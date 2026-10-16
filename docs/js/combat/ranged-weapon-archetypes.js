@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 14;
+  const VERSION = 15;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -44,6 +44,7 @@
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
   let thrownCharge = null; // Used to retain the active hold-release input until its matching release arrives.
+  let pendingThrownHold = null; // Used to remember a thrown press that arrived (and is still held) while the previous throw was animating, so Neutral starts the next windup.
   let lastRelease = null; // Used by the mobile-accessible debug snapshot to explain the most recent thrown release.
   let wrapperInstalled = false; // Used to avoid wrapping RangedWeapons.startPlayerAction more than once.
   let inputBridgeInstalled = false; // Used to avoid duplicate global release listeners after hot reloads.
@@ -460,7 +461,14 @@
     window.BandageSystem?.cancel?.('attack');
     if (!isThrown(itemKey)) return false;
     if (thrownCharge?.itemKey === itemKey) return true;
-    if (window.__rangedDebug?.playerAction) return false;
+    if (window.RangedWeapons?.playerActionState?.()) {
+      // Previous throw still animating: keep this held press queued and begin
+      // the next windup the frame that throw returns to Neutral (see
+      // resumePendingThrownHold). Its release clears the queue instead.
+      pendingThrownHold = { itemKey, source, pointerId };
+      return false;
+    }
+    pendingThrownHold = null;
     const def = window.RangedWeapons.config[itemKey];
     thrownCharge = { itemKey, source, pointerId, startedAt: performance.now() };
     window.RangedWeapons.setLoaded?.(itemKey, false);
@@ -483,7 +491,11 @@
 
   function releaseThrownCharge(source = 'release') {
     const charge = thrownCharge;
-    if (!charge) return false;
+    if (!charge) {
+      // Released before the previous throw reached Neutral: nothing to throw.
+      if (pendingThrownHold) { pendingThrownHold = null; lastRelease = { type: 'pending-hold-dropped', source, at: Date.now() }; }
+      return false;
+    }
     thrownCharge = null;
     const ranged = window.RangedWeapons;
     if (!ranged?.config?.[charge.itemKey] || typeof baseStartPlayerAction !== 'function') return false;
@@ -511,6 +523,7 @@
   }
 
   function cancelThrownCharge(reason = 'cancel') {
+    pendingThrownHold = null;
     if (!thrownCharge) return false;
     const itemKey = thrownCharge.itemKey;
     thrownCharge = null;
@@ -519,6 +532,17 @@
     window.RangedWeapons?.cancelPlayerHold?.();
     lastRelease = { type: 'cancelled', itemKey, source: reason, at: Date.now() };
     return true;
+  }
+
+  // Called each ranged update while a press is queued: once the previous
+  // throw's playerAction has cleared (Strike back to Neutral), start the next
+  // held windup immediately with the same input source/pointer.
+  function resumePendingThrownHold() {
+    const pending = pendingThrownHold;
+    if (!pending || window.RangedWeapons?.playerActionState?.()) return false;
+    pendingThrownHold = null;
+    if (window.RangedWeapons?.equippedRangedKey?.() !== pending.itemKey) return false;
+    return beginThrownCharge(pending.itemKey, `${pending.source}-held-repeat`, pending.pointerId);
   }
 
   function installRangedWrapper() {
@@ -536,6 +560,14 @@
       if (window.__rangedDebug?.playerAction?.itemKey === itemKey) return `Throwing ${ranged.config[itemKey]?.label || 'Weapon'}…`;
       return `Throw ${ranged.config[itemKey]?.label || 'Weapon'}`;
     };
+    if (typeof ranged.update === 'function') {
+      const baseUpdate = ranged.update.bind(ranged);
+      ranged.update = function archetypeAwareUpdate(dt) {
+        const result = baseUpdate(dt);
+        if (pendingThrownHold) resumePendingThrownHold();
+        return result;
+      };
+    }
     wrapperInstalled = true;
     return true;
   }
@@ -554,18 +586,19 @@
     }, true);
 
     window.addEventListener('pointerup', event => {
-      if (!thrownCharge || thrownCharge.pointerId == null) return;
-      if (event.pointerId === thrownCharge.pointerId) releaseThrownCharge('action-button-pointerup');
+      const owner = thrownCharge || pendingThrownHold;
+      if (!owner || owner.pointerId == null) return;
+      if (event.pointerId === owner.pointerId) releaseThrownCharge('action-button-pointerup');
     }, true);
     window.addEventListener('pointercancel', event => {
-      if (thrownCharge?.pointerId === event.pointerId) cancelThrownCharge('pointer-cancel');
+      if ((thrownCharge || pendingThrownHold)?.pointerId === event.pointerId) cancelThrownCharge('pointer-cancel');
     }, true);
 
     // A lost release (alt-tab, app switch) must not leave the player parked in the
     // charging windup pose forever — same convention as combat-input.js's abortAllPresses.
-    window.addEventListener('blur', () => { if (thrownCharge) cancelThrownCharge('window-blur'); });
+    window.addEventListener('blur', () => { if (thrownCharge || pendingThrownHold) cancelThrownCharge('window-blur'); });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && thrownCharge) cancelThrownCharge('visibility-hidden');
+      if (document.hidden && (thrownCharge || pendingThrownHold)) cancelThrownCharge('visibility-hidden');
     });
 
   }
@@ -594,6 +627,9 @@
     isThrown,
     basicAmmoEffectsFor,
     activeThrownChargeItemKey: () => thrownCharge?.itemKey || null,
+    // True while a thrown charge is held OR a held press is queued behind the
+    // current throw animation — input release paths route to releaseThrownCharge.
+    ownsThrownInput: () => !!(thrownCharge || pendingThrownHold),
     animations: {
       // These are mutable authored copies on purpose: the user can tune/export
       // Blowgun without changing the Crossbow or Drink source animations.

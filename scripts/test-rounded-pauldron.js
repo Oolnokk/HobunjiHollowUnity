@@ -178,7 +178,8 @@ assert(smith.includes('MetalArmorSystem?.renderSmithySection?.(list)'), 'smithy 
 assert(smith.includes('MetalArmorSystem?.init?.'), 'smithy injects existing inventory/save/avatar adapters into the generic metal-armor module');
 
 const game = read('docs/game.js');
-assert(game.includes("MetalArmorSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false })"), 'tool/weapon Mastery XP contributes to every equipped metal armor article');
+assert(read('docs/js/tool-mastery.js').includes("MetalArmorSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false })"), 'tool/weapon Mastery XP contributes to every equipped metal armor article');
+assert(read('docs/js/mastery-policy.js').includes("MetalArmorSystem?.awardExperience?.(delta, 'tool/weapon Mastery XP', { save: false })"), 'policy-permitted Mastery awards also contribute to equipped metal armor');
 assert(skillSystemSource.includes('notifyAward(skillKey, gain, reason);'), 'SkillSystem emits from the authoritative award path used by both external and internal XP grants');
 assert(metalArmorSource.includes('skillSystem.onAward'), 'ordinary SkillSystem XP reaches Temper through the authoritative award event');
 assert(!metalArmorSource.includes('skillSystem.award = wrapped'), 'Temper no longer relies on a public-method monkey patch that misses internal SkillSystem awards');

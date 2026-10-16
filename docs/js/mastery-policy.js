@@ -1,6 +1,7 @@
 // Event-gated tool/weapon mastery progression.
-// Old game.js award-on-use / award-on-hit calls still exist, so this module
-// guards the shared mastery state and only permits explicit qualifying events.
+// Old game.js award-on-hit calls still exist, so this module guards the shared
+// mastery state and only permits explicit qualifying events. game.js's
+// awardToolUseMasteryXp routes through awardToolUse (dual-role tools only).
 (() => {
   'use strict';
   if (window.HobunjiMasteryPolicy) return;
@@ -192,6 +193,7 @@
     const delta = round2(amount);
     const after = round2(before + delta);
     withPermit(() => { record.xp = after; });
+    window.MetalArmorSystem?.awardExperience?.(delta, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery (same contract as tool-mastery.js); the save below persists both.
     try { equipmentDeps?.saveGearInventory?.(); } catch (_) {}
     debug.lastAward = { itemKey, label: toolLabel(itemKey), amount: delta, before, after, reason, metadata: { ...metadata }, at: now() };
     if (window.WorldPopupText?.showChange) {
@@ -227,6 +229,19 @@
     if (ranged) return true;
     const itemSlots = Array.isArray(toolDefs()[itemKey]?.slots) ? toolDefs()[itemKey].slots.map(String) : [];
     return itemSlots.some(slot => COMBAT_SLOTS.has(slot)) && !itemSlots.some(slot => !COMBAT_SLOTS.has(slot));
+  }
+  // Tools that double as weapons (axe/pick/harpoon + weapon slot, e.g.
+  // Hatchet, Pick-Shovel, Fishing Spear) keep their original "ordinary tool
+  // use builds affinity" progression on top of kills. Single-role tools stay
+  // on their worth-based events (crop harvest / treasure dig) only.
+  function isDualRoleTool(itemKey) {
+    const itemSlots = Array.isArray(toolDefs()[itemKey]?.slots) ? toolDefs()[itemKey].slots.map(String) : [];
+    return itemSlots.some(slot => COMBAT_SLOTS.has(slot)) && itemSlots.some(slot => !COMBAT_SLOTS.has(slot));
+  }
+  function awardToolUse(itemKey, amount = 1, toolSlot = null) {
+    if (!itemKey || !isDualRoleTool(itemKey)) return 0;
+    if (toolSlot && Array.isArray(toolDefs()[itemKey]?.slots) && !toolDefs()[itemKey].slots.includes(toolSlot)) return 0;
+    return award(itemKey, amount, 'tool use', { toolSlot });
   }
   const meleeKey = () => combatDeps?.currentWeaponKey?.() || slots().weapon || slots().mainHand || slots().melee || null;
   const rangedKey = () => combatDeps?.getEquippedRangedKey?.() || slots().ranged || null;
@@ -519,7 +534,7 @@
   }
 
   window.HobunjiMasteryPolicy = {
-    getDebug, formatDebug, worthMasteryXp: worthXp, enemyDifficultyScore: enemyDifficulty, isPureCombatWeapon, recordRangedKill,
+    getDebug, formatDebug, worthMasteryXp: worthXp, enemyDifficultyScore: enemyDifficulty, isPureCombatWeapon, isDualRoleTool, awardToolUse, recordRangedKill,
     _test: { awardMastery: award, guardGearInventory: guardGear, armPolicy: arm, treasureLootWorth: treasureWorth, detectTreasureDigTransitions: detectTreasure, recordTreasureStates: recordTreasure },
   };
 

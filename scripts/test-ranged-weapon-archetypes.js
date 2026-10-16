@@ -98,6 +98,8 @@ const windowObject = {
     startPlayerAction(itemKey, options = {}) { baseStarts.push({ itemKey, loaded: loaded.get(itemKey), options }); return true; },
     playerActionLabel: itemKey => `Base ${itemKey}`,
     cancelPlayerAction: () => {},
+    playerActionState: () => mockPlayerAction,
+    update: () => { rangedUpdates++; },
     triggerPlayerVisual: (durationS, options) => { rangedVisuals.push({ durationS, options }); },
     playerWindupPoseProgress: () => visibleCharge,
     releasePlayerHold: options => { releasedHolds.push(options); return true; },
@@ -109,6 +111,8 @@ const windowObject = {
   InputBindings: { getCurrentBindings: () => ({ desktop: { action1: 'KeyF' }, controller: { action1: 'Button0' } }) },
   __farmLog: () => {},
 };
+let mockPlayerAction = null; // Stands in for RangedWeapons' live playerAction so the held-repeat path can see a throw still animating.
+let rangedUpdates = 0;
 const windowListeners = {}; // Captures window-level listeners (e.g. 'blur') so the test can fire them directly.
 windowObject.addEventListener = (type, listener) => { windowListeners[type] = listener; };
 const documentListeners = {}; // Captures document-level listeners (e.g. 'visibilitychange') so the test can fire them directly.
@@ -437,3 +441,30 @@ assert.strictEqual(snapshot.lastRelease.type, 'cancelled', 'tab hide must report
 assert.strictEqual(cancelledHolds, 2, 'each interrupted thrown hold must cancel the held ranged visual exactly once.');
 
 console.log('PASS ranged weapon archetypes');
+
+// Holding the input through the end of a throw: a press that lands while the
+// previous throw is still animating is queued, and the frame that throw
+// returns to Neutral the next held windup begins immediately.
+context.document.hidden = false;
+mockPlayerAction = { itemKey: 'kylie_copper', kind: 'fire' };
+const visualsBeforeRepeat = rangedVisuals.length;
+assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), false, 'a press during the throw animation cannot start a charge yet.');
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.ownsThrownInput(), true, 'the held press must be queued behind the running throw.');
+windowObject.RangedWeapons.update(0.016);
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().thrownCharge, null, 'no charge may start while the throw is still animating.');
+mockPlayerAction = null; // throw returned to Neutral
+windowObject.RangedWeapons.update(0.016);
+assert.ok(rangedUpdates >= 2, 'the archetype update wrapper must still run the base ranged update.');
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownChargeItemKey(), 'kylie_copper', 'held input must immediately start the next windup on Neutral.');
+assert.strictEqual(rangedVisuals.length, visualsBeforeRepeat + 1, 'the repeated hold must start exactly one held windup visual.');
+assert.strictEqual(rangedVisuals.at(-1).options.held, true);
+windowObject.HobunjiRangedWeaponArchetypes.cancelThrownCharge('test-cleanup');
+
+// Releasing before Neutral drops the queued press instead of starting a charge.
+mockPlayerAction = { itemKey: 'kylie_copper', kind: 'fire' };
+windowObject.RangedWeapons.startPlayerAction('kylie_copper');
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.releaseThrownCharge('early-release'), false, 'an early release has nothing to throw.');
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.ownsThrownInput(), false, 'an early release must clear the queued hold.');
+mockPlayerAction = null;
+windowObject.RangedWeapons.update(0.016);
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownChargeItemKey(), null, 'a released press must not start a windup on Neutral.');

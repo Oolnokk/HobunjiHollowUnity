@@ -1922,64 +1922,20 @@
         return TOOL_ITEM_DEFS[equipmentSlots.weapon]?.label || null;
       }
 
-      // ── Tool mastery ("your trusty axe/shovel/pick/spear") ────────────
-      // Cumulative XP needed to reach levels 1-5 — a tool's own affinity,
-      // built up through both combat and ordinary tool use, entirely
-      // separate from the Motes of Prowess spent on its abilities' upgrade
-      // choices (see combat-progression.js). Placeholder tuning; easy to
-      // rebalance later without touching the mechanism.
-      const MASTERY_XP_THRESHOLDS = [40, 90, 150, 220, 300];
-      const MASTERY_XP_PER_COMBAT_HIT = 2;
-      const MASTERY_XP_PER_TOOL_USE = 1;
-
-      function toolMasteryXp(itemKey) {
-        return gearInventory?.toolMastery?.[itemKey]?.xp || 0;
-      }
-
-      function toolMasteryLevel(itemKey) {
-        if (!itemKey || !TOOL_ITEM_DEFS[itemKey]) return 0;
-        const xp = toolMasteryXp(itemKey);
-        let level = 0;
-        while (level < MASTERY_XP_THRESHOLDS.length && xp >= MASTERY_XP_THRESHOLDS[level]) level++;
-        return level;
-      }
-
-      function awardToolMasteryXp(itemKey, amount) {
-        if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !(amount > 0) || !gearInventory) return;
-        if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
-        gearInventory.toolMastery[itemKey].xp += amount;
-        window.MetalArmorSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery; every equipped metal armor article receives the same event, and the shared save below persists all gains atomically.
-        window.WorldPopupText?.queueReward('masteryXp', `+${amount} ${TOOL_ITEM_DEFS[itemKey].label} Mastery`);
-        saveGearInventory();
-      }
-
-      // Dev-mode-only test shortcut (see the "+1 Mastery" button in
-      // selectGearTool/selectEquipSlot, gated by s_devMode) — jumps straight
-      // to the XP threshold for the next level instead of adding an
-      // arbitrary XP amount that might not actually cross it.
-      function devBumpToolMasteryLevel(itemKey) {
-        if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !gearInventory) return;
-        const level = toolMasteryLevel(itemKey);
-        if (level >= MASTERY_XP_THRESHOLDS.length) return; // already maxed
-        const targetXp = MASTERY_XP_THRESHOLDS[level];
-        if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
-        gearInventory.toolMastery[itemKey].xp = Math.max(gearInventory.toolMastery[itemKey].xp, targetXp);
-        saveGearInventory();
-      }
-
-      // Called from every weapon-tool ability's onStrike once it's actually
-      // landed a hit (see combat-*.js) — grows whichever tool is currently
-      // equipped as the weapon.
-      function awardWeaponMasteryXp() {
-        if (window.CombatTutorial?.active?.()) return; // Borrowed practice weapons cannot farm item Mastery.
-        awardToolMasteryXp(equipmentSlots.weapon, MASTERY_XP_PER_COMBAT_HIT);
-      }
-
-      // Called from a successful hoe/shovel/axe/pick/harpoon action —
-      // ordinary tool use also builds a tool's affinity, not just combat.
-      function awardToolUseMasteryXp(tool) {
-        awardToolMasteryXp(equipmentSlots[tool], MASTERY_XP_PER_TOOL_USE);
-      }
+      // Tool mastery XP/level/award helpers (toolMasteryXp, toolMasteryLevel,
+      // awardToolMasteryXp, devBumpToolMasteryLevel, awardWeaponMasteryXp,
+      // awardToolUseMasteryXp) now live in js/tool-mastery.js
+      window.ToolMastery.init({
+        getGearInventory: () => gearInventory,
+        getEquipmentSlots: () => equipmentSlots,
+        TOOL_ITEM_DEFS,
+        saveGearInventory: () => saveGearInventory(),
+      });
+      const {
+        MASTERY_XP_THRESHOLDS, MASTERY_XP_PER_COMBAT_HIT,
+        toolMasteryXp, toolMasteryLevel, awardToolMasteryXp, devBumpToolMasteryLevel,
+        awardWeaponMasteryXp, awardToolUseMasteryXp,
+      } = window.ToolMastery;
 
       // ── Verdigris coverage, cosmetic plating, metal reinforcement ──────
       // Continuous with the tool's own XP total (not stepped by mastery
@@ -26728,7 +26684,7 @@
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
           if (actionId === 'action1' && heldMode === 'tool' && activeTool === 'ranged') {
             const thrownBridge = window.HobunjiRangedWeaponArchetypes; // Used so controller/keyboard/mouse Action 1 releases the same active thrown charge through shared input ownership.
-            if (thrownBridge?.activeThrownChargeItemKey?.()) {
+            if (thrownBridge?.ownsThrownInput?.() ?? thrownBridge?.activeThrownChargeItemKey?.()) {
               thrownBridge.releaseThrownCharge?.('input-action-release');
               return;
             }
@@ -27596,7 +27552,7 @@
             window.HeldItemActionInput?.release();
             return;
           }
-          if (heldMode === 'tool' && activeTool === 'ranged' && window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()) {
+          if (heldMode === 'tool' && activeTool === 'ranged' && (window.HobunjiRangedWeaponArchetypes?.ownsThrownInput?.() ?? window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.())) {
             runInputAction('action1', 'release');
             return;
           }
