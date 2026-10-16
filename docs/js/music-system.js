@@ -1171,6 +1171,11 @@
     _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
   }
 
+  function isCombatMusicRequested() {
+    // Spearhead's session includes explanations, practice, and the reward choice.
+    return !!(deps.isPlayerInCombat() || window.CombatTutorial?.active?.());
+  }
+
   function updateAmbientCues() {
     if (quietLoading) return; // Preserve paused music ownership while the introduction covers scene changes.
     const currentArea = deps.getCurrentArea();
@@ -1222,21 +1227,21 @@
       _ambientCueState.nextAt = _ambientCueState.blockUntil;
     }
 
-    const playerInCombat = !!deps.isPlayerInCombat(); // Existing game combat state remains the sole source of truth for soundtrack handoff.
-    const combatOverrideSuppressed = playerInCombat && ambientMusicOwnsSoundtrack(); // Existing exclusiveSoundtrack metadata keeps authored special music authoritative without a second exemption system.
-    const combatOverrideActive = playerInCombat && !combatOverrideSuppressed; // Drives only the music override; gameplay combat state itself is untouched.
+    const combatMusicRequested = isCombatMusicRequested(); // Shared music demand keeps tutorial dialogue and pauses on the combat soundtrack.
+    const combatOverrideSuppressed = combatMusicRequested && ambientMusicOwnsSoundtrack(); // Existing exclusiveSoundtrack metadata keeps authored special music authoritative without a second exemption system.
+    const combatOverrideActive = combatMusicRequested && !combatOverrideSuppressed; // Drives only the music override; gameplay combat state itself is untouched.
     if (combatOverrideActive !== _ambientCueState.combatOverrideActive) {
       _ambientCueState.combatOverrideActive = combatOverrideActive;
       if (combatOverrideActive) {
         pauseAmbientForCombat();
         audioDebug('combat started — fading ambient music to pause', 'combat-duck-' + currentArea, 0, 'bgm');
       } else {
-        stopMusicSlot('currentCombatBgm', playerInCombat ? 'combat-exempt soundtrack active' : 'combat ended');
-        if (!playerInCombat) {
+        stopMusicSlot('currentCombatBgm', combatMusicRequested ? 'combat-exempt soundtrack active' : 'combat ended');
+        if (!combatMusicRequested) {
           restoreAmbientSchedulerAfterCombat();
           resumeAmbientAfterCombat();
         }
-        audioDebug(playerInCombat ? 'combat music suppressed by active exclusive soundtrack' : 'combat ended — resuming paused ambient music', 'combat-unduck-' + currentArea + '-' + playerInCombat, 0, 'bgm');
+        audioDebug(combatMusicRequested ? 'combat music suppressed by active exclusive soundtrack' : 'combat ended — resuming paused ambient music', 'combat-unduck-' + currentArea + '-' + combatMusicRequested, 0, 'bgm');
       }
     }
 
@@ -1269,7 +1274,7 @@
           if (repeatIfStillInCombat
               && repeatWhileCombat
               && ownsSlot
-              && !!deps.isPlayerInCombat()
+              && isCombatMusicRequested()
               && !ambientMusicOwnsSoundtrack()
               && isAudioEntryEligible(track, liveArea)
               && !audioUrlFailed(track.url)) {
@@ -1631,6 +1636,7 @@
       ' url=' + (activeSnd?._trackUrl || 'none') +
       ' combatOverride=' + _ambientCueState.combatOverrideActive +
       ' ambientPaused=' + !!ambientSnd?.paused +
+      ' tutorialActive=' + !!window.CombatTutorial?.active?.() +
       ' blockForMs=' + Math.max(0, Math.round(_ambientCueState.blockUntil - performance.now())) +
       ' conditions=' + [world.maps, world.weather, world.timesOfDay, world.seasons, world.weekdays].join('/') +
       ' rainActive=' + deps.calendar.isRaining +

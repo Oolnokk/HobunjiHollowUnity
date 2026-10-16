@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm'); // Executes the live scheduler against controlled combat/tutorial state.
 
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
@@ -37,6 +38,67 @@ const pureFocusSourceSampleRate = pureFocusMp4aIndex >= 0 ? fs.readFileSync(pure
 const undergrowthPath = path.join(__dirname, '../docs/assets/audio/music/bgm/bgm_The_Undergrowth.ogg'); // Confirms the Cloud Forest night recording exists with its case-sensitive filename.
 const fishCaughtCuePath = path.join(__dirname, '../docs/assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a'); // Confirms the catch-success sting is present.
 const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/cues/gameplaycues/gpq_progress_deeper.m4a'); // Confirms the mine-descent sting is present.
+
+// Run the scheduler and its ended callback: tutorials must keep one combat
+// transport through dialogue, idle practice, and rewards, then hand music back.
+{
+  const live = { combat: false, tutorial: false, exclusive: false, plays: 0, pauses: 0, resumes: 0 }; // Mutable inputs and transport observations for scheduler transitions.
+  const ambient = { ended: false }; // Existing exploration track retained beneath training music.
+  const state = { area: 'arena', currentBgm: ambient, mode: 'bgm', nextAt: 0, blockUntil: 0, combatOverrideActive: false }; // Scheduler slots shared with the executed production function.
+  const context = { // Narrow audio boundary: scheduler decisions and callbacks remain production code.
+    window: { AudioSystem: { gameAudioConfig: () => ({ combatBgm: [{ url: 'combat.m4a' }] }) }, CombatTutorial: { active: () => live.tutorial } },
+    deps: { getCurrentArea: () => 'arena', isPlayerInCombat: () => live.combat },
+    quietLoading: false, _startupBgm: null, _ambientCueState: state, _audioCueIndexes: new Map(),
+    performance: { now: () => 1000 },
+    areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
+    ambientMusicOwnsSoundtrack: () => live.exclusive,
+    audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false,
+    musicFadeConfig: () => ({ songFadeInMs: 0, songFadeOutMs: 0 }),
+    pauseAmbientForCombat() { live.pauses++; },
+    restoreAmbientSchedulerAfterCombat() {},
+    resumeAmbientAfterCombat() { live.resumes++; },
+    stopMusicSlot(key) { state[key] = null; },
+    retireMusicTrack(sound) { sound.retired = true; },
+    playMusicTrack(url) { return { src: url, currentTime: 12, listeners: {}, addEventListener(event, callback) { this.listeners[event] = callback; } }; },
+    requestGameAudioPlay() { live.plays++; return Promise.resolve(); },
+  };
+  const schedulerSource = music.slice(music.indexOf('  function isCombatMusicRequested()'), music.indexOf('  function setLoopingBgs(')); // Includes both the live demand helper and the scheduler's real callback closure.
+  vm.runInNewContext(schedulerSource, context);
+  context.updateAmbientCues();
+  assert.equal(state.combatOverrideActive, false, 'ordinary exploration keeps ambient music');
+  live.tutorial = true;
+  context.updateAmbientCues();
+  const trainingTrack = state.currentCombatBgm; // Transport identity must survive changes in gameplay combat state.
+  assert.ok(trainingTrack, 'an active tutorial starts combat music without gameplay combat');
+  assert.equal(live.pauses, 1, 'training pauses ambient music once');
+  for (const combat of [true, false, true, false]) {
+    live.combat = combat;
+    context.updateAmbientCues();
+    assert.equal(state.currentCombatBgm, trainingTrack, 'combat changes during a lesson keep the same track');
+  }
+  trainingTrack.listeners.ended();
+  assert.equal(live.plays, 2, 'native ended fallback immediately repeats during noncombat tutorial phases');
+  assert.equal(trainingTrack.currentTime, 0, 'tutorial repeat restarts the same transport');
+  assert.equal(trainingTrack.retired, undefined, 'tutorial repeat retains track ownership');
+  live.tutorial = false;
+  live.combat = true;
+  context.updateAmbientCues();
+  assert.equal(state.currentCombatBgm, trainingTrack, 'ending a lesson during real combat keeps combat music');
+  live.combat = false;
+  context.updateAmbientCues();
+  assert.equal(state.currentCombatBgm, null, 'ending training outside combat releases its music');
+  assert.equal(live.resumes, 1, 'normal ambient music resumes after training');
+  trainingTrack.listeners.ended();
+  assert.equal(live.plays, 2, 'a stale ended callback cannot restart music after the tutorial ends');
+  live.tutorial = true;
+  live.exclusive = true;
+  context.updateAmbientCues();
+  assert.equal(state.combatOverrideActive, false, 'existing exclusive soundtracks retain their priority');
+  delete context.window.CombatTutorial;
+  context.updateAmbientCues();
+  assert.equal(state.combatOverrideActive, false, 'music works before the tutorial module loads');
+}
 
 assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
 assert.equal((music.match(/snd\.play\(\)/g) || []).length, 1,
@@ -107,8 +169,8 @@ assert.match(music, /activeKind = _ambientCueState\.currentCombatBgm \? 'combat-
   'mobile audio diagnostics identify the combat soundtrack as the active music owner');
 assert.match(music, /' combatOverride=' \+ _ambientCueState\.combatOverrideActive[\s\S]*?' ambientPaused=' \+ !!ambientSnd\?\.paused/,
   'mobile audio diagnostics expose combat override and preserved ambient pause state');
-assert.match(music, /combatOverrideActive = playerInCombat && !combatOverrideSuppressed/,
-  'existing gameplay combat state drives the override while existing exclusive soundtrack owners can suppress it');
+assert.match(music, /combatOverrideActive = combatMusicRequested && !combatOverrideSuppressed/,
+  'combat music demand drives the override while existing exclusive soundtrack owners can suppress it');
 assert.match(music, /exclusiveSoundtrack === true/,
   'combat suppression reuses the existing exclusiveSoundtrack metadata instead of inventing a second exemption flag');
 assert.doesNotMatch(music, /combatBgmExempt/,
@@ -144,7 +206,7 @@ assert.match(music, /transport=' \+ \(activeSnd\?\._gaplessLoopAudio \? \(active
   'mobile audio diagnostics expose the active music transport');
 assert.match(music, /const mediaElement = snd\?\._gaplessNativeFallback \? snd\._gaplessNativeAudio : snd;[\s\S]*?createMediaElementSource\(mediaElement\)/,
   'native fallback playback can still use the existing GainNode path for user track boosts above 100%');
-assert.match(music, /finishCombatBgm = \(\{ repeatIfStillInCombat = true \} = \{\}\) => \{[\s\S]*?deps\.isPlayerInCombat\(\)[\s\S]*?snd\.currentTime = 0;[\s\S]*?requestGameAudioPlay\(snd\)[\s\S]*?return;[\s\S]*?retireMusicTrack\(snd\)/,
+assert.match(music, /finishCombatBgm = \(\{ repeatIfStillInCombat = true \} = \{\}\) => \{[\s\S]*?isCombatMusicRequested\(\)[\s\S]*?snd\.currentTime = 0;[\s\S]*?requestGameAudioPlay\(snd\)[\s\S]*?return;[\s\S]*?retireMusicTrack\(snd\)/,
   'if a looping combat M4A still emits ended, the same element restarts immediately while combat remains active instead of entering the scheduler/fade-in path');
 assert.match(music, /snd\.addEventListener\('ended', finishCombatBgm\);/,
   'combat ended fallback remains reusable across repeated same-element restarts');
