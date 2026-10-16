@@ -42,20 +42,54 @@ const context = {
 vm.createContext(context);
 for (const path of ['docs/js/name-advisor.js', 'docs/js/onboarding-random-name.js']) vm.runInContext(fs.readFileSync(path, 'utf8'), context);
 const suggest = context.window.hobunjiOnboardingRandomName.suggestNames;
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length];
+}
+const sourceName = 'Benjamin';
 for (const species of ['kenkari', 'mao-ao', 'engh-sho', 'tletingan', 'nuhongan']) { // Nuhongan are Tletingan-derived Slagothim and share their naming culture.
-  const names = suggest('Benjamin', species, 'male');
+  const names = suggest(sourceName, species, 'male');
   assert.ok(names.length > 0 && names.length <= 4, species);
   assert.equal(new Set(names.map(name => name.toLowerCase())).size, names.length);
-  assert.ok(names.every(name => name.length <= 32 && name.toLowerCase() !== 'benjamin'));
+  assert.ok(names.every(name => name.length <= 32 && name.toLowerCase() !== sourceName.toLowerCase()));
+  const spellingScore = name => ({
+    distance: editDistance(name.toLowerCase(), sourceName.toLowerCase()),
+    sameLength: name.length === sourceName.length,
+    lengthChange: Math.abs(name.length - sourceName.length),
+  });
+  for (let i = 1; i < names.length; i += 1) {
+    const previous = spellingScore(names[i - 1]);
+    const current = spellingScore(names[i]);
+    const ordered = previous.distance < current.distance
+      || (previous.distance === current.distance && previous.sameLength >= current.sameLength)
+      || (previous.distance === current.distance && previous.sameLength === current.sameLength && previous.lengthChange <= current.lengthChange);
+    assert.ok(ordered, `${species}: suggestions should minimize spelling edits and prefer substitutions on ties`);
+  }
 }
+const advisorOptions = context.window.HobunjiNameAdvisor.makeIdeaOptions;
+assert.equal(advisorOptions('kenkari', 'first', 'Strand', { gender: 'male' })[0].label, 'Tanu', 'Kenkari should collapse the invalid str onset to one consonant');
+assert.equal(advisorOptions('mao', 'first', 'Strand', { gender: 'male' })[0].label, 'Tanu', 'Mao-ao should collapse the invalid str onset to one consonant');
+assert.ok(advisorOptions('slagothim', 'given', 'Strand', { gender: 'male' }).length > 0, 'Slagothim should repair invalid onset and medial clusters');
+const slagothim = suggest(sourceName, 'tletingan', 'male');
+assert.equal(slagothim[0], 'Bengamir', 'best same-length Slagothim repair should be first after replacing outlawed j');
+assert.ok(slagothim.every(name => name.toLowerCase().endsWith('mir')), 'male Slagothim suggestions should keep the required suffix');
 for (const value of ['', '   ', '123', '🐈']) assert.equal(suggest(value, 'kenkari', 'male').length, 0);
-assert.equal(suggest('Benjamin', 'mashtzarr', 'male').length, 0);
-assert.ok(suggest('Benjamin', 'mao-ao', 'female').every(name => /^[aeiou]/i.test(name)));
-assert.ok(suggest('Benjamin', 'kenkari', 'male', 3).every(name => name.length <= 3));
+assert.equal(suggest(sourceName, 'mashtzarr', 'male').length, 0);
+for (const gender of ['male', 'female']) { const names = suggest(sourceName, 'tletingan', gender); const suffix = gender === 'female' ? 'mira' : 'mir'; assert.ok(names.length); assert.ok(names.every(name => name.toLowerCase().endsWith(suffix) && !/[cfjqvwxyz]/i.test(name))); }
+assert.ok(suggest(sourceName, 'mao-ao', 'female').every(name => /^[aeiou]/i.test(name)));
+assert.ok(suggest(sourceName, 'kenkari', 'male', 3).every(name => name.length <= 3));
 input.addEventListener('input', () => { overlay.persistedName = input.value; });
 pending.splice(0).forEach(fn => fn());
 const suggestions = overlay.querySelector('.ob-name-suggestions');
-input.value = 'Benjamin';
+input.value = sourceName;
 input.dispatchEvent(new context.Event('input'));
 assert.ok(suggestions.children.length > 0);
 const choice = suggestions.children[0].textContent;
@@ -66,4 +100,4 @@ input.value = '';
 input.dispatchEvent(new context.Event('input'));
 assert.equal(suggestions.children.length, 0);
 assert.equal(suggestions.hidden, true);
-console.log('onboarding name suggestions: phonology, bounds, button application and core state passed');
+console.log('onboarding name suggestions: replacement-first ranking, phonology, bounds, button application and core state passed');
