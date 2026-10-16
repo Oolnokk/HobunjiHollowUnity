@@ -151,6 +151,20 @@ const assert = require('assert');
   gear.toolMastery.hatchet.xp += 5;
   assert.equal(gear.toolMastery.hatchet.xp, 0, 'legacy mastery write must be blocked');
 
+  // Tools that double as weapons still grow from ordinary tool use through the
+  // policy's permitted awardToolUse; single-role tools do not.
+  assert.equal(policy.isDualRoleTool('hatchet'), true);
+  assert.equal(policy.isDualRoleTool('pickshovel'), true);
+  assert.equal(policy.isDualRoleTool('bronzehoe'), false);
+  assert.equal(policy.isDualRoleTool('sword'), false);
+  assert.equal(policy.awardToolUse('hatchet', 1, 'axe'), 1, 'dual-role axe use must award mastery');
+  assert.equal(gear.toolMastery.hatchet.xp, 1, 'tool-use award must survive the write guard');
+  assert.equal(policy.awardToolUse('hatchet', 1, 'pick'), 0, 'tool use must match a slot the item actually fills');
+  assert.equal(policy.awardToolUse('bronzehoe', 1, 'hoe'), 0, 'single-role hoe use must not award mastery');
+  assert.equal(policy.awardToolUse('pickshovel', 1, 'pick'), 1, 'pick-shovel mining counts as dual-role tool use');
+  gear.toolMastery.hatchet = {xp:0};
+  gear.toolMastery.pickshovel = {xp:0};
+
   // Old per-hit melee callback is swallowed, independent of direct guard.
   combatDeps.awardWeaponMasteryXp();
   assert.equal(gear.toolMastery.hatchet.xp, 0, 'old melee hit award must be suppressed');

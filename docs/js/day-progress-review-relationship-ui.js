@@ -84,7 +84,7 @@
       .catch(() => {});
   }
 
-  function exactFavorHeartDelta(card) {
+  function exactFavorPointDelta(card) {
     const npcId = card?.dataset?.dayReviewNpcId;
     if (!npcId) return null;
     const ledger = window.DayProgressReview?.debugSnapshot?.()?.ledger;
@@ -96,10 +96,12 @@
     const favor = card.querySelector('.day-review-deltas .day-review-favor');
     const valueEl = favor?.querySelector('b');
     if (!favor || !valueEl || favor.dataset.favorPointsDecorated === '1') return;
-    const heartDelta = exactFavorHeartDelta(card);
-    if (heartDelta == null || !heartDelta) return;
-    const points = window.NpcFavorBalance?.heartsToFavorPoints?.(heartDelta);
-    if (!Number.isFinite(Number(points))) return;
+    // The ledger diffs stored relationship Favor, which is already in Favor
+    // POINTS (40 = 1 heart, see favor-heart-balance.js) — never multiply it.
+    const points = exactFavorPointDelta(card);
+    if (points == null || !points) return;
+    const heartDelta = window.NpcFavorBalance?.favorPointsToHearts?.(points);
+    if (!Number.isFinite(Number(heartDelta))) return;
     const signed = Number(points) > 0 ? `+${formatNumber(points)}` : `−${formatNumber(Math.abs(points))}`;
     valueEl.textContent = signed;
     const equivalent = document.createElement('small');
