@@ -28,7 +28,7 @@ class Group {
   }
   add(...children) { this.children.push(...children); for (const child of children) if (child) child.parent = this; }
 }
-const plane = () => ({ clone: plane, material: { map: null } });
+const plane = () => ({ clone() { return { ...this }; }, material: { map: null } });
 
 const logs = [];
 const hostiles = new Set();
@@ -61,6 +61,7 @@ const creatureDb = {
 };
 
 let rngState = 0x51a77; // Deterministic but non-constant so herd size/formation paths get realistic variation.
+let genotypeRolls = 0; // Counts distinct bloodlines so per-adult rerolls cannot hide behind identical stub genes.
 function rnd() {
   rngState = (rngState * 1664525 + 1013904223) >>> 0;
   return rngState / 0x100000000;
@@ -76,7 +77,7 @@ const windowStub = {
     },
   },
   CreatureGenetics: {
-    makeDefaultGenotype() { return { sizeClass: 'medium', base: { color: '#777', copies: 2, inheritance: 'dominant' }, belly: { enabled: true } }; },
+    makeDefaultGenotype() { genotypeRolls++; return { sizeClass: 'medium', base: { color: '#' + genotypeRolls.toString(16).padStart(6, '0'), copies: 2, inheritance: 'dominant' }, belly: { enabled: true } }; },
     creatureSizeScale(kind, sizeClass) {
       assert.equal(kind, 'voorg-ass');
       if (sizeClass === 'small') return { x: 0.27, y: 0.27 };
@@ -161,11 +162,16 @@ const living = [...hostiles].filter(c => c.health > 0);
 assert(living.length >= 16 && living.length <= 24, 'two large herds spawn 8-12 adults each');
 const herdKeys = new Set(living.map(c => c.herdKey));
 assert.equal(herdKeys.size, 2, 'Northern Cliffs maintain two independently keyed herds');
+assert.equal(genotypeRolls, 2, 'each herd rolls its random genotype exactly once');
+assert.equal(new Set(living.map(c => c.genotype.base.color)).size, 2, 'separate herds retain independently rolled bloodlines');
 
 for (const herdKey of herdKeys) {
   const herd = living.filter(c => c.herdKey === herdKey);
   assert(herd.length >= 8 && herd.length <= 12, 'each roaming herd has 8-12 adults');
   assert(herd.every(c => c.genotype?.sizeClass === 'large'), 'every wild herd adult is forced to Large size');
+  assert(herd.every(c => JSON.stringify(c.genotype) === JSON.stringify(herd[0].genotype)), 'all herd members share the full genotype, including hidden alleles');
+  assert.equal(new Set(herd.map(c => c.genotype)).size, herd.length, 'each animal owns its genotype object');
+  assert.equal(new Set(herd.map(c => c.genotype.base)).size, herd.length, 'nested genes are independent across animals');
   assert(herd.every(c => c.wanderRadiusPx === 32 * 7), 'herd members receive the broad open-air wander radius');
   const mothers = herd.filter(c => c.isHerdMother);
   assert.equal(mothers.length, 1, 'each herd has exactly one Herd-Mother');
@@ -176,7 +182,42 @@ for (const herdKey of herdKeys) {
   assert(mother.carriedBabyCount >= 2 && mother.carriedBabyCount <= 4, 'Herd-Mother carries 2-4 babies');
   assert.equal(mother._carriedBabyVisuals.length, mother.carriedBabyCount, 'every carried baby has a saddle-cluster visual');
   assert(mother._carriedBabyVisuals.every(group => group.parent === mother.avatarRef.group), 'baby visuals are parented to the mother rather than spawned as takeable world objects');
+  assert(mother._carriedBabyVisuals.every(group => group.children[0].material === mother.avatarRef.frontPlane.material && group.children[1].material === mother.avatarRef.backPlane.material), 'carried babies reuse the same genotype materials without extra recoloring');
 }
+
+const corpseStart = gameSource.indexOf('function makeCorpseWorldObject(c)'); // Extracts the real corpse action without booting the entire WebGL game.
+const corpseEnd = gameSource.indexOf('function getCorpseObjectAt(', corpseStart);
+const recoveredGenotypes = []; // Captures the existing persisted-lineage API used when deploying babies.
+const inventory = {}; // Exercises inventory capacity and repeated corpse interactions.
+const corpseContext = vm.createContext({
+  window: {
+    LootRolling: { rollLootPool: () => ({}) },
+    InventoryStacks: { MAX_TOTAL: 99 },
+    FarmAnimals: { queueItemGenotype: (key, genotype) => recoveredGenotypes.push({ key, genotype }) },
+  },
+  inventory,
+  ITEM_DEFS: { voorgAssBaby: { label: 'Voorg-Ass Baby' } },
+  itemIconForKey: () => 'baby',
+  corpseObjects: new Set(),
+  despawnCreature() {},
+});
+vm.runInContext(gameSource.slice(corpseStart, corpseEnd), corpseContext);
+const mother = living.find(c => c.isHerdMother); // Uses an actual spawned herd's genotype for loot and deployment metadata.
+const originalBabyCount = mother.carriedBabyCount; // Checks every recovered baby, before the one-shot corpse action clears the count.
+const corpse = corpseContext.makeCorpseWorldObject({ ...mother }); // Executes the production corpse-loot path without altering the living census fixture.
+assert.equal(corpse.onAction('obj_loot_corpse').ok, true);
+assert.equal(inventory.voorgAssBaby, originalBabyCount);
+assert.equal(recoveredGenotypes.length, originalBabyCount);
+assert(recoveredGenotypes.every(entry => entry.key === 'voorgAssBaby' && JSON.stringify(entry.genotype) === JSON.stringify(mother.genotype)), 'recovered babies carry the exact herd genotype into the existing saved-lineage queue');
+assert(recoveredGenotypes.every(entry => entry.genotype !== mother.genotype && entry.genotype.base !== mother.genotype.base), 'baby metadata is independently cloned');
+corpse.onAction('obj_loot_corpse');
+assert.equal(recoveredGenotypes.length, originalBabyCount, 'repeated looting cannot duplicate baby metadata');
+inventory.voorgAssBaby = 98;
+corpseContext.makeCorpseWorldObject({ ...mother, carriedBabyCount: 4 }).onAction('obj_loot_corpse');
+assert.equal(inventory.voorgAssBaby, 99);
+assert.equal(recoveredGenotypes.length, originalBabyCount + 1, 'only accepted babies receive metadata near the inventory cap');
+corpseContext.makeCorpseWorldObject({ ...mother, carriedBabyCount: 4 }).onAction('obj_loot_corpse');
+assert.equal(recoveredGenotypes.length, originalBabyCount + 1, 'a full bag cannot leave phantom baby genotypes');
 
 const census = windowStub.WildlifeSpawn.roamingHerdCensus(zoneId);
 assert.equal(census.configuredHerds, 2);

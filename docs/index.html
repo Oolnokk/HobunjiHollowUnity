@@ -591,7 +591,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261013h2d764a7"></script>
+  <script src="js/wildlife-spawn.js?v=20261016hbed29c6"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -2660,7 +2660,7 @@
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
-  <script src="game.js?v=20261016ha99911b"></script>
+  <script src="game.js?v=20261016h3f4fed1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
