@@ -5,168 +5,67 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Hobunji Hollow — Special Animated Texture Preview</title>
 <style>
-  :root{color-scheme:dark;--bg:#0e1218;--panel:#171d26;--panel2:#10151d;--line:#313b4b;--text:#e9eef6;--muted:#9eabbc;--accent:#8fc8ad}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-  header{padding:16px 18px 10px;border-bottom:1px solid var(--line);background:#111720} h1{font-size:18px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
-  main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px}.previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.22)}
-  .cardHead{padding:12px 14px 10px;border-bottom:1px solid var(--line)}.cardHead strong{display:block}.cardHead small{color:var(--muted)}
-  .stageWrap{position:relative;aspect-ratio:1;background:#090d12}canvas{display:block;width:100%;height:100%;touch-action:none}
-  .badge{position:absolute;left:10px;bottom:10px;background:rgba(7,10,14,.78);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:5px 8px;font:11px ui-monospace,monospace;pointer-events:none}
-  .controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px}.control{display:grid;gap:5px;min-width:0}.control label{font-size:11px;color:var(--muted)}
-  button,input{font:inherit}button{min-height:38px;border:1px solid var(--line);border-radius:9px;background:#202938;color:var(--text);padding:8px 10px}button:active{transform:translateY(1px)}input[type="range"]{width:100%}.value{font:11px ui-monospace,monospace;color:var(--accent)}
-  .debug{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:8px}.debugTitle{display:flex;justify-content:space-between;gap:10px}.status{color:var(--accent);font-size:12px}pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0b0f15;border:1px solid #242d3a;border-radius:9px;padding:10px;color:#cbd6e4;font:11px/1.45 ui-monospace,monospace}.change{color:var(--muted);font-size:12px}.change b{color:var(--text)}
-  @media(max-width:760px){.previews{grid-template-columns:1fr}.controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+:root{color-scheme:dark;--bg:#0e1218;--panel:#171d26;--line:#313b4b;--text:#e9eef6;--muted:#9eabbc;--accent:#8fc8ad}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif}header{padding:15px 18px;border-bottom:1px solid var(--line);background:#111720}h1{margin:0 0 4px;font-size:18px}.sub,.card small{color:var(--muted)}main{max-width:1180px;margin:auto;padding:16px;display:grid;gap:16px}.previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card,.controls,.debug{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.cardHead{padding:12px 14px;border-bottom:1px solid var(--line)}.cardHead strong{display:block}.stage{position:relative;aspect-ratio:1;background:#090d12}.stage canvas{display:block;width:100%;height:100%;touch-action:none}.badge{position:absolute;left:9px;bottom:9px;padding:5px 8px;border:1px solid #ffffff24;border-radius:999px;background:#070a0ec7;font:11px ui-monospace,monospace}.controls{padding:12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.control{display:grid;gap:4px}.control label{font-size:11px;color:var(--muted)}input[type=range]{width:100%}.value{font:11px ui-monospace,monospace;color:var(--accent)}button{min-height:38px;border:1px solid var(--line);border-radius:9px;background:#202938;color:var(--text);padding:8px 10px}.debug{padding:12px}.debugTop{display:flex;justify-content:space-between;gap:12px;margin-bottom:8px}.status{color:var(--accent)}pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;background:#0b0f15;border:1px solid #242d3a;border-radius:9px;padding:10px;color:#cbd6e4;font:11px/1.45 ui-monospace,monospace}.change{margin-top:8px;color:var(--muted);font-size:12px}@media(max-width:760px){.previews{grid-template-columns:1fr}.controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
-<header><h1>Special Animated Texture Effects</h1><div class="sub">Shared farm-cliff stretch mapping, then cohesive surface-tension deformation without remapping the UVs.</div></header>
+<header><h1>Special Animated Texture Effects</h1><div class="sub">The same irregular-surface stretch mapper used by cliff faces: texture perimeter mapped to shape perimeter once, then geometry animates without remapping the UVs.</div></header>
 <main>
-  <section class="previews">
-    <article class="card"><div class="cardHead"><strong>Oil ooze</strong><small>Pure-black <code>dark_oil.png.png</code> fitted to rounded droplet/lobe geometry over <code>carved_smooth.png</code>.</small></div><div class="stageWrap"><canvas id="oilCanvas"></canvas><div class="badge" id="oilBadge">loading…</div></div></article>
-    <article class="card"><div class="cardHead"><strong>Cohesive river</strong><small>Blue-tinted <code>wibbly_surface.png</code> on a rounded river over green-tinted farm grass.</small></div><div class="stageWrap"><canvas id="riverCanvas"></canvas><div class="badge" id="riverBadge">loading…</div></div></article>
-  </section>
-  <section class="controls">
-    <div class="control"><label for="speed">Animation speed</label><input id="speed" type="range" min="0" max="2" value="1" step="0.05"><div class="value" id="speedValue">1.00×</div></div>
-    <div class="control"><label for="riverWiggle">River motion</label><input id="riverWiggle" type="range" min="0" max="1" value="0.42" step="0.01"><div class="value" id="riverWiggleValue">0.42</div></div>
-    <div class="control"><label for="cohesion">Cohesion / surface tension</label><input id="cohesion" type="range" min="0" max="1" value="0.78" step="0.01"><div class="value" id="cohesionValue">0.78</div></div>
-    <div class="control"><label for="oilViscosity">Oil viscosity</label><input id="oilViscosity" type="range" min="0.25" max="1.5" value="0.82" step="0.01"><div class="value" id="oilViscosityValue">0.82</div></div>
-    <div class="control"><label>Animation</label><button id="pauseButton" type="button">Pause</button></div>
-    <div class="control"><label>Oil test</label><button id="restartOilButton" type="button">Restart ooze</button></div>
-    <div class="control"><label>Texture flow</label><button id="flowButton" type="button">Flow: on</button></div>
-    <div class="control"><label>Geometry inspection</label><button id="wireButton" type="button">Wireframe: off</button></div>
-  </section>
-  <section class="debug"><div class="debugTitle"><strong>Mobile-visible diagnostics</strong><span class="status" id="status">booting</span></div><pre id="debugOutput">Waiting for renderer…</pre><div class="change"><b>Most recent change:</b> colored grass/water, pure-black oil, and a shared cohesion control that smooths neighboring liquid sections into rounded, surface-tension-like shapes.</div></section>
+<section class="previews">
+<article class="card"><div class="cardHead"><strong>Oil ooze</strong><small><code>dark_oil.png.png</code> is used exactly as authored — no recolor, tint, shade-fill, or black replacement.</small></div><div class="stage"><canvas id="oilCanvas"></canvas><div class="badge" id="oilBadge">loading…</div></div></article>
+<article class="card"><div class="cardHead"><strong>River overlay</strong><small>The in-game water-body overlay source <code>canvas.png</code> is stretched to the rounded river boundary over a blue water body and green grass.</small></div><div class="stage"><canvas id="riverCanvas"></canvas><div class="badge" id="riverBadge">loading…</div></div></article>
+</section>
+<section class="controls">
+<div class="control"><label for="speed">Animation speed</label><input id="speed" type="range" min="0" max="2" value="1" step=".05"><div class="value" id="speedValue"></div></div>
+<div class="control"><label for="wiggle">River motion</label><input id="wiggle" type="range" min="0" max="1" value=".42" step=".01"><div class="value" id="wiggleValue"></div></div>
+<div class="control"><label for="cohesion">Cohesion / surface tension</label><input id="cohesion" type="range" min="0" max="1" value=".78" step=".01"><div class="value" id="cohesionValue"></div></div>
+<div class="control"><label for="viscosity">Oil viscosity</label><input id="viscosity" type="range" min=".25" max="1.5" value=".82" step=".01"><div class="value" id="viscosityValue"></div></div>
+<div class="control"><label>Animation</label><button id="pause">Pause</button></div>
+<div class="control"><label>Oil test</label><button id="restart">Restart ooze</button></div>
+<div class="control"><label>Geometry</label><button id="wire">Wireframe: off</button></div>
+</section>
+<section class="debug"><div class="debugTop"><strong>Mobile-visible diagnostics</strong><span class="status" id="status">booting</span></div><pre id="debug">Waiting for renderer…</pre><div class="change"><b>Most recent change:</b> river uses the in-game <code>canvas.png</code> overlay with its PNG edge pinned to the river edge; oil uses its source PNG unchanged.</div></section>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../../js/surface-stretch-uv-furniture.js"></script>
 <script>
-(() => {
-  'use strict';
-  const WORLD_SIZE=6; // Used as the shared authoring-square and stretch reference size.
-  const HALF_WORLD=WORLD_SIZE*0.5; // Used by both orthographic cameras.
-  const OIL_TEXTURE_URL='../../assets/textures/dark_oil.png.png'; // Used by the pure-black oil overlay alpha/detail map.
-  const ROCK_TEXTURE_URL='../../assets/textures/carved_smooth.png'; // Used beneath the oil.
-  const WATER_TEXTURE_URL='../../assets/textures/wibbly_surface.png'; // Used by the blue river overlay.
-  const GRASS_TEXTURE_URL='../../assets/textures/wavy_surface.png'; // Used by the explicitly green farm-grass background.
-  const COLORS=Object.freeze({rock:0x8a8479,oil:0x000000,grass:0x709652,water:0x4f9fc8}); // Used to keep grayscale source textures visibly and predictably colored.
-  const STRETCH_OPTIONS=Object.freeze({angleToleranceDeg:24,edgeSourceFraction:0.32,edgeReferenceWorldSize:6,avoidCollapsedUvs:true}); // Used to exercise the same central surface mapper as farm cliffs.
-  const state={paused:false,flowEnabled:true,wireframe:false,speed:1,riverWiggle:0.42,cohesion:0.78,oilViscosity:0.82,oilStartSeconds:0,animationSeconds:0,lastFrameMs:performance.now(),fps:0,frameCounter:0,fpsWindowStart:performance.now(),assets:Object.create(null),errors:[]}; // Used by controls, animation, and diagnostics.
-  const previews=new Map(); // Used to address both renderers without duplicate lifecycle code.
-  const loader=new THREE.TextureLoader(); // Used to load all repository textures through one status path.
-
-  function loadTexture(url,repeat=false){
-    return new Promise((resolve,reject)=>loader.load(url,texture=>{texture.wrapS=texture.wrapT=repeat?THREE.RepeatWrapping:THREE.ClampToEdgeWrapping;texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter||THREE.LinearMipMapLinearFilter;texture.encoding=THREE.sRGBEncoding;texture.needsUpdate=true;state.assets[url]='ready';resolve(texture);},undefined,error=>{state.assets[url]='error';state.errors.push(`${url}: ${error?.message||error}`);reject(error);}));
-  }
-  function makeRenderer(canvas){const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.outputEncoding=THREE.sRGBEncoding;renderer.setClearColor(0x090d12,1);return renderer;}
-  function makeCamera(){const camera=new THREE.OrthographicCamera(-HALF_WORLD,HALF_WORLD,HALF_WORLD,-HALF_WORLD,.01,20);camera.position.set(0,0,6);camera.lookAt(0,0,0);return camera;}
-  function makeBackground(texture,color){const material=new THREE.MeshBasicMaterial({map:texture,color,depthWrite:true});const mesh=new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE,WORLD_SIZE),material);mesh.position.z=0;return mesh;}
-
-  function makeParamGridGeometry(columns,rows,pointFor){
-    const positions=new Float32Array(columns*rows*3); // Used as the deformable XY surface buffer.
-    const params=new Float32Array(columns*rows*2); // Used to retain logical U/V after the mapper expands triangle corners.
-    const indices=[]; // Used to make one continuous grid topology before shared UV mapping.
-    for(let r=0;r<rows;r++){const v=r/(rows-1);for(let c=0;c<columns;c++){const u=c/(columns-1),i=r*columns+c,p=pointFor(u,v);positions[i*3]=p.x;positions[i*3+1]=p.y;params[i*2]=u;params[i*2+1]=v;}}
-    for(let r=0;r<rows-1;r++)for(let c=0;c<columns-1;c++){const a=r*columns+c,b=a+1,d=a+columns+1,e=a+columns;indices.push(a,e,d,a,d,b);}
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.setAttribute('hobunjiParam',new THREE.BufferAttribute(params,2));geometry.setIndex(indices);geometry.computeVertexNormals();return geometry;
-  }
-  function applyStretch(mesh,label){const mapper=window.HobunjiSurfaceStretchUV;if(!mapper?.installed||typeof mapper.mapMesh!=='function')throw new Error('HobunjiSurfaceStretchUV did not load.');mapper.mapMesh(mesh,Object.assign({label},STRETCH_OPTIONS));if(!mesh.geometry.getAttribute('hobunjiParam'))throw new Error(`${label}: mapper dropped hobunjiParam.`);return mesh.geometry.userData?.hobunjiSurfaceStretch||null;}
-  function smooth01(value){const x=Math.max(0,Math.min(1,value));return x*x*(3-2*x);}
-  function clamp01(value){return Math.max(0,Math.min(1,value));}
-
-  function oilBasePoint(u,v){
-    const lateral=u*2-1; // Used as the normalized cross-blob coordinate.
-    const center=0.10*Math.sin(v*4.7)-0.05*Math.sin(v*9.2); // Used to keep the canonical droplet slightly organic.
-    const topShoulder=0.72+0.28*Math.cos(Math.min(1,v/.28)*Math.PI*.5); // Used to keep a broad rounded reservoir near the top.
-    const width=(1.55-0.30*v)*topShoulder; // Used as the canonical half-width seen by the shared UV mapper.
-    return{x:center+lateral*width,y:2.85-v*5.35};
-  }
-  function riverCenterBase(v){return 0.36*Math.sin(v*Math.PI*2.05+.35)+0.11*Math.sin(v*Math.PI*4.5+.8);}
-  function riverBasePoint(u,v){const lateral=u*2-1,endRound=Math.pow(Math.max(.012,Math.sin(Math.PI*v)),.42),width=(.77+.09*Math.sin(v*Math.PI*3.1+.8))*endRound;return{x:riverCenterBase(v)+lateral*width,y:2.82-v*5.64};}
-
-  function createPreview(name,canvas,backgroundTexture,backgroundColor,overlayTexture,geometry,options){
-    const renderer=makeRenderer(canvas); // Used as this preview's isolated WebGL renderer.
-    const scene=new THREE.Scene(); // Used to contain the substrate and animated surface.
-    const camera=makeCamera(); // Used as the fixed top-down 2D authoring view.
-    scene.add(makeBackground(backgroundTexture,backgroundColor));
-    const material=new THREE.MeshBasicMaterial({map:overlayTexture,color:options.color,transparent:true,opacity:options.opacity??1,alphaTest:options.alphaTest??0,side:THREE.DoubleSide,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}); // Used to tint grayscale liquid assets while preserving their mapped texture detail.
-    const mesh=new THREE.Mesh(geometry,material);mesh.position.z=.03;scene.add(mesh);
-    const stretchReport=applyStretch(mesh,`special-animated-texture-preview:${name}`); // Used to prove the actual shared mapper owns these UVs.
-    const preview={name,canvas,renderer,scene,camera,mesh,material,overlayTexture,stretchReport}; // Used by animation, resize, and debug.
-    previews.set(name,preview);return preview;
-  }
-
-  function cohesiveSample(sample,v,radius,strength){
-    const raw=sample(v); // Used as the unsmoothed local target.
-    if(strength<=0)return raw;
-    const offsets=[-2,-1,0,1,2],weights=[1,2,3,2,1]; // Used as a short hydrogen-bond-like neighborhood kernel.
-    let sum=0,total=0;for(let i=0;i<offsets.length;i++){const sv=clamp01(v+offsets[i]*radius),w=weights[i];sum+=sample(sv)*w;total+=w;}
-    return raw+(sum/total-raw)*strength;
-  }
-
-  function oilFront(age){return .18+smooth01(Math.min(1,age*(.042/Math.max(.2,state.oilViscosity))))*.76;}
-  function oilHalfWidth(v,front,time){
-    if(v>=front)return 0;
-    const distance=front-v; // Used to shape the rounded leading bead by distance behind the tip.
-    const capLength=.17+.06*state.cohesion; // Used as the vertical radius of the surface-tension-rounded tip.
-    const cap=Math.sqrt(clamp01(distance/capLength)); // Used to turn the end into a semicircular/teardrop cap instead of a flat edge.
-    const reservoir=1.52-.34*v; // Used as the broad attached oil mass above the descending bead.
-    const neck=1-.34*Math.exp(-Math.pow((distance-.28)/.12,2)); // Used to make a slight neck before the rounded droplet bulb.
-    const bulb=1+.30*Math.exp(-Math.pow((distance-.11)/.075,2)); // Used to swell the leading end into a cohesive droplet lobe.
-    const slowPulse=1+.025*Math.sin(time*.75+v*8.0); // Used as subtle viscous breathing without angular fingers.
-    return reservoir*neck*bulb*Math.min(1,cap*1.22)*slowPulse;
-  }
-  function animateOil(preview,time){
-    const position=preview.mesh.geometry.getAttribute('position'); // Used to deform the already-mapped oil mesh in place.
-    const param=preview.mesh.geometry.getAttribute('hobunjiParam'); // Used as immutable logical coordinates after UV mapping.
-    const age=Math.max(0,time-state.oilStartSeconds),front=oilFront(age); // Used as the gravity-driven global descent.
-    for(let i=0;i<position.count;i++){
-      const u=param.getX(i),v=param.getY(i),lateral=u*2-1; // Used to reconstruct each logical grid point.
-      const effectiveV=Math.min(v,front),center=.10*Math.sin(effectiveV*4.7+time*.08)-.05*Math.sin(effectiveV*9.2-time*.05); // Used to keep the ooze gently meandering.
-      const width=oilHalfWidth(effectiveV,front,time); // Used as the cohesive rounded silhouette at this depth.
-      const collapse=v>front?Math.max(0,1-(v-front)*35):1; // Used to collapse unreached rows into the rounded tip instead of leaving a flat curtain.
-      const x=center+lateral*width*collapse;
-      const y=2.85-effectiveV*5.35-(1-collapse)*.015; // Used as the final gravity-axis location.
-      position.setXYZ(i,x,y,0);
-    }
-    position.needsUpdate=true;
-  }
-
-  function rawRiverCenter(v,time){return riverCenterBase(v)+state.riverWiggle*(.22*Math.sin(v*Math.PI*2.8+time*.50)+.07*Math.sin(v*Math.PI*5.2-time*.26));}
-  function rawRiverWidth(v,time){const endRound=Math.pow(Math.max(.012,Math.sin(Math.PI*v)),.42);return(.78+.09*Math.sin(v*Math.PI*3.1+.8)+state.riverWiggle*.045*Math.sin(time*.52+v*8.8))*endRound;}
-  function animateRiver(preview,time){
-    const position=preview.mesh.geometry.getAttribute('position'); // Used to deform the already-mapped river mesh without changing UV ownership.
-    const param=preview.mesh.geometry.getAttribute('hobunjiParam'); // Used as stable across/along-river coordinates.
-    const smoothStrength=.45+.5*state.cohesion; // Used to make stronger cohesion suppress local kinks and preserve rounded banks.
-    for(let i=0;i<position.count;i++){
-      const u=param.getX(i),v=param.getY(i),lateral=u*2-1; // Used to place this vertex relative to the cohesive centerline.
-      const center=cohesiveSample(x=>rawRiverCenter(x,time),v,.018,smoothStrength); // Used to make neighboring river sections pull one another into a smooth centerline.
-      const width=cohesiveSample(x=>rawRiverWidth(x,time),v,.018,smoothStrength); // Used to smooth bank width like surface tension rather than independent strip animation.
-      const y=2.82-v*5.64+state.riverWiggle*.018*Math.sin(time*.35+v*7.0)*(1-lateral*lateral); // Used as only a subtle along-channel breathing motion.
-      position.setXYZ(i,center+lateral*width,y,0);
-    }
-    position.needsUpdate=true;
-    if(state.flowEnabled){preview.overlayTexture.offset.x=(time*.012)%1;preview.overlayTexture.offset.y=(time*-.035)%1;}
-  }
-
-  function resizeAll(){for(const preview of previews.values()){const rect=preview.canvas.getBoundingClientRect();preview.renderer.setSize(Math.max(2,Math.round(rect.width)),Math.max(2,Math.round(rect.height)),false);}}
-  function renderAll(){for(const preview of previews.values())preview.renderer.render(preview.scene,preview.camera);}
-  function updateBadges(){const oil=previews.get('oil'),river=previews.get('river');if(oil)document.getElementById('oilBadge').textContent=`${oil.mesh.geometry.getAttribute('position')?.count||0} verts · pure black · mapped UV`;if(river)document.getElementById('riverBadge').textContent=`${river.mesh.geometry.getAttribute('position')?.count||0} verts · blue water / green grass`;}
-  function updateDebug(){const report={fps:state.fps,paused:state.paused,speed:state.speed,cohesion:state.cohesion,colors:{oil:'#000000',grass:'#709652',water:'#4f9fc8'},assets:state.assets,previews:Array.from(previews.values()).map(p=>({name:p.name,vertices:p.mesh.geometry.getAttribute('position')?.count||0,mapping:p.mesh.geometry.userData?.hobunjiSurfaceStretch?.mapping||null,patches:p.mesh.geometry.userData?.hobunjiSurfaceStretch?.patchCount??null})),mapper:window.HobunjiSurfaceStretchUV?.snapshot?.()||null,errors:state.errors.slice(-8)};document.getElementById('debugOutput').textContent=JSON.stringify(report,null,2);document.getElementById('status').textContent=state.errors.length?`${state.errors.length} error(s)`:'running';}
-  function bindRange(id,valueId,key,digits,suffix=''){const input=document.getElementById(id),output=document.getElementById(valueId);const apply=()=>{state[key]=Number(input.value);output.textContent=`${state[key].toFixed(digits)}${suffix}`;};input.addEventListener('input',apply);apply();}
-  function wireControls(){bindRange('speed','speedValue','speed',2,'×');bindRange('riverWiggle','riverWiggleValue','riverWiggle',2);bindRange('cohesion','cohesionValue','cohesion',2);bindRange('oilViscosity','oilViscosityValue','oilViscosity',2);document.getElementById('pauseButton').addEventListener('click',e=>{state.paused=!state.paused;e.currentTarget.textContent=state.paused?'Resume':'Pause';state.lastFrameMs=performance.now();updateDebug();});document.getElementById('restartOilButton').addEventListener('click',()=>{state.oilStartSeconds=state.animationSeconds;updateDebug();});document.getElementById('flowButton').addEventListener('click',e=>{state.flowEnabled=!state.flowEnabled;e.currentTarget.textContent=`Flow: ${state.flowEnabled?'on':'off'}`;updateDebug();});document.getElementById('wireButton').addEventListener('click',e=>{state.wireframe=!state.wireframe;for(const preview of previews.values())preview.material.wireframe=state.wireframe;e.currentTarget.textContent=`Wireframe: ${state.wireframe?'on':'off'}`;updateDebug();});}
-  function frame(now){const dt=Math.min(.05,Math.max(0,(now-state.lastFrameMs)/1000));state.lastFrameMs=now;if(!state.paused)state.animationSeconds+=dt*state.speed;const oil=previews.get('oil'),river=previews.get('river');if(oil)animateOil(oil,state.animationSeconds);if(river)animateRiver(river,state.animationSeconds);renderAll();state.frameCounter++;if(now-state.fpsWindowStart>=1000){state.fps=Math.round(state.frameCounter*1000/(now-state.fpsWindowStart));state.frameCounter=0;state.fpsWindowStart=now;updateDebug();}requestAnimationFrame(frame);}
-
-  async function boot(){
-    wireControls();if(!window.THREE)throw new Error('Three.js r128 failed to load.');if(!window.HobunjiSurfaceStretchUV?.installed)throw new Error('Shared surface stretch mapper failed to load.');
-    const [rock,oil,grass,water]=await Promise.all([loadTexture(ROCK_TEXTURE_URL),loadTexture(OIL_TEXTURE_URL),loadTexture(GRASS_TEXTURE_URL),loadTexture(WATER_TEXTURE_URL,true)]); // Used as the actual repository textures for both previews.
-    const oilGeometry=makeParamGridGeometry(19,35,oilBasePoint); // Used as a dense sheet so rounded droplet caps have enough geometry.
-    const riverGeometry=makeParamGridGeometry(9,81,riverBasePoint); // Used as a dense ribbon so cohesive banks stay round while moving.
-    createPreview('oil',document.getElementById('oilCanvas'),rock,COLORS.rock,oil,oilGeometry,{color:COLORS.oil,opacity:1,alphaTest:.01});
-    createPreview('river',document.getElementById('riverCanvas'),grass,COLORS.grass,water,riverGeometry,{color:COLORS.water,opacity:.88,alphaTest:0});
-    state.oilStartSeconds=state.animationSeconds;resizeAll();updateBadges();updateDebug();window.addEventListener('resize',resizeAll,{passive:true});if('ResizeObserver'in window){const observer=new ResizeObserver(resizeAll);for(const preview of previews.values())observer.observe(preview.canvas);}requestAnimationFrame(frame);
-  }
-  boot().catch(error=>{state.errors.push(error?.stack||error?.message||String(error));document.getElementById('status').textContent='failed';document.getElementById('debugOutput').textContent=state.errors.join('\n\n');console.error('[special-animated-texture-preview]',error);});
+(()=>{'use strict';
+const SIZE=6,HALF=3;
+const TEX={oil:'../../assets/textures/dark_oil.png.png',rock:'../../assets/textures/carved_smooth.png',river:'../../assets/textures/canvas.png',grass:'../../assets/textures/wavy_surface.png'};
+const COLOR={rock:0x8a8479,grass:0x709652,water:0x4f9fc8};
+const OIL_STRETCH={angleToleranceDeg:24,edgeSourceFraction:.32,edgeReferenceWorldSize:6,avoidCollapsedUvs:true};
+const RIVER_STRETCH={angleToleranceDeg:24,edgeSourceFraction:.45,edgeReferenceWorldSize:6,avoidCollapsedUvs:true};
+const state={paused:false,wire:false,speed:1,wiggle:.42,cohesion:.78,viscosity:.82,t:0,oilStart:0,last:performance.now(),fps:0,frames:0,fpsStart:performance.now(),assets:{},errors:[]};
+const previews=new Map(),loader=new THREE.TextureLoader();
+function load(url){return new Promise((ok,bad)=>loader.load(url,t=>{t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter||THREE.LinearMipMapLinearFilter;t.encoding=THREE.sRGBEncoding;t.needsUpdate=true;state.assets[url]='ready';ok(t)},undefined,e=>{state.assets[url]='error';state.errors.push(String(e?.message||e));bad(e)}))}
+function renderer(canvas){const r=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});r.setPixelRatio(Math.min(devicePixelRatio||1,2));r.outputEncoding=THREE.sRGBEncoding;r.setClearColor(0x090d12,1);return r}
+function camera(){const c=new THREE.OrthographicCamera(-HALF,HALF,HALF,-HALF,.01,20);c.position.set(0,0,6);c.lookAt(0,0,0);return c}
+function background(tex,color){const m=new THREE.MeshBasicMaterial({map:tex,color});const o=new THREE.Mesh(new THREE.PlaneGeometry(SIZE,SIZE),m);o.position.z=0;return o}
+function grid(cols,rows,point){const p=new Float32Array(cols*rows*3),q=new Float32Array(cols*rows*2),idx=[];for(let r=0;r<rows;r++){const v=r/(rows-1);for(let c=0;c<cols;c++){const u=c/(cols-1),i=r*cols+c,a=point(u,v);p[i*3]=a.x;p[i*3+1]=a.y;q[i*2]=u;q[i*2+1]=v}}for(let r=0;r<rows-1;r++)for(let c=0;c<cols-1;c++){const a=r*cols+c,b=a+1,d=a+cols+1,e=a+cols;idx.push(a,e,d,a,d,b)}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('hobunjiParam',new THREE.BufferAttribute(q,2));g.setIndex(idx);return g}
+function stretch(mesh,label,options){const m=window.HobunjiSurfaceStretchUV;if(!m?.mapMesh)throw Error('HobunjiSurfaceStretchUV unavailable');m.mapMesh(mesh,{label,...options});if(!mesh.geometry.getAttribute('hobunjiParam'))throw Error(label+': mapper dropped hobunjiParam');return mesh.geometry.userData?.hobunjiSurfaceStretch||null}
+function pinReport(mesh){const p=mesh.geometry.getAttribute('hobunjiParam'),uv=mesh.geometry.getAttribute('uv');if(!p||!uv)return{count:0,maxUvEdgeDistance:null};let n=0,max=0;for(let i=0;i<p.count;i++){const u=p.getX(i),v=p.getY(i);if(Math.min(u,1-u,v,1-v)>1e-5)continue;const a=uv.getX(i),b=uv.getY(i);max=Math.max(max,Math.min(a,1-a,b,1-b));n++}return{boundaryVertices:n,maxUvEdgeDistance:+max.toFixed(6)}}
+const clamp=x=>Math.max(0,Math.min(1,x)),smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+function oilPoint(u,v){const x=u*2-1,center=.10*Math.sin(v*4.7)-.05*Math.sin(v*9.2),shoulder=.72+.28*Math.cos(Math.min(1,v/.28)*Math.PI*.5),w=(1.55-.30*v)*shoulder;return{x:center+x*w,y:2.85-v*5.35}}
+function riverCenter(v){return .36*Math.sin(v*Math.PI*2.05+.35)+.11*Math.sin(v*Math.PI*4.5+.8)}
+function riverPoint(u,v){const x=u*2-1,cap=Math.pow(Math.max(.012,Math.sin(Math.PI*v)),.42),w=(.77+.09*Math.sin(v*Math.PI*3.1+.8))*cap;return{x:riverCenter(v)+x*w,y:2.82-v*5.64}}
+function makeOil(canvas,rock,oil){const r=renderer(canvas),s=new THREE.Scene(),c=camera();s.add(background(rock,COLOR.rock));const mat=new THREE.MeshBasicMaterial({map:oil,color:0xffffff,transparent:true,opacity:1,alphaTest:0,side:THREE.DoubleSide,depthWrite:false});const mesh=new THREE.Mesh(grid(19,35,oilPoint),mat);mesh.position.z=.03;s.add(mesh);const report=stretch(mesh,'special-preview:oil',OIL_STRETCH);const out={name:'oil',canvas,renderer:r,scene:s,camera:c,mesh,material:mat,report,pin:pinReport(mesh)};previews.set('oil',out);return out}
+function makeRiver(canvas,grass,overlay){const r=renderer(canvas),s=new THREE.Scene(),c=camera();s.add(background(grass,COLOR.grass));const om=new THREE.MeshBasicMaterial({map:overlay,color:0xffffff,transparent:true,opacity:1,alphaTest:0,side:THREE.DoubleSide,depthWrite:false});const overlayMesh=new THREE.Mesh(grid(9,81,riverPoint),om);overlayMesh.position.z=.04;const report=stretch(overlayMesh,'special-preview:river-overlay',RIVER_STRETCH);const wm=new THREE.MeshBasicMaterial({color:COLOR.water,transparent:true,opacity:.82,side:THREE.DoubleSide,depthWrite:false});const waterMesh=new THREE.Mesh(overlayMesh.geometry,wm);waterMesh.position.z=.025;s.add(waterMesh,overlayMesh);const out={name:'river',canvas,renderer:r,scene:s,camera:c,mesh:overlayMesh,material:om,baseMaterial:wm,baseMesh:waterMesh,report,pin:pinReport(overlayMesh)};previews.set('river',out);return out}
+function neighborhood(sample,v,radius,strength){const raw=sample(v);if(strength<=0)return raw;const o=[-2,-1,0,1,2],w=[1,2,3,2,1];let sum=0,total=0;for(let i=0;i<5;i++){const k=w[i];sum+=sample(clamp(v+o[i]*radius))*k;total+=k}return raw+(sum/total-raw)*strength}
+function oilFront(age){return .18+smooth(Math.min(1,age*(.042/Math.max(.2,state.viscosity))))*.76}
+function oilWidth(v,front,time){if(v>=front)return 0;const d=front-v,capLen=.17+.06*state.cohesion,cap=Math.sqrt(clamp(d/capLen)),reservoir=1.52-.34*v,neck=1-.34*Math.exp(-Math.pow((d-.28)/.12,2)),bulb=1+.30*Math.exp(-Math.pow((d-.11)/.075,2)),pulse=1+.025*Math.sin(time*.75+v*8);return reservoir*neck*bulb*Math.min(1,cap*1.22)*pulse}
+function animateOil(p,time){const pos=p.mesh.geometry.getAttribute('position'),uv=p.mesh.geometry.getAttribute('hobunjiParam'),front=oilFront(Math.max(0,time-state.oilStart));for(let i=0;i<pos.count;i++){const u=uv.getX(i),v=uv.getY(i),x=u*2-1,e=Math.min(v,front),center=.10*Math.sin(e*4.7+time*.08)-.05*Math.sin(e*9.2-time*.05),collapse=v>front?Math.max(0,1-(v-front)*35):1;pos.setXYZ(i,center+x*oilWidth(e,front,time)*collapse,2.85-e*5.35-(1-collapse)*.015,0)}pos.needsUpdate=true}
+function rawCenter(v,t){return riverCenter(v)+state.wiggle*(.22*Math.sin(v*Math.PI*2.8+t*.50)+.07*Math.sin(v*Math.PI*5.2-t*.26))}
+function rawWidth(v,t){const cap=Math.pow(Math.max(.012,Math.sin(Math.PI*v)),.42);return(.78+.09*Math.sin(v*Math.PI*3.1+.8)+state.wiggle*.045*Math.sin(t*.52+v*8.8))*cap}
+function animateRiver(p,time){const pos=p.mesh.geometry.getAttribute('position'),uv=p.mesh.geometry.getAttribute('hobunjiParam'),strength=.45+.5*state.cohesion;for(let i=0;i<pos.count;i++){const u=uv.getX(i),v=uv.getY(i),x=u*2-1,center=neighborhood(k=>rawCenter(k,time),v,.018,strength),width=neighborhood(k=>rawWidth(k,time),v,.018,strength),y=2.82-v*5.64+state.wiggle*.018*Math.sin(time*.35+v*7)*(1-x*x);pos.setXYZ(i,center+x*width,y,0)}pos.needsUpdate=true}
+function resize(){for(const p of previews.values()){const b=p.canvas.getBoundingClientRect();p.renderer.setSize(Math.max(2,Math.round(b.width)),Math.max(2,Math.round(b.height)),false)}}
+function render(){for(const p of previews.values())p.renderer.render(p.scene,p.camera)}
+function badges(){const o=previews.get('oil'),r=previews.get('river');if(o)oilBadge.textContent=`${o.mesh.geometry.getAttribute('position').count} verts · raw PNG · edge pinned`;if(r)riverBadge.textContent=`${r.mesh.geometry.getAttribute('position').count} verts · canvas.png · edge pinned`}
+function debug(){const rows=[...previews.values()].map(p=>({name:p.name,vertices:p.mesh.geometry.getAttribute('position')?.count||0,mapping:p.mesh.geometry.userData?.hobunjiSurfaceStretch?.mapping||null,patches:p.mesh.geometry.userData?.hobunjiSurfaceStretch?.patchCount??null,boundaryPin:p.pin}));document.getElementById('debug').textContent=JSON.stringify({fps:state.fps,oilColor:'source texture unchanged',riverOverlay:'canvas.png unchanged',waterBase:'#4f9fc8',grass:'#709652',assets:state.assets,previews:rows,mapper:window.HobunjiSurfaceStretchUV?.snapshot?.()||null,errors:state.errors.slice(-8)},null,2);status.textContent=state.errors.length?`${state.errors.length} error(s)`:'running'}
+function range(id,out,key,digits,suffix=''){const el=document.getElementById(id),o=document.getElementById(out),apply=()=>{state[key]=+el.value;o.textContent=state[key].toFixed(digits)+suffix};el.addEventListener('input',apply);apply()}
+function controls(){range('speed','speedValue','speed',2,'×');range('wiggle','wiggleValue','wiggle',2);range('cohesion','cohesionValue','cohesion',2);range('viscosity','viscosityValue','viscosity',2);pause.onclick=()=>{state.paused=!state.paused;pause.textContent=state.paused?'Resume':'Pause';state.last=performance.now();debug()};restart.onclick=()=>{state.oilStart=state.t;debug()};wire.onclick=()=>{state.wire=!state.wire;for(const p of previews.values()){p.material.wireframe=state.wire;if(p.baseMaterial)p.baseMaterial.wireframe=state.wire}wire.textContent=`Wireframe: ${state.wire?'on':'off'}`;debug()}}
+function frame(now){const dt=Math.min(.05,Math.max(0,(now-state.last)/1000));state.last=now;if(!state.paused)state.t+=dt*state.speed;const o=previews.get('oil'),r=previews.get('river');if(o)animateOil(o,state.t);if(r)animateRiver(r,state.t);render();state.frames++;if(now-state.fpsStart>=1000){state.fps=Math.round(state.frames*1000/(now-state.fpsStart));state.frames=0;state.fpsStart=now;debug()}requestAnimationFrame(frame)}
+async function boot(){controls();if(!window.THREE||!window.HobunjiSurfaceStretchUV?.installed)throw Error('Three.js or HobunjiSurfaceStretchUV failed to load');const[rock,oil,grass,river]=await Promise.all([load(TEX.rock),load(TEX.oil),load(TEX.grass),load(TEX.river)]);makeOil(oilCanvas,rock,oil);makeRiver(riverCanvas,grass,river);state.oilStart=state.t;resize();badges();debug();addEventListener('resize',resize,{passive:true});if('ResizeObserver'in window){const ro=new ResizeObserver(resize);for(const p of previews.values())ro.observe(p.canvas)}requestAnimationFrame(frame)}
+boot().catch(e=>{state.errors.push(e?.stack||String(e));status.textContent='failed';document.getElementById('debug').textContent=state.errors.join('\n\n');console.error('[special-animated-texture-preview]',e)});
 })();
 </script>
 </body>
