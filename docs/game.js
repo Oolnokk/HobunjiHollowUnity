@@ -4261,6 +4261,7 @@
       // own bodyYaw flourish; this local neck residual counters both. Seated
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
+        window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (!playerNeckJoint) return;
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
@@ -4269,11 +4270,9 @@
           && !characterViewMode.enabled
         ); // Tells the render-time physical limiter that the shared point must remain the final head authority this frame.
         if (cutscenePreviewActive) return;
-        // During dialogue, faceNpcDialogueParticipants owns the player's
-        // neck bone exclusively (a continuous eye-contact aim at the NPC —
-        // see its own comment) — step aside entirely rather than fighting
-        // it with a second, different rotation write on the same bone.
+        // Dialogue owns continuous eye contact through faceNpcDialogueParticipants.
         if (dialogueOpen) return;
+        if (player.prone || window.ImpactRagdollPlayback?.isActive?.()) return;
         if (characterViewMode.enabled) {
           playerNeckJoint.rotation.x = characterViewMode.lockedNeckX;
           playerNeckJoint.rotation.y = characterViewMode.lockedNeckY;
@@ -4314,6 +4313,9 @@
               Math.max(1e-8, Math.hypot(Number(shoulderHeadDirection?.x) || 0, Number(shoulderHeadDirection?.z) || 0)),
             )
           : 0;
+        const fishingTarget = window.Fishing?.state?.active ? window.Fishing.state.anchorWorld : null; // Keeps the gaze on the cast water tile throughout cast/wait/bite/reel phases.
+        const headTarget = fishingTarget || (sitInteraction?.phase === 'active' ? null : currentPlayerPerspectiveTarget()?.point); // Ordinary gaze shares the interaction/combat convergence point.
+        window.PlayerBodyTransformComposer?.setHeadAimTarget?.(headTarget, fishingTarget ? 'fishing-water' : 'interaction-ray');
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)

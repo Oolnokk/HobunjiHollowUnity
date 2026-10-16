@@ -28,6 +28,12 @@
   let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
+  const headAimTarget = new THREE.Vector3(); // Copied from gameplay's shared interaction/fishing target before render.
+  const headAimOrigin = new THREE.Vector3(); // Reused for the neck's position after all body lean has been composed.
+  const headAimDirection = new THREE.Vector3(); // Reused to resolve the target in the final neck-parent orientation.
+  const headAimParentQuaternion = new THREE.Quaternion(); // Inverts final body yaw/pitch/roll without treating mirrored scale as rotation.
+  let headAimEnabled = false; // Dialogue, cutscene, inspection, and ragdoll owners clear this target.
+  let headAimSource = null; // Exposed through existing mobile render diagnostics.
   let pendingCapture = null; // One-shot callback fired mid-render, after the temporary delta lands but before it's undone — see captureNextRenderTransforms().
 
   function finite(value, fallback = 0) {
@@ -153,6 +159,35 @@
       perspectiveAimLocked,
       usedCameraFacingFallback: outsideLookRange,
     };
+  }
+
+  function setHeadAimTarget(point, source = 'interaction-ray') {
+    headAimEnabled = !!point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z);
+    headAimSource = headAimEnabled ? source : null;
+    if (headAimEnabled) headAimTarget.copy(point);
+    return headAimEnabled;
+  }
+
+  function applyPlayerHeadAim(undo, renderDebug) {
+    if (!headAimEnabled) return;
+    const neck = currentPlayerNeckJoint(); // Uses the current rebuilt rig rather than a second head registry.
+    if (!neck?.parent) return;
+    neck.updateWorldMatrix(true, false);
+    neck.getWorldPosition(headAimOrigin);
+    headAimDirection.copy(headAimTarget).sub(headAimOrigin);
+    if (headAimDirection.lengthSq() < 1e-12) return;
+    hierarchyWorldQuaternion(neck.parent, headAimParentQuaternion).invert();
+    headAimDirection.applyQuaternion(headAimParentQuaternion);
+    const previousRotation = neck.rotation.clone(); // Restore the authored head pose after each draw, preventing accumulating counter-lean.
+    undo.push(() => { neck.rotation.copy(previousRotation); });
+    neck.rotation.set(
+      -Math.atan2(headAimDirection.y, Math.hypot(headAimDirection.x, headAimDirection.z)),
+      Math.atan2(headAimDirection.x, headAimDirection.z), 0, 'YXZ'
+    );
+    renderDebug.headAim = {
+      source: headAimSource, target: { x: headAimTarget.x, y: headAimTarget.y, z: headAimTarget.z },
+      pitchDeg: THREE.MathUtils.radToDeg(neck.rotation.x),
+    }; // Mobile Pixel Probe can verify both the selected water point and the counter-lean pitch.
   }
 
   // Diagnostics only. Runtime composition deliberately does not depend on
@@ -370,6 +405,7 @@
     playerLegRoot = null;
     playerPosteriorY = 0;
     playerNeckJointCache = null;
+    setHeadAimTarget(null);
     clearAllChannels();
   }
 
@@ -427,7 +463,7 @@
         }
       }
 
-      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
+      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
       lastRenderDebug = renderDebug;
 
       try {
@@ -491,6 +527,7 @@
 
   window.PlayerBodyTransformComposer = {
     setChannel,
+    setHeadAimTarget,
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,
