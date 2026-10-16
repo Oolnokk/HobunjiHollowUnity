@@ -1,5 +1,6 @@
 """Build editable, textured farm production structures in the furniture part schema."""
 import json
+import math
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / 'docs/config/furniture-authored'
@@ -38,6 +39,9 @@ def build(family, tier, index):
             for z in [-1,1]: piece(f'Front slat {i} {z}','box',0,.3+i*.2,z*width*.4,width*.8,.14,.09)
         piece('Sloped cover','box',0,1.35,0,width*.87,.12,width*.87,rx=-8)
         piece('Cover grip','box',0,1.49,-width*.12,.32,.08,.1)
+        for part in parts:  # Low, shipping-box-like crate: the whole bin's height and depth are halved to fit its width x width/2 footprint.
+            t = part['transform']
+            for key in ['y','sy','z','sz']: t[key] = round(t[key]*.5, 4)
     else:
         is_mill = family in ['windmill','fodderMill']  # Mills have a tapered tower and four animated highland shingle blades.
         tower = height * (1.7 if is_mill else 1)  # Keeps the rotor clear of farm ground and doorways.
@@ -49,22 +53,28 @@ def build(family, tier, index):
         piece('Door lintel','box',0,1.3,-width*.405,.75,.12,.14)
         piece('Door step','box',0,.19,-width*.45,.84,.1,.34,'stone')
         for side in [-1,1]:
-            piece(f'Roof slope {side}','box',side*width*.22,tower+.2,0,width*.6,.14,width*.88,rz=side*27)
+            # Positive Z rotation lifts a slab's +X end, so each slope tilts toward the centre (-side) to meet in a raised ridge.
+            piece(f'Roof slope {side}','box',side*width*.22,tower+.2,0,width*.6,.14,width*.88,rz=-side*27)
             for i in range(7):
-                piece(f'Roof rib {side} {i}','box',side*width*.22,tower+.285,-width*.39+i*width*.13,width*.61,.075,.035,rz=side*27)
+                piece(f'Roof rib {side} {i}','box',side*width*.22,tower+.285,-width*.39+i*width*.13,width*.61,.075,.035,rz=-side*27)
+        body_top = width*.76*(.78 if is_mill else 1)  # Gable infill closes the triangle between the body top and the ridge.
+        for end in [-1,1]:
+            piece(f'Gable end {end}','box',0,tower+(.12+width*.112)/2,end*(body_top/2-.04),body_top,.12+width*.112,.08,'stone',topScaleX=.04)
         if is_mill:
-            rotor_y = tower*.86  # Hub/frame stays fixed while each blade rotates around the same pivot.
-            rotor_z = -width*.49
-            piece('Rotor axle','cylinder',0,rotor_y,rotor_z,.2,.4,.2,'wood',rx=90)
-            import math
+            rotor_y = tower*.95  # Hub/frame stays fixed while each blade rotates around the same pivot.
+            face_z = -width*.38  # Front face of the stone body.
+            blade_z = face_z - .55  # Blades stand well proud of the wall so the sweep reads clearly from the farm camera.
+            piece('Rotor axle','cylinder',0,rotor_y,(face_z+blade_z)/2,.18,face_z-blade_z+.1,.18,'wood',rx=90)
+            piece('Rotor hub','disc',0,rotor_y,blade_z-.02,.42,.12,.42,'wood',rx=90)
+            hub_gap = .15  # Blades start just outside the hub.
+            arm = min(width*.85, rotor_y-.4-hub_gap)  # Longest blade that still clears the ground at the bottom of its sweep.
+            radius = hub_gap + arm*.5
             for i in range(4):
                 angle = i * math.pi / 2  # Four independently editable shingle arms.
-                arm = width*.63
-                radius = arm*.5 + .12
-                ident = piece(f'Highland shingle blade {i}','glb',math.cos(angle)*radius,rotor_y+math.sin(angle)*radius,rotor_z-.12,arm,.27,.12,'wood',rz=i*90,
+                ident = piece(f'Highland shingle blade {i}','glb',math.cos(angle)*radius,rotor_y+math.sin(angle)*radius,blade_z,arm,.42,.14,'wood',rz=i*90,
                               modelPath='assets/models/HighlandLongshingle_boned.glb',hideBone=True)
                 animations.append(dict(id=f'rotor-{i}',name=f'Windmill blade {i+1}',type='spin',enabled=True,
-                                       drivenPartId=ident,anchorPartId=None,pivot=dict(x=0,y=rotor_y,z=rotor_z-.12),axis=dict(x=0,y=0,z=1),speed=.45,windResponse=.3,connectors=[]))
+                                       drivenPartId=ident,anchorPartId=None,pivot=dict(x=0,y=rotor_y,z=blade_z),axis=dict(x=0,y=0,z=1),speed=.45,windResponse=.3,connectors=[]))
             piece('Millstone','disc',0,.5,width*.21,width*.42,.15,width*.42,'stone')
             piece('Grain hopper','cup',width*.23,.76,width*.3,.44,.48,.44,'wood',innerScale=.75,basinDepth=.3)
         else:
@@ -78,7 +88,7 @@ def build(family, tier, index):
                 piece(f'Preservation rack {i}','box',0,.45+i*.26,width*.29,width*.56,.055,.27)
     key = family + tier.capitalize()  # Matches the canonical plan and authored-file identity.
     return dict(schema='hobunji_furniture_authored_runtime.v1',key=key,sourceSchema='hobunji_farm_production.v1',
-                footprint=dict(w=width,d=width),parts=parts,pieceAnimations=animations,
+                footprint=dict(w=width,d=math.ceil(width/2) if family == 'compostBin' else width),parts=parts,pieceAnimations=animations,
                 particleEmitters=[],processingWarps=[],processTimelines=[],stompAttachPoints=[])
 
 if __name__ == '__main__':

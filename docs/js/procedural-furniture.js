@@ -211,14 +211,24 @@
     }));
     return glbTemplates.get(path);
   }
+  // The roof shingle GLB is drawn through HousePieceGen's shingle pipeline (bone-aligned,
+  // surface-mapped geometry and the farm roofs' tinted material) so windmill blades match
+  // every roof. The raw GLB has no UVs, near-black vertex colours and full metalness.
+  const ROOF_SHINGLE_GLB = /(?:^|\/)HighlandLongshingle_boned\.glb$/i;
+  function loadRoofShingle(path) {
+    const gen = window.HousePieceGen;
+    if (!ROOF_SHINGLE_GLB.test(path) || typeof gen?.makeShingleModel !== 'function') return null;
+    return gen.loadShingleGlb().then(() => gen.makeShingleModel('farm'));
+  }
   function attachGlb(mesh, part, baseColor) {
     const path = /^(?:https?:|data:|blob:|\/)/.test(part.modelPath || '') ? part.modelPath : (window.__hobunjiFurnitureAssetBase || 'assets/') + String(part.modelPath || '').replace(/^assets\//, ''); // Runtime and isolated editor resolve the same saved model identity.
-    loadFurnitureGlb(path).then(template => {
+    (loadRoofShingle(path) || loadFurnitureGlb(path).then(template => template.clone(true))).then(instance => {
       if (mesh.userData.glbDisposed) return; // A world reset/move can dispose the owner while the GLB is still loading.
-      const instance = template.clone(true); // Cached materials/geometries are never mutated or disposed by a furniture instance.
+      // Cached materials/geometries are never mutated or disposed by a furniture instance.
       instance.traverse(child => {
         if (/^(?:shinglebone|.*_bone|bone)$/i.test(child.name || '')) child.visible = false;
         if (!child.isMesh) return;
+        if (child.userData.sharedShingle) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look.
         child.geometry = child.geometry.clone();
         const color = material => { const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
         child.material = Array.isArray(child.material) ? child.material.map(color) : color(child.material);

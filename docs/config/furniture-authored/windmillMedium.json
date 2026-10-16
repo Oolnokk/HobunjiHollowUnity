@@ -284,7 +284,7 @@
         "sz": 2.64,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -308,7 +308,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -332,7 +332,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -356,7 +356,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -380,7 +380,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -404,7 +404,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -428,7 +428,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -452,7 +452,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": -27
+        "rz": 27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -476,7 +476,7 @@
         "sz": 2.64,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -500,7 +500,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -524,7 +524,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -548,7 +548,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -572,7 +572,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -596,7 +596,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -620,7 +620,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -644,7 +644,7 @@
         "sz": 0.035,
         "rx": 0,
         "ry": 0,
-        "rz": 27
+        "rz": -27
       },
       "materialRole": "wood",
       "materialTexture": "carved_smooth.png",
@@ -656,16 +656,88 @@
       "bottomScaleZ": 1
     },
     {
+      "id": "gable-end--1",
+      "name": "Gable end -1",
+      "kind": "box",
+      "transform": {
+        "x": 0,
+        "y": 3.458,
+        "z": -0.8492000000000001,
+        "sx": 1.7784000000000002,
+        "sy": 0.456,
+        "sz": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "color": "#4d4d4d",
+      "segments": 16,
+      "topScaleX": 0.04,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1
+    },
+    {
+      "id": "gable-end-1",
+      "name": "Gable end 1",
+      "kind": "box",
+      "transform": {
+        "x": 0,
+        "y": 3.458,
+        "z": 0.8492000000000001,
+        "sx": 1.7784000000000002,
+        "sy": 0.456,
+        "sz": 0.08,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "color": "#4d4d4d",
+      "segments": 16,
+      "topScaleX": 0.04,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1
+    },
+    {
       "id": "rotor-axle",
       "name": "Rotor axle",
       "kind": "cylinder",
       "transform": {
         "x": 0,
-        "y": 2.7778,
-        "z": -1.47,
-        "sx": 0.2,
-        "sy": 0.4,
-        "sz": 0.2,
+        "y": 3.0685,
+        "z": -1.415,
+        "sx": 0.18,
+        "sy": 0.65,
+        "sz": 0.18,
+        "rx": 90,
+        "ry": 0,
+        "rz": 0
+      },
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "color": "#7d7355",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1
+    },
+    {
+      "id": "rotor-hub",
+      "name": "Rotor hub",
+      "kind": "disc",
+      "transform": {
+        "x": 0,
+        "y": 3.0685,
+        "z": -1.7100000000000002,
+        "sx": 0.42,
+        "sy": 0.12,
+        "sz": 0.42,
         "rx": 90,
         "ry": 0,
         "rz": 0
@@ -684,12 +756,12 @@
       "name": "Highland shingle blade 0",
       "kind": "glb",
       "transform": {
-        "x": 1.065,
-        "y": 2.7778,
-        "z": -1.5899999999999999,
-        "sx": 1.8900000000000001,
-        "sy": 0.27,
-        "sz": 0.12,
+        "x": 1.40925,
+        "y": 3.0685,
+        "z": -1.6900000000000002,
+        "sx": 2.5185,
+        "sy": 0.42,
+        "sz": 0.14,
         "rx": 0,
         "ry": 0,
         "rz": 0
@@ -710,12 +782,12 @@
       "name": "Highland shingle blade 1",
       "kind": "glb",
       "transform": {
-        "x": 6.521244205459656e-17,
-        "y": 3.8428,
-        "z": -1.5899999999999999,
-        "sx": 1.8900000000000001,
-        "sy": 0.27,
-        "sz": 0.12,
+        "x": 8.629167508492037e-17,
+        "y": 4.4777499999999995,
+        "z": -1.6900000000000002,
+        "sx": 2.5185,
+        "sy": 0.42,
+        "sz": 0.14,
         "rx": 0,
         "ry": 0,
         "rz": 90
@@ -736,12 +808,12 @@
       "name": "Highland shingle blade 2",
       "kind": "glb",
       "transform": {
-        "x": -1.065,
-        "y": 2.7778,
-        "z": -1.5899999999999999,
-        "sx": 1.8900000000000001,
-        "sy": 0.27,
-        "sz": 0.12,
+        "x": -1.40925,
+        "y": 3.0685,
+        "z": -1.6900000000000002,
+        "sx": 2.5185,
+        "sy": 0.42,
+        "sz": 0.14,
         "rx": 0,
         "ry": 0,
         "rz": 180
@@ -762,12 +834,12 @@
       "name": "Highland shingle blade 3",
       "kind": "glb",
       "transform": {
-        "x": -1.9563732616378965e-16,
-        "y": 1.7128,
-        "z": -1.5899999999999999,
-        "sx": 1.8900000000000001,
-        "sy": 0.27,
-        "sz": 0.12,
+        "x": -2.588750252547611e-16,
+        "y": 1.65925,
+        "z": -1.6900000000000002,
+        "sx": 2.5185,
+        "sy": 0.42,
+        "sz": 0.14,
         "rx": 0,
         "ry": 0,
         "rz": 270
@@ -844,8 +916,8 @@
       "anchorPartId": null,
       "pivot": {
         "x": 0,
-        "y": 2.7778,
-        "z": -1.5899999999999999
+        "y": 3.0685,
+        "z": -1.6900000000000002
       },
       "axis": {
         "x": 0,
@@ -865,8 +937,8 @@
       "anchorPartId": null,
       "pivot": {
         "x": 0,
-        "y": 2.7778,
-        "z": -1.5899999999999999
+        "y": 3.0685,
+        "z": -1.6900000000000002
       },
       "axis": {
         "x": 0,
@@ -886,8 +958,8 @@
       "anchorPartId": null,
       "pivot": {
         "x": 0,
-        "y": 2.7778,
-        "z": -1.5899999999999999
+        "y": 3.0685,
+        "z": -1.6900000000000002
       },
       "axis": {
         "x": 0,
@@ -907,8 +979,8 @@
       "anchorPartId": null,
       "pivot": {
         "x": 0,
-        "y": 2.7778,
-        "z": -1.5899999999999999
+        "y": 3.0685,
+        "z": -1.6900000000000002
       },
       "axis": {
         "x": 0,
