@@ -61,7 +61,21 @@ const synced = [];
 const sandbox = {
   window: {},
   performance: { now: () => 1000 },
-  document: undefined,
+  document: (() => {
+    const classes = new Set();
+    const button = {
+      listeners: {}, attrs: {},
+      classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)), contains: name => classes.has(name), add() {}, remove() {} },
+      addEventListener(type, fn) { this.listeners[type] = fn; },
+      setAttribute(k, v) { this.attrs[k] = v; },
+    };
+    return {
+      body: null, // Overlay vignette is skipped without a body; the ring button is what's under test.
+      __button: button,
+      getElementById: id => (id === 'btnPerceptionMode' ? button : null),
+      createElement: () => ({ classList: { toggle() {} }, setAttribute() {} }),
+    };
+  })(),
   console,
 };
 sandbox.window.THREE = THREE;
@@ -126,5 +140,16 @@ assert.strictEqual(synced[synced.length - 1], 'cleared');
 assert.strictEqual(PM.speedMultiplier(), 1);
 assert.strictEqual(PM.toggle(), true, 're-enables immediately');
 assert.deepStrictEqual(toggles, [true, false, true]);
+
+// The outer-ring button toggles the mode on pointerdown and mirrors its state.
+const button = sandbox.document.__button;
+assert.strictEqual(typeof button.listeners.pointerdown, 'function', 'init binds #btnPerceptionMode');
+assert.strictEqual(button.classList.contains('active'), true, 'button shows active while the sense is on');
+button.listeners.pointerdown({ preventDefault() {} });
+assert.strictEqual(PM.isActive(), false, 'tapping the button turns it off');
+assert.strictEqual(button.classList.contains('active'), false);
+assert.strictEqual(button.attrs['aria-pressed'], 'false');
+button.listeners.pointerdown({ preventDefault() {} });
+assert.strictEqual(PM.isActive(), true, 'and back on, no cooldown');
 
 console.log('perception mode: ok');

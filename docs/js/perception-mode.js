@@ -414,11 +414,25 @@
   }
 
   // ── Public API ───────────────────────────────────────────────────────
+  let buttonEl = null; // #btnPerceptionMode (touch/mouse toggle on the outer action ring).
+  function bindButton() {
+    if (buttonEl || typeof document === 'undefined') return;
+    buttonEl = document.getElementById('btnPerceptionMode');
+    buttonEl?.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      toggle();
+    });
+  }
+
   function setActive(next) {
     next = !!next;
     if (next === active) return active;
     active = next;
     ensureOverlayEl()?.classList.toggle('active', active);
+    if (buttonEl) {
+      buttonEl.classList.toggle('active', active);
+      buttonEl.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
     lastRefreshAt = -Infinity;
     lastInfoAt = -Infinity;
     if (!active) {
@@ -448,6 +462,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    bindButton();
     return api;
   }
 

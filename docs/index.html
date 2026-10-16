@@ -153,7 +153,7 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20261015hperc001">
+  <link rel="stylesheet" href="style.css?v=20261016hperc002">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -180,7 +180,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261015h9704344"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261015hc73ec7d"></script>
+  <script src="js/character-action-locks.js?v=20261016h7f6ee51"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -2366,6 +2366,12 @@
            updateMountRide). -->
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
+      </button>
+      <!-- Perception Mode toggle (js/perception-mode.js binds it). Mirrors the
+           B key / D-pad left 'perceptionMode' action; .active while the sense
+           is on. Its ring angle comes from js/social-action-wheel.js. -->
+      <button id="btnPerceptionMode" class="abt" aria-label="Toggle perception mode" aria-pressed="false">
+        <span class="abt-icon">🦅</span>
       </button>
       <!-- Utility menu: penultimate control on the outer ring, taking the
            12:00 slot Call Mount used to occupy; live CSS keeps it inside the screen.

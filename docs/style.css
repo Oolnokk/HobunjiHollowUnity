@@ -3449,3 +3449,25 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
   font: 700 12px/1 'DM Mono', monospace; letter-spacing: 0.18em; text-transform: uppercase;
   color: rgba(220,235,255,0.85); text-shadow: 0 1px 3px rgba(0,0,0,0.8);
 }
+
+/* ── Perception Mode toggle on the outer action ring (angle set by
+   js/social-action-wheel.js; same size/feel as Call Mount). ── */
+#btnPerceptionMode {
+  position: absolute;
+  right:  calc(-1*cos(96deg)*var(--ar2));
+  bottom: calc(   sin(96deg)*var(--ar2));
+  transform: translate(50%, 50%);
+  width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
+  border-radius: 50%;
+  background: rgba(220,235,255,0.09); border: 1.5px solid rgba(220,235,255,0.46);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; font-family: inherit; cursor: pointer;
+  transition: transform 0.08s; overflow: hidden;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+  touch-action: none;
+}
+#btnPerceptionMode:active { transform: translate(50%,50%) scale(0.92); }
+#btnPerceptionMode .abt-icon { font-size: 0.85em; }
+#btnPerceptionMode.active { background: rgba(220,235,255,0.32); border-color: rgba(220,235,255,0.9); box-shadow: 0 0 10px rgba(220,235,255,0.55); }
