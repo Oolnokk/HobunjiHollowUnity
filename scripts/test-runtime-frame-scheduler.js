@@ -115,7 +115,7 @@ assert(quickAt > popupAt, 'Quick Attack loads only after WorldPopupText exposes 
 assert(quickAt < gameAt, 'Quick Attack still loads before game.js so its pre-game scheduler subscription is ready for gameplay');
 assert(melee.includes("document.addEventListener('DOMContentLoaded', init"), 'melee scheduler registration remains after gameLoop setup');
 assert(ranged.includes("document.addEventListener('DOMContentLoaded', init"), 'ranged scheduler registration remains after gameLoop setup');
-assert(quick.includes('drawProceduralReticle(sight, nowMs)'), 'Quick Attack keeps its animated procedural fallback');
+assert(quick.includes('drawProceduralReticle(nowMs)'), 'Quick Attack keeps its animated procedural fallback');
 assert(guide.includes('No search through `game.js`'), 'architecture guide explicitly supports local subsystem comprehension');
 assert(read('AGENTS.md').includes('docs/architecture/runtime-frame-scheduler.md'), 'root coding instructions route small-context models to the cadence contract');
 console.log('runtime frame scheduler, current-main bootstrap, conservative HUD migration, and Quick Attack pre-game migration contracts passed');

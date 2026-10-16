@@ -213,9 +213,9 @@ assert.doesNotMatch(bandit, /BANDIT_LUNGE_HOMING_RATE/, 'bandits do not home aft
 assert.match(bandit, /data: \{ isBandit: true, attacker: c/, 'bandit staged actions identify their attacker for recovery');
 
 assert.match(indicator, /Object\.entries\(rawAfflictions \|\| \{\}\)/, 'opportunity effects accept progression maps without crashing');
-assert.match(indicator, /state\.root\.updateWorldMatrix\?\.\(true, true\)/, 'overlay samples the live target transform');
-assert.match(indicator, /try \{\s*\n\s*syncReadyTarget\(nowMs\);/, 'one renderer exception cannot strand a visible overlay (the scheduler itself now guarantees the next frame is scheduled regardless of subscriber outcome)');
-assert.match(indicator, /else detachReticle\(\)/, 'overlay hides immediately when the bonus condition ends');
+assert.match(indicator, /WorldPopupText\.avatarCentroidWorld\(root\)/, 'overlay samples the live target transform (avatarCentroidWorld refreshes the ancestor matrices)');
+assert.match(indicator, /try \{\s*\n\s*syncReadyTargets\(nowMs\);/, 'one renderer exception cannot strand a visible overlay (the scheduler itself now guarantees the next frame is scheduled regardless of subscriber outcome)');
+assert.match(indicator, /if \(sight\.frame !== frameSerial\) releaseSight\(target, sight\)/, 'overlay hides immediately when the bonus condition ends (behavior: test-quick-attack-bonus-indicator-scheduler.js)');
 assert.match(html, /quick-attack-bonus-indicator\.js/, 'opportunity indicator is loaded by the game page');
 
 for (const [name, source] of Object.entries({ html, style, bindings, config })) {
