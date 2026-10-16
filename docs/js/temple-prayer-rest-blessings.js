@@ -11,7 +11,7 @@
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Temple benches offer three weeklong prayers at any time on Anan, including the Spirit Communion layout; only player-bed Sleep grants the 16-hour Well Rested buff.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Well Rested and temple prayers now appear in the shared on-screen buff bar with labels and countdown fills; their timers still follow the in-game calendar.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -375,9 +375,9 @@
       const entries = [];
       if (state.prayer) {
         const prayer = PRAYERS[state.prayer.id];
-        if (prayer) entries.push({ id: `temple-prayer-${prayer.id}`, icon: prayer.icon, name: prayer.name, timerText: formatRemaining(state.prayer.expiresAtGameHour - now) });
+        if (prayer) entries.push({ id: `temple-prayer-${prayer.id}`, icon: prayer.icon, label: prayer.name, sourceLabel: 'Temple Prayer', durationS: PRAYER_DURATION_HOURS * 3600, remainingS: (state.prayer.expiresAtGameHour - now) * 3600 });
       }
-      if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', name: 'Well Rested', timerText: formatRemaining(state.wellRested.expiresAtGameHour - now) });
+      if (state.wellRested) entries.push({ id: 'well-rested', icon: '🛏️', label: 'Well Rested', sourceLabel: 'Sleep', durationS: WELL_RESTED_DURATION_HOURS * 3600, remainingS: (state.wellRested.expiresAtGameHour - now) * 3600 });
       return entries;
     });
     hudProviderInstalled = true;

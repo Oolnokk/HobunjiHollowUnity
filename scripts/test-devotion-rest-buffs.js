@@ -112,6 +112,8 @@ const clockContext = {
   document: { addEventListener() {}, getElementById: () => null },
   localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
 };
+const buffBarSource = fs.readFileSync(path.join(root, 'docs/js/effect-buff-bar.js'), 'utf8'); // Exercises the real renderer's filtering and normalization contract.
+vm.runInNewContext(buffBarSource, clockContext);
 assert.doesNotThrow(() => vm.runInNewContext(core, clockContext));
 assert.equal(calendarReads, 0, 'parser-time boot defers calendar reads');
 assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine');
@@ -127,10 +129,22 @@ assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), false
 prayerWeekday = 'Anan';
 assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().gameHour, 246);
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
+const savedHudEntries = clockWindow.EffectBuffBar.getEntries(); // Verifies saved prayer/rest effects survive the shared buff bar's required remaining-time filter.
+const restedHudEntry = savedHudEntries.find(entry => entry.id === 'well-rested'); // Checks Well Rested's label and calendar-based countdown independently of prayer.
+assert.equal(restedHudEntry?.label, 'Well Rested');
+assert.equal(restedHudEntry?.sourceLabel, 'Sleep');
+assert.equal(restedHudEntry?.durationS, 16 * 3600);
+assert.equal(restedHudEntry?.remainingS, 4 * 3600);
+assert.equal(savedHudEntries.find(entry => entry.id === 'temple-prayer-naoine')?.label, "Nao'ine Prayer");
+calendarTime = .375;
+assert.equal(clockWindow.EffectBuffBar.getEntries().find(entry => entry.id === 'well-rested')?.remainingS, 3600, 'HUD countdown follows in-game time');
 calendarTime = .5;
 assert.equal(clockWindow.TemplePrayerRestBlessings._test.expireState(), true);
 assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer(), null);
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), false);
+assert.equal(clockWindow.EffectBuffBar.getEntries().length, 0, 'expired blessings leave the HUD');
+clockWindow.TemplePrayerRestBlessings._test.grantWellRested();
+assert.equal(clockWindow.EffectBuffBar.getEntries().find(entry => entry.id === 'well-rested')?.remainingS, 16 * 3600, 'new bed-rest buff appears with a full countdown');
 assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer, null);
 
 console.log('temple prayer and Well Rested regression passed');
