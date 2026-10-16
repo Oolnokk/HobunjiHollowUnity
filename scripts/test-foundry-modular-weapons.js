@@ -47,13 +47,12 @@ assert.equal(api.getConfig().shafts['dagger-sword'].attachments.length, 1);
 assert.equal(api.getConfig().shafts['dagger-sword'].crop, undefined);
 assert.equal(api.getConfig().shafts.warhammer.defaults.scaleX, 1.65, 'Keep uploaded calibration');
 assert.equal(api.getConfig().shafts.dagger.defaults.y, 45, 'Keep uploaded calibration');
-assert.deepEqual(plain(api.getConfig().shafts['harlyao-longsword'].attachments), plain(api.getConfig().shafts['harlyao-broadsword'].attachments));
-for (const head of Object.keys(api.getConfig().heads)) {
-  const broad = api.settings('harlyao-broadsword', head), long = api.settings('harlyao-longsword', head); // Every inherited/overridden value follows the broadsword baseline.
-  assert(Math.abs(long.scaleX - broad.scaleX * .9) < 1e-6);
-  assert(Math.abs(long.scaleY - broad.scaleY * 1.1) < 1e-6);
-  for (const key of ['x', 'y', 'rotation', 'flipX', 'flipY']) assert.equal(long[key], broad[key]);
-}
+const broadShaft = api.getConfig().shafts['harlyao-broadsword']; // Baseline Harlyao sword shaft used for the default longsword proportion.
+const longShaft = api.getConfig().shafts['harlyao-longsword']; // Explicit per-head overrides may intentionally diverge from this default relation.
+assert.deepEqual(plain(longShaft.attachments), plain(broadShaft.attachments));
+assert(Math.abs(longShaft.defaults.scaleX - broadShaft.defaults.scaleX * .9) < 1e-6);
+assert(Math.abs(longShaft.defaults.scaleY - broadShaft.defaults.scaleY * 1.1) < 1e-6);
+for (const key of ['x', 'y', 'rotation', 'flipX', 'flipY']) assert.equal(longShaft.defaults[key], broadShaft.defaults[key]);
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
 draft.shafts.dagger.defaults = { scaleX: 1.2, scaleY: .8, flipX: true, flipY: false, x: 30, y: 10, rotation: 15 };
 draft.shafts.dagger.overrides.warhammer = { flipX: false, x: 0, rotation: 0 };
