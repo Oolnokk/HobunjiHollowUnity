@@ -17,6 +17,7 @@ const expectedController = {
   action8: null,
   swapTarget: null,
   toggleMount: 'Button10',
+  perceptionMode: 'Button14',
   weaponSwitch: 'Button11',
   utilityMenu: 'Button12',
   toolSelect: 'Button5',

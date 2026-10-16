@@ -680,7 +680,7 @@
     }
     deps.player.inputX = ix; deps.player.inputY = iy; deps.player.inputStrength = inputStrength;
 
-    const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul();
+    const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Perception Mode halves mounted speed too.
     if (inputStrength > 0.001) {
       mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + deps.ACCEL * dt);
       const desiredAngle = Math.atan2(iy, ix);

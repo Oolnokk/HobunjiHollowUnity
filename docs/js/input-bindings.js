@@ -26,6 +26,7 @@
     action8: null,
     swapTarget: null,
     toggleMount: 'Button10',
+    perceptionMode: 'Button14', // D-pad left: free in gameplay context (menu uiLeft / music scale-prev share it in their own contexts).
     weaponSwitch: 'Button11',
     utilityMenu: 'Button12',
     toolSelect: 'Button5',

@@ -41,7 +41,7 @@
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20260914transienttarget1"></script>
+  <script src="js/input-bindings.js?v=20261016h52dbb2f"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <script src="js/activity-events.js?v=20261007romance1"></script>
@@ -144,7 +144,7 @@
   <script src="debug.js?v=20261015h78d3fe0"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260930h1b2e2e2"></script>
-  <script src="config/scratchbones-config.js?v=20261015h58783f0"></script>
+  <script src="config/scratchbones-config.js?v=20261015h4b48147"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -153,7 +153,7 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
-  <link rel="stylesheet" href="style.css?v=20261015h24e5740">
+  <link rel="stylesheet" href="style.css?v=20261016hperc002">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -180,7 +180,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261015h9704344"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261015hc73ec7d"></script>
+  <script src="js/character-action-locks.js?v=20261016h7f6ee51"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -401,7 +401,7 @@
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261008h34e9cde"></script>
   <script src="js/world-meta-store.js?v=20261013h27ea706"></script>
-  <script src="js/farm-animals.js?v=20261015h2bcdf5b"></script>
+  <script src="js/farm-animals.js?v=20261016h4180cd9"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -820,6 +820,12 @@
   <script src="js/png-plane-outline-occluder.js?v=20261015hb93578b"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
+  <!-- Daily crop growth tick + water/ditch growth multiplier
+       (window.CropGrowth; game.js calls init and forwards tickCropDay). -->
+  <script src="js/crop-growth.js?v=20261015hcrop001"></script>
+  <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
+       info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
+  <script src="js/perception-mode.js?v=20261016hperc003"></script>
   <script src="js/world-portrait-life.js?v=20260930combatface2"></script>
 </head>
 <body>
@@ -2361,6 +2367,12 @@
       <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
         <span class="abt-icon">🐴</span>
       </button>
+      <!-- Perception Mode toggle (js/perception-mode.js binds it). Mirrors the
+           B key / D-pad left 'perceptionMode' action; .active while the sense
+           is on. Its ring angle comes from js/social-action-wheel.js. -->
+      <button id="btnPerceptionMode" class="abt" aria-label="Toggle perception mode" aria-pressed="false">
+        <span class="abt-icon">🦅</span>
+      </button>
       <!-- Utility menu: penultimate control on the outer ring, taking the
            12:00 slot Call Mount used to occupy; live CSS keeps it inside the screen.
            Hold to open the utilities wheel (Character View, Return to Camp,
@@ -2461,7 +2473,7 @@
   <script src="js/sprite-recolor.js?v=20261014ha6a3081"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20261015h8accdd2"></script>
+  <script src="js/mount-system.js?v=20261016he27d4d6"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20261012he2aea15"></script>
@@ -2508,7 +2520,7 @@
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20260930promptfix1"></script>
+  <script src="js/world-popup-text.js?v=20261015h567d2ce"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2643,7 +2655,7 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/romance-system.js?v=20261013h23504d0"></script>
   <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
-  <script src="game.js?v=20261015h5357333"></script>
+  <script src="game.js?v=20261016h5061c24"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261010h8448517"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

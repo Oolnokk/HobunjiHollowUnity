@@ -623,6 +623,7 @@
     const lastAngle = Number(outerAngles.btnSocialActions); // Social Actions is the actual preceding control, after Utilities.
     const normalStep = Math.abs(Number(outerAngles.btnUtilityMenu) - lastAngle) || 10; // Uses configured ring spacing when players customize its angles.
     outerAngles.btnSwapTarget = lastAngle - normalStep * 1.2; // Targeting always ends the second arch with 20% more center spacing.
+    if (outerAngles.btnPerceptionMode == null) outerAngles.btnPerceptionMode = lastAngle - normalStep * 2.4; // Perception Mode sits one more (widened) step past Targeting.
     const outerRules = Object.entries(outerAngles)
       .map(([id, deg]) => `#${id}{right:calc(-1*cos(${Number(deg)}deg)*var(--ar2))!important;bottom:calc(sin(${Number(deg)}deg)*var(--ar2))!important;}`)
       .join('\n');

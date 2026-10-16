@@ -35,7 +35,9 @@
     deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false,
     interactionSignature: '', interactionClearTimer: null, conditionCallout: null, aimLabel: null,
     levelUpQueue: [], levelUpActive: null, levelUpTimer: null, // Serializes player progression announcements so simultaneous Skill/Mastery gains never overlap above the avatar.
+    infoLists: new Map(), // key -> persistent info list (Perception Mode) drawn in the loot-list style on the opposite side of its root.
   };
+  const INFO_LABEL_COLOR = '#B8C5C0'; // Used for the small label words ("Growth", "Moisture") so values read first.
   let tankanFontPromise = null; // Used to load the existing Tankan OTF once before redrawing any persistent callout canvas.
 
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -154,6 +156,55 @@
     ctx.strokeText(text, textX, canvas.height / 2);
     ctx.fillStyle = state.settings.colors[kind] || '#fff';
     ctx.fillText(text, textX, canvas.height / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    const aspect = canvas.width / canvas.height;
+    const geometry = new THREE.PlaneGeometry(aspect, 1);
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(geometry, material);
+    plane.scale.setScalar(size);
+    plane.renderOrder = 1200;
+    plane.frustumCulled = false;
+    plane.userData.isBillboard = true;
+    return { plane, geometry, material, texture, width: aspect * size, height: size };
+  }
+
+  // Same canvas metrics/stroke as makePlane (the loot/reward list row), but a
+  // row is a sequence of independently colored segments so one line can mix
+  // a label with color-coded values. segment: { text, color?, small? }.
+  function makeSegmentRowPlane(segments, layout) {
+    const THREE = state.deps.THREE;
+    const size = layout.worldHeight;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const fontPx = 64; // makePlane's loot-row size.
+    const smallFontPx = 50; // Label words stay visibly subordinate to their values.
+    const gapPx = 16; // Space between segments unless a segment asks to sit tight against the previous one.
+    const parts = segments.filter(segment => segment && String(segment.text ?? '') !== '');
+    const fontFor = segment => `900 ${segment.small ? smallFontPx : fontPx}px ${POPUP_FONT_FAMILY}`;
+    let total = 0;
+    parts.forEach((segment, index) => {
+      ctx.font = fontFor(segment);
+      total += ctx.measureText(String(segment.text)).width + (index && !segment.tight ? gapPx : 0);
+    });
+    canvas.width = Math.max(64, Math.ceil(total + 28));
+    canvas.height = 92;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    let x = 14;
+    parts.forEach((segment, index) => {
+      const text = String(segment.text);
+      if (index && !segment.tight) x += gapPx;
+      ctx.font = fontFor(segment);
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(15,10,8,.9)';
+      ctx.strokeText(text, x, canvas.height / 2);
+      ctx.fillStyle = segment.color || (segment.small ? INFO_LABEL_COLOR : '#fff');
+      ctx.fillText(text, x, canvas.height / 2);
+      x += ctx.measureText(text).width;
+    });
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
@@ -549,6 +600,97 @@
     return setInteractionPrompts(options.root, prompts, { scene: options.scene });
   }
 
+  // ── Persistent info lists (Perception Mode) ─────────────────────────
+  // Rows render exactly like the loot list (same font, stroke, row scale and
+  // spacing) but mirrored to the opposite side of the root and right-aligned
+  // against it, so they never collide with a loot/reward list on the same
+  // object. entries: [{ key, root, rows: [[segment, ...], ...], lift?,
+  // objectAnchor? }]. objectAnchor skips the avatar lookup for plain props
+  // (crops), anchoring at root's world position raised by `lift`.
+  function disposeInfoList(list) {
+    list.rows.forEach(dispose);
+    list.rows.length = 0;
+  }
+
+  function clearInfoLists() {
+    for (const list of state.infoLists.values()) disposeInfoList(list);
+    state.infoLists.clear();
+  }
+
+  function syncInfoLists(entries, options = {}) {
+    if (!state.deps) return 0;
+    const scene = options.scene || state.deps.getActiveScene?.();
+    if (!scene) { clearInfoLists(); return 0; }
+    const cfg = state.settings.centeredFiveRow;
+    const layout = { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE };
+    const seen = new Set();
+    for (const entry of entries || []) {
+      if (!entry?.key || !entry.root || !Array.isArray(entry.rows) || !entry.rows.length) continue;
+      seen.add(entry.key);
+      const rows = entry.rows.slice(0, cfg.maxRows);
+      const signature = JSON.stringify(rows);
+      const existing = state.infoLists.get(entry.key);
+      if (existing && existing.signature === signature && existing.root === entry.root) {
+        existing.lift = Number(entry.lift) || 0;
+        existing.objectAnchor = !!entry.objectAnchor;
+        for (const row of existing.rows) {
+          if (row.plane.parent !== scene) { row.plane.parent?.remove(row.plane); scene.add(row.plane); }
+        }
+        continue;
+      }
+      if (existing) disposeInfoList(existing);
+      const list = {
+        root: entry.root, signature, lift: Number(entry.lift) || 0, objectAnchor: !!entry.objectAnchor,
+        rows: rows.map(segments => makeSegmentRowPlane(segments, layout)),
+      };
+      list.rows.forEach(row => scene.add(row.plane));
+      state.infoLists.set(entry.key, list);
+    }
+    for (const [key, list] of state.infoLists) {
+      if (seen.has(key)) continue;
+      disposeInfoList(list);
+      state.infoLists.delete(key);
+    }
+    return state.infoLists.size;
+  }
+
+  const _infoAnchor = { center: null }; // Scratch Vector3, created once deps.THREE exists.
+  function updateInfoLists(camera, cameraRight) {
+    if (!state.infoLists.size) return;
+    const THREE = state.deps.THREE;
+    if (!_infoAnchor.center) _infoAnchor.center = new THREE.Vector3();
+    const center = _infoAnchor.center;
+    const cfg = state.settings.centeredFiveRow;
+    for (const [key, list] of state.infoLists) {
+      if (!list.root?.parent) {
+        disposeInfoList(list);
+        state.infoLists.delete(key);
+        continue;
+      }
+      let width = 1, combinedHeight = 0.5;
+      if (list.objectAnchor) {
+        list.root.updateWorldMatrix?.(true, false);
+        list.root.getWorldPosition(center);
+      } else {
+        const metrics = avatarMetrics(list.root);
+        if (!metrics) continue;
+        center.copy(metrics.center);
+        width = metrics.width;
+        combinedHeight = metrics.combinedHeight;
+      }
+      center.y += list.lift + combinedHeight * cfg.yOffsetPercent / 100;
+      const sideOffset = Math.abs(width * cfg.xOffsetPercent / 100); // The loot list's own offset, mirrored to the other side.
+      const centerSlot = (list.rows.length - 1) * 0.5;
+      list.rows.forEach((row, slot) => {
+        row.plane.position.copy(center);
+        row.plane.position.y += (centerSlot - slot) * row.height * cfg.rowSpacing;
+        row.plane.position.addScaledVector(cameraRight, -(sideOffset + row.width * 0.5)); // Right edge hugs the object; text grows away from it.
+        row.plane.quaternion.copy(camera.quaternion);
+        row.material.opacity = 1;
+      });
+    }
+  }
+
   function clearAimLabel() {
     if (!state.aimLabel) return;
     dispose(state.aimLabel);
@@ -661,6 +803,7 @@
     }
     updateConditionCallout(camera, cameraRight);
     updateAimLabel(camera);
+    updateInfoLists(camera, cameraRight);
   }
 
   function init(deps) {
@@ -681,6 +824,7 @@
     state.interactionSignature = '';
     clearConditionCallout();
     clearAimLabel();
+    clearInfoLists();
   }
 
   function applySettings(settings) {
@@ -694,6 +838,7 @@
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
+    syncInfoLists, clearInfoLists,
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
@@ -707,6 +852,7 @@
       interactionVerbColor: INTERACTION_VERB_COLOR,
       levelUpQueueLength: state.levelUpQueue.length,
       levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
+      infoLists: [...state.infoLists.keys()],
     }),
   };
   window.WorldPopupText = api;

@@ -24,6 +24,7 @@
     toolBtn: 'toolSelect',
     itemBtn: 'itemSelect',
     btnCallMount: 'toggleMount',
+    btnPerceptionMode: 'perceptionMode',
     btnUtilityMenu: 'utilityMenu',
     btnSwapTarget: 'swapTarget',
   }); // Maps permanent arch controls to the same semantic actions exposed in Settings.
@@ -33,6 +34,7 @@
     toolBtn: 'TOOLS',
     itemBtn: 'ITEMS',
     btnCallMount: 'MOUNT',
+    btnPerceptionMode: 'SENSE',
     btnUtilityMenu: 'UTILITY',
     btnSwapTarget: 'TARGET',
     btnAmmoSelect: 'AMMO',
