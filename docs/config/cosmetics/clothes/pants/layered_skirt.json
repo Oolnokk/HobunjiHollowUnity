@@ -1,0 +1,59 @@
+{
+  "slot": "pants",
+  "material": "cloth",
+  "tags": [
+    "material:cloth"
+  ],
+  "colorRange": {
+    "minH": -180,
+    "maxH": 180,
+    "stops": [
+      {
+        "h": -180,
+        "sMin": 0.05,
+        "sMax": 0.85,
+        "vMin": -0.18,
+        "vMax": 0.28
+      },
+      {
+        "h": 0,
+        "sMin": 0.05,
+        "sMax": 0.85,
+        "vMin": -0.18,
+        "vMax": 0.28
+      },
+      {
+        "h": 180,
+        "sMin": 0.05,
+        "sMax": 0.85,
+        "vMin": -0.18,
+        "vMax": 0.28
+      }
+    ]
+  },
+  "meta": {
+    "name": "Layered Skirt",
+    "note": "Skinned with the simple pants rig; source art is aligned onto its 500\u00d7500 canvas before dyeing and weaving."
+  },
+  "parts": {
+    "pants": {
+      "layers": {
+        "base": {
+          "layerRole": "BASE",
+          "paletteColorKey": "A",
+          "image": {
+            "url": "./assets/cosmetics/clothes/legs/layered_skirt.png",
+            "layout": {
+              "width": 500,
+              "height": 500,
+              "x": 5,
+              "y": 80,
+              "drawWidth": 500,
+              "drawHeight": 346.8208092485549
+            }
+          }
+        }
+      }
+    }
+  }
+}

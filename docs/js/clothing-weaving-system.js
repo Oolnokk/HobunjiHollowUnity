@@ -1650,7 +1650,7 @@
         const paletteKey = mappedRole || layer?.paletteColorKey || null; // 'A'/'B' — which dye slot this layer recolors with (see renderClothingLayers).
         const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
         const url = layer?.image?.url;
-        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey, partName, layerName });
+        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey, partName, layerName, imageLayout: layer?.image?.layout || null });
       }
     }
     return into;
@@ -1717,6 +1717,18 @@
     return hasSecondaryDyeForCosmetic(baseCosmeticId(item)); // Lets EquipmentPanel ask about a literal garment without duplicating cosmetic-config loading.
   }
 
+  // Align differently sized source sprites on a garment's shared rig canvas, once per composition.
+  function alignLayerImage(image, layout) {
+    if (!image || !layout) return image;
+    const { width, height, x = 0, y = 0, drawWidth, drawHeight } = layout; // Authored canvas and source rectangle used by icons, weaving and rig textures.
+    if (![width, height, drawWidth, drawHeight].every(value => Number.isFinite(value) && value > 0 && value <= 4096)
+        || ![x, y].every(Number.isFinite)) return image;
+    const canvas = Object.assign(document.createElement('canvas'), { width, height }); // Shared-size layer returned to the ordinary dye/pattern pipeline.
+    const context = canvas.getContext('2d'); // Draws only at composition time, never during animation.
+    context.drawImage(image, x, y, drawWidth, drawHeight);
+    return canvas;
+  }
+
   const plainIconCanvasPromises = new Map(); // Reuses composited (unpatterned) icon canvases across the inventory grid and equipment slots.
 
   // Builds a flat icon by stacking every layer resolveIconLayers finds for
@@ -1735,7 +1747,7 @@
       plainIconCanvasPromises.set(cacheKey, (async () => {
         const layers = iconLayersForView(await resolveIconLayers(id), 'front'); // Inventory icons show the garment's normal-facing art, not a hood's dedicated rear sprite stacked on top.
         if (!layers.length) return null;
-        const images = (await Promise.all(layers.map(l => loadImageUrl(l.url).catch(() => null)))).filter(Boolean);
+        const images = (await Promise.all(layers.map(async layer => alignLayerImage(await loadImageUrl(layer.url).catch(() => null), layer.imageLayout)))).filter(Boolean);
         if (!images.length) return null;
         const width = Math.max(...images.map(img => img.naturalWidth || img.width || 0));
         const height = Math.max(...images.map(img => img.naturalHeight || img.height || 0));
@@ -1833,7 +1845,7 @@
     const trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotOverride !== undefined ? trimDyeSlotOverride : weaving?.trim?.dyeSlot); // Draft preview and saved garments share A/B/C coloring semantics.
     const trimColorHex = trimDyeSlot === 'A' ? primaryColorHex : (trimDyeSlot === 'C' ? patternHex : secondaryColorHex); // Fixed trim reuses an existing garment dye; no fourth color channel is introduced.
     const rendered = [];
-    for (const { url: frontUrl, role, paletteKey } of layers) {
+    for (const { url: frontUrl, role, paletteKey, imageLayout } of layers) {
       // Some layers swap to a dedicated "-back" sprite for the rear view,
       // some are hidden entirely from the back (a hood's front-only face
       // trim), and others just reuse their front sprite — same three
@@ -1844,7 +1856,7 @@
         if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
         url = behind.url || frontUrl;
       }
-      let img = await loadImageUrl(url);
+      let img = alignLayerImage(await loadImageUrl(url), imageLayout);
       if (!img) continue;
       const shadingSource = img; // Original authored raster; pattern ink samples this light/shadow field even after the base dye is applied.
       const patterns = weavingPatternsForRole(weaving, role); // Determines the primary + optional overpass motifs for this exact base/trim layer.

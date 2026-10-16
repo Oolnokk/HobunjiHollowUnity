@@ -55,8 +55,40 @@ console.log('Pants garment wiring: PASS');
 {
   const db = JSON.parse(fs.readFileSync('docs/config/npcs/hobunji-starter-npc-database.json', 'utf8'));
   for (const rec of db.npcs) {
-    assert(rec.equippedCosmetics.includes('pants_basic'), `${rec.id} has authored pants`);
+    assert(Renderer.garmentForCosmetics(rec.equippedCosmetics), `${rec.id} has an authored leg garment`);
+    const wantsSkirt = (rec.appearance?.speciesId === 'mao-ao' && rec.gender === 'female') || rec.id === 'teacup_unumanuk'; // Expected repository wardrobe assignments.
+    assert.strictEqual(Renderer.garmentForCosmetics(rec.equippedCosmetics), wantsSkirt ? 'layered_skirt' : 'pants_basic');
+    if (wantsSkirt) assert(rec.avatarEditor.rawExport.equippedCosmetics.includes('layered_skirt'), `${rec.id}: editor export agrees`);
     assert(rec.appliedDyes.PANTS, `${rec.id} has an authored pants dye`);
     if (rec.equippedCosmetics.includes('rugged_poncho')) assert.strictEqual(rec.appliedDyes.PANTS, rec.appliedDyes.CLOTH_B, `${rec.id}: poncho wearers' pants use the secondary dye`);
   }
 }
+
+// Every supported garment uses the same fit/bones while keeping independent exported weight data.
+for (const id of ['draped_pants', 'layered_skirt']) {
+  const garment = rigs.garments[id]; // Baked nearest-opaque transfer used by the runtime mesh.
+  assert(garment && Renderer.hasRigFor('mao-ao', 'female', id));
+  assert.strictEqual(Renderer.garmentForCosmetics(['fine_poncho', id]), id);
+  assert.deepStrictEqual(garment.legBones, rigs.garments.pants_basic.legBones);
+  assert.deepStrictEqual(garment.pantsBeltSpline, rigs.garments.pants_basic.pantsBeltSpline);
+  const weights = win.HobunjiPantsRig.decodeWeightGridRle(garment.weightMap); // Checks actual decoded skin data rather than a source string.
+  const original = win.HobunjiPantsRig.decodeWeightGridRle(rigs.garments.pants_basic.weightMap); // Control at opaque source-art samples.
+  for (const [x, y] of [[32, 18], [18, 35], [45, 35]]) {
+    const offset = (y * weights.width + x) * 5; // Corresponding cell in both normalized maps.
+    assert.deepStrictEqual(Array.from(weights.data.slice(offset, offset + 5)), Array.from(original.data.slice(offset, offset + 5)));
+  }
+  for (let i = 0; i < weights.data.length; i += 5) {
+    assert(Math.abs(Array.from(weights.data.slice(i, i + 5)).reduce((sum, value) => sum + value, 0) - 255) <= 2, 'every extended cell has normalized influences');
+  }
+  const path = index.entries.find(entry => entry.id === id).path; // Config path uses the production cosmetic registry.
+  const config = JSON.parse(fs.readFileSync('docs/config/cosmetics/' + path.replace(/^\.\//, ''), 'utf8')); // Exercises shipped layer declarations.
+  assert.strictEqual(config.slot, 'pants');
+  const layers = Object.values(config.parts.pants.layers); // Both draped-pants sprites remain independently dyed.
+  assert.strictEqual(layers.length, id === 'draped_pants' ? 2 : 1);
+  if (id === 'draped_pants') assert.deepStrictEqual(layers.map(layer => layer.paletteColorKey), ['A', 'B']);
+}
+const generatedFemale = { appearance: { speciesId: 'mao-ao', gender: 'female' } }; // Procedural townsfolk share the authored species wardrobe.
+assert(Renderer.ensureNpcPants(generatedFemale));
+assert.strictEqual(Renderer.garmentForCosmetics(generatedFemale.equippedCosmetics), 'layered_skirt');
+assert.strictEqual(Renderer.ensureNpcPants(generatedFemale), false, 'never add basic pants on top of a skirt');
+console.log('Layered leg garments: PASS');

@@ -182,6 +182,22 @@
             "conditions": {}
           },
           {
+            "id": "draped_pants",
+            "label": "Draped Pants",
+            "category": "pants",
+            "usesB": true,
+            "price": 50,
+            "conditions": {}
+          },
+          {
+            "id": "layered_skirt",
+            "label": "Layered Skirt",
+            "category": "pants",
+            "usesB": false,
+            "price": 50,
+            "conditions": {}
+          },
+          {
             "id": "tankan_tunic",
             "label": "Tankan Tunic",
             "category": "torso",
