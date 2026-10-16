@@ -11,8 +11,8 @@
       "label": "Stairs Down",
       "tiles": [
         [
-          9,
-          1
+          1,
+          8
         ]
       ],
       "targetMap": "map_i_inn",
@@ -20,12 +20,51 @@
       "spawnRow": 3
     },
     {
+      "id": "exit_inn_f2_jubmir",
+      "label": "Jubmir's Room",
+      "tiles": [
+        [
+          5,
+          6
+        ]
+      ],
+      "targetMap": "map_i_inn_F2_jubmir",
+      "spawnCol": 9,
+      "spawnRow": 9
+    },
+    {
+      "id": "exit_inn_f2_R3",
+      "label": "Guest Room 3",
+      "tiles": [
+        [
+          10,
+          6
+        ]
+      ],
+      "targetMap": "map_i_inn_F2_R3",
+      "spawnCol": 9,
+      "spawnRow": 9
+    },
+    {
+      "id": "exit_inn_f2_R4",
+      "label": "Guest Room 4",
+      "tiles": [
+        [
+          15,
+          6
+        ]
+      ],
+      "targetMap": "map_i_inn_F2_R4",
+      "spawnCol": 9,
+      "spawnRow": 9
+    },
+    {
       "id": "exit_inn_f2_hreesh",
       "label": "Hreesh's Room",
       "tiles": [
         [
-          7,
-          6
+          5,
+          10
         ]
       ],
       "targetMap": "map_i_inn_F2_hreesh",
@@ -33,15 +72,28 @@
       "spawnRow": 6
     },
     {
-      "id": "exit_inn_f2_jubmir",
-      "label": "Jubmir's Room",
+      "id": "exit_inn_f2_R5",
+      "label": "Guest Room 5",
       "tiles": [
         [
-          11,
-          6
+          10,
+          10
         ]
       ],
-      "targetMap": "map_i_inn_F2_jubmir",
+      "targetMap": "map_i_inn_F2_R5",
+      "spawnCol": 9,
+      "spawnRow": 6
+    },
+    {
+      "id": "exit_inn_f2_R6",
+      "label": "Guest Room 6",
+      "tiles": [
+        [
+          15,
+          10
+        ]
+      ],
+      "targetMap": "map_i_inn_F2_R6",
       "spawnCol": 9,
       "spawnRow": 6
     }
@@ -50,124 +102,224 @@
   "vendorZones": [],
   "floor": [
     [
+      2,
+      7
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      5,
+      7
+    ],
+    [
+      6,
+      7
+    ],
+    [
       7,
-      1
+      7
     ],
     [
       8,
-      1
+      7
     ],
     [
       9,
-      1
+      7
     ],
     [
       10,
-      1
+      7
     ],
     [
       11,
-      1
+      7
+    ],
+    [
+      12,
+      7
+    ],
+    [
+      13,
+      7
+    ],
+    [
+      14,
+      7
+    ],
+    [
+      15,
+      7
+    ],
+    [
+      16,
+      7
+    ],
+    [
+      17,
+      7
+    ],
+    [
+      2,
+      8
+    ],
+    [
+      3,
+      8
+    ],
+    [
+      4,
+      8
+    ],
+    [
+      5,
+      8
+    ],
+    [
+      6,
+      8
     ],
     [
       7,
-      2
+      8
     ],
     [
       8,
-      2
+      8
     ],
     [
       9,
-      2
+      8
     ],
     [
       10,
-      2
+      8
     ],
     [
       11,
-      2
+      8
+    ],
+    [
+      12,
+      8
+    ],
+    [
+      13,
+      8
+    ],
+    [
+      14,
+      8
+    ],
+    [
+      15,
+      8
+    ],
+    [
+      16,
+      8
+    ],
+    [
+      17,
+      8
+    ],
+    [
+      2,
+      9
+    ],
+    [
+      3,
+      9
+    ],
+    [
+      4,
+      9
+    ],
+    [
+      5,
+      9
+    ],
+    [
+      6,
+      9
     ],
     [
       7,
-      3
+      9
     ],
     [
       8,
-      3
+      9
     ],
     [
       9,
-      3
+      9
     ],
     [
       10,
-      3
+      9
     ],
     [
       11,
-      3
+      9
     ],
     [
-      7,
-      4
+      12,
+      9
     ],
     [
-      8,
-      4
+      13,
+      9
     ],
     [
-      9,
-      4
+      14,
+      9
     ],
     [
-      10,
-      4
+      15,
+      9
     ],
     [
-      11,
-      4
+      16,
+      9
     ],
     [
-      7,
-      5
+      17,
+      9
     ],
     [
-      8,
-      5
+      1,
+      8
     ],
     [
-      9,
-      5
-    ],
-    [
-      10,
-      5
-    ],
-    [
-      11,
-      5
-    ],
-    [
-      7,
+      5,
       6
     ],
     [
-      8,
-      6
-    ],
-    [
-      9,
-      6
-    ],
-    [
       10,
       6
     ],
     [
-      11,
+      15,
       6
+    ],
+    [
+      5,
+      10
+    ],
+    [
+      10,
+      10
+    ],
+    [
+      15,
+      10
     ]
   ],
   "npcStations": [],

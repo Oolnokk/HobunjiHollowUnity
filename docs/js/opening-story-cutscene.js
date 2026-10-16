@@ -6,6 +6,8 @@
   const REQUIRED_NPCS = Object.freeze(['jubmir', 'father_hunundi_hodu', 'spearhead_unumanuk', 'khannibarri_agent']); // Guards the two scenes against silently falling back to placeholder actors.
   const OPENING_RUNTIME_TIMEOUT_MS = 120000; // Gives slow mobile cold boots four times the old runtime-start window before surfacing a retry instead of falling through into town.
   const STARTUP_RETRY_DELAYS_MS = Object.freeze([350, 900]); // Used only for rescue setup failures that occur before the wilderness is revealed.
+  const FEY_VISIT_KEY = 'jubmir_great_fey'; // Shared doorstep queue/completion key for Jubmir's story visit.
+  const FEY_VISIT_DELAY_HOURS = 12; // In-game hours after the farm tour before Jubmir can visit.
   const status = { // Mobile-readable state surfaced through debugSnapshot() and the existing in-game debug log.
     phase: 'idle',
     pending: false,
@@ -293,6 +295,150 @@
     try { return localStorage.getItem(tourKey(profile)) === 'complete'; } catch (_) { return false; }
   }
 
+  function gameHours() {
+    const calendar = window.CalendarSystem; // Reads the authoritative clock, including sleep, wait and day rollover.
+    if (!calendar?.isInitialized?.()) return null;
+    const now = calendar.previewAfterHours(0); // Zero-hour preview exposes the live raw day without mutating time.
+    const hours = (now.day - 1) * 24 + calendar.getHour(now.time01); // Absolute hours keep the visit delay valid across midnight and reloads.
+    return Number.isFinite(hours) ? hours : null;
+  }
+
+  function rememberFarmTourTime(profile) {
+    const hours = gameHours(); // Recorded at the final farm-tour Continue, rather than when the tour starts.
+    if (hours === null) return;
+    const key = tourKey(profile) + ':completed-hours'; // World-scoped timestamp accompanies the existing farm-tour flag.
+    const stored = localStorage.getItem(key); // Repairs malformed timestamps as well as missing legacy data.
+    if (stored === null || stored.trim() === '' || !Number.isFinite(Number(stored))) localStorage.setItem(key, String(hours));
+  }
+
+  function feyVisitState(profile = window.__hobunjiPlayerProfile) {
+    const now = gameHours(); // Used for eligibility and mobile diagnostics, never wall-clock time.
+    const raw = localStorage.getItem(tourKey(profile) + ':completed-hours'); // Missing legacy timestamps must not coerce to zero.
+    const completedAt = raw === null || raw.trim() === '' ? NaN : Number(raw); // Rejects malformed persisted timestamps.
+    return {
+      completed: localStorage.getItem(stateKey(profile) + ':jubmir-fey') === 'complete',
+      farmTourCompletedAtHours: Number.isFinite(completedAt) ? completedAt : null,
+      hoursUntilVisit: now !== null && Number.isFinite(completedAt) ? Math.max(0, completedAt + FEY_VISIT_DELAY_HOURS - now) : null,
+      latestChange: 'Six inn rooms; Jubmir visits 12 game hours after the farm tour and discusses trade and the Great Fey in his room.',
+    };
+  }
+
+  function nextFeyVisit() {
+    const profile = window.__hobunjiPlayerProfile; // Only the world's story owner receives this one-time continuation.
+    if (profile?.isWorldOwner !== true || !tourComplete(profile) || status.running) return null;
+    rememberFarmTourTime(profile); // Legacy completed tours begin their missing timer on first observation.
+    const state = feyVisitState(profile); // The same state is exposed by debugSnapshot().
+    if (state.completed || state.hoursUntilVisit === null || state.hoursUntilVisit > 0) return null;
+    return {
+      key: FEY_VISIT_KEY, npcId: 'jubmir',
+      tree: {
+        id: 'doorstep_jubmir_great_fey', label: 'Doorstep — Jubmir’s Invitation', entryNode: 'invitation',
+        nodes: [{ id: 'invitation', type: 'text', text: "Good {{timeOfDay}}, {{playerHonorific}}. There is something I would like to discuss with you about the village. Come with me to my room at the inn, where we can speak privately.", next: null }],
+      },
+    };
+  }
+
+  function buildJubmirFeyScene(records, profile) {
+    const openingLines = [ // Authored speech before the player's optional question.
+      "The issues that Surveyor Harkhanash spoke of are very much real. I am the only trader who has made the trek to Hobunji Hollow in nearly six months, and I only come here because I love these people.",
+      "I don't tell them, but much of what I make trading elsewhere is simply lost here, because I sell them goods for less than they're worth. Their economy is not doing well, and I can only carry so much. Even though I'm sure most of them are reluctant to sell, I can't help but feel that Surveyor Harkhanash will eventually win them over.",
+      "I've seen a lot in my travels, and the Imperial Khanibarri Mining Company are not the harmless benefactors the Surveyor makes them out to seem.",
+      "They shatter mountains, level forests, and I assure you that none of the villagers will be leaving the mountains to make new lives. Their contracts are always littered with hidden snares.",
+      "They will be working the very mine their homes were destroyed to build, with growing debts they can never repay. They'll be slaves.",
+      "The only way to save Hobunji Hollow is to make it worth the journey for my people to come and trade, and luckily there are many ways to do that, but I think I'd serve you best by explaining that issue which the Surveyor so easily dismissed as mere superstition: the Harlyao Ghost Army. And I can do you even better by suggesting a solution.",
+      "You see, Hobunji Hollow sits at a crossroads between four distinct regions of the Harugasirri, all equally unpopulated, dangerous, but ripe with nature's resources.",
+      "Each one has an ancient guardian, a Great Fey. There was a time, not so long ago, when the people of this village revered them and made constant offerings in their name. But now, few still believe they even exist, and no such offerings are made.",
+      "But until so recently, we Slagothim would travel out there to trade with the barbarians. We know the wilds that surround this place far better than the villagers, and the barbarians even more so. The Great Fey are as real as the stones and the trees.",
+      "We don't know what awoke the ghost army from their long slumber, but if anyone does, it may very well be those ancient enough to have seen its soldiers as they were in life.",
+      "And if anyone can help, I am almost certain that the Great Fey are among them.",
+      "You're likely wondering why I'm coming to you, a complete stranger, for help. And honestly I am too. I can't explain it, but I have a sense that you're the one who can make a difference, that you're the missing piece of the puzzle.",
+      "But will you help me? Will you seek them out? Figure out if they can help?",
+    ];
+    const guidanceLines = [ // Shared continuation preserves all four leads and the broader trade goal on either choice path.
+      "And there is another thing that makes it even more speculative, and it's a warning that I owe you: the Fey are fickle and tricky beings.",
+      "They are nonsensical as much in form as they are in action and motivation. But if you play along, there is a good chance that they may be able to help us.",
+      "Should you look to the Northern Cliffs you may find Banubu the Sleeping Grehlr. Listen for snoring in the night during your travels if you wish to find his cave. He is benevolent, kind and well loved by the Porakaneki and Omgurku alike, though he is at times unreliable.",
+      "Should you look to the Western Slope, know that within its farthest, deepest snowbanks sleeps Old Man Nohuknuk. He has lived there since before the Unumanuk clan arrived in town, and yet they seem to know him well, even better than the locals, it seems.",
+      "Presumably his domain must extend high into those mountains that they once called home.",
+      "Sightings of him have always been rarer than the others, and he is said to ignore those who call to him. He has always been a strange, quiet neighbor to the people of Hobunji Hollow. But if the stories Eldress Teacup tells of him are true, perhaps they know how to get him to speak.",
+      "Should you look to the south you may find Hiki-hiki, the trickster. He is said to take the form of a Drenkirra, wearing a hat. He is fond of riddles, and may be eager to share them with any who would listen.",
+      "I suspect that if you were to wager his aid as a reward for solving them, he is the most likely among the four to help us. Assuming you are able to solve them, that is.",
+      "Better yet, he is infamously clever. If it's in any way possible to divert the ghost army out of the region, he would know how.",
+      "Should you look to the Eastern Mire, do be wary. It is a place of impenetrable fog, disorienting illusions, and, should you believe the tales told by the Omgurku and Porakaneki, it is a hive of evil fey entities known as the Ikthi, who wait beneath the water, preying upon lost travelers and those who fish in the deepest fog.",
+      "Those pierced with their wicked blades do not bleed out and die, though their fate is arguably worse. They are instead sent into a deep slumber, and when they awake, they are filled with a pain like no other. One said to be torturous not only to the flesh, but to the spirit.",
+      "The only way to cure this ailment is to make an offering to the one who commands them. The one who I would ask you to seek out for aid with our current dilemma, should you choose to take such a risk. The Great Fey of the Eastern Mire, Mother Rahayobi.",
+      "She is one of a scarce but widespread variety of fey known as a Hag. Few understand their nature, but they are known to be wicked, cruel and, unlike many types of fey both good and evil, deadly.",
+      "And yet, should you somehow garner the favor of Mother Rahayobi, she may be able to offer more than simply warding off the ghost army. From the stories I've heard, she is not so simple and one-dimensional as the other Great Fey, and as such is not nearly as predictable. Such a trait poses a challenge, yet opens the possibilities of what aid she may be able to offer us.",
+      "Whether you choose to seek out the Great Fey is up to you, but I thought it would be best to give you my two suns on the issue.",
+      "The patrol of the Ghost Army is predictable and avoidable by traders and travelers, but with what little Hobunji Hollow has to offer, it is enough to dissuade my fellow traders from making the trek into the highlands.",
+      "Garnering the aid of any one of the Great Fey would open a safe path into the village, but without the army diverted out of the region entirely, trade with the nearby barbarians will remain difficult, which can at times turn out more profitable than trade with Hobunji Hollow itself.",
+      "And that of course still comes with its own dangers following the recent breakout of war between them.",
+      "However you choose to help, our goal is to bring trade back to the village. With trade comes prosperity and wellbeing, and with it, the Surveyor's offer will become less and less tempting.",
+      "If things go well, a time will come when the Imperial Khanibarri Mining Company loses hope and turns its eyes elsewhere. The more profit it offers to the Slagothim that the village stands, the sooner the Company will realize that they're losing money paying Surveyor Harkhanash to chase a lost cause.",
+      "My point in saying this is that there is more than one way to skin a turg-rat. Finding ways to make the journey to Hobunji Hollow more worthwhile would be just as helpful as removing the obstacles that make it difficult.",
+      "Father Hunundi has been asking around the village for ideas on how to do that. I would seek him out when you have time.",
+    ];
+    const talk = (id, text) => ({ id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__' }); // Every line uses the canonical NPC speaker and faces the player.
+    return {
+      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir',
+      actors: [
+        { id: 'player', name: profile?.nickname || 'Farmer', isPlayer: true, worldC: 9, worldR: 8, rotation: 90, pose: 'standing' },
+        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 11, worldR: 8, rotation: 270, pose: 'standing' }),
+      ],
+      stages: [
+        { id: 'fey_fade_in', type: 'fade', direction: 'in', duration: 0.6, next: '__next__' },
+        ...openingLines.map((text, index) => talk('fey_intro_' + index, text)),
+        { id: 'fey_question', type: 'choice', speakerId: 'player', addressedActorId: 'jubmir', text: 'How do you answer?', options: [
+          { text: "Why can't you do it?", next: 'fey_why' },
+          { text: "I'll see what I can do.", next: 'fey_guidance_0' },
+        ] },
+        { ...talk('fey_why', "I can't afford the time. As I said, I am the village's only connection to the outside world. What I've told you is mere speculation on my part, and I must be in nigh-constant movement, helping in the only way that I know helps for certain."), next: 'fey_guidance_0' },
+        ...guidanceLines.map((text, index) => talk(index === guidanceLines.length - 1 ? 'fey_final' : 'fey_guidance_' + index, text)),
+        { id: 'fey_fade_out', type: 'fade', direction: 'out', duration: 0.6, next: '__end__' },
+      ],
+    };
+  }
+
+  async function playJubmirFeyVisit(profile = window.__hobunjiPlayerProfile) {
+    if (status.running || !nextFeyVisit()) return false;
+    status.running = true;
+    status.phase = 'jubmir-fey';
+    status.lastError = null;
+    try {
+      const runtime = await waitForGameRuntime(); // Shared runner owns map travel, actor cloning, input lock and return to the farm.
+      const records = await loadNpcRecords(); // Uses Jubmir's current authored appearance rather than a placeholder.
+      let finalContinued = false; // Leaving/skipping an unfinished scene must keep the visit available.
+      await runtime.run(buildJubmirFeyScene(records, profile), {
+        onDialogueContinue(stage) { if (stage.id === 'fey_final') finalContinued = true; },
+      });
+      if (!finalContinued) { status.phase = 'jubmir-fey-interrupted'; return false; }
+      localStorage.setItem(stateKey(profile) + ':jubmir-fey', 'complete');
+      window.DoorstepVisits?.markDone(FEY_VISIT_KEY);
+      window.DoorstepVisits?.dismissVisit(FEY_VISIT_KEY);
+      status.phase = 'jubmir-fey-complete';
+      log('Jubmir’s Great Fey conversation complete');
+      return true;
+    } catch (error) {
+      status.lastError = error?.message || String(error);
+      status.phase = 'jubmir-fey-error';
+      log('Jubmir conversation failed; visit remains available: ' + status.lastError, 'error');
+      return false;
+    } finally { status.running = false; }
+  }
+
+  window.DoorstepVisits?.registerProvider({
+    id: FEY_VISIT_KEY, priority: 80,
+    sync() {
+      const profile = window.__hobunjiPlayerProfile; // Starts the migration timer even if a legacy player is already outside.
+      if (profile?.isWorldOwner === true && tourComplete(profile)) rememberFarmTourTime(profile);
+    },
+    next: nextFeyVisit,
+    onComplete() {
+      void playJubmirFeyVisit(); // Async scene completion, rather than the invitation alone, commits and dismisses the visit.
+      return false;
+    },
+  });
+
   function needsTempleArrival(profile) {
     return profile?.isWorldOwner === true && !tourComplete(profile);
   }
@@ -334,7 +480,10 @@
       await runtime.run(buildFarmTourScene(records, profile, runtime.farmTourPoints()), {
         placePlayerAtFinalPosition: true, // The owner resumes beside the house after walking there during the tour.
         onDialogueContinue(stage) {
-          if (stage.id === 'farm_tour_final') localStorage.setItem(tourKey(profile), 'complete');
+          if (stage.id === 'farm_tour_final') {
+            rememberFarmTourTime(profile);
+            localStorage.setItem(tourKey(profile), 'complete');
+          }
         },
       });
       status.phase = tourComplete(profile) ? 'farm-tour-complete' : 'farm-tour-interrupted';
@@ -458,9 +607,11 @@
   window.OpeningStoryCutscene = Object.freeze({
     buildRescueScene,
     buildHunundiMeetingScene,
+    buildJubmirFeyScene, nextFeyVisit, playJubmirFeyVisit,
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
-    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness() }),
+    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState() }),
     stateKey,
     tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
   });
+  window.DevCompanion?.registerStateProvider('openingStory', () => window.OpeningStoryCutscene.debugSnapshot()); // Mobile companion exposes visit countdown, progress, latest change and setup errors without a console.
 })();
