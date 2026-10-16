@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<title>Hobunji Hollow — Special Animated Texture Preview</title>
+<style>
+:root{color-scheme:dark;--bg:#0e1218;--panel:#171d26;--line:#313b4b;--text:#e9eef6;--muted:#9eabbc;--accent:#8fc8ad}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,sans-serif}header{padding:15px 18px;border-bottom:1px solid var(--line);background:#111720}h1{margin:0 0 4px;font-size:18px}.sub,.card small{color:var(--muted)}main{max-width:1180px;margin:auto;padding:16px;display:grid;gap:16px}.previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card,.controls,.debug{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.cardHead{padding:12px 14px;border-bottom:1px solid var(--line)}.cardHead strong{display:block}.stage{position:relative;aspect-ratio:1;background:#090d12}.stage canvas{display:block;width:100%;height:100%;touch-action:none}.badge{position:absolute;left:9px;bottom:9px;padding:5px 8px;border:1px solid #ffffff24;border-radius:999px;background:#070a0ec7;font:11px ui-monospace,monospace}.controls{padding:12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.control{display:grid;gap:4px}.control label{font-size:11px;color:var(--muted)}input[type=range]{width:100%}.value{font:11px ui-monospace,monospace;color:var(--accent)}button{min-height:38px;border:1px solid var(--line);border-radius:9px;background:#202938;color:var(--text);padding:8px 10px}.debug{padding:12px}.debugTop{display:flex;justify-content:space-between;gap:12px;margin-bottom:8px}.status{color:var(--accent)}pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;background:#0b0f15;border:1px solid #242d3a;border-radius:9px;padding:10px;color:#cbd6e4;font:11px/1.45 ui-monospace,monospace}.change{margin-top:8px;color:var(--muted);font-size:12px}@media(max-width:760px){.previews{grid-template-columns:1fr}.controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header><h1>Special Animated Texture Effects</h1><div class="sub">Cliff-style stretch-to-fit with an added contour constraint: the actual visible PNG outline is fitted to the rendered liquid outline, then geometry animates without remapping.</div></header>
+<main>
+<section class="previews">
+<article class="card"><div class="cardHead"><strong>Oil ooze</strong><small><code>dark_oil.png.png</code> is used exactly as authored — no recolor, tint, shade-fill, or black replacement.</small></div><div class="stage"><canvas id="oilCanvas"></canvas><div class="badge" id="oilBadge">loading…</div></div></article>
+<article class="card"><div class="cardHead"><strong>River overlay</strong><small>The in-game <code>canvas.png</code> overlay uses its pure-black visible contour as the source boundary, fitted exactly to the rounded river boundary.</small></div><div class="stage"><canvas id="riverCanvas"></canvas><div class="badge" id="riverBadge">loading…</div></div></article>
+</section>
+<section class="controls">
+<div class="control"><label for="speed">Animation speed</label><input id="speed" type="range" min="0" max="2" value="1" step=".05"><div class="value" id="speedValue"></div></div>
+<div class="control"><label for="wiggle">River motion</label><input id="wiggle" type="range" min="0" max="1" value=".42" step=".01"><div class="value" id="wiggleValue"></div></div>
+<div class="control"><label for="cohesion">Cohesion / surface tension</label><input id="cohesion" type="range" min="0" max="1" value=".78" step=".01"><div class="value" id="cohesionValue"></div></div>
+<div class="control"><label for="viscosity">Oil viscosity</label><input id="viscosity" type="range" min=".25" max="1.5" value=".82" step=".01"><div class="value" id="viscosityValue"></div></div>
+<div class="control"><label>Animation</label><button id="pause">Pause</button></div>
+<div class="control"><label>Oil test</label><button id="restart">Restart ooze</button></div>
+<div class="control"><label>Geometry</label><button id="wire">Wireframe: off</button></div>
+</section>
+<section class="debug"><div class="debugTop"><strong>Mobile-visible diagnostics</strong><span class="status" id="status">booting</span></div><pre id="debug">Waiting for renderer…</pre><div class="change"><b>Most recent change:</b> both liquids now fit the actual visible texture contour—not merely the rectangular UV frame—to the animated mesh outline.</div></section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/surface-stretch-uv-furniture.js"></script>
+<script>
+(()=>{'use strict';
+const SIZE=6,HALF=3;
+const TEX={oil:'../../assets/textures/dark_oil.png.png',rock:'../../assets/textures/carved_smooth.png',river:'../../assets/textures/canvas.png',grass:'../../assets/textures/wavy_surface.png'};
+const COLOR={rock:0x8a8479,grass:0x709652,water:0x4f9fc8};
+const OIL_STRETCH={angleToleranceDeg:24,edgeSourceFraction:.32,edgeReferenceWorldSize:6,avoidCollapsedUvs:true};
+const RIVER_STRETCH={angleToleranceDeg:24,edgeSourceFraction:.45,edgeReferenceWorldSize:6,avoidCollapsedUvs:true};
+const state={paused:false,wire:false,speed:1,wiggle:.42,cohesion:.78,viscosity:.82,t:0,oilStart:0,last:performance.now(),fps:0,frames:0,fpsStart:performance.now(),assets:{},errors:[]};
+const previews=new Map(),loader=new THREE.TextureLoader();
+const oilCanvasEl=document.getElementById('oilCanvas'),riverCanvasEl=document.getElementById('riverCanvas'),oilBadgeEl=document.getElementById('oilBadge'),riverBadgeEl=document.getElementById('riverBadge'),statusEl=document.getElementById('status'),pauseEl=document.getElementById('pause'),restartEl=document.getElementById('restart'),wireEl=document.getElementById('wire');
+function load(url){return new Promise((ok,bad)=>loader.load(url,t=>{t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter||THREE.LinearMipMapLinearFilter;t.encoding=THREE.sRGBEncoding;t.needsUpdate=true;state.assets[url]='ready';ok(t)},undefined,e=>{state.assets[url]='error';state.errors.push(String(e?.message||e));bad(e)}))}
+function renderer(canvas){const r=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});r.setPixelRatio(Math.min(devicePixelRatio||1,2));r.outputEncoding=THREE.sRGBEncoding;r.setClearColor(0x090d12,1);return r}
+function camera(){const c=new THREE.OrthographicCamera(-HALF,HALF,HALF,-HALF,.01,20);c.position.set(0,0,6);c.lookAt(0,0,0);return c}
+function background(tex,color){const m=new THREE.MeshBasicMaterial({map:tex,color});const o=new THREE.Mesh(new THREE.PlaneGeometry(SIZE,SIZE),m);o.position.z=0;return o}
+function grid(cols,rows,point){const p=new Float32Array(cols*rows*3),q=new Float32Array(cols*rows*2),idx=[];for(let r=0;r<rows;r++){const v=r/(rows-1);for(let c=0;c<cols;c++){const u=c/(cols-1),i=r*cols+c,a=point(u,v);p[i*3]=a.x;p[i*3+1]=a.y;q[i*2]=u;q[i*2+1]=v}}for(let r=0;r<rows-1;r++)for(let c=0;c<cols-1;c++){const a=r*cols+c,b=a+1,d=a+cols+1,e=a+cols;idx.push(a,e,d,a,d,b)}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('hobunjiParam',new THREE.BufferAttribute(q,2));g.setIndex(idx);return g}
+function stretch(mesh,label,options){const m=window.HobunjiSurfaceStretchUV;if(!m?.mapMesh)throw Error('HobunjiSurfaceStretchUV unavailable');m.mapMesh(mesh,{label,...options});if(!mesh.geometry.getAttribute('hobunjiParam'))throw Error(label+': mapper dropped hobunjiParam');return mesh.geometry.userData?.hobunjiSurfaceStretch||null}
+function texturePixels(texture){const image=texture?.image,w=image?.naturalWidth||image?.width,h=image?.naturalHeight||image?.height;if(!w||!h)throw Error('Texture image unavailable for contour fitting');const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,w,h);return{w,h,data:ctx.getImageData(0,0,w,h).data}}
+function contourProfile(texture,mode){
+  const px=texturePixels(texture),rows=new Array(px.h).fill(null);
+  for(let y=0;y<px.h;y++){
+    let left=px.w,right=-1;
+    for(let x=0;x<px.w;x++){
+      const i=(y*px.w+x)*4,a=px.data[i+3];
+      const visible=mode==='black'?a>0&&px.data[i]<=1&&px.data[i+1]<=1&&px.data[i+2]<=1:a>2;
+      if(!visible)continue;
+      left=Math.min(left,x);right=Math.max(right,x);
+    }
+    if(right>=left)rows[y]={left:left/Math.max(1,px.w-1),right:right/Math.max(1,px.w-1)};
+  }
+  let first=rows.findIndex(Boolean),last=-1;
+  for(let y=rows.length-1;y>=0;y--){if(rows[y]){last=y;break}}
+  if(first<0||last<0){
+    if(mode==='black')return contourProfile(texture,'alpha');
+    throw Error('No visible pixels found for texture contour');
+  }
+  let prev=first;
+  for(let y=first+1;y<=last;y++){
+    if(!rows[y])continue;
+    if(y-prev>1){
+      const a=rows[prev],b=rows[y];
+      for(let k=prev+1;k<y;k++){
+        const t=(k-prev)/(y-prev);
+        rows[k]={left:a.left+(b.left-a.left)*t,right:a.right+(b.right-a.right)*t};
+      }
+    }
+    prev=y;
+  }
+  for(let y=0;y<first;y++)rows[y]=rows[first];
+  for(let y=last+1;y<rows.length;y++)rows[y]=rows[last];
+  const maxSpan=Math.max(...rows.slice(first,last+1).map(row=>Math.max(1e-6,row.right-row.left)));
+  return{mode,width:px.w,height:px.h,first,last,rows,maxSpan};
+}
+function contourUv(profile,u,v){const y=profile.first+clamp(v)*(profile.last-profile.first),a=Math.floor(y),b=Math.min(profile.height-1,a+1),t=y-a,ra=profile.rows[a],rb=profile.rows[b],left=ra.left+(rb.left-ra.left)*t,right=ra.right+(rb.right-ra.right)*t;return[left+(right-left)*clamp(u),1-y/Math.max(1,profile.height-1)]}
+function fitVisibleContour(mesh,profile,label){const param=mesh.geometry.getAttribute('hobunjiParam'),uv=mesh.geometry.getAttribute('uv');if(!param||!uv)throw Error(label+': required contour-fit attributes missing');for(let i=0;i<param.count;i++){const fitted=contourUv(profile,param.getX(i),param.getY(i));uv.setXY(i,fitted[0],fitted[1])}uv.needsUpdate=true;mesh.geometry.userData=Object.assign({},mesh.geometry.userData||{},{textureContourFit:{label,mode:profile.mode,width:profile.width,height:profile.height,firstVisibleRow:profile.first,lastVisibleRow:profile.last}})}
+function pinReport(mesh,profile){const p=mesh.geometry.getAttribute('hobunjiParam'),uv=mesh.geometry.getAttribute('uv');if(!p||!uv)return{count:0,maxContourUvError:null};let n=0,max=0;for(let i=0;i<p.count;i++){const u=p.getX(i),v=p.getY(i);if(Math.min(u,1-u,v,1-v)>1e-5)continue;const e=contourUv(profile,u,v);max=Math.max(max,Math.hypot(uv.getX(i)-e[0],uv.getY(i)-e[1]));n++}return{boundaryVertices:n,maxContourUvError:+max.toFixed(7),sourceMode:profile.mode,sourceRows:[profile.first,profile.last]}}
+const clamp=x=>Math.max(0,Math.min(1,x)),smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+function oilPoint(u,v){const x=u*2-1,center=.10*Math.sin(v*4.7)-.05*Math.sin(v*9.2),shoulder=.72+.28*Math.cos(Math.min(1,v/.28)*Math.PI*.5),w=(1.55-.30*v)*shoulder;return{x:center+x*w,y:2.85-v*5.35}}
+function riverCenter(v){return .36*Math.sin(v*Math.PI*2.05+.35)+.11*Math.sin(v*Math.PI*4.5+.8)}
+function riverPoint(u,v){const x=u*2-1,cap=Math.pow(Math.max(.012,Math.sin(Math.PI*v)),.42),w=(.77+.09*Math.sin(v*Math.PI*3.1+.8))*cap;return{x:riverCenter(v)+x*w,y:2.82-v*5.64}}
+function makeOil(canvas,rock,oil){const r=renderer(canvas),s=new THREE.Scene(),c=camera();s.add(background(rock,COLOR.rock));const mat=new THREE.MeshBasicMaterial({map:oil,color:0xffffff,transparent:true,opacity:1,alphaTest:0,side:THREE.DoubleSide,depthWrite:false});const mesh=new THREE.Mesh(grid(19,35,oilPoint),mat);mesh.position.z=.03;s.add(mesh);const report=stretch(mesh,'special-preview:oil',OIL_STRETCH),profile=contourProfile(oil,'alpha');fitVisibleContour(mesh,profile,'oil-alpha-silhouette');const out={name:'oil',canvas,renderer:r,scene:s,camera:c,mesh,material:mat,report,profile,pin:pinReport(mesh,profile)};previews.set('oil',out);return out}
+function makeRiver(canvas,grass,overlay){const r=renderer(canvas),s=new THREE.Scene(),c=camera();s.add(background(grass,COLOR.grass));const om=new THREE.MeshBasicMaterial({map:overlay,color:0xffffff,transparent:true,opacity:1,alphaTest:0,side:THREE.DoubleSide,depthWrite:false});const overlayMesh=new THREE.Mesh(grid(9,81,riverPoint),om);overlayMesh.position.z=.04;const report=stretch(overlayMesh,'special-preview:river-overlay',RIVER_STRETCH),profile=contourProfile(overlay,'black');fitVisibleContour(overlayMesh,profile,'river-pure-black-contour');const wm=new THREE.MeshBasicMaterial({color:COLOR.water,transparent:true,opacity:.82,side:THREE.DoubleSide,depthWrite:false});const waterMesh=new THREE.Mesh(overlayMesh.geometry,wm);waterMesh.position.z=.025;s.add(waterMesh,overlayMesh);const out={name:'river',canvas,renderer:r,scene:s,camera:c,mesh:overlayMesh,material:om,baseMaterial:wm,baseMesh:waterMesh,report,profile,pin:pinReport(overlayMesh,profile)};previews.set('river',out);return out}
+function neighborhood(sample,v,radius,strength){const raw=sample(v);if(strength<=0)return raw;const o=[-2,-1,0,1,2],w=[1,2,3,2,1];let sum=0,total=0;for(let i=0;i<5;i++){const k=w[i];sum+=sample(clamp(v+o[i]*radius))*k;total+=k}return raw+(sum/total-raw)*strength}
+function oilFront(age){return .18+smooth(Math.min(1,age*(.042/Math.max(.2,state.viscosity))))*.76}
+function oilWidth(profile,v,depth,time){const left=contourUv(profile,0,v)[0],right=contourUv(profile,1,v)[0],authored=Math.max(.015,(right-left)/Math.max(1e-6,profile.maxSpan)),tip=v<.72?1:Math.sqrt(clamp((1-v)/.28)),neck=1-.22*Math.exp(-Math.pow((v-.64)/.09,2)),bulb=1+.20*Math.exp(-Math.pow((v-.82)/.085,2)),reservoir=1.52-.26*depth,pulse=1+.022*Math.sin(time*.75+v*8);return reservoir*Math.sqrt(authored)*neck*bulb*tip*pulse}
+function animateOil(p,time){const pos=p.mesh.geometry.getAttribute('position'),param=p.mesh.geometry.getAttribute('hobunjiParam'),front=oilFront(Math.max(0,time-state.oilStart));for(let i=0;i<pos.count;i++){const u=param.getX(i),v=param.getY(i),x=u*2-1,depth=v*front,center=.10*Math.sin(depth*4.7+time*.08)-.05*Math.sin(depth*9.2-time*.05);pos.setXYZ(i,center+x*oilWidth(p.profile,v,depth,time),2.85-depth*5.35,0)}pos.needsUpdate=true}
+function rawCenter(v,t){return riverCenter(v)+state.wiggle*(.22*Math.sin(v*Math.PI*2.8+t*.50)+.07*Math.sin(v*Math.PI*5.2-t*.26))}
+function rawWidth(v,t){const cap=Math.pow(Math.max(.012,Math.sin(Math.PI*v)),.42);return(.78+.09*Math.sin(v*Math.PI*3.1+.8)+state.wiggle*.045*Math.sin(t*.52+v*8.8))*cap}
+function animateRiver(p,time){const pos=p.mesh.geometry.getAttribute('position'),uv=p.mesh.geometry.getAttribute('hobunjiParam'),strength=.45+.5*state.cohesion;for(let i=0;i<pos.count;i++){const u=uv.getX(i),v=uv.getY(i),x=u*2-1,center=neighborhood(k=>rawCenter(k,time),v,.018,strength),width=neighborhood(k=>rawWidth(k,time),v,.018,strength),y=2.82-v*5.64+state.wiggle*.018*Math.sin(time*.35+v*7)*(1-x*x);pos.setXYZ(i,center+x*width,y,0)}pos.needsUpdate=true}
+function resize(){for(const p of previews.values()){const b=p.canvas.getBoundingClientRect();p.renderer.setSize(Math.max(2,Math.round(b.width)),Math.max(2,Math.round(b.height)),false)}}
+function render(){for(const p of previews.values())p.renderer.render(p.scene,p.camera)}
+function badges(){const o=previews.get('oil'),r=previews.get('river');if(o)oilBadgeEl.textContent=`${o.mesh.geometry.getAttribute('position').count} verts · alpha contour fitted`;if(r)riverBadgeEl.textContent=`${r.mesh.geometry.getAttribute('position').count} verts · black contour fitted`}
+function debug(){const rows=[...previews.values()].map(p=>({name:p.name,vertices:p.mesh.geometry.getAttribute('position')?.count||0,mapping:p.mesh.geometry.userData?.hobunjiSurfaceStretch?.mapping||null,patches:p.mesh.geometry.userData?.hobunjiSurfaceStretch?.patchCount??null,boundaryPin:p.pin}));document.getElementById('debug').textContent=JSON.stringify({fps:state.fps,oilColor:'source texture unchanged',oilContour:'authored alpha silhouette; full texture height stays one-to-one with ooze height',riverOverlay:'canvas.png unchanged',riverContour:'pure-black pixel silhouette',waterBase:'#4f9fc8',grass:'#709652',assets:state.assets,previews:rows,mapper:window.HobunjiSurfaceStretchUV?.snapshot?.()||null,errors:state.errors.slice(-8)},null,2);statusEl.textContent=state.errors.length?`${state.errors.length} error(s)`:'running'}
+function range(id,out,key,digits,suffix=''){const el=document.getElementById(id),o=document.getElementById(out),apply=()=>{state[key]=+el.value;o.textContent=state[key].toFixed(digits)+suffix};el.addEventListener('input',apply);apply()}
+function controls(){range('speed','speedValue','speed',2,'×');range('wiggle','wiggleValue','wiggle',2);range('cohesion','cohesionValue','cohesion',2);range('viscosity','viscosityValue','viscosity',2);pauseEl.onclick=()=>{state.paused=!state.paused;pauseEl.textContent=state.paused?'Resume':'Pause';state.last=performance.now();debug()};restartEl.onclick=()=>{state.oilStart=state.t;debug()};wireEl.onclick=()=>{state.wire=!state.wire;for(const p of previews.values()){p.material.wireframe=state.wire;if(p.baseMaterial)p.baseMaterial.wireframe=state.wire}wireEl.textContent=`Wireframe: ${state.wire?'on':'off'}`;debug()}}
+function frame(now){const dt=Math.min(.05,Math.max(0,(now-state.last)/1000));state.last=now;if(!state.paused)state.t+=dt*state.speed;const o=previews.get('oil'),r=previews.get('river');if(o)animateOil(o,state.t);if(r)animateRiver(r,state.t);render();state.frames++;if(now-state.fpsStart>=1000){state.fps=Math.round(state.frames*1000/(now-state.fpsStart));state.frames=0;state.fpsStart=now;debug()}requestAnimationFrame(frame)}
+async function boot(){controls();if(!window.THREE||!window.HobunjiSurfaceStretchUV?.installed)throw Error('Three.js or HobunjiSurfaceStretchUV failed to load');const[rock,oil,grass,river]=await Promise.all([load(TEX.rock),load(TEX.oil),load(TEX.grass),load(TEX.river)]);makeOil(oilCanvasEl,rock,oil);makeRiver(riverCanvasEl,grass,river);state.oilStart=state.t;resize();badges();debug();addEventListener('resize',resize,{passive:true});if('ResizeObserver'in window){const ro=new ResizeObserver(resize);for(const p of previews.values())ro.observe(p.canvas)}requestAnimationFrame(frame)}
+boot().catch(e=>{state.errors.push(e?.stack||String(e));statusEl.textContent='failed';document.getElementById('debug').textContent=state.errors.join('\n\n');console.error('[special-animated-texture-preview]',e)});
+})();
+</script>
+</body>
+</html>
