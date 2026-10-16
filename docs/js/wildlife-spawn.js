@@ -1226,6 +1226,8 @@
     const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
     const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
     const motherBabyCount = motherIndex >= 0 ? 2 + Math.floor(deps.rnd() * 3) : 0;
+    const herdGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(speciesKey) || null; // One random bloodline per herd also shares the renderer's genotype/frame cache.
+    if (herdGenotype) herdGenotype.sizeClass = 'large'; // Wild herd adults retain their authored Large size.
     let spawned = 0;
 
     for (let i = 0; i < count; i++) {
@@ -1237,8 +1239,7 @@
       const homeOffset = deps.TILE * (0.4 + (i % 4) * 0.18);
       const sleepAngle = formationAngle + 0.31;
       const sleepRadius = deps.TILE * (0.25 + (i % 4) / 4 * ROAMING_HERD_SLEEP_RADIUS_TILES);
-      const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(speciesKey) || null;
-      if (genotype) genotype.sizeClass = 'large'; // Wild Voorg-Ass adults are always large even if a future breeding mutation path permits other farm sizes.
+      const genotype = herdGenotype ? JSON.parse(JSON.stringify(herdGenotype)) : null; // Independent instance data preserves the shared genes without cross-animal mutation.
       const isMother = i === motherIndex;
       const creatureKey = isMother ? VOORG_ASS_HERD_MOTHER_SPECIES : speciesKey;
       const opts = {

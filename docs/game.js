@@ -4812,8 +4812,13 @@
             const carriedBabyKey = c.carriedBabyItemKey; // Herd-Mothers expose their carried young only through the corpse interaction, never while alive.
             const carriedBabyCount = Math.max(0, Math.floor(Number(c.carriedBabyCount) || 0));
             if (carriedBabyKey && carriedBabyCount > 0) {
-              inventory[carriedBabyKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[carriedBabyKey] || 0) + carriedBabyCount);
-              parts.push(`${itemIconForKey(carriedBabyKey)}×${carriedBabyCount} ${ITEM_DEFS[carriedBabyKey]?.label || carriedBabyKey}`);
+              const previousCount = inventory[carriedBabyKey] || 0; // Used to queue lineage only for babies actually accepted into the bag.
+              inventory[carriedBabyKey] = Math.min(window.InventoryStacks.MAX_TOTAL, previousCount + carriedBabyCount);
+              const recoveredCount = inventory[carriedBabyKey] - previousCount; // Keeps genotype metadata aligned with inventory capacity.
+              for (let i = 0; i < recoveredCount; i++) {
+                window.FarmAnimals?.queueItemGenotype?.(carriedBabyKey, c.genotype ? JSON.parse(JSON.stringify(c.genotype)) : null);
+              }
+              if (recoveredCount > 0) parts.push(`${itemIconForKey(carriedBabyKey)}×${recoveredCount} ${ITEM_DEFS[carriedBabyKey]?.label || carriedBabyKey}`);
               c.carriedBabyCount = 0; // One-shot even if an external caller somehow re-enters corpse action before despawn completes.
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
