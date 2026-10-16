@@ -1,4 +1,4 @@
-// Foundry sprite attachment configuration, based on the authored settings upload.
+// Foundry sprite attachment configuration.
 window.MODULAR_WEAPON_CONFIG = {
   "schema": "hobunji_modular_weapons.v1",
   "upgrade": {
@@ -54,7 +54,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_fishing_spear.png",
       "attach": {
         "x": 214,
-        "y": 942
+        "y": 901
       },
       "dmgType": "sharp"
     },
@@ -219,8 +219,8 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "pickshovel-scoop": {},
         "work-hammer": {
-          "scaleX": 0.6,
-          "scaleY": 1.5,
+          "scaleX": 0.435,
+          "scaleY": 2.2,
           "y": -35,
           "rotation": 1
         },
@@ -284,7 +284,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.625
         },
         "fishing-spear": {
-          "scaleY": 0.88
+          "scaleX": 0.85,
+          "scaleY": 1.7,
+          "y": 65
         },
         "harlyao-broadsword": {
           "scaleY": 0.595
@@ -392,8 +394,8 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_fishing_mace.png",
       "attachments": [
         {
-          "x": 185,
-          "y": 974,
+          "x": 193,
+          "y": 850,
           "rotation": 0
         }
       ],
@@ -402,12 +404,60 @@ window.MODULAR_WEAPON_CONFIG = {
         "scaleY": 1,
         "flipX": false,
         "flipY": false,
-        "x": 0,
-        "y": 0,
+        "x": 5,
+        "y": 30,
         "rotation": 0,
         "animation": "sweep"
       },
-      "overrides": {}
+      "overrides": {
+        "hatchet": {},
+        "dagger": {
+          "scaleX": 0.7,
+          "scaleY": 0.6,
+          "x": 35,
+          "y": -15,
+          "rotation": -90
+        },
+        "fishing-spear": {
+          "scaleX": 1.5
+        },
+        "harlyao-broadsword": {
+          "scaleX": 1.05,
+          "scaleY": 0.5,
+          "x": 35,
+          "y": -40,
+          "rotation": -90
+        },
+        "harlyao-longsword": {
+          "scaleX": 1.05,
+          "scaleY": 0.5,
+          "x": 40,
+          "y": -35,
+          "rotation": -90
+        },
+        "pick-shovel-pick": {
+          "flipX": true,
+          "flipY": true,
+          "x": 35,
+          "y": -25,
+          "rotation": -90
+        },
+        "plains-blade": {
+          "scaleX": 1.1,
+          "scaleY": 0.35,
+          "x": -65,
+          "y": -30,
+          "rotation": -90
+        },
+        "porakaneki-greatclub": {
+          "scaleX": 1,
+          "scaleY": 0.85,
+          "y": 115
+        },
+        "work-hammer": {
+          "y": 30
+        }
+      }
     },
     "fishing-spear": {
       "label": "Fishing Spear",
@@ -442,12 +492,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.85,
           "scaleY": 0.85,
           "y": 25,
-          "disallow": false,
-          "animation": "sweep"
+          "animation": "sweep",
+          "disallow": false
         },
         "war-cleaver": {
-          "disallow": false,
-          "animation": "sweep"
+          "animation": "sweep",
+          "disallow": false
         },
         "warhammer": {
           "scaleX": 0.82,
@@ -497,6 +547,11 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "porakaneki-greatclub": {
           "scaleY": 0.886
+        },
+        "fishing-spear": {
+          "scaleX": 0.9,
+          "scaleY": 1.5,
+          "y": 0
         }
       }
     },
@@ -530,6 +585,10 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "porakaneki-greatclub": {
           "scaleY": 0.9746
+        },
+        "fishing-spear": {
+          "scaleY": 1.5,
+          "y": 15
         }
       }
     },
@@ -592,8 +651,11 @@ window.MODULAR_WEAPON_CONFIG = {
           "y": 5
         },
         "plains-blade": {
-          "scaleX": 1.2,
-          "scaleY": 0.75
+          "scaleX": 1.1,
+          "scaleY": 0.35,
+          "x": -65,
+          "y": -30,
+          "rotation": -90
         },
         "porakaneki-greatclub": {
           "scaleX": 1.5,
@@ -606,8 +668,11 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 20
         },
         "dagger": {
-          "scaleX": 0.92,
-          "scaleY": 0.92
+          "scaleX": 0.7,
+          "scaleY": 0.6,
+          "x": 35,
+          "y": -15,
+          "rotation": -90
         },
         "pickshovel-scoop": {
           "scaleX": 1
@@ -624,14 +689,26 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 0
         },
         "fishing-spear": {
-          "scaleX": 0.95,
-          "scaleY": 1.3,
-          "y": 45,
-          "rotation": -4
+          "scaleX": 1,
+          "scaleY": 1.2,
+          "flipX": true,
+          "x": -40,
+          "y": -90,
+          "rotation": -90
         },
         "harlyao-broadsword": {
-          "scaleX": 1.5,
-          "y": -15
+          "scaleX": 1.05,
+          "scaleY": 0.5,
+          "x": 35,
+          "y": -40,
+          "rotation": -90
+        },
+        "harlyao-longsword": {
+          "scaleX": 1.05,
+          "scaleY": 0.5,
+          "x": 40,
+          "y": -35,
+          "rotation": -90
         },
         "hoe": {
           "scaleX": 1,
