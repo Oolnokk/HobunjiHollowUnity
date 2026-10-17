@@ -11,6 +11,7 @@ let schedulerEnabled = false; // Tracks whether live flames correctly wake/sleep
 let createdEmitter = null; // Captures the authored campfire emitter cloned onto the afflicted avatar.
 let updates = 0; // Counts presentation-only particle ticks.
 let disposals = 0; // Counts flame disposal after extinguish/despawn.
+const kindling = new WeakMap(); // Living Flame's self-inflicted fire buildup, independent of ordinary Burning.
 const burning = new WeakMap(); // Test-owned affliction values returned through the real public API shape.
 
 const campfireData = {
@@ -49,7 +50,10 @@ const windowStub = {
     },
     createEmitterVisual(group, emitter, maxParticles) {
       createdEmitter = { group, emitter, maxParticles };
+      const points = { renderOrder: 0, material: { depthTest: true } }; // Captures draw ordering and unchanged world occlusion.
+      createdEmitter.points = points;
       return {
+        points,
         update(dt, active) {
           assert(dt > 0 && dt <= 0.05, 'particle update receives a capped positive scheduler delta');
           assert.equal(active, true);
@@ -61,8 +65,8 @@ const windowStub = {
   },
   ResourceSystem: {
     getAffliction(entity, id) {
-      assert.equal(id, 'burningHealth');
-      return burning.get(entity) || 0;
+      assert(['burningHealth', 'kindlingHealth'].includes(id));
+      return (id === 'kindlingHealth' ? kindling : burning).get(entity) || 0;
     },
   },
   Combat: { deps: {} },
@@ -86,7 +90,7 @@ vm.runInContext(source, context, { filename: 'burning-affliction-vfx.js' });
 const api = windowStub.BurningAfflictionVfx;
 assert(api?.installed, 'Burning Health VFX module registers its public API');
 assert.equal(schedulerRecord?.id, 'burning-affliction-vfx', 'module owns one stable shared scheduler subscriber');
-assert.equal(schedulerRecord?.options?.phase, 'post-game', 'particle presentation updates after gameplay resource ticks');
+assert.equal(schedulerRecord?.options?.phase, 'pre-render', 'particles update after simulation but before the current frame renders');
 assert.equal(schedulerRecord?.options?.enabled, false, 'scheduler stays asleep until a Burning Health entity exists');
 
 const entity = { id: 'burn-test' }; // Afflicted actor fixture used by syncEntity.
@@ -100,9 +104,12 @@ assert.equal(createdEmitter.emitter.type, 'fire', 'the selected authored furnitu
 assert.equal(createdEmitter.emitter.attachedPartId, undefined, 'campfire-only ash attachment is removed for character roots');
 assert.equal(createdEmitter.emitter.rate, 38, 'authored campfire flame tuning is reused instead of duplicated');
 assert.equal(createdEmitter.maxParticles, 40, 'Burning presentation retains the lightweight authored emitter cap');
+assert.equal(createdEmitter.points.renderOrder, 3, 'flames render after character PNG planes at order 2');
+assert.equal(createdEmitter.points.material.depthTest, true, 'world occlusion stays enabled');
 
+assert.equal(updates, 1, 'attachment immediately seeds visible particles');
 schedulerRecord.callback({ timestamp: 1016, deltaMs: 16 });
-assert.equal(updates, 1, 'active Burning Health advances the authored particle visual once per scheduler frame');
+assert.equal(updates, 2, 'active Burning Health advances the authored particle visual once per scheduler frame');
 
 burning.set(entity, 0);
 schedulerRecord.callback({ timestamp: 1032, deltaMs: 16 });
@@ -116,5 +123,42 @@ assert.equal(api.debugSnapshot().activeEntities, 1, 'reapplying Burning Health c
 api.disposeEntity(entity);
 assert.equal(disposals, 2, 'explicit entity despawn cleanup disposes its flame');
 assert.equal(api.debugSnapshot().activeEntities, 0, 'despawn cleanup leaves no active VFX records');
+
+// Living Flame applies Kindling before it ever ignites into ordinary Burning.
+burning.set(entity, 0);
+kindling.set(entity, 6);
+assert.equal(api.syncEntity(entity, group), true, 'Kindling alone gives the player visible fire');
+assert.equal(api.debugSnapshot().entities[0].kindling, 6, 'mobile diagnostics expose Kindling');
+const beforeSync = updates; // Confirms repeated mesh sync does not restart the particle population.
+api.syncEntity(entity, group);
+assert.equal(updates, beforeSync, 'ordinary mesh sync retains the existing emitter');
+kindling.set(entity, 0);
+burning.set(entity, 6);
+schedulerRecord.callback({ timestamp: 1048, deltaMs: 16 });
+assert.equal(disposals, 2, 'Kindling converting into Burning does not flicker or recreate fire');
+const replacementGroup = { userData: {}, parent: {} }; // Replacement avatar root used after a rebuild.
+api.syncEntity(entity, replacementGroup);
+assert.equal(disposals, 3, 'rebuilding an avatar disposes only the old emitter');
+assert.equal(group.userData.hobunjiBurningHealthVfx, false);
+assert.equal(replacementGroup.userData.hobunjiBurningHealthVfx, true);
+replacementGroup.parent = null;
+schedulerRecord.callback({ timestamp: 1100, deltaMs: 16 });
+schedulerRecord.callback({ timestamp: 2400, deltaMs: 16 });
+assert.equal(api.debugSnapshot().activeEntities, 0, 'detached avatar flames are cleaned up');
+assert.equal(schedulerEnabled, false);
+
+const enemy = { id: 'enemy' }; // Confirms a player's extinguish does not stop another burning actor.
+const enemyGroup = { userData: {}, parent: {} }; // Enemy avatar fixture sharing the same scheduler.
+api.syncEntity(entity, group);
+burning.set(enemy, 8);
+api.syncEntity(enemy, enemyGroup);
+assert.equal(api.debugSnapshot().activeEntities, 2);
+burning.set(entity, 0);
+schedulerRecord.callback({ timestamp: 2500, deltaMs: 16 });
+assert.equal(api.debugSnapshot().activeEntities, 1);
+assert.equal(schedulerEnabled, true, 'enemy fire continues after player fire is extinguished');
+burning.set(enemy, 0);
+schedulerRecord.callback({ timestamp: 2516, deltaMs: 16 });
+assert.equal(schedulerEnabled, false);
 
 console.log('Burning Health authored fire-emitter regression passed');

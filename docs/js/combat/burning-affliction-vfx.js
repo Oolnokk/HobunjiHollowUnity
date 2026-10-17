@@ -13,7 +13,8 @@
   let lastEvent = null; // Mobile-readable diagnostic surfaced through Pixel Probe.
 
   function resourceAmount(entity) {
-    return Math.max(0, Number(window.ResourceSystem?.getAffliction?.(entity, 'burningHealth')) || 0);
+    return Math.max(0, Number(window.ResourceSystem?.getAffliction?.(entity, 'burningHealth')) || 0)
+      + Math.max(0, Number(window.ResourceSystem?.getAffliction?.(entity, 'kindlingHealth')) || 0);
   }
 
   function entityLabel(entity) {
@@ -74,6 +75,10 @@
     const emitter = cloneEmitter(fireTemplate); // Each visual gets a fresh mutable emitter record for AuthoredFurniture.createEmitterVisual.
     const visual = window.AuthoredFurniture.createEmitterVisual(group, emitter, 40);
     if (!visual) return null;
+    // Avatar PNG planes draw at order 2 and write depth. Drawing particles first
+    // lets those planes paint over even the flames in front of the body.
+    if (visual.points) visual.points.renderOrder = 3;
+    visual.update?.(Math.min(0.05, 1 / Math.max(1, Number(emitter.rate) || 1)), true); // Seeds a visible particle before the first render without a long warm-up.
     const record = { entity, group, visual, emitter, detachedAt: 0 }; // Tracks one affliction presentation until extinguished/despawned.
     records.add(record);
     recordByEntity.set(entity, record);
@@ -122,7 +127,7 @@
   function tick({ timestamp, deltaMs }) {
     const now = Number(timestamp) || performance.now();
     const step = Math.min(0.05, Math.max(0, (Number(deltaMs) || 16.667) / 1000)); // Caps particle catch-up after stalls while preserving scheduler cadence.
-    for (const record of [...records]) {
+    for (const record of records) {
       if (!(resourceAmount(record.entity) > 0)) {
         disposeRecord(record, 'extinguished');
         continue;
@@ -143,15 +148,22 @@
       templateReady: !!fireTemplate,
       loading: !!fireTemplatePromise && !fireTemplate,
       activeEntities: records.size,
+      entities: Array.from(records, record => ({
+        entity: entityLabel(record.entity),
+        burning: window.ResourceSystem?.getAffliction?.(record.entity, 'burningHealth') || 0,
+        kindling: window.ResourceSystem?.getAffliction?.(record.entity, 'kindlingHealth') || 0,
+        visible: record.visual?.points?.visible ?? null,
+      })),
+      latestChange: 'Burning and Living Flame Kindling share immediate fire particles, drawn after avatar sprites with world depth testing preserved.',
       lastEvent: lastEvent ? { ...lastEvent } : null,
     };
   }
 
   if (window.RuntimeFrameScheduler?.register) {
     window.RuntimeFrameScheduler.register(SCHEDULER_ID, tick, {
-      phase: 'post-game',
+      phase: 'pre-render',
       owner: 'BurningAfflictionVfx',
-      description: 'Updates one authored furniture fire emitter on each entity with Burning Health.',
+      description: 'Updates authored fire particles for Burning Health and Kindling after simulation and before rendering.',
       enabled: false,
     });
   }
