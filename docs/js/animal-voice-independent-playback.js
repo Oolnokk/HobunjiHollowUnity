@@ -540,7 +540,7 @@
 
   function renderDecodedIndependentBuffer(decoded, context, opts = {}) {
     if (!decoded || !context?.createBuffer) return Promise.reject(new Error('Pitch-preserving render requires a decoded AudioBuffer and AudioContext'));
-    const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
+    const tempo = clampTempoFor(opts.tempo ?? 1, Math.max(GENERIC_MAX_TEMPO, Number(opts.maxTempo) || 0)); // Callers mapping a clip onto a short authored span may allow more compression.
     const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitchSemitones / 12);
     const trimSettings = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {}; // Normalize only options that affect rendered samples.

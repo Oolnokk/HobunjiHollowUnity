@@ -72,6 +72,7 @@ assert.equal(tapCount,beforeQueued);
 assert.equal(input.queueSnapshot().length,1);
 gruntDelay=0; input.update(0.01); input.update(0.01);
 assert.equal(tapCount,beforeQueued+1,'queued tap fires exactly once after the grunt duration');
+
 gruntDelay=1; hold(); input.pressEnd(1);
 assert(!holdActive,'held windup waits for the grunt gate');
 assert(input.getState(1).releaseQueued,'early release is remembered while waiting');
@@ -99,3 +100,16 @@ assert.equal(tapCount,tapsBeforeSwitch,'a buffered attack that outlived any swin
 gruntDelay=1; input.fireTap(1); gruntDelay=0; input.update(0.01);
 assert.equal(tapCount,tapsBeforeSwitch+1,'ordinary buffered taps still fire');
 console.log('grunt-duration input queue checks passed');
+
+let queueOpen = false; // Before the current attack's Strike pose, presses are ignored rather than buffered.
+context.window.CombatVocalizations = {attackStartDelayS:()=>gruntDelay, attackQueueOpen:()=>queueOpen};
+const tapsBeforeWindow = tapCount;
+gruntDelay=1; input.fireTap(1);
+assert.equal(input.queueSnapshot().length,0,'press before the Strike pose is ignored');
+gruntDelay=0; input.update(0.01); input.update(0.01);
+assert.equal(tapCount,tapsBeforeWindow,'ignored press never fires later');
+gruntDelay=1; queueOpen=true; input.fireTap(1);
+assert.equal(input.queueSnapshot().length,1,'press after the Strike pose queues');
+gruntDelay=0; input.update(0.01); input.update(0.01);
+assert.equal(tapCount,tapsBeforeWindow+1,'queued press fires at the hold midpoint');
+console.log('attack inputs queue only after the Strike pose: ok');

@@ -32,6 +32,9 @@
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
   <script src="js/format-utils.js?v=20261017hd678b44"></script>
+  <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
+       game.js; uses window.FormatUtils.clamp and must load before game.js. -->
+  <script src="js/building-entry-spawn.js?v=20261017a"></script>
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
@@ -180,7 +183,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261017h94c8fc4"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261017hda998c6"></script>
+  <script src="js/character-action-locks.js?v=20261017hf727ba3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -296,17 +299,19 @@
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
-  <script src="js/combat/combat-input.js?v=20261015h2aa7476"></script>
-  <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261016hf3aa758"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
+  <script src="js/combat/combat-input.js?v=20261017h49af261"></script>
+  <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
+  <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
+  <script src="js/combat/combat-combo.js?v=20261017h9dc5e7c"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20261017h4fe16a4"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
-  <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20261017h77ab128"></script>
+  <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261016h98cdb43"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261013hdec3ca0"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261017he00f00e"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261015h91b22f2"></script>
@@ -345,7 +350,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261017h46db59a"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261017h385d6a5"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -459,7 +464,7 @@
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261013h17d9d3b"></script>
-  <script src="js/harlyao-relics.js?v=20261015h8d40d96"></script>
+  <script src="js/harlyao-relics.js?v=20261017h210ada0"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261015hf042488"></script>
@@ -2482,7 +2487,7 @@
   <script src="js/audio-system.js?v=20261012he2aea15"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20261015h3fcfdd8"></script>
+  <script src="js/animal-vocalizations.js?v=20261017h17ab1e9"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -2591,7 +2596,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261016hfd97432"></script>
+  <script src="js/npc-pathfinding.js?v=20261017h585e6fc"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
@@ -2662,9 +2667,9 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261017h2efef0f"></script>
+  <script src="game.js?v=20261017h03e70a6"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261017h8603466"></script>
+  <script src="js/opening-story-cutscene.js?v=20261017h81a4864"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

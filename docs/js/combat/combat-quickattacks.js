@@ -97,14 +97,14 @@
   }
   window.Combat.buildQuickAttack = buildTechnique;
 
-  let WINDUP_S = 0.075;
+  let WINDUP_S = 0.1125;
   let STRIKE_S = 0.105;
   let COST_COMMIT = 60; // Up-front quick-attack commitment; configured by attack-values.json and spent in onTap().
   let CONDITIONAL_REFUND_FRACTION = 0.5; // Fraction of the actual post-modifier spend restored after at least one cooldown-ready conditional proc.
   let BONUS_EFFECT_COOLDOWN_S = 5; // Global default used to gate the stronger conditional package; individual techniques may override with bonusEffectCooldownS.
   let BONUS_EFFECT_POWER_MULTIPLIER = 2; // Multiplies mastery-derived conditional affliction/debuff strength; core bonus damage/knockback stay explicitly authored per technique.
   const bonusCooldownUntilMs = new Map(); // Enemy -> bonus cooldown end. One clock per enemy, shared by every weapon and Quick Attack; read by combat, the opportunity reticle, and mobile diagnostics.
-  let HOLD_S = 1; // post-strike pause before easing back to neutral
+  let HOLD_S = 0.48125; // post-strike pause before easing back to neutral
   // The jab's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) is intentionally tighter than the forward lunge.
   let RANGE_SCALE = 0.6;
@@ -246,6 +246,7 @@
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
+        pose: window.AttackPoseTemplates?.poseFor('pickshovel_swing'), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,
