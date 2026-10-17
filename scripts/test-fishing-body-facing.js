@@ -4,8 +4,8 @@ const fs = require('node:fs'); // Reads the production facing/pose paths.
 const vm = require('node:vm'); // Executes those paths without a WebGL renderer.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Current gameplay implementation.
 const facing = game.slice(game.indexOf("        if (window.Fishing?.state?.phase === 'caught')"), game.indexOf('        } else if (characterViewMode.enabled)', game.indexOf("        if (window.Fishing?.state?.phase === 'caught')"))) + '\n}'; // Fishing branches before unrelated locomotion owners.
-const poseStart = game.indexOf('          const bodyYawRad = activeTool'); // Fishing-aware authored pose section.
-const pose = game.slice(poseStart, game.indexOf('          _qFac.setFromAxisAngle(_tUp, vθ);', poseStart)); // Includes the actual final body rotation write.
+const poseStart = game.indexOf('          const fishingThrowHold = activeTool'); // Fishing-aware authored pose section.
+const pose = game.slice(poseStart, game.indexOf('          _qFac.setFromAxisAngle(_tUp, vθ);', poseStart)); // Includes the actual final body and leg rotation writes.
 for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.PI / 4]) {
   const target = { x: 3 + Math.sin(angle) * 5, y: 0.35, z: 7 + Math.cos(angle) * 5 }; // Cast tile in each tested direction.
   const context = {
@@ -24,13 +24,16 @@ for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.P
   for (const bodyYaw of [-152, 63, 2]) {
     context.chan = () => bodyYaw;
     vm.runInContext(`{${pose}}`, context);
-    assert(Math.abs(context.playerMesh.rotation.y - angle) < 1e-10, 'fishing faces the cast during windup, strike and return');
+    assert(Math.abs(context.playerMesh.rotation.y - (angle + bodyYaw * Math.PI / 180)) < 1e-10, 'fishing keeps the authored torso twist the spear frame is built on');
+    assert(Math.abs(context.playerMesh.rotation.y + context.playerLegs.group.rotation.y - angle) < 1e-10, 'fishing feet face the cast during windup, strike and return');
   }
+  context.playerLegs.group.rotation.y = 0;
   context.activeTool = 'ranged';
   context.fishingThrowSpinVisual = null;
   context.chan = () => -152;
   vm.runInContext(`{${pose}}`, context);
   assert(Math.abs(context.playerMesh.rotation.y - (angle - 152 * Math.PI / 180)) < 1e-10, 'combat retains authored twist');
+  assert.equal(context.playerLegs.group.rotation.y, 0, 'combat throws leave the legs with the body');
   context.window.Fishing.state.phase = 'caught';
   context.playerFacing = 0.42;
   vm.runInContext(facing, context);
@@ -42,4 +45,4 @@ for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.P
     assert.equal(context.playerMesh.rotation.y, 0.42, 'degenerate casts preserve valid facing');
   }
 }
-console.log('Fishing body facing, authored combat yaw and catch presentation passed');
+console.log('Fishing feet facing, authored spear/torso yaw and catch presentation passed');

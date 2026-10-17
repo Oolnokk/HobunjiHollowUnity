@@ -438,6 +438,13 @@
     }
     sprite.name = `weapon_enchantment_${effect.id}`;
     sprite.renderOrder = Number(emitter.plane.renderOrder || 0) + 4;
+    // HeldObjectRenderOrder hides held planes from the base colour pass and
+    // redraws them in its own overlay pass, which painted the blade over any
+    // particle drawn earlier. Particles on such a plane render only in that
+    // same pass, after (renderOrder) and in front of the blade.
+    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER;
+    if (Number.isInteger(overlayLayer) && ((Number(emitter.plane.layers?.mask) >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer); // r128 Layers has no isEnabled().
+    else sprite.layers?.set?.(0);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
     const px = index % mask.width; // Used to map the selected source pixel into plane-local X.
@@ -580,6 +587,28 @@
     return { weaponKey, visual, heldVisual, spritePath, mask, counts: planarCounts(weaponKey), planes };
   }
 
+  // Particles sit just in front of the blade's +Z face. Light/heavy stances and
+  // attack poses show the camera either face, and from behind, the opaque blade
+  // depth-hid every particle, so each emitter is mirrored onto the visible face.
+  let faceScratch = null; // Lazily created { normal, toCamera, planePos, cameraPos }; this runs every frame.
+  function faceEmittersTowardCamera(emitters = EMITTERS.values()) {
+    const camera = window.Combat?.deps?.camera; // Live game camera handed to Combat.init.
+    if (!camera?.matrixWorld || typeof THREE === 'undefined') return;
+    if (!faceScratch) faceScratch = { normal: new THREE.Vector3(), toCamera: new THREE.Vector3(), planePos: new THREE.Vector3(), cameraPos: new THREE.Vector3() };
+    const { normal, toCamera, planePos, cameraPos } = faceScratch;
+    cameraPos.setFromMatrixPosition(camera.matrixWorld);
+    for (const emitter of emitters) {
+      const plane = emitter?.plane;
+      if (!plane?.matrixWorld || !emitter.group) continue;
+      normal.set(0, 0, 1).transformDirection(plane.matrixWorld);
+      planePos.setFromMatrixPosition(plane.matrixWorld);
+      const side = normal.dot(toCamera.subVectors(cameraPos, planePos)) < 0 ? -1 : 1;
+      if (emitter.group.scale.z === side) continue;
+      emitter.group.scale.z = side;
+      emitter.group.position.z = 0.012 * side;
+    }
+  }
+
   function clearAllEmitters() {
     for (const emitter of EMITTERS.values()) disposeEmitter(emitter);
     EMITTERS.clear();
@@ -610,7 +639,10 @@
       }).catch(error => { if (generation === scanGeneration) lastEvent = `scan failed: ${error?.message || error}`; });
     }
 
-    if (activeSnapshot?.planes?.length && activeSnapshot.mask?.indices?.length) updateEmitters(dt, activeSnapshot);
+    if (activeSnapshot?.planes?.length && activeSnapshot.mask?.indices?.length) {
+      updateEmitters(dt, activeSnapshot);
+      faceEmittersTowardCamera();
+    }
   }
 
   function installUpdateLoop() {
@@ -781,7 +813,7 @@
     debugSnapshot,
     copyDebug,
     forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },
-    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter }), // Particle lifecycle/pooling regression hooks.
+    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter, faceEmittersTowardCamera }), // Particle lifecycle/pooling regression hooks.
   });
 
   bootstrap();

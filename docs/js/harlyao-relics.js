@@ -23,7 +23,7 @@
   const SHAPES = Object.freeze({
     longsword: Object.freeze({
       label: 'Harlyao Longsword', sprite: 'assets/toolsprites/harlyao_longsword.png', icon: '🗡️',
-      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy',
+      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
     }),
     warhammer: Object.freeze({
       label: 'Harlyao Warhammer', sprite: 'assets/toolsprites/warhammer.png', icon: '🔨',
@@ -31,7 +31,7 @@
     }),
     broadsword: Object.freeze({
       label: 'Harlyao Broadsword', sprite: 'assets/toolsprites/harlyao_broadsword.png', icon: '🗡️',
-      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy',
+      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
     }),
   });
 

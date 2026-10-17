@@ -53,11 +53,9 @@
   // (power:1.3) and slowed down for a heavier finisher, instead of any of
   // them needing a separate bespoke animation. game.js's pose-driven swing
   // branch (updateToolMesh) applies this generically.
-  const SWEEP_POSE = {
-    neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0,   bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup:  { x: 0, y: 0, z: 0, pitch: 0, yaw: -42, bodyYaw: -90, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    strike:  { x: 0, y: 0, z: 0, pitch: 0, yaw: 20,  bodyYaw: 120, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-  };
+  // The editor-authored sweep (js/combat/attack-pose-templates.js 'hatchet_swing'),
+  // exported below as Combat.poses.SWEEP_POSE for the bandit AI.
+  const SWEEP_POSE = window.AttackPoseTemplates?.poseFor('hatchet_swing');
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
@@ -82,15 +80,15 @@
   // the big shove for Cleave, means the combo has something left to hit by
   // the time the finisher's own knockbackMul (2.4) fires.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.345,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 0.43, dmgTag: 'blunt', lungeMul: 2.0 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.345,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 0.43, dmgTag: 'blunt', lungeMul: 1.0 },
     // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
     // handling in onTap below — barely outdamages Backhand Swing on its own
     // (1.35 vs 1.25); its real payoff is the Death Mark it leaves on
     // whatever it hits (see combat-death-mark.js), not its own base damage.
     // Keeps an extra x1.5 knockback bump (2.4) on top of the shared
     // knockback baseline, same as charged breaker/riposte/flurry.
-    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
+    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.5175, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 0.41375, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
@@ -102,14 +100,14 @@
   // opener, so the follow-ups bias toward forgiving the combo continuing
   // over staying razor-precise.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.18, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 0.47, dmgTag: 'sharp', lungeMul: 2.0 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.24, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 0.46, dmgTag: 'sharp', lungeMul: 1.0 },
     // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
     // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff is
     // the Death Mark it leaves on whatever it hits, the same way Cleave's
     // does (see combat-death-mark.js). Same extra x1.5 knockback bump as
     // Cleave.
-    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
+    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.405, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 0.4325, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -120,7 +118,9 @@
     return (rs.getAffliction(entity, 'bruisedHealth') || 0) + (rs.getAffliction(entity, 'corrodedHealth') || 0);
   }
 
-  function registerCombo(id, label, steps) {
+  // templateId: the attack-animation editor template these steps show (see
+  // the editor's ACTION_DEFS), so in-game poses match the editor exactly.
+  function registerCombo(id, label, steps, templateId) {
     let comboIndex = 0;
     let lastTapAt = -99;
     let busyAction = null;
@@ -206,8 +206,8 @@
         dirSign: step.dirSign,
         windupFrac: windupS / totalVisual,
         strikeFrac: (windupS + strikeS) / totalVisual,
-        power: step.power || 1,
-        pose: step.pose,
+        power: 1, // poseFor already applied the editor's power rule to this pose.
+        pose: window.AttackPoseTemplates?.poseFor(templateId, step.power || 1),
         holdS: step.holdS || 0,
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
@@ -305,8 +305,8 @@
     window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
   }
 
-  registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);
-  registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS);
+  registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS, 'hatchet_swing');
+  registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS, 'pickshovel_swing');
 
   // Shared with other sweep-style abilities (e.g. combat-flurry.js) so every
   // sweeping attack uses this same authored pose rather than each falling

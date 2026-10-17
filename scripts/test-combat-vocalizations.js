@@ -61,6 +61,15 @@ register('chargedBreaker', {
   },
   onHoldCancel() {},
 });
+register('acceleratingFlurry', {
+  category: 'offensiveHold', slotFamily: 'hold',
+  onHoldStart() {},
+  onHoldUpdate() { // Each Flurry strike is its own staged action fired while the hold continues.
+    W.Combat.beginStagedAction({ windupS: 0.05, strikeS: 0.085 });
+  },
+  onHoldEnd() {},
+  onHoldCancel() {},
+});
 
 const context = {
   console,
@@ -298,7 +307,7 @@ assert.equal(played.at(-1).stopped, true, 'despawn fades the current NPC voice')
 // Active visual phases own both voice timing and the queue; the return tail is cosmetic.
 emit(docListeners, 'hobunjiPlayerReady');
 let visualRemainingS = 1.3; // Includes 0.2s windup, 0.1s strike, 0.7s hold, and 0.3s return.
-W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2});
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2,strikeRemainingS:Math.max(0,visualRemainingS-1.0),holdEndRemainingS:Math.max(0,visualRemainingS-0.3)});
 W.AudioSystem.gameAudioConfig=()=>({enabled:false});
 abilities.get('swingCombo').onTap();
 assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-1)<1e-9,'muted attacks wait through Hold only');
@@ -307,7 +316,7 @@ const beforePhase = W.CombatVocalizations.debugSnapshot().lastStrike; // Windup 
 stagedSpec.onUpdate({t:0.19});
 assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike,beforePhase);
 stagedSpec.onUpdate({t:0.2});
-assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'second grunt spans Windup to Strike through Hold');
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'second grunt spans Windup through Strike and the whole hold');
 assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.category,'combo');
 stagedSpec.onStrike({t:0.3});
 assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'impact does not restart the release voice');
@@ -322,6 +331,28 @@ stagedAction.phase='done';
 assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'completed actions cannot reinstate the return delay');
 emit(docListeners, 'hobunjiPlayerReady');
 assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'return tail does not gate attacks after old actions are cleared');
+// Below 25 fps gameLoop clamps dt, so the staged clock must follow the wall-clock utterance instead.
+visualRemainingS = 1.3;
+abilities.get('swingCombo').onTap();
+const slowAction = stagedAction;
+now += 200;
+slowAction.t = 0.04; // One clamped frame of game time.
+stagedSpec.onUpdate(slowAction);
+assert(Math.abs(slowAction.t-0.2)<1e-9,'player attack clock advances by real elapsed time');
+assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-0.8)<1e-9,'queue ends with the utterance, not the slower game clock');
+now += 5000;
+stagedSpec.onUpdate(slowAction);
+assert(Math.abs(slowAction.t-0.45)<1e-9,'a long pause catches up at most 0.25s per frame');
+stagedSpec.onComplete(slowAction);
+slowAction.phase='done';
+// Flurry: one utterance per strike, mapped over its whole Windup -> Strike -> hold.
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:0.8,activeRemainingS:0.4,windupRemainingS:0.05,strikeRemainingS:0.135,holdEndRemainingS:0.6});
+abilities.get('acceleratingFlurry').onHoldUpdate();
+const flurryVoice = W.CombatVocalizations.debugSnapshot().lastStrike;
+assert.equal(flurryVoice.abilityId,'acceleratingFlurry','the strike utterance starts with the strike, not after a separate windup grunt');
+assert(Math.abs(flurryVoice.durationS-0.6)<1e-9,'one utterance spans the strike\'s windup, strike and hold');
+stagedSpec.onComplete(stagedAction);
+stagedAction.phase='done';
 console.log('shared animation timeline voice and queue timing: ok');
 
 const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including explicit and automatic hold endpoints.
@@ -329,18 +360,21 @@ const timelineContext = {activeTool:'weapon',combatSwingAnim:'thrust',toolSwingT
 vm.createContext(timelineContext);
 vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAttackTimeline()'),gameSource.indexOf('      // Ranged actions supply separate load/fire pose sets')),timelineContext);
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.3);
-assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1)<1e-9);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.65)<1e-9,'input gate ends halfway through the 0.7s hold');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().strikeRemainingS-0.3)<1e-9);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().holdEndRemainingS-1)<1e-9,'release voice maps through the end of the 0.7s hold');
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS-0.2)<1e-9);
 timelineContext.toolSwingT=1.1;
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS)<1e-9,'Windup endpoint begins the second sound');
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.1,'second phase includes strike, hold, and return');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().strikeRemainingS-0.1)<1e-9,'inputs still ignored before the Strike pose');
 timelineContext.toolSwingT=0.3;
-assert.equal(timelineContext.getWeaponAttackTimeline().activeRemainingS,0,'Hold endpoint releases input while the return animation remains active');
+assert.equal(timelineContext.getWeaponAttackTimeline().activeRemainingS,0,'mid-hold releases input while the hold and return animation continue');
 timelineContext.combatSwingHoldS=0;
 timelineContext.toolSwingT=1.3;
-assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.6)<1e-9,'automatic hold ends after 30% of the post-strike tail');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.45)<1e-9,'automatic holds release input at their midpoint too');
 timelineContext.combatSwingStrikeFrac=1;
-assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.287)<1e-9,'hold endpoint uses the renderer clamp');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.3)<1e-9,'the gate never ends before the Strike pose');
 timelineContext.toolSwingT=0;
 assert.equal(timelineContext.getWeaponAttackTimeline(),null,'reaching Neutral releases the animation gate');
 

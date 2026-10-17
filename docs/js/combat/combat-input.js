@@ -162,6 +162,10 @@
 
   function runAfterAttackAlignment(callback, slotIndex) {
     if ((window.CombatVocalizations?.attackStartDelayS?.() || 0) > 0) {
+      if (window.CombatVocalizations?.attackQueueOpen?.() === false) { // Before the current attack's Strike pose: ignored, not buffered.
+        emitState(slotIndex, 'attack-ignored');
+        return null;
+      }
       const request = { // Re-enters alignment only after the shared grunt/attack duration allows another start.
         callback,
         queuedAtMs: now() * 1000,
