@@ -39,9 +39,6 @@
   const HELD_OVERLAY_MASK = (1 << HELD_OVERLAY_LAYER) >>> 0;
   const REPLAY_PICK_MASK = (1 << REPLAY_PICK_LAYER) >>> 0;
   const NEAR_GROUND_STENCIL = 0x04; // Pixels whose front-most surface is ground on a holder's tile; bits 0/1 stay with the foot-water/held marks.
-  // How far past a held mesh's own bounds ground still counts as "its tile".
-  // Ground anywhere else keeps occluding weapons normally.
-  const NEAR_GROUND_REACH = 0.6;
   const DEFAULT_LAYER_MASK = (1 << DEFAULT_LAYER) >>> 0;
   const MASK_ALL = 0xFFFFFFFF >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
@@ -649,6 +646,7 @@
       stencilFail: material.stencilFail,
       stencilZFail: material.stencilZFail,
       stencilZPass: material.stencilZPass,
+      clippingPlanes: material.clippingPlanes,
     });
   }
 
@@ -664,6 +662,7 @@
       material.stencilFail = state.stencilFail;
       material.stencilZFail = state.stencilZFail;
       material.stencilZPass = state.stencilZPass;
+      material.clippingPlanes = state.clippingPlanes;
     }
   }
 
@@ -764,12 +763,13 @@
     return states;
   }
 
-  function prepareGroundDepthMaterials(ground) {
+  function prepareGroundDepthMaterials(ground, planes = null) {
     const states = new Map();
     for (const object of ground) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
+        if (planes) material.clippingPlanes = planes; // Near-tile restore redraws exactly the clipped stamp region.
         // Preserve depthWrite exactly. Farm/town grass currently writes depth;
         // wilderness grass intentionally does not. Replaying each as authored
         // reconstructs the postprocess depth buffer without changing its color.
@@ -1134,128 +1134,56 @@
     return !!material?.depthWrite;
   }
 
-  // Instanced ground (grass) can cover a whole map with one InstancedMesh, so
-  // its bounds always reach a holder. Only the instances on the holder's tile
-  // are stamped/restored, drawn through a per-source proxy that shares the
-  // source's geometry and material (identical depth) but holds just those
-  // instance matrices. Proxies live in their own scene, outside the world.
-  const INSTANCE_SUBSET_MIN = 64; // Smaller instanced meshes are cheap enough to draw whole.
-  const INSTANCE_CELL = 2; // World-ish units per cell of the per-source instance index.
-  const instanceSubsets = new WeakMap(); // Source InstancedMesh -> { version, count, cells, proxy, capacity }.
-  const proxyScene = new THREE.Scene();
-  proxyScene.autoUpdate = false;
-  const activeProxies = [];
-  const subsetInverse = new THREE.Matrix4();
-  const subsetCenter = new THREE.Vector3();
-  const cellKey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
-
-  function instanceSubsetEntry(mesh) {
-    let entry = instanceSubsets.get(mesh);
-    const version = mesh.instanceMatrix.version;
-    if (entry && entry.version === version && entry.count === mesh.count) return entry;
-    const cells = new Map();
-    const array = mesh.instanceMatrix.array;
-    for (let i = 0; i < mesh.count; i++) {
-      const key = cellKey(Math.floor(array[i * 16 + 12] / INSTANCE_CELL), Math.floor(array[i * 16 + 14] / INSTANCE_CELL));
-      let list = cells.get(key);
-      if (!list) cells.set(key, list = []);
-      list.push(i);
-    }
-    if (!entry) instanceSubsets.set(mesh, entry = { proxy: null, capacity: 0 });
-    entry.version = version;
-    entry.count = mesh.count;
-    entry.cells = cells;
-    return entry;
+  // Weapons only x-ray the floor/ground tile their holder stands on. A holder's
+  // tile is the 1x1 world cell under each held mesh; grass billboards never
+  // count as ground here (they keep occluding like any other prop).
+  const MAX_NEAR_TILES = 4; // Only the nearest holders' tiles beyond this count are x-rayed.
+  const TILE_HALF_DIAGONAL = 0.7072;
+  const nearTiles = []; // { x, z, planes, meshes } reused per frame.
+  const tilePlanePool = [];
+  function tilePlanes(index, x, z) {
+    let planes = tilePlanePool[index];
+    if (!planes) planes = tilePlanePool[index] = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()];
+    planes[0].set(new THREE.Vector3(1, 0, 0), -x);
+    planes[1].set(new THREE.Vector3(-1, 0, 0), x + 1);
+    planes[2].set(new THREE.Vector3(0, 0, 1), -z);
+    planes[3].set(new THREE.Vector3(0, 0, -1), z + 1);
+    return planes;
   }
 
-  function instanceProxy(entry, mesh, needed) {
-    if (entry.proxy && entry.capacity >= needed && entry.proxy.geometry === mesh.geometry && entry.proxy.material === mesh.material) return entry.proxy;
-    if (entry.proxy) { proxyScene.remove(entry.proxy); entry.proxy.dispose(); }
-    entry.capacity = Math.max(64, needed * 2);
-    const proxy = new THREE.InstancedMesh(mesh.geometry, mesh.material, entry.capacity);
-    proxy.name = `${mesh.name || 'instanced_ground'}__held_xray_subset`;
-    proxy.frustumCulled = false;
-    proxy.matrixAutoUpdate = false;
-    proxy.layers.mask = REPLAY_PICK_MASK;
-    proxy.visible = false;
-    proxyScene.add(proxy);
-    entry.proxy = proxy;
-    return proxy;
-  }
-
-  // Returns the proxy holding only `mesh`'s instances within reach, or null
-  // when none are.
-  function nearInstanceSubset(mesh, reach, reachCount) {
-    const entry = instanceSubsetEntry(mesh);
-    const geometry = mesh.geometry;
-    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-    const pad = geometry.boundingSphere.radius;
-    const source = mesh.instanceMatrix.array;
-    subsetInverse.copy(mesh.matrixWorld).invert();
-    const picked = nearInstanceScratch;
-    picked.length = 0;
-    for (let r = 0; r < reachCount; r++) {
-      subsetCenter.copy(reach[r].center).applyMatrix4(subsetInverse);
-      const radius = reach[r].radius + pad;
-      const radiusSq = radius * radius;
-      const x0 = Math.floor((subsetCenter.x - radius) / INSTANCE_CELL), x1 = Math.floor((subsetCenter.x + radius) / INSTANCE_CELL);
-      const z0 = Math.floor((subsetCenter.z - radius) / INSTANCE_CELL), z1 = Math.floor((subsetCenter.z + radius) / INSTANCE_CELL);
-      for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
-        const list = entry.cells.get(cellKey(cx, cz));
-        if (!list) continue;
-        for (const i of list) {
-          const dx = source[i * 16 + 12] - subsetCenter.x, dy = source[i * 16 + 13] - subsetCenter.y, dz = source[i * 16 + 14] - subsetCenter.z;
-          if (dx * dx + dy * dy + dz * dz <= radiusSq) picked.push(i);
-        }
-      }
-    }
-    if (!picked.length) return null;
-    if (reachCount > 1) { picked.sort((a, b) => a - b); }
-    const proxy = instanceProxy(entry, mesh, picked.length);
-    const target = proxy.instanceMatrix.array;
-    let written = 0;
-    for (let k = 0; k < picked.length; k++) {
-      if (k && picked[k] === picked[k - 1]) continue; // Overlapping reach spheres.
-      target.set(source.subarray(picked[k] * 16, picked[k] * 16 + 16), written * 16);
-      written++;
-    }
-    proxy.count = written;
-    proxy.instanceMatrix.updateRange.offset = 0;
-    proxy.instanceMatrix.updateRange.count = written * 16;
-    proxy.instanceMatrix.needsUpdate = true;
-    proxy.matrixWorld.copy(mesh.matrixWorld);
-    proxy.onBeforeRender = mesh.onBeforeRender;
-    return proxy;
-  }
-  const nearInstanceScratch = [];
-
-  const heldReach = []; // Reused spheres: each held mesh's bounds grown by NEAR_GROUND_REACH.
+  const holderSphere = new THREE.Sphere();
   const candidateSphere = new THREE.Sphere();
-  function collectNearGround(held, candidates, out, proxies) {
-    let reachCount = 0;
+  const holderOrder = [];
+  function collectHolderTiles(held, camera) {
+    nearTiles.length = 0;
+    holderOrder.length = 0;
     for (const mesh of held) {
-      const sphere = heldReach[reachCount] || (heldReach[reachCount] = new THREE.Sphere());
-      if (!worldBoundingSphere(mesh, sphere)) continue;
-      sphere.radius += NEAR_GROUND_REACH;
-      reachCount++;
+      if (!worldBoundingSphere(mesh, holderSphere)) continue;
+      holderOrder.push({ x: Math.floor(holderSphere.center.x), z: Math.floor(holderSphere.center.z), distSq: holderSphere.center.distanceToSquared(camera.position) });
     }
+    holderOrder.sort((a, b) => a.distSq - b.distSq); // Nearest holders (the player first) win when more than MAX_NEAR_TILES tiles are in view.
+    for (const { x, z } of holderOrder) {
+      if (nearTiles.length >= MAX_NEAR_TILES) break;
+      if (nearTiles.some(tile => tile.x === x && tile.z === z)) continue;
+      const entry = { x, z, planes: tilePlanes(nearTiles.length, x, z), meshes: [] };
+      nearTiles.push(entry);
+    }
+    return nearTiles;
+  }
+
+  // Fills each tile's mesh list with the depth-writing ground/floor meshes that
+  // reach that tile (horizontal bounds test only; the clip planes do the rest).
+  function collectNearGround(tiles, candidates) {
     for (const list of candidates) {
       for (const mesh of list) {
-        // Ground that never wrote depth (wilderness grass) never hid a weapon.
-        if (!writesDepth(mesh.material) || !worldBoundingSphere(mesh, candidateSphere)) continue;
-        if (mesh.isInstancedMesh && mesh.count >= INSTANCE_SUBSET_MIN) {
-          let reaches = false;
-          for (let i = 0; i < reachCount && !reaches; i++) reaches = heldReach[i].intersectsSphere(candidateSphere);
-          const proxy = reaches ? nearInstanceSubset(mesh, heldReach, reachCount) : null;
-          if (proxy) proxies.push(proxy);
-          continue;
-        }
-        for (let i = 0; i < reachCount; i++) {
-          if (heldReach[i].intersectsSphere(candidateSphere)) { out.push(mesh); break; }
+        if (isGrassGroundCover(mesh) || !writesDepth(mesh.material) || !worldBoundingSphere(mesh, candidateSphere)) continue;
+        for (const tile of tiles) {
+          const dx = candidateSphere.center.x - (tile.x + 0.5), dz = candidateSphere.center.z - (tile.z + 0.5);
+          const reach = candidateSphere.radius + TILE_HALF_DIAGONAL;
+          if (dx * dx + dz * dz <= reach * reach) tile.meshes.push(mesh);
         }
       }
     }
-    return out;
   }
 
   function cullToReplayFrustum(objects, out) {
@@ -1274,25 +1202,14 @@
     }
   }
 
-  function renderPicked(renderer, scene, camera, objects, proxies = null) {
+  function renderPicked(renderer, scene, camera, objects) {
     camera.layers.mask = REPLAY_PICK_MASK;
-    if (objects.length) {
-      setPicked(objects, true);
-      try {
-        rawRender.call(renderer, scene, camera);
-      } finally {
-        setPicked(objects, false);
-      }
-    }
-    if (proxies?.length) {
-      for (const proxy of proxies) proxy.visible = true;
-      proxyScene.fog = scene.fog; // Same fog define as the world pass, so the proxy reuses the source's shader program.
-      try {
-        rawRender.call(renderer, proxyScene, camera);
-      } finally {
-        for (const proxy of proxies) proxy.visible = false;
-        proxyScene.fog = null;
-      }
+    if (!objects.length) return;
+    setPicked(objects, true);
+    try {
+      rawRender.call(renderer, scene, camera);
+    } finally {
+      setPicked(objects, false);
     }
   }
 
@@ -1308,12 +1225,13 @@
     return states;
   }
 
-  function prepareNearGroundStampMaterials(ground) {
+  function prepareNearGroundStampMaterials(ground, planes) {
     const states = new Map();
     for (const object of ground) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
+        material.clippingPlanes = planes; // Only this holder's tile.
         // Ground cover that skipped depth in the base pass (wilderness grass) must never be
         // stamped: its blades sit in front of tents, bush wood and feet, so erasing "its"
         // depth would also erase theirs and the ground restore can never bring it back.
@@ -1367,7 +1285,6 @@
 
   let nearGroundMeshesLast = 0; // Ground meshes the latest near-tile replay stamped/restored.
   let nearGroundReplayCount = 0;
-  const nearGroundScratch = [];
   const replayScratch = [];
 
   function replayNearGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
@@ -1385,6 +1302,8 @@
     const oldShadowAutoUpdate = shadowMap?.autoUpdate;
 
     internalReplay = true;
+    const oldLocalClipping = renderer.localClippingEnabled;
+    renderer.localClippingEnabled = true; // Near-tile stamp/restore materials carry per-tile clip planes.
     const glState = renderer.state;
     const scissorMeshes = needsFootWaterComposite ? [...held, ...waterOccluded] : held;
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
@@ -1410,13 +1329,15 @@
       renderer.clearStencil?.();
       if (scissored) glState.setScissorTest(true);
 
-      nearGroundScratch.length = 0;
-      replayScratch.length = 0;
-      activeProxies.length = 0;
-      const near = needsHeldOverlay ? collectNearGround(held, [ground, topFaceGround], nearGroundScratch, activeProxies) : nearGroundScratch;
-      const nearDrawn = culled ? cullToReplayFrustum(near, replayScratch) : near;
-      nearGroundMeshesLast = nearDrawn.length + activeProxies.length;
-      const nearAny = nearDrawn.length > 0 || activeProxies.length > 0;
+      const tiles = needsHeldOverlay ? collectHolderTiles(held, camera) : nearTiles;
+      if (needsHeldOverlay) collectNearGround(tiles, [ground, topFaceGround]);
+      let nearAny = false;
+      nearGroundMeshesLast = 0;
+      for (const tile of tiles) {
+        if (culled) { replayScratch.length = 0; tile.meshes = cullToReplayFrustum(tile.meshes, replayScratch).slice(); }
+        nearGroundMeshesLast += tile.meshes.length;
+        nearAny = nearAny || tile.meshes.length > 0;
+      }
 
       if (needsHeldOverlay) {
         // 1) Avatar/PNG cutout planes skip depth writes in the base pass;
@@ -1436,17 +1357,21 @@
         }
 
         if (nearAny) {
-          // 2) Mark pixels where tile-local ground is the front-most surface,
-          // then 3) push only those pixels' depth to the far plane.
-          const stampStates = prepareNearGroundStampMaterials(activeProxies.length ? [...nearDrawn, ...activeProxies] : nearDrawn);
-          const swapped = swapGeometryPart(nearDrawn, 'top');
-          try {
-            const perf = window.PerfProfiler?.begin('held-overlay: near ground stamp render');
-            renderPicked(renderer, scene, camera, nearDrawn, activeProxies);
-            window.PerfProfiler?.end(perf);
-          } finally {
-            restoreSwappedGeometry(swapped);
-            restoreMaterialStates(stampStates);
+          // 2) Mark pixels where a holder's own tile of ground is the front-most
+          // surface (clip planes cut each ground mesh to that 1x1 tile), then
+          // 3) push only those pixels' depth to the far plane.
+          for (const tile of tiles) {
+            if (!tile.meshes.length) continue;
+            const stampStates = prepareNearGroundStampMaterials(tile.meshes, tile.planes);
+            const swapped = swapGeometryPart(tile.meshes, 'top');
+            try {
+              const perf = window.PerfProfiler?.begin('held-overlay: near ground stamp render');
+              renderPicked(renderer, scene, camera, tile.meshes);
+              window.PerfProfiler?.end(perf);
+            } finally {
+              restoreSwappedGeometry(swapped);
+              restoreMaterialStates(stampStates);
+            }
           }
           const rig = nearGroundEraseRig();
           rawRender.call(renderer, rig.scene, rig.camera);
@@ -1467,16 +1392,19 @@
 
         // 5) Restore the erased ground depth (held pixels in front keep theirs).
         if (nearAny) {
-          const groundStates = prepareGroundDepthMaterials(activeProxies.length ? [...nearDrawn, ...activeProxies] : nearDrawn);
-          const swapped = swapGeometryPart(nearDrawn, 'top');
-          try {
-            const perf = window.PerfProfiler?.begin('held-overlay: ground restore render');
-            renderPicked(renderer, scene, camera, nearDrawn, activeProxies);
-            window.PerfProfiler?.end(perf);
-            groundDepthRestoreCount++;
-          } finally {
-            restoreSwappedGeometry(swapped);
-            restoreMaterialStates(groundStates);
+          for (const tile of tiles) {
+            if (!tile.meshes.length) continue;
+            const groundStates = prepareGroundDepthMaterials(tile.meshes, tile.planes);
+            const swapped = swapGeometryPart(tile.meshes, 'top');
+            try {
+              const perf = window.PerfProfiler?.begin('held-overlay: ground restore render');
+              renderPicked(renderer, scene, camera, tile.meshes);
+              window.PerfProfiler?.end(perf);
+              groundDepthRestoreCount++;
+            } finally {
+              restoreSwappedGeometry(swapped);
+              restoreMaterialStates(groundStates);
+            }
           }
         }
         nearGroundReplayCount++;
@@ -1505,6 +1433,7 @@
     } finally {
       if (scissored) restoreRendererScissor(renderer);
       camera.layers.mask = originalCameraMask;
+      renderer.localClippingEnabled = oldLocalClipping;
       if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
       scene.autoUpdate = oldSceneAutoUpdate;
       scene.background = oldBackground;
