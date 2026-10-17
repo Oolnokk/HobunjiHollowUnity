@@ -1,0 +1,155 @@
+name: Audit IKMC outpost fix
+
+on:
+  push:
+    branches:
+      - feature/ikmc-outpost-harkhanash-v2
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/ikmc-outpost-harkhanash-v2
+          fetch-depth: 0
+      - name: Repair audited placement and runtime door anchoring
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          piece_path = Path('docs/config/pieces/ikmc-outpost.json')
+          piece = json.loads(piece_path.read_text())
+          cells = piece['footprint']['cells']
+          gc = int(piece.get('gridSize', 18)) // 2
+          expected_min_x = min(c['x'] for c in cells) - gc
+          expected_max_x = max(c['x'] for c in cells) + 1 - gc
+          expected_min_z = min(c['y'] for c in cells) - gc
+          expected_max_z = max(c['y'] for c in cells) + 1 - gc
+          vertices = [v for face in piece['base']['faces'] for v in face['v']]
+          dx = expected_min_x - min(v[0] for v in vertices)
+          dz = expected_min_z - min(v[2] for v in vertices)
+          for face in piece['base']['faces']:
+              for v in face['v']:
+                  v[0] += dx
+                  v[2] += dz
+          vertices = [v for face in piece['base']['faces'] for v in face['v']]
+          assert (min(v[0] for v in vertices), max(v[0] for v in vertices)) == (expected_min_x, expected_max_x)
+          assert (min(v[2] for v in vertices), max(v[2] for v in vertices)) == (expected_min_z, expected_max_z)
+          piece_path.write_text(json.dumps(piece, indent=2) + '\n')
+
+          door_path = Path('docs/js/building-door.js')
+          door = door_path.read_text()
+          old = '''  function resolveDoorEntrance(pieceData) {
+            pieceData = normalizePieceData(pieceData);
+            const derived = deriveDoorLocal(pieceData);
+            const authored = pieceData?.footprint?.door;
+            if (derived && authored && Number.isFinite(authored.x) && Number.isFinite(authored.y)) {
+              const allBldgCells = footprintCells(pieceData);
+              const minX = Math.min(...allBldgCells.map(c => c.x));
+              const minY = Math.min(...allBldgCells.map(c => c.y));
+              return { bboxW: derived.bboxW, bboxD: derived.bboxD, cells: [{ x: authored.x - minX, y: authored.y - minY }], psCells: [] };
+            }
+            return derived;
+          }
+          '''
+          new = '''  function resolveDoorEntrance(pieceData) {
+            pieceData = normalizePieceData(pieceData);
+            const derived = deriveDoorLocal(pieceData);
+            const authored = pieceData?.footprint?.door;
+            if (derived && authored && Number.isFinite(authored.x) && Number.isFinite(authored.y)) {
+              // Authored doors are coordinates on the structural footprint. HousePieceGen anchors its
+              // rendered shell to footprint.cells, so porch/chimney extensions west or north of that
+              // shell must not silently translate the door away from the visible building.
+              const structuralCells = pieceData?.footprint?.cells || []; // Structural shell cells define the building's gridX/gridZ origin.
+              if (!structuralCells.length) return derived;
+              const minX = Math.min(...structuralCells.map(c => c.x));
+              const minY = Math.min(...structuralCells.map(c => c.y));
+              const maxX = Math.max(...structuralCells.map(c => c.x));
+              const maxY = Math.max(...structuralCells.map(c => c.y));
+              return {
+                bboxW: maxX - minX + 1,
+                bboxD: maxY - minY + 1,
+                cells: [{ x: authored.x - minX, y: authored.y - minY }],
+                psCells: [],
+              };
+            }
+            return derived;
+          }
+          '''
+          if old not in door:
+              raise SystemExit('resolveDoorEntrance source block did not match expected branch content')
+          door_path.write_text(door.replace(old, new, 1))
+
+          test_path = Path('scripts/test-ikmc-outpost.js')
+          test = test_path.read_text()
+          test = test.replace("const fs = require('node:fs');\n", "const fs = require('node:fs');\nconst vm = require('node:vm');\n", 1)
+          face_anchor = "assert.deepEqual(new Set(piece.base.faces.map(face => face.outpostFace)), new Set(['bottom','top','south','north','west','east']));\n"
+          face_checks = r'''
+const structuralCells = piece.footprint.cells;
+const gridCenter = Math.floor((piece.gridSize || 18) / 2);
+const expectedPieceBounds = [
+  Math.min(...structuralCells.map(c => c.x)) - gridCenter,
+  Math.max(...structuralCells.map(c => c.x)) + 1 - gridCenter,
+  Math.min(...structuralCells.map(c => c.y)) - gridCenter,
+  Math.max(...structuralCells.map(c => c.y)) + 1 - gridCenter,
+];
+const outpostVertices = piece.base.faces.flatMap(face => face.v);
+assert.deepEqual([
+  Math.min(...outpostVertices.map(v => v[0])),
+  Math.max(...outpostVertices.map(v => v[0])),
+  Math.min(...outpostVertices.map(v => v[2])),
+  Math.max(...outpostVertices.map(v => v[2])),
+], expectedPieceBounds, 'Outpost six-face prism must occupy the same local bounds as its painted structural footprint');
+'''
+          if face_anchor not in test:
+              raise SystemExit('IKMC face assertion anchor not found')
+          test = test.replace(face_anchor, face_anchor + face_checks, 1)
+
+          door_anchor = "assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [15,7,'map_i_ikmc_outpost']);\n"
+          runtime_checks = r'''
+const doorContext = { window: {}, console };
+doorContext.window.window = doorContext.window;
+vm.createContext(doorContext);
+vm.runInContext(fs.readFileSync('docs/js/building-door.js', 'utf8'), doorContext, { filename: 'building-door.js' });
+const buildingDoor = doorContext.window.BuildingDoor;
+const liveOutpostDoor = buildingDoor.doorWorldFromBuilding(
+  buildingDoor.resolveDoorEntrance(piece), outpost.gridX, outpost.gridZ, outpost.rotationDeg || 0, town.rows - 1
+);
+assert.deepEqual([liveOutpostDoor.col, liveOutpostDoor.row], [outpostDoor.col, outpostDoor.row],
+  'live BuildingDoor resolution must preserve the authored Outpost transition even when porch extensions extend west of the shell');
+assert(mine.gridX + mine.footprintW <= outpost.gridX, 'mine and Outpost structural footprints must not overlap');
+assert(outpost.gridX + outpost.footprintW <= carpenter.gridX, 'Outpost and Carpenter structural footprints must not overlap');
+'''
+          if door_anchor not in test:
+              raise SystemExit('IKMC town door assertion anchor not found')
+          test = test.replace(door_anchor, door_anchor + runtime_checks, 1)
+          test_path.write_text(test)
+
+          index_path = Path('docs/index.html')
+          index = index_path.read_text()
+          old_token = 'js/building-door.js?v=20260725a'
+          new_token = 'js/building-door.js?v=20261017ikmcaudit1'
+          if old_token not in index:
+              raise SystemExit('building-door cache-bust token did not match expected branch content')
+          index_path.write_text(index.replace(old_token, new_token, 1))
+          PY
+      - name: Run targeted audited regressions
+        run: |
+          node scripts/test-ikmc-outpost.js
+          node scripts/test-stacked-log-walls.js
+          node --check docs/js/building-door.js
+      - name: Commit fix and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/audit-ikmc-outpost-fix.yml
+          git add docs/config/pieces/ikmc-outpost.json docs/js/building-door.js docs/index.html scripts/test-ikmc-outpost.js
+          git commit -m "Fix audited IKMC outpost placement and door anchoring"
+          git push origin HEAD:feature/ikmc-outpost-harkhanash-v2
