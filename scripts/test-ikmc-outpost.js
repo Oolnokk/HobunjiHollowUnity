@@ -2,6 +2,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 
 const piece = read('docs/config/pieces/ikmc-outpost.json');
@@ -11,6 +12,22 @@ assert.equal(piece.wallStyle, 'logs', 'IKMC Outpost exterior must use stacked ge
 assert.equal(piece.base.faces.length, 6, 'Outpost shipping piece must retain the exact six-face prism');
 assert(piece.base.faces.every(face => face.tag === 'wall'), 'all six Outpost prism faces must remain tagged wall');
 assert.deepEqual(new Set(piece.base.faces.map(face => face.outpostFace)), new Set(['bottom','top','south','north','west','east']));
+
+const structuralCells = piece.footprint.cells;
+const gridCenter = Math.floor((piece.gridSize || 18) / 2);
+const expectedPieceBounds = [
+  Math.min(...structuralCells.map(c => c.x)) - gridCenter,
+  Math.max(...structuralCells.map(c => c.x)) + 1 - gridCenter,
+  Math.min(...structuralCells.map(c => c.y)) - gridCenter,
+  Math.max(...structuralCells.map(c => c.y)) + 1 - gridCenter,
+];
+const outpostVertices = piece.base.faces.flatMap(face => face.v);
+assert.deepEqual([
+  Math.min(...outpostVertices.map(v => v[0])),
+  Math.max(...outpostVertices.map(v => v[0])),
+  Math.min(...outpostVertices.map(v => v[2])),
+  Math.max(...outpostVertices.map(v => v[2])),
+], expectedPieceBounds, 'Outpost six-face prism must occupy the same local bounds as its painted structural footprint');
 
 const interior = read('docs/config/maps/map_i_ikmc_outpost.json');
 assert.equal(interior.wallStyle, 'logs', 'IKMC Outpost interior walls must use the shared stacked-log renderer');
@@ -50,6 +67,19 @@ assert.deepEqual([mineDoor.col, mineDoor.row], [10,5], 'mine door transition mus
 assert(outpost && outpost.pieceFile === 'config/pieces/ikmc-outpost.json', 'town must place the authored IKMC Outpost piece');
 assert.equal(outpost.gridZ, mine.gridZ, 'mine and Outpost must share the same northern placement line');
 assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [15,7,'map_i_ikmc_outpost']);
+
+const doorContext = { window: {}, console };
+doorContext.window.window = doorContext.window;
+vm.createContext(doorContext);
+vm.runInContext(fs.readFileSync('docs/js/building-door.js', 'utf8'), doorContext, { filename: 'building-door.js' });
+const buildingDoor = doorContext.window.BuildingDoor;
+const liveOutpostDoor = buildingDoor.doorWorldFromBuilding(
+  buildingDoor.resolveDoorEntrance(piece), outpost.gridX, outpost.gridZ, outpost.rotationDeg || 0, town.rows - 1
+);
+assert.deepEqual([liveOutpostDoor.col, liveOutpostDoor.row], [outpostDoor.col, outpostDoor.row],
+  'live BuildingDoor resolution must preserve the authored Outpost transition even when porch extensions extend west of the shell');
+assert(mine.gridX + mine.footprintW <= outpost.gridX, 'mine and Outpost structural footprints must not overlap');
+assert(outpost.gridX + outpost.footprintW <= carpenter.gridX, 'Outpost and Carpenter structural footprints must not overlap');
 
 const stream = Object.entries(town.tiles || {}).filter(([,tile]) => tile?.type === 'stream').map(([key]) => key.split(',').map(Number));
 const riverDistance = Math.min(...stream.map(([c,r]) => Math.abs(c - mineDoor.col) + Math.abs(r - mineDoor.row)));
