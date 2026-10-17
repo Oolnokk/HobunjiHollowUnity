@@ -157,6 +157,16 @@
     return null;
   }
 
+  // Bag items (potions, flasks, large carried objects) live on game.js's heldItemHolder, not
+  // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
+  function playerHeldItemTarget(record) {
+    if (inAttackEditor() || record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
+    if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
+    if (gameDeps.toolHolder?.visible) return null;
+    const target = gameDeps.getHeldItemHandTarget?.();
+    return target?.holder?.visible ? target : null;
+  }
+
   function modelKeyForRecord(record) {
     if (inAttackEditor()) {
       const editorModelKey = global.HobunjiAttackEditorHandContext?.currentModelKey?.();
@@ -491,6 +501,40 @@
     };
   }
 
+  const HELD_LARGE_EDGE_MARGIN = 0.02; // Large items are gripped just outside their left/right edges.
+
+  // Hands follow the held-item holder directly. Bottle: right hand on the neck (+Z of the
+  // holder because the plane is laid flat end-for-end). Large: right/left hands on either side.
+  function syncRigToHeldItem(record, target) {
+    const THREE = record.THREE;
+    const holder = target.holder;
+    holder.updateWorldMatrix(true, false);
+    const holderQuat = hierarchyWorldQuaternion(record, holder, new THREE.Quaternion());
+    const modelCalibration = modelCalibrationForRecord(record);
+    const place = (side, local, rotationDeg) => {
+      const position = holder.localToWorld(new THREE.Vector3(local.x, local.y, local.z));
+      const quaternion = holderQuat.clone().multiply(quaternionFromDeg(record, rotationDeg));
+      const socket = handSocketAfterGripMode(record, { position, quaternion, visualBasis: null });
+      record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
+    };
+    const owners = ensureFallbackState(record).owners;
+    if (target.mode === 'large') {
+      const edge = target.width / 2 + HELD_LARGE_EDGE_MARGIN;
+      place('right', { x: edge, y: 0, z: 0 }, { pitch: 0, yaw: -90, roll: 0 });
+      place('left', { x: -edge, y: 0, z: 0 }, { pitch: 0, yaw: 90, roll: 0 });
+      owners.right = 'held-item-two-hand-right';
+      owners.left = 'held-item-two-hand-left';
+      record.secondaryActive = true;
+    } else {
+      place('right', { x: 0, y: 0, z: target.height * (Number(target.neckFraction) || 0.2) }, { pitch: 90, yaw: -90, roll: 0 });
+      applyFallbackSide(record, 'left');
+      owners.right = 'held-item-bottle-neck';
+      record.secondaryActive = false;
+    }
+    record.lastToolKey = null;
+    record.lastVisualGripBasis = null;
+  }
+
   function syncRigToTool(record, toolHolder, diagnostic = false) {
     if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
@@ -631,8 +675,10 @@
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
-        const holder = currentToolHolder(record);
-        if (holder) syncRigToTool(record, holder);
+        const heldItem = playerHeldItemTarget(record);
+        const holder = heldItem ? null : currentToolHolder(record);
+        if (heldItem) syncRigToHeldItem(record, heldItem);
+        else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
       }
     };
@@ -676,8 +722,10 @@
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
-        const holder = currentToolHolder(record);
-        if (holder) syncRigToTool(record, holder);
+        const heldItem = playerHeldItemTarget(record);
+        const holder = heldItem ? null : currentToolHolder(record);
+        if (heldItem) syncRigToHeldItem(record, heldItem);
+        else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
       }
     }

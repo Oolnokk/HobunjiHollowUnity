@@ -298,7 +298,7 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-<script src="../../js/held-action-animations.js?v=20261017h94c8fc4"></script>
+<script src="../../js/held-action-animations.js?v=20261017h44c0c02"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -1430,6 +1430,7 @@ const ACTION_DEFS = [
   { id: 'crossbow_load', group: 'Non-attack held actions', label: 'Crossbow — Load', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_load', practical: false },
   { id: 'scatterbow_load', group: 'Non-attack held actions', label: 'Scatterbow — Load', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_load', practical: false },
   { id: 'drink', group: 'Non-attack held actions', label: 'Drink', heldAnimationKey: 'drink', practical: false, toolKey: 'bottle' },
+  { id: 'held_item_large', group: 'Non-attack held actions', label: 'Large Held Item — Idle (two-hand)', heldAnimationKey: 'heldItemLarge', practical: false, toolKey: 'bottle' },
   { id: 'heavy_idle', group: 'Non-attack held actions', label: 'Heavy Weapon — Idle', templateId: 'heavy_weapon_idle', practical: false },
   { id: 'light_idle', group: 'Non-attack held actions', label: 'Light Weapon — Idle', templateId: 'light_weapon_idle', practical: false },
 ];

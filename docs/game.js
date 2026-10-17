@@ -22178,6 +22178,20 @@
       // Per-item-key overrides for HELD_ITEM_PLANE_WIDTH — most icons read fine
       // at the default size; add entries here for outliers (e.g. tiny/huge glyphs).
       const ITEM_HELD_PLANE_SCALE = {};
+      const HELD_FLASK_SIZE_MULT = 1.25; // Throwing flasks read 25% larger in hand and in flight (projectiles reuse this plane).
+      const LARGE_HELD_ITEM_CATS = new Set(['furniture', 'building', 'blueprint', 'livestock']); // Item categories carried two-handed; everything else uses the small bottle stance.
+
+      function isThrowFlaskItem(item) {
+        if (!item?.key) return false;
+        const payload = window.AlchemySystem?.POTION_ITEMS?.[item.key] || window.AlchemySystem?.parseBrewedItemKey?.(item.key);
+        return window.AlchemySystem?.RECIPE_DEFS?.[payload?.recipeId]?.useMode === 'throw';
+      }
+
+      function isLargeHeldItem(item) {
+        if (!item) return false;
+        const def = ITEM_DEFS[item.key] || item;
+        return def.heldSize === 'large' || LARGE_HELD_ITEM_CATS.has(def.cat);
+      }
 
       const _itemIconTextures = {};
       function _getItemIconTexture(icon) {
@@ -22203,7 +22217,7 @@
         const def = ITEM_DEFS[item.key] || item;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
         // Width starts square and gains the source sprite's aspect ratio after load.
-        const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
+        const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1) * (isThrowFlaskItem(item) ? HELD_FLASK_SIZE_MULT : 1);
         const geo = new THREE.PlaneGeometry(w, w);
         // Authored items start with their PNG, so a bottle never flashes or
         // remains as an emoji while the ingredient recolor resolves.
@@ -22259,12 +22273,8 @@
 
       function usesThrustHeldPose(item) {
         if (!item) return false;
-        // Definition is checked for both procedural potion identity and alcohol tags.
-        const def = ITEM_DEFS[item.key] || item;
-        return item.key.startsWith('potion_')
-          || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
-          || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
-          || window.ItemProcessing.isAlcoholItemDef(def);
+        // Small handheld items (potions, alcohol, crops, materials...) all share the liquor-bottle idle stance; only large items use the two-hand carry.
+        return !isLargeHeldItem(item);
       }
 
       // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
@@ -22289,6 +22299,7 @@
       let _heldDrinkProgress = 0; // 0..1 forward progress through the authored drink animation.
       let _heldDrinkApply = null; // Used to apply the held-item effect at the authored drink strike.
       let _heldDrinkApplied = false; // Used to guarantee at most one commit callback per drink animation.
+      let _heldItemHandMode = null; // 'bottle' (one hand on the neck) or 'large' (both hands at the sides); read by getHeldItemHandTarget.
       let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
       let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
       let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
@@ -22311,10 +22322,26 @@
         };
       }
 
+      // Consumed by procedural-hand-frame-driver.js: bag items have no toolHolder, so the
+      // hands follow this holder directly (neck grip for bottles, both side edges for large items).
+      function getHeldItemHandTarget() {
+        if (!_heldItemPlane || !heldItemHolder.visible || !_heldItemHandMode) return null;
+        const geo = _heldItemPlane.geometry?.parameters;
+        return {
+          holder: heldItemHolder,
+          plane: _heldItemPlane,
+          mode: _heldItemHandMode,
+          width: (geo?.width || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.x || 1),
+          height: (geo?.height || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1),
+          neckFraction: _heldItemKey && isThrowFlaskItem({ key: _heldItemKey }) ? 0.07 : 0.2, // Neck centre above the sprite middle as a fraction of its height: matches the authored throwingflask grip for the tall flask PNG, the bottle PNG otherwise.
+        };
+      }
+
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
         heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
         heldItemHolder.scale.setScalar(0.5);
+        _heldItemHandMode = 'bottle';
         _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
         _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
         _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
@@ -22502,6 +22529,8 @@
           heldItemHolder.rotation.set(0, 0, 0);
           heldItemHolder.scale.setScalar(0.85);
           updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
+          applyHeldDrinkPose(window.HeldActionAnimations.throwFlask, 0); // Idle flask rests in the authored thrown-weapon stance, the same Neutral its throw starts from.
         } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
@@ -22510,11 +22539,15 @@
           heldItemHolder.scale.setScalar(0.5);
           if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
         } else {
-          heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
-          heldItemHolder.rotation.set(0, 0, 0);
+          const largePose = window.HeldActionAnimations?.heldItemLarge?.poses?.neutral || { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0 }; // Authored in the Attack Editor; same origin as the Drink pose.
+          heldItemHolder.position.set(playerToolBaseX + largePose.x, playerToolBaseY + largePose.y, largePose.z);
+          heldItemHolder.rotation.set(THREE.MathUtils.degToRad(largePose.pitch), THREE.MathUtils.degToRad(largePose.yaw), THREE.MathUtils.degToRad(largePose.roll), 'YXZ');
           heldItemHolder.scale.setScalar(1);
           if (_heldItemPlane) _heldItemPlane.rotation.x = 0;
+          _heldItemHandMode = 'large';
         }
+        if (isKurraya) _heldItemHandMode = null;
+        else if (usesThrustHeldPose(item)) _heldItemHandMode = 'bottle';
         heldItemHolder.visible = !!_heldItemPlane;
       }
 
@@ -29138,7 +29171,7 @@
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         getActiveScene: window.GridTileAccessors.getActiveScene,
-        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        playerMesh, playerGroundShadow, toolHolder, getHeldItemHandTarget, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
         _isBuildingArea,
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
         startSceneTransition,
