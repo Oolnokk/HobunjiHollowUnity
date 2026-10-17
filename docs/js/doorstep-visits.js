@@ -44,6 +44,7 @@
   let runtimeDeps = null; // BanditCombat adapters; active scene/grid/player-face helpers already supplied by game.js.
   let gameDeps = null; // DoorstepVisits.init({ save, getPlayerTile }) from game.js.
   let lastSpawnAttempt = null; // Companion diagnostics retain the last attempted visit and any concrete spawn blocker.
+  const spawnAttemptsByNpc = new Map(); // Preserves each visitor outcome when a later provider spawns successfully.
   let activeVisit = null; // One visitor at a time.
   let lastArea = null;
   let lastSyncAt = 0;
@@ -106,14 +107,13 @@
     }
   }
 
-  function nextVisit() {
+  function* pendingVisits() {
     for (const provider of providers) {
       let visit = null;
       try { visit = provider.next(); }
       catch (error) { console.warn(`[doorstep-visits] ${provider.id}.next failed`, error); }
-      if (visit?.key && visit?.npcId) return { ...visit, providerId: provider.id };
+      if (visit?.key && visit?.npcId) yield { ...visit, providerId: provider.id };
     }
-    return null;
   }
 
   // ── Persistent flags ──────────────────────────────────────────────────
@@ -327,8 +327,28 @@
     };
   }
 
-  function rejectSpawn(visit, reason) {
+  function sourceDiagnostics(npcId) {
+    const walker = sourceWalker(npcId); // Checks the exact source lookup used to clone visitors.
+    return {
+      ...gameDeps?.getNpcSpawnDiagnostics?.(npcId),
+      npcId,
+      schedulingReady: !!scheduleDeps?.npcWalkers,
+      walkerCount: scheduleDeps?.npcWalkers?.length || 0,
+      sourceAvailable: !!walker,
+      sourceArea: walker?.area || null,
+      rootAvailable: !!walker?.root,
+      rootCloneAvailable: typeof walker?.root?.clone === 'function',
+      lastAttempt: spawnAttemptsByNpc.has(npcId) ? clone(spawnAttemptsByNpc.get(npcId)) : null,
+    };
+  }
+
+  function recordSpawnAttempt(visit, reason) {
     lastSpawnAttempt = { key: visit?.key || null, npcId: visit?.npcId || null, reason };
+    if (visit?.npcId) spawnAttemptsByNpc.set(visit.npcId, { ...lastSpawnAttempt });
+  }
+
+  function rejectSpawn(visit, reason) {
+    recordSpawnAttempt(visit, reason);
     return false;
   }
 
@@ -374,7 +394,7 @@
       dispose() { visual.root.parent?.remove?.(visual.root); },
     };
     scheduleDeps.npcWalkers.push(proxy);
-    lastSpawnAttempt = { key: visit.key, npcId: visit.npcId, reason: 'Spawned successfully.' };
+    recordSpawnAttempt(visit, 'Spawned successfully.');
     activeVisit = {
       visit, source, proxy, root: visual.root, door, spot,
       dialogueStarted: false,
@@ -428,8 +448,12 @@
   // ── Area watch ────────────────────────────────────────────────────────
   function onFarmhouseExit() {
     syncProviders();
-    const visit = nextVisit();
-    if (visit) spawnVisit(visit);
+    // A temporarily unavailable visitor must not starve lower-priority providers.
+    // Failed visits stay pending; stop only after one visitor actually appears.
+    for (const visit of pendingVisits()) { // Candidates are requested lazily in provider priority order.
+      if (spawnVisit(visit)) return true;
+    }
+    return false;
   }
 
   function currentArea() {
@@ -526,6 +550,7 @@
     whenApiAssigned,
     registerProvider,
     sourceWalker,
+    sourceDiagnostics,
     spawnVisit,
     removeActiveVisitor,
     dismissVisit,

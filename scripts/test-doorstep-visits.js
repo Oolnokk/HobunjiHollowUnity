@@ -429,3 +429,62 @@ console.log('doorstep visits: ok');
   snapshot.lastSpawnAttempt.reason = 'changed';
   assert.equal(api.debugSnapshot().lastSpawnAttempt.reason, 'Spawned successfully.');
 }
+
+// An unavailable higher-priority visitor must not starve a ready story visit.
+{
+  const ctx = makeContext(); // Isolated queue with missing Hreesh and available Jubmir.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Real spawn adapters.
+  const api = ctx.window.DoorstepVisits; // Runtime queue under test.
+  const tree = { nodes: [{ id: 'hello', type: 'text', text: 'Hello.' }] }; // Shared visit dialogue fixture.
+  let lowerCalls = 0; // Ensures selection stops after the first successful spawn.
+  api.registerProvider({ id: 'trust', priority: 100, next: () => ({ key: 'hreesh-gift', npcId: 'hreesh', tree }) });
+  api.registerProvider({ id: 'story', priority: 50, next: () => ({ key: 'jubmir-story', npcId: 'jubmir', tree }) });
+  api.registerProvider({ id: 'later', priority: 0, next() { lowerCalls++; return null; } });
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), 'jubmir-story');
+  assert.equal(world.walkers.filter(walker => walker._doorstepVisitor).length, 1);
+  assert.equal(lowerCalls, 0);
+  assert.equal(api.isDone('hreesh-gift'), false, 'failed visits are not consumed');
+  world.walkers.push({ ...world.walkers[0], rec: { id: 'hreesh', dialogueTrees: [] } });
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), 'hreesh-gift', 'recovered higher-priority visitor retries on the next exit');
+  world.walkers.splice(0, world.walkers.length);
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), null, 'all unavailable candidates leave no active visitor');
+  assert.equal(lowerCalls, 1, 'all providers are tried when no visit can spawn');
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.npcId, 'jubmir');
+}
+
+// Mobile diagnostics preserve failed visitors after another provider succeeds.
+{
+  const ctx = makeContext(); // Isolates diagnostic state from the other visit scenarios.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Hreesh's record exists but his avatar failed.
+  const api = ctx.window.DoorstepVisits; // Shipping diagnostics are exercised through the public API.
+  api.init({ getNpcSpawnDiagnostics: npcId => ({
+    recordFound: npcId === 'hreesh', spawnStage: 'Avatar build failed',
+    spawnError: 'Portrait image failed to load', scheduleTarget: { area: 'map_i_inn', c: 4, r: 6 },
+  }) });
+  const tree = { nodes: [] }; // Minimal valid visitor dialogue.
+  api.registerProvider({ id: 'trust', priority: 100, next: () => ({ key: 'weapon_trust:hreesh_kylie', npcId: 'hreesh', tree }) });
+  api.registerProvider({ id: 'story', priority: 50, next: () => ({ key: 'jubmir-story', npcId: 'jubmir', tree }) });
+  goOutside(ctx, world);
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.npcId, 'jubmir');
+  const missing = api.sourceDiagnostics('hreesh'); // Failure remains visible even though last overall attempt succeeded.
+  assert.equal(missing.sourceAvailable, false);
+  assert.equal(missing.recordFound, true);
+  assert.equal(missing.spawnStage, 'Avatar build failed');
+  assert.equal(missing.spawnError, 'Portrait image failed to load');
+  assert.equal(missing.scheduleTarget.area, 'map_i_inn');
+  assert.equal(missing.lastAttempt.key, 'weapon_trust:hreesh_kylie');
+  assert.equal(missing.lastAttempt.reason, 'Source NPC is unavailable.');
+  missing.lastAttempt.reason = 'edited';
+  assert.equal(api.sourceDiagnostics('hreesh').lastAttempt.reason, 'Source NPC is unavailable.');
+  world.walkers.push({ ...world.walkers[0], rec: { id: 'hreesh' }, area: 'map_i_inn' });
+  assert.equal(api.sourceDiagnostics('hreesh').sourceAvailable, true);
+  assert.equal(api.sourceDiagnostics('hreesh').sourceArea, 'map_i_inn');
+  assert.equal(api.sourceDiagnostics('hreesh').rootCloneAvailable, true);
+  goOutside(ctx, world);
+  assert.equal(api.sourceDiagnostics('hreesh').lastAttempt.reason, 'Spawned successfully.');
+}

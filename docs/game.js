@@ -9564,6 +9564,7 @@
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
       const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
+      const npcSpawnDiagnostics = new Map(); // Retains scheduled-avatar build outcomes for mobile doorstep diagnostics.
       const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
       window._npcWalkers = window.NpcPathfinding?.trackWalkerArray?.(npcWalkers) || npcWalkers; // Pushed walkers get collision-aware movement (js/npc-pathfinding.js).
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
@@ -11651,6 +11652,7 @@
           window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Freeze authored default-clothing traits before save restoration/manual outfit overrides can redefine this NPC's gift-acceptance style.
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
+          npcSpawnDiagnostics.set(rec.id, { stage: target ? 'Queued for avatar build' : 'No schedule target', error: null });
           if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
           spawnable.push({ rec, target });
         }
@@ -11669,8 +11671,16 @@
           while (nextSpawn < spawnable.length) {
             const { rec, target } = spawnable[nextSpawn++];
             if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-            try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
-            catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
+            npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
+            try {
+              const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
+              if (w) npcWalkers.push(w);
+              npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created' : 'Avatar build returned no walker', error: null });
+            }
+            catch (e) {
+              npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
+              console.warn('NPC walker failed for schedule', rec?.id, e);
+            }
             finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
           }
         };
@@ -11704,10 +11714,21 @@
           for (const rec of records) {
             if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
-            if (!target) { stillDeferred.push(rec); continue; }
+            if (!target) {
+              npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
+              stillDeferred.push(rec); continue;
+            }
             if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-            try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
-            catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+            npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
+            try {
+              const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
+              if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); }
+              npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created on retry' : 'Avatar retry returned no walker', error: null });
+            }
+            catch (e) {
+              npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
+              console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
+            }
             finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
@@ -28812,6 +28833,16 @@
         openNpcDialogue: walker => openNpcDialogue(walker),
       });
       window.DoorstepVisits?.init?.({
+        getNpcSpawnDiagnostics: npcId => {
+          const rec = scheduledNpcRecords.get(npcId); // Reads the same database record used by ordinary NPC spawning.
+          const target = rec ? resolveNpcScheduleTarget(rec) : null; // Checks today's authoritative schedule without spawning anything.
+          return {
+            recordFound: !!rec,
+            spawnStage: npcSpawnDiagnostics.get(npcId)?.stage || 'No scheduled spawn recorded',
+            spawnError: npcSpawnDiagnostics.get(npcId)?.error || null,
+            scheduleTarget: target ? { area: target.area, c: target.c, r: target.r } : null,
+          };
+        },
         save: saveMemberWorldData,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
       });

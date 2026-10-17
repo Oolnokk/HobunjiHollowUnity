@@ -656,6 +656,7 @@
     const profile = window.__hobunjiPlayerProfile; // Supplies owner eligibility for the companion's read-only story panel.
     const story = window.OpeningStoryCutscene.debugSnapshot(); // Reuses the same progress and countdown sent to companion diagnostics.
     const doorstep = window.DoorstepVisits?.debugSnapshot?.(); // Adds visitor runtime readiness and the most recent spawn failure.
+    const hreesh = window.DoorstepVisits?.sourceDiagnostics?.('hreesh'); // Live source/build status plus retained Hreesh-specific spawn failure.
     const fey = story.jubmirFey; // Shared persisted countdown/completion, with no timer writes from rendering.
     const registered = doorstep?.providers?.includes(FEY_VISIT_KEY); // Detects a missed provider registration without changing the queue.
     let reason = 'Ready — exit the farmhouse to request the visit.'; // Human-readable eligibility summary shown above the raw progress rows.
@@ -691,8 +692,17 @@
         ['Jubmir source NPC available', window.DoorstepVisits?.sourceWalker?.('jubmir') ? 'Yes' : 'No'],
         ['Farmhouse entrances', doorstep ? window.DoorstepVisits.exitDoorCandidates().length : 'Unavailable'],
         ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
+        ['Hreesh requested NPC id', hreesh?.npcId || 'Unavailable'],
+        ['Hreesh database record loaded', hreesh?.recordFound == null ? 'Unavailable' : hreesh.recordFound ? 'Yes' : 'No'],
+        ['Hreesh live source / area', hreesh?.sourceAvailable ? `Yes / ${hreesh.sourceArea || 'Unknown'}` : 'No'],
+        ['Hreesh cloneable root', hreesh?.rootCloneAvailable ? 'Yes' : 'No'],
+        ['Hreesh scheduled spawn stage', hreesh?.spawnStage || 'Unavailable'],
+        ['Hreesh avatar build error', hreesh?.spawnError || 'None recorded'],
+        ['Hreesh current schedule target', hreesh?.scheduleTarget ? JSON.stringify(hreesh.scheduleTarget) : 'None resolved'],
+        ['Hreesh last visit attempt', hreesh?.lastAttempt ? `${hreesh.lastAttempt.key}: ${hreesh.lastAttempt.reason}` : 'None this session'],
+        ['Live NPC walker count', hreesh?.walkerCount ?? 'Unavailable'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Overdue Jubmir story visits bring him back outside trading days and keep him available until the inn conversation finishes.'],
+        ['Latest change', 'Unavailable visitors no longer block the queue. Hreesh diagnostics now show database, schedule, avatar build, live source, and retained visit outcomes.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };
