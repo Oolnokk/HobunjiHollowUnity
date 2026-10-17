@@ -5,7 +5,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require('playwright');
+let chromium;
+try {
+  ({ chromium } = require('playwright'));
+} catch (error) {
+  if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  console.log('skip: playwright is not installed (browser-only test)'); // CI's regression job installs no browser dependencies.
+  process.exit(0);
+}
 
 const navSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'controller-ui-nav.js'), 'utf8'); // Shipped navigation module under test.
 
