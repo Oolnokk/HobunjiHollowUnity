@@ -119,7 +119,7 @@
     ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20261007h99b53f8', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
     ['js/sleep-passage-action-bridge.js?v=20261017hea36e23', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 3],
-    ['js/day-progress-review.js?v=20261017ha68cc69', () => Number(window.DayProgressReview?.version) >= 1],
+    ['js/day-progress-review.js?v=20261017h455b5d7', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/day-progress-review-relationship-ui.js?v=20261016h4aa30ec', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
     ['js/menu-tab-icon-only.js?v=20261016hcc30777', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20260904a', () => !!window.HobunjiNpcSocialSeating],
