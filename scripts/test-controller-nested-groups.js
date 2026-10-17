@@ -85,6 +85,12 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('right'); assert.equal(ui.focusedElement(), b);
   press('right'); assert.equal(ui.focusedElement(), b, 'Right cannot escape to a nearby outside item');
   press('tabNext'); assert.equal(tabB.clicks, 1, 'bumper switches tabs without first focusing their bar');
+  assert.equal(ui.debugState().groupDepth, 0, 'bumper selection exits the chooser');
+  tabA.focus();
+  assert.equal(ui.debugState().groupDepth, 1, 'native tab focus enters its chooser');
+  press('confirm');
+  assert.equal(ui.debugState().groupDepth, 0, 'confirming a tab releases the chooser');
+  assert.equal(ui.focusedElement(), tabs, 'tab row remains a single candidate after selection');
   assert.equal(ui.debugState().groupDepth, 0, 'switching tabs releases the old nested section');
   b.focus();
   press('cancel'); assert.equal(ui.focusedElement(), group);
@@ -201,8 +207,10 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   outsideVisible.getBoundingClientRect = () => ({ left: 10, top: 80, width: 80, height: 24 });
   for (const element of scrollGroup.children) element.y = 0;
   scrollFrame(1); press('down');
-  assert.equal(ui.focusedElement(), outsideVisible, 'an entirely offscreen nest unwinds to visible siblings');
-  assert.equal(ui.debugState().groupDepth, 0);
+  assert.notEqual(ui.focusedElement(), outsideVisible, 'manual scroll never exits the entered container');
+  assert.equal(ui.debugState().groupDepth, 1, 'offscreen containers retain focus until Back');
+  press('cancel');
+  assert.equal(ui.debugState().groupDepth, 0, 'Back releases the offscreen container');
   scrollPanel.hidden = true; await rebuild(scrollPanel);
 
   const treeToggle = button('tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // The authored toggle opens just its own collapsible tree.

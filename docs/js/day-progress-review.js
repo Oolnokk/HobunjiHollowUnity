@@ -511,15 +511,21 @@
 
   async function advancePassageHours(kind, totalHours) {
     const hours = Math.max(1, Math.round(finiteNumber(totalHours, 1))); // Selected sleep/wait duration advanced one represented hour at a time.
+    let elapsedHours = 0; // Reports actual committed time when Cancel stops this review-aware loop.
     let tickDurationMs = PASSAGE_FIRST_TICK_MS; // Current black-screen hold duration shortened after each displayed hour.
     renderPassageTick(kind, hours);
     for (let elapsed = 1; elapsed <= hours; elapsed++) {
+      if (calendarApi?.isTimePassageCancelled?.()) break;
       await delayMs(tickDurationMs);
+      if (calendarApi?.isTimePassageCancelled?.()) break;
       await advanceOnePassageHour(kind);
+      elapsedHours = elapsed;
+      calendarApi?.recordTimePassageHour?.(elapsed);
       const remaining = hours - elapsed; // Remaining selected hours displayed after this completed tick.
       renderPassageTick(kind, remaining);
       tickDurationMs *= PASSAGE_TICK_DECAY;
     }
+    return elapsedHours;
   }
 
   function restorePlayerAfterSleep() {
@@ -576,6 +582,7 @@
     const cancel = document.getElementById('timePassageCancel'); // Existing Cancel listener reused afterward for private timer/lock cleanup.
     const backdrop = document.querySelector?.('.time-passage-backdrop'); // Existing passage modal switched into its normal transitioning presentation.
     if (confirm?.dataset.dayProgressReviewRunning === '1') return;
+    if (calendarApi.beginTimePassageRun?.() === false) return;
     if (confirm) {
       confirm.dataset.dayProgressReviewRunning = '1';
       confirm.disabled = true;
@@ -584,15 +591,15 @@
 
     try {
       await calendarApi.runScreenTransition?.(async () => {
-        await advancePassageHours(kind, selectedHours);
-        if (kind === 'sleep') restorePlayerAfterSleep();
+        const elapsedHours = await advancePassageHours(kind, selectedHours); // Shared cancellation leaves the clock at the most recent displayed hour.
+        if (kind === 'sleep' && elapsedHours > 0) restorePlayerAfterSleep();
         persistCalendarSnapshot();
         window.WeatherFX?.updateRainState?.();
         window.dispatchEvent?.(new CustomEvent('hobunji-time-passage', {
-          detail: { kind, hours: selectedHours, day: calendarDeps.calendar.day, time01: calendarDeps.calendar.time01 },
+          detail: { kind, hours: elapsedHours, cancelled: !!calendarApi.isTimePassageCancelled?.(), day: calendarDeps.calendar.day, time01: calendarDeps.calendar.time01 },
         }));
       });
-      log(`${kind} advanced ${selectedHours}h with midnight review gate`);
+      log(`${kind} passage ended at ${calendarApi.formatCalendarDateTimeFull?.() || 'current hour'} with midnight review gate`);
     } catch (error) {
       log(`${kind} passage failed: ${error?.message || error}`, 'error');
     } finally {
@@ -600,6 +607,7 @@
         delete confirm.dataset.dayProgressReviewRunning;
         confirm.disabled = false;
       }
+      calendarApi.finishTimePassageRun?.();
       if (cancel) cancel.click();
       else closePassageUiFallback();
     }
@@ -778,6 +786,14 @@
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-label', 'Day progress review');
+    root.setAttribute('data-ctrl-panel', '');
+    root.setAttribute('data-ctrl-actions', '');
+    root.addEventListener('hobunji-controller-panel-action', event => {
+      event.preventDefault();
+      if (event.detail?.action !== 'confirm') return;
+      if (document.getElementById('dayReviewContinue')?.classList.contains('ready')) finishActiveReview();
+      else fastForwardReveal = true;
+    });
     root.innerHTML = `
       <div class="day-review-panel">
         <div class="day-review-kicker">Day Complete</div>
@@ -890,6 +906,7 @@
     root.classList.add('open');
     root.tabIndex = -1;
     root.focus({ preventScroll: true });
+    window.ControllerUI?.focusPanel?.(root);
 
     const revealables = [...root.querySelectorAll('.day-review-pending')]; // Section titles, rows, cards, and conversion lines revealed in DOM order.
     for (const element of revealables) {
@@ -1020,7 +1037,7 @@
       reviewedDayKey: state?.reviewedDayKey || null,
       blocking: !!activeReviewPromise,
       interruptionBlocked: reviewInterruptionBlocked(),
-      latestChange: 'Midnight review waits for fishing, combat and open menus to finish.',
+      latestChange: 'Day review claims controller focus on opening; Cancel stops review-aware waiting at the displayed hour.',
       naturalGateInstalled: !!calendarDeps?.calendar?.__dayProgressReviewTimeGate,
       passageGateInstalled: document.getElementById('timePassageConfirm')?.dataset?.dayProgressReviewGate === '1',
       ledger: state ? JSON.parse(JSON.stringify(state.ledger)) : null,

@@ -18796,7 +18796,12 @@
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
         if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
-        if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
+        if (sitInteraction) {
+          if (activeAction === 'obj_stand') endSitInteraction();
+          else if (activeAction === 'calendar_wait') window.CalendarSystem?.openTimePassage?.('wait');
+          else if (activeAction === 'temple_pray') window.TemplePrayerRestBlessings?.openMenu?.();
+          return;
+        }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
@@ -25074,7 +25079,10 @@
       function computeActionButtons() {
         const _cabStart = performance.now();
         try {
-          return computeActionButtonsImpl();
+          const buttons = computeActionButtonsImpl(); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
+          if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
+          return buttons;
         } finally {
           window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
         }
@@ -25087,7 +25095,11 @@
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
-          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+          const seatedActions = [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }]; // Shared seated actions drive touch, keyboard, controller and floating prompts.
+          seatedActions.push({ icon: '⏳', label: 'Wait', action: 'calendar_wait', inputAction: 'action2', style: 'secondary', allowed: sitInteraction.phase === 'active' && !!window.CalendarSystem?.openTimePassage });
+          const prayerAction = window.TemplePrayerRestBlessings?.getPrayerAction?.(); // The blessing owner supplies the same eligible prayer used by its menu.
+          if (prayerAction) seatedActions.push(prayerAction);
+          return seatedActions;
         }
         // Fishing gets its own arc buttons instead of the harpoon's normal
         // "Fish" one (which would just call beginFishingCast() again and
@@ -25411,7 +25423,7 @@
           btns.push({
             icon: tile.cropReady ? data.emoji : '🌱',
             label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
-            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
+            action: 'harvest', inputAction: 'action1', style: tile.cropReady ? 'harvest' : 'secondary',
             allowed: tile.cropReady,
             worldInteraction: !!tile.cropReady,
             promptRoot: _worldInteractionPromptAnchor, // Keeps the floating harvest cue on the aimed crop tile.
@@ -25614,13 +25626,13 @@
 
         if (!needsRebuild) return;
 
-        // Split tool actions from item-owned consume/plant/place/harvest actions;
+        // Split world/tool actions from item-owned consume/plant/place actions;
         // climb_branch is excluded from every arch slot below for the same
         // reason it's excluded from activeAction above — it still stays in
         // the full btns array so the 3D world-space prompt keeps working.
         const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
           || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
-          || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
+          || b.action.startsWith('place_') || b.action.startsWith('spawn_');
         const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
         const itemBtns = nonClimbBtns.filter(isItemButton);
 
@@ -25930,7 +25942,7 @@
           }
         }
 
-        if (heldMode === 'item') {
+        if (heldMode === 'item' && !sitInteraction) {
           // Item mode: all actions spread across all 5 arch positions
           // (climb_branch excluded — see nonClimbBtns above)
           applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));

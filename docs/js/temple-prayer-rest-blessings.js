@@ -11,7 +11,7 @@
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Well Rested and temple prayers now appear in the shared on-screen buff bar with labels and countdown fills; their timers still follow the in-game calendar.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Pray is part of the seated action list beside Stand and Wait, with shared touch, keyboard and controller activation throughout Anan.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -138,6 +138,7 @@
   function injectPrayAction() {
     const button = document.getElementById(ACTION_BUTTON_ID);
     if (!button) return false;
+    if (button.dataset.action === ACTION_ID && !button.classList.contains('abt-hidden')) return true;
     if (!actionInjected) { actionSnapshot = snapshotButton(button); actionInjected = true; }
     button.dataset.action = ACTION_ID;
     button.dataset.templePrayerInjected = '1';
@@ -390,6 +391,10 @@
     return `${Math.max(0, Math.ceil(safe))}h`;
   }
 
+  function getPrayerAction() {
+    return promptEligible() ? { icon: '🙏', label: 'Pray', action: ACTION_ID, inputAction: 'action3', style: 'secondary', allowed: true, worldInteraction: true } : null;
+  }
+
   function syncPrompt() {
     if (promptEligible()) injectPrayAction();
     else restorePrayAction();
@@ -426,6 +431,7 @@
   function onTimePassage(event) {
     if (event?.detail?.kind !== 'sleep') return;
     if (!consumeOwnedBedSleepToken()) return; // Debug or other generic Sleep passages must not grant Well Rested.
+    if (event.detail.hours === 0) return; // Cancelling before the first hour consumes the token without granting sleep benefits.
     grantWellRested();
   }
 
@@ -490,6 +496,7 @@
     potionEffectScale,
     debugSnapshot,
     openMenu,
+    getPrayerAction,
     _test: Object.freeze({ choosePrayer, grantWellRested, activeTemplePrayerDay, activeTempleService: activeTemplePrayerDay, seatedInTemplePew, promptEligible, expireState, strengthenPotionMultiplier, consumeOwnedBedSleepToken, sync }),
   });
 })();
