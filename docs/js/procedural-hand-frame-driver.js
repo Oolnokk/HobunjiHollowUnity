@@ -570,7 +570,8 @@
 
       let secondaryGrip = null;
       if (dualWield) {
-        const offhandBaseSocket = toolSocketWorld(record, toolHolder, primaryGrip); // Both duplicated weapons use the same authored 1H grip frame.
+        const offhandGrip = toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip; // Same authored 1H grip point, minus the main hand's palm-side offset: the offhand holds its copy from the other side.
+        const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip);
         const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) || offhandBaseSocket;
         const secondary = handSocketAfterGripMode(record, offhandSocket);
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);

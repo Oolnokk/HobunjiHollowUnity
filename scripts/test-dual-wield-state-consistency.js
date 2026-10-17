@@ -139,7 +139,7 @@ for (const editor of [true, false]) {
   const context = { visual: {}, plane, holder };
   const current = { ...context, mainRoot: root(), offRoot: root() };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
-    state: current, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
+    state: current, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {},
     idleOffhandLocalTransform() {
       assert.equal(operations[0], editor ? 'editor-bake' : 'game-bake', 'source matrices must be baked before calculating the offhand idle pose');
@@ -150,6 +150,29 @@ for (const editor of [true, false]) {
   });
   sync();
   assert.deepEqual(operations, [editor ? 'editor-bake' : 'game-bake', 'idle-pose', 'main-pose', 'root-world', 'root-world']);
+}
+// Authoring the offhand idle stance in the editor: the holder IS the offhand weapon, so the offhand copy is not derived
+// from it any more; the main-hand copy is derived from the holder instead (roles swapped), with no attack lag.
+{
+  const operations = [];
+  class Vector { clone() { return new Vector(); } copy() { return this; } set() { return this; } multiplyScalar() { return this; } }
+  class Quaternion { identity() { return this; } slerp() { return this; } }
+  const root = () => ({ updateMatrixWorld() {} });
+  const plane = { position: new Vector(), quaternion: new Quaternion(), updateWorldMatrix() {} };
+  const context = { visual: {}, plane, holder: {} };
+  const current = { ...context, mainRoot: root(), offRoot: root() };
+  const poses = { main: { id: 'main' }, offhand: { id: 'offhand' } };
+  const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
+    state: current, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
+    inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {},
+    idleOffhandLocalTransform() { operations.push('offhand-derived-from-holder'); return { position: new Vector(), quaternion: new Quaternion() }; },
+    idleStancePoses: () => poses,
+    idleCounterpartTransform(_current, source, derived) { operations.push(`${derived.id}-derived-from-${source.id}`); return { position: new Vector(), quaternion: new Quaternion() }; },
+    setRootToward() {}, applyMainLag() { operations.push('main-lag'); },
+    frameScratch: () => ({ offTargetPosition: new Vector(), offTargetQuaternion: new Quaternion() }),
+  });
+  sync();
+  assert.deepEqual(operations, ['main-derived-from-offhand'], 'offhand authoring moves the offhand weapon directly and derives main from the saved stance');
 }
 // Independent flags select behavior by weapon without rewriting the authored animation.
 const bothFlags = {

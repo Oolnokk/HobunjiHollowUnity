@@ -556,6 +556,35 @@
     };
   }
 
+  // Dual Wield's offhand holds its own copy of the weapon from the opposite side, so it must not inherit the main
+  // hand's palm-side offset along the item's normal (item Y). The default removes exactly the shared hand-on-item
+  // frame's Y, which every tool carries, so the offhand lands centered on the handle for whatever grip a weapon has.
+  // A tool may override it with `dualWieldOffhandGripOffset: { x, y, z }` in its grip data.
+  const DUAL_WIELD_OFFHAND_GRIP_OFFSET = Object.freeze({ x: 0, y: -HATCHET_PRIMARY_GRIP_EXAMPLE.y, z: 0 });
+
+  function dualWieldOffhandGripOffsetForTool(value) {
+    const raw = ensureTool(value)?.dualWieldOffhandGripOffset;
+    return {
+      x: numberOrZero(raw?.x ?? DUAL_WIELD_OFFHAND_GRIP_OFFSET.x),
+      y: numberOrZero(raw?.y ?? DUAL_WIELD_OFFHAND_GRIP_OFFSET.y),
+      z: numberOrZero(raw?.z ?? DUAL_WIELD_OFFHAND_GRIP_OFFSET.z),
+    };
+  }
+
+  // Same holder-space frame primaryGripForTool returns, for the OFFHAND weapon copy: the authored grip shifted by
+  // the offhand offset in item space, so the main hand keeps the authored grip untouched.
+  function offhandPrimaryGripForTool(value, context = currentGripContext(), identity = null) {
+    const authored = authoredPrimaryGripForTool(value, context);
+    const offset = dualWieldOffhandGripOffsetForTool(value);
+    authored.position.x += offset.x;
+    authored.position.y += offset.y;
+    authored.position.z += offset.z;
+    return {
+      position: itemPointToHolder(value, authored.position, context, identity),
+      rotationDeg: { ...authored.rotationDeg },
+    };
+  }
+
   // Held throw spin is a child-plane visual rotation, while the hand remains on
   // the authored grip frame. Translate the spinning PNG by P - R(P) so the
   // authored grip point P stays fixed in tool-holder space as the sprite rotates
@@ -735,10 +764,14 @@
       };
     }
     const opts = capturedMelee?.opts || {};
+    // combatProgress runs over the whole visual (windup + strike + hold + return tail), so the
+    // phase boundaries must be WeaponToolStances' normalized ones, exactly as the editor's
+    // sliders and hand-shoulder-pose-runtime use. The raw call options only describe
+    // windup+strike and carry no hold, which stretched the grip blend over the wrong span.
     return animationGripAt(snapshot.combatProgress, {
-      windupFrac: opts.windupFrac ?? 0.16,
-      strikeFrac: opts.strikeFrac ?? 0.55,
-      holdFrac: opts.holdFrac ?? 0.68,
+      windupFrac: snapshot.combatWindupFrac ?? opts.windupFrac ?? 0.16,
+      strikeFrac: snapshot.combatStrikeFrac ?? opts.strikeFrac ?? 0.55,
+      holdFrac: snapshot.combatHoldFrac ?? opts.holdFrac ?? 0.68,
       windupSlowdown: opts.windupSlowdown ?? 0,
       poseScale: snapshot.combatPoseScale ?? 1,
     }, opts.pose || {}, opts.sequence || 'attack', snapshot?.itemKey || snapshot?.shape || '');
@@ -778,12 +811,16 @@
       const original = deps[name];
       if (typeof original !== 'function') continue;
       deps[name] = function secondarySpanAwareCombatStart(durationS, opts = {}) {
+        // Start the visual first: this wrapper sits outside WeaponToolStances', and syncNow() reads
+        // runtimeAnimationGripState(), which clears capturedMelee while no stance visual is active.
+        // Capturing before the call lost the authored grip/dual-wield flags and fell back to defaults.
+        const result = original.call(this, durationS, opts);
         const stanceSnapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
         runtimeIdleDualWield = isDualWieldWeapon(stanceSnapshot?.itemKey || stanceSnapshot?.shape) && dualWieldEnabled(opts?.pose?.neutral?.dualWield, true);
         runtimeIdleDualToolKey = toolKeyFor(stanceSnapshot?.itemKey || stanceSnapshot?.shape || '') || null;
         capturedMelee = { durationS: Math.max(0.001, Number(durationS) || 0.5), opts: opts && typeof opts === 'object' ? opts : {}, kind: name === 'triggerWeaponHoldVisual' ? 'hold' : 'swing', startedAt: performance.now() };
         global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
-        return original.call(this, durationS, opts);
+        return result;
       };
     }
     const cancel = deps.cancelWeaponSwingHold;
@@ -1284,7 +1321,7 @@
     clone: cleanClone,
     toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
+    authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
     getDebug() {

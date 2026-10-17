@@ -1,10 +1,19 @@
 // Shared species/gender weapon-pose orbit scaling.
 //
 // Attack poses remain authored in Mao'ao space. The finished weapon point is
-// uniformly orbited around the avatar's visual/body centroid. Orbit size is an
-// explicit species+gender authoring value now; anatomical armLength remains a
-// separate measurement and is used only as a backwards-compatible fallback for
+// orbited around the avatar's visual/body centroid. Orbit size is an explicit
+// species+gender authoring value; anatomical armLength remains a separate
+// measurement and is used only as a backwards-compatible fallback for
 // old/missing config.
+//
+// An entry is either one number (X and Z scaled alike, Y untouched: the original
+// contract) or { x, y, z } so a species can set each axis independently:
+//   x  lateral (side-to-side) distance of the weapon from the body centre
+//   z  forward/back distance
+//   y  EXTRA vertical multiplier layered on the rigger-derived body-height
+//      mapping (1 = exactly the rigger's height mapping)
+// A missing axis in an object is 1. X/Z are the pose's own axes, i.e. they turn
+// with the character's facing (pass `yawRad` when the point is in world space).
 (() => {
   'use strict';
 
@@ -37,6 +46,27 @@
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
+  // Accepts a number or { x, y, z }; returns the axes, or null when the value is not usable.
+  function axesFromValue(value) {
+    const uniform = validScale(value);
+    if (uniform != null) return { x: uniform, y: 1, z: uniform };
+    if (!value || typeof value !== 'object') return null;
+    const x = validScale(value.x), y = validScale(value.y), z = validScale(value.z);
+    if (x == null && y == null && z == null) return null;
+    return { x: x ?? 1, y: y ?? 1, z: z ?? 1 };
+  }
+  // What is stored/exported: a plain number stays a number, an object keeps only its valid axes.
+  function sanitizeEntry(value) {
+    const uniform = validScale(value);
+    if (uniform != null) return uniform;
+    if (!value || typeof value !== 'object') return null;
+    const out = {};
+    for (const axis of ['x', 'y', 'z']) {
+      const n = validScale(value[axis]);
+      if (n != null) out[axis] = n;
+    }
+    return Object.keys(out).length ? out : null;
+  }
   function normalizeConfig(raw) {
     const next = clone(DEFAULT_CONFIG);
     if (raw?.schema) next.schema = String(raw.schema);
@@ -45,8 +75,8 @@
       if (!key || !genders || typeof genders !== 'object') continue;
       next.species[key] = { ...(next.species[key] || {}) };
       for (const [gender, value] of Object.entries(genders)) {
-        const scale = validScale(value);
-        if (scale != null) next.species[key][normalizeGender(gender)] = scale;
+        const entry = sanitizeEntry(value);
+        if (entry != null) next.species[key][normalizeGender(gender)] = entry;
       }
     }
     next.schema = 'hobunji_species_pose_orbit_scales.v1';
@@ -59,23 +89,38 @@
     const reach = Number(armLength);
     return Number.isFinite(reach) && reach > 0 ? reach / MAO_AO_ARM_LENGTH : 1;
   }
+  // Per-axis orbit for a poseOrbitScale value (number or { x, y, z }); null falls back to arm length.
+  function axesForPose(poseOrbitScale, armLength) {
+    const arm = scaleForArmLength(armLength);
+    return axesFromValue(poseOrbitScale) ?? { x: arm, y: 1, z: arm };
+  }
+  // Horizontal (X) orbit as one number: the original single-scale contract. Use axesForPose for Y/Z.
   function scaleForPose(poseOrbitScale, armLength) {
-    return validScale(poseOrbitScale) ?? scaleForArmLength(armLength);
+    return axesForPose(poseOrbitScale, armLength).x;
+  }
+  function resolveAxes(speciesId, gender, armLength = null) {
+    const key = normalizeSpeciesId(speciesId);
+    const authored = axesFromValue(config.species?.[key]?.[normalizeGender(gender)]);
+    return authored ?? axesForPose(null, armLength);
   }
   function resolveScale(speciesId, gender, armLength = null) {
-    const key = normalizeSpeciesId(speciesId);
-    const authored = validScale(config.species?.[key]?.[normalizeGender(gender)]);
-    return authored ?? scaleForArmLength(armLength);
+    return resolveAxes(speciesId, gender, armLength).x;
+  }
+  // The stored entry exactly as authored (number or object), or null: lets inheritance copy it without flattening.
+  function resolveAuthored(speciesId, gender) {
+    const entry = config.species?.[normalizeSpeciesId(speciesId)]?.[normalizeGender(gender)];
+    return entry == null ? null : clone(entry);
   }
   function setScale(speciesId, gender, value) {
     const key = normalizeSpeciesId(speciesId);
     const g = normalizeGender(gender);
-    const scale = validScale(value);
-    if (!key || scale == null) return false;
+    const entry = sanitizeEntry(value);
+    if (!key || entry == null) return false;
     if (!config.species[key]) config.species[key] = {};
-    config.species[key][g] = scale;
+    config.species[key][g] = entry;
+    const scale = axesFromValue(entry);
     for (const listener of listeners) {
-      try { listener({ speciesId: key, gender: g, scale, config: clone(config) }); } catch {}
+      try { listener({ speciesId: key, gender: g, scale: scale.x, axes: scale, config: clone(config) }); } catch {}
     }
     return true;
   }
@@ -148,29 +193,42 @@
     };
   }
 
-  // Compatibility surface retained for older callers: orbit scaling is now
-  // HORIZONTAL ONLY. Y must never be derived from poseOrbitScale again.
-  function scalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale) {
+  // Scales the horizontal offset (dx, dz) by sx along the pose's lateral axis and sz along its forward axis.
+  // yawRad is the facing of the pose frame when the point is in world space (right = (cos, -sin), forward =
+  // (sin, cos), as game.js builds its vRX/vFX); 0/omitted means the coordinates already ARE the pose frame
+  // (editor rig space, avatar-local previews). Equal scales are rotation-invariant, so they skip the frame.
+  function scaleHorizontal(dx, dz, sx, sz, yawRad) {
+    const yaw = Number(yawRad);
+    if (sx === sz || !Number.isFinite(yaw) || yaw === 0) return [dx * sx, dz * sz];
+    const c = Math.cos(yaw), n = Math.sin(yaw);
+    const a = (dx * c - dz * n) * sx; // lateral
+    const b = (dx * n + dz * c) * sz; // forward
+    return [a * c + b * n, -a * n + b * c];
+  }
+
+  // Compatibility surface retained for older callers. Y must never be derived from a plain-number poseOrbitScale:
+  // the orbit's own Y multiplier is 1 unless a species authors it, and Y is otherwise owned by the rigger-height mapping below.
+  function scalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale, yawRad = 0) {
     if (!point) return point;
-    const scale = scaleForPose(poseOrbitScale, armLength);
+    const axes = axesForPose(poseOrbitScale, armLength);
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
     if (![x, y, z, cx, cz].every(Number.isFinite)) return point;
-    const nextX = scale === 1 ? x : cx + (x - cx) * scale;
-    const nextZ = scale === 1 ? z : cz + (z - cz) * scale;
-    if (typeof point.set === 'function') point.set(nextX, y, nextZ);
-    else { point.x = nextX; point.y = y; point.z = nextZ; }
+    const [dx, dz] = scaleHorizontal(x - cx, z - cz, axes.x, axes.z, yawRad);
+    const nextY = axes.y === 1 || !Number.isFinite(cy) ? y : cy + (y - cy) * axes.y;
+    if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
+    else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;
   }
 
-  function unscalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale) {
+  function unscalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale, yawRad = 0) {
     if (!point) return point;
-    const scale = scaleForPose(poseOrbitScale, armLength);
+    const axes = axesForPose(poseOrbitScale, armLength);
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
-    if (![x, y, z, cx, cz].every(Number.isFinite) || !(scale > 0)) return point;
-    const nextX = scale === 1 ? x : cx + (x - cx) / scale;
-    const nextZ = scale === 1 ? z : cz + (z - cz) / scale;
-    if (typeof point.set === 'function') point.set(nextX, y, nextZ);
-    else { point.x = nextX; point.y = y; point.z = nextZ; }
+    if (![x, y, z, cx, cz].every(Number.isFinite) || !(axes.x > 0) || !(axes.y > 0) || !(axes.z > 0)) return point;
+    const [dx, dz] = scaleHorizontal(x - cx, z - cz, 1 / axes.x, 1 / axes.z, yawRad);
+    const nextY = axes.y === 1 || !Number.isFinite(cy) ? y : cy + (y - cy) / axes.y;
+    if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
+    else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;
   }
 
@@ -179,7 +237,9 @@
   // already includes portrait scale, vertical placement, and real opaque-art
   // grounding. The rigger's whole-body Y scale is applied around floorY, then
   // authored pose displacement from that hand anchor is scaled by the ratio of
-  // actual full character height to the canonical Mao'ao-male authoring height.
+  // actual full character height to the canonical Mao'ao-male authoring height
+  // (times the orbit's own Y multiplier, 1 unless authored). options.yawRad: see
+  // scaleHorizontal.
   function transformPosePoint(point, options = {}) {
     if (!point) return point;
     const x = Number(point.x), y = Number(point.y), z = Number(point.z);
@@ -188,14 +248,13 @@
     const floorY = Number(options.floorY) || 0;
     const baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
-    const orbitScale = scaleForPose(options.poseOrbitScale, options.armLength);
+    const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
-    const nextX = orbitScale === 1 ? x : cx + (x - cx) * orbitScale;
-    const nextY = scaledBaseY + (y - baseY) * metrics.heightRatio;
-    const nextZ = orbitScale === 1 ? z : cz + (z - cz) * orbitScale;
-    if (typeof point.set === 'function') point.set(nextX, nextY, nextZ);
-    else { point.x = nextX; point.y = nextY; point.z = nextZ; }
+    const [dx, dz] = scaleHorizontal(x - cx, z - cz, axes.x, axes.z, options.yawRad);
+    const nextY = scaledBaseY + (y - baseY) * metrics.heightRatio * axes.y;
+    if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
+    else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;
   }
 
@@ -207,15 +266,14 @@
     const floorY = Number(options.floorY) || 0;
     const baseY = Number(options.baseY);
     if (![x, y, z, cx, cz, floorY, baseY].every(Number.isFinite)) return point;
-    const orbitScale = scaleForPose(options.poseOrbitScale, options.armLength);
+    const axes = axesForPose(options.poseOrbitScale, options.armLength);
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
-    if (!(orbitScale > 0) || !(metrics.heightRatio > 0)) return point;
+    if (!(axes.x > 0) || !(axes.y > 0) || !(axes.z > 0) || !(metrics.heightRatio > 0)) return point;
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
-    const nextX = orbitScale === 1 ? x : cx + (x - cx) / orbitScale;
-    const nextY = baseY + (y - scaledBaseY) / metrics.heightRatio;
-    const nextZ = orbitScale === 1 ? z : cz + (z - cz) / orbitScale;
-    if (typeof point.set === 'function') point.set(nextX, nextY, nextZ);
-    else { point.x = nextX; point.y = nextY; point.z = nextZ; }
+    const [dx, dz] = scaleHorizontal(x - cx, z - cz, 1 / axes.x, 1 / axes.z, options.yawRad);
+    const nextY = baseY + (y - scaledBaseY) / (metrics.heightRatio * axes.y);
+    if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
+    else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;
   }
 
@@ -260,7 +318,11 @@
     reloadFromDatabaseSource,
     scaleForArmLength, // Compatibility/debug only; new pose consumers should use explicit poseOrbitScale.
     scaleForPose,
+    axesForPose,
+    axesFromValue,
     resolveScale,
+    resolveAxes,
+    resolveAuthored,
     resolveRigScaleY,
     portraitModelHeightFor,
     heightMetrics,

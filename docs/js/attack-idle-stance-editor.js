@@ -231,9 +231,35 @@
       return true;
     }
 
+    // The saved stance belongs to the hidden source weapon, which sits a little off the visible offhand copy, so turning only
+    // the rotation would swing the copy around that point. Re-aim X/Y/Z so the copy turns in place; both rotation frames use
+    // the editor's YXZ order (yaw, pitch, roll).
+    let pivotOffsetCache = null;
+    function pivotCompensated(prev, next) {
+      const ctx = window.HobunjiAttackEditorToolContext;
+      if (!(editingNeutral && selectedKey === 'dualWieldOffhand') || !ctx?.offhandPivotPoseOffset || !ctx.THREE) return next;
+      const rotated = ['pitch', 'yaw', 'roll'].some(key => Math.abs(numberOr(next[key]) - numberOr(prev[key])) > 1e-9);
+      const moved = ['x', 'y', 'z'].some(key => Math.abs(numberOr(next[key]) - numberOr(prev[key])) > 0.0075); // Neutral's 0.01-step sliders hand back rounded X/Y/Z; that rounding is not a position edit.
+      if (!rotated || moved) return next; // Position edits (e.g. a gizmo drag, which already pivots on the copy) are left as authored.
+      if (!pivotOffsetCache || pivotOffsetCache.key !== ctx.toolKey) { // Constant for a given weapon sprite, so measure it once rather than mid-update.
+        const measured = ctx.offhandPivotPoseOffset();
+        pivotOffsetCache = measured ? { key: ctx.toolKey, ...measured } : null;
+      }
+      const offset = pivotOffsetCache;
+      if (!offset) return next;
+      const T = ctx.THREE;
+      const quat = pose => new T.Quaternion().setFromEuler(new T.Euler(
+        numberOr(pose.pitch) * Math.PI / 180, numberOr(pose.yaw) * Math.PI / 180, numberOr(pose.roll) * Math.PI / 180, 'YXZ'));
+      const before = new T.Vector3(offset.x, offset.y, offset.z).applyQuaternion(quat(prev));
+      const after = new T.Vector3(offset.x, offset.y, offset.z).applyQuaternion(quat(next));
+      return { ...next, x: numberOr(next.x) + before.x - after.x, y: numberOr(next.y) + before.y - after.y, z: numberOr(next.z) + before.z - after.z };
+    }
+
     function captureNeutralPose({ quiet = false } = {}) {
-      const pose = readNeutralPose();
+      let pose = readNeutralPose();
       if (!pose) return false;
+      const compensated = pivotCompensated(currentPose(), pose);
+      if (compensated !== pose) { pose = compensated; writeNeutralPose(pose); } // Neutral sliders show the re-aimed position too.
       workingConfig.stances[selectedKey] = normalizePose(pose, currentPose());
       syncFieldsFromPose();
       lastNeutralSignature = JSON.stringify(pose);
@@ -249,9 +275,28 @@
         : 'Edit Selected in Neutral';
     }
 
+    function dualToolActive() {
+      return window.HobunjiHandToolGrips?.isDualWieldWeapon?.(window.HobunjiAttackEditorToolContext?.toolKey || '') === true;
+    }
+
+    // Decides what the Neutral gizmo drags. Offhand: the visible offhand weapon itself (anchor on its side, main copy
+    // placed from its saved stance), not the hidden main-hand parent the attack copies follow. Everything else: one weapon.
+    function applyEditPreviewMode() {
+      pivotOffsetCache = null;
+      const offhand = editingNeutral && selectedKey === 'dualWieldOffhand';
+      const pair = offhand && dualToolActive();
+      window.HobunjiDualWieldWeaponVisuals?.setEditorOffhandAuthoring?.(pair);
+      if (pair) setDualPairPreview(true);
+      else window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
+      window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
+      window.ProceduralHandFrameDriver?.syncNow?.();
+      window.HobunjiAttackEditorToolContext?.setOffhandAuthoringBase?.(offhand); // Last: it re-targets the gizmo, which needs the offhand copy to exist already.
+    }
+
     function stopEditingNeutral(message = '') {
-      if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(false);
+      const wasEditing = editingNeutral;
       editingNeutral = false;
+      if (wasEditing) applyEditPreviewMode();
       updateEditButton();
       if (message) setStatus(message);
     }
@@ -308,7 +353,16 @@
       input.addEventListener('input', () => {
         const value = numberOr(input.value);
         if (selectedKey === 'dualWieldOffhand' && field.key === 'bodyYaw') return;
+        const previous = { ...currentPose() };
         currentPose()[field.key] = value;
+        const compensated = pivotCompensated(previous, currentPose());
+        if (compensated !== currentPose()) {
+          Object.assign(currentPose(), { x: compensated.x, y: compensated.y, z: compensated.z });
+          for (const key of ['x', 'y', 'z']) { // Show the re-aimed position on the stance sliders too.
+            $(`idle_${key}`).value = currentPose()[key];
+            $(`idle_${key}_val`).textContent = currentPose()[key].toFixed(2);
+          }
+        }
         if (selectedKey === 'dualWieldMain' && field.key === 'bodyYaw') workingConfig.stances.dualWieldOffhand.bodyYaw = value;
         $(`idle_${field.key}_val`).textContent = field.angle ? `${value.toFixed(0)}°` : value.toFixed(2);
         if (editingNeutral) writeNeutralPose(currentPose());
@@ -321,21 +375,35 @@
       syncFieldsFromPose();
       window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       updateEditButton();
-      if (editingNeutral) { setDualPairPreview(false); writeNeutralPose(currentPose()); }
+      if (editingNeutral) { writeNeutralPose(currentPose()); applyEditPreviewMode(); }
       setStatus(`${STANCE_LABELS[selectedKey]} selected.`);
     });
 
     $('idleEditNeutralBtn').addEventListener('click', () => {
-      if (dualPairPreviewActive()) setDualPairPreview(false); // Isolate the offhand copy while the existing Neutral gizmo authors its explicit transform.
+      if (dualPairPreviewActive()) setDualPairPreview(false); // Any earlier pair preview is rebuilt below for the mode actually being edited.
       editingNeutral = !editingNeutral;
-      window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
       updateEditButton();
       if (editingNeutral) {
-        if (writeNeutralPose(currentPose())) setStatus(`Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
-        else stopEditingNeutral();
+        if (writeNeutralPose(currentPose())) {
+          applyEditPreviewMode();
+          setStatus(selectedKey === 'dualWieldOffhand' && dualToolActive()
+            ? 'Neutral sliders + gizmo now move the offhand weapon itself; the main-hand copy stays at its saved stance.'
+            : `Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
+        } else stopEditingNeutral();
       } else {
+        applyEditPreviewMode();
         setStatus('Stopped routing Neutral edits into idle stances.');
       }
+    });
+
+    // Offhand authoring re-anchors the preview, so it must never leak into attack authoring: picking another action or
+    // opening a Windup/Strike pose ends it. (Neutral stays, since that is where the stance is edited.)
+    const leaveOffhandAuthoring = () => {
+      if (editingNeutral && selectedKey === 'dualWieldOffhand') stopEditingNeutral('Stopped idle stance editing: moved on to attack authoring.');
+    };
+    document.getElementById('actionSelect')?.addEventListener('change', leaveOffhandAuthoring);
+    document.querySelectorAll('[data-edit-phase]').forEach(button => {
+      button.addEventListener('click', () => { if (button.dataset.editPhase !== 'neutral') leaveOffhandAuthoring(); });
     });
 
     $('idleMirrorDualOffhandBtn').addEventListener('click', mirrorDualWieldMainToOffhand);
@@ -419,7 +487,11 @@
         updateEditButton();
         if (editingNeutral) writeNeutralPose(currentPose());
         setDualPairPreview(dualPairPreview);
-        if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(true);
+        if (editingNeutral) applyEditPreviewMode();
+        else {
+          window.HobunjiDualWieldWeaponVisuals?.setEditorOffhandAuthoring?.(false);
+          window.HobunjiAttackEditorToolContext?.setOffhandAuthoringBase?.(false);
+        }
         setStatus(`History restored ${STANCE_LABELS[selectedKey]}.`);
         return true;
       },

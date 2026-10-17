@@ -403,7 +403,14 @@
     const dt = Math.max(0, (now - state.lastNow) / 1000);
     state.lastNow = now;
     const windupEndS = state.wf * state.totalS;
-    if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
+    // game.js owns the swing clock and caps its frame dt, so on slow frames the body/tool fall
+    // behind wall time. Follow its timeline whenever it is live; a wall-clock step would run the
+    // hands, grips and Neutral blend ahead of the pose the editor shows for the same phase.
+    const gameRemainingS = Number(window.Combat?.deps?.getWeaponAttackTimeline?.()?.remainingS);
+    if (Number.isFinite(gameRemainingS) && gameRemainingS > 0) {
+      const gameElapsedS = Math.max(0, state.totalS - gameRemainingS);
+      state.elapsedS = Math.min(state.held ? windupEndS : state.totalS, Math.max(state.elapsedS, gameElapsedS));
+    } else if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
     else state.elapsedS = Math.min(state.totalS, state.elapsedS + dt);
     state.progress = Math.max(0, Math.min(1, state.elapsedS / state.totalS));
     if (!state.held && state.progress >= 1 && !state.clearQueued) {
@@ -432,6 +439,16 @@
     if (p <= state.hf) return 1 - poseScale;
     const returnT = Math.max(0, Math.min(1, (p - state.hf) / Math.max(1e-6, 1 - state.hf))); // Used to blend the partial active pose back to full Neutral during recovery.
     return (1 - poseScale) + poseScale * returnT;
+  }
+
+  // How much of the sweep style's -90° in-plane twist to cancel this frame (1 = fully at Neutral). Weapons fade it
+  // with their attack. Tool slots (axe, fishing mace, ...) only cancel it while their idle stance is what is drawn:
+  // the Attack Editor cancels it at every sweep-style Neutral, so an axe at rest would otherwise sit turned 90° about
+  // its own face while the hands keep the editor's grip frame. Their own swings suppress the stance and keep the twist.
+  function sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied) {
+    if (activeSlot !== 'weapon' && !stanceApplied) return 0;
+    if (activeSlot === 'weapon' && visual?.anim === 'sweep') return neutralWeightForVisual(visual);
+    return !visual && def?.animStyle === 'sweep' ? 1 : 0;
   }
 
   function installCombatVisualHooks() {
@@ -511,6 +528,8 @@
 
     holder.position.add(positionDelta);
     holder.quaternion.copy(baseQ).multiply(targetQ);
+    const facing = new THREE.Vector3(0, 0, 1).applyQuaternion(baseQ); // The pose frame's forward axis: lets per-axis species orbits scale its lateral/forward axes.
+    return { yawRad: Math.atan2(facing.x, facing.z) };
   }
 
   function logState(activeSlot, itemKey, def, stateLabel) {
@@ -550,8 +569,8 @@
         savedPosition = this.position.clone();
         savedQuaternion = this.quaternion.clone();
         try {
-          applyRelativeHolderPose(this, sourcePose, targetPose);
-          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position); // Weapon idle uses the same finished-point centroid orbit as attacks.
+          const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');
@@ -564,10 +583,8 @@
       // (fully while idle, fading out by windup, fading back in on return)
       // directly on the child plane's own local axis instead of guessing a
       // compensating holder/global Euler rotation.
-      if (toolPlane && activeSlot === 'weapon') {
-        const idleSweep = !visual && def?.animStyle === 'sweep';
-        const attackSweep = visual?.anim === 'sweep';
-        const neutralWeight = attackSweep ? neutralWeightForVisual(visual) : (idleSweep ? 1 : 0);
+      if (toolPlane) {
+        const neutralWeight = sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied);
         if (neutralWeight > 0) {
           savedPlaneRotationZ = toolPlane.rotation.z;
           toolPlane.rotation.z += Math.PI / 2 * neutralWeight;
@@ -725,6 +742,7 @@
     },
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
+    sweepTwistCancelWeight,
     idleBodyYawSnapshot,
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,

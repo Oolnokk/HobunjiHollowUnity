@@ -419,6 +419,7 @@
     group.userData.armLength = portrait.userData?.armLength ?? null; // Anatomical reach retained independently from weapon pose scaling.
     group.userData.scaledArmLength = portrait.userData?.scaledArmLength ?? null; // Rendered-space reach retained for non-combat anatomy consumers.
     group.userData.poseOrbitScale = portrait.userData?.poseOrbitScale ?? 1; // Explicit species+gender weapon-orbit multiplier.
+    group.userData.poseOrbitAxes = portrait.userData?.poseOrbitAxes ?? null; // Per-axis { x, y, z } orbit; null on legacy portraits.
     group.userData.speciesId = portrait.userData?.speciesId || roster.appearance.speciesId; // Used by shared vertical pose-height mapping after the portrait is converted into the bandit group.
     group.userData.gender = portrait.userData?.gender || roster.appearance.gender; // Paired with speciesId for the same shared pose-height lookup.
     group.userData.handAttachX = portrait.userData?.handAttachX; // Preserves the scanned raw hand anchor for melee/ranged pose mapping.
@@ -473,6 +474,7 @@
       handAttachY: portrait.userData?.handAttachY,
       armLength: portrait.userData?.armLength,
       poseOrbitScale: portrait.userData?.poseOrbitScale ?? 1,
+      poseOrbitAxes: portrait.userData?.poseOrbitAxes ?? null,
       visualCentroidLocalY: portrait.userData?.visualCentroidLocalY ?? 0,
       poseCentroidY: portrait.userData?.poseCentroidY ?? (modelHeight * 0.5),
       dispose() {
@@ -2045,10 +2047,14 @@
     // twirl, refillTwistOut/Back) don't apply to a bandit's own combat
     // swing, so only the two channels real combat swings actually use are
     // ported here.
-    const spinPlane = holder.children[0]?.userData?.toolPlane;
+    const spinMesh = holder.children[0];
+    const spinPlane = spinMesh?.userData?.toolPlane;
     if (spinPlane) {
       spinPlane.rotation.z = anim === 'sweep' ? -Math.PI / 2 : 0;
-      spinPlane.scale.x = anim === 'sweep' ? dirSign : 1;
+      // Backhand is a midline reflection of the whole tool (the Attack Editor's Flip Across Midline), so it
+      // goes on the parent mesh, after the plane's spin; a child-plane flip leaves the blade facing Forehand.
+      spinPlane.scale.x = 1;
+      spinMesh.scale.x = Math.abs(spinMesh.scale.x) * (anim === 'sweep' && dirSign < 0 ? -1 : 1);
     }
 
     let progress = 0, wf = 0.16;
@@ -2149,7 +2155,7 @@
         feetY + base.y + y,
         c.y / deps.TILE + vRZ * (base.x + x) + vFZ * z,
       );
-      scaleBanditToolPositionAroundCentroid(c, holder); // Finished raw pose is uniformly orbited around this avatar's visual centroid.
+      scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Finished raw pose is orbited around this avatar's visual centroid (per-axis in the pose's own frame).
     } else {
       // THRUST -- mirrors updateToolMesh's own thrust branch exactly
       // (same windup-back/jab-forward/lateral/pitch/yaw formulas), used
@@ -2187,16 +2193,16 @@
         feetY + base.y,
         c.y / deps.TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
       );
-      scaleBanditToolPositionAroundCentroid(c, holder); // Legacy thrust uses the same finished-point transform without changing rotation/timing.
+      scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Legacy thrust uses the same finished-point transform without changing rotation/timing.
     }
   }
 
-  function scaleBanditToolPositionAroundCentroid(c, holder) {
+  function scaleBanditToolPositionAroundCentroid(c, holder, poseYawRad = 0) {
     const avatarRef = c?.avatarRef; // Holds the portrait-derived hand anchor and species/gender pose metadata.
     const group = avatarRef?.group; // Center-anchored bandit avatar used to derive the character floor.
     if (!holder || !group) return holder;
     const armLength = Number(avatarRef?.armLength ?? group.userData?.armLength);
-    const poseOrbitScale = Number(avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale);
+    const poseOrbitScale = avatarRef?.poseOrbitAxes ?? group.userData?.poseOrbitAxes ?? Number(avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale); // Per-axis { x, y, z } when the species authored one.
     const modelHeight = Number(avatarRef?.modelHeight ?? group.userData?.portraitModelHeight) || 0.9;
     const rawHandAttachY = Number(avatarRef?.handAttachY ?? group.userData?.handAttachY); // Used below as the unscaled floor-relative weapon base.
     const floorY = group.position.y - modelHeight / 2; // Bandit group is center-anchored, unlike the player's floor-anchored body root.
@@ -2209,10 +2215,10 @@
       scaler.transformPosePoint(holder.position, {
         cx: group.position.x, cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight, rigScaleY: 1,
-        armLength, poseOrbitScale,
+        armLength, poseOrbitScale, yawRad: poseYawRad,
       });
     } else {
-      scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale);
+      scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, poseYawRad);
     }
     c._banditLastCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Mobile/debug-readable authored orbit factor.
     c._banditLastPoseHeightScale = height?.heightRatio ?? 1; // Mobile/debug-readable vertical scale proving bandits use the same authored-Y contract.

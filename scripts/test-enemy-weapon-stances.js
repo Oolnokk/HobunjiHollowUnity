@@ -35,10 +35,11 @@ const BanditCombat = { // Minimal public BanditCombat API wrapped by the runtime
       dirSign: entity._banditSwingDirSign,
       power: entity._banditSwingPower,
     });
-    const toolPlane = entity._banditToolHolder?.children?.[0]?.userData?.toolPlane;
+    const toolMesh = entity._banditToolHolder?.children?.[0];
+    const toolPlane = toolMesh?.userData?.toolPlane;
     if (toolPlane) {
       toolPlane.rotation.z = entity._banditSwingAnim === 'sweep' ? -Math.PI / 2 : 0;
-      toolPlane.scale.x = entity._banditSwingAnim === 'sweep' ? (entity._banditSwingDirSign || 1) : 1;
+      toolPlane.scale.x = entity._banditSwingAnim === 'sweep' ? (entity._banditSwingDirSign || 1) : 1; // Legacy renderer's plane flip; the stance adapter must replace it with a mesh-level midline mirror.
     }
     return 'rendered';
   },
@@ -82,7 +83,7 @@ function makeEntity({ weaponKey, speciesId = 'mao-ao', anim = 'thrust', pose = n
     health: 100,
     def: { weaponKey },
     avatarRef: { profile: { speciesId } },
-    _banditToolHolder: { children: [{ userData: { toolPlane } }] },
+    _banditToolHolder: { children: [{ scale: { x: 1 }, updateMatrix() {}, userData: { toolPlane } }] },
     _banditSwingAnim: anim,
     _banditSwingPose: pose,
     _banditSwingDirSign: sign,
@@ -167,7 +168,8 @@ function approx(actual, expected, epsilon = 1e-9) {
   approx(prepared.pose.windup.z, spacedWindup.z);
   approx(prepared.pose.windup.bodyYaw, bakedWindup.bodyYaw);
   approx(entity._banditToolHolder.children[0].userData.toolPlane.rotation.z, 0);
-  assert.strictEqual(entity._banditToolHolder.children[0].userData.toolPlane.scale.x, -1);
+  assert.strictEqual(entity._banditToolHolder.children[0].userData.toolPlane.scale.x, 1, 'Backhand never flips the sprite plane itself');
+  assert.strictEqual(entity._banditToolHolder.children[0].scale.x, -1, 'Backhand mirrors the whole tool across the midline, like the player and the editor');
 }
 
 // During a sweep windup, the neutral-only plane compensation fades linearly:

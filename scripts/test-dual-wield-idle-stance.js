@@ -12,12 +12,9 @@ assert.equal(config.version, 2, 'dual idle authoring upgrades the stance schema'
 assert.deepEqual(config.stances.dualWieldMain, config.stances.lightWeapon, 'default dual main is exactly the Light Weapon stance');
 const main = config.stances.dualWieldMain;
 const off = config.stances.dualWieldOffhand;
-assert.equal(off.x, -main.x, 'default offhand mirrors X after the shared body yaw');
-assert.equal(off.y, main.y, 'default offhand preserves Y');
-assert.equal(off.z, main.z, 'default offhand preserves forward Z');
-assert.equal(off.pitch, main.pitch, 'default offhand preserves pitch');
-assert.equal(off.yaw, -main.yaw, 'default offhand mirrors yaw');
-assert.equal(off.roll, -main.roll, 'default offhand mirrors roll');
+// The committed offhand is an independently authored pose (not a mirror of main): it only has to be a complete pose
+// that shares the body yaw. The editor's Mirror Main -> Offhand action still produces the mirrored starting point.
+for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll']) assert.ok(Number.isFinite(off[key]), `authored offhand ${key} is a number`);
 assert.equal(off.bodyYaw, main.bodyYaw, 'both idle weapons share the normal body yaw');
 
 assert.match(editor, /dualWieldMain: 'Dual Wield — Main hand'/, 'idle editor exposes a dedicated main-hand preset');

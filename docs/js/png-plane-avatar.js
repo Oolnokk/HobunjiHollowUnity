@@ -1084,10 +1084,14 @@
     const legacyArmLength = Number.isFinite(legacyConfiguredArmLength) && legacyConfiguredArmLength > 0 ? legacyConfiguredArmLength : null;
     const speciesId = options.speciesId ?? options.profile?.fighter?.speciesId ?? null;
     const gender = options.gender ?? options.profile?.fighter?.gender ?? null;
-    const configuredPoseOrbitScale = Number(options.poseOrbitScale ?? options.profile?.fighter?.poseOrbitScale);
-    const poseOrbitScale = Number.isFinite(configuredPoseOrbitScale) && configuredPoseOrbitScale > 0
-      ? configuredPoseOrbitScale
-      : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, legacyArmLength) ?? (legacyArmLength ? legacyArmLength / 0.558 : 1)); // Explicit species+gender weapon orbit is independent from anatomy; old armLength is only a fallback.
+    const orbitScaler = window.HobunjiSpeciesPoseScale;
+    const configuredOrbit = options.poseOrbitScale ?? options.profile?.fighter?.poseOrbitScale; // A number, or per-axis { x, y, z }.
+    const fallbackOrbit = legacyArmLength ? legacyArmLength / 0.558 : 1;
+    // Explicit species+gender weapon orbit is independent from anatomy; old armLength is only a fallback.
+    const poseOrbitAxes = orbitScaler?.axesFromValue?.(configuredOrbit)
+      ?? orbitScaler?.resolveAxes?.(speciesId, gender, legacyArmLength)
+      ?? { x: fallbackOrbit, y: 1, z: fallbackOrbit };
+    const poseOrbitScale = poseOrbitAxes.x; // Horizontal X orbit as a single number, for callers that predate per-axis scales.
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
     const root = new THREE.Group();
@@ -1143,6 +1147,7 @@
     root.userData.gender = gender;
     root.userData.armLength = legacyArmLength; // Replaced below after handAttachY exists and rigger-derived anatomy can resolve.
     root.userData.scaledArmLength = legacyArmLength; // Same temporary fallback; concrete gameplay-space reach must not be height-scaled a second time.
+    root.userData.poseOrbitAxes = poseOrbitAxes; // Per-axis { x, y, z } orbit: what pose consumers should pass to HobunjiSpeciesPoseScale.
     root.userData.poseOrbitScale = poseOrbitScale; // Explicit species+gender weapon pose radius multiplier authored independently from anatomy.
     root.userData.visualCentroidLocalX = 0; // Visible portrait-plane centroid inside this root.
     root.userData.visualCentroidLocalY = assemblyY; // Root zero is not generally the visual centroid because the assembly is vertically shifted.

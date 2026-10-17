@@ -1610,7 +1610,7 @@
     // the ranged stance's X/Z calibration.
     holder.position.set(c.x / deps.TILE + rx * (-0.34 + pose.x) + fx * pose.z, baseY + pose.y, c.y / deps.TILE + rz * (-0.34 + pose.x) + fz * pose.z);
     const armLength = Number(c.avatarRef?.armLength ?? group.userData?.armLength); // Anatomical reach retained only as a backwards-compatible fallback.
-    const poseOrbitScale = Number(c.avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale);
+    const poseOrbitScale = c.avatarRef?.poseOrbitAxes ?? group.userData?.poseOrbitAxes ?? Number(c.avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale); // Per-axis { x, y, z } when the species authored one.
     const speciesId = c.avatarRef?.speciesId || group.userData?.speciesId || null; // Used by the shared portrait-height ratio.
     const gender = c.avatarRef?.gender || group.userData?.gender || 'male';
     const scaler = window.HobunjiSpeciesPoseScale;
@@ -1619,10 +1619,10 @@
       scaler.transformPosePoint(holder.position, {
         cx: group.position.x, cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight, rigScaleY: 1,
-        armLength, poseOrbitScale,
+        armLength, poseOrbitScale, yawRad: vθ,
       });
     } else {
-      scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale);
+      scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, vθ);
     }
     c._rangedPoseCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     c._rangedPoseHeightScale = height?.heightRatio ?? 1; // Debug proof that ranged bandits share player/editor authored-Y semantics.
