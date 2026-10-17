@@ -23304,8 +23304,13 @@
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ);
           }
-          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
-          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
+          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc. Like the
+          // Attack Editor's "Flip Across Midline" this is a midline reflection of the whole tool, so it
+          // goes on the parent mesh (applied after the sweep's in-plane spin). Flipping the child plane
+          // instead mirrors the sprite across its own face, which leaves the blade pointing the Forehand way.
+          const mirrorSign = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
+          spinPlane.scale.x = 1;
+          if (spinMesh) spinMesh.scale.x = Math.abs(spinMesh.scale.x) * (mirrorSign < 0 ? -1 : 1); // Held-item grip scaling preserves this sign (hand-tool-grips applyScaleFromBase).
         }
 
         const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.
