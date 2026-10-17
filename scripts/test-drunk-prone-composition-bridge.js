@@ -210,10 +210,13 @@ vm.runInContext(source, context, { filename: modulePath });
   mockedRunLean = 0.15;
   playerLegs.update(0.016, 3, false, undefined, { combat: true });
   assert.strictEqual(composerSet.name, 'run-lean');
+  assert.strictEqual(composerSet.contribution.space, 'world');
   assert(Math.abs(composerSet.contribution.quaternion.x - Math.sin(mockedRunLean / 2)) < 1e-12);
   for (let i = 0; i < 8; i++) {
     const yaw = i * Math.PI / 4; // Covers cardinal and diagonal logical headings relative to a held billboard.
-    playerLegs.group.rotation.y = yaw;
+    playerLegs.group.rotation.y = yaw + 0.8; // Portrait-relative leg yaw deliberately differs from actual movement.
+    player.vx = Math.sin(yaw) * 4.3;
+    player.vy = Math.cos(yaw) * 4.3;
     mockedRunLean = Math.PI / 6;
     playerLegs.update(0.016, 4.3, false, undefined, { combat: true });
     const q = composerSet.contribution.quaternion; // Exact rotated-up vector reveals whether the body leans forward or backward.
