@@ -16,8 +16,10 @@ assert.match(authorSource, /Object\.keys\(window\.CreatureGeneticsRender\?\.SPEC
   'Animation Author creature selectors must continue deriving their species list from the live creature renderer');
 assert.match(authorSource, /animationAuthor\.attachmentRigProfiles\.creatures\[kind\] = profile/,
   'Rig Coordinates must keep creating per-creature profiles for repository creature actors');
+assert.match(bridgeSource, /\.\.\/\.\.\/js\/voorg-ass-registration\.js/,
+  'Animation Author must load the canonical Voorg-Ass registration owner before gameplay genetics');
 assert.match(bridgeSource, /\.\.\/\.\.\/js\/creature-genetics\.js/,
-  'Animation Author must load the same gameplay genetics extension that registers post-renderer creature species');
+  'Animation Author must then load the same gameplay genetics extension that registers post-renderer creature species');
 assert.match(bridgeSource, /getElementById\('maaCreatureSpecies'\)/,
   'registry sync must repair the actual Add creature target species picker');
 
@@ -44,7 +46,13 @@ const creatureSelect = { // Simulates the broken Add creature target dropdown be
   appendChild(option) { this.options.push(option); return option; },
 };
 const listeners = new Map();
-let requestedRegistryScript = null; // Captures the gameplay genetics module requested by the Animation Author bridge.
+const requestedRegistryScripts = []; // Captures the ordered extension modules requested by the Animation Author bridge.
+function addListener(type, listener) { // Preserves DOMContentLoaded registration order while keeping the other test listeners single-valued.
+  if (type !== 'DOMContentLoaded') { listeners.set(type, listener); return; }
+  const bucket = Array.isArray(listeners.get(type)) ? listeners.get(type) : [];
+  bucket.push(listener);
+  listeners.set(type, bucket);
+}
 const location = { pathname: '/Oolnokk/HobunjiHollowUnity/0123456789012345678901234567890123456789/docs/tools/animation-author/index.html', href: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/0123456789012345678901234567890123456789/docs/tools/animation-author/index.html' };
 
 const sourceProfiles = {
@@ -100,13 +108,14 @@ const window = {
   clearInterval() {},
 };
 const document = {
+  readyState: 'loading',
   body: { dataset: { animationAuthorMode: 'rig' } },
   getElementById(id) {
     if (id === 'maaImportInput') return importInput;
     if (id === 'maaCreatureSpecies') return creatureSelect;
     return null;
   },
-  addEventListener(type, listener) { listeners.set(type, listener); },
+  addEventListener(type, listener) { addListener(type, listener); },
   createElement(tag) {
     if (tag === 'option') return { value: '', textContent: '' };
     if (tag === 'script') return { dataset: {}, src: '', async: true, onload: null, onerror: null };
@@ -114,9 +123,22 @@ const document = {
   },
   head: {
     appendChild(script) {
-      requestedRegistryScript = script.src;
-      window.CreatureGeneticsRender.SPECIES.puktuk = { base: { idle: 'puktuk-idle.png' } };
-      window.CreatureGeneticsRender.SPECIES['voorg-ass'] = { base: { idle: 'voorg-ass-idle.png' } };
+      requestedRegistryScripts.push(script.src);
+      if (script.src.includes('/voorg-ass-registration.js?')) {
+        window.VoorgAssRegistration = {
+          ensureRendererSpecies(species) {
+            species['voorg-ass'] = { base: { idle: 'assets/creaturesprites/voorg-ass_idle.png' } };
+            return true;
+          },
+        };
+      } else if (script.src.includes('/creature-genetics.js?')) {
+        const reinstallRendererExtensions = () => {
+          window.CreatureGeneticsRender.SPECIES.puktuk = { base: { idle: 'assets/creaturesprites/puktuk_idle.png' } };
+          window.VoorgAssRegistration.ensureRendererSpecies(window.CreatureGeneticsRender.SPECIES);
+        };
+        reinstallRendererExtensions();
+        document.addEventListener('DOMContentLoaded', reinstallRendererExtensions, { once: true }); // Reproduces the real late retry that previously undid the author's URL normalization.
+      }
       script.onload?.();
       return script;
     },
@@ -143,7 +165,13 @@ vm.runInContext(bridgeSource, context, { filename: 'animal-chathead-frame.js' })
 
 const registrySync = window.HobunjiAnimationAuthorCreatureRegistrySync;
 assert.ok(registrySync, 'creature target registry sync debug API must be exposed');
-assert.match(requestedRegistryScript, /\/docs\/js\/creature-genetics\.js\?v=/, 'Animation Author should request creature-genetics.js from its own commit-relative docs tree');
+assert.strictEqual(requestedRegistryScripts.length, 2, 'Animation Author should request exactly the two post-renderer registration modules');
+assert.match(requestedRegistryScripts[0], /\/docs\/js\/voorg-ass-registration\.js\?v=/, 'Voorg-Ass registration owner must load first');
+assert.match(requestedRegistryScripts[1], /\/docs\/js\/creature-genetics\.js\?v=/, 'Gameplay genetics must load after its Voorg-Ass dependency');
+for (const listener of listeners.get('DOMContentLoaded') || []) listener();
+document.readyState = 'complete';
+assert.match(window.CreatureGeneticsRender.SPECIES.puktuk.base.idle, /\/docs\/assets\/creaturesprites\/puktuk_idle\.png$/, 'post-DOM retry must leave Puktuk with a docs-root asset URL instead of a broken nested-tool relative path');
+assert.match(window.CreatureGeneticsRender.SPECIES['voorg-ass'].base.idle, /\/docs\/assets\/creaturesprites\/voorg-ass_idle\.png$/, 'post-DOM retry must leave Voorg-Ass with a docs-root asset URL');
 assert.deepStrictEqual(Array.from(registrySync.missingRendererKinds()), [], 'runtime-extended Puktuk and Vorg-ass renderer definitions must be present after sync');
 assert.deepStrictEqual(Array.from(registrySync.missingPickerKinds()), [], 'Add creature target picker must contain Puktuk and Vorg-ass after sync');
 assert.deepStrictEqual(creatureSelect.options.map(option => option.value), ['gar-wolf', 'uumkaoii', 'puktuk', 'voorg-ass']);

@@ -48,17 +48,30 @@
   };
 
   const characterRecords = [
-    ['tletingan::male', -17.000000000000004, 24.829594593937666, [-0.1769199293575374,0.3839625600994886,0], [0.22770354382724423,0.42663710735156957,0], [-0.2448354156580218,0.4465232083661127,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
-    ['engh-sho::male', -52.49999999999999, 40.46344209891254, [-0.2115295187159422,0.6813045758748404,0], [0.2721813782445264,0.6838406837818225,0], [-0.28930388062923146,0.7000103424366998,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
-    ['mao-ao::male', -47, 37.31351872723915, [-0.2006533796199832,0.6234902368619534,0], [0.19067248465844266,0.6947557240731601,0], [-0.28087406205430004,0.6455541403639915,0], [62.551070840197696,125.5], null,0.95,1,1.1,1.05,0],
-    ['mao-ao::female', -44.50000000000001, 40.198007305794635, [-0.14923510597360837,0.4721927183587378,0], [0.1771042396564939,0.6511546407522855,0], [-0.23898599170593354,0.646996571654354,0], [76.5545073375262,114.5], 1,0.925,0.8,1,1.025,0],
-    ['kenkari::male', -5.500000000000004, 13.133738099540614, [-0.18055321970300925,0.27150559815116515,0], [0.17819817802695415,0.27810760526210354,0], [-0.18055321970300925,0.37969897363327487,0], [79.65683229813665,77.5], 0.75,0.51,0.75,1,1,0],
-    ['kenkari::female', -4.0000000000000036, 18.49675435046502, [-0.12331214301269552,0.2212216457140902,0], [0.1629792650553279,0.29929878500014695,0], [-0.16564616738866406,0.25011972083640993,0], [87.90841750841751,82.5], 0.75,0.51,0.75,0.925,1,0],
-    ['tletingan::female', -23.00000000000001, 21.62644067848934, [-0.15767922666458786,0.36829341919016667,0], [0.19339659287777322,0.38426858848533485,0], [-0.19326419458235525,0.38220450093854685,0], [67.36241610738254,99.5], 0.85,0.62,0.85,0.925,1.025,5],
-    ['mashtzarr::male', -27.499999999999993, 28.18802021075617, [-0.3150161025604807,0.504441432761613,0], [0.2938287377558306,0.471474644548211,0], [-0.3481292844745114,0.5072329547240978,0], [63.960809102402024,87.5], 1,0.755,1.18,0.925,1.175,0],
-    ['mashtzarr::female', -31.000000000000007, 29.459673223780613, [-0.20671639379279255,0.5521654715130626,0], [0.30553153725919435,0.39823082948935073,0], [-0.2938000697183753,0.37168801102709437,0], [72.13592233009709,97.5], 1,0.79,1.18,0.9,1.125,0],
-    ['engh-sho::female', -49.500000000000014, 41.16182006615896, [-0.1857404318972175,0.5885050529830135,0], [0.20505349784094706,0.4967497459859368,0], [-0.24815066240089945,0.46042886220274515,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
+    ['tletingan::male', -17.000000000000004, -5.5, [-0.1769199293575374,0.3839625600994886,0], [0.22770354382724423,0.42663710735156957,0], [-0.2448354156580218,0.4465232083661127,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
+    ['engh-sho::male', -52.49999999999999, 30.5, [-0.2115295187159422,0.6813045758748404,0], [0.2721813782445264,0.6838406837818225,0], [-0.28930388062923146,0.7000103424366998,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
+    ['mao-ao::male', -47, 25, [-0.2006533796199832,0.6234902368619534,0], [0.19067248465844266,0.6947557240731601,0], [-0.28087406205430004,0.6455541403639915,0], [62.551070840197696,125.5], null,0.95,1,1.1,1.05,0],
+    ['mao-ao::female', -44.50000000000001, 22.5, [-0.14923510597360837,0.4721927183587378,0], [0.1771042396564939,0.6511546407522855,0], [-0.23898599170593354,0.646996571654354,0], [76.5545073375262,114.5], 1,0.925,0.8,1,1.025,0],
+    ['kenkari::male', -5.500000000000004, -19, [-0.18055321970300925,0.27150559815116515,0], [0.17819817802695415,0.27810760526210354,0], [-0.18055321970300925,0.37969897363327487,0], [79.65683229813665,77.5], 0.75,0.51,0.75,1,1,0],
+    ['kenkari::female', -4.0000000000000036, -19, [-0.12331214301269552,0.2212216457140902,0], [0.1629792650553279,0.29929878500014695,0], [-0.16564616738866406,0.25011972083640993,0], [87.90841750841751,82.5], 0.75,0.51,0.75,0.925,1,0],
+    ['tletingan::female', -23.00000000000001, -8, [-0.15767922666458786,0.36829341919016667,0], [0.19339659287777322,0.38426858848533485,0], [-0.19326419458235525,0.38220450093854685,0], [67.36241610738254,99.5], 0.85,0.62,0.85,0.925,1.025,5],
+    ['mashtzarr::male', -27.499999999999993, 5.5, [-0.3150161025604807,0.504441432761613,0], [0.2938287377558306,0.471474644548211,0], [-0.3481292844745114,0.5072329547240978,0], [63.960809102402024,87.5], 1,0.755,1.18,0.925,1.175,0],
+    ['mashtzarr::female', -31.000000000000007, 9, [-0.20671639379279255,0.5521654715130626,0], [0.30553153725919435,0.39823082948935073,0], [-0.2938000697183753,0.37168801102709437,0], [72.13592233009709,97.5], 1,0.79,1.18,0.9,1.125,0],
+    ['engh-sho::female', -49.500000000000014, 27.5, [-0.1857404318972175,0.5885050529830135,0], [0.20505349784094706,0.4967497459859368,0], [-0.24815066240089945,0.46042886220274515,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
   ];
+
+  const staleCharacterPosteriorFloors = Object.freeze({ // Exact pre-preview posterior defaults; arbitrary later authoring remains untouched.
+    'tletingan::male': 24.829594593937666,
+    'engh-sho::male': 40.46344209891254,
+    'mao-ao::male': 37.31351872723915,
+    'mao-ao::female': 40.198007305794635,
+    'kenkari::male': 13.133738099540614,
+    'kenkari::female': 18.49675435046502,
+    'tletingan::female': 21.62644067848934,
+    'mashtzarr::male': 28.18802021075617,
+    'mashtzarr::female': 29.459673223780613,
+    'engh-sho::female': 41.16182006615896,
+  });
 
   const badV1HandShoulders = Object.freeze(Object.fromEntries(characterRecords.map(record => {
     const key = record[0];
@@ -80,14 +93,23 @@
   });
 
   const creatureRecords = [
-    ['drenkirra',[0,0.09289353489875796,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],
-    ['grehlr',[0,0.12393333333333335,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
-    ['gar-wolf',[0,0.14184834174882754,0.2761841625577698],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],
-    ['dabinggi-hound',[0,0.12212625800404886,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
-    ['uumkaoii',[0,0.26595632314682005,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
-    ['puktuk',[0,0.16937859550590686,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
-    ['voorg-ass',[-0.0016655977917167481,0.12286908956931555,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[1.164,1.164],[0.75,0.75],[0.27,0.27]],null], // Large is 20% above the September 15 0.97 calibration so wild Large adults read distinctly bigger.
+    ['drenkirra',[0,0.030605877381859603,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],
+    ['grehlr',[0,0.1224031140623686,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
+    ['gar-wolf',[0,0.15973815894365057,0.3293044388176616],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],
+    ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
+    ['uumkaoii',[0,0.6408071738820479,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
+    ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
+    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[1.164,1.164],[0.75,0.75],[0.27,0.27]],null], // Large is 20% above the September 15 0.97 calibration so wild Large adults read distinctly bigger.
   ];
+  const staleCreatureSaddles = Object.freeze({ // Used by reconcileProfiles and the Animation Author repair bridge to migrate only exact superseded defaults.
+    drenkirra: Object.freeze([Object.freeze([0,0.09289353489875796,0.02])]),
+    grehlr: Object.freeze([Object.freeze([0,0.12393333333333335,0])]),
+    'gar-wolf': Object.freeze([Object.freeze([0,0.14184834174882754,0.2761841625577698])]),
+    'dabinggi-hound': Object.freeze([Object.freeze([0,0.12212625800404886,0.6091387381509006])]),
+    uumkaoii: Object.freeze([Object.freeze([0,0.26595632314682005,0.02])]),
+    puktuk: Object.freeze([Object.freeze([0,0.16937859550590686,-0.012420318741466083])]),
+    'voorg-ass': Object.freeze([Object.freeze([-0.0016655977917167481,0.12286908956931555,0.043832914384796626])]),
+  });
   const staleCreatureShoulderGrips = Object.freeze({
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
     drenkirra: Object.freeze([
@@ -185,11 +207,11 @@
 
   const MASTER_PROVENANCE = Object.freeze({
     handShoulder: Object.freeze({ source: 'exact supplied v9 Rig Coordinates hand-shoulder tuples authored after Animation Author adopted gameplay width 0.9', authoredCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945', exportedAt: V9_SHOULDERS_EXPORTED_AT, correction: 'v2 removes the v1 forensic master extra x0.9 scale; exact v9 values are already runtime-space values' }),
-    posterior: Object.freeze({ source: 'floor-relative posterior authoring; calibrated values recovered after v9 serialized the floor field as zero', coordinateChangeCommit: 'ec3594dd8db7350349e2ab7b179317bcd2a826f9', recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b' }),
+    posterior: Object.freeze({ source: 'preview calibration: posterior is 20% of portrait height below the live portrait-plane bottom edge', coordinateSpace: 'floor-relative portrait-height percent', authoredAt: '2026-10-17' }),
     portraitScale: Object.freeze({ source: 'latest authored species/gender anatomy portraitScale values, made authoritative for preview/runtime', authorityCommit: '79057667a678bde6d62c1ce929a354c18cd40f73' }),
     shoulderPerch: Object.freeze({ source: 'supplied 2026-08-28 rig export retained by the avatar-regression recovery pass', recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b', authoredAt: '2026-08-28T03:24:15.652Z' }),
     shoulderGrip: Object.freeze({ source: 'supplied 2026-08-28 creature rig export retained by the avatar-regression recovery pass', recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b', authoredAt: '2026-08-28T03:24:15.652Z' }),
-    saddle: Object.freeze({ source: 'last clearly intentional approved/v9 saddle coordinates; no later pass intentionally reauthored saddles', baselineCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945' }),
+    saddle: Object.freeze({ source: '2026-10-17 Rig Coordinates export', authoredAt: '2026-10-17T01:03:29.187Z', replacesBaselineCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945' }),
   });
 
   const masterProfiles = { characters: clone(masterCharacters), creatures: clone(masterCreatures) };
@@ -228,14 +250,14 @@
 
   window.HOBUNJI_ATTACHMENT_RIG_PROFILES = runtimeProfilesFromMaster();
   window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META = Object.freeze({
-    schema: MASTER_SCHEMA, exportedAt: '2026-09-03T00:00:00.000Z', masterConfigVersion: MASTER_VERSION,
+    schema: MASTER_SCHEMA, exportedAt: '2026-10-17T01:03:29.187Z', masterConfigVersion: MASTER_VERSION,
     coordinateSpace: 'Characters: floor-relative 0.9-wide runtime avatar space. Creature coordinates: unscaled idle-sprite local space.',
     transformSpeciesAliases: characterTransformAliases, fieldProvenance: MASTER_PROVENANCE,
     derivedCoordinates: {
       characterPosterior: { source:'posteriorRule.heightPercentFromFloor', formula:'portraitModelHeight * heightPercentFromFloor / 100', legacyFallback:'handAttachY + portraitModelHeight * heightPercentOffset / 100' },
       characterShoulderPerch: { source:'authored 2026-08-28 rig coordinates', offsetPercent:0 },
       characterHandShoulders: { source:'exact v9 Rig Coordinates export', positionScaleApplied:1, runtimeBaseWidth:GAME_AVATAR_WIDTH, exportedAt:V9_SHOULDERS_EXPORTED_AT },
-      creatureSaddle: { source:'approved/v9 authored saddle coordinates' }, creatureShoulderGrip: { source:'authored 2026-08-28 creature rig coordinates', defaultRuleVersion:5 },
+      creatureSaddle: { source:'2026-10-17 Rig Coordinates export' }, creatureShoulderGrip: { source:'authored 2026-08-28 creature rig coordinates', defaultRuleVersion:5 },
       idleHands: { x:'matching leftHandShoulder/rightHandShoulder anchor X', y:'derived character posterior Y plus procedural idle/walk Y offset', aimTarget:'matching full hand-shoulder anchor transform' },
     },
     attachmentSemantics: { mount: { carrierAnchor:'creature.saddle', riderAnchor:'character.posterior', keyedObject:'intermediateParent' }, shoulderPet: { carrierAnchor:'character.shoulderPerch', riderAnchor:'creature.shoulderGrip', keyedObject:'intermediateParent' } },
@@ -290,7 +312,7 @@
     shoulderAnchorsExportedAt: V9_SHOULDERS_EXPORTED_AT, anatomyProfiles: 'pending', authoredCharacterProfiles: 10, suppliedCharacterProfiles: 14,
     sharedCharacterProfiles: 4, exactSuppliedProfiles: 10, authoredCreatureProfiles: 5, parrotSharedProfiles: 2,
     rakakoanTransforms: 'always-aliased-to-kenkari', ghoulTransforms: 'always-aliased-to-mao-ao', handShoulderCalibration: 'v9-exact-post-calibration-no-extra-scale',
-    anchorPositionScale: 1, posteriorCoordinateSpace: 'floor-relative', posteriorPixelDependency: 'removed', posteriorFloorValues: 'master-recovered-from-pre-v9-floor-calibration',
+    anchorPositionScale: 1, posteriorCoordinateSpace: 'floor-relative', posteriorPixelDependency: 'removed', posteriorFloorValues: 'portrait-bottom-minus-20-percent-preview-calibration',
     exporterGuard: 'master-reconcile-and-versioned-rig-autosave', animationAuthorCreatureSync: { state: 'not-needed-yet', repairs: 0, lastReason: null },
   };
 
@@ -392,7 +414,8 @@
       const candidate = output.characters[key] || {};
       const merged = { ...clone(canonical), ...candidate, anchors: { ...clone(canonical.anchors), ...(candidate.anchors || {}) }, anatomy: { ...clone(canonical.anatomy), ...(candidate.anatomy || {}) }, posteriorRule: { ...clone(canonical.posteriorRule), ...(candidate.posteriorRule || {}) } };
       const floorPercent = Number(merged.posteriorRule.heightPercentFromFloor);
-      if (!Number.isFinite(floorPercent) || Math.abs(floorPercent) <= 1e-12) merged.posteriorRule.heightPercentFromFloor = canonical.posteriorRule.heightPercentFromFloor;
+      const stalePosteriorFloor = Number(staleCharacterPosteriorFloors[key]); // Migrates only the exact superseded stock posterior, preserving later hand-authored values.
+      if (!Number.isFinite(floorPercent) || Math.abs(floorPercent) <= 1e-12 || sameNumber(floorPercent, stalePosteriorFloor)) merged.posteriorRule.heightPercentFromFloor = canonical.posteriorRule.heightPercentFromFloor;
       if (!(Number(merged.anatomy.portraitScale) > 0)) merged.anatomy.portraitScale = canonical.anatomy.portraitScale;
       const badV1 = badV1HandShoulders[key];
       merged.anchors.leftHandShoulder = reconcileAnchor(merged.anchors.leftHandShoulder, canonical.anchors.leftHandShoulder, badV1?.left);
@@ -414,7 +437,9 @@
       const oldGrip = merged.anchors.shoulderGrip;
       merged.anchors.shoulderGrip = reconcileAnchor(oldGrip, canonical.anchors.shoulderGrip, staleCreatureShoulderGrips[kind]);
       if (oldGrip && !samePosition(oldGrip.position, merged.anchors.shoulderGrip.position)) merged.shoulderGripRule = clone(canonical.shoulderGripRule);
-      merged.anchors.saddle = reconcileAnchor(merged.anchors.saddle, canonical.anchors.saddle);
+      const oldSaddle = merged.anchors.saddle; // Used to restore canonical rule metadata only when an exact superseded default is migrated.
+      merged.anchors.saddle = reconcileAnchor(oldSaddle, canonical.anchors.saddle, staleCreatureSaddles[kind]);
+      if (oldSaddle && !samePosition(oldSaddle.position, merged.anchors.saddle.position)) merged.saddleRule = clone(canonical.saddleRule);
       if (repairKnownCreatureSizeScale(kind, merged, canonical)) merged.sizeScaleRule = clone(canonical.sizeScaleRule);
       output.creatures[kind] = merged;
     }
@@ -536,6 +561,10 @@
     const animationAuthorCreatureSyncStatus = window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorCreatureSync;
     const staleCreatureFields = live => {
       const stale = [];
+      for (const [kind, positions] of Object.entries(staleCreatureSaddles)) {
+        const position = live?.creatures?.[kind]?.anchors?.saddle?.position; // Used to repair old stock saddle coordinates without overwriting later custom authoring.
+        if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.saddle`);
+      }
       for (const [kind, positions] of Object.entries(staleCreatureShoulderGrips)) {
         const position = live?.creatures?.[kind]?.anchors?.shoulderGrip?.position;
         if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.shoulderGrip`);
