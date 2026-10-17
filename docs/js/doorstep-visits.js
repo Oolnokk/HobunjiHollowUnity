@@ -46,6 +46,8 @@
   let lastSpawnAttempt = null; // Companion diagnostics retain the last attempted visit and any concrete spawn blocker.
   const spawnAttemptsByNpc = new Map(); // Preserves each visitor outcome when a later provider spawns successfully.
   let activeVisit = null; // One visitor at a time.
+  let exitCount = 0; // Counts actual farmhouse exit requests in companion diagnostics.
+  let lastExitAttempt = null; // Retains trigger and provider selection even when no visit reaches spawn.
   let lastArea = null;
   let lastSyncAt = 0;
   let frameHandle = 0;
@@ -111,7 +113,12 @@
     for (const provider of providers) {
       let visit = null;
       try { visit = provider.next(); }
-      catch (error) { console.warn(`[doorstep-visits] ${provider.id}.next failed`, error); }
+      catch (error) {
+        lastExitAttempt?.providers.push({ id: provider.id, result: 'Provider error', error: String(error?.message || error) });
+        console.warn(`[doorstep-visits] ${provider.id}.next failed`, error);
+        continue;
+      }
+      lastExitAttempt?.providers.push({ id: provider.id, result: visit?.key && visit?.npcId ? visit.key : 'No pending visit' });
       if (visit?.key && visit?.npcId) yield { ...visit, providerId: provider.id };
     }
   }
@@ -446,13 +453,32 @@
   }
 
   // ── Area watch ────────────────────────────────────────────────────────
-  function onFarmhouseExit() {
+  function onFarmhouseExit(trigger = 'direct') {
+    exitCount++;
+    lastExitAttempt = { trigger, area: currentArea(), result: 'Checking providers', providers: [] };
     syncProviders();
-    // A temporarily unavailable visitor must not starve lower-priority providers.
-    // Failed visits stay pending; stop only after one visitor actually appears.
-    for (const visit of pendingVisits()) { // Candidates are requested lazily in provider priority order.
-      if (spawnVisit(visit)) return true;
+    // Failed visitors stay pending while later providers get their turn.
+    for (const visit of pendingVisits()) { // Requests candidates lazily in priority order.
+      try {
+        if (spawnVisit(visit)) {
+          lastExitAttempt.result = `Spawned ${visit.npcId}`;
+          return true;
+        }
+      } catch (error) {
+        rejectSpawn(visit, `Spawn error: ${String(error?.message || error)}`);
+      }
     }
+    lastExitAttempt.result = lastExitAttempt.providers.some(entry => entry.result !== 'No pending visit')
+      ? 'No visitor could spawn; see provider results and last spawn attempt'
+      : 'No pending visits';
+    return false;
+  }
+
+  function onAreaTransition(from, to, trigger = 'scene-transition') {
+    if (!to || from === to) return false;
+    lastArea = to; // Prevents the timer from repeating an exit already delivered by the game.
+    if (to !== config.farmhouseExteriorArea && activeVisit) removeActiveVisitor('area-change');
+    if (from === config.farmhouseInteriorArea && to === config.farmhouseExteriorArea) return onFarmhouseExit(trigger);
     return false;
   }
 
@@ -464,10 +490,7 @@
     const now = performance.now();
     const area = currentArea();
     if (area && area !== lastArea) {
-      const from = lastArea;
-      lastArea = area;
-      if (area !== config.farmhouseExteriorArea && activeVisit) removeActiveVisitor('area-change');
-      if (from === config.farmhouseInteriorArea && area === config.farmhouseExteriorArea) onFarmhouseExit();
+      onAreaTransition(lastArea, area, 'area-watch');
     }
     if (now - lastSyncAt > 1000) {
       lastSyncAt = now;
@@ -555,6 +578,7 @@
     removeActiveVisitor,
     dismissVisit,
     onFarmhouseExit,
+    onAreaTransition,
     isDone,
     markDone,
     serialize,
@@ -566,6 +590,9 @@
     activeVisitKey: () => activeVisit?.visit?.key || null,
     debugSnapshot() {
       return {
+        exitCount,
+        lastObservedArea: lastArea,
+        lastExitAttempt: clone(lastExitAttempt),
         lastSpawnAttempt: lastSpawnAttempt ? { ...lastSpawnAttempt } : null,
         mode: IS_DIALOGUE_EDITOR ? 'dialogue-editor' : 'game',
         currentArea: currentArea(),

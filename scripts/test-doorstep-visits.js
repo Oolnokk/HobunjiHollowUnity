@@ -488,3 +488,48 @@ console.log('doorstep visits: ok');
   goOutside(ctx, world);
   assert.equal(api.sourceDiagnostics('hreesh').lastAttempt.reason, 'Spawned successfully.');
 }
+
+// The completed game transition delivers an exit even when no timer saw the interior.
+{
+  const ctx = makeContext(); // Runs the shipping scene-transition callback and visitor scheduler together.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Farm stays the timer's last observed area throughout the transition.
+  const api = ctx.window.DoorstepVisits; // Records one authoritative exit, without a duplicate on the next timer tick.
+  api.registerProvider({ id: 'story', next: () => ({ key: 'story', npcId: 'jubmir', tree: { nodes: [] } }) });
+  ctx.tick();
+  Object.assign(ctx.context, {
+    sceneTransDir: 1, sceneTransAlpha: 0, sceneTransFromArea: 'interior', currentArea: 'interior',
+    sceneTransCb() { ctx.context.currentArea = 'farm'; },
+    catchNpcsOnPlayerAreaTransition() {},
+    debugLog(message) { throw new Error(message); },
+  });
+  const source = read('docs/game.js'); // Extracts the real game's fade completion owner, not a copied implementation.
+  const start = source.indexOf('      function updateSceneTransition(dt) {'); // Limits the VM to the transition function's dependencies.
+  const end = source.indexOf('      // ── Enter / exit the interior', start); // Uses the owner's existing section boundary.
+  vm.runInContext(source.slice(start, end), ctx.context);
+  vm.runInContext('updateSceneTransition(0.25)', ctx.context);
+  assert.equal(api.activeVisitKey(), 'story', 'actual scene completion requests the visitor without an interior polling tick');
+  assert.equal(api.debugSnapshot().exitCount, 1);
+  assert.equal(api.debugSnapshot().lastExitAttempt.trigger, 'scene-transition');
+  assert.equal(api.debugSnapshot().lastExitAttempt.result, 'Spawned jubmir');
+  ctx.tick();
+  assert.equal(api.debugSnapshot().exitCount, 1, 'timer fallback does not repeat the delivered exit');
+  api.onAreaTransition('farm', 'town');
+  assert.equal(api.activeVisitKey(), null, 'authoritative departures clean up the visitor');
+}
+
+// An exit with no eligible providers still records why no spawn was attempted.
+{
+  const ctx = makeContext(); // Exercises the empty queue that otherwise looks like a missing exit trigger.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Available sources do not imply an eligible visit.
+  const api = ctx.window.DoorstepVisits; // Companion reads these same diagnostics.
+  api.registerProvider({ id: 'not-due', next: () => null });
+  goOutside(ctx, world);
+  assert.equal(api.debugSnapshot().exitCount, 1);
+  assert.equal(api.debugSnapshot().lastExitAttempt.result, 'No pending visits');
+  assert.equal(api.debugSnapshot().lastExitAttempt.providers[0].result, 'No pending visit');
+  const copy = api.debugSnapshot(); // External panel consumers cannot mutate queue evidence.
+  copy.lastExitAttempt.providers[0].result = 'edited';
+  assert.equal(api.debugSnapshot().lastExitAttempt.providers[0].result, 'No pending visit');
+}

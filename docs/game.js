@@ -15411,7 +15411,10 @@
             const fromArea = sceneTransFromArea;
             try {
               _cb();
-              if (fromArea && fromArea !== currentArea) catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+              if (fromArea && fromArea !== currentArea) {
+                window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); // Delivers completed exits even when timer polling misses the interior.
+                catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+              }
             } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
