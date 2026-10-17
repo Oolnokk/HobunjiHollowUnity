@@ -67,7 +67,10 @@ assert.ok(emitter, 'emitter attaches to the weapon plane');
 
 const visual = api.stateFor('dagger_copper');
 const snapshot = { mask: { indices: [0, 1, 2, 3, 4, 5, 6, 7], width: 4, height: 2 }, visual, counts: { Ohthic: 1 } };
-for (let frame = 0; frame < 600; frame++) updateEmitters(0.05, snapshot, [emitter]); // 30s of 20fps frames, many particle lifetimes.
+for (let frame = 0; frame < 600; frame++) {
+  updateEmitters(0.05, snapshot, [emitter]);
+  assert(emitter.particles.every(p => p.sprite.material.opacity >= 0.6 && p.sprite.material.opacity <= 1), 'live particles keep at least 60% opacity throughout their lifetime and reuse');
+} // 30s of 20fps frames, many particle lifetimes.
 
 const spawned = counts.adds - 1; // First add is the emitter group onto the plane.
 assert.ok(spawned > 40, `emitter kept spawning over 30s of frames (spawned ${spawned})`);
