@@ -496,6 +496,14 @@
     } finally { status.running = false; }
   }
 
+  // Dev/test URL flags: ?skipRescue=1 skips the Gar-wolf rescue, ?skipMeeting=1
+  // skips the Hunundi meeting. Skipping the meeting still marks the opening complete.
+  function urlFlag(name) {
+    try { return new URLSearchParams(window.location?.search || '').get(name) === '1'; } catch (_) { return false; }
+  }
+  const skipRescueRequested = () => urlFlag('skipRescue');
+  const skipMeetingRequested = () => urlFlag('skipMeeting');
+
   async function play(profile, options = {}) {
     if (status.running) return false;
     status.running = true;
@@ -529,7 +537,14 @@
       status.phase = 'rescue';
       status.lastScene = rescue.title;
       let rescueReady = false; // Once onReady completes, the scene has crossed the reveal boundary and must never be silently replayed after a later runtime error.
-      let rescueComplete = false; // The setup loop exits only after the live rescue runner finishes normally.
+      let rescueComplete = skipRescueRequested(); // ?skipRescue=1 (dev/test) goes straight to the Hunundi meeting; the opening still completes normally.
+      if (rescueComplete) {
+        log('skipping the rescue scene (?skipRescue=1)');
+        await runtime.preloadOpeningMeeting?.(meeting);
+        introduction?.setProgress(100);
+        resolveAssetsReady();
+        await loadingPages;
+      }
       while (!rescueComplete) {
         status.setupAttempts += 1;
         try {
@@ -554,7 +569,14 @@
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;
       let finalDialogueContinued = false; // Scene cleanup alone must not complete an opening that skipped its final dialogue.
-      await runtime.run(meeting, {
+      if (skipMeetingRequested()) {
+        log('skipping the Hunundi meeting (?skipMeeting=1)');
+        finalDialogueContinued = true;
+        status.pending = false;
+        status.completed = true;
+        if (!options.replay) writeProgress(profile, 'complete');
+        clearBootCover();
+      } else await runtime.run(meeting, {
         keepFadeOnFinish: false,
         onDialogueContinue(stage) {
           if (stage.id !== 'meeting_hunundi_final') return;

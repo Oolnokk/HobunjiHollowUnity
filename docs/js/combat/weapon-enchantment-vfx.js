@@ -438,6 +438,13 @@
     }
     sprite.name = `weapon_enchantment_${effect.id}`;
     sprite.renderOrder = Number(emitter.plane.renderOrder || 0) + 4;
+    // HeldObjectRenderOrder hides held planes from the base colour pass and
+    // redraws them in its own overlay pass, which painted the blade over any
+    // particle drawn earlier. Particles on such a plane render only in that
+    // same pass, after (renderOrder) and in front of the blade.
+    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER;
+    if (Number.isInteger(overlayLayer) && ((Number(emitter.plane.layers?.mask) >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer); // r128 Layers has no isEnabled().
+    else sprite.layers?.set?.(0);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
     const px = index % mask.width; // Used to map the selected source pixel into plane-local X.

@@ -14,7 +14,7 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat'
 
 const counts = { materials: 0, disposed: 0, adds: 0 };
 class Obj {
-  constructor() { this.children = []; this.parent = null; this.visible = true; this.userData = {}; this.position = vec(); this.scale = vec(); }
+  constructor() { this.children = []; this.parent = null; this.visible = true; this.userData = {}; this.position = vec(); this.scale = vec(); this.layers = { mask: 1, set(channel) { this.mask = (1 << channel) >>> 0; } }; }
   add(child) { counts.adds++; child.parent?.remove(child); child.parent = this; this.children.push(child); return this; }
   remove(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parent = null; return this; }
 }
@@ -81,6 +81,20 @@ assert.ok(emitter.pool.every(sprite => sprite.visible === false), 'parked sprite
 disposeEmitter(emitter);
 assert.strictEqual(counts.disposed, counts.materials, 'disposing the emitter releases every material it ever created');
 assert.strictEqual(emitter.group.parent, null, 'the emitter group leaves the weapon plane');
+
+// HeldObjectRenderOrder redraws held planes in its own overlay pass (layer 29);
+// particles on such a plane must render in that pass, or the blade covers them.
+context.window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: 29 };
+const heldPlane = new THREE.Group();
+heldPlane.geometry = { parameters: { width: 0.4, height: 1.2 } };
+heldPlane.layers.mask = (1 | (1 << 29)) >>> 0;
+const heldEmitter = makeEmitter(heldPlane);
+updateEmitters(0.5, snapshot, [heldEmitter]);
+assert.ok(heldEmitter.particles.length > 0, 'held-plane emitter spawns');
+assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === (1 << 29) >>> 0), 'particles on a held-overlay plane render only in the overlay pass');
+const plainEmitter = makeEmitter(Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.4, height: 1.2 } } }));
+updateEmitters(0.5, snapshot, [plainEmitter]);
+assert.ok(plainEmitter.particles.every(p => p.sprite.layers.mask === 1), 'particles on an ordinary plane stay on the default layer');
 
 // The camera may see either face of the blade; particles must sit on the visible one.
 const facing = makeEmitter(new THREE.Group());
