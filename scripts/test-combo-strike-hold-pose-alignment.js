@@ -49,6 +49,11 @@ assert.ok(stagedCall, 'expected the first sweep to start a gameplay hit action')
 const visualStrikeAtS = visualCall.durationS * visualCall.opts.strikeFrac; // Exact time the pose interpolation reaches authored Strike.
 assert.ok(Math.abs(stagedCall.windupS - visualStrikeAtS) < 1e-9, `impact ${stagedCall.windupS}s must equal visual Strike ${visualStrikeAtS}s`);
 assert.strictEqual(stagedCall.strikeS, 0, 'the hit fires at the endpoint rather than starting another post-impact strike interval');
-assert.strictEqual(visualCall.opts.holdS, 1, 'the existing Strike hold remains unchanged after timing alignment');
+// Windup is 50% longer than the original 0.23s; the hold gives that time back so the
+// whole swing (windup + strike + hold + 0.12s+ return tail) keeps its original 1.42s.
+assert.ok(Math.abs(stagedCall.windupS - (0.345 + 0.07)) < 1e-9, 'Forehand windup is 0.345s, strike interpolation unchanged at 0.07s');
+const returnTailS = Math.max(0.12, visualCall.durationS * 0.35); // game.js's automatic return tail for swings without their own returnS.
+const totalS = visualCall.durationS + visualCall.opts.holdS + returnTailS;
+assert.ok(Math.abs(totalS - 1.42) < 0.002, `overall Forehand duration stays 1.42s (got ${totalS.toFixed(4)})`);
 
 console.log('test-combo-strike-hold-pose-alignment: ok');

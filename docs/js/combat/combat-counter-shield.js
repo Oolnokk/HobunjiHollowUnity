@@ -23,7 +23,7 @@
     strike:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
   };
   let BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
-  let COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
+  let COUNTER_WINDUP_S = 0.0525, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 0.9825;
 
   // Counter Shield keeps four under-weapon layers. Offensive holds reuse
   // those plus six initially-transparent over-layers (two per Charged

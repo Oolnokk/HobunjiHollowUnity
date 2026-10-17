@@ -83,5 +83,17 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
   assert.ok(started.length >= 1 && started.at(-1).offset === 0, 'release voice starts from its beginning');
   assert.ok(Math.abs(started.at(-1).buffer.duration - releaseS) < 1e-9, 'release voice is stretched over the full release span');
 
+  // Gameplay path: the release voice plays at natural length (it no longer spans the hold).
+  renders.length = 0;
+  const natural = api.prewarmStrikeGrunt(player, 'combo');
+  assert.equal(natural.natural, true);
+  await flush();
+  api.playStrikeGrunt(player, 'combo', 'swingCombo', 0.07, 0, natural);
+  await flush();
+  assert.equal(renders.length, 2);
+  assert.deepEqual(renders[1].opts, renders[0].opts, 'natural-length playback reuses the pre-rendered voice');
+  assert.equal(renders[1].opts.tempo, 1, 'natural length: no stretch to the short strike interpolation');
+  assert.ok(Math.abs(started.at(-1).buffer.duration - decoded.duration) < 1e-9, 'the whole grunt plays');
+
   console.log('Combat release grunt is pre-rendered during the windup: ok');
 })().catch(error => { console.error(error); process.exit(1); });

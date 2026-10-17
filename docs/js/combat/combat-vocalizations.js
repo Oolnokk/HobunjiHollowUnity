@@ -1002,9 +1002,10 @@ function beginCharge(options = {}) {
   // hit, so on slower devices it started late (offset past its loud start) or
   // not at all, leaving only the windup grunt, which ends at the strike. Roll
   // the pitch and render at attack start; the windup-end call reuses the cache.
-  function prewarmStrikeGrunt(entity, category, durationS) {
+  function prewarmStrikeGrunt(entity, category, durationS = null) {
     const url = pickStrikeGruntUrl(category);
-    if (!url || !(durationS > 0)) return url ? { url } : null;
+    if (!url) return null;
+    const natural = !(durationS > 0); // Natural length: rendered at tempo 1 rather than stretched to a target.
     const pitchOffsetSemitones = randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0);
     if (isHumanoidVocalEntity(entity) && audioConfig().enabled !== false && Number(audioConfig().sfxVolume ?? 1) > 0) {
       preloadStrikeBuffer(url).then(buffer => {
@@ -1014,19 +1015,19 @@ function beginCharge(options = {}) {
         const trim = playback.trimDecodedSilence ? playback.trimDecodedSilence(buffer, ctx, { padMs: 4 }) : { buffer };
         const audible = trim.buffer || buffer; // Same trimmed buffer object beginCharge will use (trims are cached per buffer).
         const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
-        const plan = chargeRatePlan(audible.duration, durationS, voice.tempo);
+        const plan = chargeRatePlan(audible.duration, natural ? null : durationS, voice.tempo);
         return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, tempo: plan.stretchedTempo });
       }).catch(() => {});
     }
-    return { url, pitchOffsetSemitones };
+    return { url, pitchOffsetSemitones, natural };
   }
 
   function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0, preset = null) {
     const isCombo = category === 'combo';
     const url = preset?.url || pickStrikeGruntUrl(category);
     if (!url) return;
-    const played = durationS > 0 ? beginCharge({
-      entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
+    const played = durationS > 0 || preset?.natural ? beginCharge({
+      entity, category, abilityId, assetUrl: url, targetDurationS: preset?.natural ? null : durationS,
       createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
       pitchOffsetSemitones: preset?.pitchOffsetSemitones,
     }) : playOneShot(
@@ -1085,13 +1086,15 @@ function beginCharge(options = {}) {
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
       const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
-      const releaseS = Math.max(0, totalS - windupS); // Windup to Strike through Hold; return easing stays purely visual.
+      const releaseS = Math.max(0, totalS - windupS); // Windup to the Strike pose; the hold and return are interruptible.
       let charge = isPlayer ? (liveChargesByAbility.get(context.id) || null) : null; // Reuse a held charge until its release boundary.
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
       if (charge) liveChargesByAbility.delete(context.id);
       if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category });
-      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS) : null; // Rendered during the windup.
+      // The release voice plays at its natural length from the end of the windup and
+      // gates nothing: the next attack's voice cuts it off. Rendered during the windup.
+      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category) : null;
       const startRelease = elapsedS => {
         if (releaseStarted) return;
         releaseStarted = true;
@@ -1126,8 +1129,7 @@ function beginCharge(options = {}) {
         },
         onComplete: (...args) => {
           cancelCharge(charge);
-          cancelCharge(release);
-          return spec.onComplete?.(...args);
+          return spec.onComplete?.(...args); // The release voice may ring on into the hold.
         },
         onCancel: (...args) => {
           cancelCharge(charge);
@@ -1277,7 +1279,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Charge spans neutral to windup; release and queued attacks end at Hold, before the visual return to neutral.',
+    latestChange: 'Charge spans neutral to windup; queued attacks start at the Strike pose (the hold is interruptible); the release voice plays at natural length.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
