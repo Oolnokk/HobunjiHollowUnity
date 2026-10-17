@@ -24,7 +24,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/HousePieceGen.js?v=20261016h9be784e&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261015h6bcbacd&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261017h24ba119&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -750,7 +750,7 @@
        window.*?.init(...) calls near the bottom of game.js run), and later
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
-  <script src="js/border-terrain.js?v=20261006he564e6d"></script>
+  <script src="js/border-terrain.js?v=20261017h0947dde"></script>
   <!-- Farm-only road paving and border reshaping. These must be explicit
        parser-time dependencies after BorderTerrain: loading them indirectly
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,
@@ -2477,7 +2477,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261016h722fdd4"></script>
+  <script src="js/tool-icon-render.js?v=20261017h8d7db4c"></script>
   <script src="js/sprite-recolor.js?v=20261017h71c197e"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2651,6 +2651,7 @@
        quality mode, and owns no requestAnimationFrame loop. -->
   <script src="js/painterly-postprocess.js?v=20261009h2588a9d"></script>
   <script src="js/banubu-cave-clouds.js?v=20261015hf69d7ce"></script>
+  <script src="js/cavern-entrance-light.js?v=20261017hb7479e9"></script> <!-- Den cavern entrance light + floor glow (built from game.js). -->
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
@@ -2667,7 +2668,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261017h5b7aa33"></script>
+  <script src="game.js?v=20261017h5235074"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261017h3decaa3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

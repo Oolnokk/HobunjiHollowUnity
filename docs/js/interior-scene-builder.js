@@ -304,6 +304,7 @@
     applyTownCliffMaterial(THREE, mesh, fallbackMat, options.surfaceMaterial || meshData.surfaceMaterial || 'farm-cliff');
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
+    mesh.userData.hobunjiGroundTopFacesOnly = true; // HeldObjectRenderOrder lets weapons x-ray this shell's floor faces (just under the walkable floor) while its walls still occlude.
     return mesh;
   }
 

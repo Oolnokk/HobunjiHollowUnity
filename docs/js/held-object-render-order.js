@@ -46,6 +46,8 @@
   const waterOccludedMeshes = new WeakSet(); // Used to count each explicitly water-occluded mesh once; procedural feet register here.
   const heldRegistry = new Set();
   const groundRegistry = new Set();
+  const topFaceGroundRegistry = new Set(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
+  const occluderGeometries = new WeakMap(); // Source geometry -> geometry of only its non-upward faces, built once per geometry.
   const waterRegistry = new Set(); // Used by the foot-only translucent-water replay.
   const waterOccludedRegistry = new Set(); // Used to stencil only feet (never weapons/hands) before replaying water.
   const pngDepthRegistry = new Set(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
@@ -57,6 +59,7 @@
   let grassCount = 0;
   let roadCount = 0;
   let terrainCount = 0;
+  let topFaceGroundCount = 0; // Meshes registered via markTopFaceGroundMesh.
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
   let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
   let waterReplayCount = 0; // Counts successful foot-only water compositing passes.
@@ -145,6 +148,15 @@
     // Spatial terrain chunks are generated only from whole-zone floor meshes.
     if (object.userData?.terrainRenderChunk === true || object.userData?.terrainRenderChunkSource === true) return true;
 
+    // Map-editor floor buckets (farm/town/wilderness). Wilderness streams
+    // them inside WildernessChunk_* groups, so the scene-parent test below
+    // never saw them and weapons were buried under wilderness ground.
+    if (object.userData?.mapEditorTerrain) return true;
+
+    // Snow/slush micro-plateau caps ride a little above the walkable surface
+    // (plateau tops included) to bury feet; weapons x-ray them like terrain.
+    if (object.userData?.environmentSurfaceMicroPlateau === true) return true;
+
     // Farm/town/wilderness floor meshes opt into the terrain material-ID layer
     // and are attached directly to the scene. Runtime-rebuilt farm tiles cast
     // shadows as well as receive them, so castShadow cannot distinguish them
@@ -161,6 +173,15 @@
     return false;
   }
 
+  // A carved cavern shell is floor, walls, and ceiling in one mesh, and its
+  // upward floor faces sit a hair below the tagged walkable floor. Hiding the
+  // whole shell would let weapons x-ray cave walls; keeping it would bury
+  // weapons under the floor. Only its upward faces are treated as ground.
+  function isTopFacesGroundSurface(object) {
+    if (!object?.isMesh || object.isSkinnedMesh || object.isInstancedMesh) return false;
+    return object.userData?.hobunjiGroundTopFacesOnly === true;
+  }
+
   function isWaterSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
     const data = object.userData || {}; // Existing runtime water tags are preferred over broad name matching so props with "water" in their names are never replayed.
@@ -170,6 +191,7 @@
   }
 
   function groundKind(object) {
+    if (isTopFacesGroundSurface(object)) return null; // Never hide the whole shell; see occluderGeometryFor.
     if (isGrassGroundCover(object)) return 'grass';
     if (isRoadSurface(object)) return 'road';
     if (isTerrainSurface(object)) return 'terrain';
@@ -309,6 +331,90 @@
     }
     const kind = groundKind(object);
     if (kind) markGroundMesh(object, kind);
+    if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object);
+  }
+
+  function markTopFaceGroundMesh(mesh) {
+    if (topFaceGroundRegistry.has(mesh)) return false;
+    topFaceGroundRegistry.add(mesh);
+    // The ground-depth restore pass draws the whole shell colorless. Its
+    // walls already wrote identical depth in the rebuild pass, so only the
+    // floor faces actually change anything there.
+    if (!hasLayer(mesh, GROUND_REPLAY_LAYER)) mesh.layers.enable(GROUND_REPLAY_LAYER);
+    topFaceGroundCount++;
+    return true;
+  }
+
+  // Geometry sharing the source's vertex attributes, indexing only faces that
+  // point less than ~60 degrees from straight up in world space, so slopes
+  // and walls keep occluding. Material groups are preserved per face.
+  const TOP_FACE_MIN_NORMAL_Y = 0.5;
+  const faceA = new THREE.Vector3();
+  const faceB = new THREE.Vector3();
+  const faceC = new THREE.Vector3();
+  const faceNormalMatrix = new THREE.Matrix3();
+  function occluderGeometryFor(mesh) {
+    const source = mesh.geometry;
+    if (!source) return null;
+    if (occluderGeometries.has(source)) return occluderGeometries.get(source);
+    let occluder = null;
+    const position = source.attributes?.position;
+    if (position && !position.isInterleavedBufferAttribute && !source.morphAttributes?.position?.length) {
+      const index = source.index;
+      const count = index ? index.count : position.count;
+      const groups = source.groups?.length ? source.groups : [{ start: 0, count, materialIndex: 0 }];
+      mesh.updateWorldMatrix(true, false);
+      faceNormalMatrix.getNormalMatrix(mesh.matrixWorld);
+      const kept = [];
+      const keptGroups = [];
+      let topFaces = 0;
+      for (const group of groups) {
+        const groupStart = kept.length;
+        const end = Math.min(count, group.start + group.count);
+        for (let i = Math.max(0, group.start); i + 2 < end; i += 3) {
+          const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
+          faceA.fromBufferAttribute(position, a);
+          faceB.fromBufferAttribute(position, b).sub(faceA);
+          faceC.fromBufferAttribute(position, c).sub(faceA);
+          faceB.cross(faceC).applyMatrix3(faceNormalMatrix);
+          const length = faceB.length();
+          if (length > 1e-12 && faceB.y / length >= TOP_FACE_MIN_NORMAL_Y) { topFaces++; continue; }
+          kept.push(a, b, c);
+        }
+        if (kept.length > groupStart) keptGroups.push({ start: groupStart, count: kept.length - groupStart, materialIndex: group.materialIndex ?? 0 });
+      }
+      if (topFaces > 0) {
+        occluder = new THREE.BufferGeometry();
+        for (const [name, attribute] of Object.entries(source.attributes)) occluder.setAttribute(name, attribute);
+        occluder.setIndex(new THREE.BufferAttribute(position.count > 65535 ? new Uint32Array(kept) : new Uint16Array(kept), 1));
+        for (const group of keptGroups) occluder.addGroup(group.start, group.count, group.materialIndex);
+        if (!source.boundingSphere) source.computeBoundingSphere();
+        if (!source.boundingBox) source.computeBoundingBox();
+        occluder.boundingSphere = source.boundingSphere?.clone() || null;
+        occluder.boundingBox = source.boundingBox?.clone() || null;
+        occluder.name = `${source.name || 'geometry'}__held_xray_occluder`;
+        // Shared attributes stay owned by the source; release only our own
+        // index buffer when the source goes away.
+        source.addEventListener('dispose', () => { occluder.attributes = {}; occluder.dispose(); });
+      }
+    }
+    occluderGeometries.set(source, occluder);
+    return occluder;
+  }
+
+  function swapToOccluderGeometry(meshes) {
+    const swapped = [];
+    for (const mesh of meshes) {
+      const occluder = occluderGeometryFor(mesh);
+      if (!occluder) continue;
+      swapped.push(mesh, mesh.geometry);
+      mesh.geometry = occluder;
+    }
+    return swapped;
+  }
+
+  function restoreSwappedGeometry(swapped) {
+    for (let i = 0; i < swapped.length; i += 2) swapped[i].geometry = swapped[i + 1];
   }
 
   function materialHasAlphaCutout(material) {
@@ -756,13 +862,13 @@
     renderer.setRenderTarget(renderer.getRenderTarget(), renderer.getActiveCubeFace?.() || 0, renderer.getActiveMipmapLevel?.() || 0);
   }
 
-  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, water, waterOccluded, originalCameraMask) {
+  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
     const needsHeldOverlay = held.length > 0; // Used to keep weapon/hand x-ray active even when no water is visible.
     const requestedFootWaterComposite = water.length > 0 && waterOccluded.length > 0; // Used to skip all foot-water stencil work on dry scenes.
     const stencilBits = currentFramebufferStencilBits(renderer); // Must describe the CURRENT render target (_mainRT while outlines are on), not the default canvas.
     const needsFootWaterComposite = requestedFootWaterComposite && stencilBits >= 2;
     if (requestedFootWaterComposite && !needsFootWaterComposite) missingStencilFootReplaySkipCount++;
-    if (!ground.length || (!needsHeldOverlay && !needsFootWaterComposite)) return;
+    if (!(ground.length || topFaceGround.length) || (!needsHeldOverlay && !needsFootWaterComposite)) return;
 
     const oldAutoClear = renderer.autoClear;
     const oldAutoClearColor = renderer.autoClearColor;
@@ -804,6 +910,7 @@
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
       const hidden = hideObjects([...ground, ...held]);
+      const swappedGeometry = swapToOccluderGeometry(topFaceGround);
       const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
       const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
       const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
@@ -827,6 +934,7 @@
           colorBuffer.setMask(true);
         }
         restoreMaterialStates(depthMaterialStates);
+        restoreSwappedGeometry(swappedGeometry);
         restoreVisibility(hidden);
       }
 
@@ -852,7 +960,7 @@
       // 3) Restore authored terrain depth before any water composite. The held
       // color is already on-screen, so this cannot cover it; it only restores
       // the real depth boundary. Raised soil therefore blocks a lower flood.
-      const groundMaterialStates = prepareGroundDepthMaterials(ground);
+      const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? [...ground, ...topFaceGround] : ground);
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
         const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
@@ -917,9 +1025,10 @@
     lastBaseStencilBits = currentFramebufferStencilBits(this);
     const held = collectVisible(heldRegistry, scene);
     const ground = collectVisible(groundRegistry, scene);
+    const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
     const water = collectVisible(waterRegistry, scene); // Used only when explicitly water-occluded meshes (feet) need a translucent replay.
     const waterOccluded = collectVisible(waterOccludedRegistry, scene); // Used to keep feet under water while weapons/hands remain above it.
-    if (!ground.length || (!held.length && !(water.length && waterOccluded.length))) return originalRender.call(this, scene, camera);
+    if (!(ground.length || topFaceGround.length) || (!held.length && !(water.length && waterOccluded.length))) return originalRender.call(this, scene, camera);
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
@@ -939,7 +1048,7 @@
     }
 
     const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the three sub-passes above plus the depth-material-prep traversal; kept separate so it's directly comparable to held-overlay: base render.
-    replaySelectiveHeldOverlay(this, scene, camera, held, ground, water, waterOccluded, originalCameraMask);
+    replaySelectiveHeldOverlay(this, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask);
     window.PerfProfiler?.end(replayPerf);
     return result;
   }
@@ -961,6 +1070,7 @@
       grassMeshes: grassCount,
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
+      topFaceGroundMeshes: topFaceGroundCount,
       waterReplayMeshes: waterMeshCount,
       waterOccludedMeshes: waterOccludedMeshCount,
       waterReplays: waterReplayCount,
@@ -1021,6 +1131,7 @@
         grass: isGrassGroundCover(object),
         road: isRoadSurface(object),
         terrain: isTerrainSurface(object),
+        topFacesGround: isTopFacesGroundSurface(object),
         waterSurface: isWaterSurface(object),
         waterOccluded: object?.userData?.hobunjiWaterOccludedBySurface === true,
       };
