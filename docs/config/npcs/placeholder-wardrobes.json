@@ -188,10 +188,10 @@
       "reason": "temporary-catch-all:authored home/work interior unavailable"
     },
     "khannibarri_agent": {
-      "area": "map_i_general_store",
-      "furnitureId": "fmqflpf2qgfgn",
-      "itemKey": "crateStackFurniture",
-      "reason": "temporary-catch-all:authored home/work interior unavailable"
+      "area": "map_i_ikmc_outpost",
+      "furnitureId": "f_ikmc_hark_wardrobe",
+      "itemKey": "wardrobeFurniture",
+      "reason": "authored:npcWardrobeFor"
     },
     "khazud": {
       "area": "map_i_general_store",

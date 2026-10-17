@@ -79,6 +79,7 @@ const residents = [
   ['garanki_gabu','map_i_researchers_tent','f_tent_cot','f_tent_chest_garanki','map_i_researchers_tent'],
   ['hreesh','map_i_inn_F2_hreesh','f_map_i_inn_F2_hreesh_bed','f_map_i_inn_F2_hreesh_wardrobe','map_i_inn'],
   ['jubmir','map_i_inn_F2_jubmir','f_map_i_inn_F2_jubmir_bed','f_map_i_inn_F2_jubmir_wardrobe','map_i_inn'],
+  ['khannibarri_agent','map_i_ikmc_outpost','f_ikmc_hark_bed','f_ikmc_hark_wardrobe','map_i_ikmc_outpost'],
   ['dzibim_khibu','map_i_carpenters_F2_dzibim','f_map_i_carpenters_F2_dzibim_bed','f_map_i_carpenters_F2_dzibim_wardrobe','map_i_carpenters'],
   ['dzahiri_khibu','map_i_carpenters_F2_dzahiri','f_map_i_carpenters_F2_dzahiri_bed','f_map_i_carpenters_F2_dzahiri_wardrobe','map_i_carpenters'],
   ['nashka_khibu','map_i_carpenters_F2_nashka','f_map_i_carpenters_F2_nashka_bed','f_map_i_carpenters_F2_nashka_wardrobe','map_i_carpenters'],
