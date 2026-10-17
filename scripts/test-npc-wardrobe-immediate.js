@@ -155,7 +155,13 @@ wardrobe.init({
   saveGearInventory() {},
   saveMemberWorldData() { saves++; },
   showToast() {},
+  getCurrentArea: () => playerArea,
+  isWalkerAsleep: w => asleepIds.has(w.rec.id),
 });
+let playerArea = 'map_i_test_bedroom'; // Where the player is; wardrobe edits only redraw while the NPC sleeps elsewhere.
+const asleepIds = new Set();
+walker.area = 'map_i_test_bedroom';
+fallbackWalker.area = 'map_i_test_bedroom';
 
 (async () => {
   assert.equal(await wardrobe.syncWalkerOutfit(walker), true, 'authored default NPC pattern policy triggers an initial post-spawn rebake without requiring a wardrobe override');
@@ -292,7 +298,25 @@ wardrobe.init({
   });
   assert.equal(overrideStyleGift.accepted, false, 'saved corrected outfit traits do not become new default gift-acceptance traits');
 
-  assert.equal(await wardrobe.storeWornItem('legacy_identity_npc', 'plain_tunic'), true, 'legacy-identity NPC can be rerendered through the same immediate Store path');
+  const buildsBeforeStore = profileBuilds.length;
+  assert.equal(await wardrobe.storeWornItem('legacy_identity_npc', 'plain_tunic'), true, 'legacy-identity NPC outfit data changes immediately on Store');
+  assert.equal(Array.from(fallbackRec.equippedCosmetics).includes('plain_tunic'), false, 'stored garment leaves the NPC record at once');
+  assert.equal(profileBuilds.length, buildsBeforeStore, 'the visible outfit does not change while the NPC is awake');
+  assert.deepEqual(Array.from(wardrobe.pendingVisualIds()), ['legacy_identity_npc'], 'the visual update is queued for bedtime');
+  asleepIds.add('legacy_identity_npc'); // Asleep, but the player is standing in the same map.
+  wardrobe.flushPendingVisuals();
+  assert.equal(profileBuilds.length, buildsBeforeStore, 'a sleeping NPC in the player\'s own map is not redrawn');
+  playerArea = 'map_i_elsewhere';
+  wardrobe.flushPendingVisuals();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(wardrobe.pendingVisualIds().length, 0, 'asleep and out of the player\'s map: the queued redraw happens');
+  playerArea = 'map_i_test_bedroom';
+  fallbackRec.equippedCosmetics = [...fallbackRec.equippedCosmetics, 'worn_take_tunic'];
+  const buildsBeforeTake = profileBuilds.length;
+  assert.equal(await wardrobe.takeWornItem('legacy_identity_npc', 'worn_take_tunic'), true, 'a currently worn garment can be taken straight out of the wardrobe');
+  assert.ok(gearInventory.clothingItems.some(item => item.cosmeticId === 'worn_take_tunic'), 'the taken garment lands in the player\'s clothing bag');
+  assert.equal(profileBuilds.length, buildsBeforeTake, 'taking a worn garment does not redraw the awake NPC');
+  assert.ok(!Array.from(fallbackRec.equippedCosmetics).includes('worn_take_tunic'), 'the NPC record no longer wears it');
   const fallbackRefresh = profileBuilds.at(-1);
   assert.equal(fallbackRefresh.appearance.speciesId, 'engh-sho', 'missing appearance.speciesId falls back to the canonical record species');
   assert.equal(fallbackRefresh.appearance.gender, 'female', 'legacy fallback preserves authored appearance gender');

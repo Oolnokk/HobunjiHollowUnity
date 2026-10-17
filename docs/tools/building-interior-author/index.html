@@ -113,11 +113,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         <button id="toolEraseFloor">Erase floor</button>
         <button id="toolPaintCollider">Collider</button>
         <button id="toolEraseCollider">Erase collider</button>
+        <button id="toolPaintDoor">Door tile</button>
+        <button id="toolEraseDoor">Erase door</button>
         <button id="toolFurniture">Place furniture</button>
         <button id="toolSelect">Select</button>
         <button id="toolErase">Erase furn</button>
       </div>
-      <p class="hint" style="margin-top:6px">Paint floor footprint. Collider = invisible blocker (red). Exit/vendor zones below. Walls auto-generate with gaps at exit tile edges.</p>
+      <p class="hint" style="margin-top:6px">Paint floor footprint. Collider = invisible blocker (red). Door tile = an auto-rotated Wooden Door on a floor tile (it bridges the two unpainted tiles beside it, faces the lone painted neighbour at a dead end, faces north with none; NPCs open it by walking up, the player opens it by hand). Exit/vendor zones below. Walls auto-generate with gaps at exit tile edges.</p>
     </div>
 
     <div class="section">
@@ -384,6 +386,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
+<script src="../../js/interior-door-tiles.js?v=1"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
@@ -521,7 +524,7 @@ function makeBlank(){
   var cols=12, rows=10, floor=[];
   for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
   return { schema:'hobunji_building_interior.v1', id:'map_i_building_01', name:'Building Interior',
-           cols:cols, rows:rows, exits:[], colliders:[], vendorZones:[], floor:floor, furniture:[],
+           cols:cols, rows:rows, exits:[], colliders:[], doorTiles:[], vendorZones:[], floor:floor, furniture:[],
            entryPoints:[], layouts:[] };
 }
 
@@ -631,6 +634,16 @@ function drawGrid(){
     for(var s=3;s<cw+ch;s+=6){ gx.moveTo(c*cw+Math.min(s,cw),r*ch+Math.max(0,s-cw)); gx.lineTo(c*cw+Math.max(0,s-ch),r*ch+Math.min(s,ch)); }
     gx.strokeStyle='rgba(210,40,40,0.55)'; gx.lineWidth=1; gx.stroke(); gx.restore();
     gx.strokeStyle='#ff3333'; gx.lineWidth=1; gx.strokeRect(c*cw+0.5,r*ch+0.5,cw-1,ch-1);
+  });
+
+  // Door tiles (brown, with a line toward the side the door faces)
+  (state.interior.doorTiles||[]).forEach(function(p){
+    var c=p[0],r=p[1], o=InteriorDoorTiles.orientation(state.floorSet,c,r);
+    gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+    var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
+    gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
+    gx.moveTo(mx-vy*cw*0.4,my+vx*ch*0.4); gx.lineTo(mx+vy*cw*0.4,my-vx*ch*0.4); gx.stroke(); // door leaf spans perpendicular to its facing
+    gx.strokeStyle='#ffe0a8'; gx.lineWidth=2; gx.beginPath(); gx.moveTo(mx,my); gx.lineTo(mx+vx*cw*0.35,my+vy*ch*0.35); gx.stroke();
   });
 
   // Exit zones
@@ -755,6 +768,7 @@ function gridAction(e){
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       }));
+      interior.doorTiles=(interior.doorTiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
       (interior.exits||[]).forEach(function(ez){ ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
       (interior.vendorZones||[]).forEach(function(vz){ vz.tiles=(vz.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
       syncFloorFromSet(); drawGrid(); rebuild3D();
@@ -806,6 +820,15 @@ function gridAction(e){
   }
   else if(tool==='eraseCollider'){
     interior.colliders=(interior.colliders||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='paintDoor'){
+    if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); } // A door tile is always floor.
+    if(!interior.doorTiles) interior.doorTiles=[];
+    if(!interior.doorTiles.some(function(p){return p[0]===c&&p[1]===r;})){ interior.doorTiles.push([c,r]); drawGrid(); rebuild3D(); }
+  }
+  else if(tool==='eraseDoor'){
+    interior.doorTiles=(interior.doorTiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
     drawGrid(); rebuild3D();
   }
   else if(tool==='paintExit'){
@@ -932,7 +955,7 @@ gc.addEventListener('pointermove',function(e){
     f.col=nc; f.row=nr;
     drawGrid();
   } else if(['paintFloor','eraseFloor','furniture','erase',
-             'paintCollider','eraseCollider','paintExit','eraseExit','paintVendor','eraseVendor'].indexOf(state.tool)>=0){
+             'paintCollider','eraseCollider','paintDoor','eraseDoor','paintExit','eraseExit','paintVendor','eraseVendor'].indexOf(state.tool)>=0){
     gridAction(e);
   }
 });
@@ -946,7 +969,7 @@ gc.addEventListener('pointerleave',function(){
 });
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
-var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry',gable:'toolGable'};
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',paintDoor:'toolPaintDoor',eraseDoor:'toolEraseDoor',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry',gable:'toolGable'};
 function setTool(t){
   state.tool=t;
   Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
@@ -1109,6 +1132,7 @@ $('applyGridBtn').addEventListener('click',function(){
   (state.interior.vendorZones||[]).forEach(function(v){ v.tiles=(v.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
   (state.interior.entryPoints||[]).forEach(function(ep){ if(ep.col>=cols||ep.row>=rows){ep.col=0;ep.row=0;} });
   state.interior.colliders=(state.interior.colliders||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
+  state.interior.doorTiles=(state.interior.doorTiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   drawGrid(); rebuild3D(); log('Grid '+cols+'x'+rows);
 });
 $('fillRectBtn').addEventListener('click',function(){
@@ -1120,6 +1144,7 @@ $('fillRectBtn').addEventListener('click',function(){
 $('clearFloorBtn').addEventListener('click',function(){
   pushUndo(); state.interior.floor=[]; syncFloorSet();
   allFurnitureArrays().forEach(function(arr){ arr.length=0; });
+  state.interior.doorTiles=[];
   (state.interior.exits||[]).forEach(function(e){e.tiles=[];});
   (state.interior.vendorZones||[]).forEach(function(v){v.tiles=[];});
   selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
@@ -1508,6 +1533,14 @@ function rebuild3D(){
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
   });
 
+  // Door tiles: a brown slab oriented like the in-game Wooden Door.
+  var doorMat3=new THREE.MeshLambertMaterial({color:0x9a6a37,transparent:true,opacity:0.8});
+  (interior.doorTiles||[]).forEach(function(p){
+    var o=InteriorDoorTiles.orientation(floorSet,p[0],p[1]);
+    var m=new THREE.Mesh(new THREE.BoxGeometry(0.92,1.2,0.12),doorMat3);
+    m.position.set(p[0]+0.5,0.6,p[1]+0.5); m.rotation.y=-o.rotationDeg*Math.PI/180; previewGroup.add(m);
+  });
+
   // Entry point markers (editor-only) — see the 2D grid's own "S1" pucks.
   var entryMat3=new THREE.MeshLambertMaterial({color:0x5adc8c,transparent:true,opacity:0.75});
   (interior.entryPoints||[]).forEach(function(ep){
@@ -1754,6 +1787,7 @@ function afterLoad(){
   }
   if(!i.exits) i.exits=[];
   if(!i.colliders) i.colliders=[];
+  if(!i.doorTiles) i.doorTiles=[];
   if(!i.vendorZones) i.vendorZones=[];
   if(!i.entryPoints) i.entryPoints=[];
   if(!i.layouts) i.layouts=[];

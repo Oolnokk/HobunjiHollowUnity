@@ -302,7 +302,7 @@
     }
     const changed = equipStoredItemData(npcId, uid);
     if (!changed) return false;
-    await refreshWalkerAppearance(walker);
+    scheduleWalkerRefresh(npcId);
     deps?.saveMemberWorldData?.();
     return true;
   }
@@ -329,9 +329,18 @@
     const walker = findWalker(npcId);
     const changed = storeWornItemData(npcId, cosmeticId);
     if (!changed) return false;
-    await refreshWalkerAppearance(walker);
+    scheduleWalkerRefresh(npcId);
     deps?.saveMemberWorldData?.();
     return true;
+  }
+
+  // Takes a currently worn garment straight into the player's clothing bag.
+  async function takeWornItem(npcId, cosmeticId) {
+    if (!storeWornItemData(npcId, cosmeticId)) return false;
+    const list = stored[npcId] || [];
+    const taken = list[list.length - 1]; // storeWornItemData appends the garment it just removed.
+    scheduleWalkerRefresh(npcId);
+    return !!taken && takeFromWardrobe(npcId, taken.uid);
   }
   const appearanceDecorators = new Map(); // Temporary event/costume layers applied only to a render export.
   function registerAppearanceDecorator(owner, decorator) {
@@ -342,7 +351,31 @@
     for (const decorator of appearanceDecorators.values()) effective = decorator(effective) || effective;
     return effective;
   }
+  // Wardrobe-panel edits change the NPC's outfit data at once, but the visible
+  // outfit only catches up once the NPC is asleep in their own bed room while
+  // the player is somewhere else (so nobody watches clothes vanish).
+  const pendingVisual = new Set(); // npcIds whose wardrobe edits are not drawn yet.
+  let pendingTimer = null;
+  function npcIsAsleepOutOfSight(walker) {
+    const asleep = deps?.isWalkerAsleep ? !!deps.isWalkerAsleep(walker) : false;
+    return asleep && !!walker?.area && walker.area !== deps?.getCurrentArea?.();
+  }
+  function flushPendingVisuals() {
+    for (const npcId of [...pendingVisual]) {
+      const walker = findWalker(npcId);
+      if (!walker) { pendingVisual.delete(npcId); continue; } // No live avatar: it is rebuilt from the record when it spawns.
+      if (npcIsAsleepOutOfSight(walker)) void refreshWalkerAppearance(walker);
+    }
+    if (!pendingVisual.size && pendingTimer) { clearInterval(pendingTimer); pendingTimer = null; }
+  }
+  function scheduleWalkerRefresh(npcId) {
+    if (!npcId) return;
+    pendingVisual.add(npcId);
+    flushPendingVisuals();
+    if (pendingVisual.size && !pendingTimer && typeof setInterval === 'function') pendingTimer = setInterval(flushPendingVisuals, 1000);
+  }
   async function refreshWalkerAppearance(walker) {
+    if (walker?.rec?.id) pendingVisual.delete(walker.rec.id); // Drawing now renders every edit made so far.
     if (!walker?.avatarGroup?.userData?.frontTexture || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
     const rec = walker.rec;
     const guessedSpecies = String(rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''); // Used only as the same legacy-record fallback as makeNpcWalker when appearance.speciesId is absent.
@@ -415,6 +448,12 @@
           render();
         }
       }));
+      panel.querySelectorAll('.npc-wardrobe-take-worn').forEach(btn => btn.addEventListener('click', async () => {
+        if (await takeWornItem(npcId, btn.dataset.cosmeticId)) {
+          deps?.showToast?.('Took ' + (btn.dataset.label || 'the garment') + '. They will change at bedtime.', true);
+          render();
+        }
+      }));
       panel.querySelectorAll('.npc-wardrobe-wear').forEach(btn => btn.addEventListener('click', async () => {
         if (await wearStoredItem(npcId, btn.dataset.uid)) {
           deps?.showToast?.('Put on ' + (btn.dataset.label || 'the garment') + '.', true);
@@ -436,6 +475,7 @@
         : `<span style="font-size:10px;color:#d99696">won't wear</span>`;
       const buttons = item.worn
         ? `<button class="npc-wardrobe-store" data-cosmetic-id="${item.cosmeticId}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Store</button>`
+          + `<button class="npc-wardrobe-take-worn" data-cosmetic-id="${item.cosmeticId}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`
         : `${wearButton}<button class="npc-wardrobe-take" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px"><span style="flex:1;font-size:12.5px">${swatch}${label}</span>${buttons}</div>`;
     }
@@ -492,6 +532,9 @@
     clothingWearability,
     wearStoredItem,
     storeWornItem,
+    takeWornItem,
+    pendingVisualIds: () => [...pendingVisual],
+    flushPendingVisuals,
     openWardrobePanel,
     closeWardrobePanel,
     captureDefaultOutfitTraits,

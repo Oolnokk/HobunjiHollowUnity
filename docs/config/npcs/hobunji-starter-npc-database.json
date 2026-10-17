@@ -10659,10 +10659,19 @@
                               "id": "home",
                               "activity": "goToRole",
                               "obligation": "plan",
-                              "window": ["17:00", "07:00"],
+                              "window": ["17:00", "22:00"],
                               "destinationRole": "khibu-living-room",
                               "destinationArea": "map_i_carpenters",
                               "activityLabel": "home"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "07:00"],
+                              "destinationStationId": "station_car_home_dzibim_bed",
+                              "destinationArea": "map_i_carpenters_F2_dzibim",
+                              "activityLabel": "sleeping upstairs"
                         }
                   ],
                   "phrasePools": [
@@ -11173,10 +11182,19 @@
                               "id": "home",
                               "activity": "goToRole",
                               "obligation": "plan",
-                              "window": ["17:00", "08:00"],
+                              "window": ["17:00", "22:00"],
                               "destinationRole": "khibu-living-room",
                               "destinationArea": "map_i_carpenters",
                               "activityLabel": "home"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "08:00"],
+                              "destinationStationId": "station_car_home_dzahiri_bed",
+                              "destinationArea": "map_i_carpenters_F2_dzahiri",
+                              "activityLabel": "sleeping upstairs"
                         }
                   ],
                   "phrasePools": [
@@ -11683,10 +11701,19 @@
                               "id": "home",
                               "activity": "goToRole",
                               "obligation": "plan",
-                              "window": ["17:00", "08:00"],
+                              "window": ["17:00", "22:00"],
                               "destinationRole": "khibu-living-room",
                               "destinationArea": "map_i_carpenters",
                               "activityLabel": "home"
+                        },
+                        {
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
+                              "window": ["22:00", "08:00"],
+                              "destinationStationId": "station_car_home_nashka_bed",
+                              "destinationArea": "map_i_carpenters_F2_nashka",
+                              "activityLabel": "sleeping upstairs"
                         }
                   ],
                   "phrasePools": [
