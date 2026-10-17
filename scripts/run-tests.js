@@ -26,10 +26,11 @@ const SLOW = new Set([
   'test-cloud-forest-trade-exit.js',
 ]);
 
-// Need Playwright + a served docs/ folder; run by the smoke-dev-random-ruin-* workflows.
+// Need Playwright; run by their dedicated browser workflow steps.
 const BROWSER = new Set([
   'test-dev-random-ruin-browser.js',
   'test-dev-random-ruin-collision-browser.js',
+  'test-controller-ui-modal-pin.js',
 ]);
 
 // Tests that fail on main and are skipped until fixed. Keep this empty: a

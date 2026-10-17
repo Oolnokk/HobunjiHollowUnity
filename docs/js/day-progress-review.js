@@ -788,6 +788,7 @@
     root.setAttribute('aria-label', 'Day progress review');
     root.setAttribute('data-ctrl-panel', '');
     root.setAttribute('data-ctrl-actions', '');
+    root.setAttribute('data-ctrl-modal', ''); // Stays the controller's active panel even if a dialogue/cutscene panel opens after it.
     root.addEventListener('hobunji-controller-panel-action', event => {
       event.preventDefault();
       if (event.detail?.action !== 'confirm') return;
@@ -804,6 +805,7 @@
         <div class="day-review-hint" id="dayReviewHint">Tap to reveal all</div>
       </div>`;
     document.body.appendChild(root);
+    installReviewInputShield();
     root.addEventListener('pointerdown', event => {
       if (event.target?.closest?.('#dayReviewContinue')) return;
       if (activeReviewPromise && !document.getElementById('dayReviewContinue')?.classList.contains('ready')) fastForwardReveal = true;
@@ -817,6 +819,26 @@
     });
     document.getElementById('dayReviewContinue')?.addEventListener('click', finishActiveReview);
     return root;
+  }
+
+  // The review is a full-screen modal over whatever the game was doing (dialogue, cutscene, menus). Keep every
+  // keyboard/pointer event that is not aimed at the review itself from reaching the layers underneath, so Escape/Enter/clicks
+  // cannot advance or close a dialogue the player cannot see. Cancel only fast-forwards the reveal; the review is never dismissable.
+  function installReviewInputShield() {
+    const swallow = event => {
+      const reviewRoot = document.getElementById(REVIEW_ROOT_ID);
+      if (!activeReviewPromise || !reviewRoot?.classList.contains('open')) return;
+      if (reviewRoot.contains(event.target)) return;
+      if (event.type === 'keydown' && (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ')) {
+        if (!document.getElementById('dayReviewContinue')?.classList.contains('ready')) fastForwardReveal = true;
+        else if (event.key !== 'Escape') finishActiveReview();
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    for (const type of ['keydown', 'keyup', 'keypress', 'click', 'dblclick', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'contextmenu', 'wheel']) {
+      window.addEventListener(type, swallow, { capture: true, passive: false });
+    }
   }
 
   function gainRows(snapshot) {
