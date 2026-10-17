@@ -238,8 +238,8 @@
   const scripts = [
     new URL('js/doorstep-visits.js?v=20261017h9e12cf8', docsBase).href, // Shared visitor runtime every doorstep provider (trust gifts, tutorial notices) registers with.
     new URL('config/weapon-trust-visits.js?v=20261015hedc83d7', docsBase).href,
-    new URL('config/weapon-discovery-rewards.js?v=20261014hc60518b', docsBase).href,
-    new URL('js/weapon-discovery-rewards.js?v=20261014hc60518b', docsBase).href,
+    new URL('config/weapon-discovery-rewards.js?v=20261017h2885c04', docsBase).href,
+    new URL('js/weapon-discovery-rewards.js?v=20261017h2885c04', docsBase).href,
     new URL('js/weapon-trust-visits.js?v=20261015hedc83d7', docsBase).href,
     new URL('js/weapon-trust-bandit-loadouts.js?v=20260926minion1', docsBase).href,
   ];
