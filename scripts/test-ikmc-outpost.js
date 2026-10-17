@@ -68,6 +68,7 @@ assert(outpost && outpost.pieceFile === 'config/pieces/ikmc-outpost.json', 'town
 assert.equal(outpost.gridZ, mine.gridZ, 'mine and Outpost must share the same northern placement line');
 assert.deepEqual([outpostDoor.col, outpostDoor.row, outpostDoor.targetMapId], [15,7,'map_i_ikmc_outpost']);
 
+// Execute the shared runtime entrance resolver here so exterior extensions cannot silently move this authored door later.
 const doorContext = { window: {}, console };
 doorContext.window.window = doorContext.window;
 vm.createContext(doorContext);
