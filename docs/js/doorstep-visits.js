@@ -544,6 +544,7 @@
         lastSpawnAttempt: lastSpawnAttempt ? { ...lastSpawnAttempt } : null,
         mode: IS_DIALOGUE_EDITOR ? 'dialogue-editor' : 'game',
         currentArea: currentArea(),
+        schedulingReady: !!scheduleDeps?.npcWalkers,
         providers: providers.map(provider => provider.id),
         activeVisitKey: activeVisit?.visit?.key || null,
         activeProviderId: activeVisit?.visit?.providerId || null,

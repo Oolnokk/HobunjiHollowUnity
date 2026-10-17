@@ -79,7 +79,7 @@ function installWorld(ctx, { npcIds }) {
     ] }],
   };
   window.NpcPathfinding = { isNpcTileWalkable: () => true };
-  window.NpcScheduling = { init() {} };
+  if (!window.NpcScheduling) window.NpcScheduling = { init() {} };
   window.NpcScheduling.init({ npcWalkers: walkers, getCurrentArea: () => state.area });
   window.BanditCombat = { init(deps) { this.deps = deps; } };
   window.BanditCombat.init({
@@ -122,6 +122,32 @@ function talkThrough(ctx, world, { naturalEnd }) {
   if (naturalEnd) ctx.window.DialogueContent.advanceNpcDialogue();
   ctx.window.DialogueContent.deps.closeNpcDialogue();
   ctx.flushTimers();
+}
+
+// Camp startup must retain the doorstep subscriber before the real scheduler loads.
+for (const campsFirst of [false, true]) {
+  const ctx = makeContext(); // Isolates both supported startup orders.
+  vm.runInContext('globalThis.fetch = () => new Promise(() => {});', ctx.context);
+  if (campsFirst) ctx.run('docs/js/porakaneki-camps-runtime.js');
+  ctx.run('docs/js/doorstep-visits.js');
+  if (!campsFirst) ctx.run('docs/js/porakaneki-camps-runtime.js');
+  ctx.run('docs/js/npc-scheduling.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Supplies the live walker after all startup hooks attach.
+  const api = ctx.window.DoorstepVisits; // Exercises the same source lookup and spawn used by the story provider.
+  api.registerProvider({
+    id: 'jubmir_great_fey',
+    next: () => ({ key: 'jubmir_great_fey', npcId: 'jubmir', tree: { nodes: [] } }),
+  });
+  assert.equal(api.debugSnapshot().schedulingReady, true, 'camp startup preserves the NPC scheduling connection');
+  assert.equal(api.sourceWalker('jubmir'), world.walkers[0], 'Jubmir resolves from the authoritative walker array');
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), 'jubmir_great_fey', 'overdue story visit spawns on farmhouse exit');
+  assert.equal(world.walkers.filter(walker => walker._doorstepVisitor).length, 1);
+  ctx.clock.now += 1200; ctx.tick();
+  assert.equal(world.walkers.filter(walker => walker._doorstepVisitor).length, 1, 'periodic synchronization does not duplicate visitors');
+  world.state.area = 'town'; ctx.tick();
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), 'jubmir_great_fey', 'unfinished visit remains available after leaving and returning');
 }
 
 // ── Shared runtime: area watch, spawn, natural end vs. Escape, flags ──────
