@@ -139,6 +139,10 @@
   function applyPlayerNeckYawLimit(renderDebug, camera) {
     const neckJoint = currentPlayerNeckJoint();
     if (!neckJoint) return;
+    if (headAimEnabled && headAimSource === 'fishing-water') {
+      renderDebug.neckYaw = { source: 'fishing-water', renderedDeg: THREE.MathUtils.radToDeg(neckJoint.rotation.y), waterTargetLocked: true };
+      return; // Fishing's authored torso twist and side camera must not override the solved water gaze.
+    }
     const rawYaw = finite(neckJoint.rotation.y); // Game-authored local neck yaw inspected below before the visual physical limit is applied.
     const sitState = window.__hobunjiFurnitureDebug?.sitInteraction; // Used only to distinguish the seated camera-look fallback from normal aim clamping.
     const seated = sitState?.phase === 'active';
