@@ -80,15 +80,15 @@
   // the big shove for Cleave, means the combo has something left to hit by
   // the time the finisher's own knockbackMul (2.4) fires.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.345,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 0.86, dmgTag: 'blunt', lungeMul: 2.0 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.345,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 0.86, dmgTag: 'blunt', lungeMul: 1.0 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.775,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 0.43, dmgTag: 'blunt', lungeMul: 2.0 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.775,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 0.43, dmgTag: 'blunt', lungeMul: 1.0 },
     // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
     // handling in onTap below — barely outdamages Backhand Swing on its own
     // (1.35 vs 1.25); its real payoff is the Death Mark it leaves on
     // whatever it hits (see combat-death-mark.js), not its own base damage.
     // Keeps an extra x1.5 knockback bump (2.4) on top of the shared
     // knockback baseline, same as charged breaker/riposte/flurry.
-    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.5175, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 0.8275, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
+    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.93125, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 0.41375, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
   // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
@@ -100,14 +100,14 @@
   // opener, so the follow-ups bias toward forgiving the combo continuing
   // over staying razor-precise.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.18, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 0.94, dmgTag: 'sharp', lungeMul: 2.0 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.24, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 0.92, dmgTag: 'sharp', lungeMul: 1.0 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.65, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 0.47, dmgTag: 'sharp', lungeMul: 2.0 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.7, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 0.46, dmgTag: 'sharp', lungeMul: 1.0 },
     // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
     // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff is
     // the Death Mark it leaves on whatever it hits, the same way Cleave's
     // does (see combat-death-mark.js). Same extra x1.5 knockback bump as
     // Cleave.
-    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.405, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 0.865, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
+    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.8375, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 0.4325, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }

@@ -21740,9 +21740,12 @@
       function getWeaponAttackTimeline() {
         if (activeTool !== 'weapon' || !combatSwingAnim || !(toolSwingT > 0)) return null;
         const elapsedS = Math.max(0, toolSwingDur - toolSwingT); // Shared animation clock includes additive strike hold and automatic return easing.
+        const holdEndFrac = combatSwingHoldS > 0 // Match updateToolMesh's explicit or proportional hold endpoint.
+          ? Math.min(0.99, combatSwingStrikeFrac + combatSwingHoldS / toolSwingDur)
+          : Math.min(0.99, combatSwingStrikeFrac + (1 - combatSwingStrikeFrac) * 0.3);
         return {
           remainingS: toolSwingT,
-          activeRemainingS: Math.max(0, toolSwingDur * combatSwingStrikeFrac - elapsedS), // Ends at the Strike pose: the hold and return can be interrupted by the next attack.
+          activeRemainingS: Math.max(0, toolSwingDur * holdEndFrac - elapsedS),
           windupRemainingS: Math.max(0, toolSwingDur * combatSwingWindupFrac - elapsedS),
           held: combatSwingHeld,
         };
