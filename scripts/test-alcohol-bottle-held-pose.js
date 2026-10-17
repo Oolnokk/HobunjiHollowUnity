@@ -67,8 +67,8 @@ for (const ingredient of ['berryKey', 'inputKey']) {
 }
 
 assert.match(game,
-  /function usesThrustHeldPose[\s\S]*?startsWith\('potion_'\)[\s\S]*?isAlcoholItemDef\(def\)/,
-  'potions and alcohol share the thrust-held-pose classifier');
+  /function usesThrustHeldPose[\s\S]*?return !isLargeHeldItem\(item\)/,
+  'every small held item (potions, alcohol, ...) shares the liquor-bottle held-pose classifier; only large items are carried two-handed');
 assert.match(game,
   /heldItemHolder\.position\.set\(playerToolBaseX, playerToolBaseY, 0\)[\s\S]*?degToRad\(10\.31\)[\s\S]*?scale\.setScalar\(0\.5\)[\s\S]*?_heldItemPlane\.rotation\.x = Math\.PI \/ 2/,
   'thrust-held consumables keep the weapon hand pivot while rendering half-size and flipped end-for-end');

@@ -103,7 +103,27 @@
     },
   };
 
-  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
+  // Still two-handed carry for large inventory items (furniture, livestock, buildings...).
+  // Same origin as Drink (hand anchor + pose offset): x lifts the item back to body centre,
+  // y matches the old chest height, z pushes it farther out from the chest than the old 0.1.
+  // Both hands grip the item's left and right edges. Small handheld items use Drink's neutral.
+  const heldItemLarge = {
+    version: 1,
+    kind: 'hobunji_held_action_animation',
+    name: 'Large Held Item (two-hand)',
+    style: 'drink',
+    durationS: 0.95,
+    windupFrac: 0.38,
+    strikeFrac: 0.62,
+    holdFrac: 0.78,
+    poses: {
+      neutral: { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true }, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 } },
+      windup: { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true }, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 } },
+      strike: { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true }, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 } },
+    },
+  };
+
+  window.HeldActionAnimations = Object.freeze({ drink, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
@@ -200,7 +220,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261017h7d7feaa', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261013ha534393', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261017hde73098', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
