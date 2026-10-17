@@ -197,7 +197,7 @@
     }
     // A blocking modal (data-ctrl-modal) stays on top however many panels open after it, so a dialogue or cutscene
     // panel appearing underneath cannot take Confirm/Back away from it.
-    const modal = [...stack].reverse().find(p => p.hasAttribute('data-ctrl-modal'));
+    const modal = [...stack].reverse().find(p => p.hasAttribute?.('data-ctrl-modal'));
     if (modal && stack[stack.length - 1] !== modal) stack = [...stack.filter(p => p !== modal), modal];
 
     const newTop = activePanel();
@@ -962,8 +962,8 @@
       registerPanel(panel);
       reconcileStack();
       if (!stack.includes(panel)) return false;
-      const modal = [...stack].reverse().find(entry => entry !== panel && entry.hasAttribute('data-ctrl-modal')); // A pinned modal refuses focus theft.
-      if (modal && !panel.hasAttribute('data-ctrl-modal')) return false;
+      const modal = [...stack].reverse().find(entry => entry !== panel && entry.hasAttribute?.('data-ctrl-modal')); // A pinned modal refuses focus theft.
+      if (modal && !panel.hasAttribute?.('data-ctrl-modal')) return false;
       stack = stack.filter(entry => entry !== panel);
       stack.push(panel);
       activatePanel(panel);
