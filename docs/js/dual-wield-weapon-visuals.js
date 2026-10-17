@@ -541,6 +541,7 @@
     transformSocketForHand,
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
+    editorMainCopy: () => (state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null), // The visible main-hand weapon when Dual Wield is showing both copies.
     editorOffhandCopy: () => (state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null), // The visible offhand weapon the Attack Editor gizmo should pivot on.
     debugSnapshot,
     constants: Object.freeze({ DUPLICATE_Z_GAP, HALF_Z_SEPARATION, MAIN_HAND_LAG_MS }),

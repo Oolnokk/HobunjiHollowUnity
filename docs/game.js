@@ -9594,7 +9594,7 @@
       // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
       let playerArmLength = 0.558; // Anatomical species+gender reach cached at avatar rebuild; retained independently from weapon pose orbit.
-      let playerPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier authored separately from anatomy.
+      let playerPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier authored separately from anatomy: a number, or per-axis { x, y, z }.
       let playerPoseCentroidY = 0.45; // Floor-relative visual/body centroid cached from the actual portrait hierarchy for per-frame pose scaling.
       // The player's own rendered bust-portrait model height (avatarHeight in
       // refreshPlayerAvatar) — recomputed there alongside playerToolBaseX/Y.
@@ -16765,12 +16765,15 @@
         const cachedArmLength = Number(avatarGroup.userData?.armLength); // Anatomical reach is independent from the authored weapon orbit multiplier.
         playerArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
         const cachedPoseOrbitScale = Number(avatarGroup.userData?.poseOrbitScale);
-        playerPoseOrbitScale = Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
-          ? cachedPoseOrbitScale
-          : (window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(playerArmLength) ?? 1); // Legacy-avatar fallback only.
+        const cachedPoseOrbitAxes = window.HobunjiSpeciesPoseScale?.axesFromValue?.(avatarGroup.userData?.poseOrbitAxes); // Per-axis { x, y, z } the species authored; null on legacy avatars.
+        playerPoseOrbitScale = cachedPoseOrbitAxes
+          ? cachedPoseOrbitAxes
+          : (Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
+            ? cachedPoseOrbitScale
+            : (window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(playerArmLength) ?? 1)); // Legacy-avatar fallback only.
         const cachedPoseCentroidY = Number(avatarGroup.userData?.poseCentroidY); // PNGPlaneAvatar already accounts for the internal assemblyY portrait shift.
         playerPoseCentroidY = Number.isFinite(cachedPoseCentroidY) ? cachedPoseCentroidY : avatarHeight * (Number(avatarGroup.userData?.portraitVerticalPlacementRatio) || 0.5);
-        window.__farmLog?.(`[combat] pose orbit cached: ${_playerData?.appearance?.speciesId || 'unknown'}/${_playerData?.appearance?.gender || 'unknown'} orbit=${playerPoseOrbitScale.toFixed(5)} arm=${playerArmLength.toFixed(3)} centroidY=${playerPoseCentroidY.toFixed(3)}`, 'info', 'combat');
+        window.__farmLog?.(`[combat] pose orbit cached: ${_playerData?.appearance?.speciesId || 'unknown'}/${_playerData?.appearance?.gender || 'unknown'} orbit=${(() => { const a = window.HobunjiSpeciesPoseScale?.axesForPose?.(playerPoseOrbitScale, playerArmLength) || { x: playerPoseOrbitScale, y: 1, z: playerPoseOrbitScale }; return `${a.x.toFixed(5)}/${a.y.toFixed(5)}/${a.z.toFixed(5)}`; })()} arm=${playerArmLength.toFixed(3)} centroidY=${playerPoseCentroidY.toFixed(3)}`, 'info', 'combat');
         // Re-clear (not just at this function's top): the 'posterior' anchor
         // is derived from playerAvatarModelHeight/playerToolBaseY, just set
         // above — anything that called playerAttachmentAnchor('posterior')
@@ -22678,7 +22681,9 @@
           gender: _playerData?.appearance?.gender || 'male',
         };
       }
-      function scaleToolWorldPointAroundPlayerCentroid(point) {
+      // poseYawRad: facing of the frame the authored x/z were built in (vθ, i.e. facing + body yaw), so per-axis
+      // species orbits scale the pose's own lateral/forward axes rather than world X/Z. Irrelevant for equal X/Z.
+      function scaleToolWorldPointAroundPlayerCentroid(point, poseYawRad = 0) {
         if (!point) return point;
         const cx = playerMesh.position.x;
         const cz = playerMesh.position.z;
@@ -22696,6 +22701,7 @@
             modelHeight: playerAvatarModelHeight,
             armLength: playerArmLength,
             poseOrbitScale: playerPoseOrbitScale,
+            yawRad: poseYawRad,
           });
         } else if (orbitScale !== 1) {
           // Compatibility fallback intentionally leaves Y alone; orbit settings never own vertical placement.
@@ -22741,9 +22747,9 @@
         };
       }
 
-      function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame()) {
+      function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame(), poseYawRad = 0) {
         if (!point) return point;
-        scaleToolWorldPointAroundPlayerCentroid(point);
+        scaleToolWorldPointAroundPlayerCentroid(point, poseYawRad);
         const pitch = -(Number(reticleFrame?.pitchRad) || 0); // Visual orbit uses the opposite X-axis sign: reticle-up must raise the authored weapon orbit, never lower it.
         const yaw = Number(reticleFrame?.yawRad) || 0; // Exact azimuth from body centroid to the shared reticle point.
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
@@ -22983,8 +22989,8 @@
             playerMesh.position.y + playerToolBaseY + y,
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
-          if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -23024,8 +23030,8 @@
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
-          if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
@@ -23064,7 +23070,7 @@
             playerMesh.position.y + playerToolBaseY,
             playerMesh.position.z + vRZ * (playerToolBaseX + lateral) + vFZ * jabOff
           );
-          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'chop') {
           // CHOP — full pose-driven swing (raise → slam → return), authored
@@ -23107,7 +23113,7 @@
           const handY = playerMesh.position.y + playerToolBaseY + y;
           const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
           toolHolder.position.set(handX, handY, handZ);
-          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'toss') {
           // TOSS — reverse hoe: lift the load on the windup, then heave it up
@@ -23241,7 +23247,7 @@
             playerMesh.position.y + playerToolBaseY,
             playerMesh.position.z + vRZ * handX + vFZ * 0.16
           );
-          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
         }
 
         // Layer the sprite's own "spinning" twirl on top of whichever swing style is active —

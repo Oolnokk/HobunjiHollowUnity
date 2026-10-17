@@ -528,6 +528,8 @@
 
     holder.position.add(positionDelta);
     holder.quaternion.copy(baseQ).multiply(targetQ);
+    const facing = new THREE.Vector3(0, 0, 1).applyQuaternion(baseQ); // The pose frame's forward axis: lets per-axis species orbits scale its lateral/forward axes.
+    return { yawRad: Math.atan2(facing.x, facing.z) };
   }
 
   function logState(activeSlot, itemKey, def, stateLabel) {
@@ -567,8 +569,8 @@
         savedPosition = this.position.clone();
         savedQuaternion = this.quaternion.clone();
         try {
-          applyRelativeHolderPose(this, sourcePose, targetPose);
-          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position); // Weapon idle uses the same finished-point centroid orbit as attacks.
+          const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');

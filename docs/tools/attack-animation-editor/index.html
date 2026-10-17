@@ -291,8 +291,8 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-utils.js?v=20261016h340e25a"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20261011h5faa803"></script>
-<script src="../../js/species-pose-scaling.js?v=20260920height2"></script>
+<script src="../../js/png-plane-avatar.js?v=20261017h64afb2a"></script>
+<script src="../../js/species-pose-scaling.js?v=20261017h7ae8f70"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
@@ -380,7 +380,7 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let currentArmLength = 0.558; // Anatomical reach remains visible for diagnostics and old-config fallback only.
-let currentPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier, independently authored below.
+let currentPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier (a number, or per-axis { x, y, z }), independently authored below.
 let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid copied from PNGPlaneAvatar metadata after each rebuild.
 let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
@@ -616,9 +616,12 @@ async function rebuildAvatar(speciesId, gender) {
   const cachedArmLength = Number(avatarModel.userData?.armLength);
   currentArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
   const cachedPoseOrbitScale = Number(avatarModel.userData?.poseOrbitScale);
-  currentPoseOrbitScale = Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
-    ? cachedPoseOrbitScale
-    : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, currentArmLength) ?? 1);
+  const cachedPoseOrbitAxes = window.HobunjiSpeciesPoseScale?.axesFromValue?.(avatarModel.userData?.poseOrbitAxes); // Per-axis { x, y, z }; the editor's rig space IS the pose frame, so no facing yaw is needed.
+  currentPoseOrbitScale = cachedPoseOrbitAxes
+    ? cachedPoseOrbitAxes
+    : (Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
+      ? cachedPoseOrbitScale
+      : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, currentArmLength) ?? 1));
   const cachedCentroidY = Number(avatarModel.userData?.poseCentroidY); // Includes the portrait assembly's internal vertical offset.
   currentPoseCentroidY = Number.isFinite(cachedCentroidY) ? cachedCentroidY : h * (Number(avatarModel.userData?.portraitVerticalPlacementRatio) || 0.5);
   if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
@@ -643,7 +646,7 @@ async function rebuildAvatar(speciesId, gender) {
   baseAttachX *= characterBodyScaleRoot.scale.x;
   baseAttachY *= characterBodyScaleRoot.scale.y;
   toolBase.position.set(toolBaseSideX(), baseAttachY, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${(() => { const a = window.HobunjiSpeciesPoseScale?.axesForPose?.(currentPoseOrbitScale, currentArmLength) || { x: currentPoseOrbitScale, y: 1, z: currentPoseOrbitScale }; return a.x === a.z && a.y === 1 ? a.x.toFixed(5) : `${a.x.toFixed(5)}/${a.y.toFixed(5)}/${a.z.toFixed(5)} (x/y/z)`; })()}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
 }
 
@@ -694,36 +697,48 @@ let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
 let editPhase = 'windup'; // Single source of truth for pose tabs, sliders, and TransformControls.
 
 transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
-// Offhand idle-stance authoring: the saved stance belongs to the hidden source weapon, but the weapon you see is the
-// dual-wield copy, which sits a small plane-normal distance away from it. Dragging the source would rotate AND translate
-// the visible copy, so the gizmo targets a proxy at the copy's own origin and each drag is converted back onto the holder.
-const offhandGizmoProxy = new THREE.Object3D();
-toolBase.add(offhandGizmoProxy);
-const proxyCopyOffset = new THREE.Vector3(); // Visible copy's origin in the holder's own local frame (constant while the pose rotates).
+// The 3D gizmo drives a proxy rather than the holder, so it can (1) sit on the weapon you actually SEE and (2) use the
+// frame each channel is authored in. The saved pose belongs to the holder (the hidden source weapon), but what is drawn
+// may sit a little away from it: the dual-wield copies are offset along their plane normal, and the held visual carries
+// the grip placement offset. Pivoting on the holder would make a rotation swing the visible weapon around a point that
+// is not on it. Translation is in character-root space (the rig frame the x/y/z channels are authored in); rotation is
+// in the tool's own space. Each drag is converted back onto the holder, whose x/y/z/pitch/yaw/roll feed the pose panel.
+const gizmoProxy = new THREE.Object3D();
+toolBase.add(gizmoProxy);
+transformControls.setSpace('local'); // The proxy supplies the orientation: rig frame to translate, tool frame to rotate.
+const proxyPivotOffset = new THREE.Vector3(); // Visible weapon's origin in the holder's own local frame (constant while the pose rotates).
 const proxyScratch = new THREE.Vector3();
-const proxyActive = () => offhandAuthoringBase && !!window.HobunjiDualWieldWeaponVisuals?.editorOffhandCopy?.();
-const gizmoTarget = () => (proxyActive() ? offhandGizmoProxy : toolHolder);
-function syncOffhandGizmoProxy() {
-  const copy = window.HobunjiDualWieldWeaponVisuals?.editorOffhandCopy?.();
-  if (!copy) return;
-  toolHolder.updateWorldMatrix(true, false);
-  copy.updateWorldMatrix(true, false);
-  proxyCopyOffset.copy(toolHolder.worldToLocal(copy.getWorldPosition(proxyScratch)));
-  offhandGizmoProxy.quaternion.copy(toolHolder.quaternion);
-  offhandGizmoProxy.position.copy(toolHolder.position).add(proxyScratch.copy(proxyCopyOffset).multiply(toolHolder.scale).applyQuaternion(toolHolder.quaternion));
-  offhandGizmoProxy.updateMatrixWorld(true);
+const IDENTITY_QUATERNION = new THREE.Quaternion();
+function gizmoPivotVisual() {
+  const dual = window.HobunjiDualWieldWeaponVisuals;
+  return (offhandAuthoringBase ? dual?.editorOffhandCopy?.() : null) || dual?.editorMainCopy?.() || toolPlaneMesh || null;
 }
+function proxyPivotWorldOffset(quaternion, out = proxyScratch) {
+  return out.copy(proxyPivotOffset).multiply(toolHolder.scale).applyQuaternion(quaternion);
+}
+function syncGizmoProxy() {
+  const visual = gizmoPivotVisual();
+  proxyPivotOffset.set(0, 0, 0);
+  if (visual) {
+    toolHolder.updateWorldMatrix(true, false);
+    visual.updateWorldMatrix(true, false);
+    proxyPivotOffset.copy(toolHolder.worldToLocal(visual.getWorldPosition(proxyScratch)));
+  }
+  gizmoProxy.quaternion.copy(gizmoMode === 'rotate' ? toolHolder.quaternion : IDENTITY_QUATERNION);
+  gizmoProxy.position.copy(toolHolder.position).add(proxyPivotWorldOffset(toolHolder.quaternion));
+  gizmoProxy.updateMatrixWorld(true);
+}
+const gizmoTarget = () => gizmoProxy;
 function refreshGizmoTarget() {
   if (gizmoMode === 'off') return;
-  if (proxyActive()) syncOffhandGizmoProxy();
+  syncGizmoProxy();
   transformControls.attach(gizmoTarget());
 }
 
 transformControls.addEventListener('objectChange', () => {
-  if (transformControls.object === offhandGizmoProxy) {
-    // Pivot on the visible copy: put the hidden source back where that copy's new pose implies.
-    toolHolder.quaternion.copy(offhandGizmoProxy.quaternion);
-    toolHolder.position.copy(offhandGizmoProxy.position).sub(proxyScratch.copy(proxyCopyOffset).multiply(toolHolder.scale).applyQuaternion(offhandGizmoProxy.quaternion));
+  if (transformControls.object === gizmoProxy) {
+    if (gizmoMode === 'rotate') toolHolder.quaternion.copy(gizmoProxy.quaternion); // Translation keeps the tool's own rotation.
+    toolHolder.position.copy(gizmoProxy.position).sub(proxyPivotWorldOffset(toolHolder.quaternion));
   }
   const p = anim.poses[editPhase];
   poseOrbitScratch.set(
@@ -1907,9 +1922,9 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
     const offset = copyPoint.sub(holderPoint).applyQuaternion(toolHolder.quaternion.clone().invert());
     return { x: offset.x, y: offset.y, z: offset.z };
   },
-  get gizmoTarget() { return gizmoTarget(); }, // What the 3D gizmo is attached to: the holder, or the offhand proxy while its stance is authored.
+  get gizmoTarget() { return gizmoTarget(); }, // What the 3D gizmo is attached to: a proxy on the visible weapon (see above), never the hidden holder.
   get transformControls() { return transformControls; },
-  setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); if (gizmoMode !== 'off') { if (!proxyActive()) transformControls.attach(toolHolder); else refreshGizmoTarget(); } }, // Idle-stance editor only: anchors the holder on the offhand side without flipping the sprite.
+  setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); refreshGizmoTarget(); },
   get toolKey() { return currentToolKey; },
   focusNeutral() {
     selectEditPhase('neutral');
@@ -2187,7 +2202,7 @@ function animate() {
   }
   const { pose, phase } = poseAt(previewT);
   applyPoseToRig(pose);
-  if (transformControls.object === offhandGizmoProxy && !transformControls.dragging) syncOffhandGizmoProxy(); // Follows slider/Neutral edits; during a drag the proxy is the input.
+  if (transformControls.object === gizmoProxy && !transformControls.dragging) syncGizmoProxy(); // Follows slider/Neutral edits and the visuals; during a drag the proxy is the input.
   updateHeadSkinVertexOverlay();
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
