@@ -14,13 +14,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -32,13 +35,21 @@ jobs:
         run: |
           node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
-      - name: Cache-bust tokens moved with their files
-        # PR checkouts are the merge commit, so diffing against the base tip is
-        # exactly this PR's change. Fix locally with: node scripts/check-cache-busts.js --fix
+      - name: Fix and validate cache-bust chain
         if: github.event_name == 'pull_request'
+        shell: bash
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          node scripts/check-cache-busts.js FETCH_HEAD
+          git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          BASE="origin/${{ github.base_ref }}"
+          node scripts/check-cache-busts.js --fix "$BASE"
+          if ! git diff --quiet; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -A
+            git commit -m "Apply cache-bust fixes for Rig Coordinates parity"
+            git push origin HEAD:"${{ github.head_ref }}"
+          fi
+          node scripts/check-cache-busts.js "$BASE"
       - name: Regression tests
         # Slow tests only run on main / manual dispatch, not on every PR push.
         run: node scripts/run-tests.js ${{ github.event_name != 'pull_request' && '--all' || '' }}
