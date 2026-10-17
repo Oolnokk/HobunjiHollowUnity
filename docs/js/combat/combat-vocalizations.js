@@ -894,7 +894,9 @@ function beginCharge(options = {}) {
       buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, trimmed: false,
     };
     const audibleBuffer = trim.buffer || buffer; // Charge math uses actual audible waveform duration, not leading/trailing silence or codec padding.
-    const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
+    const voice = voicePlaybackPlan(Number.isFinite(options.pitchOffsetSemitones)
+      ? options.pitchOffsetSemitones // Pre-rolled by prewarmStrikeGrunt so this render is already cached.
+      : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
     const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
     const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false };
     const [fullRendered, catchUpRendered] = await Promise.all([
@@ -989,15 +991,44 @@ function beginCharge(options = {}) {
     return Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0;
   }
 
-  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0) {
-    const isCombo = category === 'combo';
-    const urls = isCombo ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
+  function pickStrikeGruntUrl(category) {
+    const urls = category === 'combo' ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
     const available = urls.filter(Boolean);
-    if (!available.length) return;
-    const url = available[Math.floor(Math.random() * available.length)];
+    return available.length ? available[Math.floor(Math.random() * available.length)] : null;
+  }
+
+  // The release voice used to be pitch-rolled and WSOLA-rendered only when the
+  // windup ended. With a fresh random pitch every swing the render cache never
+  // hit, so on slower devices it started late (offset past its loud start) or
+  // not at all, leaving only the windup grunt, which ends at the strike. Roll
+  // the pitch and render at attack start; the windup-end call reuses the cache.
+  function prewarmStrikeGrunt(entity, category, durationS) {
+    const url = pickStrikeGruntUrl(category);
+    if (!url || !(durationS > 0)) return url ? { url } : null;
+    const pitchOffsetSemitones = randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0);
+    if (isHumanoidVocalEntity(entity) && audioConfig().enabled !== false && Number(audioConfig().sfxVolume ?? 1) > 0) {
+      preloadStrikeBuffer(url).then(buffer => {
+        const ctx = ensureAudioContext();
+        const playback = window.AnimalVoiceIndependentPlayback;
+        if (!buffer || !ctx || !playback?.renderDecodedIndependentBuffer) return null;
+        const trim = playback.trimDecodedSilence ? playback.trimDecodedSilence(buffer, ctx, { padMs: 4 }) : { buffer };
+        const audible = trim.buffer || buffer; // Same trimmed buffer object beginCharge will use (trims are cached per buffer).
+        const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
+        const plan = chargeRatePlan(audible.duration, durationS, voice.tempo);
+        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, tempo: plan.stretchedTempo });
+      }).catch(() => {});
+    }
+    return { url, pitchOffsetSemitones };
+  }
+
+  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0, preset = null) {
+    const isCombo = category === 'combo';
+    const url = preset?.url || pickStrikeGruntUrl(category);
+    if (!url) return;
     const played = durationS > 0 ? beginCharge({
       entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
       createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
+      pitchOffsetSemitones: preset?.pitchOffsetSemitones,
     }) : playOneShot(
       entity,
       url,
@@ -1060,11 +1091,12 @@ function beginCharge(options = {}) {
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
       if (charge) liveChargesByAbility.delete(context.id);
       if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category });
+      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS) : null; // Rendered during the windup.
       const startRelease = elapsedS => {
         if (releaseStarted) return;
         releaseStarted = true;
         cancelCharge(charge);
-        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS);
+        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS, releasePreset);
       };
       if (windupS <= 0) startRelease(0);
       // gameLoop clamps dt to 0.04s, so below 25 fps the staged clock falls behind the
@@ -1253,6 +1285,7 @@ function beginCharge(options = {}) {
     releaseCharge,
     cancelCharge,
     playStrikeGrunt,
+    prewarmStrikeGrunt,
     attackStartDelayS,
     chargeRatePlan,
     liveChargeTargetDurationS,
