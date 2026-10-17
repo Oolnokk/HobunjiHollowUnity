@@ -32,7 +32,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20260926clockcache1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261017kurrayapluck1';
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -141,6 +141,9 @@
     ['tremolo-16', 'Rapid Tremolo · sixteenths'],
     ['tremolo-triplet', 'Triplet Tremolo'],
     ['tremolo-burst-16', 'Three-Stroke Tremolo Burst'],
+    ['strum-down-4', 'Steady Downstrokes'],
+    ['strum-alternating-8', 'Alternating Down–Up'],
+    ['strum-pop-8', 'Down–Down–Up–Up–Down–Up'],
     ['strum-reggae-8', 'Reggae Offbeat Skank'],
     ['strum-bossa-16', 'Bossa Nova Syncopation'],
     ['strum-rasgueado-16', 'Rasgueado Burst'],
@@ -274,11 +277,11 @@
       if (snapshot?.melodyNotes?.length) bridge.setKurrayaSongMelody?.(snapshot.melodyNotes);
       bridge.startBackupPreviewSong?.(playerSession.songId);
     } else bridge.enterJamMode?.(); // Regular/improvise mode — the compact song picker (see buildEdgeControls) handles picking a real song from here.
+    const footstepUrls = deps.getPlayerFootstepSampleUrls?.() || []; // Surface recordings feed the same sample-accurate beat scheduler used in Music Lab.
+    bridge.useGameplayFootstepMetronome?.(footstepUrls).catch(error => window.__farmLog?.(`kurraya metronome: ${error.message}`, 'warn'));
     buildEdgeControls(frameEl);
-    // The iframe's own keydown listeners (ASDF notes, arrow-key banks, ...)
-    // only fire while it actually has focus — without this, whichever
-    // element the page happened to have focused keeps eating keystrokes.
-    try { frameEl.contentWindow?.focus(); } catch {}
+    // Host capture handlers route music keys; retaining host focus also keeps viewport mouse-look active.
+    try { window.focus(); } catch {}
   }
   frameEl?.addEventListener('load', onPlayerFrameLoaded);
 
@@ -469,6 +472,9 @@
         <div class="concertinaGroupHead"><strong>Auto Pick</strong><small>4 slottable modes</small></div>
         <div class="edgeLeftStickRow fourWayAutoPickRow" aria-label="Four-way Auto Pick controls">
           <div class="autoPickCrossWrap">
+            <label style="display:grid;gap:3px;font-size:11px">Plucking pattern
+              <select data-plucking-pattern aria-label="Pattern for selected direction" style="min-width:0;max-width:100%;width:100%;color:inherit;background:#18222c">${AUTO_PICK_PATTERNS.map(([id,label]) => `<option value="${id}">${label}</option>`).join('')}</select>
+            </label>
             <div class="autoPickCross" aria-label="Four-way Auto Pick mode cross">
               <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="0" aria-label="Select Up Auto Pick mode"><span class="directionGlyph">▲</span><span class="modeText">UP</span></button>
               <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="1" aria-label="Select Right Auto Pick mode"><span class="directionGlyph">▶</span><span class="modeText">RIGHT</span></button>
@@ -785,6 +791,11 @@
         () => endVisibleNoteHold(button));
     });
 
+    leftMount.querySelector('[data-plucking-pattern]')?.addEventListener('change', event => {
+      const sector = Number(bridge.getState?.()?.leftStickSector) || 0; // Assigns the chosen figure to the active direction, including every strum.
+      bridge.setAutoPickSlot?.(sector, event.target.value);
+      readMode();
+    });
     leftMount.querySelectorAll('[data-auto-pick-sector]').forEach(button => {
       button.addEventListener('pointerdown', event => {
         event.preventDefault();
@@ -820,6 +831,9 @@
         if (modeText) modeText.textContent = String(labels[sector] || `MODE ${sector + 1}`).replace(/\s+/g, ' ').slice(0, 8);
         button.classList.toggle('selected', sector === selectedSector);
       });
+      const patternSelect = leftMount.querySelector('[data-plucking-pattern]'); // Mirrors the selected directional slot without overwriting a user's open picker each frame.
+      const patternId = stateSnapshot.autoPickSlots?.[selectedSector] || DEFAULT_AUTO_PICK_SLOTS[selectedSector]; // Shared slot id from the engine.
+      if (patternSelect && patternSelect.value !== patternId) patternSelect.value = patternId;
       const hint = leftMount.querySelector('[data-auto-pick-hint]');
       if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
     };
@@ -1052,17 +1066,9 @@
         }
       } else controllerAutoPickSector = -1;
 
-      const rxRaw = Number(gamepad.axes[2]) || 0;
-      const ryRaw = Number(gamepad.axes[3]) || 0;
-      const rx = Math.abs(rxRaw) < 0.14 ? 0 : rxRaw;
-      const ry = Math.abs(ryRaw) < 0.14 ? 0 : ryRaw;
-      if (Math.hypot(rx, ry) >= 0.12) {
-        controllerRightStickActive = true;
-        bridge.rightStick(rx, ry, 'host-gamepad-right-stick');
-      } else if (controllerRightStickActive) {
-        controllerRightStickActive = false;
-        bridge.releaseRightStick();
-      }
+      // The gameplay camera owner reads RS from this same ControllerInput frame.
+      // Music owns note buttons and LS only; RS never triggers a manual strum.
+
     };
     unsubscribeHostedController = window.ControllerInput?.subscribe?.(
       'music-minigame', pollHostedController, window.ControllerInput.PRIORITY.music,

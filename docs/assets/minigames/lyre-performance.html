@@ -1127,13 +1127,13 @@
 
         <section class="card" id="rhythmSampleCard">
           <h3>Rhythm & root samples</h3>
-          <p class="help-text">These are independent of the main instrument sample. A metronome sample replaces the synth click; a root-pad sample replaces the synth pad while <strong>Harmony Root Pad</strong> is on.</p>
+          <p class="help-text">These are independent of the main instrument sample. A metronome sample replaces the synth click; a root-pad sample replaces the low kurraya chord while <strong>Harmony Root Pad</strong> is on.</p>
           <input id="metronomeSampleFile" type="file" accept="audio/*" hidden>
           <input id="rootPadSampleFile" type="file" accept="audio/*" hidden>
           <div class="form-grid">
             <div class="field"><label>Metronome sample</label><div id="metronomeSampleStatus" class="help-text">Synth click fallback</div></div>
             <div class="field"><label for="rootPadSampleRoot">Pad sample recorded root</label><select id="rootPadSampleRoot"></select></div>
-            <div class="field"><label>Root pad sample</label><div id="rootPadSampleStatus" class="help-text">Synth root-pad fallback</div></div>
+            <div class="field"><label>Root pad sample</label><div id="rootPadSampleStatus" class="help-text">Low kurraya fifth chord</div></div>
           </div>
           <div class="control-row"><label for="metronomeSampleLevel">Metronome Sample Level</label><input id="metronomeSampleLevel" type="range" min="0" max="100" step="1" value="55"><output id="metronomeSampleLevelOut">55%</output></div>
           <div class="action-row"><button class="wide-btn" id="importMetronomeSampleBtn">Import stomp / click</button><button class="wide-btn" id="previewMetronomeSampleBtn">Preview</button><button class="wide-btn danger" id="clearMetronomeSampleBtn">Clear</button></div>
@@ -1175,7 +1175,7 @@
     <div class="modal-body help-text">
       <p><strong>Locked input layout:</strong> development now uses <em>5 Banks · Auto Pick</em> exclusively. Open, LT, LB, RT, and RB remain five ascending groups of four notes, while the left stick latches the automatic arpeggio or tremolo behavior.</p>
       <p><strong>Visual presets:</strong> <em>Falling Strings</em> preserves the existing twenty-lane presentation. <em>20-Note Timing Rings</em> keeps every playable note visible at once in five widely separated four-note islands: LT upper-left, LB lower-left, Open center, RT upper-right, and RB lower-right. Inside every island, X/A/B/Y use the same left/bottom/right/top diamond as the face buttons. The <em>Prompts</em> dropdown chooses how many beats ahead solid timing rings appear; each ring contracts onto its fixed note circle, which lights and pulses during the playable window.</p>
-      <p><strong>Hidden harmony:</strong> one shared transport drives the falling melody notes, visual/auditory metronome, automatic-pick grid, and chord changes. Free play uses the selected hidden progression. Public-domain songs replace it with their own silent chord timeline, which changes the notes chosen by arpeggios without adding backing audio. The optional root pad remains the only sustained harmony sound.</p>
+      <p><strong>Hidden harmony:</strong> one shared transport drives the falling melody notes, visual/auditory metronome, automatic-pick grid, and chord changes. Free play uses the selected hidden progression. Public-domain songs replace it with their own silent chord timeline, which changes the notes chosen by arpeggios without adding backing audio. The optional low kurraya chord adds a plucked root and scale-safe fifth.</p>
       <p><strong>Automatic Pick:</strong> flick the left stick toward a direction to select a mode; it stays selected after the stick returns to center. The Auto Pick selector is a four-way cross; Up, Right, Down, and Left can each be assigned independently from the LS Slots library, including Single Note. The fast arpeggio uses a forward–reverse roll. Each new slow-arpeggio melody input alternates between a forward roll and a reverse roll. Every face-button press sounds its melody note immediately at the player's real tap time, then automatically fills every remaining subdivision before the next shared beat even if the button is released immediately. Base-rate mode therefore produces two total attacks when tapped within the first eighth-note slot of a beat; half-duration mode produces four, three, two, or one total attacks depending on how many sixteenth-note slots have already passed. Another musical input interrupts the remainder.</p>
       <p><strong>Fretted Pluck:</strong> select a left-stick picking direction, then press X, A, B, or Y as the melody note. Both arpeggio and tremolo attack immediately at the exact tap time and begin their beat-filling sequence without a hold-confirmation delay. Holding continues the same subdivision grid across later beats. Releasing finishes only the remaining slots before the next beat boundary. For arpeggio, the current four-string chord shape first replaces its nearest chord tone with the melody note when needed. Octaves are chosen only afterward: forward rolls rise compactly from the melody, reverse rolls fall compactly from it, and the fast forward–reverse roll rebuilds each half around the melody. Only the initial human tap is a gameplay input; every generated arpeggio or tremolo continuation is strictly auditory and cannot score, miss, increment the input counter, or flash a gameplay target.</p>
       <p><strong>Visual presets:</strong> <em>Falling Strings</em> keeps the original 20-lane display. <em>20-Note Timing Rings</em> shows all twenty playable notes grouped into five face-button diamonds. <em>Lyre View</em> collapses the lanes down to four visible strings and moves the bank prompt into each falling note as an O / LT / LB / RT / RB glyph.</p>
@@ -1346,12 +1346,8 @@
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
-  const PAD_ROOT_REGISTER_OFFSET = -12; // Anchors the harmony pad one octave below tonic: in C3 this is F2 → G2 → E2 → A2.
-  const PAD_SYNTH_FILTER_HZ = 600; // Keeps the root pad behind the Kurraya instead of reading as a bright second instrument.
-  const PAD_SYNTH_FILTER_Q = 0.22; // Gentle resonance avoids a noticeable resonant peak around the low-pass cutoff.
-  const PAD_SYNTH_ATTACK_S = 0.32; // Slow enough to bloom under the pluck while still becoming audible within a short chord.
+  const PAD_ROOT_REGISTER_OFFSET = -24; // Places the accompaniment two octaves below the melody tonic, using the regular sampler's full pitch shift.
   const PAD_SYNTH_CROSSFADE_S = 0.8; // Lets adjacent roots melt into each other instead of making the pad announce every chord change.
-  const PAD_SYNTH_HARMONICS = Object.freeze([0,1,0.10,0.025,0.008]); // Mostly sine: tiny upper harmonics preserve audibility on small speakers without adding a separate octave/fifth voice.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
   const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['1','2','3','4'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs. Keyboard shows ordinal numbers, not the literal bound key, since which physical key plays note 1-4 is player-rebindable (see js/music-minigame.js) — a fixed A/S/D/F glyph would go stale the moment a key is remapped.
@@ -1412,6 +1408,9 @@
     'tremolo-16':{label:'Rapid Tremolo · sixteenths',short:'TREM 16',ringLabel:'TREM<br>16',kind:'tremolo',division:4,tremStyle:'steady',category:'Tremolo',tradition:'Mandolin / guitar',description:'Even repeated melody attacks four times per beat.'},
     'tremolo-triplet':{label:'Triplet Tremolo',short:'TREM 3',ringLabel:'TREM<br>3',kind:'tremolo',division:3,tremStyle:'steady',category:'Tremolo',tradition:'Mandolin dance music',description:'Three repeated melody attacks per beat.'},
     'tremolo-burst-16':{label:'Three-Stroke Tremolo Burst',short:'3+REST',ringLabel:'3 +<br>REST',kind:'tremolo',division:4,tremStyle:'burst',category:'Tremolo',tradition:'Orchestral / rock gesture',description:'Three rapid melody attacks followed by one subdivision of space.'},
+    'strum-down-4':{label:'Steady Downstrokes',short:'DOWN',ringLabel:'DOWN',kind:'strum',division:1,strumStyle:'down',category:'Strum',tradition:'Folk',description:'Melody first, then one downstroke each beat.'},
+    'strum-alternating-8':{label:'Alternating Down–Up',short:'DOWN UP',ringLabel:'D / U',kind:'strum',division:2,strumStyle:'alternating',category:'Strum',tradition:'Folk / pop',description:'Melody first, then alternating eighth-note downstrokes and upstrokes.'},
+    'strum-pop-8':{label:'Down–Down–Up–Up–Down–Up',short:'POP',ringLabel:'POP',kind:'strum',division:2,strumStyle:'pop',category:'Strum',tradition:'Folk / pop',description:'A four-beat syncopated strum with two deliberate gaps.'},
     'strum-reggae-8':{label:'Reggae Offbeat Skank',short:'SKANK',ringLabel:'SKANK',kind:'strum',division:2,strumStyle:'reggae',category:'Strum',tradition:'Jamaican reggae',description:'A short melody-top chord on each offbeat.'},
     'strum-bossa-16':{label:'Bossa Nova Syncopation',short:'BOSSA',ringLabel:'BOSSA',kind:'strum',division:4,strumStyle:'bossa',category:'Strum',tradition:'Brazilian bossa nova',description:'A two-beat syncopated melody-top chord pattern.'},
     'strum-rasgueado-16':{label:'Rasgueado Burst',short:'RASG',ringLabel:'RASG',kind:'strum',division:4,strumStyle:'rasgueado',category:'Strum',tradition:'Andalusian flamenco',description:'A rapid down–down–up finger-strum burst after the melody.'},
@@ -1476,7 +1475,7 @@
     masterVolume:0.78,
     kurrayaMixLevel:1, // Relative instrument layer mix used by both Web Audio and compatibility Kurraya note playback.
     metronomeMixLevel:1, // Relative metronome layer mix; the overworld footstep metronome reads this through the host bridge too.
-    padMixLevel:1, // Relative harmony-pad layer mix applied after either synth-pad or imported-pad source gain.
+    padMixLevel:1, // Relative harmony-pad layer mix applied after either low-kurraya or imported-pad source gain.
     strumThreshold:0.52, // Vertical right-stick magnitude required to create a strum stroke.
     arpeggioIndex:0, // Current hidden-chord slot selected by left-stick angle.
     leftArpeggioZone:-1, // Active left-stick sector; -1 means centered and lets the next sector trigger.
@@ -1531,8 +1530,8 @@
     ambientMetronomeBuffer:null, // Ambient (no-human-input) NPC performance only — the tile-footstep sample the musician is standing on (see startAmbientLead), overriding metronomeSampleBuffer for as long as this session runs. Never persisted.
     labMetronomeBuffers:[], // Temporary Music Lab footstep set; rotates real recorded steps without persisting or duplicating the overworld's own surface-footstep metronome.
     labMetronomeNames:[], // Visible/debug names corresponding to labMetronomeBuffers; cleared when the standalone lab unloads.
-    rootPadEnabled:true, // Enabled by default; uses the synth root pad unless an imported pad sample is available.
-    rootPadLevel:0.02, // User-facing synth pad mix level; internally remapped so low roots remain audible.
+    rootPadEnabled:true, // Enabled by default; uses low kurraya plucks unless an imported pad sample is available.
+    rootPadLevel:0.02, // User-facing low-chord mix level; internally remapped so low roots remain audible.
     rootPadSampleBuffer:null, // Optional imported looping pad source used instead of the synth oscillators.
     rootPadSampleName:'', // Display name for the imported root-pad source.
     rootPadSampleRootMidi:48, // Recorded pitch of the imported pad, used to transpose it to the current chord root.
@@ -1542,7 +1541,7 @@
     rootPadRootSource:'default', // 'detected', 'manual', 'cached', or 'default' explains why rootPadSampleRootMidi currently has its value.
     rootPadSampleLevel:0.34, // Independent gain for the imported root-pad sample.
     pendingRootPadSampleRecord:null, // Holds cached pad PCM until Web Audio has been created.
-    rootPadVoices:[], // Holds the currently crossfading oscillator layers used by the harmony root pad.
+    rootPadVoices:[], // Holds the currently fading sampled chord voices used by the harmony root pad.
     rootPadRootMidi:null, // Tracks the pad pitch so it only rebuilds when the hidden chord root changes.
     layoutPreset:'five-bank-auto', // V21 locks all development and song input to the five-bank automatic-picking layout.
     visualPreset:'lyre-view', // Selects only the presentation: legacy falling strings or fixed shrinking timing rings.
@@ -2274,12 +2273,13 @@
     const rootDegree = ((progressionDegree % scale.length) + scale.length) % scale.length;
     const fixedRootSemitones = fixedCadence ? fixedStep.rootSemitones : songSegment?.rootSemitones != null ? songSegment.rootSemitones : fixedStep?.rootSemitones;
     const fixedQuality = fixedCadence ? fixedStep.quality : songSegment?.quality || fixedStep?.quality || null;
-    const stacked = fixedRootSemitones != null && (fixedQuality === 'major' || fixedQuality === 'minor')
+    const authoredStack = fixedRootSemitones != null && (fixedQuality === 'major' || fixedQuality === 'minor')
       ? [Number(fixedRootSemitones), Number(fixedRootSemitones) + (fixedQuality === 'minor' ? 3 : 4), Number(fixedRootSemitones) + 7]
       : [0,2,4].map(stack => {
           const degree = rootDegree + stack;
           return scale[degree % scale.length] + Math.floor(degree / scale.length) * 12;
         });
+    const stacked = authoredStack.map(offset => scaleSafeMidi(state.tonicMidi + offset) - state.tonicMidi); // Keeps authored harmony as close as possible while every accompaniment tone obeys the selected scale.
     const bankOffsets = [stacked[0]-12, stacked[1]-12, stacked[2]-12, stacked[0], stacked[1], stacked[2], stacked[0]+12, stacked[1]+12];
     const rootPitchClass = (state.tonicMidi + stacked[0]) % 12;
     const third = stacked[1] - stacked[0];
@@ -2374,6 +2374,20 @@
 
   function noteMidi(noteIndex, modeOffset = currentModeOffset()) {
     return state.tonicMidi + scaleDegreeOffset(noteIndex + modeOffset);
+  }
+
+  function scaleSafeMidi(midi) {
+    const scale = scalePitchClasses(); // Used to fit accompaniment pitches to the same scale as playable melody notes.
+    let best = Math.round(midi); // Tracks the nearest permitted pitch; lower notes win equal-distance ties.
+    let distance = Infinity; // Compares scale degrees in the neighboring octaves, including negative registers.
+    const octave = Math.floor((midi - state.tonicMidi) / 12); // Centers the search on the requested register.
+    for (let shift = -1; shift <= 1; shift++) {
+      for (const degree of scale) {
+        const candidate = state.tonicMidi + (octave + shift) * 12 + degree; // Candidate used only by this nearest-scale search.
+        if (Math.abs(candidate - midi) < distance) { best = candidate; distance = Math.abs(candidate - midi); }
+      }
+    }
+    return best;
   }
 
   function arpeggioMidi(index = state.arpeggioIndex) {
@@ -2533,6 +2547,9 @@
     }
     if (definition.kind === 'strum') {
       const patterns = {
+        down:[noteStep(fretMidi),strumStep('down')],
+        alternating:[noteStep(fretMidi),strumStep('up'),strumStep('down'),strumStep('up')],
+        pop:[noteStep(fretMidi),restStep(),strumStep('down'),strumStep('up'),restStep(),strumStep('up'),strumStep('down'),strumStep('up')],
         reggae:[noteStep(fretMidi),strumStep('down',.72,.26)],
         bossa:[noteStep(fretMidi),restStep(),strumStep('down',.72,.48),strumStep('up',.66,.38),restStep(),strumStep('down',.76,.48),restStep(),strumStep('up',.68,.38)],
         rasgueado:[noteStep(fretMidi),strumStep('down',.78,.3),strumStep('down',.74,.3),strumStep('up',.82,.34)],
@@ -2802,7 +2819,7 @@
 
   function rootPadTargetMidi(clock = sharedTransportData()) {
     const harmony = currentHarmonyData(clock);
-    return state.tonicMidi + harmony.rootOffset + PAD_ROOT_REGISTER_OFFSET; // C3 tonic resolves to F2/G2/E2/A2 for IV–V–iii–vi.
+    return state.tonicMidi + harmony.rootOffset + PAD_ROOT_REGISTER_OFFSET; // C3 tonic resolves to F1/G1/E1/A1 for IV–V–iii–vi.
   }
 
   function padProgressionRootMidis(tonicMidi = state.tonicMidi) {
@@ -2862,7 +2879,7 @@
 
   function rootPadSynthGain() {
     if (state.rootPadLevel <= 0 || state.padMixLevel <= 0) return 0;
-    return clamp(0.018 + state.rootPadLevel * 1.5, 0.018, 0.12) * state.padMixLevel; // Bakes the subtle ~20%-of-lead feel into only the synth pad, leaving imported-pad mix behavior untouched.
+    return clamp(0.018 + state.rootPadLevel * 1.5, 0.018, 0.12) * state.padMixLevel; // Bakes the subtle ~20%-of-lead feel into only the low kurraya chord, leaving imported-pad mix behavior untouched.
   }
 
   function fadeOutRootPadVoice(voice, fadeSeconds = PAD_SYNTH_CROSSFADE_S, whenMs = null) {
@@ -2891,32 +2908,40 @@
     state.rootPadRootMidi = null;
   }
 
+  function lowKurrayaChordMidis(midi = rootPadTargetMidi()) {
+    const root = scaleSafeMidi(midi); // Low root used by the sampled accompaniment and its mobile diagnostics.
+    return [root, scaleSafeMidi(root + 7)]; // Prefer a perfect fifth, with the nearest scale tone when that fifth is unavailable.
+  }
+
   function createRootPadVoice(midi, whenMs = null) {
-    const context = state.audioContext;
-    if (!context || context.state !== 'running' || !state.master) return null;
-    const now = audioStartTimeFor(context, whenMs);
-    const rootMidi = midi; // The pad carries only the authored progression root; harmonic partials below shape timbre rather than adding separate chord voices.
-    const rootOscillator = context.createOscillator();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    const real = new Float32Array(PAD_SYNTH_HARMONICS.length); // Zero cosine coefficients keep the custom waveform phase-equivalent to a sine-family oscillator.
-    const imag = new Float32Array(PAD_SYNTH_HARMONICS); // Fundamental dominates; tiny 2nd/3rd/4th harmonics keep low roots audible on phone speakers.
-    rootOscillator.setPeriodicWave(context.createPeriodicWave(real,imag));
-    rootOscillator.frequency.setValueAtTime(midiFrequency(rootMidi), now);
-    rootOscillator.detune.setValueAtTime(0, now);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(PAD_SYNTH_FILTER_HZ, now);
-    filter.Q.setValueAtTime(PAD_SYNTH_FILTER_Q, now);
-    const synthPadGain = rootPadSynthGain(); // Resolves the subtle synth-only base level and the user's independent Music Lab pad multiplier.
-    if (synthPadGain <= 0) gain.gain.setValueAtTime(0, now);
-    else {
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + PAD_SYNTH_ATTACK_S); // Blooms behind the pluck instead of presenting as an obvious synth attack.
-    }
-    rootOscillator.connect(filter).connect(gain).connect(state.master);
-    rootOscillator.start(now);
-    const voice = {midi, chordMidis:[rootMidi], oscillators:[rootOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
-    rootOscillator.onended = () => { voice.active = false; };
+    const context = state.audioContext; // Uses the ordinary sampler clock and pitch/trim pipeline, including out-of-bank low notes.
+    if (!context || context.state !== 'running' || !state.master || !state.buffer) return null;
+    const now = audioStartTimeFor(context, whenMs); // Shared start for both strings of the low chord.
+    const gain = context.createGain(); // Applies the independent accompaniment mix without changing the lead mix.
+    const filter = context.createBiquadFilter(); // Common passthrough node retained for the existing voice fade/cleanup owner.
+    filter.type = 'allpass';
+    filter.connect(gain).connect(state.master);
+    gain.gain.setValueAtTime(rootPadSynthGain(), now);
+    const chordMidis = lowKurrayaChordMidis(midi); // Actual scale-safe power-chord pitches shown in Music Lab.
+    const notes = chordMidis.map(pitch => createVoiceNodes(pitch, 0.72 / Math.sqrt(chordMidis.length), now, 1)); // Same kurraya sound, independent of the lead mix slider.
+    const voice = {midi, chordMidis, oscillators:notes.map(note => note.source), filter, gain, stopping:false, active:true, kind:'kurraya'}; // Tracked by the existing harmony voice lifecycle.
+    let remaining = notes.length; // Natural endings must not cause the per-frame recovery path to repeatedly pluck the chord.
+    notes.forEach(note => {
+      note.gain.disconnect();
+      note.gain.connect(filter);
+      const duration = Math.max(0.025, (note.markers.trimEnd - note.markers.trimStart) / Math.max(0.01, note.source.playbackRate.value)); // Preserve the normal pluck duration after pitch shifting.
+      note.gain.gain.setTargetAtTime(0.0001, now + Math.max(state.attack + 0.02, duration - Math.min(0.2, state.release)), Math.max(0.01, state.release / 4));
+      note.source.start(now, note.markers.trimStart);
+      note.source.stop(now + duration + 0.04);
+      note.source.onended = () => {
+        try { note.source.disconnect(); note.filter.disconnect(); note.gain.disconnect(); } catch {}
+        if (--remaining === 0) {
+          voice.active = false;
+          try { filter.disconnect(); gain.disconnect(); } catch {}
+          state.rootPadVoices = state.rootPadVoices.filter(candidate => candidate !== voice);
+        }
+      };
+    });
     state.rootPadVoices.push(voice);
     return voice;
   }
@@ -2964,9 +2989,9 @@
     if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
     const targetClock = clock || sharedTransportData(Number.isFinite(whenMs) ? whenMs + 0.25 : nowMs());
     const targetMidi = rootPadTargetMidi(targetClock);
-    const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'synth';
+    const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'kurraya';
     const liveVoices = state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false);
-    if (!force && state.rootPadRootMidi === targetMidi && liveVoices.some(voice => voice.kind === desiredKind)) {
+    if (!force && state.rootPadRootMidi === targetMidi && (desiredKind === 'kurraya' || liveVoices.some(voice => voice.kind === desiredKind))) {
       const now = audioStartTimeFor(state.audioContext, whenMs);
       liveVoices.filter(voice => voice.kind === desiredKind).forEach(voice => {
         voice.gain.gain.cancelScheduledValues(now);
@@ -3317,7 +3342,7 @@
     };
   }
 
-  function createVoiceNodes(midi, gainAmount, startAt = null) {
+  function createVoiceNodes(midi, gainAmount, startAt = null, mixLevel = state.kurrayaMixLevel) {
     const context = state.audioContext;
     if (!context || !state.buffer) throw new Error('Sampler audio is not ready.');
     const source = context.createBufferSource();
@@ -3336,7 +3361,7 @@
     if (state.voice === 'Hollow') { filter.type = 'bandpass'; filter.frequency.value = 760; filter.Q.value = 0.75; }
     source.connect(filter).connect(gain).connect(state.master);
     const startTime = Number.isFinite(startAt) ? Math.max(startAt, context.currentTime) : context.currentTime;
-    const targetGain = gainAmount * state.kurrayaMixLevel; // Converts the Music Lab's relative Kurraya mix into this note's final pre-master attack level.
+    const targetGain = gainAmount * mixLevel; // Converts the Music Lab's relative Kurraya mix into this note's final pre-master attack level.
     if (targetGain <= 0) gain.gain.setValueAtTime(0, startTime);
     else {
       gain.gain.setValueAtTime(0.0001, startTime);
@@ -5372,7 +5397,7 @@
 
   function updateAuxiliarySampleUI() {
     if (refs.metronomeSampleStatus) refs.metronomeSampleStatus.textContent = state.metronomeSampleBuffer || state.pendingMetronomeSampleRecord ? (state.metronomeSampleName || state.pendingMetronomeSampleRecord?.name || 'Cached stomp/click') : 'Synth click fallback';
-    if (refs.rootPadSampleStatus) refs.rootPadSampleStatus.textContent = state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Cached root pad') : 'Synth root-pad fallback';
+    if (refs.rootPadSampleStatus) refs.rootPadSampleStatus.textContent = state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Cached root pad') : 'Low kurraya fifth chord';
     if (refs.rootPadSampleRoot) refs.rootPadSampleRoot.value = String(state.rootPadSampleRootMidi);
     if (refs.metronomeSampleLevel) refs.metronomeSampleLevel.value = String(Math.round(state.metronomeSampleLevel * 100));
     if (refs.metronomeSampleLevelOut) refs.metronomeSampleLevelOut.textContent = `${Math.round(state.metronomeSampleLevel * 100)}%`;
@@ -5488,7 +5513,7 @@
     $('#clearRootPadSampleBtn')?.addEventListener('click', async () => {
       stopRootPad(0.2); state.rootPadSampleBuffer = null; state.rootPadSampleName = ''; state.rootPadDetectedMidi = null; state.rootPadDetectedFrequency = 0; state.rootPadDetectedConfidence = 0; state.rootPadRootSource = 'default'; state.pendingRootPadSampleRecord = null;
       try { await deleteAuxiliaryCachedSample('rootPad'); } catch {}
-      updateAuxiliarySampleUI(); if (state.rootPadEnabled) syncRootPad(true); saveSettings(); toast('Synth root pad restored');
+      updateAuxiliarySampleUI(); if (state.rootPadEnabled) syncRootPad(true); saveSettings(); toast('Low kurraya chord restored');
     });
     refs.metronomeSampleLevel?.addEventListener('input', event => { state.metronomeSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); saveSettings(); });
     refs.rootPadSampleLevel?.addEventListener('input', event => { state.rootPadSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); if (state.rootPadEnabled && state.rootPadSampleBuffer) syncRootPad(); saveSettings(); });
@@ -7032,7 +7057,7 @@
       if (usesAutomaticPluckInput() && state.pluckInputMode && currentFretData()) restartActiveFrettedPluck();
       if (state.scheduledHarmonyStep !== harmonyStep) syncRootPad(); // Fallback only: the normal path was already scheduled on the AudioContext clock.
     }
-    else if (state.rootPadEnabled && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
+    else if (state.rootPadEnabled && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
       syncRootPad(true); // Self-heals a pad voice that ended or failed without waiting for the next chord boundary.
     }
     if (beatChanged) {
@@ -7205,7 +7230,7 @@
       `Import: ${state.sourceChannels} source ch → ${state.monoStrategy} | corr ${state.stereoCorrelation.toFixed(2)} | gain ×${state.sampleNormalizationGain.toFixed(2)} | peak ${state.samplePeakDb.toFixed(1)} dBFS`,
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,
-      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'synth'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
+      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'kurraya'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
       `Arpeggio: ${isDualArpLayout() ? `L ${DUAL_ARP_LABELS.left[state.arpeggioIndex]} ${midiName(dualArpeggioMidi('left',state.arpeggioIndex))} | R ${DUAL_ARP_LABELS.right[state.rightArpeggioIndex]} ${midiName(dualArpeggioMidi('right',state.rightArpeggioIndex))}` : usesAutomaticPluckInput() ? `${automaticPluckLabel()} | step ${state.pluckStep}${currentFretData() ? ` | ${automaticPatternSteps(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset),currentFretData(),state.pluckInputMode).label} | ${automaticPatternDefinition().kind}` : ''}` : `slot ${state.arpeggioIndex + 1} → ${midiName(arpeggioMidi())} | fixed register −1 oct`} | LS ${state.leftStick.map(value => value.toFixed(2)).join(', ')} | RS ${state.rightStick.map(value => value.toFixed(2)).join(', ')} | gesture channels ${state.gestureMediaChannels.size}`,
       `Four-way LS: selected ${['UP','RIGHT','DOWN','LEFT'][state.leftStickSector] || 'UP'} ${automaticPatternDefinition().short} | slots ${normalizeAutoPickSlots().map((id,index) => `${['U','R','D','L'][index]}:${automaticPatternDefinition(id).short}`).join(' · ')}`,
       `Held notes/automatic melodies: ${state.noteSources.map((set,index) => set.size ? index+1 : null).filter(Boolean).join(', ') || 'none'} | auto-pick sources ${state.frettedSources.size} | mode sources ${state.modeSources.size} | ordered shifts ${state.fourGroupShiftSources.size} | trigger gestures ${state.triggerGestures.size} | active voice groups ${state.voices.size} / voices ${activeVoiceCount()}`,
@@ -7306,23 +7331,23 @@
       metronome:state.metronomeMixLevel,
       pad:state.padMixLevel,
       audioContextState:state.audioContext?.state || 'uninitialized', // Exposed to the Music Lab diagnostics so mobile audio-wake failures are visible without devtools.
-      padSynthGain:rootPadSynthGain(), // Exposed to verify that a nonzero authored synth-pad gain reaches the preview/runtime path.
-      padSynthFrequency:midiFrequency(rootPadTargetMidi()), // Exposed to show the exact low-root frequency being synthesized for the current progression step.
-      padSynthTimbre:'mostly-sine', // Visible Music Lab confirmation that the subtle harmonic custom wave, not the old triangle, is active.
-      padSynthFilterHz:PAD_SYNTH_FILTER_HZ,
-      padSynthAttackMs:Math.round(PAD_SYNTH_ATTACK_S * 1000),
+      padSynthGain:rootPadSynthGain(), // Exposed to verify that a nonzero low-chord gain reaches the preview/runtime path.
+      padSynthFrequency:midiFrequency(rootPadTargetMidi()), // Exposed to show the exact low-root sampled root frequency for the current progression step.
+      padSynthTimbre:'low kurraya pluck', // Visible Music Lab confirmation of the active accompaniment source.
+      padSynthFilterHz:state.voice === 'Dark' ? 1800 : null,
+      padSynthAttackMs:Math.round(state.attack * 1000),
       padSynthCrossfadeMs:Math.round(PAD_SYNTH_CROSSFADE_S * 1000),
       kurrayaSampleName:state.sampleName || 'Fallback pluck',
       kurrayaSampleImported:!!state.sampleImported,
-      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth root pad',
+      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Low kurraya fifth chord',
       padSampleImported:!!(state.rootPadSampleBuffer || state.pendingRootPadSampleRecord),
       padSampleRootMidi:state.rootPadSampleRootMidi,
       padDetectedMidi:state.rootPadDetectedMidi,
       padDetectedFrequency:state.rootPadDetectedFrequency,
       padDetectedConfidence:state.rootPadDetectedConfidence,
       padRootSource:state.rootPadRootSource,
-      padChordMidis:[rootPadTargetMidi()],
-      padChordNames:[midiName(rootPadTargetMidi())],
+      padChordMidis:state.rootPadSampleBuffer ? [rootPadTargetMidi()] : lowKurrayaChordMidis(),
+      padChordNames:(state.rootPadSampleBuffer ? [rootPadTargetMidi()] : lowKurrayaChordMidis()).map(midiName),
       padProgressionRootMidis:padProgressionRootMidis(),
       padProgressionRootNames:padProgressionRootMidis().map(midiName),
       metronomeSource:state.labMetronomeBuffers.length ? 'game-footsteps' : state.ambientMetronomeBuffer ? 'ambient-footstep' : state.metronomeSampleBuffer ? 'imported-sample' : 'synth-click',
@@ -7410,6 +7435,11 @@
       updateAuxiliarySampleUI();
       if (state.rootPadEnabled) syncRootPad(true);
       saveSettings();
+      return musicLabMixState();
+    },
+    async useGameplayFootstepMetronome(urls) {
+      await loadLabMetronomeFootsteps(urls);
+      state.auditoryMetronome = true;
       return musicLabMixState();
     },
     async useLabFootstepMetronome(urls) {
@@ -7568,6 +7598,14 @@
     leftStick(x, y, sourceId = 'host-left-stick') {
       void ensureAudio().catch(() => {});
       setArpeggioFromStick(clamp(Number(x) || 0, -1, 1), clamp(Number(y) || 0, -1, 1), String(sourceId));
+      return true;
+    },
+    setAutoPickSlot(sector, mode) {
+      if (!Number.isInteger(sector) || sector < 0 || sector > 3 || !AUTO_PICK_PATTERN_LIBRARY[mode]) return false;
+      normalizeAutoPickSlots();
+      state.autoPickSlots[sector] = mode;
+      setLeftStickSector(sector, 'host-pattern-selector');
+      saveSettings();
       return true;
     },
     setAutoPickMode(sector, sourceId = 'host-auto-pick-cross') {
