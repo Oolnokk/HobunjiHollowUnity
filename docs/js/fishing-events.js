@@ -42,6 +42,7 @@
   let fishingDeps = null; // Used by frenzy scanning and Fishing dependency decorators after game.js injects the dependency bag.
   let treasureDeps = null; // Used to roll/grant the live buried-treasure chest pool for Gullet rewards.
   let currentCastFrenzy = false; // Used by the rarity/quality decorators for the cast currently in progress.
+  let lastGulletDiscovery = 'No retrieval this session'; // Used by the mobile debug panel to report the most recent special weapon roll.
   let forceNextGullet = false; // Used by the mobile-safe debug panel to guarantee the next Gullet encounter.
   let previousFishingPhase = null; // Used to detect the main fish transitioning from active play into the caught view.
   let previousFishingState = null; // Used to detect minigame teardown and clean Gullet presentation reliably.
@@ -640,6 +641,12 @@
     }
     const parts = grantTreasureBundle(bundle) || []; // Used as the exact list of granted treasure for UI feedback.
     gulletState.treasureGranted = true;
+    // Roll at the retrieval owner: FishCatalog replaces early Fishing accessors,
+    // and display text must not determine whether a weapon is awarded.
+    const discovery = window.WeaponDiscoveryRewards; // Used to grant through the shared persistent weapon/bronzeworks path.
+    const reward = discovery?.rollSource?.('gulletFish'); // Used to append a successfully granted weapon to the catch summary.
+    if (reward) parts.push(reward.label || reward.shapeKey);
+    lastGulletDiscovery = reward ? `Received ${reward.label || reward.shapeKey}` : discovery ? 'No new weapon (already owned or roll missed)' : 'Weapon reward system unavailable';
     if (window.Fishing?.state) window.Fishing.state.gulletRewards = parts.length ? parts.slice() : ['Nothing this time'];
     window.Fishing?.refreshCatchRewards?.(); // A late surface retrieval also updates an already-open catch view.
     fishingDeps?.showToast?.(`Gullet Fish treasure: ${parts.length ? parts.join(', ') : 'nothing this time'}`, true);
@@ -841,7 +848,8 @@
     const status = debugPanel.querySelector('[data-status]'); // Used as the single compact status text target.
     if (!status) return;
     const gulletMotion = gulletState.mode === 'orbit' ? `/${gulletState.locomotionPhase} ${Math.max(0, gulletState.locomotionPhaseRemaining).toFixed(1)}s` : ''; // Used to expose the current sprint/recovery bout without requiring devtools.
-    status.textContent = `Fishing events | area=${fishingDeps?.getCurrentArea?.() || '—'} | frenzy=${event ? `${event.tiles.map(t => `${t.col},${t.row}`).join(';')} ${event.remainingHours.toFixed(2)}h` : `none (${frenzyState.spawnDelayHours.toFixed(2)}h)`} | castFrenzy=${currentCastFrenzy ? 'yes' : 'no'} | gullet=${gulletState.mode}${gulletMotion}${gulletState.mode === 'surface' ? ` ${Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed).toFixed(1)}s` : ''}`;
+    const discoveryStatus = ` | weapon=${lastGulletDiscovery} | latest change=Gullet retrieval rolls weapon rewards directly (15% mace)`; // Used to expose the reward hookup and latest change without devtools.
+    status.textContent = `Fishing events | area=${fishingDeps?.getCurrentArea?.() || '—'} | frenzy=${event ? `${event.tiles.map(t => `${t.col},${t.row}`).join(';')} ${event.remainingHours.toFixed(2)}h` : `none (${frenzyState.spawnDelayHours.toFixed(2)}h)`} | castFrenzy=${currentCastFrenzy ? 'yes' : 'no'} | gullet=${gulletState.mode}${gulletMotion}${gulletState.mode === 'surface' ? ` ${Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed).toFixed(1)}s` : ''}${discoveryStatus}`;
   }
 
   function featureLoop(nowMs) {
@@ -870,6 +878,7 @@
       frenzy: frenzyState.event ? { area: frenzyState.event.area, remainingHours: frenzyState.event.remainingHours, tiles: frenzyState.event.tiles.map(tile => ({ col: tile.col, row: tile.row })) } : null,
       currentCastFrenzy,
       gulletMode: gulletState.mode,
+      lastGulletDiscovery,
       gulletLocomotionPhase: gulletState.mode === 'orbit' ? gulletState.locomotionPhase : null,
       gulletLocomotionRemaining: gulletState.mode === 'orbit' ? gulletState.locomotionPhaseRemaining : null,
       gulletEscapeRemaining: gulletState.mode === 'surface' ? Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed) : null,
