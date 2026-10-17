@@ -52,14 +52,14 @@ assert.ok(master?.profiles?.creatures?.puktuk && master?.profiles?.creatures?.['
 
 const expected = {
   puktuk: {
-    saddle: { x: 0, y: 0.16937859550590686, z: -0.012420318741466083 },
+    saddle: { x: 0, y: 0.1830394938019193, z: -0.012420318741466083 },
     grip: { x: 0.01, y: -0.29715994741785007, z: -0.0010889163404909086 },
     scales: { large: { x: 1, y: 1 }, medium: { x: 0.6, y: 0.6 }, small: { x: 0.3, y: 0.3 } },
     ground: { large: 0.4, medium: 0.24, small: 0.12 },
     chathead: { x: 0.17142091899942474, y: 0.11029044613093768, width: 0.27636019798104444, height: 0.601013493102534, coordinateSpace: 'sprite-normalized-top-left', version: 1 },
   },
   'voorg-ass': {
-    saddle: { x: -0.0016655977917167481, y: 0.12286908956931555, z: 0.043832914384796626 },
+    saddle: { x: -0.0016655977917167481, y: 0.18328943170147868, z: 0.043832914384796626 },
     grip: { x: 0.01, y: -0.33453636625016553, z: 0.0181046276028018 },
     scales: { large: { x: 1.164, y: 1.164 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.27, y: 0.27 } },
     ground: { large: 0.312, medium: 0.325, small: 0.11 },
@@ -70,7 +70,7 @@ const expected = {
 for (const [kind, values] of Object.entries(expected)) {
   for (const library of [master.profiles, profiles]) {
     const profile = library.creatures[kind];
-    assert.deepEqual(plain(profile.anchors.saddle.position), values.saddle, kind + ' saddle matches September 15 authoring');
+    assert.deepEqual(plain(profile.anchors.saddle.position), values.saddle, kind + ' saddle matches the latest Rig Coordinates authoring');
     assert.deepEqual(plain(profile.anchors.shoulderGrip.position), values.grip, kind + ' shoulder grip matches September 15 authoring');
     assert.deepEqual(plain(profile.sizeScales), values.scales, kind + ' size scales match current canonical tuning');
     assert.deepEqual(plain(profile.groundOffsets), values.ground, kind + ' ground offsets match current canonical tuning');
