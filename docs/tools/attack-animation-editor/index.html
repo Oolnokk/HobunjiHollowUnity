@@ -694,7 +694,37 @@ let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
 let editPhase = 'windup'; // Single source of truth for pose tabs, sliders, and TransformControls.
 
 transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
+// Offhand idle-stance authoring: the saved stance belongs to the hidden source weapon, but the weapon you see is the
+// dual-wield copy, which sits a small plane-normal distance away from it. Dragging the source would rotate AND translate
+// the visible copy, so the gizmo targets a proxy at the copy's own origin and each drag is converted back onto the holder.
+const offhandGizmoProxy = new THREE.Object3D();
+toolBase.add(offhandGizmoProxy);
+const proxyCopyOffset = new THREE.Vector3(); // Visible copy's origin in the holder's own local frame (constant while the pose rotates).
+const proxyScratch = new THREE.Vector3();
+const proxyActive = () => offhandAuthoringBase && !!window.HobunjiDualWieldWeaponVisuals?.editorOffhandCopy?.();
+const gizmoTarget = () => (proxyActive() ? offhandGizmoProxy : toolHolder);
+function syncOffhandGizmoProxy() {
+  const copy = window.HobunjiDualWieldWeaponVisuals?.editorOffhandCopy?.();
+  if (!copy) return;
+  toolHolder.updateWorldMatrix(true, false);
+  copy.updateWorldMatrix(true, false);
+  proxyCopyOffset.copy(toolHolder.worldToLocal(copy.getWorldPosition(proxyScratch)));
+  offhandGizmoProxy.quaternion.copy(toolHolder.quaternion);
+  offhandGizmoProxy.position.copy(toolHolder.position).add(proxyScratch.copy(proxyCopyOffset).multiply(toolHolder.scale).applyQuaternion(toolHolder.quaternion));
+  offhandGizmoProxy.updateMatrixWorld(true);
+}
+function refreshGizmoTarget() {
+  if (gizmoMode === 'off') return;
+  if (proxyActive()) syncOffhandGizmoProxy();
+  transformControls.attach(gizmoTarget());
+}
+
 transformControls.addEventListener('objectChange', () => {
+  if (transformControls.object === offhandGizmoProxy) {
+    // Pivot on the visible copy: put the hidden source back where that copy's new pose implies.
+    toolHolder.quaternion.copy(offhandGizmoProxy.quaternion);
+    toolHolder.position.copy(offhandGizmoProxy.position).sub(proxyScratch.copy(proxyCopyOffset).multiply(toolHolder.scale).applyQuaternion(offhandGizmoProxy.quaternion));
+  }
   const p = anim.poses[editPhase];
   poseOrbitScratch.set(
     toolBase.position.x + toolHolder.position.x,
@@ -724,7 +754,7 @@ function setGizmoMode(mode) {
     transformControls.detach();
   } else {
     focusPreviewOnPhase(editPhase); // The visible frame and edited pose can no longer diverge.
-    transformControls.attach(toolHolder);
+    refreshGizmoTarget();
     transformControls.setMode(mode);
   }
   $('gizmoOffBtn').classList.toggle('active', mode === 'off');
@@ -1838,7 +1868,7 @@ function selectEditPhase(phase, { focus = true } = {}) {
     applyPoseToRig(anim.poses[phase]);
   }
   if (gizmoMode !== 'off') {
-    transformControls.attach(toolHolder);
+    refreshGizmoTarget();
     transformControls.setMode(gizmoMode);
   }
 }
@@ -1856,7 +1886,30 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get toolHolder() { return toolHolder; },
   get bodyRoot() { return rig; }, // Dual Wield mirrors the offhand anchor in this already-body-yawed frame without changing bodyYaw itself.
   get toolPlaneMesh() { return toolPlaneMesh; },
-  setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); }, // Idle-stance editor only: anchors the holder on the offhand side without flipping the sprite.
+  // Offhand idle authoring: where the visible offhand copy's origin sits relative to the saved (hidden source) pose,
+  // in the pose's own un-rotated units. Rotation sliders use it to turn the weapon you see in place.
+  offhandPivotPoseOffset() {
+    const copy = window.HobunjiDualWieldWeaponVisuals?.editorOffhandCopy?.();
+    if (!offhandAuthoringBase || !copy) return null;
+    toolBase.updateWorldMatrix(true, false); toolHolder.updateWorldMatrix(true, false); copy.updateWorldMatrix(true, false);
+    const toPosePoint = world => {
+      const point = toolBase.worldToLocal(world).add(toolBase.position);
+      window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(point, {
+        cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+        speciesId: currentSpeciesId, gender: currentGender,
+        modelHeight: currentAvatarModelHeight,
+        armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
+      }); // Same inverse the drag handler uses, so slider and gizmo edits agree.
+      return point;
+    };
+    const copyPoint = toPosePoint(copy.getWorldPosition(new THREE.Vector3()));
+    const holderPoint = toPosePoint(toolHolder.getWorldPosition(new THREE.Vector3()));
+    const offset = copyPoint.sub(holderPoint).applyQuaternion(toolHolder.quaternion.clone().invert());
+    return { x: offset.x, y: offset.y, z: offset.z };
+  },
+  get gizmoTarget() { return gizmoTarget(); }, // What the 3D gizmo is attached to: the holder, or the offhand proxy while its stance is authored.
+  get transformControls() { return transformControls; },
+  setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); if (gizmoMode !== 'off') { if (!proxyActive()) transformControls.attach(toolHolder); else refreshGizmoTarget(); } }, // Idle-stance editor only: anchors the holder on the offhand side without flipping the sprite.
   get toolKey() { return currentToolKey; },
   focusNeutral() {
     selectEditPhase('neutral');
@@ -2134,6 +2187,7 @@ function animate() {
   }
   const { pose, phase } = poseAt(previewT);
   applyPoseToRig(pose);
+  if (transformControls.object === offhandGizmoProxy && !transformControls.dragging) syncOffhandGizmoProxy(); // Follows slider/Neutral edits; during a drag the proxy is the input.
   updateHeadSkinVertexOverlay();
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
