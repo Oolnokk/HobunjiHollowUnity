@@ -426,6 +426,23 @@
     } finally { status.running = false; }
   }
 
+  // Story appointments take precedence over Jubmir's recurring trading days.
+  window.NpcScheduling?.registerTargetOverride(FEY_VISIT_KEY, (rec, context) => {
+    if (rec?.id !== 'jubmir') return null;
+    const profile = window.__hobunjiPlayerProfile; // Scope the appointment to the story owner's world.
+    if (profile?.isWorldOwner !== true || !tourComplete(profile)) return null;
+    const state = feyVisitState(profile); // Keep him present during playback too, until successful completion.
+    if (state.completed || state.hoursUntilVisit !== 0) return null;
+    const entrance = rec.visitorPresence?.entrance; // Reuse the authored arrival location and existing async spawn guard.
+    if (!entrance || !Number.isFinite(entrance.c) || !Number.isFinite(entrance.r)) return null;
+    if (context.hasExistingWalker) {
+      const room = window.NpcScheduling.resolveNpcStationTarget('station_inn_jubmir_bed'); // Wait in his authored room when its station is loaded.
+      if (room) return room;
+    }
+    return { area: entrance.mapId || entrance.area, c: entrance.c, r: entrance.r,
+      label: entrance.label, activity: 'Jubmir story appointment', visitorArrival: !context.hasExistingWalker };
+  });
+
   window.DoorstepVisits?.registerProvider({
     id: FEY_VISIT_KEY, priority: 80,
     sync() {
@@ -653,7 +670,7 @@
         ['Farmhouse entrances', doorstep ? window.DoorstepVisits.exitDoorCandidates().length : 'Unavailable'],
         ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Preserved doorstep NPC scheduling startup hooks alongside Porakaneki camps; overdue visits can spawn on farmhouse exit.'],
+        ['Latest change', 'Overdue Jubmir story visits bring him back outside trading days and keep him available until the inn conversation finishes.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };
