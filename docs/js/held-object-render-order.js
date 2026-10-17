@@ -40,17 +40,60 @@
   const MASK_ALL = 0xFFFFFFFF >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
 
+  // Registered meshes bucketed by the scene they were last found in. Ground
+  // registries accumulate every floor mesh of every cached zone/interior
+  // scene (15k+ after a tour of the wilds), and collectVisible runs for each
+  // registry on every world render; walking only the rendering scene's bucket
+  // keeps that per-frame cost proportional to the current map. Members are
+  // re-queued whenever they are (re)added anywhere, which is how a held tool
+  // that moves with the player into another scene gets re-bucketed.
+  class SceneRegistry {
+    constructor() {
+      this.all = new Set();
+      this.pending = new Set(); // Members whose scene is unknown or may have changed.
+      this.byScene = new Map(); // Scene -> Set of members last found under it.
+      this.sceneOf = new Map(); // Member -> scene key in byScene.
+    }
+    add(object) {
+      this.all.add(object);
+      this.unplace(object);
+      this.pending.add(object);
+      return this;
+    }
+    has(object) { return this.all.has(object); }
+    delete(object) {
+      if (!this.all.delete(object)) return false;
+      this.pending.delete(object);
+      this.unplace(object);
+      return true;
+    }
+    place(object, scene) {
+      this.unplace(object);
+      let bucket = this.byScene.get(scene);
+      if (!bucket) this.byScene.set(scene, bucket = new Set());
+      bucket.add(object);
+      this.sceneOf.set(object, scene);
+    }
+    unplace(object) {
+      const scene = this.sceneOf.get(object);
+      if (!scene) return;
+      this.sceneOf.delete(object);
+      this.byScene.get(scene)?.delete(object);
+    }
+    [Symbol.iterator]() { return this.all.values(); }
+  }
+
   const heldMeshes = new WeakSet();
   const groundMeshes = new WeakSet();
   const waterMeshes = new WeakSet(); // Used by classifyObject to count each canonical water surface once across fallback rescans.
   const waterOccludedMeshes = new WeakSet(); // Used to count each explicitly water-occluded mesh once; procedural feet register here.
-  const heldRegistry = new Set();
-  const groundRegistry = new Set();
-  const topFaceGroundRegistry = new Set(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
+  const heldRegistry = new SceneRegistry();
+  const groundRegistry = new SceneRegistry();
+  const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
   const occluderGeometries = new WeakMap(); // Source geometry -> geometry of only its non-upward faces, built once per geometry.
-  const waterRegistry = new Set(); // Used by the foot-only translucent-water replay.
-  const waterOccludedRegistry = new Set(); // Used to stencil only feet (never weapons/hands) before replaying water.
-  const pngDepthRegistry = new Set(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
+  const waterRegistry = new SceneRegistry(); // Used by the foot-only translucent-water replay.
+  const waterOccludedRegistry = new SceneRegistry(); // Used to stencil only feet (never weapons/hands) before replaying water.
+  const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -335,8 +378,9 @@
   }
 
   function markTopFaceGroundMesh(mesh) {
-    if (topFaceGroundRegistry.has(mesh)) return false;
+    const fresh = !topFaceGroundRegistry.has(mesh);
     topFaceGroundRegistry.add(mesh);
+    if (!fresh) return false;
     // The ground-depth restore pass draws the whole shell colorless. Its
     // walls already wrote identical depth in the rebuild pass, so only the
     // floor faces actually change anything there.
@@ -481,31 +525,39 @@
     classifyTree(scene);
   }
 
+  // One upward walk finds both the owning root and whether any ancestor
+  // (root included) is hidden.
+  let walkVisible = true;
+  function walkToRoot(object) {
+    let node = object;
+    walkVisible = true;
+    for (;;) {
+      if (node.visible === false) walkVisible = false;
+      if (!node.parent) return node;
+      node = node.parent;
+    }
+  }
+
   function collectVisible(registry, scene) {
     const result = [];
-    for (const object of registry) {
-      if (!object?.isMesh) {
-        registry.delete(object);
+    for (const object of registry.pending) {
+      registry.pending.delete(object);
+      if (!object?.isMesh) { registry.delete(object); continue; }
+      const root = walkToRoot(object);
+      // Detached runtime meshes should not be kept alive by our registry.
+      if (!root.isScene) registry.delete(object);
+      else registry.place(object, root);
+    }
+    const bucket = registry.byScene.get(scene);
+    if (!bucket) return result;
+    for (const object of bucket) {
+      const root = walkToRoot(object);
+      if (root !== scene) {
+        if (!root.isScene) registry.delete(object);
+        else registry.place(object, root);
         continue;
       }
-      // One upward walk finds both the owning scene and whether any ancestor
-      // (scene included) is hidden; this runs over four registries every
-      // world render, so separate scene-lookup and visibility walks would
-      // double the per-frame cost.
-      let node = object;
-      let visible = true;
-      for (;;) {
-        if (node.visible === false) visible = false;
-        if (!node.parent) break;
-        node = node.parent;
-      }
-      if (!node.isScene) {
-        // Detached runtime meshes should not be kept alive by our iterable set.
-        registry.delete(object);
-        continue;
-      }
-      if (node !== scene || !visible) continue;
-      result.push(object);
+      if (walkVisible) result.push(object);
     }
     return result;
   }
