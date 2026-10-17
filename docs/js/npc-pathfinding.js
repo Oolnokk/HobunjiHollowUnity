@@ -32,7 +32,7 @@
     if (!deps) return true;
     if (deps.isBuildingArea(area)) {
       const bg = deps.npcGridForArea(area);
-      return !!bg?.[r]?.[c] && !deps.isSolid(bg[r][c].type);
+      return !!bg?.[r]?.[c] && (!deps.isSolid(bg[r][c].type) || bg[r][c].npcFurnitureCollider === true);
     }
     const g = area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid();
     const tile = g?.[r]?.[c];
@@ -66,6 +66,7 @@
     for (const [dx, dz] of samples) {
       const sx = x + dx, sz = z + dz;
       if (ignoreFurnitureTile && Math.floor(sx) === ignoreFurnitureTile.c && Math.floor(sz) === ignoreFurnitureTile.r) continue;
+      if (deps.isBuildingArea(area) && deps.npcGridForArea(area)?.[Math.floor(sz)]?.[Math.floor(sx)]?.npcFurnitureCollider) return false;
       if (deps.furnitureBlocksMovementAt(area, sx, sz)) return false;
     }
     return true;
@@ -160,6 +161,8 @@
     allowOccupiedTarget = false,
     maxNodes = 1200,
   } = {}) {
+    targetC = Math.floor(targetC); // Grid search must use integer cells even for post-translated furniture stations.
+    targetR = Math.floor(targetR);
     const startC = Math.floor(fromX), startR = Math.floor(fromZ);
     if (startC === targetC && startR === targetR) return [];
     const minC = Math.min(startC, targetC) - padding, maxC = Math.max(startC, targetC) + padding;
@@ -239,19 +242,26 @@
   // A blocked destination tile stays unreachable on purpose (see the occupied
   // chair case in test-npc-collision-aware-pathing.js).
   function findNpcPathWithFallbacks(area, fromX, fromZ, target, allowOccupiedTarget) {
-    const attempt = (c, r, opts) => findNpcPath(area, fromX, fromZ, c, r, { allowOccupiedTarget, ...opts });
-    let path = attempt(target.c, target.r, { padding: 6 });
+    const seat = allowOccupiedTarget ? deps.npcSeatTransformForTarget?.(target) : null; // Search toward the rendered seat cell rather than the furniture's origin.
+    const c = seat ? Math.floor(seat.x) : target.c; // Final cell used by both bounded search attempts.
+    const r = seat ? Math.floor(seat.z) : target.r;
+    const attempt = opts => findNpcPath(area, fromX, fromZ, c, r, { allowOccupiedTarget, ...opts });
+    let path = attempt({ padding: 6 });
     if (path?.length) return path;
-    path = attempt(target.c, target.r, { padding: 16, maxNodes: 4000 });
+    path = attempt({ padding: 16, maxNodes: 4000 });
     if (path?.length) return path;
     return path;
   }
 
   function _walkerAllowsFurnitureOverlap(walker, tx, tz) {
     const target = walker?.currentScheduleTarget;
-    return target?.pose === 'sit'
-      && Number.isFinite(target.c) && Number.isFinite(target.r)
-      && Math.hypot(tx - (target.c + 0.5), tz - (target.r + 0.5)) < 0.08;
+    if (target?.pose !== 'sit' || target.area && target.area !== walker.area) return false;
+    const seat = deps.npcSeatTransformForTarget?.(target); // Uses the same transformed anchor as seated rendering, including bench seat index.
+    const x = seat?.x ?? (target.c + 0.5); // Exact anchor and its grid waypoint are both legitimate final approaches.
+    const z = seat?.z ?? (target.r + 0.5);
+    return Number.isFinite(x) && Number.isFinite(z)
+      && (Math.hypot(tx - x, tz - z) < 0.08
+        || Math.hypot(tx - (Math.floor(x) + 0.5), tz - (Math.floor(z) + 0.5)) < 0.08);
   }
 
   function _recordBlockedMove(walker, tx, tz) {

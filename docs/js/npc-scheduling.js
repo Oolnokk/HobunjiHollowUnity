@@ -156,9 +156,11 @@
       c, r,
       rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
       pose: station.pose || 'stand',
-      furnitureKey: station.furnitureKey
-        || deps.getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
-        || (deps.decorativeFurnitureDefs[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
+      furnitureKey: (deps.decorativeFurnitureDefs?.[station.furnitureKey] ? station.furnitureKey : '')
+        || deps.getDecorativeFurnitureKeyByItemKey?.(station.furnitureKey)
+        || station.furnitureKey
+        || deps.getDecorativeFurnitureKeyByItemKey?.(station.sourceFurnitureKey)
+        || (deps.decorativeFurnitureDefs?.[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
       seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
       toolKey: station.toolKey || '',
       toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
