@@ -300,7 +300,7 @@
   <script src="js/combat/combat-combo.js?v=20261005heb94de5"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261016hf3aa758"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261005h66f4dee"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20261002h2d08879"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261004h4413146"></script>
   <script src="js/combat/combat-flurry.js?v=20260930he6f6a0a"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261016h98cdb43"></script>
@@ -329,7 +329,7 @@
   <script src="js/combat/combat-bandit.js?v=20261016h30d2c1f"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
-  <script src="js/combat/combat-enemy-dodge.js?v=20261014h4b88a3f"></script>
+  <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261015h3faef6c"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
@@ -345,7 +345,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261017hb687766"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261017h46db59a"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2498,7 +2498,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261017h35dac52"></script>
+  <script src="js/pixel-probe.js?v=20261017h158da0d"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2662,7 +2662,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261017hd944911"></script>
+  <script src="game.js?v=20261017h2efef0f"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261017h8603466"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

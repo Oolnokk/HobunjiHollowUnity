@@ -1106,7 +1106,10 @@
     const furnitureCraftingDebug = window.CraftingPanel?.debugSnapshot?.(); // Copyable mobile evidence for material requirements and the world mastery gate.
     if (furnitureCraftingDebug) lines.push(`Furniture crafting: ${JSON.stringify({ latestChange: furnitureCraftingDebug.latestChange, recipes: furnitureCraftingDebug.recipes.length, advancedLoom: furnitureCraftingDebug.recipes.find(recipe => recipe.key === 'advancedLoomFurnitureBlueprint') })}`);
     const combatVoiceDebug = window.CombatVocalizations?.debugSnapshot?.(); // Reports retained winded NPCs after leaving an area.
-    if (combatVoiceDebug) lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}; attack delay=${Number(combatVoiceDebug.attackStartDelayS || 0).toFixed(3)}s; queued inputs=${(combatVoiceDebug.queuedAttacks || []).join(',') || 'none'}`);
+    if (combatVoiceDebug) {
+      lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}; attack delay=${Number(combatVoiceDebug.attackStartDelayS || 0).toFixed(3)}s; queued inputs=${(combatVoiceDebug.queuedAttacks || []).join(',') || 'none'}`);
+      lines.push(`Combat voice modulation: ${JSON.stringify({ latestChange: combatVoiceDebug.latestChange, modulation: combatVoiceDebug.modulation, breath: combatVoiceDebug.lastBreath, dodge: combatVoiceDebug.lastDodge, failure: combatVoiceDebug.failedPlayback })}`);
+    }
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;
