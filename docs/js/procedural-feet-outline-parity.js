@@ -23,6 +23,8 @@
   const MAX_SNAPSHOT_AGE_MS = 160;
   const FOOT_WATER_MASK_LAYER = 26; // Mirrors HeldObjectRenderOrder's private foot-only stencil layer used during water recomposition.
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
+  const SHELL_DEPTH_OFFSET_FACTOR = 4; // Pushes foot shell back faces away from the camera so they cannot overlay the foot surface.
+  const SHELL_DEPTH_OFFSET_UNITS = 4;
   let baseMatrixCaptures = 0; // Diagnostic count of visible foot matrices captured by this adapter.
   let lockedWaterMaskDraws = 0; // Diagnostic count of foot-water stencil draws forced to the captured visible matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
@@ -96,6 +98,7 @@
       visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
       restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary outline matrix.
       thicknessRestoreStack: [], // Per-draw shell-uniform restore entries; keeps non-limb outlines at the global thickness.
+      offsetRestoreStack: [], // Per-draw polygonOffset restore entries for the shared shell material.
     };
 
     mesh.onBeforeRender = function feetOutlineParityBefore(...args) {
@@ -110,6 +113,7 @@
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
+        state.offsetRestoreStack.push(null);
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
         return;
@@ -119,7 +123,25 @@
       if (!passKind) {
         state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
+        state.offsetRestoreStack.push(null);
         return;
+      }
+
+      // The doubled foot shell is a thin two-mesh model: its inflated back faces can
+      // win the depth test against the foot's own front faces and draw over the toes.
+      // Push this foot's shell draws deeper so they only show past the silhouette.
+      if (passKind === 'shell') {
+        state.offsetRestoreStack.push({
+          material,
+          enabled: material.polygonOffset,
+          factor: material.polygonOffsetFactor,
+          units: material.polygonOffsetUnits,
+        });
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = SHELL_DEPTH_OFFSET_FACTOR;
+        material.polygonOffsetUnits = SHELL_DEPTH_OFFSET_UNITS;
+      } else {
+        state.offsetRestoreStack.push(null);
       }
 
       const thicknessUniform = passKind === 'shell' ? material?.uniforms?.uThickness : null;
@@ -161,6 +183,12 @@
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
+      const offsetRestore = state.offsetRestoreStack.pop();
+      if (offsetRestore) {
+        offsetRestore.material.polygonOffset = offsetRestore.enabled;
+        offsetRestore.material.polygonOffsetFactor = offsetRestore.factor;
+        offsetRestore.material.polygonOffsetUnits = offsetRestore.units;
+      }
       const thicknessRestore = state.thicknessRestoreStack.pop();
       if (thicknessRestore) {
         thicknessRestore.uniform.value = thicknessRestore.value;
@@ -238,7 +266,7 @@
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
-        latestChange: 'Foot replacements register water occlusion immediately, without a load-time limit.',
+        latestChange: 'Foot shell outline draws use a depth push-back so inflated back faces no longer layer over the foot.',
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
       };
     },
