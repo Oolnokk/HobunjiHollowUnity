@@ -1,0 +1,42 @@
+name: Temporary Rig Coordinates gameplay parity validation
+
+on:
+  push:
+    branches:
+      - fix/animation-author-saddles-puktuk-voorg
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch main
+        run: git fetch origin main
+      - name: Fix cache-bust chain
+        shell: bash
+        run: |
+          BASE="$(git merge-base HEAD origin/main)"
+          node scripts/check-cache-busts.js --fix "$BASE"
+          if ! git diff --quiet; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -A
+            git commit -m "Apply cache-bust fixes for Rig Coordinates parity"
+            git push origin HEAD:fix/animation-author-saddles-puktuk-voorg
+          fi
+      - name: Validate Rig Coordinates parity
+        shell: bash
+        run: |
+          node --check docs/js/animation-author-rig-gameplay-appearance.js
+          node scripts/test-animation-author-rig-pants-preview.js
+          node scripts/test-pants-garment-wiring.js
+          node scripts/test-attachment-rig-master.js
+          node scripts/test-new-creature-rig-coordinates.js
+          BASE="$(git merge-base HEAD origin/main)"
+          node scripts/check-cache-busts.js "$BASE"
+          git diff --check "$BASE"..HEAD
