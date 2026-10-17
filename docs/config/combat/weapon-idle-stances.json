@@ -48,13 +48,13 @@
       "roll": -114
     },
     "dualWieldOffhand": {
-      "x": 0.09,
-      "y": 0,
-      "z": -0.04,
-      "pitch": 37,
-      "yaw": 68,
-      "bodyYaw": -40,
-      "roll": 114
+      "x": 0.11,
+      "y": -0.03,
+      "z": 0.13,
+      "pitch": 40,
+      "yaw": 88,
+      "roll": -73,
+      "bodyYaw": -40
     },
     "topHeavyTool": {
       "x": 0.21,

@@ -30,7 +30,8 @@ assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder,
 assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'left'/, 'left hand follows the offhand duplicate');
-assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'both duplicated weapons use the same fixed 1H grip frame');
+assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, offhandGrip\)/, 'the offhand copy resolves its own grip frame');
+assert.match(driver, /offhandGrip = toolGrips\.offhandPrimaryGripForTool\?\.\(toolKey, gripContext, scaleIdentity\) \|\| primaryGrip/, 'that frame is the authored 1H grip without the main hand\'s palm-side offset, falling back to the shared grip');
 assert.match(grips, /dualWieldStateForTool/, 'shared grip state exposes Dual Wield as a melee hand mode');
 assert.match(grips, /defaultTwoHand = sequence === 'attack'/, 'ordinary melee attacks default to 2H');
 assert(held.includes('dual-wield-weapon-visuals.js'), 'held-action bootstrap loads dual-wield visuals');
