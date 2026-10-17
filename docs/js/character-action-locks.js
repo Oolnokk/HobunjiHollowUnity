@@ -121,7 +121,7 @@
   const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20261015h7e50202', base).href;
   const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20261015hf36ede5', base).href;
   const socialCameraRuntime = new URL('social-action-camera-runtime.js?v=20260903social7', base).href;
-  const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20261015h1722b77', base).href;
+  const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20261017hf702d05', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20260903social13', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20260903social16', base).href;
   const npcPerformanceReactionLockRuntime = new URL('npc-performance-reaction-lock-runtime.js?v=20260914kurraya1', base).href; // Loads last so it can guard every social physical-reaction wrapper while an NPC is actively performing an instrument.
