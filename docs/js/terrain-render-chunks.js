@@ -436,7 +436,10 @@
   function isEligibleTerrainMesh(mesh) {
     if (!mesh?.isMesh || mesh.isSkinnedMesh || mesh.isInstancedMesh) return false;
     if (mesh.userData?.terrainRenderChunkSource || mesh.userData?.terrainRenderChunk) return false;
-    if (!mesh.parent?.isScene || !mesh.receiveShadow || !hasLayer(mesh, MATERIAL_ID_LAYER)) return false;
+    if (!mesh.parent?.isScene || !mesh.receiveShadow) return false;
+    // Floors opt in via the terrain material-ID layer; huge single-material
+    // meshes outside it (border terrain) opt in explicitly.
+    if (!hasLayer(mesh, MATERIAL_ID_LAYER) && mesh.userData?.terrainRenderChunkEligible !== true) return false;
     const position = mesh.geometry?.attributes?.position;
     if (!position || position.isInterleavedBufferAttribute || !position.array) return false;
     if (Array.isArray(mesh.material) || mesh.geometry.groups?.length > 1) return false;
