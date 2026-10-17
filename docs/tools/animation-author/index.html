@@ -1204,8 +1204,8 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
 <script src="../../config/attachment-rig-profiles.js"></script>
-<script src="../../js/animal-chathead-frame.js?v=20261002hc9c34ff"></script>
-<script src="../../js/transform-dump-utils.js?v=20260821a"></script>
+<script src="../../js/animal-chathead-frame.js?v=20261017h5072726"></script>
+<script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 
 <script>
 (() => {
@@ -1216,7 +1216,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261016h32b7a0b', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261017h94c8fc4', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261016h229fb4f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
@@ -1232,6 +1232,9 @@ const REQUIRED_SCRIPTS = [
   'js/png-plane-avatar.js',
   'js/leg-bones.js',
   'js/procedural-leg-animation.js',
+  'config/pants-rigs.js',
+  'js/pants-rig-core.js',
+  'js/pants-garment-renderer.js',
   'js/held-action-animations.js',
   CREATURE_RENDER_SCRIPT,
 ];
@@ -12104,6 +12107,58 @@ prepareMultiAvatarAnimationAuthor = function() {
 animationAuthor.attachmentRigSchema = 'hobunji.attachment-rig-profiles.v6';
 COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.add('hobunji.attachment-rig-profiles.v6');
 animationAuthor.attachmentRigProfiles = normalizedRigProfileLibrary(animationAuthor.attachmentRigProfiles || {});
+function rigPantsAssetUrlV1546(path) {
+  const value = String(path || '').trim();
+  if (!value || /^(?:https?:|data:|blob:|\/)/i.test(value)) return value;
+  return new URL(`../../${value.replace(/^\.\//, '')}`, location.href).href; // Commit-pinned author pages keep garment art on the same tested revision.
+}
+
+function rigPantsGarmentRecordV1546(garmentId) {
+  const source = window.HOBUNJI_PANTS_RIGS?.garments?.[garmentId];
+  if (!source) return null;
+  const garment = clone(source);
+  if (garment.image) garment.image = rigPantsAssetUrlV1546(garment.image);
+  if (Array.isArray(garment.imageLayers)) garment.imageLayers = garment.imageLayers.map(layer => ({
+    ...layer,
+    url: rigPantsAssetUrlV1546(layer?.url),
+  })); // Draped pants / layered skirts keep every separately dyed authored sprite instead of collapsing to one PNG.
+  return garment;
+}
+
+function installRigPantsPreviewV1546(actor) {
+  actor.rigPantsPreview = null; // The prior leg handle, if any, already disposed its attached pants before this rebuild.
+  const Renderer = window.PantsGarmentRenderer;
+  if (actor?.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
+  const npc = state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
+  const garmentId = Renderer.garmentForCosmetics?.(npc?.equippedCosmetics || []);
+  if (!garmentId) return null; // Database NPC clothing is authoritative; the animator must not invent pants for intentionally pantless outfits.
+  const garmentRecord = rigPantsGarmentRecordV1546(garmentId);
+  if (!garmentRecord) return null;
+  const profile = actor.model?.userData?.rigAvatarProfile || null;
+  const bodyColors = profile?.bodyColors || actor.source.appearance?.bodyColors || {};
+  const pants = Renderer.attachToLegs(state.three.THREE, actor.rigFeetPreview, {
+    avatarGroup: actor.model,
+    speciesId: actor.source.species,
+    gender: actor.source.gender,
+    garmentId,
+    garmentRecord,
+    appearance: Renderer.appearanceFromBodyColors?.(bodyColors) || {},
+    name: `${actor.id}_rig_pants`,
+  });
+  actor.rigPantsPreview = pants || null;
+  const sourceFront = actor.model?.userData?.rigSourceFrontCanvas;
+  if (pants && sourceFront && profile && Renderer.buildOverlayMask) {
+    Renderer.buildOverlayMask(sourceFront, profile, { forceEyesOpen: true, seatId: `rig-pants:${actor.source.id || actor.id}` })
+      .then(mask => {
+        if (actor.rigPantsPreview !== pants || pants.disposed) return;
+        pants.setOverlayMask?.(mask); // Keeps arm clothing, overwear, pauldrons, and hoods in front exactly like gameplay.
+        pants.update?.();
+      })
+      .catch(error => log(`Rig pants overlay mask failed for ${actor.label}: ${error?.message || error}`, 'warn'));
+  }
+  return pants;
+}
+
 function installShoulderRigFeetPreviewV1529(actor) {
   if (!actor) return null;
   actor.rigFeetPreview?.dispose?.();
@@ -12122,6 +12177,7 @@ function installShoulderRigFeetPreviewV1529(actor) {
     profile,
     portraitSize: metrics.pixelWidth,
   });
+  installRigPantsPreviewV1546(actor); // Pants/skirt use the same procedural leg handle and therefore deform with the rig preview.
   actor.rigFeetPreview?.update?.(0, 0, false, null);
   return actor.rigFeetPreview;
 }
@@ -12158,7 +12214,7 @@ renderAttachmentRigInspector = function() {
   baseRenderAttachmentRigInspectorV1529();
   const actor = selectedAnimationActor();
   if (actor?.source?.type === 'npc' && actor.rigFeetPreview && $('maaInspector')) {
-    $('maaInspector').insertAdjacentHTML('afterbegin', '<div class="maaRigStatus" style="margin:8px"><b>Proportion preview</b><br>Gameplay procedural feet are visible at the character’s real species, gender, and child-scaled dimensions.</div>');
+    $('maaInspector').insertAdjacentHTML('afterbegin', '<div class="maaRigStatus" style="margin:8px"><b>Proportion preview</b><br>Gameplay procedural feet and the NPC’s authored pants/skirt are visible at the character’s real species, gender, dyes, and child-scaled dimensions.</div>');
   }
 };
 

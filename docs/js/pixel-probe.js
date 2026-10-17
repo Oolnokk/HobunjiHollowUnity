@@ -1017,6 +1017,8 @@
     const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
     if (burningVfxDebug) {
       lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);
+      for (const fire of burningVfxDebug.entities || []) lines.push(`  Fire ${fire.entity}: Burning=${fire.burning} Kindling=${fire.kindling} particles=${fire.visible == null ? '?' : (fire.visible ? 'visible' : 'hidden')}`);
+      if (burningVfxDebug.latestChange) lines.push(`  Latest change: ${burningVfxDebug.latestChange}`);
     }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);

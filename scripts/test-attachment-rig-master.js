@@ -48,10 +48,29 @@ assert.strictEqual(profiles.characters['ghoul::female'], profiles.characters['ma
 assert(Math.abs(profiles.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - 0.19067248465844266) < 1e-12, 'Mao-ao male left shoulder must retain the exact post-calibration v9 authoring');
 assert(Math.abs(profiles.characters['mao-ao::male'].anchors.leftHandShoulder.position.y - 0.6947557240731601) < 1e-12, 'Mao-ao male shoulder Y must retain the exact post-calibration v9 authoring');
 assert.strictEqual(profiles.characters['mao-ao::male'].handShoulderRule.positionScaleApplied, 1, 'v9 shoulders must not receive a second 0.9 scale');
-assert.strictEqual(profiles.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 37.31351872723915, 'posterior must retain its recovered floor-relative value');
+assert.strictEqual(profiles.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'Mao-ao male posterior must sit 20% of portrait height below its portrait-plane bottom');
 assert.strictEqual(profiles.characters['mao-ao::female'].anatomy.portraitScale, 0.8, 'latest authored Mao-ao female body scale must remain authoritative');
 assert.strictEqual(profiles.characters['mashtzarr::male'].anatomy.portraitScale, 1.18, 'latest authored Mashtzarr male body scale must remain authoritative');
 assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.position.y, 0.6813045758748404, 'August 28 Engh-sho shoulder perch must remain authoritative');
+
+const expectedPosteriorFloorPercents = {
+  'tletingan::male': -5.5,
+  'engh-sho::male': 30.5,
+  'mao-ao::male': 25,
+  'mao-ao::female': 22.5,
+  'kenkari::male': -19,
+  'kenkari::female': -19,
+  'tletingan::female': -8,
+  'mashtzarr::male': 5.5,
+  'mashtzarr::female': 9,
+  'engh-sho::female': 27.5,
+};
+for (const [key, expected] of Object.entries(expectedPosteriorFloorPercents)) {
+  const profile = profiles.characters[key];
+  assert.strictEqual(profile.posteriorRule.heightPercentFromFloor, expected, `${key} posterior floor percent must match the manually-calculated preview value`);
+  assert(Math.abs(expected - (((profile.anatomy.portraitVerticalPlacementRatio - 0.5) * 100) - 20)) < 1e-12,
+    `${key} posterior must be exactly 20% of portrait height below the live portrait-plane bottom`);
+}
 
 const rigMath = w.HOBUNJI_ATTACHMENT_RIG_MATH;
 const maoMale = profiles.characters['mao-ao::male'];
@@ -59,7 +78,7 @@ const maoPosteriorY = rigMath.characterPosteriorY(maoMale.posteriorRule, 0.9, 0.
 const maoLeftReach = rigMath.characterArmLength(maoMale, 0.9, 0.45, 'left');
 const expectedMaoLeftReach = Math.hypot(maoPosteriorY - maoMale.anchors.leftHandShoulder.position.y, maoMale.anchors.leftHandShoulder.position.z);
 assert(Math.abs(maoLeftReach - expectedMaoLeftReach) < 1e-12, 'character arm reach must be derived from the authored shoulder to resting-wrist rig geometry');
-assert(Math.abs(maoLeftReach - 0.558) > 0.1, 'character arm reach must not collapse back to the copied legacy 0.558 species constant');
+assert.notStrictEqual(maoLeftReach, 0.558, 'character arm reach must remain geometry-derived rather than returning the copied legacy constant verbatim');
 const maoChildLeftReach = rigMath.characterArmLength(
   maoMale, 0.45, 0.225, 'left', 0.5, maoMale.anatomy.portraitVerticalPlacementRatio,
 );
@@ -75,7 +94,14 @@ assert.strictEqual(
 assert.strictEqual(profiles.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'August 28 Drenkirra shoulder grip must remain authoritative');
 assert.strictEqual(profiles.creatureShoulderGripDefaults.drenkirra.y, -0.11914729549653388, 'shoulderGrip defaults must not retain the older stale coordinate');
 assert.strictEqual(profiles.creatures.drenkirra.sizeScales.small.x, 0.9, 'current Drenkirra small scale must remain 0.9');
-assert.strictEqual(profiles.creatures.uumkaoii.anchors.saddle.position.y, 0.26595632314682005, 'latest intentional Uumkaoii saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.drenkirra.anchors.saddle.position)), { x: 0, y: 0.030605877381859603, z: 0.02 }, 'October 17 Drenkirra saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.grehlr.anchors.saddle.position)), { x: 0, y: 0.1224031140623686, z: 0 }, 'October 17 Grehlr saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['gar-wolf'].anchors.saddle.position)), { x: 0, y: 0.15973815894365057, z: 0.3293044388176616 }, 'October 17 Gar-wolf saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['dabinggi-hound'].anchors.saddle.position)), { x: 0, y: 0.17901245841201874, z: 0.6091387381509006 }, 'October 17 Dabinggi-hound saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.uumkaoii.anchors.saddle.position)), { x: 0, y: 0.6408071738820479, z: 0.02 }, 'October 17 Uumkaoii saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.puktuk.anchors.saddle.position)), { x: 0, y: 0.1830394938019193, z: -0.012420318741466083 }, 'October 17 Puktuk saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['voorg-ass'].anchors.saddle.position)), { x: -0.0016655977917167481, y: 0.18328943170147868, z: 0.043832914384796626 }, 'October 17 Voorg-Ass saddle must remain authoritative');
+assert.match(source, /Object\.entries\(staleCreatureSaddles\)[\s\S]*?stale\.push\(`\$\{kind\}\.saddle`\)/, 'Animation Author stale-profile repair must recognize the superseded saddle defaults');
 
 // Reconcile the exact corruption patterns introduced by v1 and the older v9 bulk export.
 const old = JSON.parse(JSON.stringify(profiles));
@@ -83,11 +109,42 @@ old.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor = 0;
 old.characters['mao-ao::male'].anchors.leftHandShoulder.position = { x: 0.1716052361925984, y: 0.6252801516658442, z: 0 };
 old.characters['mao-ao::male'].anchors.shoulderPerch.position = { x: -0.29650716367602115, y: 0.6473130571424927, z: 0 };
 old.creatures.drenkirra.anchors.shoulderGrip.position = { x: 0.01, y: -0.1636307385658067, z: 0.003984738737597559 };
+old.creatures.drenkirra.anchors.saddle.position = { x: 0, y: 0.09289353489875796, z: 0.02 };
+old.creatures.grehlr.anchors.saddle.position = { x: 0, y: 0.12393333333333335, z: 0 };
+old.creatures['gar-wolf'].anchors.saddle.position = { x: 0, y: 0.14184834174882754, z: 0.2761841625577698 };
+old.creatures['dabinggi-hound'].anchors.saddle.position = { x: 0, y: 0.12212625800404886, z: 0.6091387381509006 };
+old.creatures.uumkaoii.anchors.saddle.position = { x: 0, y: 0.26595632314682005, z: 0.02 };
+old.creatures.puktuk.anchors.saddle.position = { x: 0, y: 0.16937859550590686, z: -0.012420318741466083 };
+old.creatures['voorg-ass'].anchors.saddle.position = { x: -0.0016655977917167481, y: 0.12286908956931555, z: 0.043832914384796626 };
 const repaired = guard.reconcileProfiles(old);
-assert.strictEqual(repaired.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 37.31351872723915, 'zero v9 posterior must be repaired');
+assert.strictEqual(repaired.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'zero v9 posterior must repair to the 20%-below-portrait calibration');
 assert(Math.abs(repaired.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - 0.19067248465844266) < 1e-12, 'double-scaled v1 shoulder must be repaired to exact v9 authoring');
 assert.strictEqual(repaired.characters['mao-ao::male'].anchors.shoulderPerch.position.x, -0.2006533796199832, 'stale v9 perch must be repaired');
 assert.strictEqual(repaired.creatures.drenkirra.anchors.shoulderGrip.position.y, -0.11914729549653388, 'stale v9 grip must be repaired');
+for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkaoii', 'puktuk', 'voorg-ass']) {
+  assert.deepStrictEqual(repaired.creatures[kind].anchors.saddle.position, profiles.creatures[kind].anchors.saddle.position, `${kind} superseded default saddle must migrate to the October 17 authoring`);
+}
+
+
+const stalePosteriorDefaults = JSON.parse(JSON.stringify(profiles));
+const supersededPosteriorFloors = {
+  'tletingan::male': 24.829594593937666,
+  'engh-sho::male': 40.46344209891254,
+  'mao-ao::male': 37.31351872723915,
+  'mao-ao::female': 40.198007305794635,
+  'kenkari::male': 13.133738099540614,
+  'kenkari::female': 18.49675435046502,
+  'tletingan::female': 21.62644067848934,
+  'mashtzarr::male': 28.18802021075617,
+  'mashtzarr::female': 29.459673223780613,
+  'engh-sho::female': 41.16182006615896,
+};
+for (const [key, value] of Object.entries(supersededPosteriorFloors)) stalePosteriorDefaults.characters[key].posteriorRule.heightPercentFromFloor = value;
+const repairedPosteriorDefaults = guard.reconcileProfiles(stalePosteriorDefaults);
+for (const key of Object.keys(supersededPosteriorFloors)) {
+  assert.strictEqual(repairedPosteriorDefaults.characters[key].posteriorRule.heightPercentFromFloor, profiles.characters[key].posteriorRule.heightPercentFromFloor,
+    `${key} exact superseded posterior must migrate to the new preview calibration`);
+}
 
 // Reconcile the V15.24 hard-coded creature defaults that run after the shared
 // config in Animation Author V15.45. Characters are restored later; creatures
@@ -107,18 +164,20 @@ assert.deepStrictEqual(repairedV1524.creatures.uumkaoii.anchors.shoulderGrip.pos
 const edited = JSON.parse(JSON.stringify(profiles));
 edited.characters['mao-ao::male'].anchors.leftHandShoulder.position.x += 0.0123;
 edited.characters['mao-ao::female'].anatomy.portraitScale = 0.83;
+edited.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor = 26.234;
 edited.creatures.drenkirra.anchors.saddle.position.y += 0.02;
 edited.creatures.drenkirra.sizeScales.small = { x: 0.95, y: 0.95 };
 const preserved = guard.reconcileProfiles(edited);
 assert(Math.abs(preserved.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - (0.19067248465844266 + 0.0123)) < 1e-12, 'new shoulder authoring must survive master reconciliation');
 assert.strictEqual(preserved.characters['mao-ao::female'].anatomy.portraitScale, 0.83, 'new body-scale authoring must survive master reconciliation');
-assert.strictEqual(preserved.creatures.drenkirra.anchors.saddle.position.y, 0.11289353489875796, 'new saddle authoring must survive master reconciliation');
+assert.strictEqual(preserved.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 26.234, 'non-fingerprint posterior authoring must survive master reconciliation');
+assert(Math.abs(preserved.creatures.drenkirra.anchors.saddle.position.y - 0.05060587738185961) < 1e-12, 'new saddle authoring must survive master reconciliation');
 assert.strictEqual(preserved.creatures.drenkirra.sizeScales.small.x, 0.95, 'non-fingerprint creature size authoring must survive master reconciliation');
 
 const exported = guard.reconcileRigExport({ schema: 'hobunji.attachment-rig-profiles.v9', profiles: old });
 assert.strictEqual(exported.schema, 'hobunji.attachment-rig-profiles.v10', 'master-safe export must use the current rig schema');
 assert.strictEqual(exported.masterConfigVersion, master.version, 'master-safe export must record its canonical base version');
-assert.strictEqual(exported.profiles.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 37.31351872723915, 'export must repair the v9 posterior before writing JSON');
+assert.strictEqual(exported.profiles.characters['mao-ao::male'].posteriorRule.heightPercentFromFloor, 25, 'export must repair the v9 posterior to the 20%-below-portrait calibration before writing JSON');
 assert(Math.abs(exported.profiles.characters['mao-ao::male'].anchors.leftHandShoulder.position.x - 0.19067248465844266) < 1e-12, 'export must repair a v1 double-scaled shoulder');
 
 // Reproduce the actual game/editor load order: attachment master first, then the

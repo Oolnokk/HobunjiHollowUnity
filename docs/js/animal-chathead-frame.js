@@ -326,11 +326,16 @@
 
   const REQUIRED_KINDS = Object.freeze(['puktuk', 'voorg-ass']); // Used to verify the two runtime-extended livestock species reached both renderer and picker.
   const DISPLAY_LABELS = Object.freeze({ puktuk: 'Puktuk', 'voorg-ass': 'Vorg-Ass' }); // Used only when the picker needs an option appended before its ordinary population pass.
+  const EXTENSION_SCRIPTS = Object.freeze([ // Loaded in dependency order so gameplay genetics can delegate Voorg-Ass registration to its canonical owner.
+    Object.freeze({ name: 'voorg-ass-registration', path: '../../js/voorg-ass-registration.js?v=20261015h47a3826' }),
+    Object.freeze({ name: 'creature-genetics', path: '../../js/creature-genetics.js?v=20261002h5fdf0c4' }),
+  ]);
   const STATUS_KEY = 'animationAuthorCreatureRegistrySync'; // Used by the mobile-safe debug object exposed below.
   const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {}; // Stores picker diagnostics beside the existing Rig Coordinates diagnostics.
   const status = statusRoot[STATUS_KEY] ||= { state: 'waiting-for-renderer', attempts: 0, loads: 0, pickerRefreshes: 0, rendererMissing: [...REQUIRED_KINDS], pickerMissing: [...REQUIRED_KINDS], lastError: null }; // Exposed so a mobile test can report exactly which layer is stale.
   let intervalId = null; // Polls until the dynamically loaded repository renderer and its extension module are both ready.
-  let scriptRequested = false; // Prevents duplicate creature-genetics.js script requests during repository startup.
+  let scriptRequested = false; // Prevents duplicate ordered extension-script requests during repository startup.
+  let postDomSyncInstalled = false; // Ensures a late creature-genetics DOMContentLoaded reinstall is normalized exactly once after it runs.
 
   function missingRendererKinds() {
     const species = global.CreatureGeneticsRender?.SPECIES || {}; // Read by the same picker population code inside the Animation Author.
@@ -397,31 +402,51 @@
   function requestGameplayCreatureExtensions() {
     if (scriptRequested || !global.CreatureGeneticsRender?.SPECIES) return false;
     scriptRequested = true;
-    const script = global.document?.createElement?.('script'); // Loads the same runtime species-extension module gameplay relies on.
-    if (!script) {
-      status.state = 'script-element-unavailable';
-      return false;
-    }
-    const sourceUrl = new URL('../../js/creature-genetics.js?v=20261002h5fdf0c4', global.location.href).href; // Commit-relative URL keeps RawGitHack test builds on one repository revision.
-    script.src = sourceUrl;
-    script.async = false;
-    script.dataset ||= {};
-    script.dataset.hobunjiAnimationAuthorCreatureRegistry = 'v1';
-    script.onload = () => {
-      status.loads += 1;
-      status.lastError = null;
-      syncNow('creature-genetics-loaded');
-    };
-    script.onerror = () => {
-      status.state = 'creature-genetics-load-failed';
-      status.lastError = sourceUrl;
-    };
     const parent = global.document.head || global.document.documentElement; // Uses a normal document script parent in both desktop and mobile browsers.
     if (!parent?.appendChild) {
       status.state = 'script-parent-unavailable';
+      scriptRequested = false;
       return false;
     }
-    parent.appendChild(script);
+    const loadNext = index => { // Sequentially loads Voorg-Ass's owner before the gameplay genetics module that calls it.
+      if (index >= EXTENSION_SCRIPTS.length) {
+        status.lastError = null;
+        if (!postDomSyncInstalled && global.document?.readyState === 'loading') {
+          postDomSyncInstalled = true;
+          global.document.addEventListener?.('DOMContentLoaded', () => syncNow('post-dom-content-loaded'), { once: true }); // Runs after creature-genetics.js's retry listener and repairs any relative asset URLs it reinstalls.
+        }
+        syncNow('gameplay-creature-extensions-loaded');
+        return;
+      }
+      const entry = EXTENSION_SCRIPTS[index]; // Supplies the diagnostic name and commit-relative source path for this dependency stage.
+      if (entry.name === 'voorg-ass-registration' && global.VoorgAssRegistration) {
+        loadNext(index + 1);
+        return;
+      }
+      const script = global.document?.createElement?.('script'); // One dependency script; the next is not requested until this one has executed.
+      if (!script) {
+        status.state = 'script-element-unavailable';
+        status.lastError = entry.name;
+        scriptRequested = false;
+        return;
+      }
+      const sourceUrl = new URL(entry.path, global.location.href).href; // Commit-relative URL keeps RawGitHack test builds on one repository revision.
+      script.src = sourceUrl;
+      script.async = false;
+      script.dataset ||= {};
+      script.dataset.hobunjiAnimationAuthorCreatureRegistry = entry.name;
+      script.onload = () => {
+        status.loads += 1;
+        loadNext(index + 1);
+      };
+      script.onerror = () => {
+        status.state = `${entry.name}-load-failed`;
+        status.lastError = sourceUrl;
+        scriptRequested = false;
+      };
+      parent.appendChild(script);
+    };
+    loadNext(0);
     return true;
   }
 

@@ -654,6 +654,7 @@
     else if (!registered) reason = 'Jubmir’s story visit provider is not registered.';
     else if (doorstep.activeVisitKey === FEY_VISIT_KEY) reason = 'Jubmir’s story visitor is active at the farmhouse.';
     else if (doorstep.activeVisitKey) reason = 'Another doorstep visitor is active: ' + doorstep.activeVisitKey;
+    else if (!doorstep.schedulingReady) reason = 'Doorstep visits are waiting for the NPC scheduling connection.';
     else if (!window.DoorstepVisits.sourceWalker('jubmir')) reason = 'Jubmir’s source NPC is unavailable; the visitor cannot be cloned.';
     return {
       summary: reason,
@@ -667,13 +668,14 @@
         ['Story running', story.running ? 'Yes' : 'No'],
         ['Story visit provider registered', registered ? 'Yes' : 'No'],
         ['Current area', doorstep?.currentArea || 'Unavailable'],
+        ['Doorstep NPC scheduling connected', doorstep?.schedulingReady ? 'Yes' : 'No'],
         ['Active visit', doorstep?.activeVisitKey || 'None'],
         ['Registered visit providers', doorstep?.providers?.join(', ') || 'None'],
         ['Jubmir source NPC available', window.DoorstepVisits?.sourceWalker?.('jubmir') ? 'Yes' : 'No'],
         ['Farmhouse entrances', doorstep ? window.DoorstepVisits.exitDoorCandidates().length : 'Unavailable'],
         ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Added visible opening-story progress, Jubmir countdown and doorstep spawn diagnostics.'],
+        ['Latest change', 'Preserved doorstep NPC scheduling startup hooks alongside Porakaneki camps; overdue visits can spawn on farmhouse exit.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };

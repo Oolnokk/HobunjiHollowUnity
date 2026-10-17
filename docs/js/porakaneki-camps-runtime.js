@@ -1626,6 +1626,19 @@
     if (installer(window[name])) return;
     const descriptor = Object.getOwnPropertyDescriptor(window, name);
     if (descriptor && !descriptor.configurable) return;
+    // Preserve earlier startup subscribers, including DoorstepVisits' NPC adapters.
+    if (typeof descriptor?.set === 'function') {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: descriptor.enumerable ?? true,
+        get() { return descriptor.get?.call(window); },
+        set(value) {
+          descriptor.set.call(window, value);
+          installer(descriptor.get ? descriptor.get.call(window) : value);
+        },
+      });
+      return;
+    }
     let assigned = descriptor?.value;
     Object.defineProperty(window, name, {
       configurable: true, enumerable: true,
