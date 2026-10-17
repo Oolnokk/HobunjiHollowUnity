@@ -15,6 +15,23 @@ jobs:
           fetch-depth: 0
       - name: Apply IKMC outpost content
         run: python3 scripts/temp-apply-ikmc-outpost.py
+      - name: Normalize authored furniture quarter-turns
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('docs/config/maps/map_i_ikmc_outpost.json')
+          data = json.loads(path.read_text())
+          turns = {
+              'f_ikmc_hark_chair': 180,
+              'f_ikmc_bookshelf': 90,
+          }
+          for furniture in data.get('furniture', []):
+              if furniture.get('id') in turns:
+                  furniture['rotY'] = 0
+                  furniture['gridRot'] = turns[furniture['id']]
+          path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
+          PY
       - name: Validate targeted regression
         run: node scripts/test-ikmc-outpost.js
       - name: Validate fast regression suite
