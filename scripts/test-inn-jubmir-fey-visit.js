@@ -50,6 +50,7 @@ const profile = { characterId: 'farmer', worldId: 'world', isWorldOwner: true };
 const storage = new Map(); // Persists between VM reloads to test interruption/reload behavior.
 let hour = 10; // Absolute world hour advances across a day boundary below.
 let panel; // Captures the visible companion panel registered by the shipping story module.
+let storyTarget; // Captures the scheduling override used by recurring visitor arrivals.
 let provider; // Captures the actual registered DoorstepVisits provider.
 let playback = 'complete'; // Controls the shared runner's final-line/skip/failure outcomes.
 let lastScene; // Records the live scene passed to the runner.
@@ -59,6 +60,7 @@ const context = {
     __hobunjiPlayerProfile: profile, __hobunjiGameStarted: true,
     DevCompanion: { registerStateProvider() {}, registerPanel: value => { panel = value; } },
     CalendarSystem: { isInitialized: () => true, previewAfterHours: () => ({ day: Math.floor(hour / 24) + 1, time01: hour % 24 }), getHour: value => value },
+    NpcScheduling: { registerTargetOverride: (id, callback) => { storyTarget = callback; }, resolveNpcStationTarget: () => null },
     DoorstepVisits: { registerProvider: value => { provider = value; }, markDone() {}, dismissVisit() { dismissed++; } },
     LocalDBOverrides: { loadDatabase: async () => db },
     AuthoredCutsceneRuntime: { farmTourPoints: () => ({ entry: {}, porch: {}, guide: {}, playerPorch: {} }), run: async (scene, options) => {
@@ -89,7 +91,12 @@ storage.set(api.stateKey(profile), 'complete');
   assert.equal(provider.next(), null, 'not eligible before twelve hours');
   vm.runInNewContext(source, context);
   api = context.window.OpeningStoryCutscene;
+  const visitor = { id: 'jubmir', visitorPresence: { entrance: { mapId: 'map_hobunji_town', c: 30, r: 48 } } }; // Absent trader fixture.
+  assert.equal(storyTarget(visitor, { hasExistingWalker: false }), null);
   hour = 22;
+  assert.equal(storyTarget(visitor, { hasExistingWalker: false }).visitorArrival, true);
+  assert.equal(storyTarget(visitor, { hasExistingWalker: true }).visitorArrival, false);
+  assert.equal(storyTarget({ id: 'hreesh' }, { hasExistingWalker: false }), null);
   assert.equal(provider.next().npcId, 'jubmir', 'eligible exactly twelve hours after completion, including reload');
   context.window.DoorstepVisits.debugSnapshot = () => ({ schedulingReady: false, providers: ['jubmir_great_fey'], currentArea: 'farm' });
   context.window.DoorstepVisits.sourceWalker = () => null;
@@ -121,6 +128,7 @@ storage.set(api.stateKey(profile), 'complete');
   assert(lastScene.actors.find(actor => actor.npcId === 'jubmir').npcRecord.id === 'jubmir');
   assert.equal(provider.next(), null, 'completed scene never queues another visit');
   assert.equal(dismissed, 1);
+  assert.equal(storyTarget(visitor, { hasExistingWalker: true }), null, 'completion restores trading schedule');
   assert.match(panel.render().summary, /conversation is complete/);
   const byId = new Map(lastScene.stages.map(stage => [stage.id, stage])); // Walks both actual choice branches through the final dialogue.
   for (const option of byId.get('fey_question').options) {
