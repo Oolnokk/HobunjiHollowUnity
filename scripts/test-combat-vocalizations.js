@@ -61,6 +61,15 @@ register('chargedBreaker', {
   },
   onHoldCancel() {},
 });
+register('acceleratingFlurry', {
+  category: 'offensiveHold', slotFamily: 'hold',
+  onHoldStart() {},
+  onHoldUpdate() { // Each Flurry strike is its own staged action fired while the hold continues.
+    W.Combat.beginStagedAction({ windupS: 0.05, strikeS: 0.085 });
+  },
+  onHoldEnd() {},
+  onHoldCancel() {},
+});
 
 const context = {
   console,
@@ -336,6 +345,14 @@ stagedSpec.onUpdate(slowAction);
 assert(Math.abs(slowAction.t-0.45)<1e-9,'a long pause catches up at most 0.25s per frame');
 stagedSpec.onComplete(slowAction);
 slowAction.phase='done';
+// Flurry: one utterance per strike, mapped over its whole Windup -> Strike -> hold.
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:0.8,activeRemainingS:0.4,windupRemainingS:0.05,strikeRemainingS:0.135,holdEndRemainingS:0.6});
+abilities.get('acceleratingFlurry').onHoldUpdate();
+const flurryVoice = W.CombatVocalizations.debugSnapshot().lastStrike;
+assert.equal(flurryVoice.abilityId,'acceleratingFlurry','the strike utterance starts with the strike, not after a separate windup grunt');
+assert(Math.abs(flurryVoice.durationS-0.6)<1e-9,'one utterance spans the strike\'s windup, strike and hold');
+stagedSpec.onComplete(stagedAction);
+stagedAction.phase='done';
 console.log('shared animation timeline voice and queue timing: ok');
 
 const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including explicit and automatic hold endpoints.

@@ -246,6 +246,7 @@
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
+  const SINGLE_UTTERANCE_ABILITIES = new Set(['acceleratingFlurry']); // One grunt per strike across its whole pose sequence.
   const attackActions = new Set(); // Player staged attacks whose windup/strike/recovery still blocks buffered starts.
   const strikeBuffers = new Map(); // Decoded release/combo clips reused by the same timed renderer as charge vocals.
   const debug = {
@@ -1099,7 +1100,10 @@ function beginCharge(options = {}) {
       const isPlayer = context.entity === player(); // Player visuals expose the strike hold separately from the cosmetic return tail.
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
-      const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
+      // Flurry strikes are too short to split into a windup grunt and a release grunt:
+      // each strike gets one utterance mapped over its whole Windup -> Strike -> hold.
+      const singleUtterance = SINGLE_UTTERANCE_ABILITIES.has(context.id);
+      const windupS = singleUtterance ? 0 : Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
       // The input gate (totalS) runs to the middle of the Strike hold; the release
       // voice is time-mapped over Windup -> Strike -> the end of the hold, and keeps
       // playing past the gate until it ends or the next attack's voice takes over.
