@@ -70,8 +70,20 @@
     return isBoxSide(side) ? (getShippingBoxContents()[key] || 0) : (deps.inventory[key] || 0);
   }
 
+  // Single authority for "what is this worth in the Shipping Box": the crop
+  // price table first, then the item's own sellPrice. Fish, meat, hides and
+  // processed goods (jerky, smoked/dried food, wine...) only carry the latter,
+  // and the box used to reject everything missing from BASE_PRICES.
+  function getShipPrice(key) {
+    if (!deps) return undefined;
+    const base = deps.BASE_PRICES[key];
+    if (base !== undefined) return base;
+    const sell = Number(deps.ITEM_DEFS?.[key]?.sellPrice);
+    return Number.isFinite(sell) && sell > 0 ? sell : undefined;
+  }
+
   function canShipKey(key) {
-    return !!deps && deps.BASE_PRICES[key] !== undefined;
+    return getShipPrice(key) !== undefined;
   }
 
   function selectShippingItem(side, key) {
@@ -182,7 +194,7 @@
     setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
     setText('shipDetailIcon', def ? def.icon : panel.iconFallback);
     setText('shipDetailName', def ? def.label : panel.text.detailName);
-    setText('shipDetailValue', def && canShipKey(key) ? `${saleValue(deps.BASE_PRICES[key])}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
+    setText('shipDetailValue', def && canShipKey(key) ? `${saleValue(getShipPrice(key))}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
     setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
     const tags = document.getElementById('shipDetailTags');
     if (tags) tags.innerHTML = def
@@ -270,7 +282,7 @@
     const fallbackIcon = panelCfg().iconFallback;
     return Object.keys(deps.ITEM_DEFS).flatMap(key => {
       const count = Math.max(0, Number(deps.inventory[key]) || 0);
-      const price = Number(deps.BASE_PRICES[key]);
+      const price = Number(getShipPrice(key));
       const def = deps.ITEM_DEFS[key];
       if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
       return [{ key, count, price: saleValue(price), icon: def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
@@ -278,12 +290,12 @@
   }
 
   function sellInventoryAtStore(key, quantity = 1) {
-    if (!deps || deps.BASE_PRICES[key] === undefined) return { moved: 0, earned: 0 };
+    if (!deps || getShipPrice(key) === undefined) return { moved: 0, earned: 0 };
     const available = Math.max(0, Number(deps.inventory[key]) || 0);
     const requested = quantity === storeCfg().stackQuantityToken ? available : Math.max(1, Math.floor(Number(quantity) || 1));
     const moved = Math.min(available, requested);
     if (moved < 1) return { moved: 0, earned: 0 };
-    const price = Math.max(0, Number(deps.BASE_PRICES[key]) || 0);
+    const price = Math.max(0, Number(getShipPrice(key)) || 0);
     // Sells the player's worst-quality stock first so a stray sale can't
     // quietly liquidate a prize-quality unit, and prices each consumed
     // quality tier separately so star quality is actually worth something.
@@ -364,6 +376,9 @@
       releasePointerLock();
       try { dialog?.focus({ preventScroll: true }); } catch (_) { dialog?.focus(); }
     });
+    // The window is a role=dialog inside a root toggled via `hidden`; claim controller focus now so the pad drives it (and not the world) from the first frame.
+    const dialogNow = document.getElementById('shippingStandaloneWindow');
+    if (dialogNow) window.ControllerUI?.focusPanel?.(dialogNow);
     return true;
   }
 
@@ -389,7 +404,7 @@
           </div>
           <div class="shipping-window-actions">
             <button type="button" class="shipping-window-btn" id="shippingWindowDebug" aria-expanded="false">${panel.debugButton}</button>
-            <button type="button" class="shipping-window-btn" id="shippingWindowClose" aria-label="${panel.closeAriaLabel}">${panel.closeGlyph}</button>
+            <button type="button" class="shipping-window-btn" id="shippingWindowClose" data-ctrl-cancel aria-label="${panel.closeAriaLabel}">${panel.closeGlyph}</button>
           </div>
         </header>
         <div id="shippingStandaloneBody"></div>
@@ -447,6 +462,8 @@
     isOpen: () => standaloneOpen,
     getDebugState,
     getSellableInventory,
+    getShipPrice,
+    canShipKey,
     sellInventoryAtStore,
     getConfig: config,
   };

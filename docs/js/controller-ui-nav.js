@@ -940,6 +940,10 @@
     if (attrWatchedPanels.has(panel)) return;
     attrWatchedPanels.add(panel);
     attrObserver.observe(panel, { attributes: true, attributeFilter: ['class', 'style', 'aria-hidden', 'hidden'] });
+    // isVisible() also honors ancestors, so a wrapper toggled with `hidden`/aria-hidden (e.g. the Shipping Box window root) must wake reconcile too. Only those two attributes, so ordinary class/style churn up the tree stays free.
+    for (let node = panel.parentElement; node && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+      attrObserver.observe(node, { attributes: true, attributeFilter: ['aria-hidden', 'hidden'] });
+    }
   }
   function startObserving() {
     structuralObserver.observe(document.body, { childList: true, subtree: true });

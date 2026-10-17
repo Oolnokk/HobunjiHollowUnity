@@ -180,6 +180,7 @@
       speedPxS: projectileStats.speedPxS || base.speedPxS,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
+      dmgType: toolDef?.dmgType === 'blunt' ? 'blunt' : 'sharp', // Used by RangedWeapons.playProjectileImpactSfx so a thrown hit sounds like the same weapon's melee hit.
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
       toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
