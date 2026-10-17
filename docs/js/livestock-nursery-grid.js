@@ -49,7 +49,7 @@
   let selectedBabyId = null; // Used by mouse/controller focus so the right-side detail rail follows the active grid square without rebuilding the Farm panel.
   let decorateQueued = false; // Coalesces render/observer requests into one Nursery enhancement microtask.
   let installed = false; // Makes repeated parser/runtime bridge installs idempotent.
-  let mostRecentChange = 'Nursery portraits enter baby details with A; B returns to the baby, then exits the Nursery focus nest.'; // Included in mobile-visible diagnostics after every state-changing action.
+  let mostRecentChange = 'Controller focus keeps loaded Nursery portraits stable and leaves scrolling to the navigator.'; // Included in mobile-visible diagnostics after every state-changing action.
 
   const roundTo = (value, step) => Math.max(step, Math.round(Number(value || 0) / step) * step);
   const currentDeps = () => panelDeps || animalDeps;
@@ -437,8 +437,10 @@
   function setDetailPortrait(shadow, entry, url = null) {
     const portrait = shadow?.getElementById('detailPortrait');
     if (!portrait || !entry) return;
-    portrait.textContent = url ? '' : (SPECIES_FALLBACK_ICONS[entry.kind] || '🐾');
-    portrait.style.backgroundImage = url ? `url("${url}")` : '';
+    const icon = url ? '' : (SPECIES_FALLBACK_ICONS[entry.kind] || '🐾'); // Used only when the portrait has no loaded texture.
+    const background = url ? `url("${url}")` : ''; // Avoids reassigning a loaded portrait during repeated focus decorations.
+    if (portrait.textContent !== icon) portrait.textContent = icon;
+    if (portrait.style.backgroundImage !== background) portrait.style.backgroundImage = background;
   }
 
   function renderIncubationAction(actions, entry) {
@@ -577,7 +579,10 @@
       else info.specials.forEach(text => appendLine(specials, text));
     }
 
-    setDetailPortrait(shadow, entry, null);
+    if (body?.dataset.nurseryDetailId !== String(entry.id)) {
+      setDetailPortrait(shadow, entry, null);
+      if (body) body.dataset.nurseryDetailId = String(entry.id);
+    }
     portraitUrlFor(entry).then(url => {
       if (!url || selectedBabyId !== entry.id || section !== document.getElementById('livestockNurserySection')) return;
       setDetailPortrait(shadow, entry, url);
@@ -611,11 +616,12 @@
     const records = currentBabies();
     const entry = records.find(item => String(item.id) === String(id)) || null;
     if (!entry) return false;
+    if (String(selectedBabyId) === String(entry.id)) return true; // Repeated native/controller focus must not reset and reload the same portrait.
     selectedBabyId = entry.id;
     const stack = findGridStack(section);
     for (const card of stack?.querySelectorAll?.(':scope > button') || []) {
       const selected = card.dataset.nurseryBabyId === String(entry.id);
-      card.setAttribute('aria-selected', String(selected));
+      if (card.getAttribute('aria-selected') !== String(selected)) card.setAttribute('aria-selected', String(selected));
       if (selected && scroll) card.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
     renderDetails(section, entry);
@@ -696,7 +702,7 @@
     if (card && section.contains(card)) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      selectBaby(section, card.dataset.nurseryBabyId, { scroll: true });
+      selectBaby(section, card.dataset.nurseryBabyId, { scroll: false });
       return;
     }
     const action = event.target?.closest?.('[data-nursery-action]');
@@ -721,7 +727,7 @@
   function handleSectionFocus(event, section) {
     const card = event.target?.closest?.('.nursery-grid-card');
     if (!card || !section.contains(card)) return;
-    selectBaby(section, card.dataset.nurseryBabyId, { scroll: true });
+    selectBaby(section, card.dataset.nurseryBabyId, { scroll: false });
   }
 
   function handleSectionKeydown(event, section) {

@@ -42,8 +42,14 @@ assert.match(game, /isCookedFood[\s\S]{0,300}?action: 'consume_food_item'/,
   'generated cooked meals expose a numbered Eat action');
 assert.match(game, /activeAction === 'consume_food_item'[\s\S]{0,300}?CookingSystem\.eat\(/,
   'generated cooked meals consume through CookingSystem from normal action dispatch');
-assert.match(game, /const isItemButton = b =>[\s\S]{0,500}?consume_held_item[\s\S]{0,500}?consume_food_item[\s\S]{0,500}?plant_[\s\S]{0,500}?place_[\s\S]{0,500}?spawn_[\s\S]{0,500}?harvest/,
-  'mobile item-button packing recognizes consume, plant, place, spawn, and harvest actions');
+const itemButtonClassifier = game.match(/const isItemButton = b =>([\s\S]*?);/)?.[0]; // Executes the shipped action packing policy.
+assert(itemButtonClassifier);
+const classifyItem = vm.runInNewContext(`(() => { ${itemButtonClassifier} return isItemButton; })()`); // Uses the actual predicate to cover contextual harvest versus held item actions.
+for (const action of ['consume_held_item', 'consume_food_item', 'plant_turnip', 'place_chair', 'spawn_chicken']) {
+  assert.equal(classifyItem({ action }), true, `${action} stays in the held-item slots`);
+}
+assert.equal(classifyItem({ action: 'harvest', inputAction: 'action1' }), false, 'ripe crop harvest uses primary world Action 1');
+
 assert.match(game, /window\.FarmCrates\?\.init\(\{[\s\S]*?getHeldMode: \(\) => heldMode/,
   'the consumable bridge receives the current semantic held mode');
 assert.match(game, /const actionButtonKey = btns\.map[\s\S]*?\|\$\{actionButtonKey\}`/,

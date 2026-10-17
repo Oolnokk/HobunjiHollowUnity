@@ -225,7 +225,7 @@
       notCancel(document.activeElement && belongsToNavigation(document.activeElement, panel) && targets.includes(document.activeElement) && document.activeElement)
       || notCancel(remembered && belongsToNavigation(remembered, panel) && targets.includes(remembered) && remembered)
       || pickDefaultTarget(panel, targets);
-    setFocus(startFocus, { scroll: false });
+    setFocus(startFocus || navigationRoot(panel), { scroll: false });
   }
 
   function deactivateAll() {
@@ -458,14 +458,7 @@
 
   function reanchorAfterScroll(panel, dir) {
     if (scrolledSelection?.panel !== panel) return false;
-    let candidates = []; // Start inside the entered scope; unwind only scopes completely outside the current viewport.
-    while (true) {
-      candidates = navigationTargets(panel).map(el => ({ el, rect: visibleNavigationRect(el) })).filter(candidate => candidate.rect);
-      if (candidates.length || !enteredGroups(panel).length) break;
-      const entry = enteredGroups(panel).pop(); // Leaving an invisible scope must not focus/scroll its old container.
-      lastFocusedByGroup.set(entry.node, currentTarget);
-      entry.node.classList.remove('ctrl-nav-group-active');
-    }
+    const candidates = navigationTargets(panel).map(el => ({ el, rect: visibleNavigationRect(el) })).filter(candidate => candidate.rect); // Manual scrolling reanchors inside the entered scope; only Back leaves it.
     if (!candidates.length) return true; // Keep the pending reanchor until more controls become visible; never jump offscreen.
     const current = candidates.find(candidate => candidate.el === currentTarget); // A still-visible selection keeps normal directional intent within visible candidates.
     const hostRect = visibleNavigationRect(scrolledSelection.host) || panel.getBoundingClientRect(); // Anchors a lost selection in the region the player just scrolled.
@@ -605,6 +598,14 @@
       currentTarget.click();
       return;
     }
+    const tabGroup = currentTarget.closest(TABS_SELECTOR); // Tab selection releases its chooser nest so directional input can enter the selected page.
+    if (tabGroup) {
+      currentTarget.click();
+      clearGroups(panel);
+      scrolledSelection = null;
+      setFocus(groupTarget(tabGroup, panel, panel), { scroll: false });
+      return;
+    }
     const detailId = currentTarget.getAttribute('data-ctrl-detail'); // Optional association is captured before the item's click can replace its card.
     const returnPath = focusPath; // Preserves exact stack/clothing identity for Back and whole-grid rebuilds.
     currentTarget.click();
@@ -645,9 +646,10 @@
     let idx = items.findIndex(el => el === currentTarget || el.classList.contains('active'));
     if (idx < 0) idx = 0;
     const next = items[(idx + delta + items.length) % items.length];
-    if (!navigationRoot(panel).contains(next)) clearGroups(panel); // Switching outside an entered section must release its old confinement.
     next.click();
-    setFocus(groupTarget(next, navigationRoot(panel), panel));
+    clearGroups(panel);
+    scrolledSelection = null;
+    setFocus(groupTarget(group, panel, panel), { scroll: false });
   }
 
   // ── on-screen button hint bar ───────────────────────────────────────
@@ -951,6 +953,16 @@
   window.ControllerUI = {
     isActive,
     activePanel,
+    focusPanel(panel) {
+      registerPanel(panel);
+      reconcileStack();
+      if (!stack.includes(panel)) return false;
+      stack = stack.filter(entry => entry !== panel);
+      stack.push(panel);
+      activatePanel(panel);
+      window.ControllerInput?.setOwner?.('menu');
+      return true;
+    }, // Modal owners can synchronously claim focus before staged controls become visible.
     focusedElement: () => currentTarget,
     navigateVector: (x, y) => moveVectorOrAdjust(Number(x) || 0, Number(y) || 0), // Mobile/headless diagnostic seam for reproducing exact diagonal intent without a physical pad.
     // Test/debug seams — let headless verification drive navigation without
@@ -979,7 +991,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'A on inventory, nursery, tool and clothing cards enters their detail panel. B returns to the same item; another B exits the Nursery nest.',
+        latestChange: 'Scrolling preserves the entered container until B. Selecting tabs releases the chooser; nursery focus preserves detail portraits.',
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),

@@ -124,8 +124,11 @@ clockWindow.__hobunjiFurnitureDebug = {
   sitState: { phase: 'in', furnitureKey: 'benchFurniture', furnitureId: 'sc_bench_w1' },
 };
 assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), true, 'generic Spirit Communion bench is prayer-eligible on Anan');
+assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction()?.action, 'temple_pray', 'seated action list receives the eligible prayer');
+assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction()?.inputAction, 'action3', 'Pray occupies its advertised physical slot');
 prayerWeekday = 'Uung';
 assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), false, 'same temple bench is not prayer-eligible off Anan');
+assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction(), null, 'the seated list drops Pray outside Anan');
 prayerWeekday = 'Anan';
 assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().gameHour, 246);
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
