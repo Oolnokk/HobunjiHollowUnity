@@ -1,12 +1,14 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261005dualidle1';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261017toolstance1';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
-  const STANCE_ORDER = ['tool', 'hoeTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
+  const STANCE_ORDER = ['tool', 'hoeTool', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
     tool: 'Tool / Shovel-style',
-    hoeTool: 'Hoe Tool',
+    hoeTool: 'Hoe Tool (unused — Top-heavy Tool replaced it)',
+    topHeavyTool: 'Top-heavy Tool (hoe / hatchet / fishing mace)',
+    longHaftedTool: 'Long-hafted Tool (fishing spear / pick-shovel)',
     heavyWeapon: 'Heavy Weapon',
     lightWeapon: 'Light Weapon',
     dualWieldMain: 'Dual Wield — Main hand',
@@ -28,6 +30,8 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+      topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.16, pitch: 7, yaw: -49, bodyYaw: -8, roll: -96 }),
+      longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
       lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
       dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),

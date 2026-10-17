@@ -26,7 +26,7 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261005dualidle1';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261017toolstance1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
   const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']);
@@ -45,6 +45,8 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+    topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.16, pitch: 7, yaw: -49, bodyYaw: -8, roll: -96 }),
+    longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
@@ -57,6 +59,8 @@
   const idleStances = {
     tool: { ...DEFAULT_IDLE_STANCES.tool },
     hoeTool: { ...DEFAULT_IDLE_STANCES.hoeTool },
+    topHeavyTool: { ...DEFAULT_IDLE_STANCES.topHeavyTool },
+    longHaftedTool: { ...DEFAULT_IDLE_STANCES.longHaftedTool },
     heavyWeapon: { ...DEFAULT_IDLE_STANCES.heavyWeapon },
     lightWeapon: { ...DEFAULT_IDLE_STANCES.lightWeapon },
     dualWieldMain: { ...DEFAULT_IDLE_STANCES.dualWieldMain },
@@ -162,7 +166,8 @@
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
-      if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
+      if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
+      if (shape === 'fishingspear' || shape === 'pickshovel') return idleStances.longHaftedTool; // Same carry, pitched up 10° and gripped nearer the haft's middle.
       if (def?.animStyle === 'thrust') return idleStances.tool;
       return null;
     }
@@ -659,6 +664,8 @@
       poses: {
         tool: { ...idleStances.tool },
         hoeTool: { ...idleStances.hoeTool },
+        topHeavyTool: { ...idleStances.topHeavyTool },
+        longHaftedTool: { ...idleStances.longHaftedTool },
         heavyWeapon: { ...idleStances.heavyWeapon },
         lightWeapon: { ...idleStances.lightWeapon },
       },

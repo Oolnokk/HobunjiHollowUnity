@@ -55,6 +55,24 @@
       "yaw": 68,
       "bodyYaw": -40,
       "roll": 114
+    },
+    "topHeavyTool": {
+      "x": 0.21,
+      "y": -0.12,
+      "z": -0.16,
+      "pitch": 7,
+      "yaw": -49,
+      "bodyYaw": -8,
+      "roll": -96
+    },
+    "longHaftedTool": {
+      "x": 0.21,
+      "y": -0.12,
+      "z": -0.08,
+      "pitch": 17,
+      "yaw": -49,
+      "bodyYaw": -8,
+      "roll": -96
     }
   }
 }
