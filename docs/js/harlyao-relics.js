@@ -209,6 +209,7 @@
         dmgType: shape.dmgType,
         weaponIdleClass: shape.weaponIdleClass,
         shapeKey: record.shape === 'warhammer' ? 'warhammer' : record.shape === 'longsword' ? 'harlyaoLongsword' : 'harlyaoBroadsword',
+        metalKey: 'tinBronze', // Uses the shared mastery-driven bronze/verdigris renderer after unbinding.
         harlyaoRelic: true,
         itemKey: toolKey,
       };
@@ -260,6 +261,9 @@
     g.harlyaoRelics[toolKey] = { shape: relic.shape, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
     if (!g.tools) g.tools = {};
     g.tools[toolKey] = true;
+    if (!g.toolMastery) g.toolMastery = {};
+    g.toolMastery[toolKey] = { xp: 0 }; // Unbinding releases the former owner's affinity and clears mastery-driven verdigris.
+    delete g.toolPlating?.[toolKey];
     registerRelicTool(toolKey, g.harlyaoRelics[toolKey]);
     const es = ES();
     if (es) {
@@ -273,7 +277,7 @@
     deps.saveMemberWorldData?.();
     deps.buildInventoryGrid?.();
     deps.buildEquipmentSlots?.();
-    deps.showToast?.(`Garanki unbinds the ${SHAPES[relic.shape].label}. It's yours now${learned.length ? ` — and he has learned ${learned.join(', ')}` : ''}.`, true);
+    deps.showToast?.(`Garanki unbinds the ${SHAPES[relic.shape].label}. Its verdigris clears and its Mastery returns to 0${learned.length ? ` — and he has learned ${learned.join(', ')}` : ''}.`, true);
     render();
     return { ok: true, toolKey, learned, price };
   }
@@ -475,6 +479,7 @@
     return {
       bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments) })),
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
+      latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,
       collection: window.ArtifactCollection?.debugSnapshot?.() || null,
     };

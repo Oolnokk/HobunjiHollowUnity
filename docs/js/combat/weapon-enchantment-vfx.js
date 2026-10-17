@@ -34,7 +34,7 @@
 
   const ALIGNMENTS = Object.freeze({
     Tothal: Object.freeze({
-      id: 'Tothal', label: 'Tothal · Motion / Blizzard', opacity: 0.78,
+      id: 'Tothal', label: 'Tothal · Motion / Blizzard', opacity: 0.9,
       dyeIds: lichDyeIds(['green_blue', 'blue', 'blue_indigo']),
       effects: Object.freeze([
         Object.freeze({ id: 'blizzard-orb', label: 'Blizzard Orbs', motion: 'swirl', shape: 'orb', blend: 'additive', size: 0.052, life: 1.05, speed: 0.045 }),
@@ -44,7 +44,7 @@
       lore: 'Constant motion: cold, wind, water, chaos, and change.',
     }),
     Hronal: Object.freeze({
-      id: 'Hronal', label: 'Hronal · Stillness / Stone & Lava', opacity: 0.86,
+      id: 'Hronal', label: 'Hronal · Stillness / Stone & Lava', opacity: 0.96,
       dyeIds: lichDyeIds(['red', 'red_orange', 'orange', 'yellow_orange', 'yellow']),
       effects: Object.freeze([
         Object.freeze({ id: 'lava-spit', label: 'Lava Spit', motion: 'lava', shape: 'drop', blend: 'additive', size: 0.055, life: 0.76, speed: 0.048 }),
@@ -54,7 +54,7 @@
       lore: 'Utter stillness: stable earth, dead heat, flat desert, short mountains, and lava.',
     }),
     Kanthic: Object.freeze({
-      id: 'Kanthic', label: 'Kanthic · Void-Nigh / Petroleum', opacity: 0.82,
+      id: 'Kanthic', label: 'Kanthic · Void-Nigh / Petroleum', opacity: 0.94,
       dyeIds: lichDyeIds(['indigo', 'indigo_violet', 'violet'], ['dye:CLOTH:white', 'dye:CLOTH:gray', 'dye:CLOTH:charcoal']),
       effects: Object.freeze([
         Object.freeze({ id: 'petroleum-drop', label: 'Petroleum Drops', motion: 'drip', shape: 'drop', blend: 'normal', size: 0.062, life: 1.16, speed: 0.035 }),
@@ -64,7 +64,7 @@
       lore: 'The void-nigh: oily filth, trapping pull, demonic violence, and death without release.',
     }),
     Ohthic: Object.freeze({
-      id: 'Ohthic', label: 'Ohthic · Spirit World / Dead-Light', opacity: 0.38,
+      id: 'Ohthic', label: 'Ohthic · Spirit World / Dead-Light', opacity: 0.75,
       dyeIds: Object.freeze([
         'dye:CLOTH:white', 'dye:CLOTH:silver',
         'dye:CLOTH:pure_green_blue', 'dye:CLOTH:muted_green_blue',
@@ -127,18 +127,20 @@
 
   function defaultStateForAlignment(alignment) {
     const def = ALIGNMENTS[alignment]; // Used to select the first authored dye/effect for a newly seen planar family.
-    return def ? { alignment, dyeId: def.dyeIds[0], effectId: def.effects[0]?.id || '' } : null;
+    return def ? { alignment, colorAlignment: alignment, dyeId: def.dyeIds[0], effectId: def.effects[0]?.id || '' } : null;
   }
 
   function normalizedState(key, raw = visualStore()[key]) {
     const active = activeAlignments(key); // Used to reject stale visual alignment choices after enchantments are removed/swapped.
     if (!active.length) return null;
     const alignment = active.includes(raw?.alignment) ? raw.alignment : strongestAlignment(key);
-    const def = ALIGNMENTS[alignment]; // Used to validate the alignment-scoped color and particle selections.
+    const colorAlignment = active.includes(raw?.colorAlignment) ? raw.colorAlignment : alignment; // Used to preserve an independent, enchantment-backed palette origin.
+    const def = ALIGNMENTS[alignment]; // Used to validate particle forms against their selected origin.
+    const colorDef = ALIGNMENTS[colorAlignment]; // Used to validate colors independently of particle forms.
     const fallback = defaultStateForAlignment(alignment); // Used when an old/malformed save lacks current visual fields.
-    const dyeId = def.dyeIds.includes(raw?.dyeId) ? raw.dyeId : fallback.dyeId;
+    const dyeId = colorDef.dyeIds.includes(raw?.dyeId) ? raw.dyeId : colorDef.dyeIds[0];
     const effectId = def.effects.some(effect => effect.id === raw?.effectId) ? raw.effectId : fallback.effectId;
-    return { alignment, dyeId, effectId };
+    return { alignment, colorAlignment, dyeId, effectId };
   }
 
   function stateFor(key = window.Combat?.deps?.currentWeaponKey?.() || 'none') {
@@ -147,17 +149,18 @@
 
   function setChoice(key, field, value) {
     const current = normalizedState(key); // Used as the validated base state for a single player-authored visual mutation.
-    if (!current || !['alignment', 'dyeId', 'effectId'].includes(field)) return false;
+    if (!current || !['alignment', 'colorAlignment', 'dyeId', 'effectId'].includes(field)) return false;
     let next = { ...current, [field]: value }; // Used as the candidate persistent visual state before alignment-specific normalization.
-    if (field === 'alignment') {
+    if (field === 'alignment' || field === 'colorAlignment') {
       if (!activeAlignments(key).includes(value)) return false;
-      next = defaultStateForAlignment(value);
+      if (field === 'alignment') next.effectId = ALIGNMENTS[value].effects[0].id;
+      else next.dyeId = ALIGNMENTS[value].dyeIds[0];
     }
     const def = ALIGNMENTS[next.alignment]; // Used to keep dye/effect selections within the chosen plane's authored vocabulary.
-    if (!def || !def.dyeIds.includes(next.dyeId) || !def.effects.some(effect => effect.id === next.effectId)) return false;
+    if (!def || !ALIGNMENTS[next.colorAlignment]?.dyeIds.includes(next.dyeId) || !def.effects.some(effect => effect.id === next.effectId)) return false;
     visualStore()[key] = next;
     window.Combat?.deps?.saveGearInventory?.();
-    lastEvent = `saved ${key}: ${next.alignment}/${next.dyeId}/${next.effectId}`;
+    lastEvent = `saved ${key}: ${next.alignment}/${next.colorAlignment}/${next.dyeId}/${next.effectId}`;
     scanGeneration++; // Invalidate any in-flight scan that still reflects the old visual choice.
     lastScanAt = -Infinity;
     activeSnapshot = null;
@@ -473,7 +476,7 @@
       baseSize: particleSize,
       effectId: effect.id,
       motion: effect.motion,
-      maxOpacity: alignment.opacity * (0.72 + random() * 0.28),
+      maxOpacity: Math.max(0.6, alignment.opacity * (0.85 + random() * 0.15)),
     });
   }
 
@@ -525,7 +528,7 @@
     }
     sprite.position.x = x;
     sprite.position.y = y;
-    sprite.material.opacity = particle.maxOpacity * Math.sin(Math.PI * t); // Smooth birth/death fade prevents popping against the weapon edge.
+    sprite.material.opacity = Math.max(0.6, particle.maxOpacity * Math.sin(Math.PI * t)); // Keep live particles at least 60% opaque; scale still eases their birth/death.
     const scalePulse = 0.78 + 0.36 * Math.sin(Math.PI * t); // Used to make particles bloom slightly away from the metal source.
     sprite.scale.set(particle.baseSize * scalePulse, particle.baseSize * scalePulse, 1);
     sprite.material.rotation = particle.phase + particle.spin * particle.age;
@@ -714,15 +717,21 @@
       });
       alignmentSelect.id = 'weaponEnchantmentVfxAlignment';
       alignmentSelect.disabled = active.length < 2;
-      addControlRow(section, 'Planar appearance', alignmentDef.lore, alignmentSelect);
+      addControlRow(section, 'Particle form origin', alignmentDef.lore, alignmentSelect);
 
-      const colorSelect = makeSelect(state.dyeId, alignmentDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {
+      const colorDef = ALIGNMENTS[state.colorAlignment]; // Used for the independent palette picker and its lore.
+      const colorAlignmentSelect = makeSelect(state.colorAlignment, active.map(alignment => ({ value: alignment, label: ALIGNMENTS[alignment].label })), value => {
+        if (setChoice(key, 'colorAlignment', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxColorAlignment');
+      });
+      colorAlignmentSelect.id = 'weaponEnchantmentVfxColorAlignment';
+      colorAlignmentSelect.disabled = active.length < 2;
+      addControlRow(section, 'Particle color origin', 'Choose any origin present on this weapon, independently of its particle form.', colorAlignmentSelect);
+
+      const colorSelect = makeSelect(state.dyeId, colorDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {
         if (setChoice(key, 'dyeId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxColor');
       });
       colorSelect.id = 'weaponEnchantmentVfxColor';
-      addControlRow(section, 'Particle color', state.alignment === 'Ohthic'
-        ? 'Ohthic colors render deliberately ghostly and semi-transparent.'
-        : 'Uses the same authored cloth-dye color possibilities as the matching lich tradition.', colorSelect);
+      addControlRow(section, 'Particle color', 'Uses the authored cloth-dye palette of the selected color origin.', colorSelect);
 
       const effectSelect = makeSelect(state.effectId, alignmentDef.effects.map(effect => ({ value: effect.id, label: effect.label })), value => {
         if (setChoice(key, 'effectId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxEffect');
@@ -734,7 +743,7 @@
       preview.className = 'loadout-slot-combo-note';
       const swatch = document.createElement('span'); // Used to show the exact dye hex at the plane's authored transparency.
       swatch.style.cssText = `display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-2px;margin-right:6px;border:1px solid rgba(255,255,255,.55);background:${dyeHex(state.dyeId)};opacity:${alignmentDef.opacity};`;
-      preview.append(swatch, document.createTextNode(`${alignmentDef.label} · ${styleFor(state)?.label || state.effectId} · ${Math.round(alignmentDef.opacity * 100)}% base opacity`));
+      preview.append(swatch, document.createTextNode(`${alignmentDef.label} form / ${colorDef.label} color · ${styleFor(state)?.label || state.effectId} · ${Math.round(alignmentDef.opacity * 100)}% base opacity (60% minimum)`));
       section.appendChild(preview);
     }
 
@@ -794,6 +803,7 @@
       particles: [...EMITTERS.values()].reduce((sum, emitter) => sum + emitter.particles.length, 0),
       dualWield: window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.() || null,
       metalDetection: { sourceHex: SOURCE_HEX, hueToleranceDeg: SOURCE_HUE_TOL_DEG, saturationTolerance: SOURCE_SAT_TOL, alphaMin: SOURCE_ALPHA_MIN },
+      latestChange: 'Particle form and color origins are independent; live particle opacity is at least 60%.',
       lastEvent,
     };
   }
