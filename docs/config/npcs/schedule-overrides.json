@@ -203,6 +203,41 @@
           }
         ]
       }
+    },
+    {
+      "npcId": "khannibarri_agent",
+      "note": "Surveyor Harkhanash now lives and works in the IKMC Outpost rather than using Funji & Son's General Store as a temporary office.",
+      "scheduleHooks": {
+        "defaultMapId": "map_i_ikmc_outpost",
+        "defaultStationId": "station_ikmc_hark_counter",
+        "workBuildingId": "bldg_ikmc_outpost",
+        "rules": [
+          {
+            "id": "harkhanash_sleep_am",
+            "from": "00:00",
+            "to": "07:00",
+            "mapId": "map_i_ikmc_outpost",
+            "stationId": "station_ikmc_hark_bed",
+            "activity": "sleeping in the IKMC Outpost"
+          },
+          {
+            "id": "harkhanash_work",
+            "from": "07:00",
+            "to": "22:00",
+            "mapId": "map_i_ikmc_outpost",
+            "stationId": "station_ikmc_hark_counter",
+            "activity": "working at the IKMC Outpost"
+          },
+          {
+            "id": "harkhanash_sleep_pm",
+            "from": "22:00",
+            "to": "24:00",
+            "mapId": "map_i_ikmc_outpost",
+            "stationId": "station_ikmc_hark_bed",
+            "activity": "sleeping in the IKMC Outpost"
+          }
+        ]
+      }
     }
   ]
 }

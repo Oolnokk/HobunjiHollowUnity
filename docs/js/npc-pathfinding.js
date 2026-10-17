@@ -253,9 +253,13 @@
     return path;
   }
 
+  // Seats and beds are furniture the NPC is meant to end up on, so their own
+  // station tile is a legal destination even though it is a furniture collider.
+  function targetOccupiesFurniture(target) { return target?.pose === 'sit' || target?.pose === 'lie'; }
+
   function _walkerAllowsFurnitureOverlap(walker, tx, tz) {
     const target = walker?.currentScheduleTarget;
-    if (target?.pose !== 'sit' || target.area && target.area !== walker.area) return false;
+    if (!targetOccupiesFurniture(target) || target.area && target.area !== walker.area) return false;
     const seat = deps.npcSeatTransformForTarget?.(target); // Uses the same transformed anchor as seated rendering, including bench seat index.
     const x = seat?.x ?? (target.c + 0.5); // Exact anchor and its grid waypoint are both legitimate final approaches.
     const z = seat?.z ?? (target.r + 0.5);
@@ -403,10 +407,10 @@
         // (occupied seat, walled-off tile), and a failed swept A* explores its
         // whole bounded box. Remember the failure briefly; a new target, area or
         // start tile searches again immediately.
-        const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + (target.pose === 'sit');
+        const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + targetOccupiesFurniture(target);
         const now = Date.now();
         if (this._npcPathFailKey === failKey && now < this._npcPathFailUntil) { debugStats.pathFailuresSkipped++; return false; }
-        const path = findNpcPathWithFallbacks(this.area, this.root.position.x, this.root.position.z, target, target.pose === 'sit');
+        const path = findNpcPathWithFallbacks(this.area, this.root.position.x, this.root.position.z, target, targetOccupiesFurniture(target));
         if (!path?.length) {
           this._npcPathFailKey = failKey;
           this._npcPathFailUntil = now + PATH_FAILURE_RETRY_MS;

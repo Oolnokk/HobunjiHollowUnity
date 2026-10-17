@@ -12121,7 +12121,7 @@
             if (!window.TilePathfinding) return false;
             const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
             const path = window.TilePathfinding.findPath(startCol, startRow, target.c, target.r,
-              (c, r) => (target.pose === 'sit' && c === target.c && r === target.r) || isNpcTileWalkable(this.area, c, r),
+              (c, r) => ((target.pose === 'sit' || target.pose === 'lie') && c === target.c && r === target.r) || isNpcTileWalkable(this.area, c, r),
               { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, 6) });
             if (!path || !path.length) return false;
             this._gridPath = path;
@@ -12501,7 +12501,7 @@
             }
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit')) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -12712,6 +12712,7 @@
         }
         nearbyNpcWalker = closest;
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
+        window.InteriorDoorTiles?.update(dt);
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -13268,6 +13269,7 @@
         // Drop the outgoing layout's seats/stations (e.g. wedding pews) so a
         // rebuilt room only advertises what it actually contains.
         for (const id of info.registeredStationIds || []) npcStationsById.delete(id);
+        window.InteriorDoorTiles?.discard(mapId);
         info.scene.traverse(object => object.geometry?.dispose?.());
         info.scene.clear();
         _buildingScenes.delete(mapId);
@@ -13714,6 +13716,13 @@
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(seatFurnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
+          // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
+          await window.InteriorDoorTiles?.build({
+            THREE, scene: bScene, mapId, mapData, floorSet,
+            surfaceYAt: (c, r) => tileSurfaceYInArea(bGrid?.[r]?.[c], mapId),
+            registerInteractable: (c, r, interactable) => _buildingInteractables.set(mapId + ',' + c + ',' + r, interactable),
+            decorate: group => { _markOutline(group); _markFurnitureEdgeId(group); },
+          });
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -17693,6 +17702,7 @@
       }
 
       function canPlayerOccupy(wx, wy) {
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, PLAYER_RADIUS * 0.72 / TILE)) return false; // Closed interior doors stop the player only (js/interior-door-tiles.js); NPC pathing ignores them.
         if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
         // Universal "unstuck" escape: if the player's own true position is
         // itself embedded in solid geometry (spawned/teleported into a wall
@@ -27769,6 +27779,7 @@
           return commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
         },
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
+        enterBuilding: (mapId, col, row) => enterBuilding(mapId, col, row), // Headless QA: jump straight into an interior.
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
@@ -29105,6 +29116,12 @@
         },
       });
 
+      window.InteriorDoorTiles?.init({
+        getCurrentArea: () => currentArea,
+        getNpcTiles: area => npcWalkers.filter(w => w.area === area && w.root).map(w => [w.root.position.x, w.root.position.z]),
+        getPlayerTile: () => [player.x / TILE, player.y / TILE],
+      });
+
       window.NpcWardrobe?.init({
         getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical record access lets wardrobe restore reach offscreen/deferred NPCs before a walker exists.
         getGearInventory: () => gearInventory,
@@ -29112,6 +29129,8 @@
         showToast,
         saveMemberWorldData,
         npcWalkers,
+        getCurrentArea: () => currentArea,
+        isWalkerAsleep: walker => walker?.currentScheduleTarget?.pose === 'lie' && walker.area === walker.currentScheduleTarget.area, // Bedtime: the NPC has reached its own bed room.
       });
 
       window.WhistleEquip?.init({

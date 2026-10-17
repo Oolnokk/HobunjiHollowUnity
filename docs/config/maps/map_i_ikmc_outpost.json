@@ -1,0 +1,447 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_ikmc_outpost",
+  "name": "IKMC Outpost",
+  "cols": 12,
+  "rows": 12,
+  "wallStyle": "logs",
+  "logWall": {
+    "seed": "cabin-log-1",
+    "logDiameter": 0.34,
+    "trunkWonk": 0.18,
+    "courseGap": -0.03
+  },
+  "floor": [
+    [
+      1,
+      6
+    ],
+    [
+      2,
+      6
+    ],
+    [
+      3,
+      6
+    ],
+    [
+      4,
+      6
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      6,
+      6
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      10,
+      6
+    ],
+    [
+      1,
+      7
+    ],
+    [
+      2,
+      7
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      5,
+      7
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      8,
+      7
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      1,
+      8
+    ],
+    [
+      2,
+      8
+    ],
+    [
+      3,
+      8
+    ],
+    [
+      4,
+      8
+    ],
+    [
+      5,
+      8
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      1,
+      9
+    ],
+    [
+      2,
+      9
+    ],
+    [
+      3,
+      9
+    ],
+    [
+      4,
+      9
+    ],
+    [
+      5,
+      9
+    ],
+    [
+      6,
+      9
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      9
+    ],
+    [
+      10,
+      9
+    ],
+    [
+      7,
+      1
+    ],
+    [
+      8,
+      1
+    ],
+    [
+      9,
+      1
+    ],
+    [
+      10,
+      1
+    ],
+    [
+      7,
+      2
+    ],
+    [
+      8,
+      2
+    ],
+    [
+      9,
+      2
+    ],
+    [
+      10,
+      2
+    ],
+    [
+      7,
+      3
+    ],
+    [
+      8,
+      3
+    ],
+    [
+      9,
+      3
+    ],
+    [
+      10,
+      3
+    ],
+    [
+      7,
+      4
+    ],
+    [
+      8,
+      4
+    ],
+    [
+      9,
+      4
+    ],
+    [
+      10,
+      4
+    ],
+    [
+      8,
+      5
+    ],
+    [
+      5,
+      10
+    ]
+  ],
+  "furniture": [
+    {
+      "id": "f_ikmc_counter",
+      "itemKey": "counterFurniture",
+      "col": 3,
+      "row": 7,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ikmc_hark_chair",
+      "itemKey": "chairSimpleFurniture",
+      "col": 4,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "gridRot": 180
+    },
+    {
+      "id": "f_ikmc_desk",
+      "itemKey": "deskFurniture",
+      "col": 1,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ikmc_bookshelf",
+      "itemKey": "bookshelfFurniture",
+      "col": 1,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "gridRot": 90
+    },
+    {
+      "id": "f_ikmc_crates",
+      "itemKey": "crateStackFurniture",
+      "col": 9,
+      "row": 8,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ikmc_hark_bed",
+      "itemKey": "basicBedFurniture",
+      "col": 8,
+      "row": 2,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_ikmc_hark_wardrobe",
+      "itemKey": "wardrobeFurniture",
+      "col": 8,
+      "row": 1,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "khannibarri_agent"
+    },
+    {
+      "id": "f_ikmc_nightstand",
+      "itemKey": "nightstandFurniture",
+      "col": 9,
+      "row": 3,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    }
+  ],
+  "exits": [
+    {
+      "id": "exit_ikmc_outpost_front",
+      "label": "Front Door",
+      "tiles": [
+        [
+          5,
+          10
+        ]
+      ],
+      "targetMap": "",
+      "spawnCol": 0,
+      "spawnRow": 0
+    }
+  ],
+  "colliders": [],
+  "vendorZones": [],
+  "routes": [
+    {
+      "id": "route_ikmc_front_counter",
+      "label": "Front door to counter",
+      "nodes": [
+        [
+          5,
+          10
+        ],
+        [
+          5,
+          8
+        ],
+        [
+          4,
+          6
+        ]
+      ]
+    },
+    {
+      "id": "route_ikmc_counter_bed",
+      "label": "Counter to bedroom",
+      "nodes": [
+        [
+          4,
+          6
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          8,
+          5
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          2
+        ]
+      ]
+    }
+  ],
+  "npcStations": [
+    {
+      "id": "station_ikmc_hark_counter",
+      "label": "Surveyor's Counter Chair",
+      "col": 4,
+      "row": 6,
+      "rotY": 180,
+      "pose": "sit",
+      "furnitureKey": "chairSimpleFurniture",
+      "seatIndex": 0,
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
+      "id": "station_ikmc_hark_bed",
+      "label": "Surveyor Harkhanash's Bed",
+      "col": 8,
+      "row": 2,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
+  "npcPaths": []
+}
