@@ -17,6 +17,7 @@
   const PROJECTILE_MIN_TRAVEL_S = 0.42; // Near throws remain responsive.
   const PROJECTILE_MAX_TRAVEL_S = 0.9; // Distant throws remain readable without feeling sluggish.
   const RELEASE_DELAY_S = 0.28; // Authored windup→strike release point.
+  const LANDING_SHADOW_FADE_IN_S = 0.12; // Ground cue appears almost immediately at release, independent of flight length.
   const impactEffects = []; // Bounded, module-owned Three.js splash presentations.
   const projectileTrails = []; // Short luminous motes shed by active flask projectiles.
   const SFX_CUES = Object.freeze({ // Semantic placeholders; audio assets are intentionally configured outside this module.
@@ -216,7 +217,53 @@
     deps.getActiveScene?.()?.add(group);
     record.mesh = group;
     record.disposables = [auraGeometry, auraMaterial]; // Released at impact with the projectile group.
+    record.landingShadow = makeLandingShadow(record);
     return record;
+  }
+
+  // Fixed (non-tracking) ground cue for an in-flight flask: the same soft disc
+  // that sits under characters, fading in at the splash radius and contracting
+  // over the flight to half the player's shadow so it "lands" with the flask.
+  function makeLandingShadow(record) {
+    const make = window.CharacterGroundShadow?.make; // Shared character-shadow material (color/opacity from config).
+    const scene = deps.getActiveScene?.();
+    if (!make || !scene) return null;
+    const config = window.CharacterGroundShadow.config(); // Player shadow footprint the cue shrinks toward.
+    const mesh = make('flask_landing_shadow');
+    const radiusTiles = splashRadius(record.definition, record.playerOwned !== false); // Same radius as the aim ring and impact query.
+    const baseOpacity = mesh.material.opacity; // Character-shadow opacity, restored after the quick fade-in.
+    const groundY = record.target.y; // Landing surface shared with the projectile.
+    mesh.material.opacity = 0;
+    mesh.position.set(record.target.x, groundY + window.CharacterGroundShadow.surfaceOffset(), record.target.z);
+    mesh.scale.set(radiusTiles, 1, radiusTiles);
+    scene.add(mesh);
+    return { mesh, baseOpacity, groundY, startX: radiusTiles, startZ: radiusTiles, endX: (config.radiusX ?? 0.34) * 0.5, endZ: (config.radiusZ ?? 0.22) * 0.5 };
+  }
+
+  function updateLandingShadow(projectile, ratio) {
+    const shadow = projectile.landingShadow; // Null when the shared shadow factory is unavailable.
+    if (!shadow) return;
+    const scaleX = shadow.startX + (shadow.endX - shadow.startX) * ratio; // Linear contraction spans the whole flight.
+    const scaleZ = shadow.startZ + (shadow.endZ - shadow.startZ) * ratio;
+    shadow.mesh.scale.set(scaleX, 1, scaleZ);
+    shadow.mesh.material.opacity = shadow.baseOpacity * Math.min(1, projectile.t / LANDING_SHADOW_FADE_IN_S);
+    const positions = shadow.mesh.geometry.attributes?.position; // Unit disc in the XZ plane; local Y carries terrain height.
+    if (!positions?.setY) return;
+    const centerX = projectile.target.x; // Landing point in Three units.
+    const centerZ = projectile.target.z;
+    for (let index = 0; index < positions.count; index++) {
+      positions.setY(index, groundAt(centerX + positions.getX(index) * scaleX, centerZ + positions.getZ(index) * scaleZ) - shadow.groundY);
+    }
+    positions.needsUpdate = true;
+  }
+
+  function disposeLandingShadow(projectile) {
+    const shadow = projectile.landingShadow;
+    if (!shadow) return;
+    shadow.mesh.parent?.remove?.(shadow.mesh);
+    shadow.mesh.geometry?.dispose?.();
+    shadow.mesh.material?.dispose?.();
+    projectile.landingShadow = null;
   }
 
   function releaseProjectile() {
@@ -304,6 +351,7 @@
 
   function disposeProjectile(projectile) {
     projectile.mesh?.parent?.remove?.(projectile.mesh);
+    disposeLandingShadow(projectile);
     projectile.disposables?.forEach(resource => resource?.dispose?.());
     deps.disposeFlaskProjectile?.(projectile.sprite, projectile.mesh);
   }
@@ -399,6 +447,7 @@
       const arc = Math.sin(Math.PI * ratio) * Math.min(1.65, 0.72 + projectile.distanceTiles * 0.065); // Taller arc for distant shoulder throws.
       projectile.mesh?.position.set(projectile.origin.x + (projectile.target.x - projectile.origin.x) * ratio, projectile.origin.y + (projectile.target.y - projectile.origin.y) * ratio + arc, projectile.origin.z + (projectile.target.z - projectile.origin.z) * ratio);
       projectile.mesh?.rotation.set(projectile.t * 8, 0, projectile.t * 5);
+      updateLandingShadow(projectile, ratio);
       projectile.trailAccumulator += Math.max(0, dt);
       if (projectile.trailAccumulator >= 0.045 && ratio < 0.96) { projectile.trailAccumulator = 0; spawnProjectileTrail(projectile); }
       if (ratio >= 1) { impact(projectile); projectiles.splice(index, 1); }
