@@ -9385,6 +9385,7 @@
         player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+        window.CombatVocalizations?.playDodge?.(player);
         window.CombatTutorial?.observe?.('dodge');
         return true;
       }

@@ -1,4 +1,4 @@
-// Player combat vocalizations: stamina breathing, pain reactions, and attack grunts.
+// Character combat vocalizations: stamina breathing, pain, dodges, and attack grunts.
 // Owns only vocal playback/orchestration; combat abilities and ResourceSystem stay authoritative.
 (() => {
   'use strict';
@@ -245,12 +245,14 @@
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
+  const DODGE_DURATION_SCALE = 0.75; // Dodge compresses pain intensity 1 to 75% of its normal species/gender-modulated duration.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
   const attackActions = new Set(); // Player staged attacks whose windup/strike/recovery still blocks buffered starts.
   const strikeBuffers = new Map(); // Decoded release/combo clips reused by the same timed renderer as charge vocals.
   const debug = {
     lastBreath: null,
     lastPain: null,
+    lastDodge: null,
     lastStrike: null,
     lastCharge: null,
     failedPlayback: null,
@@ -388,7 +390,7 @@
     }, 2);
   }
 
-  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active') {
+  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active', durationScale = 1) {
     if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
@@ -400,6 +402,7 @@
     if (window.CharacterVoiceOwner && !claim) return { suppressed: true, reason: 'voice-priority', voiceKind, ...detail };
 
     const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones), entity);
+    plan.tempo /= durationScale; // Shortens dodge duration independently of the species/gender pitch.
     const volume = clamp(
       Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1),
       0,
@@ -428,9 +431,11 @@
       } else if (typeof Audio === 'function') {
         snd = new Audio(url);
         snd.volume = volume;
-        setPitchPreservation(snd, true);
-        snd.playbackRate = plan.tempo;
+        // Emergency native playback couples speed and pitch; preserve the authored voice identity.
+        setPitchPreservation(snd, Math.abs(plan.pitchSemitones) < 0.05);
+        snd.playbackRate = clamp(plan.tempo * Math.pow(2, plan.pitchSemitones / 12), 0.02, 4);
         snd.addEventListener?.('ended', finish, { once: true });
+        snd.addEventListener?.('error', finish, { once: true });
         window.CharacterVoiceOwner?.bindStop?.(claim, fadeS => fadeNativeVoice(snd, fadeS, finish));
         const result = snd.play();
         result?.catch?.(error => { finish(); recordPlaybackFailure(debugKind, error, url); });
@@ -448,7 +453,7 @@
       tempo: plan.tempo,
       pitchSemitones: plan.pitchSemitones,
       modulation: plan.modulation,
-      independentPitch: true,
+      independentPitch: !!(window.AnimalVoiceIndependentPlayback?.playIndependent || window.AnimalVoiceIndependentPlayback?.play),
       suppressed: false,
       ...detail,
     };
@@ -632,6 +637,30 @@
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
     };
+  }
+
+  function playDodge(entity = player()) {
+    const played = playOneShot( // Uses the same voice owner, modulation, and spatial routing as combat pain/breathing.
+      entity,
+      config.assets?.pain?.[1],
+      config.pain?.volume ?? 0.9,
+      config.pain?.pitchRandomSemitones ?? 0,
+      'dodge',
+      { intensity: 1, durationScale: DODGE_DURATION_SCALE },
+      'active',
+      DODGE_DURATION_SCALE,
+    );
+    debug.lastDodge = {
+      atMs: Math.round(nowMs()),
+      entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
+      intensity: 1,
+      durationScale: DODGE_DURATION_SCALE,
+      suppressed: !!played?.suppressed,
+      tempo: played?.tempo ?? null,
+      pitchSemitones: played?.pitchSemitones ?? null,
+    };
+    trackBreather(entity);
+    return played;
   }
 
   function onResourceChange(event) {
@@ -1229,7 +1258,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Charge spans neutral to windup; release and queued attacks end at Hold, before the visual return to neutral.',
+    latestChange: 'Dodge uses pain intensity 1 at 75% duration; all combat vocals, including breathing and native fallback, retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1237,6 +1266,7 @@ function beginCharge(options = {}) {
     releaseCharge,
     cancelCharge,
     playStrikeGrunt,
+    playDodge,
     attackStartDelayS,
     chargeRatePlan,
     liveChargeTargetDurationS,
@@ -1245,6 +1275,7 @@ function beginCharge(options = {}) {
     getVoicePriority: kind => voicePriority(kind),
     debugSnapshot: () => ({
       version: VERSION,
+      latestChange: window.CombatVocalizations.latestChange,
       configSource,
       configError,
       attackStartDelayS: attackStartDelayS(),
@@ -1271,6 +1302,7 @@ function beginCharge(options = {}) {
       modulation: voiceModulation(),
       lastBreath: debug.lastBreath ? { ...debug.lastBreath } : null,
       lastPain: debug.lastPain ? { ...debug.lastPain } : null,
+      lastDodge: debug.lastDodge ? { ...debug.lastDodge } : null,
       lastStrike: debug.lastStrike ? { ...debug.lastStrike } : null,
       lastCharge: debug.lastCharge ? { ...debug.lastCharge } : null,
       failedPlayback: debug.failedPlayback ? { ...debug.failedPlayback } : null,
