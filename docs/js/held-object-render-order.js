@@ -32,13 +32,10 @@
   const WATER_REPLAY_LAYER = 27;
   const GROUND_REPLAY_LAYER = 28;
   const HELD_OVERLAY_LAYER = 29;
-  const REPLAY_PICK_LAYER = 24; // Toggled on only the meshes one near-tile replay sub-pass draws, then off again.
   const FOOT_WATER_MASK = (1 << FOOT_WATER_MASK_LAYER) >>> 0;
   const WATER_REPLAY_MASK = (1 << WATER_REPLAY_LAYER) >>> 0;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
   const HELD_OVERLAY_MASK = (1 << HELD_OVERLAY_LAYER) >>> 0;
-  const REPLAY_PICK_MASK = (1 << REPLAY_PICK_LAYER) >>> 0;
-  const NEAR_GROUND_STENCIL = 0x04; // Pixels whose front-most surface is ground on a holder's tile; bits 0/1 stay with the foot-water/held marks.
   const DEFAULT_LAYER_MASK = (1 << DEFAULT_LAYER) >>> 0;
   const MASK_ALL = 0xFFFFFFFF >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
@@ -93,7 +90,7 @@
   const heldRegistry = new SceneRegistry();
   const groundRegistry = new SceneRegistry();
   const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
-  const occluderGeometries = new WeakMap(); // Source geometry -> { top, side } face split (see faceSplitFor).
+  const occluderGeometries = new WeakMap(); // Source geometry -> geometry of only its non-upward faces, built once per geometry.
   const waterRegistry = new SceneRegistry(); // Used by the foot-only translucent-water replay.
   const waterOccludedRegistry = new SceneRegistry(); // Used to stencil only feet (never weapons/hands) before replaying water.
   const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
@@ -237,7 +234,7 @@
   }
 
   function groundKind(object) {
-    if (isTopFacesGroundSurface(object)) return null; // Never hide the whole shell; see faceSplitFor.
+    if (isTopFacesGroundSurface(object)) return null; // Never hide the whole shell; see occluderGeometryFor.
     if (isGrassGroundCover(object)) return 'grass';
     if (isRoadSurface(object)) return 'road';
     if (isTerrainSurface(object)) return 'terrain';
@@ -264,7 +261,6 @@
     // both so any future lit material behaves exactly like the normal base pass.
     light.layers.enable(HELD_OVERLAY_LAYER);
     light.layers.enable(WATER_REPLAY_LAYER);
-    light.layers.enable(REPLAY_PICK_LAYER);
     preparedLights.add(light);
   }
 
@@ -393,20 +389,19 @@
     return true;
   }
 
-  // Two geometries sharing the source's vertex attributes: `top` indexes only
-  // faces pointing less than ~60 degrees from straight up in world space (the
-  // floor), `side` everything else (walls, slopes, ceiling). Material groups
-  // are preserved per face. Built once per source geometry.
+  // Geometry sharing the source's vertex attributes, indexing only faces that
+  // point less than ~60 degrees from straight up in world space, so slopes
+  // and walls keep occluding. Material groups are preserved per face.
   const TOP_FACE_MIN_NORMAL_Y = 0.5;
   const faceA = new THREE.Vector3();
   const faceB = new THREE.Vector3();
   const faceC = new THREE.Vector3();
   const faceNormalMatrix = new THREE.Matrix3();
-  function faceSplitFor(mesh) {
+  function occluderGeometryFor(mesh) {
     const source = mesh.geometry;
     if (!source) return null;
     if (occluderGeometries.has(source)) return occluderGeometries.get(source);
-    let split = null;
+    let occluder = null;
     const position = source.attributes?.position;
     if (position && !position.isInterleavedBufferAttribute && !source.morphAttributes?.position?.length) {
       const index = source.index;
@@ -414,9 +409,11 @@
       const groups = source.groups?.length ? source.groups : [{ start: 0, count, materialIndex: 0 }];
       mesh.updateWorldMatrix(true, false);
       faceNormalMatrix.getNormalMatrix(mesh.matrixWorld);
-      const parts = { top: { indices: [], groups: [] }, side: { indices: [], groups: [] } };
+      const kept = [];
+      const keptGroups = [];
+      let topFaces = 0;
       for (const group of groups) {
-        const topStart = parts.top.indices.length, sideStart = parts.side.indices.length;
+        const groupStart = kept.length;
         const end = Math.min(count, group.start + group.count);
         for (let i = Math.max(0, group.start); i + 2 < end; i += 3) {
           const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
@@ -425,46 +422,37 @@
           faceC.fromBufferAttribute(position, c).sub(faceA);
           faceB.cross(faceC).applyMatrix3(faceNormalMatrix);
           const length = faceB.length();
-          const part = length > 1e-12 && faceB.y / length >= TOP_FACE_MIN_NORMAL_Y ? parts.top : parts.side;
-          part.indices.push(a, b, c);
+          if (length > 1e-12 && faceB.y / length >= TOP_FACE_MIN_NORMAL_Y) { topFaces++; continue; }
+          kept.push(a, b, c);
         }
-        const materialIndex = group.materialIndex ?? 0;
-        if (parts.top.indices.length > topStart) parts.top.groups.push({ start: topStart, count: parts.top.indices.length - topStart, materialIndex });
-        if (parts.side.indices.length > sideStart) parts.side.groups.push({ start: sideStart, count: parts.side.indices.length - sideStart, materialIndex });
+        if (kept.length > groupStart) keptGroups.push({ start: groupStart, count: kept.length - groupStart, materialIndex: group.materialIndex ?? 0 });
       }
-      if (parts.top.indices.length) {
+      if (topFaces > 0) {
+        occluder = new THREE.BufferGeometry();
+        for (const [name, attribute] of Object.entries(source.attributes)) occluder.setAttribute(name, attribute);
+        occluder.setIndex(new THREE.BufferAttribute(position.count > 65535 ? new Uint32Array(kept) : new Uint16Array(kept), 1));
+        for (const group of keptGroups) occluder.addGroup(group.start, group.count, group.materialIndex);
         if (!source.boundingSphere) source.computeBoundingSphere();
         if (!source.boundingBox) source.computeBoundingBox();
-        const build = (part, suffix) => {
-          const geometry = new THREE.BufferGeometry();
-          for (const [name, attribute] of Object.entries(source.attributes)) geometry.setAttribute(name, attribute);
-          geometry.setIndex(new THREE.BufferAttribute(position.count > 65535 ? new Uint32Array(part.indices) : new Uint16Array(part.indices), 1));
-          for (const group of part.groups) geometry.addGroup(group.start, group.count, group.materialIndex);
-          geometry.boundingSphere = source.boundingSphere?.clone() || null;
-          geometry.boundingBox = source.boundingBox?.clone() || null;
-          geometry.name = `${source.name || 'geometry'}__held_xray_${suffix}`;
-          return geometry;
-        };
-        split = { top: build(parts.top, 'top'), side: build(parts.side, 'side') };
+        occluder.boundingSphere = source.boundingSphere?.clone() || null;
+        occluder.boundingBox = source.boundingBox?.clone() || null;
+        occluder.name = `${source.name || 'geometry'}__held_xray_occluder`;
         // Shared attributes stay owned by the source; release only our own
-        // index buffers when the source goes away.
-        source.addEventListener('dispose', () => {
-          for (const geometry of [split.top, split.side]) { geometry.attributes = {}; geometry.dispose(); }
-        });
+        // index buffer when the source goes away.
+        source.addEventListener('dispose', () => { occluder.attributes = {}; occluder.dispose(); });
       }
     }
-    occluderGeometries.set(source, split);
-    return split;
+    occluderGeometries.set(source, occluder);
+    return occluder;
   }
 
-  function swapGeometryPart(meshes, part) {
+  function swapToOccluderGeometry(meshes) {
     const swapped = [];
     for (const mesh of meshes) {
-      if (!isTopFacesGroundSurface(mesh)) continue;
-      const split = faceSplitFor(mesh);
-      if (!split) continue;
+      const occluder = occluderGeometryFor(mesh);
+      if (!occluder) continue;
       swapped.push(mesh, mesh.geometry);
-      mesh.geometry = split[part];
+      mesh.geometry = occluder;
     }
     return swapped;
   }
@@ -646,7 +634,6 @@
       stencilFail: material.stencilFail,
       stencilZFail: material.stencilZFail,
       stencilZPass: material.stencilZPass,
-      clippingPlanes: material.clippingPlanes,
     });
   }
 
@@ -662,7 +649,6 @@
       material.stencilFail = state.stencilFail;
       material.stencilZFail = state.stencilZFail;
       material.stencilZPass = state.stencilZPass;
-      material.clippingPlanes = state.clippingPlanes;
     }
   }
 
@@ -763,13 +749,12 @@
     return states;
   }
 
-  function prepareGroundDepthMaterials(ground, planes = null) {
+  function prepareGroundDepthMaterials(ground) {
     const states = new Map();
     for (const object of ground) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
-        if (planes) material.clippingPlanes = planes; // Near-tile restore redraws exactly the clipped stamp region.
         // Preserve depthWrite exactly. Farm/town grass currently writes depth;
         // wilderness grass intentionally does not. Replaying each as authored
         // reconstructs the postprocess depth buffer without changing its color.
@@ -929,9 +914,7 @@
     renderer.setRenderTarget(renderer.getRenderTarget(), renderer.getActiveCubeFace?.() || 0, renderer.getActiveMipmapLevel?.() || 0);
   }
 
-  // Legacy whole-map x-ray for render targets without a third stencil bit:
-  // rebuilds depth without any ground, draws held meshes, restores all ground.
-  function replayWholeGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
+  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
     const needsHeldOverlay = held.length > 0; // Used to keep weapon/hand x-ray active even when no water is visible.
     const requestedFootWaterComposite = water.length > 0 && waterOccluded.length > 0; // Used to skip all foot-water stencil work on dry scenes.
     const stencilBits = currentFramebufferStencilBits(renderer); // Must describe the CURRENT render target (_mainRT while outlines are on), not the default canvas.
@@ -979,7 +962,7 @@
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
       const hidden = hideObjects([...ground, ...held]);
-      const swappedGeometry = swapGeometryPart(topFaceGround, 'side');
+      const swappedGeometry = swapToOccluderGeometry(topFaceGround);
       const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
       const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
       const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
@@ -1082,376 +1065,6 @@
     }
   }
 
-  // ── Near-tile x-ray ────────────────────────────────────────────────────
-  // Only ground on a holder's own tile should ever let a weapon show through;
-  // every other surface (a hill or cliff between camera and weapon included)
-  // keeps occluding normally. So instead of rebuilding the whole depth
-  // buffer without ground, the base depth is kept and only pixels whose
-  // front-most surface is that nearby ground are erased before the held
-  // meshes draw. Restoring depth then only redraws those few ground meshes.
-  const instancedBounds = new WeakMap(); // InstancedMesh -> { version, count, sphere } in mesh-local space.
-  const instanceMatrix = new THREE.Matrix4();
-  const instanceSphere = new THREE.Sphere();
-  const instanceBox = new THREE.Box3();
-  const instanceExtent = new THREE.Vector3();
-  function localBoundingSphere(mesh) {
-    const geometry = mesh.geometry;
-    if (!geometry?.attributes?.position) return null;
-    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-    if (!mesh.isInstancedMesh) return geometry.boundingSphere;
-    // r128 bounds an InstancedMesh by its base geometry only; cover every
-    // instance, recomputed only when the instance matrices change.
-    const version = mesh.instanceMatrix.version;
-    let cached = instancedBounds.get(mesh);
-    if (cached && cached.version === version && cached.count === mesh.count) return cached.sphere;
-    instanceBox.makeEmpty();
-    for (let i = 0; i < mesh.count; i++) {
-      mesh.getMatrixAt(i, instanceMatrix);
-      instanceSphere.copy(geometry.boundingSphere).applyMatrix4(instanceMatrix);
-      instanceExtent.copy(instanceSphere.center).addScalar(-instanceSphere.radius);
-      instanceBox.expandByPoint(instanceExtent);
-      instanceExtent.copy(instanceSphere.center).addScalar(instanceSphere.radius);
-      instanceBox.expandByPoint(instanceExtent);
-    }
-    cached = { version, count: mesh.count, sphere: instanceBox.isEmpty() ? geometry.boundingSphere.clone() : instanceBox.getBoundingSphere(new THREE.Sphere()) };
-    instancedBounds.set(mesh, cached);
-    return cached.sphere;
-  }
-
-  function worldBoundingSphere(mesh, out) {
-    const local = localBoundingSphere(mesh);
-    if (!local) return null;
-    return out.copy(local).applyMatrix4(mesh.matrixWorld);
-  }
-
-  function writesDepthEverywhere(material) {
-    if (Array.isArray(material)) return material.every(entry => !entry || entry.depthWrite);
-    return !!material?.depthWrite;
-  }
-
-  function writesDepth(material) {
-    if (Array.isArray(material)) return material.some(entry => entry?.depthWrite);
-    return !!material?.depthWrite;
-  }
-
-  // Weapons only x-ray the floor/ground tile their holder stands on. A holder's
-  // tile is the 1x1 world cell under each held mesh; grass billboards never
-  // count as ground here (they keep occluding like any other prop).
-  const MAX_NEAR_TILES = 4; // Only the nearest holders' tiles beyond this count are x-rayed.
-  const TILE_HALF_DIAGONAL = 0.7072;
-  const nearTiles = []; // { x, z, planes, meshes } reused per frame.
-  const tilePlanePool = [];
-  function tilePlanes(index, x, z) {
-    let planes = tilePlanePool[index];
-    if (!planes) planes = tilePlanePool[index] = [new THREE.Plane(), new THREE.Plane(), new THREE.Plane(), new THREE.Plane()];
-    planes[0].set(new THREE.Vector3(1, 0, 0), -x);
-    planes[1].set(new THREE.Vector3(-1, 0, 0), x + 1);
-    planes[2].set(new THREE.Vector3(0, 0, 1), -z);
-    planes[3].set(new THREE.Vector3(0, 0, -1), z + 1);
-    return planes;
-  }
-
-  const holderSphere = new THREE.Sphere();
-  const candidateSphere = new THREE.Sphere();
-  const holderOrder = [];
-  function collectHolderTiles(held, camera) {
-    nearTiles.length = 0;
-    holderOrder.length = 0;
-    for (const mesh of held) {
-      if (!worldBoundingSphere(mesh, holderSphere)) continue;
-      holderOrder.push({ x: Math.floor(holderSphere.center.x), z: Math.floor(holderSphere.center.z), distSq: holderSphere.center.distanceToSquared(camera.position) });
-    }
-    holderOrder.sort((a, b) => a.distSq - b.distSq); // Nearest holders (the player first) win when more than MAX_NEAR_TILES tiles are in view.
-    for (const { x, z } of holderOrder) {
-      if (nearTiles.length >= MAX_NEAR_TILES) break;
-      if (nearTiles.some(tile => tile.x === x && tile.z === z)) continue;
-      const entry = { x, z, planes: tilePlanes(nearTiles.length, x, z), meshes: [] };
-      nearTiles.push(entry);
-    }
-    return nearTiles;
-  }
-
-  // Fills each tile's mesh list with the depth-writing ground/floor meshes that
-  // reach that tile (horizontal bounds test only; the clip planes do the rest).
-  function collectNearGround(tiles, candidates) {
-    for (const list of candidates) {
-      for (const mesh of list) {
-        if (isGrassGroundCover(mesh) || !writesDepth(mesh.material) || !worldBoundingSphere(mesh, candidateSphere)) continue;
-        for (const tile of tiles) {
-          const dx = candidateSphere.center.x - (tile.x + 0.5), dz = candidateSphere.center.z - (tile.z + 0.5);
-          const reach = candidateSphere.radius + TILE_HALF_DIAGONAL;
-          if (dx * dx + dz * dz <= reach * reach) tile.meshes.push(mesh);
-        }
-      }
-    }
-  }
-
-  function cullToReplayFrustum(objects, out) {
-    for (const object of objects) {
-      if (!object.isSprite && isReplayCullable(object) && !replayCullFrustum.intersectsObject(object)) continue;
-      if (object.isInstancedMesh && worldBoundingSphere(object, candidateSphere) && !replayCullFrustum.intersectsSphere(candidateSphere)) continue;
-      out.push(object);
-    }
-    return out;
-  }
-
-  function setPicked(objects, picked) {
-    for (const object of objects) {
-      if (picked) object.layers.enable(REPLAY_PICK_LAYER);
-      else object.layers.disable(REPLAY_PICK_LAYER);
-    }
-  }
-
-  function renderPicked(renderer, scene, camera, objects) {
-    camera.layers.mask = REPLAY_PICK_MASK;
-    if (!objects.length) return;
-    setPicked(objects, true);
-    try {
-      rawRender.call(renderer, scene, camera);
-    } finally {
-      setPicked(objects, false);
-    }
-  }
-
-  function prepareCutoutDepthOnlyMaterials(cutouts) {
-    const states = new Map();
-    for (const object of cutouts) {
-      forEachMaterial(object.material, (material) => {
-        saveMaterialState(states, material);
-        material.colorWrite = false;
-        material.depthWrite = true; // Avatar/PNG planes skip depth in the base pass; weapons behind them must still be hidden.
-      });
-    }
-    return states;
-  }
-
-  function prepareNearGroundStampMaterials(ground, planes) {
-    const states = new Map();
-    for (const object of ground) {
-      forEachMaterial(object.material, (material) => {
-        saveMaterialState(states, material);
-        material.colorWrite = false;
-        material.clippingPlanes = planes; // Only this holder's tile.
-        // Ground cover that skipped depth in the base pass (wilderness grass) must never be
-        // stamped: its blades sit in front of tents, bush wood and feet, so erasing "its"
-        // depth would also erase theirs and the ground restore can never bring it back.
-        const wroteDepth = material.depthWrite !== false;
-        material.depthWrite = false;
-        if (!wroteDepth) { material.stencilWrite = false; return; }
-        // Same shader/depth as the base pass with the default LessEqual test:
-        // passes exactly where this ground is still the front-most surface.
-        material.stencilWrite = true;
-        material.stencilWriteMask = NEAR_GROUND_STENCIL;
-        material.stencilFunc = THREE.AlwaysStencilFunc;
-        material.stencilRef = NEAR_GROUND_STENCIL;
-        material.stencilFuncMask = 0xFF;
-        material.stencilFail = THREE.KeepStencilOp;
-        material.stencilZFail = THREE.KeepStencilOp;
-        material.stencilZPass = THREE.ReplaceStencilOp;
-      });
-    }
-    return states;
-  }
-
-  let eraseRig = null; // Fullscreen quad that pushes depth to the far plane on stencil-marked pixels.
-  function nearGroundEraseRig() {
-    if (eraseRig) return eraseRig;
-    const material = new THREE.ShaderMaterial({
-      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.99999, 1.0); }',
-      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
-    });
-    material.name = 'held_xray_near_ground_depth_erase';
-    material.colorWrite = false;
-    material.depthTest = true; // GL only writes depth with the test enabled; Always makes it unconditional.
-    material.depthFunc = THREE.AlwaysDepth;
-    material.depthWrite = true;
-    material.stencilWrite = true;
-    material.stencilWriteMask = 0x00;
-    material.stencilFunc = THREE.EqualStencilFunc;
-    material.stencilRef = NEAR_GROUND_STENCIL;
-    material.stencilFuncMask = NEAR_GROUND_STENCIL;
-    material.stencilFail = THREE.KeepStencilOp;
-    material.stencilZFail = THREE.KeepStencilOp;
-    material.stencilZPass = THREE.KeepStencilOp;
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
-    quad.frustumCulled = false;
-    const scene = new THREE.Scene();
-    scene.autoUpdate = false;
-    scene.add(quad);
-    quad.updateMatrixWorld(true);
-    eraseRig = { scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
-    return eraseRig;
-  }
-
-  let nearGroundMeshesLast = 0; // Ground meshes the latest near-tile replay stamped/restored.
-  let nearGroundReplayCount = 0;
-  const replayScratch = [];
-
-  function replayNearGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
-    const needsHeldOverlay = held.length > 0;
-    const needsFootWaterComposite = water.length > 0 && waterOccluded.length > 0;
-    if (!needsHeldOverlay && !needsFootWaterComposite) return;
-
-    const oldAutoClear = renderer.autoClear;
-    const oldAutoClearColor = renderer.autoClearColor;
-    const oldAutoClearDepth = renderer.autoClearDepth;
-    const oldAutoClearStencil = renderer.autoClearStencil;
-    const oldBackground = scene.background;
-    const oldSceneAutoUpdate = scene.autoUpdate;
-    const shadowMap = renderer.shadowMap;
-    const oldShadowAutoUpdate = shadowMap?.autoUpdate;
-
-    internalReplay = true;
-    const oldLocalClipping = renderer.localClippingEnabled;
-    renderer.localClippingEnabled = true; // Near-tile stamp/restore materials carry per-tile clip planes.
-    const glState = renderer.state;
-    const scissorMeshes = needsFootWaterComposite ? [...held, ...waterOccluded] : held;
-    let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
-    const culled = scissored && replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight);
-    try {
-      if (scissored) {
-        glState.scissor(scissorRect);
-        glState.setScissorTest(true);
-        scissoredReplayCount++;
-      } else {
-        fullscreenReplayCount++;
-        lastReplayScissorCoverage = 1;
-      }
-      renderer.autoClear = false;
-      renderer.autoClearColor = false;
-      renderer.autoClearDepth = false;
-      renderer.autoClearStencil = false;
-      scene.background = null;
-      scene.autoUpdate = false; // base pass already produced current matrices
-      if (shadowMap) shadowMap.autoUpdate = false;
-
-      if (scissored) glState.setScissorTest(false); // Stencil clears stay full-framebuffer, as before.
-      renderer.clearStencil?.();
-      if (scissored) glState.setScissorTest(true);
-
-      const tiles = needsHeldOverlay ? collectHolderTiles(held, camera) : nearTiles;
-      if (needsHeldOverlay) collectNearGround(tiles, [ground, topFaceGround]);
-      let nearAny = false;
-      nearGroundMeshesLast = 0;
-      for (const tile of tiles) {
-        if (culled) { replayScratch.length = 0; tile.meshes = cullToReplayFrustum(tile.meshes, replayScratch).slice(); }
-        nearGroundMeshesLast += tile.meshes.length;
-        nearAny = nearAny || tile.meshes.length > 0;
-      }
-
-      if (needsHeldOverlay) {
-        // 1) Avatar/PNG cutout planes skip depth writes in the base pass;
-        // give them depth now so a weapon behind a body or sprite stays hidden.
-        const heldSet = new Set(held);
-        // Only planes that skipped depth in the base pass need this; alpha-tested
-        // ground cover such as farm/town grass already wrote its depth.
-        const cutouts = collectVisible(pngDepthRegistry, scene).filter(object => !heldSet.has(object) && !writesDepthEverywhere(object.material));
-        const cutoutsDrawn = culled ? cullToReplayFrustum(cutouts, []) : cutouts;
-        const cutoutStates = prepareCutoutDepthOnlyMaterials(cutoutsDrawn);
-        try {
-          const perf = window.PerfProfiler?.begin('held-overlay: cutout depth render');
-          renderPicked(renderer, scene, camera, cutoutsDrawn);
-          window.PerfProfiler?.end(perf);
-        } finally {
-          restoreMaterialStates(cutoutStates);
-        }
-
-        if (nearAny) {
-          // 2) Mark pixels where a holder's own tile of ground is the front-most
-          // surface (clip planes cut each ground mesh to that 1x1 tile), then
-          // 3) push only those pixels' depth to the far plane.
-          for (const tile of tiles) {
-            if (!tile.meshes.length) continue;
-            const stampStates = prepareNearGroundStampMaterials(tile.meshes, tile.planes);
-            const swapped = swapGeometryPart(tile.meshes, 'top');
-            try {
-              const perf = window.PerfProfiler?.begin('held-overlay: near ground stamp render');
-              renderPicked(renderer, scene, camera, tile.meshes);
-              window.PerfProfiler?.end(perf);
-            } finally {
-              restoreSwappedGeometry(swapped);
-              restoreMaterialStates(stampStates);
-            }
-          }
-          const rig = nearGroundEraseRig();
-          rawRender.call(renderer, rig.scene, rig.camera);
-        }
-
-        // 4) Draw weapons/hands once and mark their pixels in stencil bit 1 so
-        // later water compositing can never paint over them.
-        const heldStencilStates = prepareHeldStencilMaterials(held);
-        try {
-          camera.layers.mask = HELD_OVERLAY_MASK;
-          const perf = window.PerfProfiler?.begin('held-overlay: overlay render');
-          rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(perf);
-          selectiveOverlayCount++;
-        } finally {
-          restoreMaterialStates(heldStencilStates);
-        }
-
-        // 5) Restore the erased ground depth (held pixels in front keep theirs).
-        if (nearAny) {
-          for (const tile of tiles) {
-            if (!tile.meshes.length) continue;
-            const groundStates = prepareGroundDepthMaterials(tile.meshes, tile.planes);
-            const swapped = swapGeometryPart(tile.meshes, 'top');
-            try {
-              const perf = window.PerfProfiler?.begin('held-overlay: ground restore render');
-              renderPicked(renderer, scene, camera, tile.meshes);
-              window.PerfProfiler?.end(perf);
-              groundDepthRestoreCount++;
-            } finally {
-              restoreSwappedGeometry(swapped);
-              restoreMaterialStates(groundStates);
-            }
-          }
-        }
-        nearGroundReplayCount++;
-      }
-
-      // 6) Feet intentionally do NOT x-ray water (see replayWholeGroundXray).
-      if (needsFootWaterComposite) {
-        const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);
-        try {
-          camera.layers.mask = FOOT_WATER_MASK;
-          rawRender.call(renderer, scene, camera);
-        } finally {
-          restoreMaterialStates(footStencilStates);
-        }
-        const waterStencilStates = prepareWaterStencilMaterials(water);
-        try {
-          camera.layers.mask = WATER_REPLAY_MASK;
-          rawRender.call(renderer, scene, camera);
-          waterReplayCount++;
-        } finally {
-          restoreMaterialStates(waterStencilStates);
-        }
-      }
-      if (scissored) { restoreRendererScissor(renderer); scissored = false; }
-      renderer.clearStencil?.();
-    } finally {
-      if (scissored) restoreRendererScissor(renderer);
-      camera.layers.mask = originalCameraMask;
-      renderer.localClippingEnabled = oldLocalClipping;
-      if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
-      scene.autoUpdate = oldSceneAutoUpdate;
-      scene.background = oldBackground;
-      renderer.autoClear = oldAutoClear;
-      renderer.autoClearColor = oldAutoClearColor;
-      renderer.autoClearDepth = oldAutoClearDepth;
-      renderer.autoClearStencil = oldAutoClearStencil;
-      internalReplay = false;
-    }
-  }
-
-  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
-    // The near-tile path needs stencil bits 0-2; anything shallower keeps the
-    // legacy whole-map rebuild (which itself skips foot water below 2 bits).
-    if (lastBaseStencilBits >= 3) return replayNearGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask);
-    return replayWholeGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask);
-  }
-
   function wrappedRender(scene, camera) {
     if (internalReplay || !scene?.isScene || !camera?.isCamera) {
       return originalRender.call(this, scene, camera);
@@ -1510,8 +1123,6 @@
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
       topFaceGroundMeshes: topFaceGroundCount,
-      nearGroundMeshesLast,
-      nearGroundReplays: nearGroundReplayCount,
       waterReplayMeshes: waterMeshCount,
       waterOccludedMeshes: waterOccludedMeshCount,
       waterReplays: waterReplayCount,
