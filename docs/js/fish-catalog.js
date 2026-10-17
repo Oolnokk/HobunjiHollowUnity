@@ -265,6 +265,9 @@
   let curvedCollisionMask=null; // Alpha data for the exact curved frame used by Fishing's silhouette collision.
   let collisionMaskReadbackWarned=false; // Deduplicates mobile-visible diagnostics if canvas alpha readback is unavailable.
   let observedFishImage=null, hrefObserver=null, settingHref=false, presentationRunning=false;
+  let caughtSpriteKey=''; // Identifies which hooked fish owns the prewarmed colored retrieval sprite.
+  let caughtSpriteUrl=''; // Holds the colored/patterned fish data URL swapped into the minigame image during retraction.
+  let caughtSpritePromise=null; // Prevents duplicate recolor work while the active fish sprite is being prewarmed.
 
   function ensureSilhouetteAssets() {
     if (silhouetteBody) return Promise.resolve(true);
@@ -421,6 +424,41 @@
     }
   }
 
+  function caughtFishIsRetracting(state) {
+    return state?.phase==='active' && state.bridge?.spearActive && state.bridge?.caughtFish && Number(state.bridge?.retractTimer)>0;
+  }
+
+  function prewarmCaughtFishSprite(fishDef) {
+    const key=fishDef?.key; // Selects the authored catalog entry for the fish currently on the bridge.
+    if(!key)return Promise.resolve(null);
+    if(caughtSpriteKey===key && caughtSpriteUrl)return Promise.resolve(caughtSpriteUrl);
+    if(caughtSpriteKey===key && caughtSpritePromise)return caughtSpritePromise;
+    const authoredFish=byKey.get(key); // Supplies species sprite choice plus the authored color/pattern recipe.
+    if(!authoredFish)return Promise.resolve(null);
+    const spritePath=`assets/objectsprites/${sprite(authoredFish)}`; // Uses the same source PNG as inventory/catch presentation before FishCatalog applies recolor/pattern layers.
+    caughtSpriteKey=key;
+    caughtSpriteUrl='';
+    caughtSpritePromise=getRecoloredCanvas(spritePath,key)
+      .then(canvas=>{
+        const url=canvas?.toDataURL?.('image/png')||''; // Encodes the already-colored/patterned catalog canvas once so the SVG image can swap synchronously on retrieval.
+        if(caughtSpriteKey!==key)return null;
+        caughtSpriteUrl=url;
+        caughtSpritePromise=null;
+        return url||null;
+      })
+      .catch(err=>{
+        if(caughtSpriteKey===key)caughtSpritePromise=null;
+        window.__farmLog?.(`[fish-catalog] caught sprite prewarm failed key=${key}: ${err?.message||err}`,'warn');
+        return null;
+      });
+    return caughtSpritePromise;
+  }
+
+  function currentFishPresentationHref(state) {
+    if(caughtFishIsRetracting(state) && caughtSpriteKey===state?.fishDef?.key && caughtSpriteUrl)return caughtSpriteUrl;
+    return lastCurvedUrl;
+  }
+
   function setFishHref(image,href) {
     if(!image||!href||image.getAttribute('href')===href)return;
     settingHref=true;
@@ -436,7 +474,8 @@
     hrefObserver=new MutationObserver(()=>{
       if(settingHref)return;
       const state=window.Fishing?.state;
-      if(state?.phase==='active'&&lastCurvedUrl&&image.getAttribute('href')!==lastCurvedUrl)setFishHref(image,lastCurvedUrl);
+      const desiredHref=currentFishPresentationHref(state); // Keeps external href writes from reverting a hooked fish back to its silhouette while it is being reeled in.
+      if(state?.phase==='active'&&desiredHref&&image.getAttribute('href')!==desiredHref)setFishHref(image,desiredHref);
     });
     hrefObserver.observe(image,{attributes:true,attributeFilter:['href']});
   }
@@ -449,6 +488,9 @@
     lastCurvedUrl=null;
     lastCurvedAt=-Infinity;
     curvedCollisionMask=null;
+    caughtSpriteKey='';
+    caughtSpriteUrl='';
+    caughtSpritePromise=null;
   }
 
   function presentationLoop() {
@@ -462,11 +504,14 @@
     observeFishImage(image);
     if(image&&fishDef){
       const {sx,sy}=minigamePresentationScale(fishDef);
+      prewarmCaughtFishSprite(fishDef);
       image.style.transformBox='fill-box';
       image.style.transformOrigin='center';
       image.style.transform=`scale(${sx},${sy})`;
       if(state.phase==='active'){
-        const href=renderCurvedFishFrame(state,sx,sy);
+        const href=caughtFishIsRetracting(state) && caughtSpriteKey===fishDef.key && caughtSpriteUrl
+          ? caughtSpriteUrl
+          : renderCurvedFishFrame(state,sx,sy); // The colored sprite reuses the exact silhouette image box/scale, so retrieval cannot jump in apparent size.
         if(href)setFishHref(image,href);
       }else{
         lastCurvedUrl=null;

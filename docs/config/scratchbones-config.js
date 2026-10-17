@@ -3558,7 +3558,7 @@ window.SCRATCHBONES_CONFIG = {
         // Music.playGameplayCue(); they use the BGM volume path without taking
         // ownership away from the currently scheduled area/combat soundtrack.
         "gameplayCues": {
-          "fishCaught": { "url": "assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a", "volume": 1 },
+          "fishCaught": { "url": "assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a", "volume": 1, "duckBackground": true, "duckOutMs": 90, "duckInMs": 260 },
           "progressDeeper": { "url": "assets/audio/music/cues/gameplaycues/gpq_progress_deeper.m4a", "volume": 1 }
         },
         "startupBgm": { "url": "assets/audio/music/bgm/bgm_remembrance.m4a", "loop": true },
@@ -3829,6 +3829,7 @@ window.SCRATCHBONES_CONFIG = {
           "weaponSwing1": { "url": "assets/audio/sfx/combat/sfx_swing_1.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "weaponSwing2": { "url": "assets/audio/sfx/combat/sfx_swing_2.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "weaponSwing3": { "url": "assets/audio/sfx/combat/sfx_swing_3.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "harpoonHit": { "url": "assets/audio/sfx/sfx_harpoon_hit_1.mp3", "volume": 1.0 },
           "rangedLoad": { "url": "assets/audio/sfx/combat/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
           "rangedFire": { "url": "assets/audio/sfx/combat/sfx_shootarrow.m4a", "volume": 1.0, "pitchVarianceMul": 0.02 },
           "rangedImpact": { "url": "assets/audio/sfx/combat/sfx_arrow_hit.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },

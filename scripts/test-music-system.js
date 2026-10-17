@@ -228,8 +228,8 @@ assert.match(config, /"combatBgm": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bg
 assert.doesNotMatch(config, /"combatBgm": \[[\s\S]*?bgm_skirmish\.m4a[\s\S]*?\n        \],/,
   'Skirmish is not eligible for combat playback');
 
-assert.match(config, /"gameplayCues": \{[\s\S]*?"fishCaught": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_fish_caught\.m4a", "volume": 1 \}[\s\S]*?"progressDeeper": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_progress_deeper\.m4a", "volume": 1 \}/,
-  'semantic catch and mine-progress cues resolve to the authored gameplay-cue files');
+assert.match(config, /"gameplayCues": \{[\s\S]*?"fishCaught": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_fish_caught\.m4a", "volume": 1, "duckBackground": true, "duckOutMs": 90, "duckInMs": 260 \}[\s\S]*?"progressDeeper": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_progress_deeper\.m4a", "volume": 1 \}/,
+  'semantic catch and mine-progress cues resolve to the authored gameplay-cue files, with the catch sting temporarily ducking background music');
 assert.ok(skirmishSmpb, 'Skirmish M4A must retain iTunSMPB gapless metadata');
 assert.equal(skirmishSourceSampleRate, 48000,
   'configured Skirmish source sample rate matches the M4A mp4a sample entry');

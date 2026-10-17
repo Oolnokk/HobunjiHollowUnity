@@ -741,6 +741,7 @@
     if ((gulletState.mode === 'orbit' || gulletState.mode === 'dash') && bridge?.spearActive) {
       const distance = pointSegmentDistance(gulletState.x, gulletState.y, bridge.prevTipX, bridge.prevTipY, bridge.tipX, bridge.tipY); // Used as the swept spear/Gullet collision distance.
       if (distance <= GULLET_CONFIG.hitRadius) {
+        window.AudioSystem?.playCombatSfxKey?.('harpoonHit');
         if (gulletState.mode === 'dash' && gulletState.dashT >= 0.5) {
           surfaceGullet();
         } else if (gulletState.mode === 'dash') {
