@@ -108,6 +108,22 @@
     api.init = wrapped;
   }
 
+  // Settings writes these keys; re-read at most twice a second instead of
+  // touching localStorage on every controller frame of a performance.
+  let lookPrefs = null;
+  let lookPrefsAt = -Infinity;
+  function controllerLookPrefs() {
+    const now = window.performance?.now?.() ?? 0;
+    if (!lookPrefs || now - lookPrefsAt > 500) {
+      lookPrefs = {
+        sensitivity: clamp(Number(localStorage.getItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY)) || 1, 0.5, 2),
+        invertY: localStorage.getItem(CONTROLLER_INVERT_Y_STORAGE_KEY) === '1',
+      };
+      lookPrefsAt = now;
+    }
+    return lookPrefs;
+  }
+
   function applyKurrayaControllerLook(frame) {
     if (!window.MusicMinigame?.state?.active || !cameraDeps || !characterViewDeps?.characterViewMode?.enabled) {
       if (lastMusicLook.active) lastMusicLook = { x: 0, y: 0, active: false };
@@ -128,8 +144,7 @@
     }
 
     const current = cameraDeps.getCameraOrientationOffsets?.() || { azimuthDeg: 0, angleDeg: 0 };
-    const sensitivity = clamp(Number(localStorage.getItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY)) || 1, 0.5, 2);
-    const invertY = localStorage.getItem(CONTROLLER_INVERT_Y_STORAGE_KEY) === '1';
+    const { sensitivity, invertY } = controllerLookPrefs();
     const turnRate = Number(inputCfg.controllerLookDegPerSec) || 190;
     const verticalScale = Number(inputCfg.controllerLookVerticalScale) || 0.8;
     const dt = clamp(frame?.dt || (1 / 60), 0, 0.05);

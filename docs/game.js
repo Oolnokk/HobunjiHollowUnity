@@ -13535,36 +13535,12 @@
               bScene.add(ceilingGroup);
             }
           }
-          // A den's cavern entrance had no visual distinguishing it from any
-          // other dark corner of the cave (see generateCavernFloor's
-          // guaranteed 3-wide south opening) — a warm point light standing
-          // in for daylight spilling through the mouth, plus a lighter floor
-          // patch, makes it read as "the way out" and gives the player's
-          // spawn point some actual light instead of pitch dark.
-          if (mapData.wallStyle === 'cavern' && entranceLightTileSet.size) {
-            let ex = 0, ez = 0;
-            for (const key of entranceLightTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
-            ex = ex / entranceLightTileSet.size + 0.5; ez = ez / entranceLightTileSet.size + 0.5;
-            const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
-            doorLight.position.set(ex, 1.6, ez + 0.6);
-            doorLight.userData.furnitureLightMask = true; // Local lights only reach the screen through the 2D fake-light overlay (js/furniture-light-registry.js).
-            window.FurnitureLightRegistry?.register(doorLight);
-            bScene.add(doorLight);
-            const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
-            const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
-            glow.rotation.x = -Math.PI / 2;
-            // y=0.02 used to sit right at the entrance's own carved floor
-            // surface — not reliably ABOVE it: confirmed directly (SDF
-            // field sampling, not just visual guessing) that the true
-            // floor at the entrance's exact centroid only clears open air
-            // somewhere between y=0.02 and y=0.05, so the glow patch was
-            // landing inside the floor/rock there on every single den,
-            // reading as "a little arch of light placed inside a rock,
-            // cutting a hole in it" instead of lying flat on open floor.
-            // 0.15 clears that transition with real margin.
-            const glowTileY = tileSurfaceYInArea(bGrid?.[Math.floor(ez)]?.[Math.floor(ex)], mapId);
-            glow.position.set(ex, glowTileY + 0.02, ez);
-            bScene.add(glow);
+          // Den cavern entrance light + floor glow now live in js/cavern-entrance-light.js.
+          if (mapData.wallStyle === 'cavern') {
+            window.CavernEntranceLight?.build?.({
+              THREE, scene: bScene, entranceTiles: entranceLightTileSet,
+              surfaceYAt: (col, row) => tileSurfaceYInArea(bGrid?.[row]?.[col], mapId),
+            });
           }
           window.ColorPoolsSystem?.decorateScene?.({ THREE, scene: bScene, mapData }); // Renders Color Pools metadata as the three tinted 2x2 water surfaces without adding a second cave-generation path.
           window.BanubuCaveClouds?.decorate?.({ THREE, scene: bScene, mapData }); // Authored low clouds and nearby cool lights only in Banubu's cavern.
@@ -15412,7 +15388,9 @@
             try {
               _cb();
               if (fromArea && fromArea !== currentArea) {
-                window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); // Delivers completed exits even when timer polling misses the interior.
+                // Delivers completed exits even when timer polling misses the interior; isolated so a visitor failure never skips the NPC catch-up below.
+                try { window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); }
+                catch (e) { debugLog('doorstep area transition error: ' + (e?.stack || e), 'error'); }
                 catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
               }
             } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
@@ -28371,6 +28349,14 @@
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        // Recordings for the surface under the player, so Kurraya's beat uses real footsteps instead of the synth click.
+        getPlayerFootstepSampleUrls: () => {
+          if (!window.AudioSystem) return [];
+          const tile = window.AudioSystem.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid());
+          const surfaceKey = window.AudioSystem.footstepSurfaceKey(currentArea, tile?.type ?? null);
+          const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls || [];
+          return urls.map(url => { try { return new URL(url, document.baseURI).href; } catch { return url; } });
+        },
         showToast,
         // Frames the performance in third-person (see the "music" camera
         // mode in scratchbones-config.js) instead of leaving the default

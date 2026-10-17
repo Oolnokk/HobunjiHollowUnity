@@ -32,23 +32,74 @@
   const WATER_REPLAY_LAYER = 27;
   const GROUND_REPLAY_LAYER = 28;
   const HELD_OVERLAY_LAYER = 29;
+  const REPLAY_PICK_LAYER = 24; // Toggled on only the meshes one near-tile replay sub-pass draws, then off again.
   const FOOT_WATER_MASK = (1 << FOOT_WATER_MASK_LAYER) >>> 0;
   const WATER_REPLAY_MASK = (1 << WATER_REPLAY_LAYER) >>> 0;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
   const HELD_OVERLAY_MASK = (1 << HELD_OVERLAY_LAYER) >>> 0;
+  const REPLAY_PICK_MASK = (1 << REPLAY_PICK_LAYER) >>> 0;
+  const NEAR_GROUND_STENCIL = 0x04; // Pixels whose front-most surface is ground on a holder's tile; bits 0/1 stay with the foot-water/held marks.
+  // How far past a held mesh's own bounds ground still counts as "its tile".
+  // Ground anywhere else keeps occluding weapons normally.
+  const NEAR_GROUND_REACH = 0.6;
   const DEFAULT_LAYER_MASK = (1 << DEFAULT_LAYER) >>> 0;
   const MASK_ALL = 0xFFFFFFFF >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
+
+  // Registered meshes bucketed by the scene they were last found in. Ground
+  // registries accumulate every floor mesh of every cached zone/interior
+  // scene (15k+ after a tour of the wilds), and collectVisible runs for each
+  // registry on every world render; walking only the rendering scene's bucket
+  // keeps that per-frame cost proportional to the current map. Members are
+  // re-queued whenever they are (re)added anywhere, which is how a held tool
+  // that moves with the player into another scene gets re-bucketed.
+  class SceneRegistry {
+    constructor() {
+      this.all = new Set();
+      this.pending = new Set(); // Members whose scene is unknown or may have changed.
+      this.byScene = new Map(); // Scene -> Set of members last found under it.
+      this.sceneOf = new Map(); // Member -> scene key in byScene.
+    }
+    add(object) {
+      this.all.add(object);
+      this.unplace(object);
+      this.pending.add(object);
+      return this;
+    }
+    has(object) { return this.all.has(object); }
+    delete(object) {
+      if (!this.all.delete(object)) return false;
+      this.pending.delete(object);
+      this.unplace(object);
+      return true;
+    }
+    place(object, scene) {
+      this.unplace(object);
+      let bucket = this.byScene.get(scene);
+      if (!bucket) this.byScene.set(scene, bucket = new Set());
+      bucket.add(object);
+      this.sceneOf.set(object, scene);
+    }
+    unplace(object) {
+      const scene = this.sceneOf.get(object);
+      if (!scene) return;
+      this.sceneOf.delete(object);
+      this.byScene.get(scene)?.delete(object);
+    }
+    [Symbol.iterator]() { return this.all.values(); }
+  }
 
   const heldMeshes = new WeakSet();
   const groundMeshes = new WeakSet();
   const waterMeshes = new WeakSet(); // Used by classifyObject to count each canonical water surface once across fallback rescans.
   const waterOccludedMeshes = new WeakSet(); // Used to count each explicitly water-occluded mesh once; procedural feet register here.
-  const heldRegistry = new Set();
-  const groundRegistry = new Set();
-  const waterRegistry = new Set(); // Used by the foot-only translucent-water replay.
-  const waterOccludedRegistry = new Set(); // Used to stencil only feet (never weapons/hands) before replaying water.
-  const pngDepthRegistry = new Set(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
+  const heldRegistry = new SceneRegistry();
+  const groundRegistry = new SceneRegistry();
+  const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
+  const occluderGeometries = new WeakMap(); // Source geometry -> { top, side } face split (see faceSplitFor).
+  const waterRegistry = new SceneRegistry(); // Used by the foot-only translucent-water replay.
+  const waterOccludedRegistry = new SceneRegistry(); // Used to stencil only feet (never weapons/hands) before replaying water.
+  const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -57,6 +108,7 @@
   let grassCount = 0;
   let roadCount = 0;
   let terrainCount = 0;
+  let topFaceGroundCount = 0; // Meshes registered via markTopFaceGroundMesh.
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
   let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
   let waterReplayCount = 0; // Counts successful foot-only water compositing passes.
@@ -145,6 +197,15 @@
     // Spatial terrain chunks are generated only from whole-zone floor meshes.
     if (object.userData?.terrainRenderChunk === true || object.userData?.terrainRenderChunkSource === true) return true;
 
+    // Map-editor floor buckets (farm/town/wilderness). Wilderness streams
+    // them inside WildernessChunk_* groups, so the scene-parent test below
+    // never saw them and weapons were buried under wilderness ground.
+    if (object.userData?.mapEditorTerrain) return true;
+
+    // Snow/slush micro-plateau caps ride a little above the walkable surface
+    // (plateau tops included) to bury feet; weapons x-ray them like terrain.
+    if (object.userData?.environmentSurfaceMicroPlateau === true) return true;
+
     // Farm/town/wilderness floor meshes opt into the terrain material-ID layer
     // and are attached directly to the scene. Runtime-rebuilt farm tiles cast
     // shadows as well as receive them, so castShadow cannot distinguish them
@@ -161,6 +222,15 @@
     return false;
   }
 
+  // A carved cavern shell is floor, walls, and ceiling in one mesh, and its
+  // upward floor faces sit a hair below the tagged walkable floor. Hiding the
+  // whole shell would let weapons x-ray cave walls; keeping it would bury
+  // weapons under the floor. Only its upward faces are treated as ground.
+  function isTopFacesGroundSurface(object) {
+    if (!object?.isMesh || object.isSkinnedMesh || object.isInstancedMesh) return false;
+    return object.userData?.hobunjiGroundTopFacesOnly === true;
+  }
+
   function isWaterSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
     const data = object.userData || {}; // Existing runtime water tags are preferred over broad name matching so props with "water" in their names are never replayed.
@@ -170,6 +240,7 @@
   }
 
   function groundKind(object) {
+    if (isTopFacesGroundSurface(object)) return null; // Never hide the whole shell; see faceSplitFor.
     if (isGrassGroundCover(object)) return 'grass';
     if (isRoadSurface(object)) return 'road';
     if (isTerrainSurface(object)) return 'terrain';
@@ -196,6 +267,7 @@
     // both so any future lit material behaves exactly like the normal base pass.
     light.layers.enable(HELD_OVERLAY_LAYER);
     light.layers.enable(WATER_REPLAY_LAYER);
+    light.layers.enable(REPLAY_PICK_LAYER);
     preparedLights.add(light);
   }
 
@@ -309,6 +381,99 @@
     }
     const kind = groundKind(object);
     if (kind) markGroundMesh(object, kind);
+    if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object);
+  }
+
+  function markTopFaceGroundMesh(mesh) {
+    const fresh = !topFaceGroundRegistry.has(mesh);
+    topFaceGroundRegistry.add(mesh);
+    if (!fresh) return false;
+    // The ground-depth restore pass draws the whole shell colorless. Its
+    // walls already wrote identical depth in the rebuild pass, so only the
+    // floor faces actually change anything there.
+    if (!hasLayer(mesh, GROUND_REPLAY_LAYER)) mesh.layers.enable(GROUND_REPLAY_LAYER);
+    topFaceGroundCount++;
+    return true;
+  }
+
+  // Two geometries sharing the source's vertex attributes: `top` indexes only
+  // faces pointing less than ~60 degrees from straight up in world space (the
+  // floor), `side` everything else (walls, slopes, ceiling). Material groups
+  // are preserved per face. Built once per source geometry.
+  const TOP_FACE_MIN_NORMAL_Y = 0.5;
+  const faceA = new THREE.Vector3();
+  const faceB = new THREE.Vector3();
+  const faceC = new THREE.Vector3();
+  const faceNormalMatrix = new THREE.Matrix3();
+  function faceSplitFor(mesh) {
+    const source = mesh.geometry;
+    if (!source) return null;
+    if (occluderGeometries.has(source)) return occluderGeometries.get(source);
+    let split = null;
+    const position = source.attributes?.position;
+    if (position && !position.isInterleavedBufferAttribute && !source.morphAttributes?.position?.length) {
+      const index = source.index;
+      const count = index ? index.count : position.count;
+      const groups = source.groups?.length ? source.groups : [{ start: 0, count, materialIndex: 0 }];
+      mesh.updateWorldMatrix(true, false);
+      faceNormalMatrix.getNormalMatrix(mesh.matrixWorld);
+      const parts = { top: { indices: [], groups: [] }, side: { indices: [], groups: [] } };
+      for (const group of groups) {
+        const topStart = parts.top.indices.length, sideStart = parts.side.indices.length;
+        const end = Math.min(count, group.start + group.count);
+        for (let i = Math.max(0, group.start); i + 2 < end; i += 3) {
+          const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
+          faceA.fromBufferAttribute(position, a);
+          faceB.fromBufferAttribute(position, b).sub(faceA);
+          faceC.fromBufferAttribute(position, c).sub(faceA);
+          faceB.cross(faceC).applyMatrix3(faceNormalMatrix);
+          const length = faceB.length();
+          const part = length > 1e-12 && faceB.y / length >= TOP_FACE_MIN_NORMAL_Y ? parts.top : parts.side;
+          part.indices.push(a, b, c);
+        }
+        const materialIndex = group.materialIndex ?? 0;
+        if (parts.top.indices.length > topStart) parts.top.groups.push({ start: topStart, count: parts.top.indices.length - topStart, materialIndex });
+        if (parts.side.indices.length > sideStart) parts.side.groups.push({ start: sideStart, count: parts.side.indices.length - sideStart, materialIndex });
+      }
+      if (parts.top.indices.length) {
+        if (!source.boundingSphere) source.computeBoundingSphere();
+        if (!source.boundingBox) source.computeBoundingBox();
+        const build = (part, suffix) => {
+          const geometry = new THREE.BufferGeometry();
+          for (const [name, attribute] of Object.entries(source.attributes)) geometry.setAttribute(name, attribute);
+          geometry.setIndex(new THREE.BufferAttribute(position.count > 65535 ? new Uint32Array(part.indices) : new Uint16Array(part.indices), 1));
+          for (const group of part.groups) geometry.addGroup(group.start, group.count, group.materialIndex);
+          geometry.boundingSphere = source.boundingSphere?.clone() || null;
+          geometry.boundingBox = source.boundingBox?.clone() || null;
+          geometry.name = `${source.name || 'geometry'}__held_xray_${suffix}`;
+          return geometry;
+        };
+        split = { top: build(parts.top, 'top'), side: build(parts.side, 'side') };
+        // Shared attributes stay owned by the source; release only our own
+        // index buffers when the source goes away.
+        source.addEventListener('dispose', () => {
+          for (const geometry of [split.top, split.side]) { geometry.attributes = {}; geometry.dispose(); }
+        });
+      }
+    }
+    occluderGeometries.set(source, split);
+    return split;
+  }
+
+  function swapGeometryPart(meshes, part) {
+    const swapped = [];
+    for (const mesh of meshes) {
+      if (!isTopFacesGroundSurface(mesh)) continue;
+      const split = faceSplitFor(mesh);
+      if (!split) continue;
+      swapped.push(mesh, mesh.geometry);
+      mesh.geometry = split[part];
+    }
+    return swapped;
+  }
+
+  function restoreSwappedGeometry(swapped) {
+    for (let i = 0; i < swapped.length; i += 2) swapped[i].geometry = swapped[i + 1];
   }
 
   function materialHasAlphaCutout(material) {
@@ -375,31 +540,39 @@
     classifyTree(scene);
   }
 
+  // One upward walk finds both the owning root and whether any ancestor
+  // (root included) is hidden.
+  let walkVisible = true;
+  function walkToRoot(object) {
+    let node = object;
+    walkVisible = true;
+    for (;;) {
+      if (node.visible === false) walkVisible = false;
+      if (!node.parent) return node;
+      node = node.parent;
+    }
+  }
+
   function collectVisible(registry, scene) {
     const result = [];
-    for (const object of registry) {
-      if (!object?.isMesh) {
-        registry.delete(object);
+    for (const object of registry.pending) {
+      registry.pending.delete(object);
+      if (!object?.isMesh) { registry.delete(object); continue; }
+      const root = walkToRoot(object);
+      // Detached runtime meshes should not be kept alive by our registry.
+      if (!root.isScene) registry.delete(object);
+      else registry.place(object, root);
+    }
+    const bucket = registry.byScene.get(scene);
+    if (!bucket) return result;
+    for (const object of bucket) {
+      const root = walkToRoot(object);
+      if (root !== scene) {
+        if (!root.isScene) registry.delete(object);
+        else registry.place(object, root);
         continue;
       }
-      // One upward walk finds both the owning scene and whether any ancestor
-      // (scene included) is hidden; this runs over four registries every
-      // world render, so separate scene-lookup and visibility walks would
-      // double the per-frame cost.
-      let node = object;
-      let visible = true;
-      for (;;) {
-        if (node.visible === false) visible = false;
-        if (!node.parent) break;
-        node = node.parent;
-      }
-      if (!node.isScene) {
-        // Detached runtime meshes should not be kept alive by our iterable set.
-        registry.delete(object);
-        continue;
-      }
-      if (node !== scene || !visible) continue;
-      result.push(object);
+      if (walkVisible) result.push(object);
     }
     return result;
   }
@@ -756,13 +929,15 @@
     renderer.setRenderTarget(renderer.getRenderTarget(), renderer.getActiveCubeFace?.() || 0, renderer.getActiveMipmapLevel?.() || 0);
   }
 
-  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, water, waterOccluded, originalCameraMask) {
+  // Legacy whole-map x-ray for render targets without a third stencil bit:
+  // rebuilds depth without any ground, draws held meshes, restores all ground.
+  function replayWholeGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
     const needsHeldOverlay = held.length > 0; // Used to keep weapon/hand x-ray active even when no water is visible.
     const requestedFootWaterComposite = water.length > 0 && waterOccluded.length > 0; // Used to skip all foot-water stencil work on dry scenes.
     const stencilBits = currentFramebufferStencilBits(renderer); // Must describe the CURRENT render target (_mainRT while outlines are on), not the default canvas.
     const needsFootWaterComposite = requestedFootWaterComposite && stencilBits >= 2;
     if (requestedFootWaterComposite && !needsFootWaterComposite) missingStencilFootReplaySkipCount++;
-    if (!ground.length || (!needsHeldOverlay && !needsFootWaterComposite)) return;
+    if (!(ground.length || topFaceGround.length) || (!needsHeldOverlay && !needsFootWaterComposite)) return;
 
     const oldAutoClear = renderer.autoClear;
     const oldAutoClearColor = renderer.autoClearColor;
@@ -804,6 +979,7 @@
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
       const hidden = hideObjects([...ground, ...held]);
+      const swappedGeometry = swapGeometryPart(topFaceGround, 'side');
       const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
       const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
       const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
@@ -827,6 +1003,7 @@
           colorBuffer.setMask(true);
         }
         restoreMaterialStates(depthMaterialStates);
+        restoreSwappedGeometry(swappedGeometry);
         restoreVisibility(hidden);
       }
 
@@ -852,7 +1029,7 @@
       // 3) Restore authored terrain depth before any water composite. The held
       // color is already on-screen, so this cannot cover it; it only restores
       // the real depth boundary. Raised soil therefore blocks a lower flood.
-      const groundMaterialStates = prepareGroundDepthMaterials(ground);
+      const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? [...ground, ...topFaceGround] : ground);
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
         const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
@@ -905,6 +1082,442 @@
     }
   }
 
+  // ── Near-tile x-ray ────────────────────────────────────────────────────
+  // Only ground on a holder's own tile should ever let a weapon show through;
+  // every other surface (a hill or cliff between camera and weapon included)
+  // keeps occluding normally. So instead of rebuilding the whole depth
+  // buffer without ground, the base depth is kept and only pixels whose
+  // front-most surface is that nearby ground are erased before the held
+  // meshes draw. Restoring depth then only redraws those few ground meshes.
+  const instancedBounds = new WeakMap(); // InstancedMesh -> { version, count, sphere } in mesh-local space.
+  const instanceMatrix = new THREE.Matrix4();
+  const instanceSphere = new THREE.Sphere();
+  const instanceBox = new THREE.Box3();
+  const instanceExtent = new THREE.Vector3();
+  function localBoundingSphere(mesh) {
+    const geometry = mesh.geometry;
+    if (!geometry?.attributes?.position) return null;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    if (!mesh.isInstancedMesh) return geometry.boundingSphere;
+    // r128 bounds an InstancedMesh by its base geometry only; cover every
+    // instance, recomputed only when the instance matrices change.
+    const version = mesh.instanceMatrix.version;
+    let cached = instancedBounds.get(mesh);
+    if (cached && cached.version === version && cached.count === mesh.count) return cached.sphere;
+    instanceBox.makeEmpty();
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, instanceMatrix);
+      instanceSphere.copy(geometry.boundingSphere).applyMatrix4(instanceMatrix);
+      instanceExtent.copy(instanceSphere.center).addScalar(-instanceSphere.radius);
+      instanceBox.expandByPoint(instanceExtent);
+      instanceExtent.copy(instanceSphere.center).addScalar(instanceSphere.radius);
+      instanceBox.expandByPoint(instanceExtent);
+    }
+    cached = { version, count: mesh.count, sphere: instanceBox.isEmpty() ? geometry.boundingSphere.clone() : instanceBox.getBoundingSphere(new THREE.Sphere()) };
+    instancedBounds.set(mesh, cached);
+    return cached.sphere;
+  }
+
+  function worldBoundingSphere(mesh, out) {
+    const local = localBoundingSphere(mesh);
+    if (!local) return null;
+    return out.copy(local).applyMatrix4(mesh.matrixWorld);
+  }
+
+  function writesDepthEverywhere(material) {
+    if (Array.isArray(material)) return material.every(entry => !entry || entry.depthWrite);
+    return !!material?.depthWrite;
+  }
+
+  function writesDepth(material) {
+    if (Array.isArray(material)) return material.some(entry => entry?.depthWrite);
+    return !!material?.depthWrite;
+  }
+
+  // Instanced ground (grass) can cover a whole map with one InstancedMesh, so
+  // its bounds always reach a holder. Only the instances on the holder's tile
+  // are stamped/restored, drawn through a per-source proxy that shares the
+  // source's geometry and material (identical depth) but holds just those
+  // instance matrices. Proxies live in their own scene, outside the world.
+  const INSTANCE_SUBSET_MIN = 64; // Smaller instanced meshes are cheap enough to draw whole.
+  const INSTANCE_CELL = 2; // World-ish units per cell of the per-source instance index.
+  const instanceSubsets = new WeakMap(); // Source InstancedMesh -> { version, count, cells, proxy, capacity }.
+  const proxyScene = new THREE.Scene();
+  proxyScene.autoUpdate = false;
+  const activeProxies = [];
+  const subsetInverse = new THREE.Matrix4();
+  const subsetCenter = new THREE.Vector3();
+  const cellKey = (cx, cz) => (cx + 32768) * 65536 + (cz + 32768);
+
+  function instanceSubsetEntry(mesh) {
+    let entry = instanceSubsets.get(mesh);
+    const version = mesh.instanceMatrix.version;
+    if (entry && entry.version === version && entry.count === mesh.count) return entry;
+    const cells = new Map();
+    const array = mesh.instanceMatrix.array;
+    for (let i = 0; i < mesh.count; i++) {
+      const key = cellKey(Math.floor(array[i * 16 + 12] / INSTANCE_CELL), Math.floor(array[i * 16 + 14] / INSTANCE_CELL));
+      let list = cells.get(key);
+      if (!list) cells.set(key, list = []);
+      list.push(i);
+    }
+    if (!entry) instanceSubsets.set(mesh, entry = { proxy: null, capacity: 0 });
+    entry.version = version;
+    entry.count = mesh.count;
+    entry.cells = cells;
+    return entry;
+  }
+
+  function instanceProxy(entry, mesh, needed) {
+    if (entry.proxy && entry.capacity >= needed && entry.proxy.geometry === mesh.geometry && entry.proxy.material === mesh.material) return entry.proxy;
+    if (entry.proxy) { proxyScene.remove(entry.proxy); entry.proxy.dispose(); }
+    entry.capacity = Math.max(64, needed * 2);
+    const proxy = new THREE.InstancedMesh(mesh.geometry, mesh.material, entry.capacity);
+    proxy.name = `${mesh.name || 'instanced_ground'}__held_xray_subset`;
+    proxy.frustumCulled = false;
+    proxy.matrixAutoUpdate = false;
+    proxy.layers.mask = REPLAY_PICK_MASK;
+    proxy.visible = false;
+    proxyScene.add(proxy);
+    entry.proxy = proxy;
+    return proxy;
+  }
+
+  // Returns the proxy holding only `mesh`'s instances within reach, or null
+  // when none are.
+  function nearInstanceSubset(mesh, reach, reachCount) {
+    const entry = instanceSubsetEntry(mesh);
+    const geometry = mesh.geometry;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    const pad = geometry.boundingSphere.radius;
+    const source = mesh.instanceMatrix.array;
+    subsetInverse.copy(mesh.matrixWorld).invert();
+    const picked = nearInstanceScratch;
+    picked.length = 0;
+    for (let r = 0; r < reachCount; r++) {
+      subsetCenter.copy(reach[r].center).applyMatrix4(subsetInverse);
+      const radius = reach[r].radius + pad;
+      const radiusSq = radius * radius;
+      const x0 = Math.floor((subsetCenter.x - radius) / INSTANCE_CELL), x1 = Math.floor((subsetCenter.x + radius) / INSTANCE_CELL);
+      const z0 = Math.floor((subsetCenter.z - radius) / INSTANCE_CELL), z1 = Math.floor((subsetCenter.z + radius) / INSTANCE_CELL);
+      for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
+        const list = entry.cells.get(cellKey(cx, cz));
+        if (!list) continue;
+        for (const i of list) {
+          const dx = source[i * 16 + 12] - subsetCenter.x, dy = source[i * 16 + 13] - subsetCenter.y, dz = source[i * 16 + 14] - subsetCenter.z;
+          if (dx * dx + dy * dy + dz * dz <= radiusSq) picked.push(i);
+        }
+      }
+    }
+    if (!picked.length) return null;
+    if (reachCount > 1) { picked.sort((a, b) => a - b); }
+    const proxy = instanceProxy(entry, mesh, picked.length);
+    const target = proxy.instanceMatrix.array;
+    let written = 0;
+    for (let k = 0; k < picked.length; k++) {
+      if (k && picked[k] === picked[k - 1]) continue; // Overlapping reach spheres.
+      target.set(source.subarray(picked[k] * 16, picked[k] * 16 + 16), written * 16);
+      written++;
+    }
+    proxy.count = written;
+    proxy.instanceMatrix.updateRange.offset = 0;
+    proxy.instanceMatrix.updateRange.count = written * 16;
+    proxy.instanceMatrix.needsUpdate = true;
+    proxy.matrixWorld.copy(mesh.matrixWorld);
+    proxy.onBeforeRender = mesh.onBeforeRender;
+    return proxy;
+  }
+  const nearInstanceScratch = [];
+
+  const heldReach = []; // Reused spheres: each held mesh's bounds grown by NEAR_GROUND_REACH.
+  const candidateSphere = new THREE.Sphere();
+  function collectNearGround(held, candidates, out, proxies) {
+    let reachCount = 0;
+    for (const mesh of held) {
+      const sphere = heldReach[reachCount] || (heldReach[reachCount] = new THREE.Sphere());
+      if (!worldBoundingSphere(mesh, sphere)) continue;
+      sphere.radius += NEAR_GROUND_REACH;
+      reachCount++;
+    }
+    for (const list of candidates) {
+      for (const mesh of list) {
+        // Ground that never wrote depth (wilderness grass) never hid a weapon.
+        if (!writesDepth(mesh.material) || !worldBoundingSphere(mesh, candidateSphere)) continue;
+        if (mesh.isInstancedMesh && mesh.count >= INSTANCE_SUBSET_MIN) {
+          let reaches = false;
+          for (let i = 0; i < reachCount && !reaches; i++) reaches = heldReach[i].intersectsSphere(candidateSphere);
+          const proxy = reaches ? nearInstanceSubset(mesh, heldReach, reachCount) : null;
+          if (proxy) proxies.push(proxy);
+          continue;
+        }
+        for (let i = 0; i < reachCount; i++) {
+          if (heldReach[i].intersectsSphere(candidateSphere)) { out.push(mesh); break; }
+        }
+      }
+    }
+    return out;
+  }
+
+  function cullToReplayFrustum(objects, out) {
+    for (const object of objects) {
+      if (!object.isSprite && isReplayCullable(object) && !replayCullFrustum.intersectsObject(object)) continue;
+      if (object.isInstancedMesh && worldBoundingSphere(object, candidateSphere) && !replayCullFrustum.intersectsSphere(candidateSphere)) continue;
+      out.push(object);
+    }
+    return out;
+  }
+
+  function setPicked(objects, picked) {
+    for (const object of objects) {
+      if (picked) object.layers.enable(REPLAY_PICK_LAYER);
+      else object.layers.disable(REPLAY_PICK_LAYER);
+    }
+  }
+
+  function renderPicked(renderer, scene, camera, objects, proxies = null) {
+    camera.layers.mask = REPLAY_PICK_MASK;
+    if (objects.length) {
+      setPicked(objects, true);
+      try {
+        rawRender.call(renderer, scene, camera);
+      } finally {
+        setPicked(objects, false);
+      }
+    }
+    if (proxies?.length) {
+      for (const proxy of proxies) proxy.visible = true;
+      proxyScene.fog = scene.fog; // Same fog define as the world pass, so the proxy reuses the source's shader program.
+      try {
+        rawRender.call(renderer, proxyScene, camera);
+      } finally {
+        for (const proxy of proxies) proxy.visible = false;
+        proxyScene.fog = null;
+      }
+    }
+  }
+
+  function prepareCutoutDepthOnlyMaterials(cutouts) {
+    const states = new Map();
+    for (const object of cutouts) {
+      forEachMaterial(object.material, (material) => {
+        saveMaterialState(states, material);
+        material.colorWrite = false;
+        material.depthWrite = true; // Avatar/PNG planes skip depth in the base pass; weapons behind them must still be hidden.
+      });
+    }
+    return states;
+  }
+
+  function prepareNearGroundStampMaterials(ground) {
+    const states = new Map();
+    for (const object of ground) {
+      forEachMaterial(object.material, (material) => {
+        saveMaterialState(states, material);
+        material.colorWrite = false;
+        material.depthWrite = false;
+        // Same shader/depth as the base pass with the default LessEqual test:
+        // passes exactly where this ground is still the front-most surface.
+        material.stencilWrite = true;
+        material.stencilWriteMask = NEAR_GROUND_STENCIL;
+        material.stencilFunc = THREE.AlwaysStencilFunc;
+        material.stencilRef = NEAR_GROUND_STENCIL;
+        material.stencilFuncMask = 0xFF;
+        material.stencilFail = THREE.KeepStencilOp;
+        material.stencilZFail = THREE.KeepStencilOp;
+        material.stencilZPass = THREE.ReplaceStencilOp;
+      });
+    }
+    return states;
+  }
+
+  let eraseRig = null; // Fullscreen quad that pushes depth to the far plane on stencil-marked pixels.
+  function nearGroundEraseRig() {
+    if (eraseRig) return eraseRig;
+    const material = new THREE.ShaderMaterial({
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.99999, 1.0); }',
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+    });
+    material.name = 'held_xray_near_ground_depth_erase';
+    material.colorWrite = false;
+    material.depthTest = true; // GL only writes depth with the test enabled; Always makes it unconditional.
+    material.depthFunc = THREE.AlwaysDepth;
+    material.depthWrite = true;
+    material.stencilWrite = true;
+    material.stencilWriteMask = 0x00;
+    material.stencilFunc = THREE.EqualStencilFunc;
+    material.stencilRef = NEAR_GROUND_STENCIL;
+    material.stencilFuncMask = NEAR_GROUND_STENCIL;
+    material.stencilFail = THREE.KeepStencilOp;
+    material.stencilZFail = THREE.KeepStencilOp;
+    material.stencilZPass = THREE.KeepStencilOp;
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    quad.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.autoUpdate = false;
+    scene.add(quad);
+    quad.updateMatrixWorld(true);
+    eraseRig = { scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+    return eraseRig;
+  }
+
+  let nearGroundMeshesLast = 0; // Ground meshes the latest near-tile replay stamped/restored.
+  let nearGroundReplayCount = 0;
+  const nearGroundScratch = [];
+  const replayScratch = [];
+
+  function replayNearGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
+    const needsHeldOverlay = held.length > 0;
+    const needsFootWaterComposite = water.length > 0 && waterOccluded.length > 0;
+    if (!needsHeldOverlay && !needsFootWaterComposite) return;
+
+    const oldAutoClear = renderer.autoClear;
+    const oldAutoClearColor = renderer.autoClearColor;
+    const oldAutoClearDepth = renderer.autoClearDepth;
+    const oldAutoClearStencil = renderer.autoClearStencil;
+    const oldBackground = scene.background;
+    const oldSceneAutoUpdate = scene.autoUpdate;
+    const shadowMap = renderer.shadowMap;
+    const oldShadowAutoUpdate = shadowMap?.autoUpdate;
+
+    internalReplay = true;
+    const glState = renderer.state;
+    const scissorMeshes = needsFootWaterComposite ? [...held, ...waterOccluded] : held;
+    let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
+    const culled = scissored && replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight);
+    try {
+      if (scissored) {
+        glState.scissor(scissorRect);
+        glState.setScissorTest(true);
+        scissoredReplayCount++;
+      } else {
+        fullscreenReplayCount++;
+        lastReplayScissorCoverage = 1;
+      }
+      renderer.autoClear = false;
+      renderer.autoClearColor = false;
+      renderer.autoClearDepth = false;
+      renderer.autoClearStencil = false;
+      scene.background = null;
+      scene.autoUpdate = false; // base pass already produced current matrices
+      if (shadowMap) shadowMap.autoUpdate = false;
+
+      if (scissored) glState.setScissorTest(false); // Stencil clears stay full-framebuffer, as before.
+      renderer.clearStencil?.();
+      if (scissored) glState.setScissorTest(true);
+
+      nearGroundScratch.length = 0;
+      replayScratch.length = 0;
+      activeProxies.length = 0;
+      const near = needsHeldOverlay ? collectNearGround(held, [ground, topFaceGround], nearGroundScratch, activeProxies) : nearGroundScratch;
+      const nearDrawn = culled ? cullToReplayFrustum(near, replayScratch) : near;
+      nearGroundMeshesLast = nearDrawn.length + activeProxies.length;
+      const nearAny = nearDrawn.length > 0 || activeProxies.length > 0;
+
+      if (needsHeldOverlay) {
+        // 1) Avatar/PNG cutout planes skip depth writes in the base pass;
+        // give them depth now so a weapon behind a body or sprite stays hidden.
+        const heldSet = new Set(held);
+        // Only planes that skipped depth in the base pass need this; alpha-tested
+        // ground cover such as farm/town grass already wrote its depth.
+        const cutouts = collectVisible(pngDepthRegistry, scene).filter(object => !heldSet.has(object) && !writesDepthEverywhere(object.material));
+        const cutoutsDrawn = culled ? cullToReplayFrustum(cutouts, []) : cutouts;
+        const cutoutStates = prepareCutoutDepthOnlyMaterials(cutoutsDrawn);
+        try {
+          const perf = window.PerfProfiler?.begin('held-overlay: cutout depth render');
+          renderPicked(renderer, scene, camera, cutoutsDrawn);
+          window.PerfProfiler?.end(perf);
+        } finally {
+          restoreMaterialStates(cutoutStates);
+        }
+
+        if (nearAny) {
+          // 2) Mark pixels where tile-local ground is the front-most surface,
+          // then 3) push only those pixels' depth to the far plane.
+          const stampStates = prepareNearGroundStampMaterials(activeProxies.length ? [...nearDrawn, ...activeProxies] : nearDrawn);
+          const swapped = swapGeometryPart(nearDrawn, 'top');
+          try {
+            const perf = window.PerfProfiler?.begin('held-overlay: near ground stamp render');
+            renderPicked(renderer, scene, camera, nearDrawn, activeProxies);
+            window.PerfProfiler?.end(perf);
+          } finally {
+            restoreSwappedGeometry(swapped);
+            restoreMaterialStates(stampStates);
+          }
+          const rig = nearGroundEraseRig();
+          rawRender.call(renderer, rig.scene, rig.camera);
+        }
+
+        // 4) Draw weapons/hands once and mark their pixels in stencil bit 1 so
+        // later water compositing can never paint over them.
+        const heldStencilStates = prepareHeldStencilMaterials(held);
+        try {
+          camera.layers.mask = HELD_OVERLAY_MASK;
+          const perf = window.PerfProfiler?.begin('held-overlay: overlay render');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(perf);
+          selectiveOverlayCount++;
+        } finally {
+          restoreMaterialStates(heldStencilStates);
+        }
+
+        // 5) Restore the erased ground depth (held pixels in front keep theirs).
+        if (nearAny) {
+          const groundStates = prepareGroundDepthMaterials(activeProxies.length ? [...nearDrawn, ...activeProxies] : nearDrawn);
+          const swapped = swapGeometryPart(nearDrawn, 'top');
+          try {
+            const perf = window.PerfProfiler?.begin('held-overlay: ground restore render');
+            renderPicked(renderer, scene, camera, nearDrawn, activeProxies);
+            window.PerfProfiler?.end(perf);
+            groundDepthRestoreCount++;
+          } finally {
+            restoreSwappedGeometry(swapped);
+            restoreMaterialStates(groundStates);
+          }
+        }
+        nearGroundReplayCount++;
+      }
+
+      // 6) Feet intentionally do NOT x-ray water (see replayWholeGroundXray).
+      if (needsFootWaterComposite) {
+        const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);
+        try {
+          camera.layers.mask = FOOT_WATER_MASK;
+          rawRender.call(renderer, scene, camera);
+        } finally {
+          restoreMaterialStates(footStencilStates);
+        }
+        const waterStencilStates = prepareWaterStencilMaterials(water);
+        try {
+          camera.layers.mask = WATER_REPLAY_MASK;
+          rawRender.call(renderer, scene, camera);
+          waterReplayCount++;
+        } finally {
+          restoreMaterialStates(waterStencilStates);
+        }
+      }
+      if (scissored) { restoreRendererScissor(renderer); scissored = false; }
+      renderer.clearStencil?.();
+    } finally {
+      if (scissored) restoreRendererScissor(renderer);
+      camera.layers.mask = originalCameraMask;
+      if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
+      scene.autoUpdate = oldSceneAutoUpdate;
+      scene.background = oldBackground;
+      renderer.autoClear = oldAutoClear;
+      renderer.autoClearColor = oldAutoClearColor;
+      renderer.autoClearDepth = oldAutoClearDepth;
+      renderer.autoClearStencil = oldAutoClearStencil;
+      internalReplay = false;
+    }
+  }
+
+  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask) {
+    // The near-tile path needs stencil bits 0-2; anything shallower keeps the
+    // legacy whole-map rebuild (which itself skips foot water below 2 bits).
+    if (lastBaseStencilBits >= 3) return replayNearGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask);
+    return replayWholeGroundXray(renderer, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask);
+  }
+
   function wrappedRender(scene, camera) {
     if (internalReplay || !scene?.isScene || !camera?.isCamera) {
       return originalRender.call(this, scene, camera);
@@ -917,9 +1530,10 @@
     lastBaseStencilBits = currentFramebufferStencilBits(this);
     const held = collectVisible(heldRegistry, scene);
     const ground = collectVisible(groundRegistry, scene);
+    const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
     const water = collectVisible(waterRegistry, scene); // Used only when explicitly water-occluded meshes (feet) need a translucent replay.
     const waterOccluded = collectVisible(waterOccludedRegistry, scene); // Used to keep feet under water while weapons/hands remain above it.
-    if (!ground.length || (!held.length && !(water.length && waterOccluded.length))) return originalRender.call(this, scene, camera);
+    if (!(ground.length || topFaceGround.length) || (!held.length && !(water.length && waterOccluded.length))) return originalRender.call(this, scene, camera);
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
@@ -939,7 +1553,7 @@
     }
 
     const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the three sub-passes above plus the depth-material-prep traversal; kept separate so it's directly comparable to held-overlay: base render.
-    replaySelectiveHeldOverlay(this, scene, camera, held, ground, water, waterOccluded, originalCameraMask);
+    replaySelectiveHeldOverlay(this, scene, camera, held, ground, topFaceGround, water, waterOccluded, originalCameraMask);
     window.PerfProfiler?.end(replayPerf);
     return result;
   }
@@ -961,6 +1575,9 @@
       grassMeshes: grassCount,
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
+      topFaceGroundMeshes: topFaceGroundCount,
+      nearGroundMeshesLast,
+      nearGroundReplays: nearGroundReplayCount,
       waterReplayMeshes: waterMeshCount,
       waterOccludedMeshes: waterOccludedMeshCount,
       waterReplays: waterReplayCount,
@@ -1021,6 +1638,7 @@
         grass: isGrassGroundCover(object),
         road: isRoadSurface(object),
         terrain: isTerrainSurface(object),
+        topFacesGround: isTopFacesGroundSurface(object),
         waterSurface: isWaterSurface(object),
         waterOccluded: object?.userData?.hobunjiWaterOccludedBySurface === true,
       };

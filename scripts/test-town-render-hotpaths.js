@@ -97,7 +97,7 @@ assert.match(heldRender, /renderer\.clearStencil\?\.\(\)/,
   'held/foot-water stencil markers are cleared around the private composite pass');
 
 const heldOverlayAt = heldRender.indexOf('const heldStencilStates = prepareHeldStencilMaterials(held);'); // Used to guard the intended weapon-before-ground replay ordering.
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(ground);'); // Used to keep raised soil in the depth buffer before water is recomposited.
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials('); // Used to keep raised soil in the depth buffer before water is recomposited.
 const footMaskAt = heldRender.indexOf('const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);'); // Used to prove water targets feet rather than held gear.
 const waterCompositeAt = heldRender.indexOf('const waterStencilStates = prepareWaterStencilMaterials(water);'); // Used with footMaskAt to protect the foot-only water policy.
 assert.ok(heldOverlayAt >= 0 && groundDepthRestoreAt > heldOverlayAt,
