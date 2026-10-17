@@ -15388,7 +15388,9 @@
             try {
               _cb();
               if (fromArea && fromArea !== currentArea) {
-                window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); // Delivers completed exits even when timer polling misses the interior.
+                // Delivers completed exits even when timer polling misses the interior; isolated so a visitor failure never skips the NPC catch-up below.
+                try { window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); }
+                catch (e) { debugLog('doorstep area transition error: ' + (e?.stack || e), 'error'); }
                 catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
               }
             } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
@@ -28347,6 +28349,14 @@
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        // Recordings for the surface under the player, so Kurraya's beat uses real footsteps instead of the synth click.
+        getPlayerFootstepSampleUrls: () => {
+          if (!window.AudioSystem) return [];
+          const tile = window.AudioSystem.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid());
+          const surfaceKey = window.AudioSystem.footstepSurfaceKey(currentArea, tile?.type ?? null);
+          const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls || [];
+          return urls.map(url => { try { return new URL(url, document.baseURI).href; } catch { return url; } });
+        },
         showToast,
         // Frames the performance in third-person (see the "music" camera
         // mode in scratchbones-config.js) instead of leaving the default

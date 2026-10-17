@@ -18,7 +18,7 @@ assert.match(lyre, /function lowKurrayaChordMidis\(midi = rootPadTargetMidi\(\)\
 assert.match(lyre, /return \[root, scaleSafeMidi\(root \+ 7\)\]/, 'the sampled low chord prefers a scale-safe fifth');
 assert.match(lyre, /createVoiceNodes\(pitch, 0\.72 \/ Math\.sqrt\(chordMidis\.length\), now, 1\)/, 'the low chord goes through the ordinary pitch-shifted Kurraya sampler');
 assert.match(lyre, /async useGameplayFootstepMetronome\(urls\)/, 'the hosted bridge can still accept gameplay footstep samples when a host provides them');
-assert.match(music, /setAutoPickSlot\?\.\(sector, value\)/, 'the visible plucking-pattern selector edits the selected left-stick sector');
+assert.match(music, /setAutoPickSlot\?\.\(sector, (?:event\.target\.)?value\)/, 'the visible plucking-pattern selector edits the selected left-stick sector');
 assert.match(music, /gameplay camera owner reads RS/, 'music keeps right stick reserved for camera look instead of manual strumming');
 assert.doesNotMatch(music, /bridge\.rightStick\(rx, ry, 'host-gamepad-right-stick'\)/, 'controller right stick is not routed back into Kurraya strumming');
 
