@@ -1101,9 +1101,10 @@ function beginCharge(options = {}) {
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
       const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
       // The input gate (totalS) runs to the middle of the Strike hold; the release
-      // voice is time-mapped to fill exactly Windup -> Strike (the start of the hold).
-      const strikeEndS = Math.min(totalS, Math.max(windupS, Number(timeline?.strikeRemainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0))) || 0));
-      const releaseS = Math.max(0, strikeEndS - windupS);
+      // voice is time-mapped over Windup -> Strike -> the end of the hold, and keeps
+      // playing past the gate until it ends or the next attack's voice takes over.
+      const voiceEndS = Math.max(windupS, Number(timeline?.holdEndRemainingS ?? totalS) || 0);
+      const releaseS = Math.max(0, voiceEndS - windupS);
       let charge = isPlayer ? (liveChargesByAbility.get(context.id) || null) : null; // Reuse a held charge until its release boundary.
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
@@ -1144,8 +1145,7 @@ function beginCharge(options = {}) {
         },
         onComplete: (...args) => {
           cancelCharge(charge);
-          cancelCharge(release);
-          return spec.onComplete?.(...args);
+          return spec.onComplete?.(...args); // The release voice runs on to the end of the hold.
         },
         onCancel: (...args) => {
           cancelCharge(charge);
@@ -1295,7 +1295,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Charge spans neutral to windup; release spans windup to the Strike pose; the input gate ends halfway through the hold and inputs queue only after the Strike pose.',
+    latestChange: 'Charge spans neutral to windup; release spans windup through the end of the Strike hold; the input gate ends halfway through the hold and inputs queue only after the Strike pose.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,

@@ -298,7 +298,7 @@ assert.equal(played.at(-1).stopped, true, 'despawn fades the current NPC voice')
 // Active visual phases own both voice timing and the queue; the return tail is cosmetic.
 emit(docListeners, 'hobunjiPlayerReady');
 let visualRemainingS = 1.3; // Includes 0.2s windup, 0.1s strike, 0.7s hold, and 0.3s return.
-W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2,strikeRemainingS:Math.max(0,visualRemainingS-1.0)});
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2,strikeRemainingS:Math.max(0,visualRemainingS-1.0),holdEndRemainingS:Math.max(0,visualRemainingS-0.3)});
 W.AudioSystem.gameAudioConfig=()=>({enabled:false});
 abilities.get('swingCombo').onTap();
 assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-1)<1e-9,'muted attacks wait through Hold only');
@@ -307,10 +307,10 @@ const beforePhase = W.CombatVocalizations.debugSnapshot().lastStrike; // Windup 
 stagedSpec.onUpdate({t:0.19});
 assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike,beforePhase);
 stagedSpec.onUpdate({t:0.2});
-assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.1)<1e-9,'second grunt spans Windup to the Strike pose only');
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'second grunt spans Windup through Strike and the whole hold');
 assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.category,'combo');
 stagedSpec.onStrike({t:0.3});
-assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.1)<1e-9,'impact does not restart the release voice');
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'impact does not restart the release voice');
 stagedAction.t=0.99;
 visualRemainingS=0.31;
 assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-0.01)<1e-9,'queue still waits during the final Hold interval');
@@ -345,6 +345,7 @@ vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAtt
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.3);
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.65)<1e-9,'input gate ends halfway through the 0.7s hold');
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().strikeRemainingS-0.3)<1e-9);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().holdEndRemainingS-1)<1e-9,'release voice maps through the end of the 0.7s hold');
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS-0.2)<1e-9);
 timelineContext.toolSwingT=1.1;
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS)<1e-9,'Windup endpoint begins the second sound');

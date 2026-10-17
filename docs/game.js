@@ -21748,6 +21748,7 @@
           remainingS: toolSwingT,
           activeRemainingS: Math.max(0, toolSwingDur * gateFrac - elapsedS),
           strikeRemainingS: Math.max(0, toolSwingDur * combatSwingStrikeFrac - elapsedS), // Attack inputs only queue once the Strike pose is reached.
+          holdEndRemainingS: Math.max(0, toolSwingDur * Math.max(combatSwingStrikeFrac, holdEndFrac) - elapsedS), // The release voice is mapped through the whole hold.
           windupRemainingS: Math.max(0, toolSwingDur * combatSwingWindupFrac - elapsedS),
           held: combatSwingHeld,
         };
