@@ -707,7 +707,7 @@
         ['Hreesh last visit attempt', hreesh?.lastAttempt ? `${hreesh.lastAttempt.key}: ${hreesh.lastAttempt.reason}` : 'None this session'],
         ['Live NPC walker count', hreesh?.walkerCount ?? 'Unavailable'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Completed scene transitions notify doorstep visits directly. Exit requests and provider results now explain missed or empty visit attempts.'],
+        ['Latest change', 'Visitor cloning bypasses circular live hand-rig metadata and remaps cloned skeletons to their own bones; original NPC rigs stay untouched.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };

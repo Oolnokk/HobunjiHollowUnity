@@ -48,16 +48,23 @@ function makeContext() {
 // A THREE-ish object just rich enough for cloneVisitorRoot.
 function fakeObject3D(name) {
   const node = {
-    name, children: [], parent: null, userData: {}, visible: true,
+    name, isObject3D: true, children: [], parent: null, userData: {}, visible: true,
     position: { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
     rotation: { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
     add(child) { child.parent = node; node.children.push(child); },
     remove(child) { const i = node.children.indexOf(child); if (i >= 0) node.children.splice(i, 1); child.parent = null; },
     traverse(fn) { fn(node); node.children.forEach(child => child.traverse(fn)); },
-    clone() {
-      const copy = fakeObject3D(node.name);
-      copy.userData = { ...node.userData };
-      node.children.forEach(child => copy.add(child.clone()));
+    toJSON() { return { name: this.name, userData: JSON.parse(JSON.stringify(this.userData)) }; },
+    clone(recursive = true) {
+      const copy = fakeObject3D(this.name);
+      copy.userData = JSON.parse(JSON.stringify(this.userData));
+      copy.position.set(this.position.x, this.position.y, this.position.z);
+      copy.rotation.set(this.rotation.x, this.rotation.y, this.rotation.z);
+      copy.isSkinnedMesh = this.isSkinnedMesh;
+      copy.skeleton = this.skeleton;
+      copy.geometry = this.geometry;
+      copy.material = this.material;
+      if (recursive || this.isSkinnedMesh) this.children.forEach(child => copy.add(child.clone()));
       return copy;
     },
   };
@@ -532,4 +539,51 @@ console.log('doorstep visits: ok');
   const copy = api.debugSnapshot(); // External panel consumers cannot mutate queue evidence.
   copy.lastExitAttempt.providers[0].result = 'edited';
   assert.equal(api.debugSnapshot().lastExitAttempt.providers[0].result, 'No pending visit');
+}
+
+// Live hand rigs point back to their owning avatar: JSON cloning overflows.
+{
+  const ctx = makeContext(); // Exercises the real visitor clone path with Three-style userData serialization.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['hreesh'] }); // Hreesh has both procedural hands and a skinned portrait.
+  const source = world.walkers[0]; // Original NPC must remain entirely usable after cloning and dismissal.
+  const portrait = fakeObject3D('portrait-skin'); // Mesh and skeleton references mirror PNGPlaneAvatar's neckRig.
+  const neck = fakeObject3D('neck'); // The visitor resets this clone without rotating the inn NPC.
+  const hands = fakeObject3D('hand-visuals'); // Stationary visits retain the already-built hand meshes.
+  portrait.isSkinnedMesh = true;
+  portrait.geometry = { name: 'shared-geometry' };
+  portrait.material = { name: 'shared-material' };
+  portrait.skeleton = { bones: [neck], clone() { return { ...this, bones: this.bones.slice() }; }, dispose() { this.disposed = true; } };
+  portrait.add(neck);
+  source.avatarGroup.add(portrait);
+  source.root.add(hands);
+  source.neckJoint = neck;
+  neck.rotation.y = 0.75;
+  source.avatarGroup.userData.neckRig = { available: true, neckJoint: neck, skinnedPlane: portrait, skeleton: portrait.skeleton };
+  source.avatarGroup.userData.proceduralHandRig = { avatarRoot: source.avatarGroup, parent: source.root, group: hands, dispose() { throw new Error('must not dispose source hands'); } };
+  const originalData = source.avatarGroup.userData; // Identity check detects temporary mutations to the original metadata.
+  assert.throws(() => source.root.clone(true), /Maximum call stack size exceeded/, 'ordinary Three-style cloning reproduces the reported failure');
+  assert.equal(ctx.window.DoorstepVisits.spawnVisit({ key: 'hreesh-test', npcId: 'hreesh', tree: { nodes: [] } }), true);
+  const visitor = world.walkers.find(walker => walker._doorstepVisitor); // Inspects the runtime proxy rather than a test-only clone API.
+  const clonedRig = visitor.avatarGroup.userData.neckRig; // Every reference must resolve inside the copied hierarchy.
+  assert.notStrictEqual(clonedRig, originalData.neckRig);
+  assert.strictEqual(clonedRig.neckJoint, visitor.neckJoint);
+  assert.strictEqual(clonedRig.skinnedPlane, visitor.avatarGroup.children[0]);
+  assert.notStrictEqual(clonedRig.skinnedPlane.skeleton, portrait.skeleton);
+  assert.strictEqual(clonedRig.skinnedPlane.skeleton.bones[0], visitor.neckJoint);
+  assert.equal(clonedRig.skinnedPlane.children.length, 1, 'r128 skinned copy must not duplicate its bone hierarchy');
+  assert.strictEqual(clonedRig.skeleton, clonedRig.skinnedPlane.skeleton);
+  assert.strictEqual(clonedRig.skinnedPlane.geometry, portrait.geometry);
+  assert.strictEqual(clonedRig.skinnedPlane.material, portrait.material);
+  assert.equal(visitor.neckJoint.rotation.y, 0);
+  assert.equal(neck.rotation.y, 0.75);
+  assert.equal(visitor.avatarGroup.userData.proceduralHandRig, undefined, 'source driver callbacks never migrate into the visitor');
+  assert(visitor.root.children.some(child => child.name === 'hand-visuals'));
+  assert.strictEqual(source.avatarGroup.userData, originalData);
+  ctx.window.DoorstepVisits.removeActiveVisitor();
+  assert.equal(clonedRig.skinnedPlane.skeleton.disposed, true, 'visitor-owned skeleton resources are released');
+  assert.equal(portrait.skeleton.disposed, undefined, 'source skeleton resources remain live');
+  assert.strictEqual(source.avatarGroup.userData.proceduralHandRig.avatarRoot, source.avatarGroup);
+  assert.strictEqual(neck.parent, portrait);
+  assert.strictEqual(hands.parent, source.root);
 }

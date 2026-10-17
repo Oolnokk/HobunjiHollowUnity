@@ -279,8 +279,63 @@
     return cloned || null;
   }
 
+  function copyVisitorMetadata(value, copies, seen) {
+    if (!value || typeof value !== 'object') return value;
+    if (copies.has(value)) return copies.get(value);
+    if (value.isObject3D) return null; // External scene objects do not belong to this visitor.
+    if (seen.has(value)) return seen.get(value);
+    const prototype = Object.getPrototypeOf(value); // Textures, canvases and other resource instances stay shared, without calling toJSON.
+    if (!Array.isArray(value) && prototype !== null && prototype.constructor?.name !== 'Object') return value;
+    const result = Array.isArray(value) ? [] : {}; // Plain passive metadata gets its own cycle-safe container.
+    seen.set(value, result);
+    for (const key of Object.keys(value)) {
+      // The stationary clone keeps the hand meshes, but never the live driver's
+      // callbacks: they close over the original NPC's rig and disposal state.
+      if (key === 'proceduralHandRig') continue;
+      result[key] = copyVisitorMetadata(value[key], copies, seen);
+    }
+    return result;
+  }
+
+  function cloneVisitorHierarchy(sourceRoot) {
+    if (!sourceRoot?.clone) return null;
+    const copies = new Map(); // Remaps every mesh/bone/rig reference into the visitor's own hierarchy.
+    const skeletons = []; // Tracks only visitor-owned skeletons for disposal when the clone leaves.
+    function copyNode(sourceNode) {
+      // Object3D.copy JSON-serializes userData. A non-mutating view bypasses
+      // that step, including the hand rig's avatarRoot -> userData -> rig loop.
+      const cloneSource = Object.create(sourceNode, { userData: { value: {} }, children: { value: [] } }); // Leaves the live NPC untouched even if cloning throws.
+      const copied = sourceNode.clone.call(cloneSource, false); // Empty children also handles r128 SkinnedMesh.copy ignoring the recursive flag.
+      copies.set(sourceNode, copied);
+      for (const child of sourceNode.children || []) copied.add(copyNode(child));
+      return copied;
+    }
+    const root = copyNode(sourceRoot); // First build all nodes so forward rig references can be remapped.
+    for (const [sourceNode, copied] of [...copies]) {
+      if (!sourceNode.isSkinnedMesh || !sourceNode.skeleton) continue;
+      let skeleton = copies.get(sourceNode.skeleton); // Multiple meshes may share one skeleton inside this visitor.
+      if (!skeleton) {
+        skeleton = sourceNode.skeleton.clone();
+        skeleton.bones = sourceNode.skeleton.bones.map(bone => {
+          const copiedBone = copies.get(bone); // Visitors must not animate or reset the source NPC's bones.
+          if (!copiedBone) throw new Error('Visitor skeleton bone is outside the NPC hierarchy.');
+          return copiedBone;
+        });
+        copies.set(sourceNode.skeleton, skeleton);
+        skeletons.push(skeleton);
+      }
+      copied.skeleton = skeleton;
+    }
+    const seen = new WeakMap(); // Preserves shared passive metadata references without recursing through Three.js serialization.
+    for (const [sourceNode, copied] of copies) {
+      if (sourceNode.isObject3D || sourceNode === sourceRoot || sourceNode.children) copied.userData = copyVisitorMetadata(sourceNode.userData || {}, copies, seen);
+    }
+    root._doorstepSkeletons = skeletons;
+    return root;
+  }
+
   function cloneVisitorRoot(source, visit, spot, door) {
-    const root = source?.root?.clone?.(true);
+    const root = cloneVisitorHierarchy(source?.root);
     if (!root) return null;
     root.name = `doorstepVisitor_${visit.npcId}`;
     root.visible = true;
@@ -421,6 +476,7 @@
       if (index >= 0) walkers.splice(index, 1);
     }
     current.root?.parent?.remove?.(current.root);
+    for (const skeleton of current.root?._doorstepSkeletons || []) skeleton.dispose?.(); // Releases clone-owned bone textures; shared materials/geometry stay live.
     current.root?.traverse?.(node => {
       // Cloned visitor meshes share the source NPC's materials/textures; do not
       // dispose shared GPU resources here. Removing the clone is sufficient.
