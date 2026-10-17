@@ -2045,10 +2045,14 @@
     // twirl, refillTwistOut/Back) don't apply to a bandit's own combat
     // swing, so only the two channels real combat swings actually use are
     // ported here.
-    const spinPlane = holder.children[0]?.userData?.toolPlane;
+    const spinMesh = holder.children[0];
+    const spinPlane = spinMesh?.userData?.toolPlane;
     if (spinPlane) {
       spinPlane.rotation.z = anim === 'sweep' ? -Math.PI / 2 : 0;
-      spinPlane.scale.x = anim === 'sweep' ? dirSign : 1;
+      // Backhand is a midline reflection of the whole tool (the Attack Editor's Flip Across Midline), so it
+      // goes on the parent mesh, after the plane's spin; a child-plane flip leaves the blade facing Forehand.
+      spinPlane.scale.x = 1;
+      spinMesh.scale.x = Math.abs(spinMesh.scale.x) * (anim === 'sweep' && dirSign < 0 ? -1 : 1);
     }
 
     let progress = 0, wf = 0.16;

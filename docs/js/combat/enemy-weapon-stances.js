@@ -213,12 +213,14 @@
       const toolPlane = entity?._banditToolHolder?.children?.[0]?.userData?.toolPlane || null; // Weapon sprite plane whose spin/mirror must reflect the ORIGINAL attack style, not the temporary generic branch.
       const neutralWeight = attackNeutralWeight(entity); // Shared neutral contribution used to cancel sweep's legacy -90° plane twist at idle/start and fade it back by windup.
       if (toolPlane) {
-        if (prepared.originalAnim === 'sweep') {
-          toolPlane.rotation.z = -Math.PI / 2 + Math.PI / 2 * neutralWeight;
-          toolPlane.scale.x = prepared.effectiveSign;
-        } else {
-          toolPlane.rotation.z = 0;
-          toolPlane.scale.x = 1;
+        const toolMesh = entity?._banditToolHolder?.children?.[0] || null; // Parent of the plane: Backhand mirrors it across the body midline exactly like the player (see game.js updateToolMesh).
+        const mirrored = prepared.originalAnim === 'sweep' && prepared.effectiveSign < 0;
+        if (prepared.originalAnim === 'sweep') toolPlane.rotation.z = -Math.PI / 2 + Math.PI / 2 * neutralWeight;
+        else toolPlane.rotation.z = 0;
+        toolPlane.scale.x = 1;
+        if (toolMesh) {
+          toolMesh.scale.x = Math.abs(toolMesh.scale.x) * (mirrored ? -1 : 1);
+          toolMesh.updateMatrix?.();
         }
         toolPlane.updateMatrix?.();
       }

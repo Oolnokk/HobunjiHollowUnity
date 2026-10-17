@@ -125,7 +125,7 @@
     ['js/npc-social-seating-bridge.js?v=20260904a', () => !!window.HobunjiNpcSocialSeating],
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
-    ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],
+    ['js/combat/enemy-weapon-stances.js?v=20261017h2ac7179', () => !!window.EnemyWeaponStances],
     ['js/npc-held-equipment-v4.js?v=20261010h43388e2', () => Number(window.NpcHeldEquipment?.version) >= 4],
     ['js/combat/ranged-weapon-archetypes.js?v=20261017he0a7f23', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
     ['js/combat/ranged-camera-ray-authority.js?v=20260927reticletarget1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 4],
