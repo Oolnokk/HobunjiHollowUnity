@@ -271,7 +271,7 @@
   // naturally as "here's what the room looks like during this layout" than
   // as an add/remove list, and it's what the interior/map editors already
   // let an author build (clone the base layout, then rearrange it).
-  const OVERRIDABLE_KEYS = ['floor', 'colliders', 'vendorZones', 'furniture', 'npcStations', 'decor', 'objects', 'buildings', 'routes'];
+  const OVERRIDABLE_KEYS = ['floor', 'colliders', 'doorTiles', 'vendorZones', 'furniture', 'npcStations', 'decor', 'objects', 'buildings', 'routes'];
 
   // A station may bind itself to one authored furniture instance instead of
   // duplicating that furniture's coordinates. Resolution happens only after
