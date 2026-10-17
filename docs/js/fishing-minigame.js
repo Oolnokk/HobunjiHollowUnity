@@ -35,6 +35,7 @@
   const FISHING_CAMERA_RAISE_TILES = 0.5; // Raises the resolved fishing camera exactly half a tile without changing its side/diagonal XZ position or water look target.
   const FISHING_CAMERA_FOV_DEG = 70; // Keeps both the nearby player and aimed water tile legible from the tight diagonal camera position.
   const AMPHIBIOUS_BASE_FOOTING_COST = 20; // Full Footing cost of reeling in a catch before the Amphibious Fish perk discounts it.
+  const HARPOON_THROW_SWING_DELAY_MS = 70; // Places swing 1 just after the dodge-style exertion vocal when a bridge throw is committed.
   // Escape/respawn sequence timings, ported from the prototype's fishRespawn
   // state: when panic maxes out the fish doesn't just end the round, it visibly
   // slides into the central pool, shrinks away, waits, then a freshly rolled
@@ -886,6 +887,8 @@
     b.shotTimer = 0;
     b.retractTimer = 0;
     b.caughtFish = false;
+    window.CombatVocalizations?.playDodge?.();
+    setTimeout(() => window.AudioSystem?.playWeaponSlashSfx?.(undefined, 0), HARPOON_THROW_SWING_DELAY_MS);
     const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
     const a = fishingPolarToXY(b.lineA, outerRadius);
     b.tipX = b.prevTipX = a.x;
@@ -1009,6 +1012,7 @@
     };
     if (hit) {
       b.caughtFish = true;
+      window.AudioSystem?.playCombatSfxKey?.('harpoonHit');
       window.__farmLog?.(`fish silhouette hit: source=${source} samples=${sampleCount + 1}`, 'fish');
       return true;
     }
@@ -1036,9 +1040,8 @@
       fm.messageType = 'good';
       deps.setLastActionMessage(fm.message);
       deps.awardToolUseMasteryXp('harpoon');
-      window.AudioSystem?.playWeaponSlashSfx();
-      window.Music?.playGameplayCue?.('fishCaught'); // Plays the authored success sting exactly once when the catch is committed to inventory.
       beginFishCatchView(fm, stars);
+      window.Music?.playGameplayCue?.('fishCaught'); // Starts the authored sting only once the catch-showoff view owns the screen.
       return;
     }
     // Escaping used to slide the fish into the pool and swim a fresh

@@ -42,6 +42,7 @@
   const _loopingBgs = new Map();
   const _audioDebugLast = new Map();
   const _gameAudioElements = new Set();
+  const _gameplayCueDuckOwners = new Set(); // Tracks active one-shot gameplay cues that temporarily suppress the scheduled background soundtrack.
   let _gameAudioUnlocked = false;
   const _audioFailedUrls = new Set();
   const _dailyBgmPlayed = new Set();
@@ -736,15 +737,41 @@
     return snd;
   }
 
+  function setGameplayCueBackgroundDuck(duck, fadeMs) {
+    const keepDucked = duck || isLyreMusicPlaying(); // Preserves the existing instrument duck if a gameplay sting finishes while live music is still sounding.
+    const tracks = new Set([_ambientCueState.currentBgm, _ambientCueState.currentCue, _ambientCueState.currentCombatBgm].filter(Boolean)); // Deduplicates scheduler-owned tracks before changing their shared duck state.
+    for (const track of tracks) track?._setDuck?.(keepDucked, fadeMs);
+  }
+
   function playGameplayCue(key) {
     const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Supplies the authored gameplay-cue registry and shared BGM level.
-    const cue = audioCfg.gameplayCues?.[key]; // Resolves the semantic fishing/mine cue without leaking asset paths into gameplay modules.
+    const cue = audioCfg.gameplayCues?.[key]; // Resolves semantic gameplay cues without leaking asset paths into gameplay modules.
     if (audioCfg.enabled === false || !cue?.url || audioUrlFailed(cue.url)) return null;
     const cueVolume = Math.max(0, Number(cue.volume) || 1); // Scales this sting against the user's existing BGM volume.
     const baseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48))) * cueVolume; // Keeps gameplay stings on the music-volume path rather than object-SFX settings.
-    const snd = playMusicTrack(cue.url, baseVolume, 0, 0); // Uses the shared unlock/loudness/ducking transport without claiming an ambient scheduler slot.
+    const snd = playMusicTrack(cue.url, baseVolume, 0, 0); // Uses the shared unlock/loudness transport without claiming an ambient scheduler slot.
+    const duckBackground = cue.duckBackground === true; // Enables short soundtrack suppression only for cues that explicitly author it.
+    const duckOutMs = Math.max(0, Number(cue.duckOutMs) || 90); // Controls how quickly scheduled BGM yields to this one-shot cue.
+    const duckInMs = Math.max(0, Number(cue.duckInMs) || 260); // Controls the short return to the scheduled soundtrack after the sting ends.
+    let finished = false; // Makes ended/error/play-failure cleanup idempotent so soundtrack duck ownership cannot leak.
+    let duckStarted = false; // Ensures an autoplay-blocked cue does not mute the soundtrack until the browser actually starts the sting.
     snd._gameplayCueKey = key; // Exposes the semantic owner to mobile-readable audio diagnostics and ad-hoc inspection.
-    const finishGameplayCue = () => retireMusicTrack(snd); // Releases the one-shot element after playback/error without disturbing area/combat music.
+    const beginGameplayCueDuck = () => {
+      if (!duckBackground || duckStarted) return;
+      duckStarted = true;
+      _gameplayCueDuckOwners.add(snd);
+      setGameplayCueBackgroundDuck(true, duckOutMs);
+    }; // Starts the temporary BGM duck on the real media play event, including a later unlock retry.
+    const finishGameplayCue = () => {
+      if (finished) return;
+      finished = true;
+      if (duckStarted) {
+        _gameplayCueDuckOwners.delete(snd);
+        if (_gameplayCueDuckOwners.size === 0) setGameplayCueBackgroundDuck(false, duckInMs);
+      }
+      retireMusicTrack(snd);
+    }; // Releases the one-shot element and its temporary duck without disturbing area/combat soundtrack ownership.
+    snd.addEventListener('play', beginGameplayCueDuck, { once: true });
     snd.addEventListener('ended', finishGameplayCue, { once: true });
     snd.addEventListener('error', () => {
       if (isRealMediaError(snd)) markAudioUrlFailed(cue.url, 'gameplay cue media error');
@@ -752,7 +779,7 @@
     }, { once: true });
     audioDebug('playing gameplay cue key=' + key + ' url=' + snd.src + ' baseVolume=' + baseVolume.toFixed(2), 'gameplay-cue-' + key, 0, 'cue');
     requestGameAudioPlay(snd).catch(err => {
-      const errName = err?.name || ''; // Keeps autoplay blocks retryable through unlockGameAudio while rejecting real media failures.
+      const errName = err?.name || ''; // Distinguishes browser autoplay blocking from real media failures while retaining the shared unlock retry.
       if (errName === 'NotAllowedError') return;
       if (errName !== 'AbortError') markAudioUrlFailed(cue.url, errName || 'gameplay cue play failed');
       finishGameplayCue();
@@ -1048,7 +1075,7 @@
     _lyreDucked = shouldDuck;
     const fadeMs = 900;
     for (const key of ['currentBgm', 'currentCue', 'currentCombatBgm']) {
-      _ambientCueState[key]?._setDuck?.(shouldDuck, fadeMs);
+      _ambientCueState[key]?._setDuck?.(shouldDuck || _gameplayCueDuckOwners.size > 0, fadeMs);
     }
     audioDebug('lyre ducking ' + (shouldDuck ? 'engaged' : 'released'), 'lyre-duck-' + shouldDuck, 0, 'bgm');
   }
