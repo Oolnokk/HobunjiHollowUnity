@@ -536,7 +536,7 @@
 // Load it only there so the generic PanelUI helper remains harmless elsewhere.
 if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
   const idleStanceScript = document.createElement('script');
-  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20261017he89f63b';
+  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20261017h619c5dd';
   idleStanceScript.defer = true;
   document.head.appendChild(idleStanceScript);
 }

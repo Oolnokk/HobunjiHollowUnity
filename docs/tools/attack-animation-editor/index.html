@@ -369,6 +369,8 @@ rig.add(toolBase);
 // symmetric (it's the real scanned right-arm edge, not -w/2), so a midline flip
 // has to negate it too — see flipBtn.onclick below for why.
 let baseAttachX = 0;
+let offhandAuthoringBase = false; // While authoring the Dual Wield offhand idle stance, the hand anchor sits on the offhand side so the gizmo moves the visible offhand weapon itself.
+const toolBaseSideX = () => ((toolMirrored !== offhandAuthoringBase) ? -baseAttachX : baseAttachX);
 let toolMirrored = false;
 const anchorDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6aa7ff }));
 toolBase.add(anchorDot);
@@ -640,7 +642,7 @@ async function rebuildAvatar(speciesId, gender) {
   // other than 1 -- it never lines up with the shoulder.
   baseAttachX *= characterBodyScaleRoot.scale.x;
   baseAttachY *= characterBodyScaleRoot.scale.y;
-  toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
+  toolBase.position.set(toolBaseSideX(), baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
 }
@@ -1123,7 +1125,7 @@ $('flipBtn').onclick = () => {
   anim.poses.strike = flipPose(anim.poses.strike);
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   toolMirrored = !toolMirrored;
-  toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
+  toolBase.position.x = toolBaseSideX();
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
   syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
@@ -1501,7 +1503,7 @@ function templateForAction(action) {
 }
 function setMirroredPreview(mirrored) {
   toolMirrored = !!mirrored;
-  toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
+  toolBase.position.x = toolBaseSideX();
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
 }
 function actionUsesMeleeSpacing(action) {
@@ -1854,6 +1856,7 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get toolHolder() { return toolHolder; },
   get bodyRoot() { return rig; }, // Dual Wield mirrors the offhand anchor in this already-body-yawed frame without changing bodyYaw itself.
   get toolPlaneMesh() { return toolPlaneMesh; },
+  setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); }, // Idle-stance editor only: anchors the holder on the offhand side without flipping the sprite.
   get toolKey() { return currentToolKey; },
   focusNeutral() {
     selectEditPhase('neutral');

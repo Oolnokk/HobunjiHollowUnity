@@ -20,6 +20,7 @@
   const HISTORY_WINDOW_MS = 240; // Keeps enough parent poses to resolve the short lag through low-FPS frames.
   const ACTIVE_EPSILON = 0.0001;
   let state = null;
+  let editorOffhandAuthoring = false; // Attack Editor only: the holder IS the offhand weapon while its idle stance is being dragged.
 
   function clamp01(value) {
     const n = Number(value);
@@ -259,7 +260,15 @@
 
   function idleOffhandLocalTransform(current) {
     const poses = idleStancePoses();
-    if (!poses || !current.holder?.matrixWorld || !current.plane?.matrixWorld || !current.bodyRoot) return null;
+    return poses ? idleCounterpartTransform(current, poses.main, poses.offhand) : null;
+  }
+
+  // Places the hand opposite the one whose pose the holder currently carries. In play and
+  // pair preview the holder carries MAIN and this yields the offhand. While authoring the
+  // offhand stance the holder carries OFFHAND, so the roles swap and this yields main.
+  function idleCounterpartTransform(current, sourcePose, derivedPose) {
+    if (!sourcePose || !derivedPose || !current.holder?.matrixWorld || !current.plane?.matrixWorld || !current.bodyRoot) return null;
+    const poses = { main: sourcePose, offhand: derivedPose };
     const s = frameScratch(current);
     const mainQ = poseQuaternion(s, poses.main, s.mainQ);
     const offQ = poseQuaternion(s, poses.offhand, s.offQ);
@@ -407,7 +416,10 @@
     if (inAttackEditor()) current.plane.updateWorldMatrix?.(true, false);
     else current.holder?.updateMatrixWorld?.(true);
     const scratch = frameScratch(current);
-    const idleTransform = current.idleBlend > ACTIVE_EPSILON ? idleOffhandLocalTransform(current) : null;
+    // Authoring the offhand stance: the gizmo/Neutral sliders move the offhand weapon directly (it stays
+    // on the holder), and the main-hand copy is placed from its saved stance instead.
+    const authoringOffhand = editorOffhandAuthoring && inAttackEditor() && current.idleBlend > ACTIVE_EPSILON;
+    const idleTransform = current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
     const idleAmount = clamp01(current.idleBlend);
     const targetPosition = idleTransform ? scratch.offTargetPosition.copy(idleTransform.position).multiplyScalar(idleAmount) : scratch.offTargetPosition.set(0, 0, 0);
     const targetQuaternion = idleTransform
@@ -421,7 +433,15 @@
       current.mainRoot.scale.set(1, 1, 1);
       current.history.length = 0;
     }
-    if (active) applyMainLag(current);
+    if (active && authoringOffhand) {
+      const poses = idleStancePoses();
+      const mainTransform = poses ? idleCounterpartTransform(current, poses.offhand, poses.main) : null;
+      if (mainTransform) {
+        scratch.offTargetPosition.copy(mainTransform.position).multiplyScalar(idleAmount);
+        scratch.offTargetQuaternion.identity().slerp(mainTransform.quaternion, idleAmount);
+        setRootToward(current.mainRoot, scratch.offTargetPosition, scratch.offTargetQuaternion, current.influence); // No lag: a stance is authored directly.
+      }
+    } else if (active) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
     return current;
@@ -483,6 +503,14 @@
     return editorIdlePreviewActive;
   }
 
+  function setEditorOffhandAuthoring(active) {
+    editorOffhandAuthoring = !!active;
+    resetPoseHistory();
+    syncNow();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    return editorOffhandAuthoring;
+  }
+
   function debugSnapshot() {
     return {
       active: !!state && state.influence > ACTIVE_EPSILON,
@@ -512,6 +540,7 @@
     resetPoseHistory,
     transformSocketForHand,
     setEditorIdlePreview,
+    setEditorOffhandAuthoring,
     debugSnapshot,
     constants: Object.freeze({ DUPLICATE_Z_GAP, HALF_Z_SEPARATION, MAIN_HAND_LAG_MS }),
   };

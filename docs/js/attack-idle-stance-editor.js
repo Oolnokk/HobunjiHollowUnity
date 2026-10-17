@@ -249,9 +249,27 @@
         : 'Edit Selected in Neutral';
     }
 
+    function dualToolActive() {
+      return window.HobunjiHandToolGrips?.isDualWieldWeapon?.(window.HobunjiAttackEditorToolContext?.toolKey || '') === true;
+    }
+
+    // Decides what the Neutral gizmo drags. Offhand: the visible offhand weapon itself (anchor on its side, main copy
+    // placed from its saved stance), not the hidden main-hand parent the attack copies follow. Everything else: one weapon.
+    function applyEditPreviewMode() {
+      const offhand = editingNeutral && selectedKey === 'dualWieldOffhand';
+      const pair = offhand && dualToolActive();
+      window.HobunjiAttackEditorToolContext?.setOffhandAuthoringBase?.(offhand);
+      window.HobunjiDualWieldWeaponVisuals?.setEditorOffhandAuthoring?.(pair);
+      if (pair) setDualPairPreview(true);
+      else window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
+      window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
+      window.ProceduralHandFrameDriver?.syncNow?.();
+    }
+
     function stopEditingNeutral(message = '') {
-      if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(false);
+      const wasEditing = editingNeutral;
       editingNeutral = false;
+      if (wasEditing) applyEditPreviewMode();
       updateEditButton();
       if (message) setStatus(message);
     }
@@ -321,19 +339,23 @@
       syncFieldsFromPose();
       window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       updateEditButton();
-      if (editingNeutral) { setDualPairPreview(false); writeNeutralPose(currentPose()); }
+      if (editingNeutral) { writeNeutralPose(currentPose()); applyEditPreviewMode(); }
       setStatus(`${STANCE_LABELS[selectedKey]} selected.`);
     });
 
     $('idleEditNeutralBtn').addEventListener('click', () => {
-      if (dualPairPreviewActive()) setDualPairPreview(false); // Isolate the offhand copy while the existing Neutral gizmo authors its explicit transform.
+      if (dualPairPreviewActive()) setDualPairPreview(false); // Any earlier pair preview is rebuilt below for the mode actually being edited.
       editingNeutral = !editingNeutral;
-      window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
       updateEditButton();
       if (editingNeutral) {
-        if (writeNeutralPose(currentPose())) setStatus(`Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
-        else stopEditingNeutral();
+        if (writeNeutralPose(currentPose())) {
+          applyEditPreviewMode();
+          setStatus(selectedKey === 'dualWieldOffhand' && dualToolActive()
+            ? 'Neutral sliders + gizmo now move the offhand weapon itself; the main-hand copy stays at its saved stance.'
+            : `Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
+        } else stopEditingNeutral();
       } else {
+        applyEditPreviewMode();
         setStatus('Stopped routing Neutral edits into idle stances.');
       }
     });
@@ -419,7 +441,11 @@
         updateEditButton();
         if (editingNeutral) writeNeutralPose(currentPose());
         setDualPairPreview(dualPairPreview);
-        if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(true);
+        if (editingNeutral) applyEditPreviewMode();
+        else {
+          window.HobunjiAttackEditorToolContext?.setOffhandAuthoringBase?.(false);
+          window.HobunjiDualWieldWeaponVisuals?.setEditorOffhandAuthoring?.(false);
+        }
         setStatus(`History restored ${STANCE_LABELS[selectedKey]}.`);
         return true;
       },
