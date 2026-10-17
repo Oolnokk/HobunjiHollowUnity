@@ -50,6 +50,11 @@
     installShippingLifecycle();
   }
 
+  // Sale value of one unit, or undefined if the box won't take it; shares ShippingPanel's rule (crop table, then the item's own sellPrice).
+  function shipPrice(key) {
+    return window.ShippingPanel?.getShipPrice?.(key) ?? deps.BASE_PRICES[key];
+  }
+
   function currentCalendarDay() {
     const life = lifecycleCfg();
     return Math.max(Number(life.minCalendarDay), Math.floor(Number(deps?.calendar?.day) || Number(life.minCalendarDay)));
@@ -111,7 +116,7 @@
         if (qty < 1) continue;
         bin[key] -= qty;
         sold += qty;
-        earned += window.TownMine?.applySaleBonus?.(qty * (deps.BASE_PRICES[key] || 0)) ?? qty * (deps.BASE_PRICES[key] || 0); // Town Value sale bonus.
+        earned += window.TownMine?.applySaleBonus?.(qty * (shipPrice(key) || 0)) ?? qty * (shipPrice(key) || 0); // Town Value sale bonus.
         soldParts.push((deps.itemIconForKey(key) || key) + '×' + qty);
       }
       if (sold < 1) return { sold: 0, earned: 0 };
@@ -439,7 +444,7 @@
       getButtons() {
         const item = deps.getActiveInventoryItem();
         const btns = [];
-        if (item && deps.BASE_PRICES[item.key] !== undefined) {
+        if (item && shipPrice(item.key) !== undefined) {
           const count = deps.inventory[item.key] || 0;
           btns.push({
             icon: item.icon,
@@ -462,7 +467,7 @@
       onAction(action) {
         if (action === actions.deposit) {
           const item = deps.getActiveInventoryItem();
-          if (!item || deps.BASE_PRICES[item.key] === undefined) return { ok: false, message: labels.cannotDeposit };
+          if (!item || shipPrice(item.key) === undefined) return { ok: false, message: labels.cannotDeposit };
           const qty = deps.inventory[item.key] || 0;
           if (qty < 1) return { ok: false, message: messages.noItemPrefix + item.label + messages.noItemSuffix };
           deps.inventory[item.key]--;
@@ -481,7 +486,7 @@
       getContents() { return bin; },
       getTotalItems() { return totalItems(); },
       depositItem(key, qty) {
-        if (deps.BASE_PRICES[key] === undefined) return 0;
+        if (shipPrice(key) === undefined) return 0;
         const moved = Math.max(0, Math.min(qty, deps.inventory[key] || 0));
         if (moved < 1) return 0;
         deps.inventory[key] -= moved;
