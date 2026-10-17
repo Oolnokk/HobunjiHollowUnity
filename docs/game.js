@@ -1835,8 +1835,8 @@
       // below, but future weapons no longer have to masquerade as tool definitions.
       const MELEE_WEAPON_SHAPE_DEFS = {
         warhammer: { label: 'Warhammer', icon: '🔨', baseSprite: 'assets/toolsprites/warhammer.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
-        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
-        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
+        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
         bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
         daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
         plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
@@ -9385,6 +9385,7 @@
         player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+        window.CombatVocalizations?.playDodge?.(player);
         window.CombatTutorial?.observe?.('dodge');
         return true;
       }
@@ -9563,6 +9564,7 @@
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
       const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
+      const npcSpawnDiagnostics = new Map(); // Retains scheduled-avatar build outcomes for mobile doorstep diagnostics.
       const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
       window._npcWalkers = window.NpcPathfinding?.trackWalkerArray?.(npcWalkers) || npcWalkers; // Pushed walkers get collision-aware movement (js/npc-pathfinding.js).
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
@@ -11650,6 +11652,7 @@
           window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Freeze authored default-clothing traits before save restoration/manual outfit overrides can redefine this NPC's gift-acceptance style.
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
+          npcSpawnDiagnostics.set(rec.id, { stage: target ? 'Queued for avatar build' : 'No schedule target', error: null });
           if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
           spawnable.push({ rec, target });
         }
@@ -11668,8 +11671,16 @@
           while (nextSpawn < spawnable.length) {
             const { rec, target } = spawnable[nextSpawn++];
             if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-            try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
-            catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
+            npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
+            try {
+              const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
+              if (w) npcWalkers.push(w);
+              npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created' : 'Avatar build returned no walker', error: null });
+            }
+            catch (e) {
+              npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
+              console.warn('NPC walker failed for schedule', rec?.id, e);
+            }
             finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
           }
         };
@@ -11703,10 +11714,21 @@
           for (const rec of records) {
             if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
-            if (!target) { stillDeferred.push(rec); continue; }
+            if (!target) {
+              npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
+              stillDeferred.push(rec); continue;
+            }
             if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-            try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
-            catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+            npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
+            try {
+              const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
+              if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); }
+              npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created on retry' : 'Avatar retry returned no walker', error: null });
+            }
+            catch (e) {
+              npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
+              console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
+            }
             finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
@@ -14060,29 +14082,10 @@
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
 
+      // buildingSpawnFromExit's body now lives in js/building-entry-spawn.js
+      // (pure function of the scene's transitions).
       function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
-        const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
-        if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
-        // Multiple unrelated exit_building tiles can exist on one map (e.g. a real
-        // exterior door plus an unwired stairwell stub). Cluster tiles that share the
-        // same exitId/door, then use the largest cluster so a stray single-tile stub
-        // can't drag the computed spawn point away from the actual entrance.
-        const clusters = new Map();
-        for (const t of exitTiles) {
-          const key = t.exitId != null ? t.exitId : `${t.col},${t.row}`;
-          if (!clusters.has(key)) clusters.set(key, []);
-          clusters.get(key).push(t);
-        }
-        let mainCluster = exitTiles;
-        if (clusters.size > 1) {
-          mainCluster = [...clusters.values()].reduce((a, b) => (b.length > a.length ? b : a));
-        }
-        const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
-        const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
-        return {
-          col: window.FormatUtils.clamp(Math.round(avgCol), 0, fallbackCols - 1),
-          row: window.FormatUtils.clamp(northRow, 0, fallbackRows - 1)
-        };
+        return window.BuildingEntrySpawn.fromExit(bi, fallbackCols, fallbackRows);
       }
 
       function mapDebugName(area) {
@@ -15408,7 +15411,10 @@
             const fromArea = sceneTransFromArea;
             try {
               _cb();
-              if (fromArea && fromArea !== currentArea) catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+              if (fromArea && fromArea !== currentArea) {
+                window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); // Delivers completed exits even when timer polling misses the interior.
+                catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+              }
             } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
@@ -16983,7 +16989,7 @@
         }; // Mobile Pixel Probe reads this copy without reaching into game.js's private closure.
       }
       function setCharacterViewMode(enabled, reason = 'utility-wheel') {
-        const nextEnabled = window.MusicMinigame?.state?.active ? true : Boolean(enabled); // Performances retain Character View until the session ends.
+        const nextEnabled = Boolean(enabled);
         if (nextEnabled === characterViewMode.enabled) return;
         if (nextEnabled) {
           characterViewMode.lockedFacingAngle = facingAngle;
@@ -17280,7 +17286,7 @@
           ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
           : Math.hypot(input.x, input.y); // Used here to disable character view from keyboard, touch, or controller movement through one input threshold.
         const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || !!player._knockbackLedgeFall || Math.hypot(player.vx, player.vy) > 1;
-        if (characterViewMode.enabled && !window.MusicMinigame?.state?.active && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
+        if (characterViewMode.enabled && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
           setCharacterViewMode(false, 'movement');
         }
         // Every mode below that takes over movement/input outright (dialogue,
@@ -21767,9 +21773,12 @@
         const holdEndFrac = combatSwingHoldS > 0 // Match updateToolMesh's explicit or proportional hold endpoint.
           ? Math.min(0.99, combatSwingStrikeFrac + combatSwingHoldS / toolSwingDur)
           : Math.min(0.99, combatSwingStrikeFrac + (1 - combatSwingStrikeFrac) * 0.3);
+        const gateFrac = Math.max(combatSwingStrikeFrac, (combatSwingStrikeFrac + holdEndFrac) / 2); // The next attack may start halfway through the Strike hold.
         return {
           remainingS: toolSwingT,
-          activeRemainingS: Math.max(0, toolSwingDur * holdEndFrac - elapsedS),
+          activeRemainingS: Math.max(0, toolSwingDur * gateFrac - elapsedS),
+          strikeRemainingS: Math.max(0, toolSwingDur * combatSwingStrikeFrac - elapsedS), // Attack inputs only queue once the Strike pose is reached.
+          holdEndRemainingS: Math.max(0, toolSwingDur * Math.max(combatSwingStrikeFrac, holdEndFrac) - elapsedS), // The release voice is mapped through the whole hold.
           windupRemainingS: Math.max(0, toolSwingDur * combatSwingWindupFrac - elapsedS),
           held: combatSwingHeld,
         };
@@ -22913,10 +22922,11 @@
           const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
           const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
           const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
-          // Fishing holds this throw's windup indefinitely; its authored -152°
-          // body twist would leave the player facing away from the cast tile.
-          const bodyYawRad = activeTool === 'harpoon' && fishingThrowSpinVisual
-            ? 0 : THREE.MathUtils.degToRad(chan('bodyYaw', true)); // Combat throws retain their authored body turn.
+          // Fishing holds this throw's windup indefinitely. The authored -152°
+          // body twist stays (the spear's frame is authored against it); only
+          // the legs counter-rotate below so the feet face the cast tile.
+          const fishingThrowHold = activeTool === 'harpoon' && !!fishingThrowSpinVisual;
+          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
 
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
@@ -22929,6 +22939,7 @@
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
+          if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
@@ -26778,16 +26789,6 @@
         // held selector owned the sticks -- telling every consumer a menu was
         // open when none was. Menus still answer through isActive(); held
         // selectors and the music minigame now declare ownership directly.
-        if (window.MusicMinigame?.state?.active && !window.ControllerUI?.isActive?.()) {
-          if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to kurraya');
-          gamepadState.uiOwned = true;
-          const musicPad = window.ControllerInput?.frame?.()?.pad || null; // Reuses the shared snapshot while music owns note buttons and the left stick.
-          const musicLook = window.ControllerInput.normalizeStick(musicPad?.axes[2], musicPad?.axes[3], INPUT_DEFAULTS.deadzone, CONTROLLER_LOOK_RESPONSE); // Camera keeps its existing response, invert-Y, and sensitivity.
-          controllerCameraX = musicLook.x; controllerCameraY = musicLook.y;
-          input.x = 0; input.y = 0;
-          publishControllerStatus(musicPad, 'kurraya + camera', null, musicLook);
-          return;
-        }
         if (window.ControllerUI?.isActive?.() || window.ControllerInput?.gameplaySuspended?.()) {
           if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
           gamepadState.uiOwned = true;
@@ -27599,7 +27600,7 @@
           // this wrap into a full 360° orbit instead of the usual ±45° peek
           // clamp. Falls through to the raycast-based facing/aim below
           // otherwise, same as it always has.
-          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE || window.MusicMinigame?.state?.active) && cameraDragAllowed()) {
+          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Applies slowdown without ignoring any movementX/Y deltas.
             const degPerPx = (Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15) * turnMultiplier;
@@ -28344,7 +28345,6 @@
 
       let _musicPrevCameraMode = null;
       let _musicPrevCameraTarget = null;
-      let _musicPrevCharacterView = false; // Restores the pre-performance Character View setting when playing ends.
       // Resolves a random real-recording footstep URL for whatever surface
       // this NPC is currently standing on — same surface resolution
       // _tickFootsteps uses for their actual footfalls — turned into an
@@ -28371,22 +28371,27 @@
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
-        getPlayerFootstepSampleUrls: () => {
-          const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()); // Uses the same surface resolution as ordinary player footsteps.
-          const surface = window.AudioSystem?.footstepSurfaceKey(currentArea, tile?.type ?? null); // Selects the authored recordings for the player's current ground.
-          return (window.AudioSystem?.gameAudioConfig()?.footsteps?.surfaces?.[surface]?.urls || []).map(url => new URL(url, document.baseURI).href);
-        },
         showToast,
-        // Keep the current framing and position, with Character View owning body/neck locks and camera orbit.
-        beginMusicCamera: () => {
+        // Frames the performance in third-person (see the "music" camera
+        // mode in scratchbones-config.js) instead of leaving the default
+        // camera in place — matches how fishing/dialogue each get their
+        // own framing. In backup mode the target sits at the midpoint
+        // between the player and whichever NPC they joined, so both stay
+        // in shot; in lead/solo mode it just follows the player as usual.
+        beginMusicCamera: (npcId) => {
           _musicPrevCameraMode = activeCameraMode;
           _musicPrevCameraTarget = activeCameraTarget;
-          _musicPrevCharacterView = characterViewMode.enabled;
-          activeCameraTarget = null;
-          setCharacterViewMode(true, 'kurraya');
+          activeCameraMode = 'music';
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.root) {
+            const midX = (player.x / TILE + walker.root.position.x) / 2;
+            const midZ = (player.y / TILE + walker.root.position.z) / 2;
+            activeCameraTarget = { position: new THREE.Vector3(midX, 0, midZ) };
+          } else {
+            activeCameraTarget = null;
+          }
         },
         endMusicCamera: () => {
-          setCharacterViewMode(_musicPrevCharacterView, 'kurraya-ended');
           activeCameraMode = _musicPrevCameraMode ?? 'default';
           activeCameraTarget = _musicPrevCameraTarget ?? null;
           _musicPrevCameraMode = null;
@@ -28831,6 +28836,16 @@
         openNpcDialogue: walker => openNpcDialogue(walker),
       });
       window.DoorstepVisits?.init?.({
+        getNpcSpawnDiagnostics: npcId => {
+          const rec = scheduledNpcRecords.get(npcId); // Reads the same database record used by ordinary NPC spawning.
+          const target = rec ? resolveNpcScheduleTarget(rec) : null; // Checks today's authoritative schedule without spawning anything.
+          return {
+            recordFound: !!rec,
+            spawnStage: npcSpawnDiagnostics.get(npcId)?.stage || 'No scheduled spawn recorded',
+            spawnError: npcSpawnDiagnostics.get(npcId)?.error || null,
+            scheduleTarget: target ? { area: target.area, c: target.c, r: target.r } : null,
+          };
+        },
         save: saveMemberWorldData,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
       });

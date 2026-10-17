@@ -15,6 +15,7 @@
     rarityMultiplier: Object.freeze({ common: 0.55, uncommon: 1.8, rare: 3.25 }),
     qualityBonusChance: 0.30,
   });
+  const GULLET_BASE_ESCAPE_SECONDS = 10; // Keeps the dive ceiling tied to the escape time before the new drift slowdown.
   const GULLET_CONFIG = Object.freeze({ // Used by the secondary-ring Gullet state machine.
     spawnChance: 0.18,
     ringRadius: 128,
@@ -26,7 +27,8 @@
     dashCooldownSec: [3, 7],
     dashDurationSec: [0.28, 0.42],
     hitRadius: 20,
-    escapeSeconds: 10,
+    baseEscapeSeconds: GULLET_BASE_ESCAPE_SECONDS,
+    escapeSeconds: GULLET_BASE_ESCAPE_SECONDS / 0.5, // Half base surface drift speed doubles the retrieval window.
     silhouetteBaseWidth: 64,
     silhouetteBaseHeight: 40,
     silhouetteWidthMultiplier: 2,
@@ -42,6 +44,7 @@
   let fishingDeps = null; // Used by frenzy scanning and Fishing dependency decorators after game.js injects the dependency bag.
   let treasureDeps = null; // Used to roll/grant the live buried-treasure chest pool for Gullet rewards.
   let currentCastFrenzy = false; // Used by the rarity/quality decorators for the cast currently in progress.
+  let lastGulletDiscovery = 'No retrieval this session'; // Used by the mobile debug panel to report the most recent special weapon roll.
   let forceNextGullet = false; // Used by the mobile-safe debug panel to guarantee the next Gullet encounter.
   let previousFishingPhase = null; // Used to detect the main fish transitioning from active play into the caught view.
   let previousFishingState = null; // Used to detect minigame teardown and clean Gullet presentation reliably.
@@ -315,30 +318,36 @@
     return 1 - Math.min(0.6, (window.PerkSystem?.rank('fishing', 'decreaseGulletDriftSpeed') || 0) * 0.12); // Decrease Gullet Fish Drift Speed perk.
   }
 
-  function setGulletLocomotionPhase(phase) {
+  function setGulletLocomotionPhase(phase, state = gulletState, speedMultiplier = gulletDriftMultiplier()) {
     const sprinting = phase === 'sprint'; // Used to switch between the exhausted recovery bout and the erratic sprint bout.
-    gulletState.locomotionPhase = sprinting ? 'sprint' : 'recovery';
-    gulletState.locomotionPhaseRemaining = randomRange(sprinting ? GULLET_CONFIG.sprintDurationSec : GULLET_CONFIG.recoveryDurationSec);
-    const speed = randomRange(sprinting ? GULLET_CONFIG.sprintSpeedDegPerSec : GULLET_CONFIG.recoverySpeedDegPerSec) * gulletDriftMultiplier(); // Used as this bout's ring travel speed.
-    gulletState.orbitSpeedDegPerSec = speed * gulletState.orbitDirection;
-    gulletState.sprintFlipRemaining = sprinting ? randomRange(GULLET_CONFIG.sprintFlipIntervalSec) : Infinity;
+    state.locomotionPhase = sprinting ? 'sprint' : 'recovery';
+    state.locomotionPhaseRemaining = randomRange(sprinting ? GULLET_CONFIG.sprintDurationSec : GULLET_CONFIG.recoveryDurationSec);
+    const speed = randomRange(sprinting ? GULLET_CONFIG.sprintSpeedDegPerSec : GULLET_CONFIG.recoverySpeedDegPerSec) * speedMultiplier; // Used as this bout's ring travel speed.
+    state.orbitSpeedDegPerSec = speed * state.orbitDirection;
+    state.sprintFlipRemaining = sprinting ? randomRange(GULLET_CONFIG.sprintFlipIntervalSec) : Infinity;
   }
 
-  function updateGulletLocomotion(dt) {
-    gulletState.locomotionPhaseRemaining -= dt;
-    if (gulletState.locomotionPhaseRemaining <= 0) {
-      setGulletLocomotionPhase(gulletState.locomotionPhase === 'sprint' ? 'recovery' : 'sprint');
+  function updateGulletLocomotion(dt, state = gulletState, speedMultiplier = gulletDriftMultiplier()) {
+    state.locomotionPhaseRemaining -= dt;
+    if (state.locomotionPhaseRemaining <= 0) {
+      setGulletLocomotionPhase(state.locomotionPhase === 'sprint' ? 'recovery' : 'sprint', state, speedMultiplier);
     }
-    if (gulletState.locomotionPhase === 'sprint') {
-      gulletState.sprintFlipRemaining -= dt;
-      if (gulletState.sprintFlipRemaining <= 0) {
-        gulletState.orbitDirection *= -1;
-        gulletState.orbitSpeedDegPerSec = randomRange(GULLET_CONFIG.sprintSpeedDegPerSec) * gulletDriftMultiplier() * gulletState.orbitDirection; // Used to make each sprint reversal slightly different instead of metronomic.
-        gulletState.sprintFlipRemaining = randomRange(GULLET_CONFIG.sprintFlipIntervalSec);
+    if (state.locomotionPhase === 'sprint') {
+      state.sprintFlipRemaining -= dt;
+      if (state.sprintFlipRemaining <= 0) {
+        state.orbitDirection *= -1;
+        state.orbitSpeedDegPerSec = randomRange(GULLET_CONFIG.sprintSpeedDegPerSec) * speedMultiplier * state.orbitDirection; // Used to make each sprint reversal slightly different instead of metronomic.
+        state.sprintFlipRemaining = randomRange(GULLET_CONFIG.sprintFlipIntervalSec);
       }
     }
-    gulletState.angleDeg = (gulletState.angleDeg + gulletState.orbitSpeedDegPerSec * dt + 360) % 360;
+    state.angleDeg = (state.angleDeg + state.orbitSpeedDegPerSec * dt + 360) % 360;
   }
+
+  window.FishingMovement = Object.freeze({
+    config: GULLET_CONFIG,
+    startPatrol: setGulletLocomotionPhase,
+    updatePatrol: updateGulletLocomotion,
+  }); // Ordinary rare fish reuse the Gullet's authoritative sprint/recovery and reversal behavior.
 
   function gulletColorSpriteDataUrl() {
     const canvas = document.createElement('canvas'); // Used to render the surfaced non-silhouette Gullet Fish sprite without requiring a new binary asset.
@@ -481,7 +490,7 @@
   }
 
   function surfaceGullet() {
-    const screen = screenPointFromFishingSvg(gulletState.x, gulletState.y); // Used as the start position for the 10-second surface escape.
+    const screen = screenPointFromFishingSvg(gulletState.x, gulletState.y); // Used as the start position for the base-speed-adjusted surface escape.
     if (!screen) { resetGulletEncounter(); return; }
     removeGulletRingDom();
     const canvasWrap = document.getElementById('canvasWrap'); // Used as the parent that keeps the surfaced sprite visible even when the fishing ring hides on a main catch.
@@ -491,7 +500,7 @@
     sprite.style.cssText = 'position:absolute;width:92px;height:auto;z-index:44;pointer-events:none;transform:translate(-50%,-50%);filter:drop-shadow(0 2px 2px rgba(0,0,0,.55));';
     canvasWrap?.appendChild(sprite);
     const side = Math.floor(Math.random() * 4); // Used to choose the edge the surfaced fish will escape toward.
-    const margin = 38; // Used to keep the fish visible until the end of the exact 10-second lerp.
+    const margin = 38; // Used to keep the fish visible until the end of the full surface drift.
     const end = side === 0 ? { x: margin, y: screen.y } : side === 1 ? { x: Math.max(margin, screen.width - margin), y: screen.y } : side === 2 ? { x: screen.x, y: margin } : { x: screen.x, y: Math.max(margin, screen.height - margin) }; // Used as the surface-escape destination.
     gulletState.mode = 'surface';
     gulletState.surfaceSprite = sprite;
@@ -504,7 +513,7 @@
 
   function updateSurfaceSpritePosition() {
     if (!gulletState.surfaceSprite || !gulletState.surfaceStart || !gulletState.surfaceEnd) return;
-    const t = clamp(gulletState.surfaceElapsed / GULLET_CONFIG.escapeSeconds, 0, 1); // Used as the exact 10-second surface escape lerp fraction.
+    const t = clamp(gulletState.surfaceElapsed / GULLET_CONFIG.escapeSeconds, 0, 1); // Used as the exact base-speed-adjusted surface escape lerp fraction.
     const x = gulletState.surfaceStart.x + (gulletState.surfaceEnd.x - gulletState.surfaceStart.x) * t; // Used as the current surfaced X position.
     const y = gulletState.surfaceStart.y + (gulletState.surfaceEnd.y - gulletState.surfaceStart.y) * t; // Used as the current surfaced Y position.
     gulletState.surfaceSprite.style.left = `${x}px`;
@@ -640,6 +649,12 @@
     }
     const parts = grantTreasureBundle(bundle) || []; // Used as the exact list of granted treasure for UI feedback.
     gulletState.treasureGranted = true;
+    // Roll at the retrieval owner: FishCatalog replaces early Fishing accessors,
+    // and display text must not determine whether a weapon is awarded.
+    const discovery = window.WeaponDiscoveryRewards; // Used to grant through the shared persistent weapon/bronzeworks path.
+    const reward = discovery?.rollSource?.('gulletFish'); // Used to append a successfully granted weapon to the catch summary.
+    if (reward) parts.push(reward.label || reward.shapeKey);
+    lastGulletDiscovery = reward ? `Received ${reward.label || reward.shapeKey}` : discovery ? 'No new weapon (already owned or roll missed)' : 'Weapon reward system unavailable';
     if (window.Fishing?.state) window.Fishing.state.gulletRewards = parts.length ? parts.slice() : ['Nothing this time'];
     window.Fishing?.refreshCatchRewards?.(); // A late surface retrieval also updates an already-open catch view.
     fishingDeps?.showToast?.(`Gullet Fish treasure: ${parts.length ? parts.join(', ') : 'nothing this time'}`, true);
@@ -841,7 +856,11 @@
     const status = debugPanel.querySelector('[data-status]'); // Used as the single compact status text target.
     if (!status) return;
     const gulletMotion = gulletState.mode === 'orbit' ? `/${gulletState.locomotionPhase} ${Math.max(0, gulletState.locomotionPhaseRemaining).toFixed(1)}s` : ''; // Used to expose the current sprint/recovery bout without requiring devtools.
-    status.textContent = `Fishing events | area=${fishingDeps?.getCurrentArea?.() || '—'} | frenzy=${event ? `${event.tiles.map(t => `${t.col},${t.row}`).join(';')} ${event.remainingHours.toFixed(2)}h` : `none (${frenzyState.spawnDelayHours.toFixed(2)}h)`} | castFrenzy=${currentCastFrenzy ? 'yes' : 'no'} | gullet=${gulletState.mode}${gulletMotion}${gulletState.mode === 'surface' ? ` ${Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed).toFixed(1)}s` : ''}`;
+    const discoveryStatus = ` | weapon=${lastGulletDiscovery} | latest change=Rarity patrols; frequent short dives (8s ceiling); half-speed surface drift; water-locked head`; // Used to expose the reward hookup and latest change without devtools.
+    const fish = window.Fishing?.state; // Current rarity and dive timing are visible in the existing mobile debug panel.
+    const motionStatus = fish?.fish ? ` | fish=${fish.fishDef?.rarity || 'common'}/${fish.fish.patrol?.locomotionPhase || fish.fishClass} | dive=${fish.dive?.active ? fish.dive.timer.toFixed(2) + '/' + fish.dive.lastDuration.toFixed(2) + 's' : 'surface'}` : '';
+    const text = `Fishing events | area=${fishingDeps?.getCurrentArea?.() || '—'} | frenzy=${event ? `${event.tiles.map(t => `${t.col},${t.row}`).join(';')} ${event.remainingHours.toFixed(2)}h` : `none (${frenzyState.spawnDelayHours.toFixed(2)}h)`} | castFrenzy=${currentCastFrenzy ? 'yes' : 'no'} | gullet=${gulletState.mode}${gulletMotion}${gulletState.mode === 'surface' ? ` ${Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed).toFixed(1)}s` : ''}${discoveryStatus}${motionStatus}`;
+    if (status.textContent !== text) status.textContent = text;
   }
 
   function featureLoop(nowMs) {
@@ -870,6 +889,10 @@
       frenzy: frenzyState.event ? { area: frenzyState.event.area, remainingHours: frenzyState.event.remainingHours, tiles: frenzyState.event.tiles.map(tile => ({ col: tile.col, row: tile.row })) } : null,
       currentCastFrenzy,
       gulletMode: gulletState.mode,
+      lastGulletDiscovery,
+      baseEscapeSeconds: GULLET_CONFIG.baseEscapeSeconds,
+      escapeSeconds: GULLET_CONFIG.escapeSeconds,
+      maxDiveSeconds: GULLET_CONFIG.baseEscapeSeconds * 0.8,
       gulletLocomotionPhase: gulletState.mode === 'orbit' ? gulletState.locomotionPhase : null,
       gulletLocomotionRemaining: gulletState.mode === 'orbit' ? gulletState.locomotionPhaseRemaining : null,
       gulletEscapeRemaining: gulletState.mode === 'surface' ? Math.max(0, GULLET_CONFIG.escapeSeconds - gulletState.surfaceElapsed) : null,

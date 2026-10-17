@@ -61,6 +61,15 @@ register('chargedBreaker', {
   },
   onHoldCancel() {},
 });
+register('acceleratingFlurry', {
+  category: 'offensiveHold', slotFamily: 'hold',
+  onHoldStart() {},
+  onHoldUpdate() { // Each Flurry strike is its own staged action fired while the hold continues.
+    W.Combat.beginStagedAction({ windupS: 0.05, strikeS: 0.085 });
+  },
+  onHoldEnd() {},
+  onHoldCancel() {},
+});
 
 const context = {
   console,
@@ -298,7 +307,7 @@ assert.equal(played.at(-1).stopped, true, 'despawn fades the current NPC voice')
 // Active visual phases own both voice timing and the queue; the return tail is cosmetic.
 emit(docListeners, 'hobunjiPlayerReady');
 let visualRemainingS = 1.3; // Includes 0.2s windup, 0.1s strike, 0.7s hold, and 0.3s return.
-W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2});
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:visualRemainingS,activeRemainingS:Math.max(0,visualRemainingS-0.3),windupRemainingS:0.2,strikeRemainingS:Math.max(0,visualRemainingS-1.0),holdEndRemainingS:Math.max(0,visualRemainingS-0.3)});
 W.AudioSystem.gameAudioConfig=()=>({enabled:false});
 abilities.get('swingCombo').onTap();
 assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-1)<1e-9,'muted attacks wait through Hold only');
@@ -307,7 +316,7 @@ const beforePhase = W.CombatVocalizations.debugSnapshot().lastStrike; // Windup 
 stagedSpec.onUpdate({t:0.19});
 assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike,beforePhase);
 stagedSpec.onUpdate({t:0.2});
-assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'second grunt spans Windup to Strike through Hold');
+assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'second grunt spans Windup through Strike and the whole hold');
 assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.category,'combo');
 stagedSpec.onStrike({t:0.3});
 assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastStrike.durationS-0.8)<1e-9,'impact does not restart the release voice');
@@ -322,6 +331,28 @@ stagedAction.phase='done';
 assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'completed actions cannot reinstate the return delay');
 emit(docListeners, 'hobunjiPlayerReady');
 assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'return tail does not gate attacks after old actions are cleared');
+// Below 25 fps gameLoop clamps dt, so the staged clock must follow the wall-clock utterance instead.
+visualRemainingS = 1.3;
+abilities.get('swingCombo').onTap();
+const slowAction = stagedAction;
+now += 200;
+slowAction.t = 0.04; // One clamped frame of game time.
+stagedSpec.onUpdate(slowAction);
+assert(Math.abs(slowAction.t-0.2)<1e-9,'player attack clock advances by real elapsed time');
+assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-0.8)<1e-9,'queue ends with the utterance, not the slower game clock');
+now += 5000;
+stagedSpec.onUpdate(slowAction);
+assert(Math.abs(slowAction.t-0.45)<1e-9,'a long pause catches up at most 0.25s per frame');
+stagedSpec.onComplete(slowAction);
+slowAction.phase='done';
+// Flurry: one utterance per strike, mapped over its whole Windup -> Strike -> hold.
+W.Combat.deps.getWeaponAttackTimeline=()=>({remainingS:0.8,activeRemainingS:0.4,windupRemainingS:0.05,strikeRemainingS:0.135,holdEndRemainingS:0.6});
+abilities.get('acceleratingFlurry').onHoldUpdate();
+const flurryVoice = W.CombatVocalizations.debugSnapshot().lastStrike;
+assert.equal(flurryVoice.abilityId,'acceleratingFlurry','the strike utterance starts with the strike, not after a separate windup grunt');
+assert(Math.abs(flurryVoice.durationS-0.6)<1e-9,'one utterance spans the strike\'s windup, strike and hold');
+stagedSpec.onComplete(stagedAction);
+stagedAction.phase='done';
 console.log('shared animation timeline voice and queue timing: ok');
 
 const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including explicit and automatic hold endpoints.
@@ -329,17 +360,157 @@ const timelineContext = {activeTool:'weapon',combatSwingAnim:'thrust',toolSwingT
 vm.createContext(timelineContext);
 vm.runInContext(gameSource.slice(gameSource.indexOf('      function getWeaponAttackTimeline()'),gameSource.indexOf('      // Ranged actions supply separate load/fire pose sets')),timelineContext);
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.3);
-assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1)<1e-9);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.65)<1e-9,'input gate ends halfway through the 0.7s hold');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().strikeRemainingS-0.3)<1e-9);
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().holdEndRemainingS-1)<1e-9,'release voice maps through the end of the 0.7s hold');
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS-0.2)<1e-9);
 timelineContext.toolSwingT=1.1;
 assert(Math.abs(timelineContext.getWeaponAttackTimeline().windupRemainingS)<1e-9,'Windup endpoint begins the second sound');
 assert.equal(timelineContext.getWeaponAttackTimeline().remainingS,1.1,'second phase includes strike, hold, and return');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().strikeRemainingS-0.1)<1e-9,'inputs still ignored before the Strike pose');
 timelineContext.toolSwingT=0.3;
-assert.equal(timelineContext.getWeaponAttackTimeline().activeRemainingS,0,'Hold endpoint releases input while the return animation remains active');
+assert.equal(timelineContext.getWeaponAttackTimeline().activeRemainingS,0,'mid-hold releases input while the hold and return animation continue');
 timelineContext.combatSwingHoldS=0;
 timelineContext.toolSwingT=1.3;
-assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.6)<1e-9,'automatic hold ends after 30% of the post-strike tail');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-0.45)<1e-9,'automatic holds release input at their midpoint too');
 timelineContext.combatSwingStrikeFrac=1;
-assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.287)<1e-9,'hold endpoint uses the renderer clamp');
+assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.3)<1e-9,'the gate never ends before the Strike pose');
 timelineContext.toolSwingT=0;
 assert.equal(timelineContext.getWeaponAttackTimeline(),null,'reaching Neutral releases the animation gate');
+
+// Every authored species/gender applies the same profile to all one-shot combat vocals.
+W.AudioSystem.gameAudioConfig = () => ({ enabled: true, sfxVolume: 1 });
+for (const entry of played) entry.handle?.finish();
+for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfig().utteranceModulation.species)) {
+  for (const [gender, profile] of Object.entries(genders)) {
+    const actor = { // Fresh actor isolates cadence/voice ownership for each authored profile.
+      id: `voice-${speciesId}-${gender}`, health: 80, maxHealth: 100, stamina: 50, maxStamina: 100,
+      appearance: { speciesId, gender },
+    };
+    for (const category of ['combo', 'quickAttack', 'offensiveHold']) {
+      W.CombatVocalizations.playStrikeGrunt(actor, category, 'profile-audit');
+      assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/${category} pitch`);
+      assert.equal(played.at(-1).tempo, profile.tempo);
+      assert.equal(played.at(-1).volume, Math.min(1, 0.86 * profile.gain));
+      played.at(-1).handle.finish();
+    }
+    emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: true });
+    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/pain pitch`);
+    assert.equal(played.at(-1).volume, Math.min(1, 0.9 * profile.gain));
+    played.at(-1).handle.finish();
+    scheduledBreath({ timestamp: 100000 });
+    assert(played.at(-1).url.includes('heavybreath_'));
+    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 0.2156)) < 1e-9, `${actor.id}/breath pitch`);
+    assert.equal(played.at(-1).tempo, profile.tempo);
+    assert.equal(played.at(-1).volume, Math.min(1, 0.72 * profile.gain));
+    const breathEntry = played.at(-1); // Dodge must preempt this actor's breathing with the shared click-safe handoff.
+    const dodge = W.CombatVocalizations.playDodge(actor); // Captures the actual independent tempo/pitch request.
+    assert.equal(breathEntry.stopped, true);
+    assert(played.at(-1).url.endsWith('sfx_pain_intensity1.m4a'));
+    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/dodge pitch`);
+    assert.equal(played.at(-1).tempo, profile.tempo / 0.75);
+    assert.equal(played.at(-1).volume, Math.min(1, 0.9 * profile.gain));
+    assert.equal(dodge.durationScale, 0.75);
+    assert.equal(W.CharacterVoiceOwner.current(actor).kind, 'active');
+    assert.equal(W.CombatVocalizations.debugSnapshot().lastDodge.intensity, 1);
+    W.CombatVocalizations.forgetEntity(actor);
+  }
+}
+assert.equal(W.CombatVocalizations.playDodge(null), null, 'missing actors are ignored');
+assert.equal(W.CombatVocalizations.playDodge({}), null, 'animals do not acquire humanoid dodge vocals');
+W.AudioSystem.gameAudioConfig = () => ({ enabled: false });
+const beforeMutedDodge = played.length; // Muted audio must not queue a dodge utterance.
+assert.equal(W.CombatVocalizations.playDodge(player), null);
+assert.equal(played.length, beforeMutedDodge);
+W.AudioSystem.gameAudioConfig = () => ({ enabled: true, sfxVolume: 1 });
+
+// A missing independent renderer must still transpose the voice in emergency native playback.
+W.AnimalVoiceIndependentPlayback = null;
+W.Audio = function Audio(url) { // Captures HTMLAudioElement properties without requiring a browser.
+  this.src = url;
+  this.addEventListener = () => {};
+  this.play = () => Promise.resolve();
+};
+W.__hobunjiPlayerProfile = { appearance: { speciesId: 'mashtzarr', gender: 'male' } };
+const nativeDodge = W.CombatVocalizations.playDodge(player); // Native-only browsers couple speed/pitch, but keep authored voice identity.
+assert.equal(nativeDodge.snd.preservesPitch, false);
+assert(Math.abs(nativeDodge.snd.playbackRate - ((1 / 0.75) * Math.pow(2, (-6 + 1.47) / 12))) < 1e-9);
+assert.equal(nativeDodge.independentPitch, false);
+W.CharacterVoiceOwner.release(nativeDodge.claim);
+
+// Execute the real ordinary dodge entry point, including all its early exits.
+const dodgeActor = { x: 0, y: 0, angle: 0, inputStrength: 1, inputX: 1, inputY: 0, stamina: 100 }; // Isolated player for the authoritative game.js action.
+let ordinaryDodgeCalls = 0; // Counts audio calls from successful dodge starts only.
+const dodgeContext = vm.createContext({
+  window: { CombatVocalizations: { playDodge(actor) { assert.equal(actor, dodgeActor); ordinaryDodgeCalls++; } } },
+  player: dodgeActor, DODGE_STAMINA_COST: 18, DODGE_DUR_S: 0.22, DODGE_COOLDOWN_S: 0.5, DODGE_IFRAME_MS: 250,
+  beginSomersaultRecovery: () => true, performance: { now: () => 0 }, Math,
+}); // Exact closure dependencies needed by performDodge.
+vm.runInContext(gameSource.slice(gameSource.indexOf('      function performDodge()'), gameSource.indexOf('      // Single dedicated "context action" button')), dodgeContext);
+assert.equal(dodgeContext.performDodge(), true);
+assert.equal(ordinaryDodgeCalls, 1);
+assert.equal(dodgeContext.performDodge(), false);
+assert.equal(ordinaryDodgeCalls, 1, 'an already active dodge does not vocalize again');
+dodgeActor.dodging = false;
+assert.equal(dodgeContext.performDodge(), false);
+assert.equal(ordinaryDodgeCalls, 1, 'cooldown rejection does not vocalize');
+dodgeActor.dodgeCooldownT = 0;
+dodgeContext.window.Mounts = { rideState: 'mounted' };
+assert.equal(dodgeContext.performDodge(), false);
+assert.equal(ordinaryDodgeCalls, 1, 'mounted rejection does not vocalize');
+dodgeContext.window.Mounts = null;
+dodgeActor.prone = true;
+assert.equal(dodgeContext.performDodge(), true);
+assert.equal(ordinaryDodgeCalls, 1, 'prone recovery is not an evasive dodge');
+console.log('all species/gender combat voice profiles, dodge duration, native fallback, and ordinary dodge trigger: ok');
+
+(async () => {
+  await W.CombatVocalizations.configPromise;
+  const renders = []; // Captures the actual decoded charge/release renderer inputs.
+  const outputs = []; // Captures the gain applied to each timed vocal output.
+  const audioContext = { // Minimal Web Audio graph executes the real timed combat playback path.
+    currentTime: 0, state: 'running', destination: {},
+    decodeAudioData(_bytes, done) { done({ duration: 1.2 }); },
+    createBufferSource() { return { playbackRate: {}, connect() {}, start() {}, stop() {}, disconnect() {} }; },
+    createGain() {
+      const output = { gain: { value: 1 }, connect() {}, disconnect() {} }; // Captures the authored species gain used by chargeOutputGain.
+      outputs.push(output);
+      return output;
+    },
+  };
+  W.AudioContext = function AudioContext() { return audioContext; };
+  W.fetch = async url => String(url).includes('combat-vocalizations.json')
+    ? { ok: false }
+    : { ok: true, arrayBuffer: async () => new ArrayBuffer(1) };
+  W.AnimalVoiceIndependentPlayback = {
+    renderDecodedIndependentBuffer: async (buffer, _ctx, options) => {
+      renders.push(options);
+      return { buffer, playbackRate: Math.pow(2, options.pitchSemitones / 12), durationS: buffer.duration / options.tempo };
+    },
+    trimDecodedSilence: buffer => ({ buffer, trimStartS: 0, trimEndS: 0 }),
+  };
+  await W.CombatVocalizations.reloadConfig();
+  for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfig().utteranceModulation.species)) {
+    for (const [gender, profile] of Object.entries(genders)) {
+      const actor = { appearance: { speciesId, gender } }; // Fresh humanoid owns each timed charge and release separately.
+      for (const category of ['charge', 'combo', 'quickAttack', 'offensiveHold']) {
+        const token = W.CombatVocalizations.beginCharge({ // Unique release URL avoids pre-existing failed-decode entries from the offline harness.
+          entity: actor, category, targetDurationS: 0.6,
+          ...(category === 'charge' ? { catchUpOnRelease: true } : { assetUrl: `${speciesId}-${gender}-${category}.m4a` }),
+        });
+        for (let turn = 0; turn < 20 && !token.ready && !token.done; turn++) await Promise.resolve();
+        assert.equal(token.ready, true, `${speciesId}/${gender}/${category} renders`);
+        assert(Math.abs(token.pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${speciesId}/${gender}/${category} modulation`);
+        assert.equal(outputs.at(-1).gain.value, 0.86 * profile.gain);
+        assert.equal(renders.at(-1).pitchSemitones, token.pitchSemitones);
+        assert.equal(token.normalTempo, profile.tempo);
+        if (category === 'charge') {
+          assert.equal(token.catchUpTempo, profile.tempo * 2);
+          W.CombatVocalizations.releaseCharge(token);
+        }
+        token.source.onended();
+      }
+    }
+  }
+  console.log('all species/gender profiles reach timed charge/combo/quick/held renderers: ok');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -44,7 +44,10 @@
   let runtimeDeps = null; // BanditCombat adapters; active scene/grid/player-face helpers already supplied by game.js.
   let gameDeps = null; // DoorstepVisits.init({ save, getPlayerTile }) from game.js.
   let lastSpawnAttempt = null; // Companion diagnostics retain the last attempted visit and any concrete spawn blocker.
+  const spawnAttemptsByNpc = new Map(); // Preserves each visitor outcome when a later provider spawns successfully.
   let activeVisit = null; // One visitor at a time.
+  let exitCount = 0; // Counts actual farmhouse exit requests in companion diagnostics.
+  let lastExitAttempt = null; // Retains trigger and provider selection even when no visit reaches spawn.
   let lastArea = null;
   let lastSyncAt = 0;
   let frameHandle = 0;
@@ -106,14 +109,18 @@
     }
   }
 
-  function nextVisit() {
+  function* pendingVisits() {
     for (const provider of providers) {
       let visit = null;
       try { visit = provider.next(); }
-      catch (error) { console.warn(`[doorstep-visits] ${provider.id}.next failed`, error); }
-      if (visit?.key && visit?.npcId) return { ...visit, providerId: provider.id };
+      catch (error) {
+        lastExitAttempt?.providers.push({ id: provider.id, result: 'Provider error', error: String(error?.message || error) });
+        console.warn(`[doorstep-visits] ${provider.id}.next failed`, error);
+        continue;
+      }
+      lastExitAttempt?.providers.push({ id: provider.id, result: visit?.key && visit?.npcId ? visit.key : 'No pending visit' });
+      if (visit?.key && visit?.npcId) yield { ...visit, providerId: provider.id };
     }
-    return null;
   }
 
   // ── Persistent flags ──────────────────────────────────────────────────
@@ -272,8 +279,63 @@
     return cloned || null;
   }
 
+  function copyVisitorMetadata(value, copies, seen) {
+    if (!value || typeof value !== 'object') return value;
+    if (copies.has(value)) return copies.get(value);
+    if (value.isObject3D) return null; // External scene objects do not belong to this visitor.
+    if (seen.has(value)) return seen.get(value);
+    const prototype = Object.getPrototypeOf(value); // Textures, canvases and other resource instances stay shared, without calling toJSON.
+    if (!Array.isArray(value) && prototype !== null && prototype.constructor?.name !== 'Object') return value;
+    const result = Array.isArray(value) ? [] : {}; // Plain passive metadata gets its own cycle-safe container.
+    seen.set(value, result);
+    for (const key of Object.keys(value)) {
+      // The stationary clone keeps the hand meshes, but never the live driver's
+      // callbacks: they close over the original NPC's rig and disposal state.
+      if (key === 'proceduralHandRig') continue;
+      result[key] = copyVisitorMetadata(value[key], copies, seen);
+    }
+    return result;
+  }
+
+  function cloneVisitorHierarchy(sourceRoot) {
+    if (!sourceRoot?.clone) return null;
+    const copies = new Map(); // Remaps every mesh/bone/rig reference into the visitor's own hierarchy.
+    const skeletons = []; // Tracks only visitor-owned skeletons for disposal when the clone leaves.
+    function copyNode(sourceNode) {
+      // Object3D.copy JSON-serializes userData. A non-mutating view bypasses
+      // that step, including the hand rig's avatarRoot -> userData -> rig loop.
+      const cloneSource = Object.create(sourceNode, { userData: { value: {} }, children: { value: [] } }); // Leaves the live NPC untouched even if cloning throws.
+      const copied = sourceNode.clone.call(cloneSource, false); // Empty children also handles r128 SkinnedMesh.copy ignoring the recursive flag.
+      copies.set(sourceNode, copied);
+      for (const child of sourceNode.children || []) copied.add(copyNode(child));
+      return copied;
+    }
+    const root = copyNode(sourceRoot); // First build all nodes so forward rig references can be remapped.
+    for (const [sourceNode, copied] of [...copies]) {
+      if (!sourceNode.isSkinnedMesh || !sourceNode.skeleton) continue;
+      let skeleton = copies.get(sourceNode.skeleton); // Multiple meshes may share one skeleton inside this visitor.
+      if (!skeleton) {
+        skeleton = sourceNode.skeleton.clone();
+        skeleton.bones = sourceNode.skeleton.bones.map(bone => {
+          const copiedBone = copies.get(bone); // Visitors must not animate or reset the source NPC's bones.
+          if (!copiedBone) throw new Error('Visitor skeleton bone is outside the NPC hierarchy.');
+          return copiedBone;
+        });
+        copies.set(sourceNode.skeleton, skeleton);
+        skeletons.push(skeleton);
+      }
+      copied.skeleton = skeleton;
+    }
+    const seen = new WeakMap(); // Preserves shared passive metadata references without recursing through Three.js serialization.
+    for (const [sourceNode, copied] of copies) {
+      if (sourceNode.isObject3D || sourceNode === sourceRoot || sourceNode.children) copied.userData = copyVisitorMetadata(sourceNode.userData || {}, copies, seen);
+    }
+    root._doorstepSkeletons = skeletons;
+    return root;
+  }
+
   function cloneVisitorRoot(source, visit, spot, door) {
-    const root = source?.root?.clone?.(true);
+    const root = cloneVisitorHierarchy(source?.root);
     if (!root) return null;
     root.name = `doorstepVisitor_${visit.npcId}`;
     root.visible = true;
@@ -327,8 +389,28 @@
     };
   }
 
-  function rejectSpawn(visit, reason) {
+  function sourceDiagnostics(npcId) {
+    const walker = sourceWalker(npcId); // Checks the exact source lookup used to clone visitors.
+    return {
+      ...gameDeps?.getNpcSpawnDiagnostics?.(npcId),
+      npcId,
+      schedulingReady: !!scheduleDeps?.npcWalkers,
+      walkerCount: scheduleDeps?.npcWalkers?.length || 0,
+      sourceAvailable: !!walker,
+      sourceArea: walker?.area || null,
+      rootAvailable: !!walker?.root,
+      rootCloneAvailable: typeof walker?.root?.clone === 'function',
+      lastAttempt: spawnAttemptsByNpc.has(npcId) ? clone(spawnAttemptsByNpc.get(npcId)) : null,
+    };
+  }
+
+  function recordSpawnAttempt(visit, reason) {
     lastSpawnAttempt = { key: visit?.key || null, npcId: visit?.npcId || null, reason };
+    if (visit?.npcId) spawnAttemptsByNpc.set(visit.npcId, { ...lastSpawnAttempt });
+  }
+
+  function rejectSpawn(visit, reason) {
+    recordSpawnAttempt(visit, reason);
     return false;
   }
 
@@ -374,7 +456,7 @@
       dispose() { visual.root.parent?.remove?.(visual.root); },
     };
     scheduleDeps.npcWalkers.push(proxy);
-    lastSpawnAttempt = { key: visit.key, npcId: visit.npcId, reason: 'Spawned successfully.' };
+    recordSpawnAttempt(visit, 'Spawned successfully.');
     activeVisit = {
       visit, source, proxy, root: visual.root, door, spot,
       dialogueStarted: false,
@@ -394,6 +476,7 @@
       if (index >= 0) walkers.splice(index, 1);
     }
     current.root?.parent?.remove?.(current.root);
+    for (const skeleton of current.root?._doorstepSkeletons || []) skeleton.dispose?.(); // Releases clone-owned bone textures; shared materials/geometry stay live.
     current.root?.traverse?.(node => {
       // Cloned visitor meshes share the source NPC's materials/textures; do not
       // dispose shared GPU resources here. Removing the clone is sufficient.
@@ -426,10 +509,33 @@
   }
 
   // ── Area watch ────────────────────────────────────────────────────────
-  function onFarmhouseExit() {
+  function onFarmhouseExit(trigger = 'direct') {
+    exitCount++;
+    lastExitAttempt = { trigger, area: currentArea(), result: 'Checking providers', providers: [] };
     syncProviders();
-    const visit = nextVisit();
-    if (visit) spawnVisit(visit);
+    // Failed visitors stay pending while later providers get their turn.
+    for (const visit of pendingVisits()) { // Requests candidates lazily in priority order.
+      try {
+        if (spawnVisit(visit)) {
+          lastExitAttempt.result = `Spawned ${visit.npcId}`;
+          return true;
+        }
+      } catch (error) {
+        rejectSpawn(visit, `Spawn error: ${String(error?.message || error)}`);
+      }
+    }
+    lastExitAttempt.result = lastExitAttempt.providers.some(entry => entry.result !== 'No pending visit')
+      ? 'No visitor could spawn; see provider results and last spawn attempt'
+      : 'No pending visits';
+    return false;
+  }
+
+  function onAreaTransition(from, to, trigger = 'scene-transition') {
+    if (!to || from === to) return false;
+    lastArea = to; // Prevents the timer from repeating an exit already delivered by the game.
+    if (to !== config.farmhouseExteriorArea && activeVisit) removeActiveVisitor('area-change');
+    if (from === config.farmhouseInteriorArea && to === config.farmhouseExteriorArea) return onFarmhouseExit(trigger);
+    return false;
   }
 
   function currentArea() {
@@ -440,10 +546,7 @@
     const now = performance.now();
     const area = currentArea();
     if (area && area !== lastArea) {
-      const from = lastArea;
-      lastArea = area;
-      if (area !== config.farmhouseExteriorArea && activeVisit) removeActiveVisitor('area-change');
-      if (from === config.farmhouseInteriorArea && area === config.farmhouseExteriorArea) onFarmhouseExit();
+      onAreaTransition(lastArea, area, 'area-watch');
     }
     if (now - lastSyncAt > 1000) {
       lastSyncAt = now;
@@ -526,10 +629,12 @@
     whenApiAssigned,
     registerProvider,
     sourceWalker,
+    sourceDiagnostics,
     spawnVisit,
     removeActiveVisitor,
     dismissVisit,
     onFarmhouseExit,
+    onAreaTransition,
     isDone,
     markDone,
     serialize,
@@ -541,6 +646,9 @@
     activeVisitKey: () => activeVisit?.visit?.key || null,
     debugSnapshot() {
       return {
+        exitCount,
+        lastObservedArea: lastArea,
+        lastExitAttempt: clone(lastExitAttempt),
         lastSpawnAttempt: lastSpawnAttempt ? { ...lastSpawnAttempt } : null,
         mode: IS_DIALOGUE_EDITOR ? 'dialogue-editor' : 'game',
         currentArea: currentArea(),

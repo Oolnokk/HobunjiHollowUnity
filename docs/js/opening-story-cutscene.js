@@ -426,6 +426,23 @@
     } finally { status.running = false; }
   }
 
+  // Story appointments take precedence over Jubmir's recurring trading days.
+  window.NpcScheduling?.registerTargetOverride(FEY_VISIT_KEY, (rec, context) => {
+    if (rec?.id !== 'jubmir') return null;
+    const profile = window.__hobunjiPlayerProfile; // Scope the appointment to the story owner's world.
+    if (profile?.isWorldOwner !== true || !tourComplete(profile)) return null;
+    const state = feyVisitState(profile); // Keep him present during playback too, until successful completion.
+    if (state.completed || state.hoursUntilVisit !== 0) return null;
+    const entrance = rec.visitorPresence?.entrance; // Reuse the authored arrival location and existing async spawn guard.
+    if (!entrance || !Number.isFinite(entrance.c) || !Number.isFinite(entrance.r)) return null;
+    if (context.hasExistingWalker) {
+      const room = window.NpcScheduling.resolveNpcStationTarget('station_inn_jubmir_bed'); // Wait in his authored room when its station is loaded.
+      if (room) return room;
+    }
+    return { area: entrance.mapId || entrance.area, c: entrance.c, r: entrance.r,
+      label: entrance.label, activity: 'Jubmir story appointment', visitorArrival: !context.hasExistingWalker };
+  });
+
   window.DoorstepVisits?.registerProvider({
     id: FEY_VISIT_KEY, priority: 80,
     sync() {
@@ -496,6 +513,14 @@
     } finally { status.running = false; }
   }
 
+  // Dev/test URL flags: ?skipRescue=1 skips the Gar-wolf rescue, ?skipMeeting=1
+  // skips the Hunundi meeting. Skipping the meeting still marks the opening complete.
+  function urlFlag(name) {
+    try { return new URLSearchParams(window.location?.search || '').get(name) === '1'; } catch (_) { return false; }
+  }
+  const skipRescueRequested = () => urlFlag('skipRescue');
+  const skipMeetingRequested = () => urlFlag('skipMeeting');
+
   async function play(profile, options = {}) {
     if (status.running) return false;
     status.running = true;
@@ -529,7 +554,14 @@
       status.phase = 'rescue';
       status.lastScene = rescue.title;
       let rescueReady = false; // Once onReady completes, the scene has crossed the reveal boundary and must never be silently replayed after a later runtime error.
-      let rescueComplete = false; // The setup loop exits only after the live rescue runner finishes normally.
+      let rescueComplete = skipRescueRequested(); // ?skipRescue=1 (dev/test) goes straight to the Hunundi meeting; the opening still completes normally.
+      if (rescueComplete) {
+        log('skipping the rescue scene (?skipRescue=1)');
+        await runtime.preloadOpeningMeeting?.(meeting);
+        introduction?.setProgress(100);
+        resolveAssetsReady();
+        await loadingPages;
+      }
       while (!rescueComplete) {
         status.setupAttempts += 1;
         try {
@@ -554,7 +586,14 @@
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;
       let finalDialogueContinued = false; // Scene cleanup alone must not complete an opening that skipped its final dialogue.
-      await runtime.run(meeting, {
+      if (skipMeetingRequested()) {
+        log('skipping the Hunundi meeting (?skipMeeting=1)');
+        finalDialogueContinued = true;
+        status.pending = false;
+        status.completed = true;
+        if (!options.replay) writeProgress(profile, 'complete');
+        clearBootCover();
+      } else await runtime.run(meeting, {
         keepFadeOnFinish: false,
         onDialogueContinue(stage) {
           if (stage.id !== 'meeting_hunundi_final') return;
@@ -617,6 +656,7 @@
     const profile = window.__hobunjiPlayerProfile; // Supplies owner eligibility for the companion's read-only story panel.
     const story = window.OpeningStoryCutscene.debugSnapshot(); // Reuses the same progress and countdown sent to companion diagnostics.
     const doorstep = window.DoorstepVisits?.debugSnapshot?.(); // Adds visitor runtime readiness and the most recent spawn failure.
+    const hreesh = window.DoorstepVisits?.sourceDiagnostics?.('hreesh'); // Live source/build status plus retained Hreesh-specific spawn failure.
     const fey = story.jubmirFey; // Shared persisted countdown/completion, with no timer writes from rendering.
     const registered = doorstep?.providers?.includes(FEY_VISIT_KEY); // Detects a missed provider registration without changing the queue.
     let reason = 'Ready — exit the farmhouse to request the visit.'; // Human-readable eligibility summary shown above the raw progress rows.
@@ -651,9 +691,23 @@
         ['Registered visit providers', doorstep?.providers?.join(', ') || 'None'],
         ['Jubmir source NPC available', window.DoorstepVisits?.sourceWalker?.('jubmir') ? 'Yes' : 'No'],
         ['Farmhouse entrances', doorstep ? window.DoorstepVisits.exitDoorCandidates().length : 'Unavailable'],
+        ['Farmhouse exit requests', doorstep?.exitCount ?? 'Unavailable'],
+        ['Last observed area', doorstep?.lastObservedArea || 'None'],
+        ['Last exit trigger', doorstep?.lastExitAttempt?.trigger || 'None this session'],
+        ['Last exit result', doorstep?.lastExitAttempt?.result || 'None this session'],
+        ['Last exit provider results', doorstep?.lastExitAttempt ? JSON.stringify(doorstep.lastExitAttempt.providers) : 'None this session'],
         ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
+        ['Hreesh requested NPC id', hreesh?.npcId || 'Unavailable'],
+        ['Hreesh database record loaded', hreesh?.recordFound == null ? 'Unavailable' : hreesh.recordFound ? 'Yes' : 'No'],
+        ['Hreesh live source / area', hreesh?.sourceAvailable ? `Yes / ${hreesh.sourceArea || 'Unknown'}` : 'No'],
+        ['Hreesh cloneable root', hreesh?.rootCloneAvailable ? 'Yes' : 'No'],
+        ['Hreesh scheduled spawn stage', hreesh?.spawnStage || 'Unavailable'],
+        ['Hreesh avatar build error', hreesh?.spawnError || 'None recorded'],
+        ['Hreesh current schedule target', hreesh?.scheduleTarget ? JSON.stringify(hreesh.scheduleTarget) : 'None resolved'],
+        ['Hreesh last visit attempt', hreesh?.lastAttempt ? `${hreesh.lastAttempt.key}: ${hreesh.lastAttempt.reason}` : 'None this session'],
+        ['Live NPC walker count', hreesh?.walkerCount ?? 'Unavailable'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Preserved doorstep NPC scheduling startup hooks alongside Porakaneki camps; overdue visits can spawn on farmhouse exit.'],
+        ['Latest change', 'Visitor cloning bypasses circular live hand-rig metadata and remaps cloned skeletons to their own bones; original NPC rigs stay untouched.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };

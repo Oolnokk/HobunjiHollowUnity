@@ -41,6 +41,8 @@ global.window = {
   },
 };
 
+const templatesPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'attack-pose-templates.js'); // Shared with the attack-animation editor.
+vm.runInThisContext(fs.readFileSync(templatesPath, 'utf8'), { filename: templatesPath });
 vm.runInThisContext(source, { filename: modulePath });
 registered.swingCombo.onTap();
 
@@ -49,6 +51,16 @@ assert.ok(stagedCall, 'expected the first sweep to start a gameplay hit action')
 const visualStrikeAtS = visualCall.durationS * visualCall.opts.strikeFrac; // Exact time the pose interpolation reaches authored Strike.
 assert.ok(Math.abs(stagedCall.windupS - visualStrikeAtS) < 1e-9, `impact ${stagedCall.windupS}s must equal visual Strike ${visualStrikeAtS}s`);
 assert.strictEqual(stagedCall.strikeS, 0, 'the hit fires at the endpoint rather than starting another post-impact strike interval');
-assert.strictEqual(visualCall.opts.holdS, 1, 'the existing Strike hold remains unchanged after timing alignment');
+// Forehand: windup 0.345s, strike interpolation 0.07s, hold 0.43s (halved).
+assert.ok(Math.abs(stagedCall.windupS - (0.345 + 0.07)) < 1e-9, 'Forehand impact lands at windup + strike');
+assert.ok(Math.abs(visualCall.opts.holdS - 0.43) < 1e-9, 'Forehand hold is 0.43s');
+
+// The editor shows Forehand Swing with its 'hatchet_swing' template (ACTION_DEFS);
+// the game must play exactly those poses.
+const editorHtml = fs.readFileSync(path.join(__dirname, '..', 'docs', 'tools', 'attack-animation-editor', 'index.html'), 'utf8');
+const forehandTemplate = /id: 'swing_forehand'[^\n]*templateId: '([a-z_]+)'/.exec(editorHtml)?.[1];
+assert.strictEqual(forehandTemplate, 'hatchet_swing');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(visualCall.opts.pose)), JSON.parse(JSON.stringify(window.AttackPoseTemplates.poseFor(forehandTemplate))), 'Forehand plays the editor template poses');
+assert.strictEqual(visualCall.opts.power, 1, 'no second power scaling on top of the editor pose');
 
 console.log('test-combo-strike-hold-pose-alignment: ok');

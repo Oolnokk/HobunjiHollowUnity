@@ -1,4 +1,4 @@
-// Player combat vocalizations: stamina breathing, pain reactions, and attack grunts.
+// Character combat vocalizations: stamina breathing, pain, dodges, and attack grunts.
 // Owns only vocal playback/orchestration; combat abilities and ResourceSystem stay authoritative.
 (() => {
   'use strict';
@@ -245,12 +245,15 @@
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
+  const DODGE_DURATION_SCALE = 0.75; // Dodge compresses pain intensity 1 to 75% of its normal species/gender-modulated duration.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
+  const SINGLE_UTTERANCE_ABILITIES = new Set(['acceleratingFlurry']); // One grunt per strike across its whole pose sequence.
   const attackActions = new Set(); // Player staged attacks whose windup/strike/recovery still blocks buffered starts.
   const strikeBuffers = new Map(); // Decoded release/combo clips reused by the same timed renderer as charge vocals.
   const debug = {
     lastBreath: null,
     lastPain: null,
+    lastDodge: null,
     lastStrike: null,
     lastCharge: null,
     failedPlayback: null,
@@ -388,7 +391,7 @@
     }, 2);
   }
 
-  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active') {
+  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active', durationScale = 1) {
     if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
@@ -400,6 +403,7 @@
     if (window.CharacterVoiceOwner && !claim) return { suppressed: true, reason: 'voice-priority', voiceKind, ...detail };
 
     const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones), entity);
+    plan.tempo /= durationScale; // Shortens dodge duration independently of the species/gender pitch.
     const volume = clamp(
       Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1),
       0,
@@ -428,9 +432,11 @@
       } else if (typeof Audio === 'function') {
         snd = new Audio(url);
         snd.volume = volume;
-        setPitchPreservation(snd, true);
-        snd.playbackRate = plan.tempo;
+        // Emergency native playback couples speed and pitch; preserve the authored voice identity.
+        setPitchPreservation(snd, Math.abs(plan.pitchSemitones) < 0.05);
+        snd.playbackRate = clamp(plan.tempo * Math.pow(2, plan.pitchSemitones / 12), 0.02, 4);
         snd.addEventListener?.('ended', finish, { once: true });
+        snd.addEventListener?.('error', finish, { once: true });
         window.CharacterVoiceOwner?.bindStop?.(claim, fadeS => fadeNativeVoice(snd, fadeS, finish));
         const result = snd.play();
         result?.catch?.(error => { finish(); recordPlaybackFailure(debugKind, error, url); });
@@ -448,7 +454,7 @@
       tempo: plan.tempo,
       pitchSemitones: plan.pitchSemitones,
       modulation: plan.modulation,
-      independentPitch: true,
+      independentPitch: !!(window.AnimalVoiceIndependentPlayback?.playIndependent || window.AnimalVoiceIndependentPlayback?.play),
       suppressed: false,
       ...detail,
     };
@@ -634,6 +640,30 @@
     };
   }
 
+  function playDodge(entity = player()) {
+    const played = playOneShot( // Uses the same voice owner, modulation, and spatial routing as combat pain/breathing.
+      entity,
+      config.assets?.pain?.[1],
+      config.pain?.volume ?? 0.9,
+      config.pain?.pitchRandomSemitones ?? 0,
+      'dodge',
+      { intensity: 1, durationScale: DODGE_DURATION_SCALE },
+      'active',
+      DODGE_DURATION_SCALE,
+    );
+    debug.lastDodge = {
+      atMs: Math.round(nowMs()),
+      entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
+      intensity: 1,
+      durationScale: DODGE_DURATION_SCALE,
+      suppressed: !!played?.suppressed,
+      tempo: played?.tempo ?? null,
+      pitchSemitones: played?.pitchSemitones ?? null,
+    };
+    trackBreather(entity);
+    return played;
+  }
+
   function onResourceChange(event) {
     const detail = event?.detail || {};
     const entity = detail.entity;
@@ -739,6 +769,10 @@ function liveChargeTargetDurationS(abilityId) {
   return fallback > 0 ? fallback : null;
 }
 
+// Grunts are time-mapped onto authored attack phases; a short windup->strike
+// interpolation can need well over the renderer's generic 4x compression.
+const MAX_MAPPED_TEMPO = 16;
+
 function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
   const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
   const targetS = Number(targetDurationS) > 0 ? Number(targetDurationS) : clipDurationS;
@@ -751,7 +785,7 @@ function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
     clipDurationS,
     targetDurationS: targetS,
     normalTempo: baseNormalTempo,
-    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, 4), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.
+    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, MAX_MAPPED_TEMPO), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.
     earlyReleaseNormalSpeedMul,
     catchUpTempo: clamp(baseNormalTempo * earlyReleaseNormalSpeedMul, 1 / 9, 4),
   };
@@ -894,9 +928,11 @@ function beginCharge(options = {}) {
       buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, trimmed: false,
     };
     const audibleBuffer = trim.buffer || buffer; // Charge math uses actual audible waveform duration, not leading/trailing silence or codec padding.
-    const voice = voicePlaybackPlan(randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
+    const voice = voicePlaybackPlan(Number.isFinite(options.pitchOffsetSemitones)
+      ? options.pitchOffsetSemitones // Pre-rolled by prewarmStrikeGrunt so this render is already cached.
+      : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
     const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
-    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false };
+    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO };
     const [fullRendered, catchUpRendered] = await Promise.all([
       renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
       token.catchUpOnRelease
@@ -976,23 +1012,68 @@ function beginCharge(options = {}) {
 
   function attackStartDelayS() {
     let delayS = 0; // Gameplay animation timing owns the queue even when audio is muted, suppressed, or unavailable.
+    let tracked = false; // A tracked attack's own utterance span is the whole gate; the frame-clamped visual clock must not outlast it.
     for (const action of attackActions) {
       if (action.cancelled || action.phase === 'done') attackActions.delete(action);
-      else delayS = Math.max(delayS, Math.max(0, (Number(action.totalS) || 0) - (Number(action.t) || 0)));
+      else {
+        tracked = true;
+        delayS = Math.max(delayS, Math.max(0, (Number(action.totalS) || 0) - (Number(action.t) || 0)));
+      }
     }
+    if (tracked) return delayS;
     const timeline = window.Combat?.deps?.getWeaponAttackTimeline?.(); // The cosmetic return tail must not extend the next attack's queue.
-    return Math.max(delayS, Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0);
+    return Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0;
   }
 
-  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0) {
-    const isCombo = category === 'combo';
-    const urls = isCombo ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
+  // Attack inputs during a gated attack queue only once its Strike pose is
+  // reached; earlier presses are ignored rather than buffered.
+  function attackQueueOpen() {
+    for (const action of attackActions) {
+      if (action.cancelled || action.phase === 'done') continue;
+      if ((Number(action.t) || 0) < (Number(action.windupS) || 0) + (Number(action.strikeS) || 0)) return false;
+    }
+    const timeline = window.Combat?.deps?.getWeaponAttackTimeline?.();
+    return !(Number(timeline?.strikeRemainingS) > 0);
+  }
+
+  function pickStrikeGruntUrl(category) {
+    const urls = category === 'combo' ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
     const available = urls.filter(Boolean);
-    if (!available.length) return;
-    const url = available[Math.floor(Math.random() * available.length)];
+    return available.length ? available[Math.floor(Math.random() * available.length)] : null;
+  }
+
+  // The release voice used to be pitch-rolled and WSOLA-rendered only when the
+  // windup ended. With a fresh random pitch every swing the render cache never
+  // hit, so on slower devices it started late (offset past its loud start) or
+  // not at all, leaving only the windup grunt, which ends at the strike. Roll
+  // the pitch and render at attack start; the windup-end call reuses the cache.
+  function prewarmStrikeGrunt(entity, category, durationS) {
+    const url = pickStrikeGruntUrl(category);
+    if (!url || !(durationS > 0)) return url ? { url } : null;
+    const pitchOffsetSemitones = randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0);
+    if (isHumanoidVocalEntity(entity) && audioConfig().enabled !== false && Number(audioConfig().sfxVolume ?? 1) > 0) {
+      preloadStrikeBuffer(url).then(buffer => {
+        const ctx = ensureAudioContext();
+        const playback = window.AnimalVoiceIndependentPlayback;
+        if (!buffer || !ctx || !playback?.renderDecodedIndependentBuffer) return null;
+        const trim = playback.trimDecodedSilence ? playback.trimDecodedSilence(buffer, ctx, { padMs: 4 }) : { buffer };
+        const audible = trim.buffer || buffer; // Same trimmed buffer object beginCharge will use (trims are cached per buffer).
+        const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
+        const plan = chargeRatePlan(audible.duration, durationS, voice.tempo);
+        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO, tempo: plan.stretchedTempo });
+      }).catch(() => {});
+    }
+    return { url, pitchOffsetSemitones };
+  }
+
+  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0, preset = null) {
+    const isCombo = category === 'combo';
+    const url = preset?.url || pickStrikeGruntUrl(category);
+    if (!url) return;
     const played = durationS > 0 ? beginCharge({
       entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
       createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
+      pitchOffsetSemitones: preset?.pitchOffsetSemitones,
     }) : playOneShot(
       entity,
       url,
@@ -1048,26 +1129,45 @@ function beginCharge(options = {}) {
       const isPlayer = context.entity === player(); // Player visuals expose the strike hold separately from the cosmetic return tail.
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
-      const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
-      const releaseS = Math.max(0, totalS - windupS); // Windup to Strike through Hold; return easing stays purely visual.
+      // Flurry strikes are too short to split into a windup grunt and a release grunt:
+      // each strike gets one utterance mapped over its whole Windup -> Strike -> hold.
+      const singleUtterance = SINGLE_UTTERANCE_ABILITIES.has(context.id);
+      const windupS = singleUtterance ? 0 : Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
+      // The input gate (totalS) runs to the middle of the Strike hold; the release
+      // voice is time-mapped over Windup -> Strike -> the end of the hold, and keeps
+      // playing past the gate until it ends or the next attack's voice takes over.
+      const voiceEndS = Math.max(windupS, Number(timeline?.holdEndRemainingS ?? totalS) || 0);
+      const releaseS = Math.max(0, voiceEndS - windupS);
       let charge = isPlayer ? (liveChargesByAbility.get(context.id) || null) : null; // Reuse a held charge until its release boundary.
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
       if (charge) liveChargesByAbility.delete(context.id);
       if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category });
+      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS) : null; // Rendered during the windup.
       const startRelease = elapsedS => {
         if (releaseStarted) return;
         releaseStarted = true;
         cancelCharge(charge);
-        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS);
+        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS, releasePreset);
       };
       if (windupS <= 0) startRelease(0);
+      // gameLoop clamps dt to 0.04s, so below 25 fps the staged clock falls behind the
+      // wall-clock utterance and the next attack waited after the voice had stopped.
+      // Player attacks advance by real elapsed time (capped per frame so a pause can't skip the strike).
+      let wallClockS = 0;
+      let lastWallMs = nowMs();
       const originalStrike = spec.onStrike; // Gameplay hit callbacks retain their authored impact time.
       const originalCancel = spec.onCancel; // Canceling either phase stops its audio as well as queued starts.
       const action = originalBeginStagedAction.call(this, {
         ...spec,
         recoverS: Math.max(Number(spec.recoverS) || 0, totalS - (Number(spec.windupS) || 0) - (Number(spec.strikeS) || 0)),
         onUpdate: action => {
+          if (isPlayer) {
+            const atMs = nowMs();
+            wallClockS += Math.min(0.25, Math.max(0, (atMs - lastWallMs) / 1000));
+            lastWallMs = atMs;
+            if (wallClockS > action.t) action.t = wallClockS;
+          }
           if (action.t >= windupS) startRelease(Math.max(0, action.t - windupS));
           spec.onUpdate?.(action);
         },
@@ -1078,8 +1178,7 @@ function beginCharge(options = {}) {
         },
         onComplete: (...args) => {
           cancelCharge(charge);
-          cancelCharge(release);
-          return spec.onComplete?.(...args);
+          return spec.onComplete?.(...args); // The release voice runs on to the end of the hold.
         },
         onCancel: (...args) => {
           cancelCharge(charge);
@@ -1229,7 +1328,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Charge spans neutral to windup; release and queued attacks end at Hold, before the visual return to neutral.',
+    latestChange: 'Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1237,7 +1336,10 @@ function beginCharge(options = {}) {
     releaseCharge,
     cancelCharge,
     playStrikeGrunt,
+    prewarmStrikeGrunt,
+    playDodge,
     attackStartDelayS,
+    attackQueueOpen,
     chargeRatePlan,
     liveChargeTargetDurationS,
     getConfig: () => clone(config),
@@ -1245,6 +1347,7 @@ function beginCharge(options = {}) {
     getVoicePriority: kind => voicePriority(kind),
     debugSnapshot: () => ({
       version: VERSION,
+      latestChange: window.CombatVocalizations.latestChange,
       configSource,
       configError,
       attackStartDelayS: attackStartDelayS(),
@@ -1271,6 +1374,7 @@ function beginCharge(options = {}) {
       modulation: voiceModulation(),
       lastBreath: debug.lastBreath ? { ...debug.lastBreath } : null,
       lastPain: debug.lastPain ? { ...debug.lastPain } : null,
+      lastDodge: debug.lastDodge ? { ...debug.lastDodge } : null,
       lastStrike: debug.lastStrike ? { ...debug.lastStrike } : null,
       lastCharge: debug.lastCharge ? { ...debug.lastCharge } : null,
       failedPlayback: debug.failedPlayback ? { ...debug.failedPlayback } : null,

@@ -284,7 +284,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <script src="../../js/local-db-overrides.js?v=20261013ha525e98"></script>
 <script src="../../config/scratchbones-config.js?v=20261016h5fbd77a"></script>
-<script src="../../config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261017hdd91890"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20261010hd4b4796"></script>
 <script src="../../js/character-rig-scale.js?v=20261007h0c4d7d9"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
@@ -297,9 +297,10 @@ canvas{display:block;width:100%;height:100%}
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
-<script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20261016h32b7a0b"></script>
+<script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
+<script src="../../js/held-action-animations.js?v=20261017h94c8fc4"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
+<script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -1144,6 +1145,12 @@ $('resetPosesBtn').onclick = () => {
 // read directly off updateToolMesh's radian constants, converted to degrees.
 // Hold (idle) poses are each style's progress=0 values; windup/strike are each
 // style's WF/SF (0.16/0.28) keyframe extremes.
+// Attack templates the game also plays (js/combat/attack-pose-templates.js); edit poses there.
+function sharedAttackPoses(templateId) {
+  const poses = window.AttackPoseTemplates?.poseFor?.(templateId);
+  if (!poses) throw new Error(`Missing shared attack pose template ${templateId}`);
+  return poses;
+}
 const TOOL_PRESETS = [
   ...(window.HeldActionAnimations?.drink ? [{
     id: 'drink', label: 'Bottle — Drink', style: 'drink', toolKey: 'bottle', still: false,
@@ -1170,16 +1177,14 @@ const TOOL_PRESETS = [
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'hatchet_swing', label: 'Hatchet — Swing (sweep)', style: 'sweep', toolKey: 'hatchet', still: false,
-    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('hatchet_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'pickshovel_idle', label: 'Pick-Shovel — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
     windup: defaultPose(0, 0, 0, 10.31, 0, 0), strike: defaultPose(0, 0, 0, 10.31, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'pickshovel_swing', label: 'Pick-Shovel — Swing (thrust)', style: 'thrust', toolKey: 'pickshovel', still: false,
-    neutral: { ...neutralPoseFor('thrust'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, -0.22, 10.31, 0, -45), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(-0.23, 0, 0.32, 1, -45, 46), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('pickshovel_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', toolKey: 'bronzehoe', still: true,
@@ -1195,16 +1200,14 @@ const TOOL_PRESETS = [
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'fishingspear_swing', label: 'Fishing Spear — Swing (sweep)', style: 'sweep', toolKey: 'fishingspear', still: false,
-    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('fishingspear_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'fishingmace_idle', label: 'Fishing Mace — Idle (still)', style: 'sweep', toolKey: 'fishingmace', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
-    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('fishingmace_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'attack', toolKey: 'crossbow', still: false,
     neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },

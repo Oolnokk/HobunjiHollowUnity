@@ -226,7 +226,10 @@ function assertAuthoredFlags(poses, name) {
     assert.equal(poses[phase].secondaryGrip.enabled, phase !== 'neutral', `${name}/${phase} explicitly authors 2H only on Windup/Strike`);
   }
 }
-for (const [path, constant] of [['docs/js/combat/combat-combo.js', 'SWEEP_POSE'], ['docs/js/combat/combat-counter-shield.js', 'BLOCK_POSE']]) {
+const templateWindow = {}; // Attack templates shared by the game and the attack-animation editor.
+vm.runInNewContext(fs.readFileSync('docs/js/combat/attack-pose-templates.js', 'utf8'), { window: templateWindow, JSON });
+for (const [id, template] of Object.entries(templateWindow.AttackPoseTemplates.TEMPLATES)) assertAuthoredFlags(template, id);
+for (const [path, constant] of [['docs/js/combat/combat-counter-shield.js', 'BLOCK_POSE']]) {
   const source = fs.readFileSync(path, 'utf8');
   const start = source.indexOf(`  const ${constant} = `), end = source.indexOf('\n  };', start) + '\n  };'.length;
   const poses = vm.runInNewContext(source.slice(start, end) + `\n${constant}`);
@@ -242,6 +245,7 @@ const html = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'u
 const presetStart = html.indexOf('const TOOL_PRESETS = ['), presetEnd = html.indexOf('\n];', presetStart) + '\n];'.length;
 const presets = vm.runInNewContext(html.slice(presetStart, presetEnd) + '\nTOOL_PRESETS;', {
   window: {}, defaultPose: () => ({}), neutralPoseFor: () => ({}),
+  sharedAttackPoses: id => templateWindow.AttackPoseTemplates.poseFor(id),
 });
 const meleePresets = presets.filter(preset => preset.id.endsWith('_swing'));
 assert.equal(meleePresets.length, 5);

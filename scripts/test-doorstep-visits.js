@@ -48,16 +48,23 @@ function makeContext() {
 // A THREE-ish object just rich enough for cloneVisitorRoot.
 function fakeObject3D(name) {
   const node = {
-    name, children: [], parent: null, userData: {}, visible: true,
+    name, isObject3D: true, children: [], parent: null, userData: {}, visible: true,
     position: { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
     rotation: { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
     add(child) { child.parent = node; node.children.push(child); },
     remove(child) { const i = node.children.indexOf(child); if (i >= 0) node.children.splice(i, 1); child.parent = null; },
     traverse(fn) { fn(node); node.children.forEach(child => child.traverse(fn)); },
-    clone() {
-      const copy = fakeObject3D(node.name);
-      copy.userData = { ...node.userData };
-      node.children.forEach(child => copy.add(child.clone()));
+    toJSON() { return { name: this.name, userData: JSON.parse(JSON.stringify(this.userData)) }; },
+    clone(recursive = true) {
+      const copy = fakeObject3D(this.name);
+      copy.userData = JSON.parse(JSON.stringify(this.userData));
+      copy.position.set(this.position.x, this.position.y, this.position.z);
+      copy.rotation.set(this.rotation.x, this.rotation.y, this.rotation.z);
+      copy.isSkinnedMesh = this.isSkinnedMesh;
+      copy.skeleton = this.skeleton;
+      copy.geometry = this.geometry;
+      copy.material = this.material;
+      if (recursive || this.isSkinnedMesh) this.children.forEach(child => copy.add(child.clone()));
       return copy;
     },
   };
@@ -428,4 +435,155 @@ console.log('doorstep visits: ok');
   const snapshot = api.debugSnapshot(); // External readers cannot mutate the stored last attempt through a snapshot.
   snapshot.lastSpawnAttempt.reason = 'changed';
   assert.equal(api.debugSnapshot().lastSpawnAttempt.reason, 'Spawned successfully.');
+}
+
+// An unavailable higher-priority visitor must not starve a ready story visit.
+{
+  const ctx = makeContext(); // Isolated queue with missing Hreesh and available Jubmir.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Real spawn adapters.
+  const api = ctx.window.DoorstepVisits; // Runtime queue under test.
+  const tree = { nodes: [{ id: 'hello', type: 'text', text: 'Hello.' }] }; // Shared visit dialogue fixture.
+  let lowerCalls = 0; // Ensures selection stops after the first successful spawn.
+  api.registerProvider({ id: 'trust', priority: 100, next: () => ({ key: 'hreesh-gift', npcId: 'hreesh', tree }) });
+  api.registerProvider({ id: 'story', priority: 50, next: () => ({ key: 'jubmir-story', npcId: 'jubmir', tree }) });
+  api.registerProvider({ id: 'later', priority: 0, next() { lowerCalls++; return null; } });
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), 'jubmir-story');
+  assert.equal(world.walkers.filter(walker => walker._doorstepVisitor).length, 1);
+  assert.equal(lowerCalls, 0);
+  assert.equal(api.isDone('hreesh-gift'), false, 'failed visits are not consumed');
+  world.walkers.push({ ...world.walkers[0], rec: { id: 'hreesh', dialogueTrees: [] } });
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), 'hreesh-gift', 'recovered higher-priority visitor retries on the next exit');
+  world.walkers.splice(0, world.walkers.length);
+  goOutside(ctx, world);
+  assert.equal(api.activeVisitKey(), null, 'all unavailable candidates leave no active visitor');
+  assert.equal(lowerCalls, 1, 'all providers are tried when no visit can spawn');
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.npcId, 'jubmir');
+}
+
+// Mobile diagnostics preserve failed visitors after another provider succeeds.
+{
+  const ctx = makeContext(); // Isolates diagnostic state from the other visit scenarios.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Hreesh's record exists but his avatar failed.
+  const api = ctx.window.DoorstepVisits; // Shipping diagnostics are exercised through the public API.
+  api.init({ getNpcSpawnDiagnostics: npcId => ({
+    recordFound: npcId === 'hreesh', spawnStage: 'Avatar build failed',
+    spawnError: 'Portrait image failed to load', scheduleTarget: { area: 'map_i_inn', c: 4, r: 6 },
+  }) });
+  const tree = { nodes: [] }; // Minimal valid visitor dialogue.
+  api.registerProvider({ id: 'trust', priority: 100, next: () => ({ key: 'weapon_trust:hreesh_kylie', npcId: 'hreesh', tree }) });
+  api.registerProvider({ id: 'story', priority: 50, next: () => ({ key: 'jubmir-story', npcId: 'jubmir', tree }) });
+  goOutside(ctx, world);
+  assert.equal(api.debugSnapshot().lastSpawnAttempt.npcId, 'jubmir');
+  const missing = api.sourceDiagnostics('hreesh'); // Failure remains visible even though last overall attempt succeeded.
+  assert.equal(missing.sourceAvailable, false);
+  assert.equal(missing.recordFound, true);
+  assert.equal(missing.spawnStage, 'Avatar build failed');
+  assert.equal(missing.spawnError, 'Portrait image failed to load');
+  assert.equal(missing.scheduleTarget.area, 'map_i_inn');
+  assert.equal(missing.lastAttempt.key, 'weapon_trust:hreesh_kylie');
+  assert.equal(missing.lastAttempt.reason, 'Source NPC is unavailable.');
+  missing.lastAttempt.reason = 'edited';
+  assert.equal(api.sourceDiagnostics('hreesh').lastAttempt.reason, 'Source NPC is unavailable.');
+  world.walkers.push({ ...world.walkers[0], rec: { id: 'hreesh' }, area: 'map_i_inn' });
+  assert.equal(api.sourceDiagnostics('hreesh').sourceAvailable, true);
+  assert.equal(api.sourceDiagnostics('hreesh').sourceArea, 'map_i_inn');
+  assert.equal(api.sourceDiagnostics('hreesh').rootCloneAvailable, true);
+  goOutside(ctx, world);
+  assert.equal(api.sourceDiagnostics('hreesh').lastAttempt.reason, 'Spawned successfully.');
+}
+
+// The completed game transition delivers an exit even when no timer saw the interior.
+{
+  const ctx = makeContext(); // Runs the shipping scene-transition callback and visitor scheduler together.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Farm stays the timer's last observed area throughout the transition.
+  const api = ctx.window.DoorstepVisits; // Records one authoritative exit, without a duplicate on the next timer tick.
+  api.registerProvider({ id: 'story', next: () => ({ key: 'story', npcId: 'jubmir', tree: { nodes: [] } }) });
+  ctx.tick();
+  Object.assign(ctx.context, {
+    sceneTransDir: 1, sceneTransAlpha: 0, sceneTransFromArea: 'interior', currentArea: 'interior',
+    sceneTransCb() { ctx.context.currentArea = 'farm'; },
+    catchNpcsOnPlayerAreaTransition() {},
+    debugLog(message) { throw new Error(message); },
+  });
+  const source = read('docs/game.js'); // Extracts the real game's fade completion owner, not a copied implementation.
+  const start = source.indexOf('      function updateSceneTransition(dt) {'); // Limits the VM to the transition function's dependencies.
+  const end = source.indexOf('      // ── Enter / exit the interior', start); // Uses the owner's existing section boundary.
+  vm.runInContext(source.slice(start, end), ctx.context);
+  vm.runInContext('updateSceneTransition(0.25)', ctx.context);
+  assert.equal(api.activeVisitKey(), 'story', 'actual scene completion requests the visitor without an interior polling tick');
+  assert.equal(api.debugSnapshot().exitCount, 1);
+  assert.equal(api.debugSnapshot().lastExitAttempt.trigger, 'scene-transition');
+  assert.equal(api.debugSnapshot().lastExitAttempt.result, 'Spawned jubmir');
+  ctx.tick();
+  assert.equal(api.debugSnapshot().exitCount, 1, 'timer fallback does not repeat the delivered exit');
+  api.onAreaTransition('farm', 'town');
+  assert.equal(api.activeVisitKey(), null, 'authoritative departures clean up the visitor');
+}
+
+// An exit with no eligible providers still records why no spawn was attempted.
+{
+  const ctx = makeContext(); // Exercises the empty queue that otherwise looks like a missing exit trigger.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['jubmir'] }); // Available sources do not imply an eligible visit.
+  const api = ctx.window.DoorstepVisits; // Companion reads these same diagnostics.
+  api.registerProvider({ id: 'not-due', next: () => null });
+  goOutside(ctx, world);
+  assert.equal(api.debugSnapshot().exitCount, 1);
+  assert.equal(api.debugSnapshot().lastExitAttempt.result, 'No pending visits');
+  assert.equal(api.debugSnapshot().lastExitAttempt.providers[0].result, 'No pending visit');
+  const copy = api.debugSnapshot(); // External panel consumers cannot mutate queue evidence.
+  copy.lastExitAttempt.providers[0].result = 'edited';
+  assert.equal(api.debugSnapshot().lastExitAttempt.providers[0].result, 'No pending visit');
+}
+
+// Live hand rigs point back to their owning avatar: JSON cloning overflows.
+{
+  const ctx = makeContext(); // Exercises the real visitor clone path with Three-style userData serialization.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['hreesh'] }); // Hreesh has both procedural hands and a skinned portrait.
+  const source = world.walkers[0]; // Original NPC must remain entirely usable after cloning and dismissal.
+  const portrait = fakeObject3D('portrait-skin'); // Mesh and skeleton references mirror PNGPlaneAvatar's neckRig.
+  const neck = fakeObject3D('neck'); // The visitor resets this clone without rotating the inn NPC.
+  const hands = fakeObject3D('hand-visuals'); // Stationary visits retain the already-built hand meshes.
+  portrait.isSkinnedMesh = true;
+  portrait.geometry = { name: 'shared-geometry' };
+  portrait.material = { name: 'shared-material' };
+  portrait.skeleton = { bones: [neck], clone() { return { ...this, bones: this.bones.slice() }; }, dispose() { this.disposed = true; } };
+  portrait.add(neck);
+  source.avatarGroup.add(portrait);
+  source.root.add(hands);
+  source.neckJoint = neck;
+  neck.rotation.y = 0.75;
+  source.avatarGroup.userData.neckRig = { available: true, neckJoint: neck, skinnedPlane: portrait, skeleton: portrait.skeleton };
+  source.avatarGroup.userData.proceduralHandRig = { avatarRoot: source.avatarGroup, parent: source.root, group: hands, dispose() { throw new Error('must not dispose source hands'); } };
+  const originalData = source.avatarGroup.userData; // Identity check detects temporary mutations to the original metadata.
+  assert.throws(() => source.root.clone(true), /Maximum call stack size exceeded/, 'ordinary Three-style cloning reproduces the reported failure');
+  assert.equal(ctx.window.DoorstepVisits.spawnVisit({ key: 'hreesh-test', npcId: 'hreesh', tree: { nodes: [] } }), true);
+  const visitor = world.walkers.find(walker => walker._doorstepVisitor); // Inspects the runtime proxy rather than a test-only clone API.
+  const clonedRig = visitor.avatarGroup.userData.neckRig; // Every reference must resolve inside the copied hierarchy.
+  assert.notStrictEqual(clonedRig, originalData.neckRig);
+  assert.strictEqual(clonedRig.neckJoint, visitor.neckJoint);
+  assert.strictEqual(clonedRig.skinnedPlane, visitor.avatarGroup.children[0]);
+  assert.notStrictEqual(clonedRig.skinnedPlane.skeleton, portrait.skeleton);
+  assert.strictEqual(clonedRig.skinnedPlane.skeleton.bones[0], visitor.neckJoint);
+  assert.equal(clonedRig.skinnedPlane.children.length, 1, 'r128 skinned copy must not duplicate its bone hierarchy');
+  assert.strictEqual(clonedRig.skeleton, clonedRig.skinnedPlane.skeleton);
+  assert.strictEqual(clonedRig.skinnedPlane.geometry, portrait.geometry);
+  assert.strictEqual(clonedRig.skinnedPlane.material, portrait.material);
+  assert.equal(visitor.neckJoint.rotation.y, 0);
+  assert.equal(neck.rotation.y, 0.75);
+  assert.equal(visitor.avatarGroup.userData.proceduralHandRig, undefined, 'source driver callbacks never migrate into the visitor');
+  assert(visitor.root.children.some(child => child.name === 'hand-visuals'));
+  assert.strictEqual(source.avatarGroup.userData, originalData);
+  ctx.window.DoorstepVisits.removeActiveVisitor();
+  assert.equal(clonedRig.skinnedPlane.skeleton.disposed, true, 'visitor-owned skeleton resources are released');
+  assert.equal(portrait.skeleton.disposed, undefined, 'source skeleton resources remain live');
+  assert.strictEqual(source.avatarGroup.userData.proceduralHandRig.avatarRoot, source.avatarGroup);
+  assert.strictEqual(neck.parent, portrait);
+  assert.strictEqual(hands.parent, source.root);
 }

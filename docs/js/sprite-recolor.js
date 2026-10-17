@@ -145,7 +145,7 @@
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fishing-events.js','fishing-events','20261014catchrewards1');
+    parserOrderedScript('fishing-events.js','fishing-events','20261017h3f28cfc');
   }
   function loadAmphibiousFishingForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;

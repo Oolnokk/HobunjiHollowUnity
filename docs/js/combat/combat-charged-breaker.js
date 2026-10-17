@@ -32,7 +32,7 @@
 
   let STRIKE_S = 0.30;
   let POWER = 1.70;
-  let HOLD_S = 1.0;
+  let HOLD_S = 0.5;
   let LUNGE_HOP_UNITS = 0.45;
   const GLOW_COLOR = 0xffc85a;
   const GLOW_FLARE_DURATION_S = 0.17; // Short enough for the 48% and 50% milestones to read as two distinct flashes.
@@ -171,10 +171,10 @@
       deps.showToast('Charged Breaker charging — release to strike.', true);
       deps.triggerWeaponHoldVisual(MAX_CHARGE_S + STRIKE_S, {
         anim: 'sweep',
-        pose: window.Combat.poses.SWEEP_POSE,
+        pose: window.AttackPoseTemplates?.poseFor('hatchet_swing', POWER), // The editor's Charged Breaker pose, POWER already applied.
         windupFrac: MAX_CHARGE_S / (MAX_CHARGE_S + STRIKE_S),
         strikeFrac: 1,
-        power: POWER,
+        power: 1,
         holdS: HOLD_S,
         windupSlowdown: WINDUP_SLOWDOWN,
         afflictionIds: Object.keys(effects.afflictions),

@@ -96,28 +96,6 @@
     return null;
   }
 
-  function patchFishing(api) {
-    if (!api?.init || patchedApis.has(api)) return;
-    patchedApis.add(api);
-    const originalInit = api.init;
-    api.init = function weaponDiscoveryFishingInit(injectedDeps) {
-      if (injectedDeps && !injectedDeps.__weaponDiscoveryGulletToastWrapped) {
-        const originalToast = injectedDeps.showToast;
-        if (typeof originalToast === 'function') {
-          injectedDeps.showToast = function weaponDiscoveryGulletToast(message, ...args) {
-            const result = originalToast.call(this, message, ...args);
-            // fishing-events.js emits this once, and only after a Gullet Fish's
-            // treasure retrieval succeeds. Failure/escape messages use different text.
-            if (String(message || '').startsWith('Gullet Fish treasure:')) rollSource('gulletFish');
-            return result;
-          };
-          Object.defineProperty(injectedDeps, '__weaponDiscoveryGulletToastWrapped', { value: true, configurable: true });
-        }
-      }
-      return originalInit.call(this, injectedDeps);
-    };
-  }
-
   function decorateTreasureChestObject(object) {
     if (!object || object.type !== 'treasure_chest' || typeof object.onAction !== 'function' || object.__weaponDiscoveryRewardWrapped) return;
     const originalAction = object.onAction;
@@ -212,7 +190,6 @@
   });
 
   if (!IS_DIALOGUE_EDITOR) {
-    patchApiWhenAssigned('Fishing', patchFishing);
     patchApiWhenAssigned('WildTreasure', patchWildTreasure);
     scanFrame = global.setInterval(scan, 500); // Idempotent, flag-guarded safety scan; cheap and non-urgent, no per-frame cadence needed.
   }

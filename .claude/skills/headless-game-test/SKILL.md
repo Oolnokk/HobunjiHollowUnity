@@ -66,6 +66,13 @@ for minutes of headless time. For dev/test use only, skip it:
 Every page's hold time and Continue prompt is bypassed; the loading work each stage waits on still finishes, so the world is built
 exactly as after a normal read-through. (Implemented in `docs/js/loading-screen-runtime.js`.)
 
+`skipIntro` does not skip the opening cutscenes that follow. Add `&skipRescue=1` to skip the Gar-wolf
+rescue and `&skipMeeting=1` to skip the Hunundi meeting; with both
+(`index.html?skipIntro=1&skipRescue=1&skipMeeting=1`) the opening is marked complete and the player is placed
+outside the temple, ready to play. (Implemented in `docs/js/opening-story-cutscene.js`.)
+Don't release the cutscene's `CharacterActionLocks` lock or teleport out mid-scene instead: that wedges the
+authored cutscene and leaves its camera and dialogue box stuck.
+
 ## Driving it with Playwright
 
 Chromium is pre-installed at `/opt/pw-browsers/chromium` (a symlink to the

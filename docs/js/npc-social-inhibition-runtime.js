@@ -723,7 +723,10 @@
       snapshots.push(() => { walker.stationToolMesh.visible = visible; });
     }
     applyLegDance(walker, presentation, beat, motion, dimensions, snapshots);
-    applyHandDance(walker, presentation, beat, motion, dimensions, snapshots);
+    // NpcDancePresentationRuntime owns NPC dance hands (applied after the hand
+    // frame driver). Applying here as well stacked a second punch on the
+    // sockets it then re-based from, lifting hands ~2 arm lengths overhead.
+    if (!global.NpcDancePresentationRuntime?.installed) applyHandDance(walker, presentation, beat, motion, dimensions, snapshots);
     state.danceApplications++;
   }
 

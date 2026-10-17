@@ -136,6 +136,7 @@
     entity._enemyDodgeCooldownT = tuning.cooldownS;
     entity._enemyDodge = { threatId: threat.id, durationS, remainingS: durationS, spinSign: direction.sign || 1, source: threat.source };
     entity._enemyDodgePending = null;
+    window.CombatVocalizations?.playDodge?.(entity);
     dodgeCount += 1;
     lastEvent = {
       at: Date.now(), enemy: entity.id, rank: entity.banditRank, threat: threat.source, result: 'dodged',
