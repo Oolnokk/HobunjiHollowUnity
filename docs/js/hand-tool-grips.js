@@ -735,10 +735,14 @@
       };
     }
     const opts = capturedMelee?.opts || {};
+    // combatProgress runs over the whole visual (windup + strike + hold + return tail), so the
+    // phase boundaries must be WeaponToolStances' normalized ones, exactly as the editor's
+    // sliders and hand-shoulder-pose-runtime use. The raw call options only describe
+    // windup+strike and carry no hold, which stretched the grip blend over the wrong span.
     return animationGripAt(snapshot.combatProgress, {
-      windupFrac: opts.windupFrac ?? 0.16,
-      strikeFrac: opts.strikeFrac ?? 0.55,
-      holdFrac: opts.holdFrac ?? 0.68,
+      windupFrac: snapshot.combatWindupFrac ?? opts.windupFrac ?? 0.16,
+      strikeFrac: snapshot.combatStrikeFrac ?? opts.strikeFrac ?? 0.55,
+      holdFrac: snapshot.combatHoldFrac ?? opts.holdFrac ?? 0.68,
       windupSlowdown: opts.windupSlowdown ?? 0,
       poseScale: snapshot.combatPoseScale ?? 1,
     }, opts.pose || {}, opts.sequence || 'attack', snapshot?.itemKey || snapshot?.shape || '');
@@ -778,12 +782,16 @@
       const original = deps[name];
       if (typeof original !== 'function') continue;
       deps[name] = function secondarySpanAwareCombatStart(durationS, opts = {}) {
+        // Start the visual first: this wrapper sits outside WeaponToolStances', and syncNow() reads
+        // runtimeAnimationGripState(), which clears capturedMelee while no stance visual is active.
+        // Capturing before the call lost the authored grip/dual-wield flags and fell back to defaults.
+        const result = original.call(this, durationS, opts);
         const stanceSnapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
         runtimeIdleDualWield = isDualWieldWeapon(stanceSnapshot?.itemKey || stanceSnapshot?.shape) && dualWieldEnabled(opts?.pose?.neutral?.dualWield, true);
         runtimeIdleDualToolKey = toolKeyFor(stanceSnapshot?.itemKey || stanceSnapshot?.shape || '') || null;
         capturedMelee = { durationS: Math.max(0.001, Number(durationS) || 0.5), opts: opts && typeof opts === 'object' ? opts : {}, kind: name === 'triggerWeaponHoldVisual' ? 'hold' : 'swing', startedAt: performance.now() };
         global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
-        return original.call(this, durationS, opts);
+        return result;
       };
     }
     const cancel = deps.cancelWeaponSwingHold;

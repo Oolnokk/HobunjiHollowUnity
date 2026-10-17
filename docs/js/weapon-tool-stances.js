@@ -403,7 +403,14 @@
     const dt = Math.max(0, (now - state.lastNow) / 1000);
     state.lastNow = now;
     const windupEndS = state.wf * state.totalS;
-    if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
+    // game.js owns the swing clock and caps its frame dt, so on slow frames the body/tool fall
+    // behind wall time. Follow its timeline whenever it is live; a wall-clock step would run the
+    // hands, grips and Neutral blend ahead of the pose the editor shows for the same phase.
+    const gameRemainingS = Number(window.Combat?.deps?.getWeaponAttackTimeline?.()?.remainingS);
+    if (Number.isFinite(gameRemainingS) && gameRemainingS > 0) {
+      const gameElapsedS = Math.max(0, state.totalS - gameRemainingS);
+      state.elapsedS = Math.min(state.held ? windupEndS : state.totalS, Math.max(state.elapsedS, gameElapsedS));
+    } else if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
     else state.elapsedS = Math.min(state.totalS, state.elapsedS + dt);
     state.progress = Math.max(0, Math.min(1, state.elapsedS / state.totalS));
     if (!state.held && state.progress >= 1 && !state.clearQueued) {
