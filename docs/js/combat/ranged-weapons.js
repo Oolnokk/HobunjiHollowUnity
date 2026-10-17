@@ -1247,6 +1247,11 @@
     const t = Math.max(0, Math.min(1, Number(segmentT) || 0));
     const x = p.prevX + (p.x - p.prevX) * t;
     const y = p.prevY + (p.y - p.prevY) * t;
+    if (p.def?.rangedType === 'thrown') {
+      // Thrown weapons reuse the melee impact family (sharp/blunt) of the same weapon instead of the arrow-hit cue.
+      window.AudioSystem?.playWeaponHitSfx?.(p.def.dmgType, x, y, p.areaId, undefined, 'medium');
+      return;
+    }
     window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId);
   }
 

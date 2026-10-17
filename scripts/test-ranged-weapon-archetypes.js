@@ -18,7 +18,7 @@ const releasedHolds = []; // Captures partial-pose release options passed into t
 let cancelledHolds = 0; // Confirms lost releases cancel the held ranged animation, not only the archetype input state.
 
 const toolDefs = {
-  kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie' },
+  kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie', dmgType: 'blunt' },
   bshuakauitl_copper: { label: "Copper B'shuakauitl", sprite: "assets/toolsprites/b'shuakauitl.png", slots: ['weapon'], animStyle: 'sweep', shapeKey: 'bshuakauitl' },
   dagger_copper: {
     label: 'Copper Dagger', sprite: 'assets/toolsprites/dagger.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'dagger',
@@ -294,6 +294,9 @@ for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace projectile spin rate.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.dmgType, 'blunt', 'Thrown config must carry the weapon\'s melee damage type so its hit sound matches the melee hit.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.dmgType, 'sharp', 'Thrown weapons without a blunt melee type default to the sharp hit family.');
+assert.match(rangedWeaponsSource, /rangedType === 'thrown'\) \{[^}]*playWeaponHitSfx\?\.\(p\.def\.dmgType/, 'Thrown projectile impacts must play the melee weapon-hit sound, not the arrow-hit cue.');
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpin, true, 'Dagger must use the same held Spin Throw twirl as hatchet/Kylie.');
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinBasisDeg, 0, 'Dagger held spin must use the generic zero-degree spin basis, not the spear offset.');
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinRevolutions, 2.5, 'Dagger must share the generic 2.5-revolution held throw.');
