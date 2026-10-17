@@ -22,6 +22,7 @@
   //   data-ctrl-tabs    optional, on a row of sibling tab/category buttons
   //                     (e.g. the pause menu's own top tab bar). Gamepad
   //                     LB/RB (and Tab/Shift+Tab) step through its children.
+  //   data-ctrl-modal   optional, pins the panel to the top of the stack while visible, even if other panels open later.
   //   data-ctrl-actions optional, receives cancelable hobunji-controller-panel-action
   //                     events (confirm/cancel/previous/next). Prevent default to
   //                     give a letter reader fixed A/B/LB/RB semantics.
@@ -194,6 +195,10 @@
     for (const p of current) {
       if (!stack.includes(p)) stack.push(p);
     }
+    // A blocking modal (data-ctrl-modal) stays on top however many panels open after it, so a dialogue or cutscene
+    // panel appearing underneath cannot take Confirm/Back away from it.
+    const modal = [...stack].reverse().find(p => p.hasAttribute('data-ctrl-modal'));
+    if (modal && stack[stack.length - 1] !== modal) stack = [...stack.filter(p => p !== modal), modal];
 
     const newTop = activePanel();
     if (newTop !== prevTop) {
@@ -957,6 +962,8 @@
       registerPanel(panel);
       reconcileStack();
       if (!stack.includes(panel)) return false;
+      const modal = [...stack].reverse().find(entry => entry !== panel && entry.hasAttribute('data-ctrl-modal')); // A pinned modal refuses focus theft.
+      if (modal && !panel.hasAttribute('data-ctrl-modal')) return false;
       stack = stack.filter(entry => entry !== panel);
       stack.push(panel);
       activatePanel(panel);

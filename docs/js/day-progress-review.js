@@ -788,6 +788,7 @@
     root.setAttribute('aria-label', 'Day progress review');
     root.setAttribute('data-ctrl-panel', '');
     root.setAttribute('data-ctrl-actions', '');
+    root.setAttribute('data-ctrl-modal', ''); // Stays the controller's active panel even if a dialogue/cutscene panel opens after it.
     root.addEventListener('hobunji-controller-panel-action', event => {
       event.preventDefault();
       if (event.detail?.action !== 'confirm') return;
