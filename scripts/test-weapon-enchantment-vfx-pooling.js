@@ -29,7 +29,16 @@ const THREE = {
     dispose() { counts.disposed++; }
   },
   CanvasTexture: class { constructor(canvas) { this.image = canvas; } },
+  Vector3: class { // Just the column-major matrix helpers faceEmittersTowardCamera uses.
+    constructor() { this.x = 0; this.y = 0; this.z = 0; }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    setFromMatrixPosition(m) { const e = m.elements; return this.set(e[12], e[13], e[14]); }
+    transformDirection(m) { const e = m.elements, { x, y, z } = this; this.set(e[0] * x + e[4] * y + e[8] * z, e[1] * x + e[5] * y + e[9] * z, e[2] * x + e[6] * y + e[10] * z); const l = Math.hypot(this.x, this.y, this.z) || 1; return this.set(this.x / l, this.y / l, this.z / l); }
+    subVectors(a, b) { return this.set(a.x - b.x, a.y - b.y, a.z - b.z); }
+    dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+  },
 };
+const translation = (x, y, z) => ({ elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1] });
 const noopContext = new Proxy({}, { get: () => () => ({ addColorStop() {} }), set: () => true });
 const context = {
   window: {
@@ -72,5 +81,17 @@ assert.ok(emitter.pool.every(sprite => sprite.visible === false), 'parked sprite
 disposeEmitter(emitter);
 assert.strictEqual(counts.disposed, counts.materials, 'disposing the emitter releases every material it ever created');
 assert.strictEqual(emitter.group.parent, null, 'the emitter group leaves the weapon plane');
+
+// The camera may see either face of the blade; particles must sit on the visible one.
+const facing = makeEmitter(new THREE.Group());
+facing.plane.matrixWorld = translation(0, 0, 0); // Blade +Z face points toward +Z.
+context.window.Combat.deps.camera = { matrixWorld: translation(0, 1, 5) };
+api._test.faceEmittersTowardCamera([facing]);
+assert.strictEqual(facing.group.scale.z, 1, 'front view keeps particles on the +Z face');
+assert.ok(facing.group.position.z > 0);
+context.window.Combat.deps.camera.matrixWorld = translation(0, 1, -5);
+api._test.faceEmittersTowardCamera([facing]);
+assert.strictEqual(facing.group.scale.z, -1, 'back view mirrors particles onto the -Z face');
+assert.ok(facing.group.position.z < 0, 'mirrored emitter sits in front of the back face');
 
 console.log('weapon enchantment VFX pooling tests passed');

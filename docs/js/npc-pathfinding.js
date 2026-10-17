@@ -473,7 +473,15 @@
       if (t.target === 'building' && t.targetMapId) {
         if (warmBuildings && !deps.buildingScenes.has(t.targetMapId)) deps.loadBuildingScene(t.targetMapId);
         const bi = deps.buildingScenes.get(t.targetMapId);
-        const spawn = bi ? deps.buildingSpawnFromExit(bi, bi.cols, bi.rows)
+        // Interior-to-interior doors (inn hallway <-> rooms) carry an authored
+        // spawn, same as the player's enterBuilding. The exit heuristic is only
+        // for maps with a town door; a room has none, so it used to send NPCs
+        // to its fallback tile far outside the room's floor.
+        const authoredSpawn = deps.isBuildingArea?.(area) && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)
+          && (t.targetCol !== 0 || t.targetRow !== 0) // Exits without spawnCol/spawnRow are loaded as 0,0.
+          && !window.TownMine?.floorFromMapId?.(t.targetMapId); // Generated mine floors pick their own walkable entrance.
+        const spawn = authoredSpawn ? { col: t.targetCol, row: t.targetRow }
+          : bi ? deps.buildingSpawnFromExit(bi, bi.cols, bi.rows)
           : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
         links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
       } else if (t.target === 'exit_building') {

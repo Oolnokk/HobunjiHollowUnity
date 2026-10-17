@@ -976,12 +976,17 @@ function beginCharge(options = {}) {
 
   function attackStartDelayS() {
     let delayS = 0; // Gameplay animation timing owns the queue even when audio is muted, suppressed, or unavailable.
+    let tracked = false; // A tracked attack's own utterance span is the whole gate; the frame-clamped visual clock must not outlast it.
     for (const action of attackActions) {
       if (action.cancelled || action.phase === 'done') attackActions.delete(action);
-      else delayS = Math.max(delayS, Math.max(0, (Number(action.totalS) || 0) - (Number(action.t) || 0)));
+      else {
+        tracked = true;
+        delayS = Math.max(delayS, Math.max(0, (Number(action.totalS) || 0) - (Number(action.t) || 0)));
+      }
     }
+    if (tracked) return delayS;
     const timeline = window.Combat?.deps?.getWeaponAttackTimeline?.(); // The cosmetic return tail must not extend the next attack's queue.
-    return Math.max(delayS, Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0);
+    return Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0;
   }
 
   function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0) {
@@ -1062,12 +1067,23 @@ function beginCharge(options = {}) {
         release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS);
       };
       if (windupS <= 0) startRelease(0);
+      // gameLoop clamps dt to 0.04s, so below 25 fps the staged clock falls behind the
+      // wall-clock utterance and the next attack waited after the voice had stopped.
+      // Player attacks advance by real elapsed time (capped per frame so a pause can't skip the strike).
+      let wallClockS = 0;
+      let lastWallMs = nowMs();
       const originalStrike = spec.onStrike; // Gameplay hit callbacks retain their authored impact time.
       const originalCancel = spec.onCancel; // Canceling either phase stops its audio as well as queued starts.
       const action = originalBeginStagedAction.call(this, {
         ...spec,
         recoverS: Math.max(Number(spec.recoverS) || 0, totalS - (Number(spec.windupS) || 0) - (Number(spec.strikeS) || 0)),
         onUpdate: action => {
+          if (isPlayer) {
+            const atMs = nowMs();
+            wallClockS += Math.min(0.25, Math.max(0, (atMs - lastWallMs) / 1000));
+            lastWallMs = atMs;
+            if (wallClockS > action.t) action.t = wallClockS;
+          }
           if (action.t >= windupS) startRelease(Math.max(0, action.t - windupS));
           spec.onUpdate?.(action);
         },

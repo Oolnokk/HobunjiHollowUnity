@@ -1835,8 +1835,8 @@
       // below, but future weapons no longer have to masquerade as tool definitions.
       const MELEE_WEAPON_SHAPE_DEFS = {
         warhammer: { label: 'Warhammer', icon: '🔨', baseSprite: 'assets/toolsprites/warhammer.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
-        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
-        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
+        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
         bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
         daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
         plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
@@ -14060,29 +14060,10 @@
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
 
+      // buildingSpawnFromExit's body now lives in js/building-entry-spawn.js
+      // (pure function of the scene's transitions).
       function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
-        const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
-        if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
-        // Multiple unrelated exit_building tiles can exist on one map (e.g. a real
-        // exterior door plus an unwired stairwell stub). Cluster tiles that share the
-        // same exitId/door, then use the largest cluster so a stray single-tile stub
-        // can't drag the computed spawn point away from the actual entrance.
-        const clusters = new Map();
-        for (const t of exitTiles) {
-          const key = t.exitId != null ? t.exitId : `${t.col},${t.row}`;
-          if (!clusters.has(key)) clusters.set(key, []);
-          clusters.get(key).push(t);
-        }
-        let mainCluster = exitTiles;
-        if (clusters.size > 1) {
-          mainCluster = [...clusters.values()].reduce((a, b) => (b.length > a.length ? b : a));
-        }
-        const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
-        const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
-        return {
-          col: window.FormatUtils.clamp(Math.round(avgCol), 0, fallbackCols - 1),
-          row: window.FormatUtils.clamp(northRow, 0, fallbackRows - 1)
-        };
+        return window.BuildingEntrySpawn.fromExit(bi, fallbackCols, fallbackRows);
       }
 
       function mapDebugName(area) {
@@ -22908,10 +22889,11 @@
           const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
           const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
           const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
-          // Fishing holds this throw's windup indefinitely; its authored -152°
-          // body twist would leave the player facing away from the cast tile.
-          const bodyYawRad = activeTool === 'harpoon' && fishingThrowSpinVisual
-            ? 0 : THREE.MathUtils.degToRad(chan('bodyYaw', true)); // Combat throws retain their authored body turn.
+          // Fishing holds this throw's windup indefinitely. The authored -152°
+          // body twist stays (the spear's frame is authored against it); only
+          // the legs counter-rotate below so the feet face the cast tile.
+          const fishingThrowHold = activeTool === 'harpoon' && !!fishingThrowSpinVisual;
+          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
 
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
@@ -22924,6 +22906,7 @@
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
+          if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);

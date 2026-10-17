@@ -322,6 +322,20 @@ stagedAction.phase='done';
 assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'completed actions cannot reinstate the return delay');
 emit(docListeners, 'hobunjiPlayerReady');
 assert.equal(W.CombatVocalizations.attackStartDelayS(),0,'return tail does not gate attacks after old actions are cleared');
+// Below 25 fps gameLoop clamps dt, so the staged clock must follow the wall-clock utterance instead.
+visualRemainingS = 1.3;
+abilities.get('swingCombo').onTap();
+const slowAction = stagedAction;
+now += 200;
+slowAction.t = 0.04; // One clamped frame of game time.
+stagedSpec.onUpdate(slowAction);
+assert(Math.abs(slowAction.t-0.2)<1e-9,'player attack clock advances by real elapsed time');
+assert(Math.abs(W.CombatVocalizations.attackStartDelayS()-0.8)<1e-9,'queue ends with the utterance, not the slower game clock');
+now += 5000;
+stagedSpec.onUpdate(slowAction);
+assert(Math.abs(slowAction.t-0.45)<1e-9,'a long pause catches up at most 0.25s per frame');
+stagedSpec.onComplete(slowAction);
+slowAction.phase='done';
 console.log('shared animation timeline voice and queue timing: ok');
 
 const gameSource = fs.readFileSync(path.join(__dirname,'..','docs','game.js'),'utf8'); // Executes the real visual timeline bridge, including explicit and automatic hold endpoints.
