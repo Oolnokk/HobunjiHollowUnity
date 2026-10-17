@@ -42,7 +42,7 @@
     projectileSpin: true,
     poses: {
       neutral: {
-        x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
+        x: -0.04, y: 0.29, z: -0.1, pitch: 47, yaw: 107, bodyYaw: -55, roll: 88, // Authored thrown-weapon idle stance (Spin Throw); also the held flask's idle.
         shoulderAim: { grip: true, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
         dualWield: { enabled: true },
@@ -77,7 +77,7 @@
     projectileLockAlignment: true,
     projectileBasisDeg: -90, // Corrects only the launched spear PNG a quarter-turn clockwise; held spin/end-flip authoring stays unchanged.
     poses: {
-      neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
+      neutral: { ...weaponThrowSpin.poses.neutral, x: -0.12, y: 0.2, z: 0, pitch: -10, yaw: 167, bodyYaw: -62, roll: 75, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
       windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },
       strike: { ...weaponThrowSpin.poses.strike, shoulderAim: { ...weaponThrowSpin.poses.strike.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.strike.secondaryGrip } },
     },

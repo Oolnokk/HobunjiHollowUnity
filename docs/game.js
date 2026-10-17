@@ -22529,6 +22529,8 @@
           heldItemHolder.rotation.set(0, 0, 0);
           heldItemHolder.scale.setScalar(0.85);
           updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
+          applyHeldDrinkPose(window.HeldActionAnimations.throwFlask, 0); // Idle flask rests in the authored thrown-weapon stance, the same Neutral its throw starts from.
         } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
