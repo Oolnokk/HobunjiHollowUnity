@@ -1,0 +1,30 @@
+name: temp-apply-ikmc-outpost
+on:
+  push:
+    branches:
+      - feature/ikmc-outpost-harkhanash-v2
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply IKMC outpost content
+        run: python3 scripts/temp-apply-ikmc-outpost.py
+      - name: Validate targeted regression
+        run: node scripts/test-ikmc-outpost.js
+      - name: Validate fast regression suite
+        run: node scripts/run-tests.js
+      - name: Remove temporary patch machinery
+        run: rm scripts/temp-apply-ikmc-outpost.py .github/workflows/temp-apply-ikmc-outpost.yml
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add IKMC Outpost and relocate Harkhanash"
+          git push origin HEAD:feature/ikmc-outpost-harkhanash-v2
