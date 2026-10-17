@@ -194,14 +194,15 @@
 
       if (String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
       const previousUpdate = handle.update.bind(handle);
-      const runLeanQuaternion = new THREEArg.Quaternion(); // Reused to lean along the leg rig's logical facing rather than the billboard direction.
+      const runLeanQuaternion = new THREEArg.Quaternion(); // Reused to lean along actual world movement independently of portrait and weapon yaw.
       handle.update = function proneAwarePlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
         const player = window.Combat?.deps?.player;
         const effectiveSuppressed = !!suppressed || !!player?.prone;
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose, motion);
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
         if (pitch && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
-          priority: 100, mode: 'additive', quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Number(handle.group?.rotation?.y) || 0),
+          priority: 100, mode: 'additive', space: 'world',
+          quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Math.atan2(Number(player?.vx) || 0, Number(player?.vy) || 0)),
         });
         else composer.clearChannel(RUN_CHANNEL);
         return result;
@@ -347,6 +348,8 @@
     getDebug() {
       const player = window.Combat?.deps?.player;
       return {
+        lastChange: 'Procedural movement lean follows velocity independently of portrait and weapon stance yaw',
+        runLeanSpace: 'world-movement',
         playerProne: !!player?.prone,
         footing: Number(player?.footing) || 0,
         maxFooting: Number(player?.maxFooting) || 0,

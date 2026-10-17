@@ -633,6 +633,7 @@
       deps.player.invulnUntil = Math.max(deps.player.invulnUntil || 0, performance.now() + invulnMs);
       nextZipAt = t + ZIP_COOLDOWN_S * (1 + (stats.zipCooldownMul || 0));
 
+      window.CombatVocalizations?.playDodge?.(deps.player);
       blinkRuntimeDebug.hopCount += 1;
       window.CombatTutorial?.observe?.('blink', { abilityId: 'blinkDodge' });
       blinkRuntimeDebug.lastHopReason = reason;

@@ -262,10 +262,10 @@
     ));
   }
 
-  function resolveDelta(targetKind = 'all') {
+  function resolveDelta(targetKind = 'all', space = 'local') {
     const ordered = Array.from(channels.entries())
       .filter(([, channel]) => {
-        if (!channel || channel.enabled === false) return false;
+        if (!channel || channel.enabled === false || channel.space !== space) return false;
         if (targetKind === 'player' && channel.includePlayer === false) return false;
         if (targetKind === 'external' && channel.includeExternal === false) return false;
         return true;
@@ -333,6 +333,7 @@
     if (!name) return false;
     const stored = {
       priority: finite(contribution.priority),
+      space: contribution.space === 'world' ? 'world' : 'local', // Movement lean is applied after portrait yaw and its camera clamp.
       mode: contribution.mode === 'override' ? 'override' : 'additive',
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
       enabled: contribution.enabled !== false,
@@ -388,6 +389,21 @@
     }
     const neck = currentPlayerNeckJoint(); // Counter the body correction so physical neck limits operate on the original logical gaze.
     if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
+  }
+
+  const worldChannelPivot = new THREE.Vector3(); // Reused posterior pivot for movement-space contributions at each render.
+  function applyWorldChannels(undo, renderDebug) {
+    if (!playerMesh) return;
+    const bodyDelta = resolveDelta('player', 'world'); // World-aligned movement tilt must survive stance yaw and the final portrait clamp.
+    const externalDelta = resolveDelta('external', 'world'); // Held objects and shoulder pets share the same posterior pivot and tilt.
+    if (!hasResolvedDelta(bodyDelta) && !hasResolvedDelta(externalDelta)) return;
+    const pivot = playerMesh.localToWorld(worldChannelPivot.set(0, playerPosteriorY, 0)); // Uses the final pose's posterior before leaning the whole character.
+    for (const entry of currentOwnedRootEntries()) {
+      const delta = entry.kind === 'player' ? bodyDelta : externalDelta; // Selects the contribution intended for this visual root.
+      if (hasResolvedDelta(delta)) applyWorldDelta(entry.root, pivot, delta.rotation, delta.translation, undo);
+    }
+    renderDebug.appliedOrder.push(...new Set([...bodyDelta.applied, ...externalDelta.applied]));
+    renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
   }
 
   function registerPlayerRig(parent, handle) {
@@ -463,7 +479,7 @@
         }
       }
 
-      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
+      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); applyWorldChannels(undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
       lastRenderDebug = renderDebug;
 
       try {
@@ -554,6 +570,7 @@
         channels: Array.from(channels.entries()).map(([name, channel]) => ({
           name,
           priority: channel.priority,
+          space: channel.space,
           mode: channel.mode,
           enabled: channel.enabled !== false,
           includePlayer: channel.includePlayer !== false,
