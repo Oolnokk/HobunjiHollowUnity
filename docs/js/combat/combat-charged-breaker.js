@@ -171,10 +171,10 @@
       deps.showToast('Charged Breaker charging — release to strike.', true);
       deps.triggerWeaponHoldVisual(MAX_CHARGE_S + STRIKE_S, {
         anim: 'sweep',
-        pose: window.Combat.poses.SWEEP_POSE,
+        pose: window.AttackPoseTemplates?.poseFor('hatchet_swing', POWER), // The editor's Charged Breaker pose, POWER already applied.
         windupFrac: MAX_CHARGE_S / (MAX_CHARGE_S + STRIKE_S),
         strikeFrac: 1,
-        power: POWER,
+        power: 1,
         holdS: HOLD_S,
         windupSlowdown: WINDUP_SLOWDOWN,
         afflictionIds: Object.keys(effects.afflictions),

@@ -41,6 +41,8 @@ global.window = {
   },
 };
 
+const templatesPath = path.join(__dirname, '..', 'docs', 'js', 'combat', 'attack-pose-templates.js'); // Shared with the attack-animation editor.
+vm.runInThisContext(fs.readFileSync(templatesPath, 'utf8'), { filename: templatesPath });
 vm.runInThisContext(source, { filename: modulePath });
 registered.swingCombo.onTap();
 
@@ -55,5 +57,13 @@ assert.ok(Math.abs(stagedCall.windupS - (0.345 + 0.07)) < 1e-9, 'Forehand windup
 const returnTailS = Math.max(0.12, visualCall.durationS * 0.35); // game.js's automatic return tail for swings without their own returnS.
 const totalS = visualCall.durationS + visualCall.opts.holdS + returnTailS;
 assert.ok(Math.abs(totalS - 1.42) < 0.002, `overall Forehand duration stays 1.42s (got ${totalS.toFixed(4)})`);
+
+// The editor shows Forehand Swing with its 'hatchet_swing' template (ACTION_DEFS);
+// the game must play exactly those poses.
+const editorHtml = fs.readFileSync(path.join(__dirname, '..', 'docs', 'tools', 'attack-animation-editor', 'index.html'), 'utf8');
+const forehandTemplate = /id: 'swing_forehand'[^\n]*templateId: '([a-z_]+)'/.exec(editorHtml)?.[1];
+assert.strictEqual(forehandTemplate, 'hatchet_swing');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(visualCall.opts.pose)), JSON.parse(JSON.stringify(window.AttackPoseTemplates.poseFor(forehandTemplate))), 'Forehand plays the editor template poses');
+assert.strictEqual(visualCall.opts.power, 1, 'no second power scaling on top of the editor pose');
 
 console.log('test-combo-strike-hold-pose-alignment: ok');

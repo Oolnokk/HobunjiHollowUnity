@@ -125,7 +125,7 @@
         dirSign,
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
-        pose: window.Combat.poses.SWEEP_POSE,
+        pose: window.AttackPoseTemplates?.poseFor('hatchet_swing'), // The editor's Flurry template.
         holdS: HOLD_S,
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,

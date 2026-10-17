@@ -246,6 +246,7 @@
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
+        pose: window.AttackPoseTemplates?.poseFor('pickshovel_swing'), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,

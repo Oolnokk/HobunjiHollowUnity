@@ -53,11 +53,9 @@
   // (power:1.3) and slowed down for a heavier finisher, instead of any of
   // them needing a separate bespoke animation. game.js's pose-driven swing
   // branch (updateToolMesh) applies this generically.
-  const SWEEP_POSE = {
-    neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0,   bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup:  { x: 0, y: 0, z: 0, pitch: 0, yaw: -42, bodyYaw: -90, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    strike:  { x: 0, y: 0, z: 0, pitch: 0, yaw: 20,  bodyYaw: 120, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-  };
+  // The editor-authored sweep (js/combat/attack-pose-templates.js 'hatchet_swing'),
+  // exported below as Combat.poses.SWEEP_POSE for the bandit AI.
+  const SWEEP_POSE = window.AttackPoseTemplates?.poseFor('hatchet_swing');
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
@@ -120,7 +118,9 @@
     return (rs.getAffliction(entity, 'bruisedHealth') || 0) + (rs.getAffliction(entity, 'corrodedHealth') || 0);
   }
 
-  function registerCombo(id, label, steps) {
+  // templateId: the attack-animation editor template these steps show (see
+  // the editor's ACTION_DEFS), so in-game poses match the editor exactly.
+  function registerCombo(id, label, steps, templateId) {
     let comboIndex = 0;
     let lastTapAt = -99;
     let busyAction = null;
@@ -206,8 +206,8 @@
         dirSign: step.dirSign,
         windupFrac: windupS / totalVisual,
         strikeFrac: (windupS + strikeS) / totalVisual,
-        power: step.power || 1,
-        pose: step.pose,
+        power: 1, // poseFor already applied the editor's power rule to this pose.
+        pose: window.AttackPoseTemplates?.poseFor(templateId, step.power || 1),
         holdS: step.holdS || 0,
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
@@ -305,8 +305,8 @@
     window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
   }
 
-  registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);
-  registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS);
+  registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS, 'hatchet_swing');
+  registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS, 'pickshovel_swing');
 
   // Shared with other sweep-style abilities (e.g. combat-flurry.js) so every
   // sweeping attack uses this same authored pose rather than each falling
