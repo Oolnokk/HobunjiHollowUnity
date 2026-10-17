@@ -344,7 +344,8 @@
 
   const MINE_DARKNESS_OVERLAY_ALPHA = 0.99; // Raised from 0.90 so untouched mine-screen edges retain only about one percent of the rendered image.
   const DEN_DARKNESS_OVERLAY_ALPHA = clamp01(0.82 + GLOBAL_DARKNESS_DELTA); // Applies the mine's +0.09 darkness change to the previous den level.
-  const INTERIOR_DARKNESS_OVERLAY_ALPHA = clamp01(0.28 + GLOBAL_DARKNESS_DELTA); // Applies the same +0.09 darkness change to ordinary enclosed interiors.
+  const INTERIOR_DARKNESS_OVERLAY_ALPHA = 0.97; // Unlit building areas retain only three percent of their image; windows and lamps reveal local pools.
+  const INTERIOR_LIGHT_RADIUS_MULTIPLIER = 2; // Broad indoor pools fade linearly from the source to their outer edge.
 
   let skyPolicyDeps = null;
   function isCloudForestMap(area) { return area === 'map_southern_cloud_forest' || area === 'map_opening_cloud_forest'; } // The temporary rescue map shares the biome's sky and mist policy.
@@ -502,19 +503,22 @@
     }
     ctx.globalCompositeOperation = 'destination-out';
     const lanternTuning = tuning.lantern;
+    const linearInterior = ordinaryBuildingInterior(currentArea) && !isUndergroundLanternArea(currentArea); // Cavern and outdoor lantern tuning remains independent.
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
       if (!center.visible) continue;
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
       if (!(shineR > 0)) continue;
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * lanternStrength})`);
-      grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha * lanternStrength})`);
-      grad.addColorStop(
-        Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
-        `rgba(0,0,0,${lanternTuning.softMaskAlpha * lanternStrength})`,
-      );
+      if (!linearInterior) {
+        grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha * lanternStrength})`);
+        grad.addColorStop(
+          Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
+          `rgba(0,0,0,${lanternTuning.softMaskAlpha * lanternStrength})`,
+        );
+      }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -553,10 +557,11 @@
   function drawFurnitureLightMasksCompat(preserveOutdoorWeatherTint = false) {
     const ctx = lightingDeps.lctx;
     const visible = [];
+    const linearInterior = ordinaryBuildingInterior(lightingDeps.getCurrentArea()) && !isUndergroundLanternArea(lightingDeps.getCurrentArea()); // Only ordinary buildings use the broad linear profile.
     for (const light of lightingDeps.getFurnitureLightSources()) {
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
       if (!center.visible) continue;
-      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
+      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
       if (!(shineR > 0)) continue;
       visible.push({ light, center, shineR });
     }
@@ -567,8 +572,10 @@
       const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-      grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
-      grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      if (!linearInterior) {
+        grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
+        grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -601,12 +608,12 @@
 
     ctx.globalCompositeOperation = 'source-over';
     for (const { light, center, shineR } of visible) {
-      const glowR = shineR * 0.62;
+      const glowR = shineR * (linearInterior ? 1 : 0.62);
       const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
       const { r, g, b } = light.color;
       const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
-      glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
+      if (!linearInterior) glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
       glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = glow;
       ctx.beginPath();
@@ -626,11 +633,13 @@
   const WINDOW_PANE_GLOW_RADIUS = 0.55; // World units; about the authored pane's half-diagonal.
   const WINDOW_PANE_GLOW_STRENGTH = 0.85;
 
-  function drawWindowRevealCircle(ctx, center, radius, strength, clarity) {
+  function drawWindowRevealCircle(ctx, center, radius, strength, clarity, linear = false) {
     const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
     grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-    grad.addColorStop(clarity, `rgba(0,0,0,${strength * 0.7})`);
-    grad.addColorStop(Math.min(1, clarity + 0.35), `rgba(0,0,0,${strength * 0.2})`);
+    if (!linear) {
+      grad.addColorStop(clarity, `rgba(0,0,0,${strength * 0.7})`);
+      grad.addColorStop(Math.min(1, clarity + 0.35), `rgba(0,0,0,${strength * 0.2})`);
+    }
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -663,10 +672,10 @@
       }
       if (daylight <= 0.02) continue;
       const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
-      const shineR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles);
+      const shineR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER);
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
       if (!(shineR > 0) || !(strength > 0)) continue;
-      drawWindowRevealCircle(ctx, center, shineR, strength, 0.35); // Daylight pool spreading into the room.
+      drawWindowRevealCircle(ctx, center, shineR, strength, 0.35, true); // Daylight pool spreading into the room.
       windowMaskStats.drawn += 1;
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -769,6 +778,9 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
+        latestChange: 'Spirit Communion preserves windows and gables; pew item keys resolve to seats; interiors use 97% darkness and doubled linear light radii.',
+        interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
+        interiorLightFalloff: 'linear',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,

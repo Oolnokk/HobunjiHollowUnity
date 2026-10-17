@@ -11830,6 +11830,7 @@
         buildingScenes: _buildingScenes,
         loadBuildingScene,
         buildingSpawnFromExit,
+        npcSeatTransformForTarget, // Shared seat authority used by collision checks and final approach pathing.
       });
       const {
         isNpcTileWalkable,
@@ -12500,7 +12501,7 @@
             }
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -13386,8 +13387,13 @@
             }
           }
           // Colliders override back to solid
+          const manualColliderKeys = new Set(mapData._interiorManualColliderKeys || []); // Explicit authored walls remain hard blockers even beneath a seat.
           for (const [c, r] of (mapData.colliders || [])) {
-            if (bGrid[r]?.[c]) bGrid[r][c].type = TileType.ROCK;
+            if (bGrid[r]?.[c]) {
+              bGrid[r][c].type = TileType.ROCK;
+              bGrid[r][c].npcFurnitureCollider = Array.isArray(mapData._interiorManualColliderKeys)
+                && floorSet.has(`${c},${r}`) && !manualColliderKeys.has(`${c},${r}`);
+            }
           }
           // Build transitions from exits array
           const transitions = [];

@@ -684,7 +684,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261012hbd0b6b9"></script>
+  <script src="js/cloud-forest-fog.js?v=20261017h8c2a3b0"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -2503,7 +2503,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261017h158da0d"></script>
+  <script src="js/pixel-probe.js?v=20261017h5f76d40"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2572,7 +2572,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261009he4308cf"></script>
+  <script src="js/npc-scheduling.js?v=20261017hf291bfa"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2596,7 +2596,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261017h585e6fc"></script>
+  <script src="js/npc-pathfinding.js?v=20261017h1f79e2c"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
@@ -2668,7 +2668,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261017h75873c2"></script>
+  <script src="game.js?v=20261017h706373b"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261017h3decaa3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
