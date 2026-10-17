@@ -1314,7 +1314,12 @@
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
+        // Ground cover that skipped depth in the base pass (wilderness grass) must never be
+        // stamped: its blades sit in front of tents, bush wood and feet, so erasing "its"
+        // depth would also erase theirs and the ground restore can never bring it back.
+        const wroteDepth = material.depthWrite !== false;
         material.depthWrite = false;
+        if (!wroteDepth) { material.stencilWrite = false; return; }
         // Same shader/depth as the base pass with the default LessEqual test:
         // passes exactly where this ground is still the front-most surface.
         material.stencilWrite = true;
