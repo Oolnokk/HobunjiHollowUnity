@@ -34,26 +34,8 @@ assert.match(
 
 assert.match(
   source,
-  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?const rootMidi = midi[\s\S]*?rootOscillator\.frequency\.setValueAtTime\(midiFrequency\(rootMidi\), now\)[\s\S]*?chordMidis:\[rootMidi\]/,
-  'the synth harmony pad must contain only the current progression root'
-);
-
-assert.doesNotMatch(
-  source,
-  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?fifthOscillator/,
-  'the synth root pad must not create a hidden fifth oscillator'
-);
-
-assert.match(
-  source,
   /function rootPadSynthGain\(\)[\s\S]*?0\.018 \+ state\.rootPadLevel \* 1\.5[\s\S]*?0\.12[\s\S]*?state\.padMixLevel/,
-  'the synth-only base gain must be reduced without attenuating imported pad samples'
-);
-
-assert.match(
-  source,
-  /PAD_SYNTH_FILTER_HZ = 600[\s\S]*?PAD_SYNTH_ATTACK_S = 0\.32[\s\S]*?PAD_SYNTH_CROSSFADE_S = 0\.8[\s\S]*?PAD_SYNTH_HARMONICS = Object\.freeze\(\[0,1,0\.10,0\.025,0\.008\]\)[\s\S]*?function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?createPeriodicWave\(real,imag\)[\s\S]*?filter\.frequency\.setValueAtTime\(PAD_SYNTH_FILTER_HZ, now\)[\s\S]*?now \+ PAD_SYNTH_ATTACK_S/,
-  'the synth root pad must use the mostly-sine subtle waveform, 600 Hz low-pass, soft attack, and slow crossfade tuning'
+  'the low-kurraya base gain must preserve its independent mix without attenuating imported pad samples'
 );
 
 assert.match(
@@ -111,7 +93,7 @@ assert.match(
 
 assert.match(
   source,
-  /gainAmount \* state\.kurrayaMixLevel/,
+  /function createVoiceNodes\(midi, gainAmount, startAt = null, mixLevel = state\.kurrayaMixLevel\)[\s\S]*?gainAmount \* mixLevel/,
   'the Kurraya mix multiplier must reach instrument-note playback'
 );
 assert.match(

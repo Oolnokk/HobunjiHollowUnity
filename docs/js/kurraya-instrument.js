@@ -47,7 +47,7 @@
   const KURRAYA_SAMPLE_GATED_BRIDGE_METHODS = [ // Sound-producing/control methods queued behind sample readiness so no fallback-pluck note leaks through first.
     'noteDown', 'noteUp', 'bankDown', 'bankUp', 'tap',
     'leftStick', 'setAutoPickMode', 'rightStick', 'releaseLeftStick', 'releaseRightStick',
-    'resetHarmony', 'setHarmonyPattern', 'startGameplaySong', 'startBackupPreviewSong',
+    'useGameplayFootstepMetronome', 'resetHarmony', 'setHarmonyPattern', 'startGameplaySong', 'startBackupPreviewSong',
     'startAmbientLead', 'stopBackupPreview', 'enterJamMode',
   ];
   // The front plane's own geometry/scale already comes from the caller's

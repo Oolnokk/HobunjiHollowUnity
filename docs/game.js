@@ -16983,7 +16983,7 @@
         }; // Mobile Pixel Probe reads this copy without reaching into game.js's private closure.
       }
       function setCharacterViewMode(enabled, reason = 'utility-wheel') {
-        const nextEnabled = Boolean(enabled);
+        const nextEnabled = window.MusicMinigame?.state?.active ? true : Boolean(enabled); // Performances retain Character View until the session ends.
         if (nextEnabled === characterViewMode.enabled) return;
         if (nextEnabled) {
           characterViewMode.lockedFacingAngle = facingAngle;
@@ -17280,7 +17280,7 @@
           ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
           : Math.hypot(input.x, input.y); // Used here to disable character view from keyboard, touch, or controller movement through one input threshold.
         const viewModeForcedMovement = player.dodging || player.lunging || player.knockbackT > 0 || !!player._knockbackLedgeFall || Math.hypot(player.vx, player.vy) > 1;
-        if (characterViewMode.enabled && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
+        if (characterViewMode.enabled && !window.MusicMinigame?.state?.active && !sitInteraction && (viewModeMoveMagnitude > 0.08 || viewModeForcedMovement)) {
           setCharacterViewMode(false, 'movement');
         }
         // Every mode below that takes over movement/input outright (dialogue,
@@ -26778,6 +26778,16 @@
         // held selector owned the sticks -- telling every consumer a menu was
         // open when none was. Menus still answer through isActive(); held
         // selectors and the music minigame now declare ownership directly.
+        if (window.MusicMinigame?.state?.active && !window.ControllerUI?.isActive?.()) {
+          if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to kurraya');
+          gamepadState.uiOwned = true;
+          const musicPad = window.ControllerInput?.frame?.()?.pad || null; // Reuses the shared snapshot while music owns note buttons and the left stick.
+          const musicLook = window.ControllerInput.normalizeStick(musicPad?.axes[2], musicPad?.axes[3], INPUT_DEFAULTS.deadzone, CONTROLLER_LOOK_RESPONSE); // Camera keeps its existing response, invert-Y, and sensitivity.
+          controllerCameraX = musicLook.x; controllerCameraY = musicLook.y;
+          input.x = 0; input.y = 0;
+          publishControllerStatus(musicPad, 'kurraya + camera', null, musicLook);
+          return;
+        }
         if (window.ControllerUI?.isActive?.() || window.ControllerInput?.gameplaySuspended?.()) {
           if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
           gamepadState.uiOwned = true;
@@ -27589,7 +27599,7 @@
           // this wrap into a full 360° orbit instead of the usual ±45° peek
           // clamp. Falls through to the raycast-based facing/aim below
           // otherwise, same as it always has.
-          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
+          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE || window.MusicMinigame?.state?.active) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Applies slowdown without ignoring any movementX/Y deltas.
             const degPerPx = (Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15) * turnMultiplier;
@@ -28334,6 +28344,7 @@
 
       let _musicPrevCameraMode = null;
       let _musicPrevCameraTarget = null;
+      let _musicPrevCharacterView = false; // Restores the pre-performance Character View setting when playing ends.
       // Resolves a random real-recording footstep URL for whatever surface
       // this NPC is currently standing on — same surface resolution
       // _tickFootsteps uses for their actual footfalls — turned into an
@@ -28360,27 +28371,22 @@
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        getPlayerFootstepSampleUrls: () => {
+          const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()); // Uses the same surface resolution as ordinary player footsteps.
+          const surface = window.AudioSystem?.footstepSurfaceKey(currentArea, tile?.type ?? null); // Selects the authored recordings for the player's current ground.
+          return (window.AudioSystem?.gameAudioConfig()?.footsteps?.surfaces?.[surface]?.urls || []).map(url => new URL(url, document.baseURI).href);
+        },
         showToast,
-        // Frames the performance in third-person (see the "music" camera
-        // mode in scratchbones-config.js) instead of leaving the default
-        // camera in place — matches how fishing/dialogue each get their
-        // own framing. In backup mode the target sits at the midpoint
-        // between the player and whichever NPC they joined, so both stay
-        // in shot; in lead/solo mode it just follows the player as usual.
-        beginMusicCamera: (npcId) => {
+        // Keep the current framing and position, with Character View owning body/neck locks and camera orbit.
+        beginMusicCamera: () => {
           _musicPrevCameraMode = activeCameraMode;
           _musicPrevCameraTarget = activeCameraTarget;
-          activeCameraMode = 'music';
-          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
-          if (walker?.root) {
-            const midX = (player.x / TILE + walker.root.position.x) / 2;
-            const midZ = (player.y / TILE + walker.root.position.z) / 2;
-            activeCameraTarget = { position: new THREE.Vector3(midX, 0, midZ) };
-          } else {
-            activeCameraTarget = null;
-          }
+          _musicPrevCharacterView = characterViewMode.enabled;
+          activeCameraTarget = null;
+          setCharacterViewMode(true, 'kurraya');
         },
         endMusicCamera: () => {
+          setCharacterViewMode(_musicPrevCharacterView, 'kurraya-ended');
           activeCameraMode = _musicPrevCameraMode ?? 'default';
           activeCameraTarget = _musicPrevCameraTarget ?? null;
           _musicPrevCameraMode = null;
