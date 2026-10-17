@@ -441,6 +441,16 @@
     return (1 - poseScale) + poseScale * returnT;
   }
 
+  // How much of the sweep style's -90° in-plane twist to cancel this frame (1 = fully at Neutral). Weapons fade it
+  // with their attack. Tool slots (axe, fishing mace, ...) only cancel it while their idle stance is what is drawn:
+  // the Attack Editor cancels it at every sweep-style Neutral, so an axe at rest would otherwise sit turned 90° about
+  // its own face while the hands keep the editor's grip frame. Their own swings suppress the stance and keep the twist.
+  function sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied) {
+    if (activeSlot !== 'weapon' && !stanceApplied) return 0;
+    if (activeSlot === 'weapon' && visual?.anim === 'sweep') return neutralWeightForVisual(visual);
+    return !visual && def?.animStyle === 'sweep' ? 1 : 0;
+  }
+
   function installCombatVisualHooks() {
     const combatDeps = window.Combat?.deps;
     if (!combatDeps || combatHooksInstalled || combatDeps.__weaponToolStanceVisualHooks) return;
@@ -571,10 +581,8 @@
       // (fully while idle, fading out by windup, fading back in on return)
       // directly on the child plane's own local axis instead of guessing a
       // compensating holder/global Euler rotation.
-      if (toolPlane && activeSlot === 'weapon') {
-        const idleSweep = !visual && def?.animStyle === 'sweep';
-        const attackSweep = visual?.anim === 'sweep';
-        const neutralWeight = attackSweep ? neutralWeightForVisual(visual) : (idleSweep ? 1 : 0);
+      if (toolPlane) {
+        const neutralWeight = sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied);
         if (neutralWeight > 0) {
           savedPlaneRotationZ = toolPlane.rotation.z;
           toolPlane.rotation.z += Math.PI / 2 * neutralWeight;
@@ -732,6 +740,7 @@
     },
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
+    sweepTwistCancelWeight,
     idleBodyYawSnapshot,
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,
