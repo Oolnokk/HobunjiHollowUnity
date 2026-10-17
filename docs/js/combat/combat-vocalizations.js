@@ -739,6 +739,10 @@ function liveChargeTargetDurationS(abilityId) {
   return fallback > 0 ? fallback : null;
 }
 
+// Grunts are time-mapped onto authored attack phases; a short windup->strike
+// interpolation can need well over the renderer's generic 4x compression.
+const MAX_MAPPED_TEMPO = 16;
+
 function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
   const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
   const targetS = Number(targetDurationS) > 0 ? Number(targetDurationS) : clipDurationS;
@@ -751,7 +755,7 @@ function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
     clipDurationS,
     targetDurationS: targetS,
     normalTempo: baseNormalTempo,
-    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, 4), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.
+    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, MAX_MAPPED_TEMPO), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.
     earlyReleaseNormalSpeedMul,
     catchUpTempo: clamp(baseNormalTempo * earlyReleaseNormalSpeedMul, 1 / 9, 4),
   };
@@ -898,7 +902,7 @@ function beginCharge(options = {}) {
       ? options.pitchOffsetSemitones // Pre-rolled by prewarmStrikeGrunt so this render is already cached.
       : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
     const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
-    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false };
+    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO };
     const [fullRendered, catchUpRendered] = await Promise.all([
       renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
       token.catchUpOnRelease
@@ -991,6 +995,17 @@ function beginCharge(options = {}) {
     return Number(timeline?.activeRemainingS ?? timeline?.remainingS) || 0;
   }
 
+  // Attack inputs during a gated attack queue only once its Strike pose is
+  // reached; earlier presses are ignored rather than buffered.
+  function attackQueueOpen() {
+    for (const action of attackActions) {
+      if (action.cancelled || action.phase === 'done') continue;
+      if ((Number(action.t) || 0) < (Number(action.windupS) || 0) + (Number(action.strikeS) || 0)) return false;
+    }
+    const timeline = window.Combat?.deps?.getWeaponAttackTimeline?.();
+    return !(Number(timeline?.strikeRemainingS) > 0);
+  }
+
   function pickStrikeGruntUrl(category) {
     const urls = category === 'combo' ? (config.assets?.comboAttackGrunts || []) : [config.assets?.releaseGrunt];
     const available = urls.filter(Boolean);
@@ -1015,7 +1030,7 @@ function beginCharge(options = {}) {
         const audible = trim.buffer || buffer; // Same trimmed buffer object beginCharge will use (trims are cached per buffer).
         const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
         const plan = chargeRatePlan(audible.duration, durationS, voice.tempo);
-        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, tempo: plan.stretchedTempo });
+        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO, tempo: plan.stretchedTempo });
       }).catch(() => {});
     }
     return { url, pitchOffsetSemitones };
@@ -1085,7 +1100,10 @@ function beginCharge(options = {}) {
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
       const windupS = Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
-      const releaseS = Math.max(0, totalS - windupS); // Windup to Strike through Hold; return easing stays purely visual.
+      // The input gate (totalS) runs to the middle of the Strike hold; the release
+      // voice is time-mapped to fill exactly Windup -> Strike (the start of the hold).
+      const strikeEndS = Math.min(totalS, Math.max(windupS, Number(timeline?.strikeRemainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0))) || 0));
+      const releaseS = Math.max(0, strikeEndS - windupS);
       let charge = isPlayer ? (liveChargesByAbility.get(context.id) || null) : null; // Reuse a held charge until its release boundary.
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
@@ -1277,7 +1295,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Charge spans neutral to windup; release and queued attacks end at Hold, before the visual return to neutral.',
+    latestChange: 'Charge spans neutral to windup; release spans windup to the Strike pose; the input gate ends halfway through the hold and inputs queue only after the Strike pose.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1287,6 +1305,7 @@ function beginCharge(options = {}) {
     playStrikeGrunt,
     prewarmStrikeGrunt,
     attackStartDelayS,
+    attackQueueOpen,
     chargeRatePlan,
     liveChargeTargetDurationS,
     getConfig: () => clone(config),

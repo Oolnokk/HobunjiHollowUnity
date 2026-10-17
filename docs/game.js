@@ -21743,9 +21743,11 @@
         const holdEndFrac = combatSwingHoldS > 0 // Match updateToolMesh's explicit or proportional hold endpoint.
           ? Math.min(0.99, combatSwingStrikeFrac + combatSwingHoldS / toolSwingDur)
           : Math.min(0.99, combatSwingStrikeFrac + (1 - combatSwingStrikeFrac) * 0.3);
+        const gateFrac = Math.max(combatSwingStrikeFrac, (combatSwingStrikeFrac + holdEndFrac) / 2); // The next attack may start halfway through the Strike hold.
         return {
           remainingS: toolSwingT,
-          activeRemainingS: Math.max(0, toolSwingDur * holdEndFrac - elapsedS),
+          activeRemainingS: Math.max(0, toolSwingDur * gateFrac - elapsedS),
+          strikeRemainingS: Math.max(0, toolSwingDur * combatSwingStrikeFrac - elapsedS), // Attack inputs only queue once the Strike pose is reached.
           windupRemainingS: Math.max(0, toolSwingDur * combatSwingWindupFrac - elapsedS),
           held: combatSwingHeld,
         };
