@@ -515,8 +515,18 @@ assert.ok(ITEM_DEFS[boundKey]?.harlyaoBoundRelic, 'bound relic item def rebuilds
 assert.equal(ES.isBaseUnlocked('burning'), false, 'nothing learned before unbinding');
 const price = HR.unbindPrice(relic.enchantments);
 assert.equal(price, HR.TUNING.UNBIND_BASE_PRICE + 4 * HR.TUNING.UNBIND_PRICE_PER_ENCHANTMENT);
+load('docs/js/tool-mastery.js');
+context.ToolMastery.init({ getGearInventory: () => gear, TOOL_ITEM_DEFS });
+const relicToolKey = 'harlyaoRelic_longsword_abc123'; // Used to seed former-owner affinity before the actual unbinding action.
+gear.toolMastery = { [relicToolKey]: { xp: 300 }, sword: { xp: 150 } };
+gear.toolPlating = { [relicToolKey]: { mode: 'pattern', pattern: {} } };
 const res = HR.unbind(boundKey);
 assert.equal(res.ok, true);
+assert.equal(res.toolKey, relicToolKey);
+assert.equal(context.ToolMastery.toolMasteryLevel(res.toolKey), 0, 'unbinding resets former-owner mastery');
+assert.equal(gear.toolMastery.sword.xp, 150, 'unbinding preserves other weapon mastery');
+assert.equal(gear.toolPlating[res.toolKey], undefined, 'unbinding clears stale verdigris patterns');
+assert.equal(TOOL_ITEM_DEFS[res.toolKey].metalKey, 'tinBronze', 'unbound relics use the normal mastery-driven bronze recolor pipeline');
 assert.equal(inventory[boundKey], undefined, 'bound stack consumed');
 assert.equal(inventory.gold, 10000 - price, 'Garanki charged his fee');
 assert.equal(gear.tools[res.toolKey], true, 'unbound relic is now a gear weapon');
