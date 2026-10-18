@@ -92,16 +92,17 @@ function makeFixture(hasTarget=true){
   assert.equal(start.reusedDecoyPillars,2,'A mixed room converts 40% of its four decoy supports');
   assert.equal(start.totalPillars,2,'It does not insert differently shaped supplementary hazards');
   assert.equal(f.target.visible,true,'Real target pillars remain untouched');
-  const cracked=f.supports.filter(({shaft})=>shaft.children.length===12);
-  assert.equal(cracked.length,2,'Exactly two authored shafts get four faces × three warning stages');
-  assert.equal(cracked[0].shaft.children.filter(c=>c.visible).length,4,'Only the first fissures glow initially');
+  const cracked=f.supports.filter(({shaft})=>shaft.children.length===3);
+  assert.equal(cracked.length,2,'Exactly two authored shafts get three batched four-face warning stages');
+  assert.equal(cracked[0].shaft.children.filter(c=>c.visible).length,1,'Only the first four-sided fissure glows initially');
+  assert.ok(cracked[0].shaft.children.every(c=>c.geometry.attributes.position.values.length===576),'Each crack stage contains all four tapered faces in one mesh');
   for(const {shaft,geometry,material} of f.supports){
     assert.strictEqual(shaft.geometry,geometry,'Original shaft geometry must not be replaced');
     assert.strictEqual(shaft.material,material,'Original shaft material must not be replaced');
   }
   f.player.x=cracked[0].support.position.x*64;f.player.y=cracked[0].support.position.z*64;
   f.tick(5);
-  assert.equal(cracked[0].shaft.children.filter(c=>c.visible).length,12,'Cracks visibly expand across three pulses');
+  assert.equal(cracked[0].shaft.children.filter(c=>c.visible).length,3,'Cracks visibly expand across three pulses');
   assert.ok(f.sounds>=3,'All rock warning pulses play');
   f.tick(4);
   assert.equal(cracked[0].support.visible,false,'The exact original support disappears at detonation');
