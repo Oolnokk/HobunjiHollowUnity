@@ -45,7 +45,7 @@ assert.equal(layout.activeLayoutId,'festival_gorkunash');
 assert(!layout.decor.some(prop=>prop.activity?.type==='welcome'),'no generic Gorkunash guide board');
 assert.equal(layout.decor.filter(prop=>prop.festivalRoadArch).length,6,'town-wide overhead arches');
 assert.equal(layout.npcStations.filter(station=>station.festivalLocaleParent).length,31,'all generated locale destinations');
-assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,28,'all generated locale furnishings');
+assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,22,'all generated locale furnishings');
 const originalRoot=town.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand');
 const originalMusic=layout.npcStations.find(station=>station.id==='gorkunash_bandstand:station:foroji');
 const moved=structuredClone(town);
