@@ -50,6 +50,10 @@
     ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
   });
 
+  // The stance baker's fallback source neutral is melee-only (thrust / sweep / chop); any other style falls back to
+  // thrust, exactly as the player's WeaponToolStances always did.
+  const MELEE_STYLE_NEUTRAL = Object.freeze({ thrust: STYLE_NEUTRAL_POSE.thrust, sweep: STYLE_NEUTRAL_POSE.sweep, chop: STYLE_NEUTRAL_POSE.chop });
+
   // The legacy procedural arcs, written once. game.js's tool branches, the
   // enemy renderer and the Light/Heavy stance bakers all read these numbers.
   const LEGACY_THRUST = deepFreeze({
@@ -94,6 +98,30 @@
       return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
     }
     return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV);
+  }
+
+  // ── The swing clock ────────────────────────────────────────────────
+
+  // Where the strike pose is held until before easing back: an ability's explicit holdS (real seconds), else a
+  // proportional share of what is left. This is the player's rule (game.js updateToolMesh), shared with enemies.
+  function holdFrac(sf, holdS, totalS) {
+    return holdS > 0 ? Math.min(0.99, sf + holdS / totalS) : Math.min(0.99, sf + (1 - sf) * 0.3);
+  }
+
+  // The player's cosmetic swing timeline (game.js triggerWeaponSwingVisual), written once and shared with enemies so
+  // an enemy's strike, hold and eased return last exactly as long as the player's for the same ability data.
+  // durationS is windup + strike (+ the ability's own returnS); an ability that budgets no return of its own
+  // (strikeFrac of 1) gets a proportional tail so it eases back instead of snapping. holdS is the post-strike pause,
+  // added on top. Fills `out` { totalS, wf, sf, hf }; progress is elapsed / totalS.
+  function swingTimeline(out, durationS, windupFrac, strikeFrac, holdS) {
+    const returnTailS = strikeFrac < 0.999 ? 0 : Math.max(0.12, durationS * 0.35);
+    const hold = Math.max(0, holdS || 0);
+    const rawTotalS = durationS + returnTailS + hold;
+    out.totalS = Math.max(0.05, rawTotalS);
+    out.wf = windupFrac * durationS / rawTotalS;
+    out.sf = strikeFrac * durationS / rawTotalS;
+    out.hf = holdFrac(out.sf, hold, out.totalS);
+    return out;
   }
 
   // ── Per-frame sampling (allocation-free) ───────────────────────────
@@ -258,7 +286,7 @@
     let windup;
     let strike;
     if (authoredPose) {
-      const sourceNeutral = normalizePose(authoredPose.neutral, STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust);
+      const sourceNeutral = normalizePose(authoredPose.neutral, MELEE_STYLE_NEUTRAL[anim] || MELEE_STYLE_NEUTRAL.thrust);
       windup = bakeAuthoredEndpoint(authoredPose.windup, sourceNeutral, p);
       strike = bakeAuthoredEndpoint(authoredPose.strike, sourceNeutral, p);
     } else {
@@ -283,6 +311,8 @@
     LEGACY_CHOP_POSE,
     fourPhaseLerp,
     sequencedPoseLerp,
+    holdFrac,
+    swingTimeline,
     createSample,
     samplePose,
     sampleLegacyThrust,

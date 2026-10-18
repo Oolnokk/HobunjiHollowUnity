@@ -51,7 +51,18 @@
     return (stanceClass === 'heavy' ? poses.heavyWeapon : poses.lightWeapon) || null;
   }
 
+  // How much of the sweep style's -90 degree plane twist is cancelled by the weapon's resting stance:
+  // 1 at rest, fading out over the windup, 0 through strike and hold, fading back in over the return --
+  // the same rule the attack editor applies at Neutral. BanditCombat publishes the live swing timeline it
+  // just drew; the action-only formula below is the fallback for a renderer that does not.
   function attackNeutralWeight(entity) {
+    const timeline = entity?._banditToolTimeline; // Fresh: the renderer ran immediately before this read.
+    if (timeline) {
+      if (!timeline.live) return 1;
+      if (timeline.progress <= timeline.wf) return timeline.wf > 0.000001 ? 1 - timeline.progress / timeline.wf : 0;
+      if (timeline.progress > timeline.hf) return Math.max(0, Math.min(1, (timeline.progress - timeline.hf) / Math.max(0.000001, 1 - timeline.hf)));
+      return 0;
+    }
     const action = entity?._banditAction; // Current staged action whose windup defines how quickly the neutral-plane compensation fades.
     if (!action) return 1;
     const totalS = Math.max(0.0001, (Number(action.windupS) || 0) + (Number(action.strikeS) || 0)); // Safe duration matching BanditCombat's own progress calculation.
@@ -119,8 +130,8 @@
 
   function shouldApply(entity, nowMs) {
     if (!entity?.isBandit || (Number(entity.health) || 0) <= 0 || entity._rangedMode) return false;
-    if (entity._banditAction) return true;
-    const settleUntil = Number(entity._banditToolSettleUntil) || 0; // Existing frozen strike-pose tail that must finish before idle stance resumes.
+    if (entity._banditAction || entity._banditToolTail) return true; // The strike/hold/return tail is still the swing: it keeps the stance neutral and endpoints.
+    const settleUntil = Number(entity._banditToolSettleUntil) || 0; // Externally set settle window that must finish before idle stance resumes.
     return nowMs >= settleUntil;
   }
 
@@ -171,10 +182,13 @@
       try {
         result = originalUpdateToolMesh(entity);
       } finally {
-        entity._banditSwingAnim = originalAnim;
-        entity._banditSwingPose = originalPose;
-        entity._banditSwingDirSign = originalDirSign;
-        entity._banditSwingPower = originalPower;
+        if (entity._banditSwingResetDone) entity._banditSwingResetDone = false; // The swing's tail just ended and the renderer restored the rest stance: keep it.
+        else {
+          entity._banditSwingAnim = originalAnim;
+          entity._banditSwingPose = originalPose;
+          entity._banditSwingDirSign = originalDirSign;
+          entity._banditSwingPower = originalPower;
+        }
       }
 
       const toolPlane = entity?._banditToolHolder?.children?.[0]?.userData?.toolPlane || null; // Weapon sprite plane whose spin/mirror must reflect the ORIGINAL attack style, not the temporary generic branch.

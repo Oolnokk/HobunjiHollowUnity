@@ -35,6 +35,10 @@ const BanditCombat = { // Minimal public BanditCombat API wrapped by the runtime
       dirSign: entity._banditSwingDirSign,
       power: entity._banditSwingPower,
     });
+    if (entity._mockRendererFinishesTail) { // The real renderer restores the rest stance at the end of the draw that finishes the tail.
+      entity._banditSwingAnim = 'thrust'; entity._banditSwingPose = null; entity._banditSwingDirSign = 1; entity._banditSwingPower = 1;
+      entity._banditSwingResetDone = true;
+    }
     const toolMesh = entity._banditToolHolder?.children?.[0];
     const toolPlane = toolMesh?.userData?.toolPlane;
     if (toolPlane) {
@@ -290,4 +294,28 @@ function approx(actual, expected, epsilon = 1e-9) {
   assert.deepStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(flagged).pose.windup.secondaryGrip, { enabled: false, percent: 50, primaryPercent: 50 });
 }
 
+// The strike/hold/return tail is still the swing: the adapter keeps the stance neutral through it, and when the
+// renderer finishes the tail (restoring the rest stance) the adapter must not restore the finished swing over it.
+{
+  renderCalls.length = 0;
+  const entity = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } }, power: 1.5 });
+  entity._banditToolTail = { startMs: 0, baseElapsedS: 0.6, durationS: 0.6, windupFrac: 0.7, strikeFrac: 1, holdS: 0.4 };
+  window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(renderCalls[0].anim, 'sweep', 'stance pose is applied through the tail');
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, heavyPose);
+  assert.strictEqual(entity._enemyWeaponStanceDebug.applied, true);
+
+  // The draw that finishes the tail restores the rest stance; the adapter keeps it instead of restoring the old swing.
+  entity._mockRendererFinishesTail = true;
+  window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(entity._banditSwingAnim, 'thrust', 'rest stance survives the adapter');
+  assert.strictEqual(entity._banditSwingPower, 1);
+  assert.strictEqual(entity._banditSwingPose, null);
+  assert.strictEqual(entity._banditSwingResetDone, false, 'the handoff flag is consumed');
+  // Without a reset, the swing's own fields are restored exactly as before.
+  const normal = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', power: 1.5 });
+  normal._banditToolTail = { startMs: 0, baseElapsedS: 0.6, durationS: 0.6, windupFrac: 0.7, strikeFrac: 1, holdS: 0.4 };
+  window.BanditCombat.updateToolMesh(normal);
+  assert.strictEqual(normal._banditSwingAnim, 'sweep'); assert.strictEqual(normal._banditSwingPower, 1.5);
+}
 console.log('test-enemy-weapon-stances: ok');

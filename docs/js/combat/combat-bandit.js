@@ -881,26 +881,49 @@
   // runs extra bookkeeping (retreat, cooldowns) once it's actually done
   // rather than the moment it's cancelled mid-flight.
   function finishBanditAction(c) {
+    const action = c._banditAction;
     c._banditAction = null;
     c.telegraphState = null;
     if (!c._banditLunging) c._banditLungeHopCurrent = 0;
-    // Quick Attack and Charged Breaker both hardcode their OWN anim/
-    // pose regardless of the equipped weapon ('thrust'/null and
-    // 'sweep'/SWEEP_POSE respectively -- see fireBanditQuickAttack/
-    // fireBanditChargedBreaker's own comments) and, unlike
-    // fireBanditComboStep, nothing ever set these back afterward --
-    // once ANY bandit used either ability even once, its idle-between-
-    // attacks stance got stuck showing that ability's style forever
-    // (regardless of its real weapon) until a combo step happened to
-    // fire and correct it by coincidence. Reset unconditionally here so
-    // "idle" always means the weapon's own natural rest stance, not
-    // whatever the last-fired ability happened to want.
+    // The player's swing doesn't stop when its strike lands: it holds the strike pose, then eases back to
+    // neutral (game.js triggerWeaponSwingVisual). A COMPLETED melee action hands its swing to a tail that
+    // updateBanditToolMesh keeps playing on the same shared clock (SharedAttackPose.swingTimeline) before
+    // resetting to the weapon's rest stance. A cancelled action (staggered mid-windup) and a Flasker throw
+    // reset immediately, as before.
+    if (action && !action.cancelled && !action.data?.flasker && window.SharedAttackPose) {
+      const durationS = Math.max(0.0001, action.windupS + action.strikeS + (Number(c._banditSwingReturnS) || 0));
+      c._banditToolTail = {
+        startMs: performance.now(),
+        baseElapsedS: action.windupS + action.strikeS,
+        durationS,
+        windupFrac: action.windupS / durationS,
+        strikeFrac: (action.windupS + action.strikeS) / durationS,
+        holdS: Number(c._banditSwingHoldS) || 0,
+      };
+      return;
+    }
+    c._banditToolTail = null;
+    resetBanditSwingToNatural(c);
+  }
+
+  // Quick Attack and Charged Breaker both hardcode their OWN anim/
+  // pose regardless of the equipped weapon ('thrust'/null and
+  // 'sweep'/SWEEP_POSE respectively -- see fireBanditQuickAttack/
+  // fireBanditChargedBreaker's own comments) and nothing ever set these
+  // back afterward -- once ANY bandit used either ability even once, its
+  // idle-between-attacks stance got stuck showing that ability's style
+  // forever (regardless of its real weapon). Reset unconditionally once
+  // the swing (and its tail) is over so "idle" always means the weapon's
+  // own natural rest stance, not whatever the last-fired ability wanted.
+  function resetBanditSwingToNatural(c) {
     const natural = banditNaturalSwing(c.def);
     c._banditSwingAnim = natural.anim;
     c._banditSwingPose = natural.pose;
     c._banditSwingDirSign = 1;
     c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1; // Used by updateBanditToolMesh to clear any sampled partial Charged Breaker amplitude after the action ends.
+    c._banditSwingHoldS = 0;
+    c._banditSwingReturnS = 0;
   }
 
   // ── Bandit lunge ─────────────────────────────────────────────────
@@ -1056,6 +1079,7 @@
     c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
     c._banditSwingPoseScale = 1;
+    c._banditSwingHoldS = step.holdS || 0; c._banditSwingReturnS = step.returnS || 0; // Same pause / finisher tail combat-combo.js hands the player's swing visual.
     beginBanditLunge(c, deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad }, targetPlayer);
     // Tracked so onComplete below can tell a whiff from a landed hit --
     // a bandit should only break off (retreat) on a miss or after
@@ -1131,6 +1155,7 @@
     c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1;
+    c._banditSwingHoldS = qa.HOLD_S || 0; c._banditSwingReturnS = 0; // Same post-strike pause the player's quick attack swing visual gets.
     beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
@@ -1184,6 +1209,7 @@
     c._banditSwingDirSign = 1;
     c._banditSwingPower = cb.POWER || 1.7;
     c._banditSwingPoseScale = chargeT; // Used by updateBanditToolMesh to show the sampled partial pose without changing the legacy heavy-attack identity field.
+    c._banditSwingHoldS = cb.HOLD_S || 0; c._banditSwingReturnS = 0; // Same post-strike pause the player's Charged Breaker release gets.
     // Bandit AI has no literal held input, so it samples a pose charge and
     // derives how long the shared nonlinear windup would need to reach it.
     beginBanditLunge(
@@ -1879,19 +1905,12 @@
     return holder;
   }
 
-  // A bandit's staged action has no cosmetic return-tail duration of its own
-  // (recoverS is always 0; see fireBanditComboStep etc), so there's no real
-  // strike/hold/return split to ease across the way the player's longer
-  // toolSwingDur has room for. It samples SharedAttackPose with sf = wf and
-  // hf = 1: 0->wf rises from neutral to the windup pose (identical formula to
-  // the player's), then HOLDS the strike pose for the rest of the action. The
-  // brief hold-then-freeze in updateBanditToolMesh below covers the return.
+  // An enemy's swing plays the player's own clock: SharedAttackPose.swingTimeline turns the staged action's
+  // windup/strike (and the ability's own holdS/returnS, the same data combat-combo.js hands the player's swing
+  // visual) into windup -> strike travel -> hold -> eased return. The staged action itself ends at its strike
+  // (recoverS is always 0); finishBanditAction hands the rest of the timeline to c._banditToolTail.
+  const banditTimeline = { totalS: 0, wf: 0, sf: 0, hf: 0 }; // Scratch for the timeline of the enemy being drawn; consumed synchronously.
   let banditPoseSample = null; // One SharedAttackPose sample reused by every bandit's per-frame pose; created lazily and consumed synchronously inside updateBanditToolMesh.
-
-  // How long the weapon keeps showing its last (strike) pose once
-  // c._banditAction completes, before resetting straight to neutral --
-  // a cheap stand-in for the player's own eased return-to-neutral tail.
-  const BANDIT_TOOL_SETTLE_S = 0.15;
 
   // ── Bandit weapon swing trail ────────────────────────────────────
   //
@@ -2002,24 +2021,31 @@
       if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     }
     const action = c._banditAction;
-    if (!action) {
-      if (performance.now() < (c._banditToolSettleUntil || 0)) {
-        // Holding last pose briefly -- the weapon holder's own
-        // quaternion/position are frozen (nothing below runs), but
-        // updateCreatureMesh (which now runs BEFORE this every frame,
-        // unconditionally) keeps smoothing c.groupRot/the avatar's
-        // rotation.y back toward the plain aim angle the whole time,
-        // since it has no idea a swing was ever leaning it. Without
-        // reasserting the lean here too, the body visibly turns back
-        // to facing the player while the weapon stays frozen leaned
-        // out from the swing -- "the character turns independently of
-        // the weapon." Keeps both in sync until the settle window
-        // actually ends and they reset to plain θ together below.
-        if (c._banditToolLastVθ != null) { c.avatarRef.group.rotation.y = c._banditToolLastVθ; c.groupRot = c._banditToolLastVθ; }
-        return;
-      }
-      if (handDriverRoot?.userData) handDriverRoot.userData.proceduralHandAnimationGrip = null;
+    // The player's swing clock, shared (SharedAttackPose.swingTimeline): windup, strike travel, an ability's
+    // own post-strike hold, then an eased return to neutral. Elapsed time comes from the live staged action,
+    // then from the tail finishBanditAction hands over once the action completes.
+    const SAP = window.SharedAttackPose; // Same pose math the player's updateToolMesh samples (js/combat/shared-attack-pose.js).
+    const nowMs = performance.now();
+    let timelineLive = false;
+    let resetAfterDraw = false;
+    let elapsedS = 0;
+    if (action) {
+      c._banditToolTail = null;
+      const durationS = Math.max(0.0001, action.windupS + action.strikeS + (Number(c._banditSwingReturnS) || 0));
+      SAP.swingTimeline(banditTimeline, durationS, action.windupS / durationS, (action.windupS + action.strikeS) / durationS, c._banditSwingHoldS);
+      elapsedS = action.t;
+      timelineLive = true;
+    } else if (c._banditToolTail) {
+      const tail = c._banditToolTail;
+      SAP.swingTimeline(banditTimeline, tail.durationS, tail.windupFrac, tail.strikeFrac, tail.holdS);
+      elapsedS = tail.baseElapsedS + (nowMs - tail.startMs) / 1000;
+      if (elapsedS >= banditTimeline.totalS) { // The eased return has finished: this frame still draws Neutral with the swing's own fields, then the rest stance is restored.
+        c._banditToolTail = null;
+        resetAfterDraw = true;
+      } else timelineLive = true;
     }
+    if (timelineLive) c._banditToolSettleUntil = nowMs + Math.max(0, banditTimeline.totalS - elapsedS) * 1000; // Keeps the idle-stance adapter, sleep gate and combat log aware the swing is still playing.
+    if (!timelineLive && handDriverRoot?.userData) handDriverRoot.userData.proceduralHandAnimationGrip = null;
     const anim = c._banditSwingAnim || 'thrust';
     const pose = c._banditSwingPose;
     const dirSign = c._banditSwingDirSign || 1;
@@ -2050,16 +2076,16 @@
       spinMesh.scale.x = Math.abs(spinMesh.scale.x) * (anim === 'sweep' && dirSign < 0 ? -1 : 1);
     }
 
-    let progress = 0, wf = 0.16;
-    if (action) {
-      const totalS = Math.max(0.0001, action.windupS + action.strikeS);
-      progress = Math.min(1, action.t / totalS);
-      wf = action.windupS / totalS;
+    let progress = 0, wf = 0.16, sf = 0.16, hf = 1; // At rest the pose is plain Neutral whatever the fractions are.
+    if (timelineLive) {
+      progress = Math.min(1, elapsedS / banditTimeline.totalS);
+      wf = banditTimeline.wf; sf = banditTimeline.sf; hf = banditTimeline.hf;
       if (handDriverRoot?.userData) {
-        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: wf, holdFrac: 1, poseScale: power }, pose || {}) ?? null; // Matches this actor’s windup lerp and immediate strike/settle hold.
+        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: sf, holdFrac: hf, poseScale: power }, pose || {}) ?? null; // Same timing the player's hands get for the same swing.
       }
-      c._banditToolSettleUntil = performance.now() + BANDIT_TOOL_SETTLE_S * 1000;
     }
+    const timelineState = c._banditToolTimeline || (c._banditToolTimeline = { live: false, progress: 0, wf: 0.16, hf: 1 }); // Read by EnemyWeaponStances for the sweep-plane twist fade; one object per enemy, updated in place.
+    timelineState.live = timelineLive; timelineState.progress = progress; timelineState.wf = wf; timelineState.hf = hf;
 
     // NEITHER c.facing NOR c.groupRot directly -- the weapon holder is a
     // standalone world object using the exact same rotation.y convention
@@ -2104,12 +2130,10 @@
     // same +base.y offset needs feet-level Y here too, not center Y.
     const feetY = c.avatarRef.group.position.y - (c.halfHeight || 0);
 
-    const SAP = window.SharedAttackPose; // Same pose math the player's updateToolMesh samples (js/combat/shared-attack-pose.js).
     if (!banditPoseSample) banditPoseSample = SAP.createSample();
 
     if ((anim === 'sweep' || anim === 'chop') && pose) {
-      // sf = wf, hf = 1: rise to the windup pose, then hold the strike pose (see banditPoseSample above).
-      const sampled = SAP.samplePose(banditPoseSample, pose, SAP.STYLE_NEUTRAL_POSE[anim] || SAP.STYLE_NEUTRAL_POSE.sweep, progress, wf, wf, 1, dirSign, power, 'attack');
+      const sampled = SAP.samplePose(banditPoseSample, pose, SAP.STYLE_NEUTRAL_POSE[anim] || SAP.STYLE_NEUTRAL_POSE.sweep, progress, wf, sf, hf, dirSign, power, 'attack');
       const x = sampled.x, y = sampled.y, z = sampled.z;
       const pitchRad = sampled.pitchRad;
       const yawRad = sampled.yawRad;
@@ -2134,7 +2158,6 @@
       const vθGroup = vθ - aimOffset;
       c.avatarRef.group.rotation.y = vθGroup;
       c.groupRot = vθGroup;
-      c._banditToolLastVθ = vθGroup; // reasserted during the settle window below (already in groupRot-space)
       const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
       deps.qFac.setFromAxisAngle(deps.tUp, vθ);
       deps.qToolYaw.setFromAxisAngle(deps.tUp, yawRad);
@@ -2155,7 +2178,7 @@
       // the 10.31 degree held-up tilt -- the authored attack-animation-editor
       // rest values -- so a bandit's thrust weapon sits at true idle exactly
       // where the player's does instead of staying pulled back mid-windup.
-      const thrustSample = SAP.sampleLegacyThrust(banditPoseSample, progress, wf, wf, 1, power);
+      const thrustSample = SAP.sampleLegacyThrust(banditPoseSample, progress, wf, sf, hf, power);
       const jabOff = thrustSample.z;
       const lateral = thrustSample.x;
       const pitchRad = thrustSample.pitchRad;
@@ -2167,7 +2190,6 @@
       const vθGroup = vθ - aimOffset;
       c.avatarRef.group.rotation.y = vθGroup;
       c.groupRot = vθGroup;
-      c._banditToolLastVθ = vθGroup; // reasserted during the settle window above (already in groupRot-space)
       const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
       deps.qFac.setFromAxisAngle(deps.tUp, vθ);
       deps.qToolYaw.setFromAxisAngle(deps.tUp, yawRad);
@@ -2179,6 +2201,10 @@
         c.y / deps.TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
       );
       scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Legacy thrust uses the same finished-point transform without changing rotation/timing.
+    }
+    if (resetAfterDraw) {
+      resetBanditSwingToNatural(c);
+      c._banditSwingResetDone = true; // Tells a wrapper that temporarily substituted the swing fields not to restore the finished swing over this reset.
     }
   }
 
@@ -2414,6 +2440,7 @@
     updateTrailArc: updateBanditTrailArc,
     fireCounterRiposte: fireBanditCounterRiposte,
     naturalSwing: banditNaturalSwing,
+    finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.
     engagementReachPx: banditEngagementReachPx,
     RANK_LABEL: BANDIT_RANK_LABEL,
     TINT_SLOT_BY_SLOT: BANDIT_TINT_SLOT_BY_SLOT,

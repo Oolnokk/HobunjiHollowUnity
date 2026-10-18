@@ -15,21 +15,32 @@ the code that turns an attack pose into this frame's tool and body channels. It 
 - `samplePose` — merge over the style neutral, power scaling, Backhand mirroring (`x`, `yaw`, `roll`, `bodyYaw`), midline-flip blend.
 - `LEGACY_THRUST` / `LEGACY_SWEEP` / `LEGACY_CHOP_POSE` + `sampleLegacyThrust` — the old procedural arcs, written once; the stance baker (`legacyProceduralEndpoints`) reads the same numbers.
 - `bakeAttackEndpoints`, `effectiveDirSign`, `neutralInputForSigns` — how an attack is baked against a replacement Light/Heavy Neutral (power, `MeleePoseSpacing`, handedness).
+- `swingTimeline` / `holdFrac` — the player's swing clock (post-strike hold, proportional return tail, wf/sf/hf).
 
 Authored pose *data* (`attack-pose-templates.js`, `combat-combo.js`, the weapon stance JSON) was already shared; this module shares the code that plays it.
+
+## The player's animations are authoritative
+
+The player's attack animations as they were before this module existed (`game.js` `updateToolMesh`, `weapon-tool-stances.js`, commit `9855210`) are the intended look for the player **and** for enemies. `scripts/test-player-pose-golden.js` embeds that original math verbatim and fuzzes `SharedAttackPose` against it (poses, legacy thrust/chop, stance baking, the swing clock). If it fails, fix the module, not the reference.
+
+Enemies therefore play the player's swing **clock** too: `swingTimeline` turns the staged action's windup/strike plus the ability's own `holdS` / `returnS` (the data `combat-combo.js` etc. hand the player's swing visual) into windup → strike travel → hold → eased return. The staged action ends at its strike, so `finishBanditAction` hands the rest of the timeline to `c._banditToolTail`, which `updateBanditToolMesh` keeps playing before resetting to the weapon's rest stance. A cancelled action (staggered mid-windup) and a Flasker throw reset immediately.
 
 ## What stays per-actor on purpose
 
 - **Placement** of the sampled channels: the player's hand anchor, reticle orbit and species scaling vs. an enemy's own avatar anchor.
-- **The swing clock.** The player has a long eased return tail (`wf < sf < hf < 1`). An enemy's staged action has none, so it samples with `sf = wf, hf = 1` (rise to the windup, then hold the strike pose).
+- **Where the elapsed time comes from**: the player's `toolSwingT` vs. an enemy's staged action + tail.
+- **Heavy-weapon alternating Neutral** (a heavy swing finishing on the opposite side, `returnNeutral` / mirror signs in `weapon-tool-stances.js`) is still player-only; enemies return to their ordinary stance Neutral.
 
 ## Performance
 
 Everything on the per-frame path (`fourPhaseLerp`, `samplePose`, `sampleLegacyThrust`) writes into a caller-owned sample object and module scratch — no per-frame objects or closures. `EnemyWeaponStances` bakes each enemy's stance pose once per attack (cached on the entity, revalidated against the live stance values, the attack's pose/power/sign and the action identity) instead of rebuilding about a dozen objects per enemy per frame.
 
-## Not yet shared
+## The attack-animation editor is connected too
 
-- The attack-animation editor (`docs/tools/attack-animation-editor/index.html`) still has its own `poseAt()` / `lerpPose()` / `STYLE_NEUTRAL_POSE`. It could load this module; `scripts/test-shared-attack-pose.js` pins the semantics it must keep matching.
-- Enemies do not get the player's dual-wield / secondary-grip *Neutral* decoration (`weapon-tool-stances.js`); they do honor authored hand-grip flags on Windup/Strike.
+`docs/tools/attack-animation-editor/index.html` loads this module and uses it for its rest poses (`STYLE_NEUTRAL_POSE`, plus the editor-only `drink`), its playback timeline (`poseAt` → `sequencedPoseLerp`) and its Backhand mirroring (`flipPose` → `MIRRORED_POSE_KEYS`). What the editor previews is computed by the same code the game runs. The editor's previous behavior is kept everywhere (including showing the windup pose at t = 0 for a 0% windup).
 
-Tests: `node scripts/run-tests.js shared-attack-pose enemy-weapon-stances`.
+## Hand grips
+
+`animationGripAt` (`hand-tool-grips.js`) already defaults an attack's windup/strike to two-handed and its Neutral to one-handed, which is exactly what the player's `prepareCombatOptions` spells out as explicit `secondaryGrip` / `dualWield` flags. Enemies therefore get the same two-hand behavior from the same flags (authored flags on Windup/Strike ride through the baker). **Dual-wield is player-only on purpose:** `dual-wield-weapon-visuals.js` keeps one global duplicate-weapon state bound to the player's holder, so enemies must not be put in dual mode until that is per-actor (`BanditCombat` passes no tool key to `animationGripAt`, which keeps them out of it).
+
+Tests: `node scripts/run-tests.js shared-attack-pose player-pose-golden attack-editor-shared enemy-weapon-stances`.

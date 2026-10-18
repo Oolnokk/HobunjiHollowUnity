@@ -21598,6 +21598,7 @@
       const fourPhaseLerp = SharedAttackPose.fourPhaseLerp; // Also used by heldActionPoseAt for held-item actions.
       const STYLE_NEUTRAL_POSE = SharedAttackPose.STYLE_NEUTRAL_POSE; // Each tool style's rest pose; also handed to BanditCombat.init.
       const _toolPoseSample = SharedAttackPose.createSample(); // Reused every frame by updateToolMesh's SharedAttackPose sampling.
+      const _swingTimelineScratch = { totalS: 0, wf: 0, sf: 0, hf: 0 }; // Reused by triggerWeaponSwingVisual's SharedAttackPose.swingTimeline.
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
@@ -21738,23 +21739,17 @@
         // auto-derived from SF in updateToolMesh, without needing any
         // per-ability changes in the combat-*.js files. Callers that already
         // reserved their own returnS (strikeFrac < 1) are left untouched.
-        const hasOwnReturn = strikeFrac < 0.999;
-        const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
-        // Reserve an explicit post-strike hold (if this ability's config asked
-        // for one) on top of whatever windup/strike/return it already
-        // budgeted — additive, rather than carving it out of durationS, so
-        // the windup/strike/return real-world timings stay exactly as
-        // authored; the pause is just inserted between strike and return.
+        // The tail / hold / fraction math is SharedAttackPose.swingTimeline, shared with enemies so their swings last as long.
         const holdS = Math.max(0, opts.holdS || 0);
-        const totalS = durationS + returnTailS + holdS;
-        toolSwingDur = Math.max(0.05, totalS);
+        const timeline = SharedAttackPose.swingTimeline(_swingTimelineScratch, durationS, windupFrac, strikeFrac, holdS);
+        toolSwingDur = timeline.totalS;
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
         combatSwingAnim = opts.anim || null;
         combatSwingSign = opts.dirSign || 1;
-        combatSwingWindupFrac = windupFrac * durationS / totalS;
-        combatSwingStrikeFrac = strikeFrac * durationS / totalS;
+        combatSwingWindupFrac = timeline.wf;
+        combatSwingStrikeFrac = timeline.sf;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
@@ -22863,9 +22858,7 @@
         // timing is; otherwise fall back to the old proportional-to-
         // what's-left formula (dig/fill/refill, and any combat swing that
         // didn't set holdS).
-        const HF = (combatSwingAnim && combatSwingHoldS > 0)
-          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
-          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        const HF = SharedAttackPose.holdFrac(SF, combatSwingAnim ? combatSwingHoldS : 0, toolSwingDur); // Shared with enemies.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {

@@ -161,6 +161,7 @@ for (const power of [1, 1.4]) {
   const double = {
     createSample: () => ({}),
     STYLE_NEUTRAL_POSE: SAP.STYLE_NEUTRAL_POSE,
+    swingTimeline: SAP.swingTimeline, // The shared clock itself: enemies must derive it from here.
     samplePose(sampleOut, poseArg, styleNeutral, progress, wf, sf, hf, sign, power, sequence) {
       calls.push({ kind: 'pose', poseArg, styleNeutral, progress, wf, sf, hf, sign, power, sequence });
       return Object.assign(sampleOut, sentinel);
@@ -180,7 +181,7 @@ for (const power of [1, 1.4]) {
   const holderQuaternion = { copy() { return this; }, multiply() { return this; } };
   sandbox.window.BanditCombat.init({
     TILE: 32, qFac: quat('fac'), qToolYaw: quat('yaw'), qAnim: quat('pitch'), qRoll: quat('roll'),
-    tUp: 'up', xAxis: 'x', zAxis: 'z',
+    tUp: 'up', xAxis: 'x', zAxis: 'z', TOOL_ITEM_DEFS: { fixture_axe: { animStyle: 'sweep' } },
   });
 
   function makeBandit(extra = {}) {
@@ -189,7 +190,7 @@ for (const power of [1, 1.4]) {
       holder,
       c: {
         x: 64, y: 96, facing: 0.5, halfHeight: 0.4,
-        def: { weaponKey: null, aimAngleOffset: 0.1 },
+        def: { weaponKey: 'fixture_axe', aimAngleOffset: 0.1 },
         avatarRef: { group: { position: { x: 2, y: 1, z: 3 }, rotation: { y: 0 }, userData: {} }, handAttachX: -0.25, handAttachY: 0.6 },
         _banditToolHolder: holder, _banditAction: { windupS: 0.3, strikeS: 0.1, t: 0.2 },
         _banditSwingAnim: 'sweep', _banditSwingPose: pose, _banditSwingDirSign: -1, _banditSwingPower: 1.25, _banditSwingPoseScale: 1,
@@ -209,30 +210,70 @@ for (const power of [1, 1.4]) {
     };
   }
 
-  // Authored pose (sweep / chop): sampled on the enemy timeline (sf = wf, hf = 1) with the action's own power and sign.
-  const { c, holder } = makeBandit();
+  // Authored pose (sweep / chop): sampled on the player's clock (SharedAttackPose.swingTimeline) built from the
+  // action's windup/strike and the ability's own hold, with the action's own power and sign.
+  const { c, holder } = makeBandit({ _banditSwingHoldS: 0.43 });
+  const expected = SAP.swingTimeline({}, 0.4, 0.3 / 0.4, 1, 0.43);
   sandbox.window.BanditCombat.updateToolMesh(c);
   assert.equal(calls.length, 1); assert.equal(calls[0].kind, 'pose');
   assert.equal(calls[0].poseArg, pose); assert.equal(calls[0].styleNeutral, SAP.STYLE_NEUTRAL_POSE.sweep);
-  approx(calls[0].progress, 0.2 / 0.4, 'progress'); approx(calls[0].wf, 0.3 / 0.4, 'wf');
-  assert.equal(calls[0].sf, calls[0].wf, 'no strike travel: sf = wf'); assert.equal(calls[0].hf, 1, 'strike pose is held to the end of the action');
+  approx(calls[0].progress, 0.2 / expected.totalS, 'progress'); approx(calls[0].wf, expected.wf, 'wf'); approx(calls[0].sf, expected.sf, 'sf'); approx(calls[0].hf, expected.hf, 'hf');
+  assert.ok(calls[0].sf > calls[0].wf && calls[0].hf > calls[0].sf && calls[0].hf < 1, 'strike travels, holds, then leaves room for the eased return');
   assert.equal(calls[0].sign, -1); assert.equal(calls[0].power, 1.25); assert.equal(calls[0].sequence, 'attack');
   const want = expectedHolder(c, sentinel);
   approx(holder.position.x, want.x, 'holder x'); approx(holder.position.y, want.y, 'holder y'); approx(holder.position.z, want.z, 'holder z');
   approx(angles.pitch, sentinel.pitchRad, 'pitch'); approx(angles.yaw, sentinel.yawRad, 'yaw'); approx(angles.roll, sentinel.rollRad, 'roll'); approx(angles.fac, want.v, 'facing + bodyYaw');
   approx(c.groupRot, want.v - c.def.aimAngleOffset, 'the avatar body leans with the weapon'); approx(c.avatarRef.group.rotation.y, c.groupRot, 'body rotation');
+  assert.ok(c._banditToolSettleUntil > 1000, 'a swinging enemy reports its swing as still playing');
 
-  // Legacy thrust: the shared jab arc, same timeline.
-  calls.length = 0;
-  const thrusting = makeBandit({ _banditSwingAnim: 'thrust', _banditSwingPose: null, _banditSwingDirSign: 1 });
+  // The player keeps animating after the strike lands: a completed action hands the rest of the clock to a tail.
+  c._banditToolTail = { startMs: 1000, baseElapsedS: 0.4, durationS: 0.4, windupFrac: 0.75, strikeFrac: 1, holdS: 0.43 };
+  c._banditAction = null;
+  for (const [nowMs, expectProgress] of [[1000, 0.4], [1300, 0.7], [1900, 1.3]]) {
+    sandbox.performance.now = () => nowMs; calls.length = 0;
+    sandbox.window.BanditCombat.updateToolMesh(c);
+    if (expectProgress < expected.totalS) {
+      assert.equal(calls.length, 1, `still playing at +${nowMs - 1000}ms`);
+      approx(calls[0].progress, expectProgress / expected.totalS, `tail progress at +${nowMs - 1000}ms`);
+      approx(calls[0].hf, expected.hf, 'tail uses the same clock');
+      assert.ok(c._banditToolTail, 'tail stays until the return finishes');
+    }
+  }
+  assert.equal(c._banditToolTail, null, 'the tail ends once the eased return has played');
+  assert.equal(c._banditSwingAnim, 'sweep', 'rest stance is the weapon natural swing again');
+
+  // Legacy thrust: the shared jab arc on the same clock.
+  sandbox.performance.now = () => 1000; calls.length = 0;
+  const thrusting = makeBandit({ _banditSwingAnim: 'thrust', _banditSwingPose: null, _banditSwingDirSign: 1, _banditSwingHoldS: 0.48 });
   sandbox.window.BanditCombat.updateToolMesh(thrusting.c);
+  const thrustClock = SAP.swingTimeline({}, 0.4, 0.3 / 0.4, 1, 0.48);
   assert.equal(calls.length, 1); assert.equal(calls[0].kind, 'thrust');
-  assert.equal(calls[0].sf, calls[0].wf); assert.equal(calls[0].hf, 1); assert.equal(calls[0].power, 1.25);
+  approx(calls[0].wf, thrustClock.wf, 'thrust wf'); approx(calls[0].sf, thrustClock.sf, 'thrust sf'); approx(calls[0].hf, thrustClock.hf, 'thrust hf'); assert.equal(calls[0].power, 1.25);
   const tv = -thrusting.c.facing + Math.PI / 2 + sentinel.bodyYawRad; // Thrust leans by the jab's own body yaw.
   const handX = thrusting.c.avatarRef.handAttachX + sentinel.x; // Thrust adds its lateral offset to the hand anchor; no midline-flip blend.
   approx(thrusting.holder.position.x, thrusting.c.x / 32 + Math.cos(tv) * handX + Math.sin(tv) * sentinel.z, 'thrust holder x');
   approx(thrusting.holder.position.y, thrusting.c.avatarRef.group.position.y - thrusting.c.halfHeight + thrusting.c.avatarRef.handAttachY, 'thrust holder y (the jab has no vertical channel)');
   approx(thrusting.holder.position.z, thrusting.c.y / 32 - Math.sin(tv) * handX + Math.cos(tv) * sentinel.z, 'thrust holder z');
+
+  // A completed action hands its hold/return to a tail on the same clock; a cancelled one (or a Flasker throw) resets at once.
+  const finishing = makeBandit({ _banditSwingHoldS: 0.43, _banditSwingReturnS: 0, _banditSwingAnim: 'sweep', _banditSwingPower: 1.25 });
+  sandbox.performance.now = () => 5000;
+  finishing.c._banditAction = { windupS: 0.3, strikeS: 0.1, t: 0.4, cancelled: false, data: { isBandit: true } };
+  sandbox.window.BanditCombat.finishAction(finishing.c);
+  assert.equal(finishing.c._banditAction, null);
+  const tail = finishing.c._banditToolTail;
+  assert.deepEqual([tail.startMs, tail.baseElapsedS, tail.durationS, tail.strikeFrac, tail.holdS], [5000, 0.4, 0.4, 1, 0.43]);
+  approx(tail.windupFrac, 0.75, 'tail windupFrac');
+  assert.equal(finishing.c._banditSwingPower, 1.25, 'the swing keeps its pose and power while the tail plays');
+  const cancelled = makeBandit({ _banditSwingHoldS: 0.43, _banditSwingPower: 1.25 });
+  cancelled.c._banditAction = { windupS: 0.3, strikeS: 0.1, t: 0.1, cancelled: true, data: { isBandit: true } };
+  sandbox.window.BanditCombat.finishAction(cancelled.c);
+  assert.equal(cancelled.c._banditToolTail, null, 'a staggered (cancelled) swing does not play out its strike');
+  assert.equal(cancelled.c._banditSwingPower, 1, 'and returns to the rest stance immediately');
+  const flask = makeBandit({ _banditSwingHoldS: 0 });
+  flask.c._banditAction = { windupS: 0.3, strikeS: 0.1, t: 0.4, cancelled: false, data: { isBandit: true, flasker: true } };
+  sandbox.window.BanditCombat.finishAction(flask.c);
+  assert.equal(flask.c._banditToolTail, null, 'a Flasker throw has no melee tail');
 }
 
 console.log('shared attack pose tests passed');
