@@ -29,7 +29,7 @@
   const alive = actor => !!actor && actor.health !== 0 && actor.dead !== true && actor.isDead !== true;
   const getActors = kit => {
     const all = [kit.deps?.player, ...(kit.deps?.hostileObjects || [])]; // Player and enemies share ice and icicle collision checks.
-    return all.filter(alive);
+    return all.filter(actor => alive(actor) && (actor === kit.deps.player || (actor.areaId || actor.area || actor.mapId || MAP_ID) === MAP_ID)); // Never slide/hit a hostile cached in another area.
   };
   const pointOf = (actor, tile) => ({ x:(Number(actor.x) || 0) / tile, z:(Number(actor.y) || 0) / tile });
   const floorY = (kit, x, z) => Number(kit.sampleSupport(x, z)?.y) || Number(world?.context?.meta?.floorSurfaceY) || 0;
@@ -143,7 +143,7 @@
       }
     }
   }
-  function emitShards(x, y, z, color, radius, count) {
+  function emitShards(x, y, z, color, radius, count, pillarHeight = 0, pillarWidth = 0) {
     const group = new THREE.Group();
     const geo = new THREE.TetrahedronGeometry(.11);
     const mat = new THREE.MeshBasicMaterial({ color });
@@ -151,7 +151,12 @@
     const parts = [];
     for (let i = 0; i < count; i++) {
       const a = i * 2.399963, speed = radius * (.45 + (i % 8) / 13);
-      parts.push({ x:0, y:0, z:0, vx:Math.cos(a) * speed, vz:Math.sin(a) * speed, vy:2 + (i % 7) * .32 });
+      parts.push({
+        x:pillarWidth ? (i % 7 / 6 - .5) * pillarWidth : 0,
+        y:pillarHeight ? (i / Math.max(1,count-1) - .5) * pillarHeight : 0,
+        z:pillarWidth ? (Math.floor(i/7)%7/6 - .5) * pillarWidth : 0,
+        vx:Math.cos(a) * speed, vz:Math.sin(a) * speed, vy:2 + (i % 7) * .32
+      }); // The shattered stone first reproduces the original pillar's height/width, then sprays out like the lich eruption.
     }
     group.position.set(x, y, z); group.add(mesh);
     world.group.add(group);
@@ -209,7 +214,10 @@
         group.add(crack); cracks.push(crack);
       }
       world.group.add(group);
-      world.pillars.push({ x:point.x, z:point.z, y, height, group, cracks, phase:'idle', elapsed:0, pulses:0 });
+      const pillar = { x:point.x, z:point.z, y, height, group, cracks, phase:'idle', elapsed:0, pulses:0 }; // Explosion state is also the live collision-footprint gate.
+      world.pillars.push(pillar);
+      window.DevRandomRuinTileOccupancy?.addSolidBox?.('hronal-pillar-'+room.id,
+        {cx:point.x,cz:point.z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent','lich-theme-pillars'); // The intact stone blocks movement; the blasted column does not.
     }
   }
   function updatePillars(kit, dt, actors) {
@@ -233,7 +241,8 @@
       if (pillar.elapsed < 3) continue; // Blast one second after the third pulse.
       pillar.phase = 'spent';
       pillar.group.visible = false;
-      emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64);
+      window.DevRandomRuinTileOccupancy?.refresh?.(); // Remove destroyed pillar collision on the same frame as the explosion.
+      emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64, pillar.height, .62);
       emitShards(pillar.x, pillar.y + pillar.height * .5, pillar.z, 0xff6419, PILLAR_RADIUS * .85, 24);
       for (const actor of actors) {
         if (distance(pointOf(actor, kit.deps.TILE), pillar) <= PILLAR_RADIUS) {
@@ -383,7 +392,10 @@
     if (!inside) {
       world.sink = 0;
       const first = tileFromKey(room.plasmOriginal), center = {x:first[0]+.5,z:first[1]+.5};
-      if (!obstructed(point, center, kit)) return; // Plasm only grows while in the same room but out of sight.
+      const facing = Number(player.facing); // Used with occluders to test player sight, not camera visibility (which depends on third-person orbit).
+      const bearing = Math.atan2(center.z-point.z, center.x-point.x);
+      const outOfView = Number.isFinite(facing) && Math.cos(bearing - facing) < .35;
+      if (!outOfView && !obstructed(point, center, kit)) return; // Behind the player's gaze or physically occluded, never visible directly ahead.
       room.plasmElapsed += dt * 1000;
       if (room.plasmElapsed >= PLASM_EXPANSION_MS) {
         room.plasmElapsed -= PLASM_EXPANSION_MS;
@@ -410,7 +422,8 @@
       if (clearAt(nx,nz,floorY(kit,point.x,point.z))) { player.x=nx*tile;player.y=nz*tile; }
     }
     const baseY = floorY(kit,player.x/tile,player.y/tile);
-    window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY - world.sink * 1.8);
+    const bodyHeight = Math.max(.9, Number(kit.deps.playerMesh?.userData?.portraitModelHeight) || 1.8); // A full sink hides the entire rendered body, not merely its knees.
+    window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY - world.sink * bodyHeight);
     if (world.sink >= 1) {
       world.sink = 0;
       resetPlasmRoom(kit,room);
@@ -431,7 +444,7 @@
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
     kit.group().add(world.group);
     makeRoomLights(kit);
-    if (world.theme === 'hronal') makePillars(kit);
+    if (world.theme === 'hronal') { makePillars(kit); window.DevRandomRuinTileOccupancy?.refresh?.(); }
     if (world.theme === 'tothal') { makeIce(kit); makeIcicles(kit); }
     if (world.theme === 'kanthic') makePlasm(kit);
     lastEvent = 'generated:'+world.theme;
@@ -449,6 +462,8 @@
     for (const spike of world.icicles) spike.mesh.parent?.remove(spike.mesh); // Shared geometry belongs to the composer instance.
     if (world.icicles.length) {world.icicles[0].mesh.geometry.dispose();world.icicles[0].mesh.material.dispose();}
     for (const burst of world.bursts) {burst.mesh.geometry.dispose();burst.mesh.material.dispose();}
+    window.DevRandomRuinTileOccupancy?.clearSolids?.('lich-theme-pillars'); // Reroll/leave cannot strand invisible, still-colliding Hronal columns.
+    window.DevRandomRuinTileOccupancy?.refresh?.();
     world.plasmGeometry?.dispose(); world.plasmMaterial?.dispose(); world.ownedTexture?.dispose();
     world.group.parent?.remove(world.group);
     world.group.traverse(obj => {
