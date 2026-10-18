@@ -37,6 +37,25 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       occupancy:window.DevRandomRuin?.getOccupancySnapshot?.()?.revision ?? null,
       area:window.GridTileAccessors?.getCurrentArea?.() || null,
       ruin:window.DevRandomRuin?.getState?.()?.materialStats || null,
+      hiddenActivatorSources:(() => {
+        const root=window.DevRandomRuin?.getRuntimeContext?.()?.root;
+        const hidden=[];
+        root?.traverse?.(node => {
+          if (node.userData?.devRuinNativeRenderKind !== 'activator') return;
+          const replacement=node.userData?.devRuinGlyphPlaque || null;
+          let invisible=null;
+          for(let parent=replacement||node;parent;parent=parent.parent) {
+            if(parent.visible===false){invisible=parent;break;}
+            if(parent===root)break;
+          }
+          if (invisible) hidden.push({
+            name:node.name,hiddenName:invisible.name,hiddenOwn:invisible===node,
+            replacer:!!replacement,replacementVisible:replacement?.visible,
+            activatorType:node.parent?.userData?.activatorType || null,
+          });
+        });
+        return {count:hidden.length,examples:hidden.slice(0,20),byHiddenName:Object.fromEntries([...new Set(hidden.map(h=>h.hiddenName))].slice(0,15).map(k=>[k,hidden.filter(h=>h.hiddenName===k).length]))};
+      })(),
     }));
     console.error('[ruin collision smoke] wall proxy readiness:', JSON.stringify(sceneDebug));
     console.error('[ruin collision smoke] page errors:', JSON.stringify(errors.slice(-12)));
