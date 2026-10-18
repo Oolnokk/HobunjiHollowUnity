@@ -26,6 +26,7 @@ load('docs/js/npc-agenda.js');
 load('docs/js/npc-scheduling.js');
 load('docs/js/tile-pathfinding.js');
 load('docs/js/npc-pathfinding.js');
+load('docs/js/npc-activity-planner.js');
 
 const agenda = window.NpcAgenda;
 const nightBeat = { id: 'night', activity: 'work', day: 'Naru', window: ['22:00', '02:00'] }; // Friday-only test beat spanning into Saturday.
@@ -39,6 +40,27 @@ for (const [name, day, nowMin, expected] of [
   assert.equal(agenda.isBeatActiveNow(nightBeat, { npcId: 'night_worker', weekdayName: name, day, nowMin }), expected,
     `agenda overnight ${name} ${nowMin}`);
 }
+
+// The public calendar changes civil dates at midnight; raw gameplay day waits until 06:00.
+const rawCalendar = { day: 45 }; // Used by the planner to model 06:00 raw-day rollover without changing the civil schedule date.
+window.CalendarSystem.civilDayForRawDay = () => rawCalendar.day + (hour < 6 ? 1 : 0);
+const midnightWalker = { rec: { id: 'night_worker', name: 'Night worker', agenda: [nightBeat] }, area: 'town', root: { position: { x: 1.5, z: 1.5 } } }; // Supplies a live NPC for the planner's read-only debug snapshot.
+window.NpcActivityPlanner.init({
+  calendar: rawCalendar,
+  findNpcWalker: id => id === midnightWalker.rec.id ? midnightWalker : null,
+  getCurrentArea: () => 'town',
+});
+weekday = 'Tothu';
+hour = 1;
+const beforeRawRollover = window.NpcActivityPlanner.debugSnapshot(midnightWalker.rec.id); // Should use civil day 46 despite raw calendar day 45.
+assert.equal(beforeRawRollo.intendedBeatId, 'night', 'the agenda still considers an overnight shift active just after midnight');
+assert.equal(beforeRawRollo.dailySeed, agenda.dailySeed('night_worker', 46, 'debug'),
+  'planner seeds use the current civil day before the 06:00 raw rollover');
+rawCalendar.day = 46;
+hour = 7;
+const afterRawRollover = window.NpcActivityPlanner.debugSnapshot(midnightWalker.rec.id); // The civil day stays 46 after raw maintenance.
+assert.equal(afterRawRollo.dailySeed, beforeRawRollover.dailySeed,
+  'planner seeds do not change again at the 06:00 raw-day rollover');
 
 const schedulingDeps = {
   normalizeNpcArea: area => area || 'town',
@@ -121,7 +143,15 @@ let probes = 0;
 movementDeps.furnitureBlocksMovementAt = () => { probes++; return false; };
 window.NpcPathfinding.decorateWalkerCollision(walker);
 walker.moveToward(1.5, 1.5, 1 / 60);
-assert.equal(probes, 0, 'no-op walker movement skips all furniture collision probes');
+assert.equal(probes, 0, 'completed no-op walker movement skips all furniture collision probes');
+const unresolvedWalker = {
+  area: 'interior',
+  root: { position: { x: 1.5, z: 1.5 } },
+  moveToward() { return false; },
+}; // A failed movement call must still run collision/recovery logic even without displacement.
+window.NpcPathfinding.decorateWalkerCollision(unresolvedWalker);
+unresolvedWalker.moveToward(3.5, 1.5, 1 / 60);
+assert.ok(probes > 0, 'incomplete zero-displacement movement does not bypass collision/recovery checks');
 
 // Standalone tools and tests that load only npc-pathfinding.js keep the old
 // small-array search fallback instead of failing on a missing shared utility.
