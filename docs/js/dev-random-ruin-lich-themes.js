@@ -621,14 +621,14 @@
         if(step>.00001){
           const target={x:point.x+motion.dir.x*step,z:point.z+motion.dir.z*step};
           const y=floorY(kit,point.x,point.z);
-          // The curved cap is visual only; the exact ice tile set determines
-          // whether the continuation is still permitted. Never drift onto land.
-          if(!world.iceTiles.has(tileKey(target.x,target.z)))motion.remaining=0;
-          else if(!clearAt(target.x,target.z,y)||Math.abs(floorY(kit,target.x,target.z)-y)>=.4){
+          // Cross onto the first dry tile normally, then immediately cancel
+          // inertia. A dry boundary is a brake, not an invisible collision wall.
+          if(!clearAt(target.x,target.z,y)||Math.abs(floorY(kit,target.x,target.z)-y)>=.4){
             collisionImpact(actor,kit,step);motion.remaining=0;
           }else{
             actor.x=target.x*tile;actor.y=target.z*tile;
             if(actor===kit.deps.player)window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY(kit,target.x,target.z));
+            if(!world.iceTiles.has(tileKey(target.x,target.z)))motion.remaining=0;
           }
         }
         if(motion.remaining<=.00001){motion.sliding=false;motion.hold=0;}
