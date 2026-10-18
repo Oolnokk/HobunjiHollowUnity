@@ -184,6 +184,78 @@ assert.equal(shown('vbFootingRow'), true, 'Footing afflictions also reveal their
 assert.equal(elements.get('vbFootingSegments').children.length, 1);
 assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 1, 'mobile-readable debug snapshot includes HUD state');
 
+// Enhanced resource visuals are driven by actual transaction metadata, not
+// one-off names: rapid attacks swell, efficient resources have crenellations.
+player.afflictions.shamblingFooting = 0;
+player.afflictions.furiousStamina = 26;
+refresh();
+const furious = elements.get('vbStaminaSegments').children.find(span => span.title === 'Furious Stamina');
+assert(furious?.className.includes('vb-effect-balloon'), 'Furious Stamina swells from tempoMultiplier');
+assert.equal(furious.style.backgroundColor, 'transparent', 'balloon has genuine deforming SVG silhouette');
+assert.equal(furious.children[0].id, 'svg');
+assert.equal(furious.children[0].children[1].children[0].id, 'animate', 'balloon animates SVG outline without game-frame work');
+assert.equal(furious.children[0].children[1].children[0].getAttribute('attributeName'), 'd');
+player.afflictions.furiousStamina = 23;
+refresh();
+assert.equal(elements.get('vbStaminaSegments').children.find(span => span.title === 'Furious Stamina'), furious, 'balloon node retained as amount changes');
+player.afflictions.furiousStamina = 0;
+
+player.afflictions.moralizedStamina = 31;
+refresh();
+const moralized = elements.get('vbStaminaSegments').children.find(span => span.title === 'Moralized Stamina');
+assert(moralized?.className.includes('vb-effect-crenellated'), '3-for-1 Stamina uses generic efficient-resource crenels');
+const battlement = moralized.children[0].children[1].getAttribute('d');
+assert(battlement.includes(' -4') && battlement.includes(' 4') && battlement.includes(' 44') && battlement.includes(' 36'), 'castle outline alternates slight outward and inward ledges');
+player.afflictions.moralizedStamina = 24;
+refresh();
+assert.equal(moralized.children[0].children[1].getAttribute('d'), battlement, 'crenellation mesh is stable while draining');
+player.afflictions.moralizedStamina = 0;
+
+player.afflictions.resoluteHealth = 21;
+refresh();
+assert(elements.get('vbHealthSegments').children.some(span => span.className.includes('vb-effect-crenellated')), '3-for-1 Health damage absorption reuses crenels');
+player.afflictions.resoluteHealth = 0;
+
+player.afflictions.resoluteFooting = 28;
+refresh();
+assert(elements.get('vbFootingSegments').children.some(span => span.className.includes('vb-effect-crenellated')), '3-for-1 Footing damage absorption reuses crenels');
+player.afflictions.resoluteFooting = 0;
+
+// A future two-for-one resource must inherit the same motif with no new CSS.
+context.ResourceSystem.AFFLICTIONS.futureEfficientHealth = {
+  name: 'Future Efficient Health', resource: 'health', extend: 'currentBack',
+  priority: 200, enhanced: true, tags: ['enhanced'],
+};
+context.ResourceSystem.ENHANCED_RESOURCE_DEFS = {
+  ...context.ResourceSystem.ENHANCED_RESOURCE_DEFS,
+  futureEfficientHealth: { resource: 'health', conversionRate: 2 },
+};
+player.afflictions.futureEfficientHealth = 14;
+refresh();
+assert(elements.get('vbHealthSegments').children.some(span =>
+  span.title === 'Future Efficient Health' && span.className.includes('vb-effect-crenellated')),
+  'future two-for-one resources automatically receive crenellations');
+player.afflictions.futureEfficientHealth = 0;
+delete context.ResourceSystem.AFFLICTIONS.futureEfficientHealth;
+delete context.ResourceSystem.ENHANCED_RESOURCE_DEFS.futureEfficientHealth;
+
+player.afflictions.mirroredHealth = 16;
+refresh();
+assert(elements.get('vbHealthSegments').children.some(span => span.className.includes('vb-effect-mirror')), 'one-for-one reflected health uses shine, not crenels');
+player.afflictions.mirroredHealth = 0;
+for (const [id, klass] of [
+  ['burningHealth', 'fire'],
+  ['kindlingHealth', 'ember'],
+  ['entrancedHealth', 'entranced'],
+]) {
+  player.afflictions[id] = 12;
+  refresh();
+  assert(elements.get('vbHealthSegments').children.some(span => span.className.includes('vb-effect-' + klass)),
+    id + ' has its behavioral overlay');
+  player.afflictions[id] = 0;
+}
+refresh();
+
 const html = fs.readFileSync('docs/index.html', 'utf8');
 const css = fs.readFileSync('docs/style.css', 'utf8');
 const hudHtml = html.slice(html.indexOf('<div id="vitalsBar"'), html.indexOf('<!-- Active alchemy buffs/'));
@@ -209,6 +281,9 @@ assert(css.includes('#vbHealthRow { z-index: 30; }'), 'upper bar paints its drop
 assert(css.includes('height: 2.29dvh') && css.includes('width: 27.78vw') && css.includes('width: 81.25vw'), 'bar width and height are viewport percentages');
 assert(css.includes('bottom: max(2.2dvh, env(safe-area-inset-bottom))'), 'bar hugs viewport safe-area bottom');
 assert(css.includes('.vb-shape-svg'), 'actual inline SVG silhouette styling exists');
+assert(css.includes('.vb-effect-balloon') && css.includes('.vb-effect-crenellated'), 'enhanced silhouettes hide old rectangular borders');
+assert(css.includes('.vb-effect-mirror::after'), 'mirror reflection visual is present');
+assert(css.includes('.vb-effect-fire::after') && css.includes('.vb-effect-ember::after') && css.includes('.vb-effect-entranced::after'), 'remaining damaging/control effects have semantic overlays');
 assert(!css.includes('.vb-effect-brittle::before'), 'old fake chip slashes are gone');
 assert(!css.includes('clip-path: polygon('), 'starved cap no longer clips a rectangular border');
 assert(css.slice(css.indexOf('/* ── Player-only resource bars'), css.indexOf('/* ── Buff bar: active timed effects')).includes('background: transparent'), 'HUD root has no visible panel');
