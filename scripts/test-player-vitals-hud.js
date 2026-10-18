@@ -28,7 +28,7 @@ function element(id) {
 const elements = new Map(); // Provides the exact HUD ids expected by the game's HTML.
 elements.set('vitalsBar', element('vitalsBar'));
 for (const resource of ['Health', 'Stamina', 'Footing']) {
-  for (const part of ['Row', 'Fill', 'Segments', 'Cap']) {
+  for (const part of ['Row', 'Fill', 'Segments', 'Normal', 'Cap']) {
     const id = 'vb' + resource + part; // Matches the existing in-game #vb<resource><part> naming pattern.
     elements.set(id, element(id));
   }
@@ -77,6 +77,8 @@ assert.equal(shown('vbHealthRow'), true, 'damaged Health is visible');
 assert.equal(shown('vbStaminaRow'), false, 'full Stamina stays hidden when Health is damaged');
 assert.equal(shown('vbFootingRow'), false, 'full Footing stays hidden');
 assert.equal(bar('Health').style.width, '49%');
+assert.equal(elements.get('vbHealthNormal').children.length, 1, 'ordinary fill receives its own straight-outlined span');
+assert.equal(elements.get('vbHealthNormal').children[0].style.width, '49.0%', 'ordinary span follows current Health');
 
 player.health = 100;
 player.afflictions.bleedingHealth = 40;
@@ -84,8 +86,16 @@ player.afflictions.bruisedHealth = 20;
 refresh();
 assert.equal(shown('vbHealthRow'), true, 'a full but afflicted resource is visible');
 assert.equal(elements.get('vbHealthSegments').children.length, 1, 'priority clips the lower-priority overlapping affliction');
-assert.equal(elements.get('vbHealthSegments').children[0].style.backgroundColor,
-  context.HOBUNJI_CONFIG.resourceRings.afflictionColors.bleedingHealth, 'uses the shared resource-ring palette');
+assert.equal(elements.get('vbHealthSegments').children[0].style.color,
+  context.HOBUNJI_CONFIG.resourceRings.afflictionColors.bleedingHealth, 'drips inherit the shared resource-ring palette');
+assert.equal(elements.get('vbHealthSegments').children[0].style.backgroundColor, 'transparent', 'deforming liquid bottom owns the entire outline');
+assert.equal(elements.get('vbHealthSegments').children[0].children[0].id, 'svg', 'dripping bands have live SVG bottom edges');
+const dripMotion = elements.get('vbHealthSegments').children[0].children[0].children[1].children[0];
+assert.equal(dripMotion.id, 'animate', 'SVG morphs the bottom edge instead of overlaying it');
+assert.equal(dripMotion.getAttribute('attributeName'), 'd');
+assert.equal(dripMotion.getAttribute('repeatCount'), 'indefinite');
+assert.equal(elements.get('vbHealthNormal').children.length, 1, 'underlying ordinary fill is separated from the affliction');
+assert.equal(elements.get('vbHealthNormal').children[0].style.width, '60.0%', 'ordinary top and bottom borders stop before the bleeding interval');
 const bleedingSpan = elements.get('vbHealthSegments').children[0];
 assert(bleedingSpan.className.includes('vb-effect-drip'), 'bleeding shows falling drops');
 player.afflictions.bleedingHealth = 38;
@@ -101,7 +111,7 @@ assert.equal(bruisedSpan.children[0].id, 'svg', 'inline SVG renders the bar mesh
 const bruisePath = bruisedSpan.children[0].children[1].getAttribute('d');
 assert(bruisePath.includes('L') && bruisePath.includes('Z'), 'closed jagged outline path');
 const topInset = [...bruisePath.matchAll(/L [\d.]+ ([\d.]+)/g)].map(match => +match[1]);
-assert(topInset.some(y => y >= 10 && y <= 16), 'inward cuts are 25-40% of path height');
+assert(topInset.some(y => y >= 5 && y <= 8), 'inward cuts are halved to 12.5-20% of path height');
 player.afflictions.bruisedHealth = 17;
 refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged mesh remains stable across frames');
@@ -178,7 +188,11 @@ const html = fs.readFileSync('docs/index.html', 'utf8');
 const css = fs.readFileSync('docs/style.css', 'utf8');
 const hudHtml = html.slice(html.indexOf('<div id="vitalsBar"'), html.indexOf('<!-- Active alchemy buffs/'));
 assert(!/class="vb-(icon|label|value)"/.test(hudHtml), 'HUD contains no visible icon, label or numeric text');
-assert(css.includes('border: .556dvh solid #000'), 'outline is doubled relative to old 2px reference at 720px viewport');
+assert(css.includes('border-left: .556dvh solid #000') && css.includes('border-top: 0'), 'track retains only its left/right endcaps');
+assert(css.includes('#vitalsBar .vb-normal-segment'), 'normal resource sections own their straight outline');
+assert(css.includes('border: max(1px, .14dvh) solid #000'), 'droplets have their own black outlines');
+assert(css.includes('translate3d(0, 9dvh, 0)'), 'droplets cross lower resource rows');
+assert(css.includes('#vbHealthRow { z-index: 30; }'), 'upper bar paints its droplets over the bars below it');
 assert(css.includes('height: 2.29dvh') && css.includes('width: 27.78vw') && css.includes('width: 81.25vw'), 'bar width and height are viewport percentages');
 assert(css.includes('bottom: max(2.2dvh, env(safe-area-inset-bottom))'), 'bar hugs viewport safe-area bottom');
 assert(css.includes('.vb-shape-svg'), 'actual inline SVG silhouette styling exists');

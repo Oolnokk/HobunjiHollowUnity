@@ -233,69 +233,87 @@
       transition: opacity .2s ease, transform .2s ease, visibility .2s;
     }
     #vitalsBar.is-active { visibility: visible; opacity: 1; transform: translate(-50%, 0); }
-    #vitalsBar .vb-row { display: none; width: 100%; }
+    #vitalsBar .vb-row { display: none; width: 100%; position: relative; }
     #vitalsBar .vb-row.is-active { display: block; }
+    /* Higher rows paint LAST so drops visibly pass in front of lower bars. */
+    #vitalsBar #vbHealthRow { z-index: 30; }
+    #vitalsBar #vbStaminaRow { z-index: 20; }
+    #vitalsBar #vbFootingRow { z-index: 10; }
     #vitalsBar .vb-track {
       position: relative;
       width: 100%;
       height: 2.29dvh;
       min-height: 12px;
       overflow: visible; /* Required for droplets to fall past the edge. */
-      border: .556dvh solid #000;
-      border-radius: .22dvh;
+      border-top: 0;
+      border-bottom: 0;
+      border-left: .556dvh solid #000;
+      border-right: .556dvh solid #000;
+      border-radius: 0;
       background: rgba(0, 0, 0, .45);
       box-sizing: border-box;
-      isolation: isolate;
     }
     #vitalsBar .vb-fill {
       position: absolute;
       top: 0; bottom: 0; left: 0;
       width: 100%;
       transition: width .15s ease-out;
+      opacity: 0; /* Numeric width remains authoritative; split spans paint the fill. */
     }
     #vitalsBar .vb-health { background-color: #55d76f; }
     #vitalsBar .vb-stamina { background-color: #67b7ff; }
     #vitalsBar .vb-footing { background-color: #d9a441; }
+    #vitalsBar .vb-normal-segments,
     #vitalsBar .vb-segments { position: absolute; inset: 0; pointer-events: none; }
+    #vitalsBar .vb-normal-segment,
     #vitalsBar .vb-affliction-segment {
       position: absolute;
       top: 0; bottom: 0;
-      box-shadow: inset 1px 0 #000, inset -1px 0 #000;
+      box-sizing: border-box;
+      border-top: .556dvh solid #000;
+      border-bottom: .556dvh solid #000;
+      border-left: .12dvh solid #000;
+      border-right: .12dvh solid #000;
       transition: left .15s ease-out, width .15s ease-out;
       pointer-events: none;
     }
+    #vitalsBar .vb-effect-drip,
+    #vitalsBar .vb-effect-brittle {
+      border: 0;
+      background: transparent;
+    }
 
-    /* Two composited droplets per live band, not JS-spawned particles.
-       Poison oozes slowly, Wounded Health drips more softly. */
+    /* Detached SVG-surface droplets. 4.6s matches the two morphs of the
+       bottom outline; each painted drop crosses *every* bar below its row.
+       Only transform/opacity animate on these tiny compositor-friendly bits. */
     #vitalsBar .vb-effect-drip::before,
     #vitalsBar .vb-effect-drip::after {
       content: '';
       position: absolute;
-      z-index: 4;
-      top: 65%;
-      width: min(.34dvw, 5px);
-      min-width: 2px;
-      height: .85dvh;
-      border-radius: 45% 45% 65% 65%;
+      z-index: 40;
+      top: 66%;
+      width: clamp(3px, .45dvw, 6px);
+      height: 1dvh;
+      border: max(1px, .14dvh) solid #000;
+      box-sizing: border-box;
+      border-radius: 44% 44% 65% 65%;
       background: currentColor;
       opacity: 0;
-      animation: vb-drip-fall 2s ease-in infinite;
+      animation: vb-fluid-drop 4.6s ease-in infinite;
       pointer-events: none;
     }
     #vitalsBar .vb-effect-drip::before { left: 28%; }
-    #vitalsBar .vb-effect-drip::after { left: 72%; animation-delay: -1s; }
+    #vitalsBar .vb-effect-drip::after { left: 72%; animation-delay: -2.3s; }
     #vitalsBar .vb-effect-poison::before,
-    #vitalsBar .vb-effect-poison::after {
-      border-radius: 60% 45% 70% 50%;
-      animation-duration: 3.1s;
-    }
+    #vitalsBar .vb-effect-poison::after { border-radius: 60% 42% 70% 50%; }
     #vitalsBar .vb-effect-wound::before,
-    #vitalsBar .vb-effect-wound::after { animation-duration: 2.7s; height: .6dvh; }
-    @keyframes vb-drip-fall {
+    #vitalsBar .vb-effect-wound::after { height: .7dvh; }
+    @keyframes vb-fluid-drop {
       0%, 12% { transform: translate3d(0, 0, 0) scaleY(.3); opacity: 0; }
-      25% { opacity: .92; }
-      73% { transform: translate3d(0, 1.7dvh, 0) scaleY(1.15); opacity: .83; }
-      100% { transform: translate3d(0, 2.3dvh, 0) scaleY(.85); opacity: 0; }
+      17% { transform: translate3d(0, .25dvh, 0) scaleY(1.7); opacity: 1; }
+      24% { transform: translate3d(0, .8dvh, 0) scaleY(1); opacity: 1; }
+      45% { transform: translate3d(0, 9dvh, 0) scaleY(.85); opacity: .94; }
+      50%, 100% { transform: translate3d(0, 10dvh, 0) scaleY(.65); opacity: 0; }
     }
 
     /* The actual brittle/starved bars are single reusable inline-SVG meshes.
@@ -306,9 +324,9 @@
       display: block;
       position: absolute;
       left: 0;
-      top: calc(-1 * .556dvh);
+      top: 0;
       width: 100%;
-      height: calc(100% + 1.112dvh);
+      height: 100%;
       overflow: visible;
       pointer-events: none;
     }
@@ -318,6 +336,8 @@
       position: absolute;
       top: 0;
       bottom: 0;
+      border-top: .556dvh solid #000;
+      border-bottom: .556dvh solid #000;
       background: repeating-linear-gradient(135deg, rgba(0,0,0,.83) 0 .5dvh, rgba(255,255,255,.16) .5dvh .8dvh);
       border-left: .17dvh solid #000;
       pointer-events: none;
@@ -325,7 +345,7 @@
     #vitalsBar .vb-cap[hidden] { display: none; }
     #vitalsBar .vb-cap.is-withered {
       background: transparent;
-      border-left: 0;
+      border: 0;
     }
     /* Static bell-shaped spline; shape itself, not just a mask, owns outline. */
     #vitalsBar .vb-starved-svg { overflow: visible; }

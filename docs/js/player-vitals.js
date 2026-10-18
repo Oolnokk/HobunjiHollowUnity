@@ -31,8 +31,10 @@
         row: document.getElementById('vb' + spec.label + 'Row'),
         fill: document.getElementById('vb' + spec.label + 'Fill'),
         segments: document.getElementById('vb' + spec.label + 'Segments'),
+        normalSegments: document.getElementById('vb' + spec.label + 'Normal'),
         cap: document.getElementById('vb' + spec.label + 'Cap'),
         segmentsByKey: new Map(), // Preserve CSS animations between ordinary resource ticks.
+        normalByKey: new Map(), // Stable straight-edged ordinary resource bands.
         fillColor: '', // Tracks the CSS color assigned to the ordinary/exhausted bar across frames.
       };
     }
@@ -103,7 +105,7 @@
   }
 
   function jaggedPath(key, fraction) {
-    // Approximately one cut per second interval, with 25-40% inward depth.
+    // Every other vertex cuts inward 12.5-20% (half the previous depth).
     // Fewer vertices on narrower segments keep chips short and legible.
     const intervals = Math.max(4, Math.min(24, 2 * Math.round(fraction * 12)));
     const cacheKey = key + ':' + intervals;
@@ -119,13 +121,13 @@
     const top = ['M 0 0'];
     for (let i = 1; i < intervals; i++) {
       const x = (i + (rand() - .5) * .22) * 100 / intervals;
-      const inset = i % 2 === 1 ? SVG_HEIGHT * (.25 + rand() * .15) : 0;
+      const inset = i % 2 === 1 ? SVG_HEIGHT * (.125 + rand() * .075) : 0;
       top.push('L ' + x.toFixed(2) + ' ' + inset.toFixed(2));
     }
     top.push('L 100 0', 'L 100 ' + SVG_HEIGHT);
     for (let i = intervals - 1; i >= 1; i--) {
       const x = (i + (rand() - .5) * .22) * 100 / intervals;
-      const inset = i % 2 === 1 ? SVG_HEIGHT * (.25 + rand() * .15) : 0;
+      const inset = i % 2 === 1 ? SVG_HEIGHT * (.125 + rand() * .075) : 0;
       top.push('L ' + x.toFixed(2) + ' ' + (SVG_HEIGHT - inset).toFixed(2));
     }
     top.push('L 0 ' + SVG_HEIGHT, 'Z');
@@ -173,6 +175,44 @@
     if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
   }
 
+  // A fixed, morphing bottom border gives the droplet a little adhesive
+  // neck before release. Each SVG path has IDENTICAL command structure, so
+  // the browser interpolates the surface without a game-loop DOM update.
+  function liquidEdge(leftDepth = 0, rightDepth = 0) {
+    const L = n => Number(n).toFixed(2);
+    return 'M 0 0 L 100 0 L 100 40 L 84 40 '
+      + 'C 78 40 76 ' + L(40 + rightDepth * .5) + ' 72 ' + L(40 + rightDepth) + ' '
+      + 'C 68 ' + L(40 + rightDepth * .5) + ' 66 40 62 40 '
+      + 'L 38 40 '
+      + 'C 34 40 32 ' + L(40 + leftDepth * .5) + ' 28 ' + L(40 + leftDepth) + ' '
+      + 'C 24 ' + L(40 + leftDepth * .5) + ' 22 40 16 40 '
+      + 'L 0 40 Z';
+  }
+
+  function ensureDripShape(segment, color) {
+    if (!segment._vbShape) {
+      segment._vbShape = shapeSvg('drip');
+      const path = segment._vbShape.path;
+      const flat = liquidEdge();
+      const left = liquidEdge(18, 0);
+      const right = liquidEdge(0, 18);
+      path.setAttribute('d', flat);
+      // Reduced-motion mode retains the still silhouette and drip markers.
+      if (!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+        const motion = svgElement('animate');
+        motion.setAttribute('attributeName', 'd');
+        motion.setAttribute('dur', '4.6s');
+        motion.setAttribute('keyTimes', '0;0.17;0.24;0.34;0.5;0.67;0.74;0.84;1');
+        motion.setAttribute('values', [flat, left, left, flat, flat, right, right, flat, flat].join(';'));
+        motion.setAttribute('repeatCount', 'indefinite');
+        path.appendChild(motion);
+      }
+      segment.appendChild(segment._vbShape.svg);
+    }
+    const path = segment._vbShape.path;
+    if (path.getAttribute('fill') !== color) path.setAttribute('fill', color);
+  }
+
   function ensureStarvedCap(cap, color) {
     if (!cap._vbShape) {
       cap._vbShape = shapeSvg('starved');
@@ -203,10 +243,12 @@
       if (segment.style.left !== left) segment.style.left = left;
       if (segment.style.width !== width) segment.style.width = width;
       const brittle = BRITTLE_EFFECTS.has(piece.id);
-      const base = brittle ? 'transparent' : piece.color;
+      const dripping = Object.prototype.hasOwnProperty.call(DRIP_EFFECTS, piece.id);
+      const base = brittle || dripping ? 'transparent' : piece.color;
       if (segment.style.backgroundColor !== base) segment.style.backgroundColor = base;
       if (segment.style.color !== piece.color) segment.style.color = piece.color;
       if (brittle) ensureBrittleShape(segment, key, (piece.end - piece.start) / denominator, piece.color);
+      if (dripping) ensureDripShape(segment, piece.color);
       next.set(key, segment);
       order.push(segment);
     }
@@ -219,6 +261,42 @@
     nodes.segmentsByKey = next;
   }
 
+  // Ordinary resource fill is now segmented too: no horizontal border runs
+  // through another affliction's shape, and the full track has only end caps.
+  function drawNormalSegments(nodes, afflicted, end, denominator, color) {
+    const ordered = [...afflicted].sort((a, b) => a.start - b.start);
+    const unclaimed = [];
+    let cursor = 0;
+    for (const piece of ordered) {
+      const left = clamp(piece.start, 0, end);
+      const right = clamp(piece.end, 0, end);
+      if (left > cursor + .001) unclaimed.push({ start: cursor, end: left });
+      cursor = Math.max(cursor, right);
+    }
+    if (end > cursor + .001) unclaimed.push({ start: cursor, end });
+    const previous = nodes.normalByKey, next = new Map(), order = [];
+    for (let i = 0; i < unclaimed.length; i++) {
+      const piece = unclaimed[i], key = String(i);
+      let segment = previous.get(key);
+      if (!segment) {
+        segment = document.createElement('span');
+        segment.className = 'vb-normal-segment';
+      }
+      const left = (piece.start / denominator * 100).toFixed(1) + '%';
+      const width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
+      if (segment.style.left !== left) segment.style.left = left;
+      if (segment.style.width !== width) segment.style.width = width;
+      if (segment.style.backgroundColor !== color) segment.style.backgroundColor = color;
+      next.set(key, segment);
+      order.push(segment);
+    }
+    const rendered = nodes.normalSegments.children;
+    if (rendered.length !== order.length || order.some((el, i) => rendered[i] !== el)) {
+      nodes.normalSegments.replaceChildren(...order);
+    }
+    nodes.normalByKey = next;
+  }
+
   function refreshVitalsHud() {
     if (!deps?.player || !resolveHudNodes()) return;
     const rs = window.ResourceSystem; // Supplies authoritative affliction, capacity and exhausted state.
@@ -229,7 +307,7 @@
 
     for (const spec of HUD_RESOURCES) {
       const nodes = hudNodes[spec.key]; // DOM elements for this resource row.
-      if (!nodes?.row || !nodes.fill || !nodes.segments || !nodes.cap) continue;
+      if (!nodes?.row || !nodes.fill || !nodes.segments || !nodes.normalSegments || !nodes.cap) continue;
       const authoredMax = Math.max(0, Number(player[spec.max]) || 0); // Original resource capacity used for band positions.
       const effectiveMax = Math.max(0, Number(rs.getEffectiveMax(player, spec.key)) || 0); // Buffs, reservations and capacity damage.
       const current = Math.max(0, Number(player[spec.value]) || 0); // Live ordinary Health/Stamina/Footing level.
@@ -273,6 +351,7 @@
       }
       const pieces = exhausted ? [] : visibleAfflictionSegments(player, spec.key, activeAfflictions, denominator, rs);
       drawAfflictionSegments(nodes, pieces, denominator);
+      drawNormalSegments(nodes, pieces, fillFraction * denominator, denominator, fillColor);
       const amountLabel = exhausted
         ? 'Exhausted ' + percent.toFixed(0) + '%'
         : Math.round(current) + ' / ' + Math.round(effectiveMax);
