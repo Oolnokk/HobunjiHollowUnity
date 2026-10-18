@@ -264,9 +264,13 @@
     const variants=Array.from({length:5},(_,i)=>clusterGeometry(i));
     world.icicleGeometries=variants.map(v=>v.geometry);
     world.icicleMaterial=new THREE.MeshBasicMaterial({color:0xa0d7ef,transparent:true,opacity:.82,side:THREE.DoubleSide});
-    const spacing=3; // Even spatial coverage (about one cluster per 9 walkable cells), not a ranked clump.
     for(const room of world.rooms){
       const b=room.bounds;
+      // Expand the spacing for exceptionally large rooms instead of
+      // clustering the first 48 icicles at one end of the ceiling.
+      const availableW=Math.max(0,b.maxX-b.minX-2),availableD=Math.max(0,b.maxZ-b.minZ-2);
+      let spacing=3;
+      while(Math.ceil(availableW/spacing)*Math.ceil(availableD/spacing)>48)spacing++;
       let count=0;
       for(let z=Math.floor(b.minZ+1);z<b.maxZ-1;z+=spacing){
         for(let x=Math.floor(b.minX+1);x<b.maxX-1;x+=spacing){
