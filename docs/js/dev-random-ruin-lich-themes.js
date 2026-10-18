@@ -698,7 +698,12 @@
   }
   function updatePlasmMesh(kit) {
     const patches=new Set(world.rooms.flatMap(room=>[...(room.plasm||[])]));
-    world.plasmMesh?.parent?.remove(world.plasmMesh); // Geometry variants remain shared until composer teardown.
+    if(world.plasmMesh){
+      // InstancedMesh owns GPU instance-matrix buffers even when its geometry
+      // and material are shared. Explicitly release those on every grow step.
+      world.plasmMesh.traverse(obj=>{if(obj.isInstancedMesh)obj.dispose?.();});
+      world.plasmMesh.parent?.remove(world.plasmMesh);
+    }
     world.plasmMesh=null;
     if(!patches.size)return;
     world.plasmMesh=renderCurvedTiles(kit,patches,world.plasmMaterial,PLASM_DEPTH,'kanthic_plasm_snow_shelf');
@@ -861,6 +866,7 @@
     const burstMeshes=new Set(world.bursts.map(b=>b.mesh));
     world.group.traverse(obj=>{
       if(!obj.isMesh||icicleMeshes.has(obj)||burstMeshes.has(obj))return;
+      if(obj.isInstancedMesh)obj.dispose?.(); // Release each surviving ice/plasm instance buffer.
       if(obj.geometry)ownedGeometries.add(obj.geometry);
       for(const material of Array.isArray(obj.material)?obj.material:[obj.material])if(material)ownedMaterials.add(material);
     });
