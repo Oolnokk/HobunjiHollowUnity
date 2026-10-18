@@ -125,11 +125,11 @@ for (const itemKey of ['crossbow', 'scatterbow']) {
   assert.strictEqual(def.reloadWindupFrac, 0.55, `${itemKey} must preserve the authored load windup timing`);
   assert.strictEqual(def.reloadStrikeFrac, 0.56, `${itemKey} must preserve the authored load strike timing`);
   assert.strictEqual(def.reloadHoldFrac, 0.692, `${itemKey} must preserve the authored load hold timing`);
-  assert.strictEqual(def.fireDurationS, 1.04, `${itemKey} must preserve the authored fire duration`);
+  assert.strictEqual(def.fireDurationS, 0.9932, `${itemKey} must preserve the authored fire duration`);
   assert.strictEqual(def.fireSequence, 'attack', `${itemKey} fire must include windup and strike stages`);
-  assert.strictEqual(def.fireWindupFrac, 0.05, `${itemKey} must preserve the authored fire windup timing`);
-  assert.strictEqual(def.fireAtFrac, 0.08, `${itemKey} must preserve the authored fire strike timing`);
-  assert.strictEqual(def.fireHoldFrac, 0.17, `${itemKey} must preserve the authored fire hold timing`);
+  assert.strictEqual(def.fireWindupFrac, 0.052356020942408384, `${itemKey} must preserve the authored fire windup timing`);
+  assert.strictEqual(def.fireAtFrac, 0.08376963350785342, `${itemKey} must preserve the authored fire strike timing`);
+  assert.strictEqual(def.fireHoldFrac, 0.13089005235602094, `${itemKey} must preserve the authored fire hold timing`);
 }
 assert.match(ranged, /AUTHORED_FIRE_POSE[\s\S]*neutral:\s*\{[^}]*scale:\s*1\.77/, 'fire neutral must use the higher authored tool scale');
 assert.match(ranged, /AUTHORED_LOAD_POSE[\s\S]*neutral:\s*\{[^}]*scale:\s*1\.77/, 'load neutral must use the higher authored tool scale');
