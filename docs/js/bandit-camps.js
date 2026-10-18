@@ -601,6 +601,7 @@
 
   const SIMPLE_HYDRA_DELAY_S = 5;
   const SIMPLE_HYDRA_DEFAULT_BURN_S = 8;
+  const SIMPLE_HYDRA_REINFORCEMENT_RANKS = ['grunt', 'flasker', 'lieutenant'];
 
   function simpleHydraPoint(rec, exterior = false) {
     if (exterior) {
@@ -622,12 +623,25 @@
     };
   }
 
+  // Reinforcement ranks are drawn in proportion to what is left in the camp's reserve, so a
+  // camp refills with the same mix it was staged with (a lone Flasker is not as likely as
+  // the dozen grunts beside it).
   function simpleHydraRank(rec) {
-    const choices = [];
-    if ((rec.reserveByRank.lieutenant || 0) > 0) choices.push('lieutenant');
-    if ((rec.reserveByRank.flasker || 0) > 0) choices.push('flasker');
-    if ((rec.reserveByRank.grunt || 0) > 0) choices.push('grunt');
-    return choices.length ? choices[Math.floor(deps.rnd() * choices.length)] : null;
+    let total = 0;
+    for (const rank of SIMPLE_HYDRA_REINFORCEMENT_RANKS) total += Math.max(0, rec.reserveByRank[rank] || 0);
+    if (!(total > 0)) return null;
+    let roll = deps.rnd() * total;
+    for (const rank of SIMPLE_HYDRA_REINFORCEMENT_RANKS) {
+      roll -= Math.max(0, rec.reserveByRank[rank] || 0);
+      if (roll < 0) return rank;
+    }
+    return SIMPLE_HYDRA_REINFORCEMENT_RANKS.find(rank => (rec.reserveByRank[rank] || 0) > 0) || null;
+  }
+
+  // One Flasker per `regularBanditsPerFlasker` grunts (the plain "Bandit" rank).
+  function flaskerCountForGrunts(comp, grunts) {
+    const perFlasker = Math.max(1, Math.floor(Number(comp?.regularBanditsPerFlasker) || 4));
+    return Math.floor(Math.max(0, grunts) / perFlasker);
   }
 
   function rollGruntVariant(rec, rank) {
@@ -709,22 +723,28 @@
 
   async function spawnSimpleHydraBandit(rec, rank, nameOverride, exterior = false) {
     if (rec.zoneId !== deps.getCurrentArea()) return null;
+    if ((rec.reserveByRank[rank] || 0) <= 0) return null;
+    rec.reserveByRank[rank]--; // Claimed before the async avatar build: concurrent callers can never spawn past the camp's reserve.
     const point = simpleHydraPoint(rec, exterior);
-    const c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
-      zoneId: rec.zoneId,
-      extra: {
-        homeX: rec.homeX,
-        homeY: rec.homeY,
-        banditCampInstanceId: rec.instance.id,
-        state: 'idle',
-      },
-      nameOverride,
-    });
+    let c = null;
+    try {
+      c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
+        zoneId: rec.zoneId,
+        extra: {
+          homeX: rec.homeX,
+          homeY: rec.homeY,
+          banditCampInstanceId: rec.instance.id,
+          state: 'idle',
+        },
+        nameOverride,
+      });
+    } finally {
+      if (!c) rec.reserveByRank[rank]++; // Failed or thrown builds give the slot back.
+    }
     if (!c) return null;
     deps.hostileObjects.add(c);
     rec.gangIds.add(c.id);
     rec.activeRanksById.set(c.id, rank);
-    rec.reserveByRank[rank] = Math.max(0, (rec.reserveByRank[rank] || 0) - 1);
     if (rank === 'captain') rec.captainName = c.name || rec.captainName;
     return c;
   }
@@ -766,12 +786,15 @@
         );
       }
 
-      if (rec.reinforcementPending) {
+      if (rec.reinforcementPending && !rec.reinforcementSpawnInFlight) { // This runs every frame while the avatar build below is awaited; without the flag each frame launched another replacement.
         rec.reinforcementTimer -= dt;
         if (rec.reinforcementTimer <= 0) {
           const rank = simpleHydraRank(rec);
           if (rank) {
-            const c = await spawnSimpleHydraBandit(rec, rank);
+            rec.reinforcementSpawnInFlight = true;
+            let c = null;
+            try { c = await spawnSimpleHydraBandit(rec, rank); }
+            finally { rec.reinforcementSpawnInFlight = false; }
             if (c) {
               rec.reinforcementPending = false;
               window.__farmLog?.(
@@ -793,6 +816,7 @@
         && !rec.captainSpawnInFlight
         && (rec.reserveByRank.captain || 0) > 0
         && !rec.reinforcementPending
+        && !rec.reinforcementSpawnInFlight
         && (simpleHydraAllTentsBurning(rec)
           || ((rec.reserveByRank.grunt || 0) === 0
             && (rec.reserveByRank.lieutenant || 0) === 0
@@ -899,6 +923,7 @@
       reserveByRank: { grunt: 0, flasker: 0, lieutenant: 0, captain: 0 },
       activeRanksById: new Map(),
       reinforcementPending: false,
+      reinforcementSpawnInFlight: false,
       reinforcementTimer: 0,
       captainSpawned: false,
       captainSpawnInFlight: false,
@@ -911,7 +936,7 @@
     const comp = cfg?.gangComposition || {};
     const grunts = (comp.gruntsMin ?? 3) + Math.floor(deps.rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
     const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
-    const flaskers = (comp.flaskersMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.flaskersMax ?? 2) - (comp.flaskersMin ?? 1) + 1)); // Supporting Flaskers are guaranteed in ordinary camps.
+    const flaskers = flaskerCountForGrunts(comp, grunts); // One Flasker per four regular bandits (gangComposition.regularBanditsPerFlasker).
     rec.reserveByRank.grunt = grunts;
     rec.reserveByRank.flasker = flaskers;
     rec.reserveByRank.lieutenant = lieutenants;
@@ -1322,6 +1347,7 @@
 
   window.BanditCamps = {
     init,
+    _simpleHydra: { campInstances: _banditCampInstances, update: updateSimpleHydra, spawnBandit: spawnSimpleHydraBandit, rankFor: simpleHydraRank, flaskerCountForGrunts }, // Test seam: executes the camp reinforcement lifecycle without a full zone.
     isCampCleared: isBanditCampCleared,
     updateCampBanners: updateBanditCampBanners,
     companionPerceptionRangePx: _companionPerceptionRangePx,

@@ -115,7 +115,7 @@
   function makeTargetRing() {
     if (targetRing || !deps?.THREE) return targetRing;
     const geometry = new deps.THREE.RingGeometry(0, 1, 48, 6); // Filled AoE plane with radial subdivisions for terrain projection.
-    const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.24, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
+    const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.5, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
     targetRing = new deps.THREE.Mesh(geometry, material);
     window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(targetRing);
     targetRing.rotation.x = -Math.PI / 2;

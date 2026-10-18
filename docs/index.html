@@ -343,7 +343,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261016h64ad85c"></script>
+  <script src="js/bandit-camps.js?v=20261018ha062610"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -373,7 +373,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261008he9050ff"></script>
-  <script src="js/alchemy-flasks.js?v=20261018h0709af9"></script>
+  <script src="js/alchemy-flasks.js?v=20261018hca63062"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
