@@ -940,7 +940,16 @@
     // restorePreviewRoots() reclaims these detached roots before rebuilding,
     // preserving exact prototype caches and preventing repeated iframe/CDN boot.
     if(removeMap) removeGeneratorFrame();
-    const badge=document.getElementById('devRandomRuinBadge'); if(badge) badge.style.display='none';
+    const badge=document.getElementById('devRandomRuinBadge');
+    if(badge){
+      badge.style.display='none';
+      badge._ruinDebugBadgeParts=null; // A reroll starts fresh; no old subsystem diagnostics survive into a new map.
+      badge.textContent='';
+      badge.dataset.ruinBadgeExpanded='0';
+      badge.style.maxHeight='3.8em';
+      badge.style.overflowY='hidden';
+      badge.setAttribute('aria-expanded','false');
+    }
   }
 
   function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
@@ -1057,10 +1066,42 @@
   }
   DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);reconcilePlayer(now);});
 
+  const BADGE_PART_ORDER=['base','hooks','motion','simple','lich','coverage'];
+  function setDebugBadgePart(part,text){
+    // All ruin diagnostics write a *named segment* instead of caching/appending the entire
+    // shared badge text. This makes frame-client order irrelevant and prevents runaway growth.
+    if(!ruin||!devModeEnabled()||!BADGE_PART_ORDER.includes(part))return false;
+    const badge=document.getElementById('devRandomRuinBadge');
+    if(!badge)return false;
+    const parts=badge._ruinDebugBadgeParts||(badge._ruinDebugBadgeParts=Object.create(null));
+    const value=String(text||'');
+    if(parts[part]===value)return true;
+    parts[part]=value;
+    const composed=BADGE_PART_ORDER.map(key=>parts[key]||'').join('');
+    if(badge.textContent!==composed)badge.textContent=composed;
+    return true;
+  }
   function updateBadge(){
     if(!ruin||!devModeEnabled())return; // Diagnostics badge is for Dev Mode only; wilderness-site ruins are ordinary play.
     let b=document.getElementById('devRandomRuinBadge'); // Used as the existing mobile-visible Random Test Ruin diagnostic badge.
-    if(!b){b=document.createElement('div');b.id='devRandomRuinBadge';b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:none';document.body.appendChild(b);}
+    if(!b){
+      b=document.createElement('div');
+      b.id='devRandomRuinBadge';
+      b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;box-sizing:border-box;max-width:calc(100vw - 20px);max-height:3.8em;overflow:hidden;white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:auto;cursor:pointer;touch-action:pan-y';
+      b.title='Tap or click to expand/collapse the ruin diagnostics';
+      b.tabIndex=0;b.setAttribute('role','button');
+      b.setAttribute('aria-label','Expand or collapse ruin diagnostics');
+      const toggle=()=>{
+        const expanded=b.dataset.ruinBadgeExpanded!=='1';
+        b.dataset.ruinBadgeExpanded=expanded?'1':'0';
+        b.style.maxHeight=expanded?'min(35vh, 250px)':'3.8em';
+        b.style.overflowY=expanded?'auto':'hidden';
+        b.setAttribute('aria-expanded',String(expanded));
+      };
+      b.addEventListener('click',toggle);
+      b.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggle();}});
+      document.body.appendChild(b);
+    }
     const occupancy=ruin.occupancy?.snapshot?.(); // Used to retain the existing red/green/blue occupancy counts in the badge.
     const roomPuzzleCounts=Object.values(ruin.puzzleGeneration?.countsByRoom||{}).map(Number); // Used to verify the configured room cap without opening devtools.
     const maxRoomPuzzles=roomPuzzleCounts.length?Math.max(...roomPuzzleCounts):0; // Used to report the busiest generated room.
@@ -1068,7 +1109,7 @@
     const solvabilityLabel=ruin.solvability?.ok?('solvable ✓'+(ruin.generationAttempt>1?' after '+ruin.generationAttempt+' tries':'')):'solvability ?'; // Mobile-visible proof that this accepted seed passed the pre-entry audit.
     const darkness=getDarknessSettings(); // Shows whether the test-only darkness override is active without requiring desktop devtools.
     const darknessLabel=darkness.enabled?(Math.round(darkness.severity*100)+'% override'):'themed';
-    b.textContent=MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0);
+    setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
   }
   function installSettingsButton(){
@@ -1100,5 +1141,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,theme:ruin.theme,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,theme:ruin.theme,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();
