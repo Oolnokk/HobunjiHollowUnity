@@ -2895,7 +2895,7 @@
         ${['translation','rotationDeg','scale'].map(kind => `<div class="row">${['x','y','z'].map(axis => `<label>${kind === 'translation' ? 'Move' : kind === 'rotationDeg' ? 'Rotate degrees' : 'Scale'} ${axis}<input data-transform-kind="${kind}" data-transform-axis="${axis}" type="number" step=".1" value="${Number(stage.transform?.[kind]?.[axis]) || (kind === 'scale' ? 1 : 0)}"></label>`).join('')}</div>`).join('')}
         <p class="tip">Transforms are relative to the map pose. Each card blends from the piece's current transform; seated actors follow their bound chair.</p><label>Blend seconds<input id="editDuration" type="number" min="0" step=".1" value="${stage.duration || 0}"></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     } else if (stage.type === 'camera') {
-      fields = `<label>View<select id="editCameraMode"><option value="establishing" ${stage.cameraMode === 'establishing' ? 'selected' : ''}>Establishing shot</option><option value="follow" ${stage.cameraMode === 'follow' ? 'selected' : ''}>Follow actors</option><option value="authored" ${stage.cameraMode === 'authored' ? 'selected' : ''}>Authored camera record</option><option value="wall" ${stage.cameraMode === 'wall' ? 'selected' : ''}>Scene cinematic camera</option><option value="npcRelative" ${stage.cameraMode === 'npcRelative' ? 'selected' : ''}>NPC relative</option><option value="pov" ${stage.cameraMode === 'pov' ? 'selected' : ''}>Character POV</option></select></label><label>Viewing character<select id="editActor">${actorSelectHtml(stage.actorId)}</select></label><label>Look at character<select id="editTargetActor">${actorSelectHtml(stage.targetActorId)}</select></label><label>Hold seconds<input id="editDuration" type="number" min="0" step=".1" value="${stage.duration || 0}"></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
+      fields = `<label>View<select id="editCameraMode"><option value="establishing" ${stage.cameraMode === 'establishing' ? 'selected' : ''}>Establishing shot</option><option value="follow" ${stage.cameraMode === 'follow' ? 'selected' : ''}>Follow actors</option><option value="authored" ${stage.cameraMode === 'authored' ? 'selected' : ''}>Authored camera record</option><option value="wall" ${stage.cameraMode === 'wall' ? 'selected' : ''}>Scene cinematic camera</option><option value="npcRelative" ${stage.cameraMode === 'npcRelative' ? 'selected' : ''}>NPC relative</option><option value="pov" ${stage.cameraMode === 'pov' ? 'selected' : ''}>Character POV</option><option value="orbit" ${stage.cameraMode === 'orbit' ? 'selected' : ''}>Two-character orbit</option></select></label><label>Viewing character<select id="editActor">${actorSelectHtml(stage.actorId)}</select></label><label>Look at character<select id="editTargetActor">${actorSelectHtml(stage.targetActorId)}</select></label><label>Hold seconds<input id="editDuration" type="number" min="0" step=".1" value="${stage.duration || 0}"></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     } else if (stage.type === 'caption') {
       fields = `<label>Caption<textarea id="editText">${escapeHtml(stage.text || '')}</textarea></label><label>Then<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     } else if (stage.type === "talk") {
@@ -2980,15 +2980,27 @@
         <label>After fade<select id="editNext">${nextSelectHtml(stage.next,stage.id)}</select></label>`;
     }
 
+    const orbitFields = stage.cameraMode === 'orbit' ? `
+      <label>Orbit character A<select id="editOrbitActorA">${actorSelectHtml(stage.orbitActorIds?.[0] || stage.actorId || stage.speakerId)}</select></label>
+      <label>Orbit character B<select id="editOrbitActorB">${actorSelectHtml(stage.orbitActorIds?.[1] || stage.targetActorId || stage.addressedActorId)}</select></label>
+      <label>Initial focus<select id="editOrbitFocus"><option value="">Midpoint</option>${actorSelectHtml(stage.orbitFocusActorId)}</select></label>
+      <label><input id="editOrbitAlternating" type="checkbox" ${stage.orbitAlternateFocus ? 'checked' : ''}> Alternate initial focus between characters</label>
+      <label>Intended zoom % (blank = progressive)<input id="editOrbitZoom" type="number" min="25" max="500" step="5" value="${stage.orbitZoomPercent ?? ''}"></label>
+      <label>Zoom increase per orbit reset %<input id="editOrbitZoomStep" type="number" min="0" max="30" step="1" value="${stage.orbitZoomStepPercent ?? 0}"></label>
+      <label>Base radius, tiles<input id="editOrbitDistance" type="number" min=".5" max="30" step=".1" value="${stage.orbitDistanceTiles ?? 3.7}"></label>
+      <label>Speed, degrees/sec<input id="editOrbitSpeed" type="number" min="-30" max="30" step=".5" value="${stage.orbitSpeedDegPerSec ?? 6}"></label>
+      <label>Reset blend, seconds<input id="editOrbitBlend" type="number" min="0" max="8" step=".1" value="${stage.orbitBlendSeconds ?? 1}"></label>
+      <p class="tip">Each card resets a continuous midpoint orbit; initial gaze eases from the chosen character. The game camera's colliders may squeeze the requested radius. Use Preview in Game to inspect actual geometry.</p>` : ''; // Editable options share the existing cutscene stage format.
     const index = stageIndex(stage.id);
     els.stageEditor.innerHTML = `<div class="editor-fields">
       <div class="editor-title"><span class="round-icon">${stageIcon(stage.type)}</span><div><strong>${escapeHtml(stageLabel(stage,index))}</strong><div style="color:var(--muted)">${stageName(stage.type)} card</div></div></div>
       ${fields}
       <details><summary>Camera, gaze, entrance and navigation</summary>
       <label>Addressed character<select id="editAddressedActor"><option value="">Default player</option>${actorSelectHtml(stage.addressedActorId)}</select></label>
-      <label>Camera switch<select id="editCameraSwitch"><option value="">Keep/default</option>${['wall','npcRelative','pov','establishing','follow','authored'].map(mode => `<option ${stage.cameraMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}</select></label>
+      <label>Camera switch<select id="editCameraSwitch"><option value="">Keep/default</option>${['wall','npcRelative','pov','orbit','establishing','follow','authored'].map(mode => `<option ${stage.cameraMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}</select></label>
       <label>Visibility on this card<select id="editVisible"><option value="">Keep</option><option value="true" ${stage.visible === true ? 'selected' : ''}>Reveal</option><option value="false" ${stage.visible === false ? 'selected' : ''}>Hide</option></select></label>
       <label><input id="editNavigate" type="checkbox" ${stage.navigate ? 'checked' : ''}> Navigate around obstacles</label>
+      ${orbitFields}
       <label>Additional runtime fields (JSON)<textarea id="editRuntimeFields">${escapeHtml(JSON.stringify(stage,null,2))}</textarea></label><button id="applyRuntimeFields">Apply runtime fields</button><p class="tip">Use targetWorld for a POV point of interest; povBack, povSide and povHeight for shoulder offsets; blendSeconds/fovDeg for camera framing, and actorId/targetActorId for POV bindings. Follow shots accept followActorIds and cameraOffset; authored shots accept a camera record; waitForActors waits for movement to stop, and spawnOutsideView reveals an actor outside the preceding shot.</p></details>
     </div>`;
     bindStageEditor(stage);
@@ -3001,6 +3013,27 @@
     bindSelect("editSpeed","speed"); bindSelect("editNext","next"); bindSelect("editLossNext","lossNext");
     bindSelect("editResultPose","resultPose"); bindSelect("editTurnMode","mode"); bindSelect("editTargetActor","targetActorId");
     bindSelect("editFadeDirection","direction"); bindSelect("editAnimKind","animKind"); bindSelect("editEmoteName","emoteName");
+    // Orbit stage controls update existing serialized runtime fields, rather than creating another camera subsystem.
+    for (const [id, property, min, max] of [
+      ['editOrbitZoom', 'orbitZoomPercent', 25, 500], ['editOrbitZoomStep', 'orbitZoomStepPercent', 0, 30],
+      ['editOrbitDistance', 'orbitDistanceTiles', 0.5, 30], ['editOrbitSpeed', 'orbitSpeedDegPerSec', -30, 30],
+      ['editOrbitBlend', 'orbitBlendSeconds', 0, 8],
+    ]) {
+      $(id)?.addEventListener('change', event => {
+        if (!event.target.value.trim()) delete stage[property];
+        else stage[property] = clamp(Number(event.target.value) || 0, min, max);
+        changed('Orbit framing updated.');
+      });
+    }
+    for (const [id, slot] of [['editOrbitActorA', 0], ['editOrbitActorB', 1]]) {
+      $(id)?.addEventListener('change', event => {
+        stage.orbitActorIds ||= [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId];
+        stage.orbitActorIds[slot] = event.target.value;
+        changed('Orbit pair updated.');
+      });
+    }
+    bindSelect('editOrbitFocus', 'orbitFocusActorId');
+    $('editOrbitAlternating')?.addEventListener('change', event => { stage.orbitAlternateFocus = event.target.checked; changed('Orbit focus alternation updated.'); });
 
     els.stageEditor.querySelectorAll('[data-transform-kind]').forEach(input => input.addEventListener('change', () => { stage.transform ||= {}; stage.transform[input.dataset.transformKind] ||= {}; stage.transform[input.dataset.transformKind][input.dataset.transformAxis] = Number(input.value) || 0; changed('Furniture transform updated.'); }));
     $('editVisible')?.addEventListener('change', event => { if (!event.target.value) delete stage.visible; else stage.visible = event.target.value === 'true'; changed('Entrance visibility updated.'); });
