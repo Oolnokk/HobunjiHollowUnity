@@ -877,6 +877,7 @@
   }
 
   function createVisibleRopeLavaHazard(cx,cz,y,length,width,axis) {
+    if (state?.context?.theme !== 'hronal') return null; // Rope crossings in Tothal/Kanthic ruins are dry: all lava is Hronal-only.
     if(!state.lavaMaterial)state.lavaMaterial=createLavaMaterial();
     const geometry=lavaSurfaceGeometry(axis==='x'?length:width,axis==='x'?width:length,cx,cz,axis==='x'?.18:0,axis==='z'?.18:0);
     const mesh=new THREE.Mesh(geometry,state.lavaMaterial);
