@@ -242,16 +242,30 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   t.tick(4,.25);
   assert.equal(t.api.snapshot().plasmTiles,globallySeen,
     'Seeing ANY tile in one room freezes the otherwise unseen plasm in every room');
-  // Fatal immersion must not erase the patch either; only full runtime clear
-  // on dungeon exit is permitted to destroy it.
+  // Fatal immersion resets ALL rooms to the original seeded puddle clusters,
+  // rather than leaving the previous unseen expansion behind.
   const [sx,sz]=seedWest[0].split(',').map(Number);
   t.player.x=(sx+.5)*64;t.player.y=(sz+.5)*64;
   t.tick(13,.25);
   assert.equal(t.player.health,0,'Plasm remains lethal after repeated room transitions');
-  for(const key of seedWest.concat(seedEast)){
-    const [x,z]=key.split(',').map(Number);
-    assert.ok(t.api.isPlasmAt(x+.5,z+.5),'Player death may not cull persistent plasm: '+key);
-  }
+  assert.equal(t.api.snapshot().plasmTiles,seedWest.length+seedEast.length,
+    'Fatal plasm sinking must reset ALL rooms to their original 2x2–4x4 clusters');
+  const initialSeed=new Set(seedWest.concat(seedEast));
+  for(let z=2;z<12;z++)for(let x=2;x<22;x++)assert.equal(
+    t.api.isPlasmAt(x+.5,z+.5),initialSeed.has(x+','+z),
+    'Fatal plasm sinking must restore exact original tile positions: '+x+','+z);
+  t.tick(3,.25);
+  assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,'A dead player must not restart unseen plasm growth');
+  // An unrelated cause of death must trigger exactly the same reset.
+  t.player.health=100;
+  t.player.x=40*64;t.player.y=40*64;t.tick(4,.25);
+  assert.ok(t.api.snapshot().plasmTiles>initialSeed.size,'Plasm can resume growing after respawn');
+  t.player.health=0;t.tick(1,.25);
+  assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,
+    'Death from another source also restores original plasm across every room');
+  for(let z=2;z<12;z++)for(let x=2;x<22;x++)assert.equal(
+    t.api.isPlasmAt(x+.5,z+.5),initialSeed.has(x+','+z),
+    'Other causes of death must restore exact original tile positions: '+x+','+z);
   t.composer.clear();
   assert.equal(t.api.isPlasmAt(sx+.5,sz+.5),false,'Exiting and clearing the dungeon finally releases all plasm');
 }
