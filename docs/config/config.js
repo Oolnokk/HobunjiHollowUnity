@@ -31,8 +31,8 @@
       }),
       colors: Object.freeze({
         health: '#55d76f',
-        stamina: '#67b7ff',
-        footing: '#d9a441',
+        stamina: '#d9a441',
+        footing: '#67b7ff',
         exhausted: '#050608',
         outline: '#000000',
         target: '#ff2020'
