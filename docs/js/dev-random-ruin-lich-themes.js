@@ -633,17 +633,94 @@
     world.plasmMaterial=new THREE.MeshBasicMaterial({color:0x251c34,map:texture,transparent:true,opacity:.88,depthWrite:false});
     updatePlasmMesh(kit);
   }
-  function updatePlasmMesh(kit) {
-    const patches=new Set(world.rooms.flatMap(room=>[...(room.plasm||[])]));
-    if(world.plasmMesh){
-      // InstancedMesh owns GPU instance-matrix buffers even when its geometry
-      // and material are shared. Explicitly release those on every grow step.
-      world.plasmMesh.traverse(obj=>{if(obj.isInstancedMesh)obj.dispose?.();});
-      world.plasmMesh.parent?.remove(world.plasmMesh);
+  // Mirrors EnvironmentSurfaceMicroPlateau's snow: assemble the whole
+  // connected patch, including its perimeter lip, BEFORE mapping the UVs.
+  // The 9-slice mapper sees one real topological surface, not a copy of
+  // canvas.png on each separate tile. Adjacent caps share their full-height
+  // edge, while exposed edges slope down to ground.
+  function makePlasmSurface(kit,room) {
+    const patch=room.plasm;
+    if(!patch?.size)return null;
+    const axis=[0,.11,.22,.78,.89,1],width=axis.length;
+    const pos=[],idx=[];
+    const smooth=value=>{const t=between(value,0,1);return t*t*(3-2*t);};
+    for(const key of patch){
+      const [x,z]=tileFromKey(key);
+      const mask=surfaceMask(x,z,patch); // N/E/S/W solid neighbors eliminate corresponding exposed-edge curves.
+      const base=pos.length/3;
+      for(let j=0;j<width;j++)for(let i=0;i<width;i++){
+        const u=axis[i],v=axis[j];
+        let factor=1;
+        if(!(mask&1))factor=Math.min(factor,smooth(v/.22));
+        if(!(mask&2))factor=Math.min(factor,smooth((1-u)/.22));
+        if(!(mask&4))factor=Math.min(factor,smooth((1-v)/.22));
+        if(!(mask&8))factor=Math.min(factor,smooth(u/.22));
+        pos.push(x+u,floorY(kit,x+.5,z+.5)+.006+PLASM_DEPTH*factor,z+v);
+      }
+      for(let j=0;j<width-1;j++)for(let i=0;i<width-1;i++){
+        const v00=base+j*width+i,v10=v00+1,v01=v00+width,v11=v01+1;
+        idx.push(v00,v01,v11,v00,v11,v10);
+      }
     }
-    world.plasmMesh=null;
-    if(!patches.size)return;
-    world.plasmMesh=renderCurvedTiles(kit,patches,world.plasmMaterial,PLASM_DEPTH,'kanthic_plasm_snow_shelf');
+    const source=new THREE.BufferGeometry();
+    source.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    source.setIndex(idx);
+    let geometry=source, mapping='continuous-planar-fallback';
+    const mapper=window.HobunjiSurfaceStretchUV;
+    if(typeof mapper?.mapGeometry==='function'){
+      try{
+        const mapped=mapper.mapGeometry(source,{
+          label:'kanthic-plasm-room-'+room.index,
+          angleToleranceDeg:89,
+          edgeSourceFraction:.32,
+          edgeReferenceWorldSize:6,
+        });
+        if(mapped?.getAttribute?.('uv')){
+          geometry=mapped;
+          mapping='edge-preserving-nine-slice';
+          if(geometry!==source)source.dispose();
+        }
+      }catch(error){
+        console.warn?.('[kanthic-plasm] connected-surface UV mapping failed',error);
+      }
+    }
+    if(mapping!=='edge-preserving-nine-slice'){
+      // Keep the whole patch seamless even if the shared mapper is absent;
+      // fallback UVs span room-local bounds, never restart per tile.
+      const minX=Math.min(...[...patch].map(k=>tileFromKey(k)[0]));
+      const maxX=Math.max(...[...patch].map(k=>tileFromKey(k)[0]+1));
+      const minZ=Math.min(...[...patch].map(k=>tileFromKey(k)[1]));
+      const maxZ=Math.max(...[...patch].map(k=>tileFromKey(k)[1]+1));
+      const p=geometry.getAttribute('position');
+      const uv=[];
+      for(let i=0;i<p.count;i++){
+        const u=between((p.getX(i)-minX)/Math.max(1,maxX-minX),0,1);
+        const v=between((p.getZ(i)-minZ)/Math.max(1,maxZ-minZ),0,1);
+        uv.push(u,v);
+      }
+      geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    }
+    const mesh=new THREE.Mesh(geometry,world.plasmMaterial);
+    mesh.name='kanthic_plasm_connected_room_'+room.index;
+    mesh.userData.plasmUvMapping=mapping;
+    mesh.userData.plasmTileCount=patch.size;
+    mesh.frustumCulled=false;
+    return mesh;
+  }
+  function updatePlasmMesh(kit,changedRoom=null) {
+    if(!world.plasmMesh){
+      world.plasmMesh=new THREE.Group();
+      world.plasmMesh.name='kanthic_plasm_connected_surfaces';
+      world.group.add(world.plasmMesh);
+    }
+    const rooms=changedRoom?[changedRoom]:world.rooms;
+    for(const room of rooms){
+      const old=world.plasmRoomMeshes.get(room.index);
+      if(old){old.parent?.remove(old);old.geometry?.dispose?.();}
+      world.plasmRoomMeshes.delete(room.index);
+      const mesh=makePlasmSurface(kit,room);
+      if(mesh){world.plasmMesh.add(mesh);world.plasmRoomMeshes.set(room.index,mesh);}
+    }
   }
   function obstructed(a,b,kit) {
     const count = Math.ceil(distance(a,b) * 3);
@@ -653,21 +730,19 @@
     }
     return false;
   }
-  function visiblePlasmTile(kit,point,facing,room) {
-    const radius=Number(window.CloudForestFog?.getKanthicLanternRadiusTiles?.())||.9; // Default 2.4 tile lantern × .375 Kanthic scale.
+  function visiblePlasmTile(kit,point,room) {
+    const configured=window.CloudForestFog?.getKanthicLanternRadiusTiles?.();
+    const radius=Number.isFinite(configured)&&configured>0?configured:.9;
     const r2=radius*radius;
-    // Every tile matters; checking only the original seed falsely allows
-    // spreading while newly advanced edges are illuminated.
+    // The real lantern masks are omnidirectional radial gradients, NOT a
+    // head-facing cone. They also do not raycast against furniture/walls.
+    // Growth must pause whenever the illumination circle intersects any
+    // part of any plasm tile, regardless of where the avatar faces.
     for(const key of room.plasm||[]){
       const [x,z]=tileFromKey(key);
-      // The nearest point of the 1x1 surface, not its centre, determines
-      // whether the lit circle actually overlaps *any* part of the puddle.
-      const px=between(point.x,x+.02,x+.98),pz=between(point.z,z+.02,z+.98);
+      const px=between(point.x,x,x+1),pz=between(point.z,z,z+1);
       const dx=px-point.x,dz=pz-point.z;
-      if(dx*dx+dz*dz>r2)continue; // Anything completely outside the real lantern circle is unseen.
-      if(Number.isFinite(facing)&&Math.hypot(dx,dz)>.15 &&
-        Math.cos(Math.atan2(dz,dx)-facing)<.35)continue;
-      if(!obstructed(point,{x:px,z:pz},kit))return true;
+      if(dx*dx+dz*dz<=r2)return true;
     }
     return false;
   }
@@ -773,8 +848,7 @@
     // retain both their puddle tiles and their paused growth clocks unchanged.
     // Hallways/outside rooms cannot cause any puddle to advance.
     if(!room?.plasm?.size){world.sink=0;return;}
-    const facing=Number(player.facing);
-    const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,facing,other));
+    const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,other));
     if(anythingVisible){
       room.plasmElapsed=0; // A visible puddle anywhere still vetoes local growth.
     }else{
@@ -784,7 +858,7 @@
         room.plasmElapsed-=PLASM_EXPANSION_MS;
         if(growPlasmRoom(kit,room,point))changed=true;
       }
-      if(changed){updatePlasmMesh(kit);lastEvent='kanthic:plasm-grow';}
+      if(changed){updatePlasmMesh(kit,room);lastEvent='kanthic:plasm-grow';} // Remap only the changed room, every grid update.
     }
     if(!room.plasm.has(tileKey(point.x,point.z))){
       world.sink=0;
@@ -819,7 +893,7 @@
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
       lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
-      plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
+      plasmMesh:null,plasmRoomMeshes:new Map(),plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
     kit.group().add(world.group);
