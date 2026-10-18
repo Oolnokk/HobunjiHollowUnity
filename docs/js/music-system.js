@@ -1490,8 +1490,9 @@
     if (!node) {
       const ctx = getMusicAudioCtx(); // Reuses the game's gesture-unlocked audio context, not a separately suspended one.
       if (!ctx || ctx.state !== 'running') return; // The volume-only path must remain audible on browsers without working Web Audio.
+      let source = null; // Allows the fallback to reconnect captured media if a Web Audio filter fails midway through setup.
       try {
-        const source = ctx.createMediaElementSource(snd); // Each weather HTML audio loop can be captured only once.
+        source = ctx.createMediaElementSource(snd); // Each weather HTML audio loop can be captured only once.
         const filter = ctx.createBiquadFilter(); // Filters the loop itself, leaving songs, wildlife, and object SFX untouched.
         filter.type = 'lowpass';
         filter.frequency.value = OUTDOOR_WEATHER_CUTOFF_HZ;
@@ -1500,6 +1501,7 @@
         node = { ctx, source, filter, cutoffHz: OUTDOOR_WEATHER_CUTOFF_HZ };
         _weatherBgsFilters.set(snd, node);
       } catch (error) {
+        if (source) try { source.connect(ctx.destination); } catch (_) {} // Keeps the sound audible even after an unsuccessful media-source capture.
         audioDebug('weather low-pass unavailable for ' + id + ': ' + (error?.message || error), 'weather-filter-' + id, 5000, 'bgs');
         return; // Direct HTML playback and the indoor volume attenuation still work.
       }
