@@ -60,6 +60,7 @@ global.window = { // Browser globals required by the runtime adapter.
   __farmLog() {},
 };
 
+vm.runInThisContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { filename: 'shared-attack-pose.js' }); // Shared pose math the stance runtime delegates to.
 vm.runInThisContext(spacingSource, { filename: spacingPath });
 vm.runInThisContext(source, { filename: modulePath });
 
@@ -245,6 +246,48 @@ function approx(actual, expected, epsilon = 1e-9) {
   assert.strictEqual(snapshot.length, 2);
   assert.deepStrictEqual(snapshot.map(row => row.stanceClass), ['heavy', 'light']);
   assert.deepStrictEqual(snapshot.map(row => row.speciesId), ['mao-ao', 'ghoul']);
+}
+
+// The baked pose only depends on values that are constant for a whole attack, so
+// it is built once per attack and reused every frame (no per-enemy per-frame
+// garbage), but still rebuilt whenever anything it derives from changes.
+{
+  renderCalls.length = 0;
+  const authored = {
+    neutral: { ...sweepNeutral },
+    windup: { x: 0.20, y: 0.10, z: 0.30, pitch: 10, yaw: 20, bodyYaw: -30, roll: 40 },
+    strike: { x: -0.10, y: 0.20, z: 0.50, pitch: -15, yaw: -25, bodyYaw: 35, roll: -45 },
+  };
+  const entity = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: authored, sign: 1, power: 1, action: { windupS: 0.4, strikeS: 0.2, t: 0 } });
+  const first = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  for (let frame = 1; frame <= 5; frame += 1) {
+    entity._banditAction.t = frame * 0.05; // The action advances every frame; the bake must not.
+    assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), first, 'same attack reuses its baked pose');
+  }
+  window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(entity._enemyPreparedPose.prepared, first, 'the renderer path shares that cache');
+
+  const savedX = heavyPose.x;
+  heavyPose.x = savedX + 0.05; // WeaponToolStances edits its shared stance objects in place.
+  const afterStanceEdit = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  assert.notStrictEqual(afterStanceEdit, first, 'an in-place stance edit rebakes');
+  approx(afterStanceEdit.pose.neutral.x, savedX + 0.05);
+  heavyPose.x = savedX;
+
+  const afterRestore = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  entity._banditSwingPower = 1.2;
+  assert.notStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), afterRestore, 'a different attack power rebakes');
+  entity._banditSwingPower = 1;
+  const settledPower = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  entity._banditAction = { windupS: 0.4, strikeS: 0.2, t: 0 };
+  assert.notStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), settledPower, 'a new staged action is a new attack and rebakes');
+  entity._banditSwingDirSign = -1;
+  assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity).effectiveSign, -1, 'a different direction rebakes');
+
+  // Authored hand-grip flags on the attack's endpoints reach the enemy's hand driver like the player's.
+  const withFlags = { ...authored, windup: { ...authored.windup, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 } } };
+  const flagged = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: withFlags, action: { windupS: 0.4, strikeS: 0.2, t: 0 } });
+  assert.deepStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(flagged).pose.windup.secondaryGrip, { enabled: false, percent: 50, primaryPercent: 50 });
 }
 
 console.log('test-enemy-weapon-stances: ok');

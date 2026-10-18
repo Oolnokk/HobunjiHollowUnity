@@ -96,7 +96,7 @@ assert.match(editor, /function updateHeadSkinVertexOverlay\(\)[\s\S]*(?:boneTran
 assert.match(editor, /lightBlendColor[\s\S]*fullHeadColor[\s\S]*\.lerp\(fullHeadColor, vertex\.headWeight\)/, 'head overlay must use a visible weight heatmap');
 const exportFunction = editor.slice(editor.indexOf('function exportAnimObject()'), editor.indexOf("$('exportBtn').onclick"));
 assert.doesNotMatch(exportFunction, /neckPreview|neckStrength|neckRadius|headSkinVertex/, 'preview neck diagnostics must not leak into attack exports');
-assert.match(game, /toolHolder\.scale\.setScalar\(Number\.isFinite\(Number\(neutral\.scale\)\)/, 'runtime must apply authored neutral tool scale');
+assert.match(game, /toolHolder\.scale\.setScalar\(sampled\.scale\)/, 'runtime must apply authored neutral tool scale'); // The sampled scale comes from SharedAttackPose.samplePose (covered by test-shared-attack-pose.js).
 assert.match(game, /playerIdlePose\?\.\(equipmentSlots\.ranged\)/, 'runtime must select the loaded or empty ranged neutral pose');
 assert.match(game, /function updatePlayerHeadAim\(\)/, 'runtime must own global player head aim tracking');
 assert.match(game, /angleDiff\(targetWorldYaw, playerMesh\.rotation\.y \+ composerYawDelta\)/, 'head aim must counter the fully composed rendered body yaw');

@@ -283,6 +283,10 @@
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
+  <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
+       Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
+       weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
+  <script src="js/combat/shared-attack-pose.js?v=20261018a"></script>
   <script src="js/combat/combat-core.js?v=20261016h917d5d5"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -293,7 +297,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-loadout.js?v=20261017h57a8b88"></script>
+  <script src="js/combat/combat-loadout.js?v=20261018hc14a25d"></script>
   <script src="js/combat/combat-progression.js?v=20261016h8734814"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -332,7 +336,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261017hdcd3097"></script>
+  <script src="js/combat/combat-bandit.js?v=20261018h7461c9c"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -351,7 +355,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261018h298f8c3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261018h73097dd"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2669,7 +2673,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261018kyliebluntdw015"></script>
+  <script src="game.js?v=20261018hba33e03"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261017h3decaa3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -1789,11 +1789,13 @@
 
   // ── Bandit weapon visuals ────────────────────────────────────────
   //
-  // Reuses the PLAYER's own tool-swing pose math verbatim (fourPhaseLerp,
-  // deps.STYLE_NEUTRAL_POSE, window.Combat.poses.SWEEP_POSE, and the same
-  // thrust/sweep formulas updateToolMesh itself computes from) instead of
-  // a static prop or an invented animation -- "use the player
-  // animations," per design direction. What's NOT reused is
+  // Plays the PLAYER's own tool-swing poses through the SAME code the player
+  // uses: window.SharedAttackPose (js/combat/shared-attack-pose.js) owns the
+  // swing interpolation, the per-style rest poses, the mirroring rule and the
+  // legacy thrust arc, and the player's updateToolMesh samples it too -- so
+  // editing a pose formula there changes the player, bandits, ghouls,
+  // skeletons and every other BanditCombat humanoid together ("use the
+  // player animations," per design direction). What's NOT shared is
   // updateToolMesh itself or the single shared toolHolder/toolSwingT/
   // combatSwing* variables it reads: those are one-per-game singletons
   // (see combat-core.js's own "every staged action in this pipeline is a
@@ -1801,12 +1803,8 @@
   // exists. Each bandit gets its own toolHolder-equivalent group
   // (_banditToolHolder, added straight to the scene and repositioned in
   // world space every frame, exactly like the player's toolHolder is),
-  // driven by that SAME pure pose math against its own facing/position
-  // and its own current ability's windup/strike timing (c._banditAction)
-  // instead of the player's. fourPhaseLerp/deps.STYLE_NEUTRAL_POSE/SWEEP_POSE
-  // are already stateless pure functions/data -- the only reason this
-  // isn't a one-line call into updateToolMesh is that updateToolMesh
-  // hardcodes which entity it's posing for throughout.
+  // placed against its own facing/position and its own current ability's
+  // windup/strike timing (c._banditAction) instead of the player's.
   // Hostile weapons use the same base + calculated-height held-item scale as
   // the player's (HobunjiHandToolGrips.heldItemPlacementForTool), so the
   // procedural hand's grip target -- which already expands by that scale --
@@ -1881,19 +1879,14 @@
     return holder;
   }
 
-  // Two-phase version of updateToolMesh's fourPhaseLerp: 0->wf rises from
-  // neutral to the windup pose (identical formula), then HOLDS at the
-  // strike pose for the rest of the action instead of also modeling a
-  // separate strike/hold/return split -- a bandit's own staged action has
-  // no cosmetic return-tail duration of its own (recoverS is always 0;
-  // see fireBanditComboStep etc), so there's no real "SF"/"HF" window to
-  // ease across the way the player's longer toolSwingDur has room for.
-  // The brief hold-then-freeze in updateBanditToolMesh below covers the
-  // return instead.
-  function banditPoseLerp(progress, wf, windupV, strikeV, neutralV) {
-    if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-    return strikeV;
-  }
+  // A bandit's staged action has no cosmetic return-tail duration of its own
+  // (recoverS is always 0; see fireBanditComboStep etc), so there's no real
+  // strike/hold/return split to ease across the way the player's longer
+  // toolSwingDur has room for. It samples SharedAttackPose with sf = wf and
+  // hf = 1: 0->wf rises from neutral to the windup pose (identical formula to
+  // the player's), then HOLDS the strike pose for the rest of the action. The
+  // brief hold-then-freeze in updateBanditToolMesh below covers the return.
+  let banditPoseSample = null; // One SharedAttackPose sample reused by every bandit's per-frame pose; created lazily and consumed synchronously inside updateBanditToolMesh.
 
   // How long the weapon keeps showing its last (strike) pose once
   // c._banditAction completes, before resetting straight to neutral --
@@ -2111,20 +2104,18 @@
     // same +base.y offset needs feet-level Y here too, not center Y.
     const feetY = c.avatarRef.group.position.y - (c.halfHeight || 0);
 
+    const SAP = window.SharedAttackPose; // Same pose math the player's updateToolMesh samples (js/combat/shared-attack-pose.js).
+    if (!banditPoseSample) banditPoseSample = SAP.createSample();
+
     if ((anim === 'sweep' || anim === 'chop') && pose) {
-      const styleNeutral = deps.STYLE_NEUTRAL_POSE?.[anim] || deps.STYLE_NEUTRAL_POSE.sweep;
-      const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
-      const chan = (ch, mirror = false) => {
-        const w = (neutral[ch] + ((pose.windup?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
-        const s = (neutral[ch] + ((pose.strike?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
-        const n = neutral[ch] * (mirror ? dirSign : 1);
-        return banditPoseLerp(progress, wf, w, s, n);
-      };
-      const x = chan('x', true), y = chan('y'), z = chan('z');
-      const pitchRad = THREE.MathUtils.degToRad(chan('pitch'));
-      const yawRad = THREE.MathUtils.degToRad(chan('yaw', true));
-      const rollRad = THREE.MathUtils.degToRad(chan('roll', true));
-      const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+      // sf = wf, hf = 1: rise to the windup pose, then hold the strike pose (see banditPoseSample above).
+      const sampled = SAP.samplePose(banditPoseSample, pose, SAP.STYLE_NEUTRAL_POSE[anim] || SAP.STYLE_NEUTRAL_POSE.sweep, progress, wf, wf, 1, dirSign, power, 'attack');
+      const x = sampled.x, y = sampled.y, z = sampled.z;
+      const pitchRad = sampled.pitchRad;
+      const yawRad = sampled.yawRad;
+      const rollRad = sampled.rollRad;
+      const bodyYawRad = sampled.bodyYawRad;
+      const handBaseX = base.x * sampled.mirrorBlend; // 1 unless the pose authors a midline-flip sequence, exactly like the player's hand anchor.
       const vθ = θ + bodyYawRad;
       // Leans the avatar body itself into the swing too, not just the
       // weapon -- matches the player's own updateToolMesh, which sets
@@ -2151,31 +2142,25 @@
       deps.qRoll.setFromAxisAngle(deps.zAxis, rollRad);
       holder.quaternion.copy(deps.qFac).multiply(deps.qToolYaw).multiply(deps.qAnim).multiply(deps.qRoll);
       holder.position.set(
-        c.x / deps.TILE + vRX * (base.x + x) + vFX * z,
+        c.x / deps.TILE + vRX * (handBaseX + x) + vFX * z,
         feetY + base.y + y,
-        c.y / deps.TILE + vRZ * (base.x + x) + vFZ * z,
+        c.y / deps.TILE + vRZ * (handBaseX + x) + vFZ * z,
       );
       scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Finished raw pose is orbited around this avatar's visual centroid (per-axis in the pose's own frame).
     } else {
-      // THRUST -- mirrors updateToolMesh's own thrust branch exactly
-      // (same windup-back/jab-forward/lateral/pitch/yaw formulas), used
-      // for pokeCombo, every Quick Attack, and the Counter Shield riposte.
-      const windupBack = -0.40 * power;
-      // neutralV=0, NOT windupBack -- matches the player's own thrust
-      // branch, whose equivalent fourPhaseLerp call for jabOff omits an
-      // explicit neutralV entirely (defaulting to 0), which is verified
-      // intentional (not just "happened to be 0") by deps.STYLE_NEUTRAL_POSE.
-      // thrust.z === 0, the authored attack-animation-editor rest value
-      // this whole style is built to match at progress=0. Passing
-      // windupBack here instead left a bandit's thrust weapon
-      // permanently held pulled back (as if crouched mid-windup) even
-      // at true idle, never resting at the same neutral extension the
-      // player's own weapon sits at.
-      const jabOff = banditPoseLerp(progress, wf, windupBack, 0.32 * power, 0);
-      const lateral = banditPoseLerp(progress, wf, 0, -0.23 * power, 0);
-      const pitchRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
-      const yawRad = banditPoseLerp(progress, wf, 0, THREE.MathUtils.degToRad(-45) * power, 0);
-      const bodyYawRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power, 0);
+      // THRUST -- the same SharedAttackPose.sampleLegacyThrust jab arc the
+      // player's thrust branch samples (windup-back / jab-forward / lateral /
+      // pitch / yaw / body yaw), used for pokeCombo, every Quick Attack, and the
+      // Counter Shield riposte. Its jab and lateral rest at 0 and its pitch at
+      // the 10.31 degree held-up tilt -- the authored attack-animation-editor
+      // rest values -- so a bandit's thrust weapon sits at true idle exactly
+      // where the player's does instead of staying pulled back mid-windup.
+      const thrustSample = SAP.sampleLegacyThrust(banditPoseSample, progress, wf, wf, 1, power);
+      const jabOff = thrustSample.z;
+      const lateral = thrustSample.x;
+      const pitchRad = thrustSample.pitchRad;
+      const yawRad = thrustSample.yawRad;
+      const bodyYawRad = thrustSample.bodyYawRad;
       const vθ = θ + bodyYawRad;
       // Leans the avatar body itself into the thrust too -- see the
       // matching comment in the sweep branch above.
