@@ -87,7 +87,7 @@
   // keep their authored arrival tile. Maps that are not loaded yet are left alone.
   function nearestWalkableTile(area, c, r, maxRadius = 6) {
     if (!deps || !deps.isBuildingArea(area) || !deps.npcGridForArea(area)) return { c, r };
-    if (isNpcTileStructurallyWalkable(area, c, r)) return { c, r };
+    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5)) return { c, r };
     let fallback = null; // Structurally clear but furniture-blocked tile, used only when no free tile is in range.
     for (let radius = 1; radius <= maxRadius; radius++) {
       let best = null, bestDist = Infinity;
@@ -95,7 +95,7 @@
         for (let dc = -radius; dc <= radius; dc++) {
           if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
           const tc = c + dc, tr = r + dr;
-          if (!isNpcTileStructurallyWalkable(area, tc, tr)) continue;
+          if (!isNpcPositionStructurallyWalkable(area, tc + 0.5, tr + 0.5)) continue;
           if (!isNpcTileWalkable(area, tc, tr)) { fallback ||= { c: tc, r: tr }; continue; }
           const dist = Math.hypot(dc, dr);
           if (dist < bestDist) { best = { c: tc, r: tr }; bestDist = dist; }
@@ -405,10 +405,11 @@
     walker.moveToward = function collisionAwareNpcMoveToward(tx, tz, dt) {
       if (!deps || !this.root?.position) return originalMoveToward.call(this, tx, tz, dt);
       const startX = this.root.position.x, startZ = this.root.position.z;
-      const startStructuralClear = isNpcPositionStructurallyWalkable(this.area, startX, startZ);
-      const startFullyClear = startStructuralClear && isNpcPositionWalkable(this.area, startX, startZ);
       const arrived = originalMoveToward.call(this, tx, tz, dt);
       const desiredX = this.root.position.x, desiredZ = this.root.position.z;
+      if (Math.abs(desiredX - startX) + Math.abs(desiredZ - startZ) < 1e-8) return arrived; // Idle/already-arrived walkers skip expensive footprint checks when no position changes.
+      const startStructuralClear = isNpcPositionStructurallyWalkable(this.area, startX, startZ); // Checked only for actual movement to distinguish legacy overlap escapes.
+      const startFullyClear = startStructuralClear && isNpcPositionWalkable(this.area, startX, startZ); // Preserves the existing chair/blocked-save escape guard.
 
       const seatOverlap = _walkerAllowsFurnitureOverlap(this, tx, tz);
       const seatFurnitureTile = seatOverlap ? { c: Math.floor(tx), r: Math.floor(tz) } : null; // Used by every per-frame check so only the actual chair tile is exempted.
@@ -550,9 +551,9 @@
   function findNpcAreaLink(fromArea, toArea, { warmBuildings = true } = {}) {
     if (fromArea === toArea) return null;
     const visited = new Set([fromArea]);
-    const queue = [{ area: fromArea, firstHop: null }];
-    while (queue.length) {
-      const { area, firstHop } = queue.shift();
+    const queue = [{ area: fromArea, firstHop: null }]; // Breadth-first traversal queue for a one-hop map-transition route.
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const { area, firstHop } = queue[cursor]; // O(1) dequeue avoids repeated array shifting when many maps are reachable.
       for (const link of areaLinksFrom(area, { warmBuildings })) {
         const hop = firstHop || link;
         if (link.toArea === toArea) return hop;
