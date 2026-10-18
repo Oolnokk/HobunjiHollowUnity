@@ -75,6 +75,7 @@ for (let i = 1; i < stones.length; i++) {
 }
 const decals = first.object.children.filter(item => item.geometry?.type === 'plane');
 assert.equal(decals.length, 4);
+assert.ok(decals.every(item => item.geometry === decals[0].geometry), 'Decals share one reusable plane geometry');
 assert.ok(decals.every(item => item.material === first.material), 'All decal faces have a consistent activation state');
 assert.equal(first.material.map.path, 'assets/textures/decals/ruin_glyph_rune.png');
 assert.equal(first.material.color.hex, 0xff8a2a);
