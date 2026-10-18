@@ -28,7 +28,7 @@ class Vector {
   applyAxisAngle() { return this; }
 }
 class Node {
-  constructor() { this.children = []; this.position = new Vector(); this.rotation = new Vector(); this.scale = new Vector(); this.matrix = {}; this.visible = true; this.disposed=false; }
+  constructor() { this.children = []; this.position = new Vector(); this.rotation = new Vector(); this.scale = new Vector(); this.matrix = {}; this.visible = true; this.disposed=false; this.userData={}; }
   add(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
   remove(node) { this.children = this.children.filter(child => child !== node); node.parent = null; }
   traverse(visitor) { visitor(this); for (const child of this.children) child.traverse(visitor); }
