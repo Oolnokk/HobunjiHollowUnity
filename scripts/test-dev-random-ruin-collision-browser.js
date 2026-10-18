@@ -26,10 +26,48 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   await page.waitForFunction(() => window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin', null, { timeout:30000 });
   await page.waitForFunction(() => {
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.();
+    const root = window.DevRandomRuin?.getRuntimeContext?.()?.root;
+    let hiddenPatternOverlays = 0; // Intentionally hidden pattern:sides helper geometry is not an activator surface players should see.
+    root?.traverse?.(node => {
+      if (node.userData?.devRuinNativeRenderKind === 'activator'
+        && node.name === 'pattern:sides' && node.visible === false) hiddenPatternOverlays++;
+    });
     return render?.sourceDoorMeshes > 0 && render.visibleDoorSources === render.sourceDoorMeshes
-      && render.sourceActivatorMeshes > 0 && render.visibleActivatorSources === render.sourceActivatorMeshes
+      && render.sourceActivatorMeshes > 0
+      && render.visibleActivatorSources + hiddenPatternOverlays === render.sourceActivatorMeshes
       && render.totalProxyCount === 0;
-  }, null, { timeout:10000 });
+  }, null, { timeout:10000, polling:250 }).catch(async error => { // Headless/WebGL rAF can stall even after all visibility conditions are true.
+    // Keep the original assertion, but report the exact failed counts when CI
+    // cannot display WebGL. These are also available from Pixel Probe in-game.
+    const sceneDebug = await page.evaluate(() => ({
+      render:window.DevRandomRuinWallRenderProxy?.snapshot?.() || null,
+      occupancy:window.DevRandomRuin?.getOccupancySnapshot?.()?.revision ?? null,
+      area:window.GridTileAccessors?.getCurrentArea?.() || null,
+      ruin:window.DevRandomRuin?.getState?.()?.materialStats || null,
+      hiddenActivatorSources:(() => {
+        const root=window.DevRandomRuin?.getRuntimeContext?.()?.root;
+        const hidden=[];
+        root?.traverse?.(node => {
+          if (node.userData?.devRuinNativeRenderKind !== 'activator') return;
+          const replacement=node.userData?.devRuinGlyphPlaque || null;
+          let invisible=null;
+          for(let parent=replacement||node;parent;parent=parent.parent) {
+            if(parent.visible===false){invisible=parent;break;}
+            if(parent===root)break;
+          }
+          if (invisible) hidden.push({
+            name:node.name,hiddenName:invisible.name,hiddenOwn:invisible===node,
+            replacer:!!replacement,replacementVisible:replacement?.visible,
+            activatorType:node.parent?.userData?.activatorType || null,
+          });
+        });
+        return {count:hidden.length,examples:hidden.slice(0,20),byHiddenName:Object.fromEntries([...new Set(hidden.map(h=>h.hiddenName))].slice(0,15).map(k=>[k,hidden.filter(h=>h.hiddenName===k).length]))};
+      })(),
+    }));
+    console.error('[ruin collision smoke] wall proxy readiness:', JSON.stringify(sceneDebug));
+    console.error('[ruin collision smoke] page errors:', JSON.stringify(errors.slice(-12)));
+    throw error;
+  });
 
   const result = await page.evaluate(() => {
     const first = window.DevRandomRuin.getOccupancySnapshot();
@@ -66,7 +104,13 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
 
     const probe = window.DevRandomRuinCollisionPrecision.snapshot();
     const render = window.DevRandomRuinWallRenderProxy.snapshot();
+    let hiddenPatternOverlays = 0; // Invisible pattern:sides decoration remains in the source-mesh inventory but is not player-facing activator geometry.
+    window.DevRandomRuin?.getRuntimeContext?.()?.root?.traverse?.(node => {
+      if (node.userData?.devRuinNativeRenderKind === 'activator'
+        && node.name === 'pattern:sides' && node.visible === false) hiddenPatternOverlays++;
+    });
     return {
+      hiddenPatternOverlays,
       counts:{ blocked:first.blocked.length, causes:first.causes.length, effects:first.effects.length },
       aggregate:aggregate.length,
       legacy:legacy.length,
@@ -103,7 +147,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   assert.equal(result.render.visibleDoorArchSources, result.render.sourceDoorArchMeshes, JSON.stringify(result.render));
   assert.ok(result.render.normalizedDoorAssemblies > 0, JSON.stringify(result.render));
   assert.ok(result.render.sourceActivatorMeshes > 0, JSON.stringify(result.render));
-  assert.equal(result.render.visibleActivatorSources, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.visibleActivatorSources + result.hiddenPatternOverlays, result.render.sourceActivatorMeshes, JSON.stringify({render:result.render,hiddenPatternOverlays:result.hiddenPatternOverlays}));
   assert.equal(result.render.totalProxyCount, 0, JSON.stringify(result.render));
   assert.equal(result.render.frustumCulledSources, result.render.nativeSourceMeshCount, JSON.stringify(result.render));
   assert.equal(result.render.allNativeMainRealmMaterials, result.render.nativeSourceMeshCount, JSON.stringify(result.render));

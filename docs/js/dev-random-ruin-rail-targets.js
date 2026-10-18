@@ -14,10 +14,9 @@
   const SimplePuzzles = window.DevRandomRuinSimplePuzzles;
   if (!window.THREE || !SimplePuzzles?.registerComposer) return;
 
-  const TARGET_COLOR = 0xff8a2a; // Same orange-until-struck / green-after language as the ceiling glyphs.
-  const STRUCK_COLOR = 0x4dff6e;
+  // The shared ceiling-sconce visual owns both the idle and struck rune colors.
   const RAIL_DROP = .18; // Rail hangs this far under the ceiling.
-  const DISC_DROP = .5; // Target disc centre below the rail.
+  const TARGET_DROP = .69; // Centre of the decaled block under the rail carriage.
   const EMERGE_SPEED = 1.4;
   const ZIP_SPEED = 5.2;
   const RETRACT_SPEED = 6.5;
@@ -69,19 +68,19 @@
     kit.group().add(group);
     const metal = kit.makeBasic(0x4b4238), slotMat = kit.makeBasic(0x0c0a08);
     const along = (len, thick, tall) => frame.axis === 'x' ? kit.sharedBoxGeometry(len, tall, thick) : kit.sharedBoxGeometry(thick, tall, len);
-    const rail = new THREE.Mesh(along(frame.span - .04, .1, .07), metal);
+    const rail = new THREE.Mesh(along(frame.span + .12, .1, .07), metal); // Extend 0.06 into each end wall; the track must not stop short of its recess.
     rail.position.copy(at(frame.span * .5, railY));
     rail.name = 'dev_ruin_ceiling_rail_bar_' + room.id;
     group.add(rail);
     for (let s = .8; s < frame.span - .4; s += 1.6) {
-      const hanger = new THREE.Mesh(kit.sharedBoxGeometry(.05, RAIL_DROP, .05), metal);
-      hanger.position.copy(at(s, railY + RAIL_DROP * .5));
+      const hanger = new THREE.Mesh(kit.sharedBoxGeometry(.05, RAIL_DROP + .06, .05), metal);
+      hanger.position.copy(at(s, railY + RAIL_DROP * .5 - .015)); // Embedded .015 in the ceiling and .045 in the rail, rather than end-to-end floating.
       hanger.name = 'dev_ruin_ceiling_rail_hanger_' + room.id;
       group.add(hanger);
     }
     for (const s of [0, frame.span]) { // Dark slots the targets slide out of.
-      const slot = new THREE.Mesh(frame.axis === 'x' ? kit.sharedBoxGeometry(.06, .78, .66) : kit.sharedBoxGeometry(.66, .78, .06), slotMat);
-      slot.position.copy(at(s + (s ? -.02 : .02), railY - DISC_DROP + .05));
+      const slot = new THREE.Mesh(frame.axis === 'x' ? kit.sharedBoxGeometry(.06, 1.18, .66) : kit.sharedBoxGeometry(.66, 1.18, .06), slotMat);
+      slot.position.copy(at(s + (s ? -.02 : .02), railY - TARGET_DROP + .19)); // Larger recess includes the full decaled block and support.
       slot.name = 'dev_ruin_ceiling_rail_slot_' + room.id;
       group.add(slot);
     }
@@ -89,20 +88,14 @@
     const record = { id:'rail-' + room.id, roomId:String(room.id), frame, cross, railY, at, group, targets:[], inside:false, solved:false, chest:null, hinted:false };
     for (let i = 0; i < count; i++) {
       const home = i % 2 ? frame.span + WALL_HIDE : -WALL_HIDE; // Alternate ends so targets emerge from both walls.
-      const object = new THREE.Group();
-      object.name = 'dev_ruin_ceiling_rail_projectile_target_' + room.id + '_' + i;
-      const trolley = new THREE.Mesh(kit.sharedBoxGeometry(.24, .1, .24), metal);
-      const stem = new THREE.Mesh(kit.sharedCylinderGeometry(.025, .025, DISC_DROP - .2, 6), metal);
-      stem.position.y = -(DISC_DROP - .2) * .5 - .05;
-      const material = kit.makeBasic(TARGET_COLOR);
-      const disc = new THREE.Mesh(kit.sharedCylinderGeometry(.27, .27, .08, 10), material);
-      disc.position.y = -DISC_DROP;
-      if (frame.axis === 'x') disc.rotation.x = Math.PI * .5; else disc.rotation.z = Math.PI * .5; // Face across the room, toward its long walls.
-      object.add(trolley, stem, disc);
+      const visual = window.DevRandomRuinCeilingTargetVisuals?.create?.(kit, {
+        parent:group,name:'dev_ruin_ceiling_rail_projectile_target_' + room.id + '_' + i,
+      });
+      if (!visual) { rejects.push(room.id + ': ceiling-sconce visual unavailable'); group.parent?.remove(group); return null; }
+      const { object, hitMesh, material } = visual;
       object.visible = false;
-      group.add(object);
       const target = {
-        id:`${record.id}-target-${i}`, object, disc, material, home, s:home, from:home, to:home, t:1, mode:'hidden', pauseLeft:0, active:false,
+        id:`${record.id}-target-${i}`, object, hitMesh, visual, material, home, s:home, from:home, to:home, t:1, mode:'hidden', pauseLeft:0, active:false,
         hittable:() => object.visible && target.mode !== 'hidden',
         onHit:() => strike(kit, record, target),
       };
@@ -115,7 +108,7 @@
   }
 
   function placeTarget(record, target) {
-    record.at(target.s, record.railY - .05, target.object.position); // Writes in place: called every frame for each moving target.
+    record.at(target.s, record.railY - .05, target.object.position); // The sconce plate top (+.05) stays embedded in its overhead rail.
   }
 
   function moveTo(target, s, speed, mode) {
@@ -133,7 +126,7 @@
   function strike(kit, record, target) {
     if (target.active) return;
     target.active = true;
-    target.material.color.setHex(STRUCK_COLOR);
+    target.visual.setActive(true); // Tint the four decals, preserving the stone finish.
     kit.playStoneUnlockKchunk?.();
     const hit = record.targets.filter(entry => entry.active).length;
     // Struck targets coast home and stay in their wall slot.
@@ -220,7 +213,7 @@
       rejects:rejects.slice(),
       rooms:rooms.map(record => ({
         id:record.id, roomId:record.roomId, axis:record.frame.axis, span:+record.frame.span.toFixed(2), railY:+record.railY.toFixed(3), inside:record.inside, solved:record.solved, chest:!!record.chest,
-        targets:record.targets.map(target => ({ id:target.id, mode:target.mode, active:target.active, visible:target.object.visible, s:+target.s.toFixed(2) })),
+        targets:record.targets.map(target => ({ id:target.id, mode:target.mode, active:target.active, visible:target.object.visible, s:+target.s.toFixed(2), railMountGap:+target.visual.attachmentGap(record.railY).toFixed(3), mountConnected:target.visual.attachmentGap(record.railY)<=.001 })),
       })),
     };
   }
