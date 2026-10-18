@@ -16,6 +16,7 @@
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
+  const externalFoodProviders = new Map(); // Independent festival meals augment cooked-food stats without refreshing or replacing real meal timers.
   let unlockedRecipeIds = new Set(); // Used to persist opt-in recipe templates such as Banubu's Three-Fish Pie.
   let cookTimer = null; // Used to prevent duplicate cooks during the hearth animation.
   let maxIngredientsLimit = null; // Used by the Foraging Survivalist perk to cap recipes when cooking away from an indoor hearth.
@@ -468,7 +469,18 @@
 
   function getFoodEffectStacks(effectKey) {
     const now = performance.now() / 1000; // Used to ignore expired stacks even between update ticks.
-    return activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAt > now).reduce((sum, effect) => sum + effect.stacks, 0);
+    let total = activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAt > now).reduce((sum, effect) => sum + effect.stacks, 0);
+    for (const provider of externalFoodProviders.values()) {
+      try { total += Math.max(0, Number(provider(effectKey)) || 0); }
+      catch (error) { window.__farmLog?.('[cooking] external food effect failed: ' + error.message, 'warn'); }
+    }
+    return total;
+  }
+  function registerExternalFoodProvider(id, provider) {
+    if (!id) return false;
+    if (typeof provider === 'function') externalFoodProviders.set(String(id), provider);
+    else externalFoodProviders.delete(String(id));
+    return true;
   }
 
   function getSpeedMultiplier() {
@@ -630,6 +642,7 @@
     init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     registerCookedDefinition, recordItemQuality, getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
+    registerExternalFoodProvider,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
   };
