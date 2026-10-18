@@ -124,7 +124,7 @@
     state.fullness.stacks++;
     heldBowl.uses--;
     if (!heldBowl.uses) heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS};
-    const diners=(deps.getWalkers?.()||[]).filter(walker=>walker.area==='town'&&walker.state==='idle'
+    const diners=(deps.getWalkers?.()||[]).filter(walker=>walker.area==='town'&&['idle','sit','sitting','seated'].includes(walker.state)
       &&walker.currentScheduleTarget?.festivalLocaleKind==='dining'
       &&walker.root?.position && Math.hypot(walker.root.position.x-deps.getPlayerTile().c,walker.root.position.z-deps.getPlayerTile().r)<5);
     for(const walker of diners) addFestivalFun(walker.rec.id,25);
