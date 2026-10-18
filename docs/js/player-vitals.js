@@ -89,6 +89,9 @@
   function visualTreatment(id, def, rs) {
     if (DRIP_EFFECTS[id]) return DRIP_EFFECTS[id];
     if (BRITTLE_EFFECTS.has(id)) return 'brittle';
+    // A zero-anchored capacity reducer must deform its afflicted band itself,
+    // not only the unavailable-cap overlay at the far end of the track.
+    if (def?.reducesEffectiveMax) return 'starved';
     const enhanced = rs.ENHANCED_RESOURCE_DEFS?.[id];
     if (Number(enhanced?.tempoMultiplier) > 1) return 'balloon';
     if (Number(enhanced?.conversionRate) > 1) return 'crenellated';
@@ -328,12 +331,14 @@
       const treatment = segment._vbTreatment;
       const brittle = treatment === 'brittle';
       const dripping = treatment.includes('drip');
-      const shaped = brittle || dripping || treatment === 'balloon' || treatment === 'crenellated';
+      const shaped = brittle || dripping || treatment === 'starved'
+        || treatment === 'balloon' || treatment === 'crenellated';
       const base = shaped ? 'transparent' : piece.color;
       if (segment.style.backgroundColor !== base) segment.style.backgroundColor = base;
       if (segment.style.color !== piece.color) segment.style.color = piece.color;
       if (brittle) ensureBrittleShape(segment, key, (piece.end - piece.start) / denominator, piece.color);
       if (dripping) ensureDripShape(segment, piece.color);
+      if (treatment === 'starved') ensureStarvedCap(segment, piece.color);
       if (treatment === 'balloon' || treatment === 'crenellated') {
         ensureEnhancedShape(segment, treatment, (piece.end - piece.start) / denominator, piece.color);
       }
