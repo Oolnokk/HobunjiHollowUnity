@@ -78,7 +78,7 @@
     woundedHealth: 'drip wound',
   });
   const BRITTLE_EFFECTS = new Set([
-    'bruisedHealth', 'woundedStamina', 'infectedStamina',
+    'bruisedHealth', 'corrodedHealth', 'woundedStamina', 'infectedStamina',
     'frostbittenStamina', 'shatteredStamina',
     'scentMarkedHealth', 'drunkenHealth',
   ]);

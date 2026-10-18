@@ -190,6 +190,15 @@ const hudHtml = html.slice(html.indexOf('<div id="vitalsBar"'), html.indexOf('<!
 assert(!/class="vb-(icon|label|value)"/.test(hudHtml), 'HUD contains no visible icon, label or numeric text');
 assert(css.includes('border-left: .556dvh solid #000') && css.includes('border-top: 0'), 'track retains only its left/right endcaps');
 assert(css.includes('#vitalsBar .vb-normal-segment'), 'normal resource sections own their straight outline');
+assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.corrodedHealth, '#b6d94c', 'Corroded Health palette is shared');
+assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.woundedHealth, '#b35f6b', 'Wounded Health no longer defaults to white');
+assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.scentMarkedHealth, '#82ae6c', 'Scent-marked Health has its own palette');
+player.afflictions.corrodedHealth = 13;
+player.health = 87;
+refresh();
+assert(elements.get('vbHealthSegments').children.some(span => span.className.includes('vb-effect-brittle')), 'Corroded Health is brittle like Bruised Health');
+player.afflictions.corrodedHealth = 0;
+player.health = 100;
 assert(css.includes('border: max(1px, .14dvh) solid #000'), 'droplets have their own black outlines');
 assert(css.includes('translate3d(0, 9dvh, 0)'), 'droplets cross lower resource rows');
 assert(css.includes('#vbHealthRow { z-index: 30; }'), 'upper bar paints its droplets over the bars below it');

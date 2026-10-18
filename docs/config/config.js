@@ -40,10 +40,13 @@
       afflictionColors: Object.freeze({
         woundedStamina: '#ff9b2f',
         bleedingHealth: '#cf1e2e',
+        woundedHealth: '#b35f6b',
+        scentMarkedHealth: '#82ae6c',
         congealedHealth: '#c98d41',
         infectedStamina: '#284f2a',
         windedStamina: '#90949c',
         bruisedHealth: '#4c42a9',
+        corrodedHealth: '#b6d94c',
         shatteredStamina: '#8c4ad9',
         poisonedHealth: '#37651c',
         burningHealth: '#ff5a1f',
