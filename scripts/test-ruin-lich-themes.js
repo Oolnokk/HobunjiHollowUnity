@@ -35,14 +35,14 @@ class Node {
   updateMatrix() {}
   dispose() {this.disposed=true;}
 }
-class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
+class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}getAttribute(key){return this.attributes[key];}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
 class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
 class Mesh extends Node { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class Instances extends Mesh { constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = {}; this.isInstancedMesh=true; } setMatrixAt() {} }
 const THREE = {
   Group:Node, Object3D:Node, Vector3:Vector, Mesh, InstancedMesh:Instances,
   PlaneGeometry:Geometry, ConeGeometry:Geometry, TetrahedronGeometry:Geometry, BoxGeometry:Geometry,
-  BufferGeometry:Geometry,Float32BufferAttribute:class {constructor(array,itemSize){this.array=array;this.itemSize=itemSize;this.count=array.length/itemSize;}},
+  BufferGeometry:Geometry,Float32BufferAttribute:class {constructor(array,itemSize){this.array=array;this.itemSize=itemSize;this.count=array.length/itemSize;}getX(i){return this.array[i*this.itemSize];}getY(i){return this.array[i*this.itemSize+1];}getZ(i){return this.array[i*this.itemSize+2];}},
   MeshBasicMaterial:Material, DoubleSide:2, RepeatWrapping:1,
   TextureLoader:class { load(_url, done) { const texture = {dispose(){}}; done?.(texture); return texture; } },
 }; // Lightweight renderer stand-ins preserve creation, instance batching and cleanup code paths.
@@ -53,6 +53,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   let afflictionCount = 0; // Confirms area hazards affect the same ResourceSystem as normal combat.
   let footprint = null; // Captures a Hronal column's live collision enabled gate.
   const audioEvents=[]; // Verifies release plays the existing rock sample at double speed/pitch.
+  const mappedPatches=[]; // Verify connected nine-slice remapping occurs whenever a puddle's grid changes.
   const player = {x:playerX * 64, y:playerZ * 64, health:100, facing:3};
   const window = {
     THREE, DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; }},
@@ -65,6 +66,27 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     DevRandomRuin:{syncPlayerPresentationHeight() {}},
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
     CloudForestFog:{getKanthicLanternRadiusTiles:()=>options.lanternRadius??.9}, // Default: 2.4 × .375. Cap stress tests may suppress visibility without changing production logic.
+    HobunjiSurfaceStretchUV:{
+      mapGeometry(geo,settings){
+        // The real nine-slice mapper is independently covered by
+        // scripts/test-surface-stretch-uv.js. Here check that the
+        // compositor passes ONE connected mesh's positions through it
+        // on each grid edit rather than tiling the source PNG per tile.
+        const p=geo.getAttribute('position');
+        const bounds={minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity};
+        for(let i=0;i<p.count;i++){
+          bounds.minX=Math.min(bounds.minX,p.getX(i));bounds.maxX=Math.max(bounds.maxX,p.getX(i));
+          bounds.minZ=Math.min(bounds.minZ,p.getZ(i));bounds.maxZ=Math.max(bounds.maxZ,p.getZ(i));
+        }
+        const uv=[];
+        for(let i=0;i<p.count;i++)uv.push(
+          (p.getX(i)-bounds.minX)/Math.max(1,bounds.maxX-bounds.minX),
+          (p.getZ(i)-bounds.minZ)/Math.max(1,bounds.maxZ-bounds.minZ));
+        geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+        mappedPatches.push({geo,settings});
+        return geo;
+      },
+    },
   }; // Gameplay APIs stubbed at the contract boundaries, not duplicated in the tests.
   const document = {getElementById:() => null}; // The mobile diagnostics path intentionally handles a missing badge.
   const Audio = class {constructor(url){this.url=url;this.playbackRate=1;}play(){audioEvents.push({url:this.url,rate:this.playbackRate});return Promise.resolve();}};
@@ -83,7 +105,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   composer.buildRooms(kit, context);
   const api = window.DevRandomRuinLichThemes;
   const tick = (frames, seconds = .25) => {for (let index = 0; index < frames; index++) composer.update(kit, index * seconds * 1000, seconds);};
-  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents};
+  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches};
 }
 
 {
@@ -159,9 +181,12 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const minZ=Math.min(...seed.map(p=>p.z)),maxZ=Math.max(...seed.map(p=>p.z));
   assert.equal((maxX-minX+1)*(maxZ-minZ+1),initial,'Seed is a solid square, not a scattered set of puddles');
   const caps=[];
-  t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('kanthic_plasm_snow_shelf_edge_'))caps.push(mesh);});
-  assert.ok(caps.length,'Plasm must use tapered-edge surface variants');
-  const firstInstanced=caps.slice(); // Each subsequent growth rebuild must retire these per-instance GPU buffers.
+  t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('kanthic_plasm_connected_room_'))caps.push(mesh);});
+  assert.equal(caps.length,1,'A contiguous room puddle uses one continuous textured surface');
+  const initialSurface=caps[0],initialGeometry=initialSurface.geometry;
+  assert.equal(initialSurface.userData.plasmUvMapping,'edge-preserving-nine-slice','Plasm must use the existing snow nine-slice mapping API');
+  assert.equal(t.mappedPatches.length,1,'Initial seeded cluster must be UV-mapped once');
+  assert.equal(t.mappedPatches[0].settings.angleToleranceDeg,89,'Shared snow mapper must preserve curved lip + top as one surface');
   assert.equal(t.api.snapshot().lightSources, 0, 'Kanthic relies on lantern alone');
   // Turn toward the seed from outside the narrowed radius; the player can
   // still see the direction, but not the actual puddle at lantern range.
@@ -173,7 +198,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   t.tick(4,.25);
   const grown=t.api.snapshot().plasmTiles;
   assert.equal(grown,initial+2,'A fully unseen local puddle grows exactly two cells per second');
-  assert.ok(firstInstanced.every(mesh=>mesh.disposed),'Rebuilding a fast-growing puddle must free its previous instanced GPU buffers');
+  assert.ok(initialGeometry.disposed,'Retexturing after plasm growth must dispose the previous GPU geometry');
+  assert.equal(t.mappedPatches.length,3,'Every one-cell grid edit must regenerate connected nine-slice UVs');
+  assert.equal(t.mappedPatches[2].settings.edgeSourceFraction,.32,'Plasm must preserve source-PNG nine-slice borders');
   // Step out of the chamber; no room transition may grow or cull the patch.
   t.player.x=30*64;t.player.y=30*64;
   t.tick(2,.25);
