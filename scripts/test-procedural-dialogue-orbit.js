@@ -41,6 +41,50 @@ assert(second.orbitDebug.radius < radius, 'higher intended zoom requests a short
 assert.equal(cinematic.createActorOrbitShot([actors[0]], {}), null, 'invalid orbit subjects cannot crash a cutscene');
 assert.equal(cinematic.createStageOrbitShot({id:'duplicate'}, [actors[0], actors[0]], 1), null, 'one actor cannot be both orbit subjects');
 
+// Height modes use rig-specific face heights; the fallback face ratio must not
+// override the provided real skinned head positions for actors of unequal sizes.
+const unequalActors = [
+  { id: 'player', root: { position: new Vec3(9.5, 0, 8.5) }, walker: { avatarHeight: 1.3 }, faceWorldPosition: () => ({y: 1.4}) },
+  { id: 'jubmir', root: { position: new Vec3(10.5, 0, 8.5) }, walker: { avatarHeight: 2.7 }, faceWorldPosition: () => ({y: 2.8}) },
+];
+const focusFace = cinematic.createActorOrbitShot(unequalActors, { heightMode: 'focusFace', focusActorId: 'jubmir' });
+assert(Math.abs(focusFace.positionProvider().y - 2.8) < 1e-9, 'face-height orbit uses the selected actor\'s actual head height');
+const offsetFace = cinematic.createActorOrbitShot(unequalActors, { heightMode: 'focusFaceOffset', faceHeightOffset: -0.35, focusActorId: 'player' });
+assert(Math.abs(offsetFace.positionProvider().y - 1.05) < 1e-9, 'face height offset is in world units and may be negative');
+const arcOrigin = clock;
+const tilted = cinematic.createActorOrbitShot(unequalActors, { heightMode: 'oppositeFaceArc', focusActorId: 'player', speedDegPerSec: 90, zoomPercent: 125 });
+let cameraEnd = tilted.positionProvider().clone(), oppositeEnd = tilted.targetProvider().clone();
+assert(Math.abs(cameraEnd.y - 2.8) < 1e-9 && Math.abs(oppositeEnd.y - 1.4) < 1e-9,
+  'focused player begins at the opposing Jubmir-height end and looks to the player-height end');
+const middlePoint = cameraEnd.clone().add(oppositeEnd).multiplyScalar(0.5);
+const arcRadius = Math.hypot(cameraEnd.x - middlePoint.x, cameraEnd.y - middlePoint.y, cameraEnd.z - middlePoint.z);
+assert(Math.abs(oppositeEnd.x + cameraEnd.x - 20) < 1e-9
+  && Math.abs(oppositeEnd.z + cameraEnd.z - 17) < 1e-9, 'opposite look-at remains diametrically opposite the camera');
+clock = arcOrigin + 1000; // A quarter turn: height midpoint and constant 3D radius.
+const quarterCamera = tilted.positionProvider().clone(), quarterTarget = tilted.targetProvider().clone();
+assert(Math.abs(quarterCamera.y - 2.1) < 1e-9 && Math.abs(quarterTarget.y - 2.1) < 1e-9,
+  'tilted orbit crosses the midpoint of the two face heights at a quarter turn');
+assert(Math.abs(Math.hypot(quarterCamera.x - middlePoint.x, quarterCamera.y - middlePoint.y, quarterCamera.z - middlePoint.z) - arcRadius) < 1e-9,
+  'face-height endpoints define a true tilted circular orbit, not a changing-radius ellipse');
+clock = arcOrigin + 2000;
+cameraEnd = tilted.positionProvider(); oppositeEnd = tilted.targetProvider();
+assert(Math.abs(cameraEnd.y - 1.4) < 1e-9 && Math.abs(oppositeEnd.y - 2.8) < 1e-9,
+  'a half-turn swaps camera and gaze endpoint face elevations');
+const tighter = cinematic.createStageOrbitShot({
+  id: 'fey_first', orbitInitialZoomPercent: 131.25, orbitZoomStepPercent: 5,
+  orbitHeightMode: 'oppositeFaceArc', orbitAlternateFocus: true,
+}, unequalActors, 1);
+const followUp = cinematic.createStageOrbitShot({
+  id: 'fey_second', orbitInitialZoomPercent: 131.25, orbitZoomStepPercent: 5,
+  orbitHeightMode: 'oppositeFaceArc', orbitAlternateFocus: true,
+}, unequalActors, 2);
+assert.equal(tighter.orbitDebug.zoomPercent, 131.25);
+assert.equal(followUp.orbitDebug.zoomPercent, 136.25);
+assert.equal(tighter.orbitDebug.heightMode, 'oppositeFaceArc');
+assert(Math.abs(tighter.orbitDebug.radius / (3.7 * 100 / 105) - 0.8) < 1e-12,
+  'Jubmir initial boom is exactly 20% shorter than the old 105% zoom framing');
+clock = 20000;
+
 const stageStart = game.indexOf('        function runStage(stageId)'); // Actual live Director stage dispatcher.
 const stageEnd = game.indexOf('        function runMove(stage)', stageStart); // Excludes unrelated movement mechanics.
 assert(stageStart !== -1 && stageEnd > stageStart);
@@ -87,6 +131,10 @@ assert(previewOrbit && previewOrbit.orbitDebug.focusActorId === liveOrbit.orbitD
   && previewOrbit.orbitDebug.zoomPercent === liveOrbit.orbitDebug.zoomPercent,
   'Director preview and game agree about the first focus and requested zoom');
 assert(author.includes("st.cameraMode==='orbit'"), 'Director stage playback recognizes the new orbit mode');
+assert(read('docs/tools/cutscene-director/index.html').includes('editOrbitHeightMode')
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitInitialZoom')
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitFaceHeightOffset'),
+  'Director exposes all height and initial zoom authoring controls');
 
 const solverStart = game.indexOf('      const CAMERA_FLOOR_CLEARANCE ='); // Includes the same constants and ground slide as the game camera.
 const solverEnd = game.indexOf('      // How far under a tree canopy', solverStart); // Ends at the production solver boundary.
@@ -127,4 +175,4 @@ assert(recovering.z > blockedReach && recovering.z < 3, 'camera extends smoothly
 elapsedMs = 1200;
 const recoveredMore = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
 assert(recoveredMore.z > recovering.z, 'clearance recovery progresses with elapsed real time');
-console.log('Procedural dialogue orbit: timing, replay reset, character focus, 5% zoom, angled lateral collision, and smoothing passed.');
+console.log('Procedural dialogue orbit: timing, replay reset, face-height and antipodal tilt modes, exact 20% closer initial zoom, angled wall collision, and smoothing passed.');
