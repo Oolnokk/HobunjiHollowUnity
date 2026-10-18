@@ -31499,16 +31499,7 @@
             const subjects = subjectIds.map(id => entities.get(id) && { id, ...entities.get(id) }).filter(Boolean); // Reuse the live stand-ins, including the player, instead of making new avatars.
             if (subjects.length === 2 && subjectIds[0] !== subjectIds[1]) { // Never orbit one actor twice if a Director pair is incomplete.
               const paragraphNumber = orbitResetCount + 1; // Advance only when the required pair really exists.
-              const zoomSetting = Number(stage.orbitZoomPercent);
-              const zoomPercent = Number.isFinite(zoomSetting) && zoomSetting > 0
-                ? zoomSetting : 100 + Math.max(0, Number(stage.orbitZoomStepPercent) || 0) * paragraphNumber; // 5% per spoken paragraph even through either choice branch.
-              const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[paragraphNumber % 2].id : null); // First Jubmir, then player, alternating on resets.
-              const orbit = window.CinematicCameraRuntime?.createActorOrbitShot?.(subjects, {
-                id: 'cutscene_orbit_' + stage.id, shotKey: stage.id + ':' + paragraphNumber, // A second visit to this same card must restart its blend clock as well as orbit.
-                focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
-                speedDegPerSec: stage.orbitSpeedDegPerSec, startAzimuthDeg: stage.orbitStartAzimuthDeg,
-                targetHeight: stage.orbitTargetHeight, fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
-              }); // Providers feed the existing blending, room collider and floor-clearance solve on every frame.
+              const orbit = window.CinematicCameraRuntime?.createStageOrbitShot?.(stage, subjects, paragraphNumber); // Shared camera owner keeps game and Director focus/zoom/reset behavior identical.
               if (orbit) {
                 orbitResetCount = paragraphNumber;
                 cinematicCameraReady = false;
