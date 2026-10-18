@@ -20387,38 +20387,58 @@
         return 1;
       }
 
-      let _cameraHorizontalDebug = null; // Most recent camera horizontal squeeze, available in cutscene/Pixel Probe diagnostics.
+      let _cameraHorizontalDebug = null; // Last horizontal clearance calculation, included in cutscene Pixel Probe reports.
+      let _cameraHorizontalSafeDistance = null; // Smoothed X/Z boom extension; obstructions retract immediately, clear space extends gradually.
+      let _cameraHorizontalUpdatedAt = 0; // Real-time reference for frame-rate-independent horizontal collision recovery.
+      let _cameraHorizontalArea = null; // Prevents a previous building's wall from shortening another area's camera.
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
-        const originalIdealX = idealX, originalIdealZ = idealZ; // Unobstructed horizontal offsets shown separately in the mobile debug snapshot.
-        const horizontalObstacles = currentAreaOcclusionMeshes(); // One obstacle collection reused for both lateral and normal 3D boom tests.
-        const horizontalSqueezeEnabled = _isBuildingArea(currentArea) || cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.(); // Avoid extra rays outdoors unless a cinematic requires them.
-        let horizontalSqueeze = 1; // Fraction of the originally desired X/Z offset still available beside walls.
-        if (horizontalSqueezeEnabled && horizontalObstacles?.length) {
-          const hx = idealX - lookAtX, hz = idealZ - lookAtZ; // Planar boom, independent of intentional vertical camera framing.
-          const reach = Math.hypot(hx, hz);
-          if (reach > 0.08) {
-            const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Probe camera center plus left/right 0.18-tile clearance.
-            let clearReach = reach; // Shortest unobstructed horizontal boom across all three probes.
-            for (const side of [-1, 0, 1]) {
-              _cameraOcclusionRaycaster.set(
-                _cameraOcclusionOriginVec.set(lookAtX + rightX * side, idealY, lookAtZ + rightZ * side),
-                _cameraOcclusionDirVec.set(hx / reach, 0, hz / reach),
-              );
-              _cameraOcclusionRaycaster.near = 0.02;
-              _cameraOcclusionRaycaster.far = reach;
-              const hits = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true);
-              if (hits.length) clearReach = Math.min(clearReach, Math.max(0.025, hits[0].distance - 0.12));
-            }
-            horizontalSqueeze = clearReach / reach;
-            idealX = lookAtX + hx * horizontalSqueeze;
-            idealZ = lookAtZ + hz * horizontalSqueeze;
+        const originalIdealX = idealX, originalIdealZ = idealZ; // Authored X/Z intent, preserved for diagnostics.
+        const horizontalObstacles = currentAreaOcclusionMeshes(); // Same tagged walls/furniture used by the existing full 3D boom collision.
+        const horizontalSqueezeEnabled = _isBuildingArea(currentArea) || cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.(); // Do not add lateral rays to ordinary outdoor gameplay.
+        if (_cameraHorizontalArea !== currentArea || _occlusionCameraMode !== activeCameraMode) {
+          _cameraHorizontalSafeDistance = null;
+          _cameraHorizontalUpdatedAt = 0;
+          _cameraHorizontalArea = currentArea;
+        }
+        const hx = idealX - lookAtX, hy = idealY - lookAtY, hz = idealZ - lookAtZ; // True tilted camera trajectory; a fixed-Y probe would miss lower walls.
+        const reach = Math.hypot(hx, hz);
+        const boomLength = Math.hypot(hx, hy, hz);
+        let permittedReach = reach; // Maximum unobstructed horizontal camera offset along the requested trajectory.
+        let horizontalRays = 0; // Exposed on the mobile diagnostic to identify when expensive lateral checks run.
+        if (horizontalSqueezeEnabled && horizontalObstacles?.length && reach > 0.08 && boomLength > 0.08) {
+          const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Three boom rays approximate camera's horizontal width.
+          const dirX = hx / boomLength, dirY = hy / boomLength, dirZ = hz / boomLength; // Probe through actual wall heights, not just the final camera Y.
+          for (const side of [-1, 0, 1]) {
+            _cameraOcclusionRaycaster.set(
+              _cameraOcclusionOriginVec.set(lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side),
+              _cameraOcclusionDirVec.set(dirX, dirY, dirZ),
+            );
+            _cameraOcclusionRaycaster.near = 0.02;
+            _cameraOcclusionRaycaster.far = boomLength;
+            const hits = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true);
+            horizontalRays++;
+            if (hits.length) permittedReach = Math.min(permittedReach, reach * Math.max(0.025, hits[0].distance - 0.12) / boomLength);
           }
         }
+        if (horizontalSqueezeEnabled && reach > 0.08) {
+          const now = performance.now(); // The same clock as seated-wall recovery.
+          const dt = _cameraHorizontalUpdatedAt ? Math.max(0, Math.min(0.1, (now - _cameraHorizontalUpdatedAt) / 1000)) : 0;
+          _cameraHorizontalUpdatedAt = now;
+          if (_cameraHorizontalSafeDistance == null || permittedReach < _cameraHorizontalSafeDistance) _cameraHorizontalSafeDistance = permittedReach;
+          else _cameraHorizontalSafeDistance += (permittedReach - _cameraHorizontalSafeDistance) * (1 - Math.exp(-8 * dt));
+          const safeReach = window.FormatUtils.clamp(_cameraHorizontalSafeDistance, 0.025, reach);
+          const factor = safeReach / reach; // Only the X/Z offset is squeezed; keep the authored vertical offset.
+          idealX = lookAtX + hx * factor;
+          idealZ = lookAtZ + hz * factor;
+        } else {
+          _cameraHorizontalSafeDistance = null;
+          _cameraHorizontalUpdatedAt = 0;
+        }
         _cameraHorizontalDebug = horizontalSqueezeEnabled ? {
-          area: currentArea, factor: horizontalSqueeze,
-          intended: { x: originalIdealX, z: originalIdealZ },
+          area: currentArea, factor: reach > 0.08 ? Math.hypot(idealX - lookAtX, idealZ - lookAtZ) / reach : 1,
+          rays: horizontalRays, intended: { x: originalIdealX, z: originalIdealZ },
           solved: { x: idealX, z: idealZ },
-        } : null; // Read-only; the regular terrain and full 3D occlusion checks still run after the sideways squeeze.
+        } : null; // Existing 3D boom, local terrain and floor guard still follow this X/Z solve.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
         let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
@@ -31477,14 +31497,14 @@
           } else if (stage.cameraMode === 'orbit') {
             const subjectIds = stage.orbitActorIds || [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId]; // Actor IDs are authored independently of the speaker.
             const subjects = subjectIds.map(id => entities.get(id) && { id, ...entities.get(id) }).filter(Boolean); // Reuse the live stand-ins, including the player, instead of making new avatars.
-            if (subjects.length === 2) {
+            if (subjects.length === 2 && subjectIds[0] !== subjectIds[1]) { // Never orbit one actor twice if a Director pair is incomplete.
               const paragraphNumber = orbitResetCount + 1; // Advance only when the required pair really exists.
               const zoomSetting = Number(stage.orbitZoomPercent);
               const zoomPercent = Number.isFinite(zoomSetting) && zoomSetting > 0
                 ? zoomSetting : 100 + Math.max(0, Number(stage.orbitZoomStepPercent) || 0) * paragraphNumber; // 5% per spoken paragraph even through either choice branch.
               const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[paragraphNumber % 2].id : null); // First Jubmir, then player, alternating on resets.
               const orbit = window.CinematicCameraRuntime?.createActorOrbitShot?.(subjects, {
-                id: 'cutscene_orbit_' + stage.id, shotKey: stage.id,
+                id: 'cutscene_orbit_' + stage.id, shotKey: stage.id + ':' + paragraphNumber, // A second visit to this same card must restart its blend clock as well as orbit.
                 focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
                 speedDegPerSec: stage.orbitSpeedDegPerSec, startAzimuthDeg: stage.orbitStartAzimuthDeg,
                 targetHeight: stage.orbitTargetHeight, fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
