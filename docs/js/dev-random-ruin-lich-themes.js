@@ -725,7 +725,7 @@
     return false;
   }
   function visiblePlasmTile(kit,point,facing,room) {
-    const radius=Number(window.CloudForestFog?.getKanthicLanternRadiusTiles?.())||.6;
+    const radius=Number(window.CloudForestFog?.getKanthicLanternRadiusTiles?.())||.9; // Default 2.4 tile lantern × .375 Kanthic scale.
     const r2=radius*radius;
     // Every tile matters; checking only the original seed falsely allows
     // spreading while newly advanced edges are illuminated.
