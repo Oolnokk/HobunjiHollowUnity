@@ -27,7 +27,7 @@
   <script src="js/interior-scene-builder.js?v=20261018h3d30302&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
-  <script src="js/tile-pathfinding.js?v=20260808a"></script>
+  <script src="js/tile-pathfinding.js?v=20261018a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
@@ -2564,7 +2564,7 @@
        call time, not parse time) but all four must load before
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
-  <script src="js/npc-agenda.js?v=20260902a"></script>
+  <script src="js/npc-agenda.js?v=20261018a"></script>
   <script src="js/npc-activities.js?v=20260902d"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
   <script src="js/npc-activity-planner.js?v=20260902d"></script>
@@ -2573,7 +2573,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261017hf291bfa"></script>
+  <script src="js/npc-scheduling.js?v=20261018a"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2597,7 +2597,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261018h3370480"></script>
+  <script src="js/npc-pathfinding.js?v=20261018a"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
