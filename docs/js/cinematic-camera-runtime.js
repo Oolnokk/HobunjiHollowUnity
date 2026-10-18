@@ -132,6 +132,145 @@
     return active;
   }
 
+
+  // Orbit height authoring:
+  //   default           = legacy midpoint-height orbit and eased initial face focus.
+  //   focusFace         = camera stays level with the initially favored character's face.
+  //   focusFaceOffset   = same face height plus orbitFaceHeightOffset world units.
+  //   oppositeFaceArc   = a circular orbit tilted across the two actual face heights;
+  //                       camera aims through the diameter at its antipodal point.
+  function createActorOrbitShot(subjects, options = {}) {
+    const T = window.THREE;
+    if (!T?.Vector3 || !Array.isArray(subjects) || subjects.length !== 2
+      || subjects[0]?.id === subjects[1]?.id || subjects.some(actor => !actor?.root?.position)) return null;
+    const [a, b] = subjects;
+    const pA = new T.Vector3(), pB = new T.Vector3(), mid = new T.Vector3();
+    const position = new T.Vector3(), target = new T.Vector3();
+    const started = performance.now();
+    const zoomPercent = Math.max(25, Math.min(500, finite(options.zoomPercent, 100)));
+    const radius = Math.max(0.5, finite(options.distanceTiles, 3.7)) * 100 / zoomPercent;
+    const speedRad = finite(options.speedDegPerSec, 6) * Math.PI / 180;
+    const focusActorId = String(options.focusActorId || '');
+    const focusActor = subjects.find(actor => String(actor.id) === focusActorId) || null;
+    const heightMode = ['focusFace', 'focusFaceOffset', 'oppositeFaceArc'].includes(options.heightMode)
+      ? options.heightMode : 'default';
+    const faceHeightOffset = finite(options.faceHeightOffset, 0);
+    const eyeRatio = Math.max(0.1, finite(options.targetHeight, 0.68));
+    const faceRatio = Math.max(0.1, finite(options.faceHeightRatio, 0.85));
+    // Game cutscenes pass their rig-derived face resolver. Tool-only preview scenes
+    // fall back to the avatar's scaled face ratio when skinned bones are unavailable.
+    function anchor(actor, out) {
+      if (typeof actor.root.getWorldPosition === 'function') actor.root.getWorldPosition(out);
+      else out.copy(actor.root.position);
+      const fallbackRatio = heightMode === 'default' ? eyeRatio : faceRatio;
+      out.y += Math.max(0.3, finite(actor.walker?.avatarHeight, 1.2) * fallbackRatio);
+      if (heightMode !== 'default') {
+        const liveFace = actor.faceWorldPosition?.();
+        if (Number.isFinite(Number(liveFace?.y))) out.y = Number(liveFace.y);
+      }
+      return out;
+    }
+    function updateMidpoint() {
+      anchor(a, pA); anchor(b, pB);
+      mid.copy(pA).add(pB).multiplyScalar(0.5);
+      return mid;
+    }
+    updateMidpoint();
+    const lineAngle = Math.atan2(pB.x - pA.x, pB.z - pA.z);
+    const defaultAngle = lineAngle + Math.PI / 2 + (focusActor === b ? 0.38 : focusActor === a ? -0.38 : 0);
+    const facingA = focusActor !== b; // Without an initial focus, start from the B-side and face A.
+    const baseAngle = options.startAzimuthDeg != null && Number.isFinite(Number(options.startAzimuthDeg))
+      ? Number(options.startAzimuthDeg) * Math.PI / 180
+      : heightMode === 'oppositeFaceArc' ? (facingA ? 0 : Math.PI) : defaultAngle; // Camera starts opposite the focused actor's end.
+    // Positive angle in this X/Z parameterization is counterclockwise viewed from above.
+    // Apply a signed start offset before the first frame, so reversing direction also reverses its lead-in.
+    const initialAngle = baseAngle + finite(options.startOffsetDeg, 0) * Math.PI / 180;
+    const elapsed = () => Math.max(0, (performance.now() - started) / 1000);
+    function arcPoint(angle, out) {
+      updateMidpoint();
+      const dx = pB.x - pA.x, dz = pB.z - pA.z, span = Math.hypot(dx, dz);
+      const alongX = span > 1e-5 ? dx / span : 1, alongZ = span > 1e-5 ? dz / span : 0;
+      const acrossX = -alongZ, acrossZ = alongX;
+      const halfHeightDifference = (pB.y - pA.y) * 0.5;
+      const acrossRadius = Math.hypot(radius, halfHeightDifference); // True circle in the plane tilted between the face elevations.
+      const along = Math.cos(angle) * radius, across = Math.sin(angle) * acrossRadius;
+      return out.set(
+        mid.x + alongX * along + acrossX * across,
+        mid.y + halfHeightDifference * Math.cos(angle),
+        mid.z + alongZ * along + acrossZ * across,
+      );
+    }
+    const targetProvider = () => {
+      if (heightMode === 'oppositeFaceArc') return arcPoint(initialAngle + elapsed() * speedRad + Math.PI, target);
+      updateMidpoint();
+      target.copy(mid);
+      if (focusActor) {
+        const source = focusActor === a ? pA : pB;
+        target.lerp(source, 0.78 * Math.exp(-elapsed() / 2.3));
+      }
+      return target;
+    };
+    const positionProvider = () => {
+      const angle = initialAngle + elapsed() * speedRad;
+      if (heightMode === 'oppositeFaceArc') return arcPoint(angle, position);
+      updateMidpoint();
+      const height = heightMode === 'focusFace' || heightMode === 'focusFaceOffset'
+        ? (focusActor === b ? pB.y : focusActor === a ? pA.y : mid.y)
+          + (heightMode === 'focusFaceOffset' ? faceHeightOffset : 0)
+        : mid.y + 0.55 + radius * 0.12;
+      return position.set(mid.x + Math.sin(angle) * radius, height, mid.z + Math.cos(angle) * radius);
+    };
+    return {
+      id: String(options.id || 'actor_orbit'),
+      shotKey: String(options.shotKey || String(started)),
+      positionProvider, targetProvider,
+      position: positionProvider().clone(), target: targetProvider().clone(),
+      fovDeg: Math.max(15, Math.min(95, finite(options.fovDeg, 52))),
+      blendSeconds: Math.max(0, finite(options.blendSeconds, 1)),
+      dialogueFraming: false,
+      orbitDebug: {
+        actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null,
+        zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI,
+        direction: speedRad < 0 ? 'clockwise' : 'counterclockwise',
+        startOffsetDeg: finite(options.startOffsetDeg, 0),
+        heightMode, faceHeightOffset, targetMode: heightMode === 'oppositeFaceArc' ? 'antipodal' : 'eased-focus',
+      },
+    };
+  }
+
+  function createStageOrbitShot(stage, subjects, sequence = 1) {
+    if (!stage || !Array.isArray(subjects) || subjects.length !== 2 || subjects[0]?.id === subjects[1]?.id) return null;
+    const visit = Math.max(1, Math.floor(finite(sequence, 1))); // Count actual visited orbit cards, not authored stage indices or optional branches.
+    const explicit = stage.orbitZoomPercent == null || stage.orbitZoomPercent === '' ? NaN : Number(stage.orbitZoomPercent);
+    const initial = stage.orbitInitialZoomPercent == null || stage.orbitInitialZoomPercent === ''
+      ? NaN : Number(stage.orbitInitialZoomPercent);
+    const step = Math.max(0, finite(stage.orbitZoomStepPercent, 0));
+    // A specified initial zoom is the first *visited* paragraph's zoom; later
+    // resets add the same authored percentage-point step. Legacy cards preserve 100 + step * visit.
+    const zoomPercent = Number.isFinite(explicit) && explicit > 0 ? explicit
+      : Number.isFinite(initial) && initial > 0 ? initial + step * (visit - 1) : 100 + step * visit;
+    const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[visit % 2].id : null); // First visit favors the second actor.
+    const speed = finite(stage.orbitSpeedDegPerSec, 6);
+    // Legacy signed-speed shots remain unchanged. Explicit direction supports the authored
+    // clockwise/clockwise/counterclockwise/counterclockwise cycle independent of focus.
+    const authoredDirection = stage.orbitDirection === 'clockwise' ? -1
+      : stage.orbitDirection === 'counterclockwise' ? 1 : Math.sign(speed) || 1;
+    const switchEvery = Math.max(0, Math.floor(finite(stage.orbitDirectionSwitchEvery, 0)));
+    const reverse = switchEvery > 0 && (Math.floor((visit - 1) / switchEvery) % 2 === 1);
+    const direction = authoredDirection * (reverse ? -1 : 1);
+    const startOffsetDeg = direction * Math.abs(finite(stage.orbitDirectionalStartOffsetDeg, 0));
+    const shot = createActorOrbitShot(subjects, {
+      id: 'cutscene_orbit_' + stage.id, shotKey: stage.id + ':' + visit, // Replaying the exact same card produces a fresh transition record.
+      focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
+      speedDegPerSec: Math.abs(speed) * direction, startAzimuthDeg: stage.orbitStartAzimuthDeg, startOffsetDeg,
+      targetHeight: stage.orbitTargetHeight, heightMode: stage.orbitHeightMode,
+      faceHeightOffset: stage.orbitFaceHeightOffset, faceHeightRatio: stage.orbitFaceHeightRatio,
+      fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitInstantCut === true ? 0 : stage.orbitBlendSeconds,
+    });
+    if (shot) shot.orbitDebug.instantCut = stage.orbitInstantCut === true;
+    return shot;
+  }
+
   function createBlendController({ camera, lookPoint, safePosition, aspect, framing }) {
     const T = window.THREE; // Uses the caller's existing Three.js camera/render loop.
     const desiredPosition = new T.Vector3(), desiredTarget = new T.Vector3(), target = new T.Vector3(); // Reused interpolation vectors for game and Director playback.
@@ -159,6 +298,7 @@
         const safe = safePosition?.(target.x, target.y, target.z, camera.position.x, camera.position.y, camera.position.z); // Game keeps its collision boom; private tool scenes may omit it.
         if (safe) camera.position.set(safe.x, safe.y, safe.z);
         camera.lookAt(target);
+        camera.near = Math.min(0.1, Math.max(0.01, Math.hypot(camera.position.x - target.x, camera.position.y - target.y, camera.position.z - target.z) * 0.22)); // Walls may shorten cinematics to less than the default near plane.
         lookPoint.copy(target);
         camera.fov = blend.fov + (shot.fovDeg - blend.fov) * alpha;
         if (aspect) camera.aspect = aspect();
@@ -411,6 +551,7 @@
       resolvedTarget: target ? { ...target } : null,
       targetNpcId: camera?.targetNpcId || null,
       targetNpcPoint: camera?.targetNpcPoint || null,
+      orbit: camera?.orbitDebug || null, // Cutscene/Pixel Probe diagnostics expose the reset/focus/zoom currently in use.
       petFade,
       registeredAreas: camerasByArea.size,
       latestChange: 'World-space dialogue framing; live face/root targeting; cinematic player staging opt-in; in-game Map Edit camera transform authoring',
@@ -429,6 +570,8 @@
     deactivate,
     beginDialogue,
     createBlendController,
+    createActorOrbitShot,
+    createStageOrbitShot,
     applyDialogueNodeCamera,
     endDialogue,
     activeCamera,
