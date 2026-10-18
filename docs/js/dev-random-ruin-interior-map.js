@@ -370,7 +370,7 @@
     };
   }
 
-  function floorProjection(meta, includeSanctum = true) {
+  function floorProjection(meta) {
     const worldW = scaledWorldWidth(meta, 8);
     const worldD = scaledWorldDepth(meta, 8);
     const cs = worldCellSize(meta);
@@ -379,7 +379,7 @@
     const walkable = new Set();
     // The boss sanctum wing (js/dev-random-ruin-sanctum.js) lives east of the
     // V50 layout in the same grid, reached through the ruin's Great Door.
-    const sanctum = includeSanctum ? window.DevRandomRuinSanctum?.reserve?.(cols, rows) || null : null;
+    const sanctum = window.DevRandomRuinSanctum?.reserve?.(cols, rows) || null;
     if (sanctum) { cols = sanctum.cols; rows = sanctum.rows; for (const key of sanctum.tiles) walkable.add(key); }
     for (const [c0, r0] of (meta.floorCells || [])) {
       const x0 = PAD + Number(c0) * cs, x1 = PAD + (Number(c0) + 1) * cs - 1e-6;
@@ -787,8 +787,8 @@
     return mesh;
   }
 
-  function makeMapRecord(seed, generated, roots, meta, puzzleOptions) {
-    const projected=floorProjection(meta, puzzleOptions?.sanctum !== false), scene=new THREE.Scene(); // Do not reserve an inaccessible boss wing when Sanctum is disabled.
+  function makeMapRecord(seed, generated, roots, meta) {
+    const projected=floorProjection(meta), scene=new THREE.Scene();
     // Like cliffs and other authored PNG surfaces, Random Test Ruin geometry is
     // intentionally unlit. Darkness is exclusively the shared 2D overlay below,
     // so removing that overlay really does reveal the untouched material art.
@@ -850,7 +850,7 @@
         const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),size:cfg('generation.size','medium'),density:cfg('generation.density',62),roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions});
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
-        const rec=makeMapRecord(candidateSeed,generated,roots,meta,puzzleOptions); buildingScenes.set(MAP_ID,rec);
+        const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
         ruin={seed:candidateSeed,theme,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1}; // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
 
