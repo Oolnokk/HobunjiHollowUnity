@@ -78,14 +78,11 @@
 
   function updateBadge() {
     if (window.GridTileAccessors?.getCurrentArea?.() !== MAP_ID) return null; // Frame client runs for every player; skip the snapshot/JSON clone work outside the dev ruin.
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (!badge) return null;
     const coverage = resolveCoverage();
     if (!coverage.active) return coverage;
-    let text = badge.textContent.replace(/ · cross-layer \d+$/, '');
-    text = text.replace(/unhandled \d+/, `unhandled ${coverage.effectiveUnhandled.length}`);
-    if (coverage.covered.length) text += ` · cross-layer ${coverage.covered.length}`;
-    badge.textContent = text;
+    const segment = ' · unhandled '+coverage.effectiveUnhandled.length+
+      (coverage.covered.length ? ' · cross-layer '+coverage.covered.length : '');
+    window.DevRandomRuin?.setDebugBadgePart?.('coverage',segment); // Effective coverage never rewrites/repeats other live badge fields.
     return coverage;
   }
 
