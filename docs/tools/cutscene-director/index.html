@@ -888,7 +888,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
-<script src="../../js/cinematic-camera-runtime.js?v=20261018orbit3"></script>
+<script src="../../js/cinematic-camera-runtime.js?v=20261018orbit4"></script>
 <script src="camera-author.js?v=20261018orbitpreview2"></script>
 <script src="../../js/GLTFLoader.js?v=20260712l"></script>
 <script src="../../js/WallBuilder.js?v=20261013hd467097"></script>
@@ -2996,9 +2996,16 @@
       </select></label>
       <label>Face height offset, world tiles (offset mode)<input id="editOrbitFaceHeightOffset" type="number" min="-10" max="10" step=".05" value="${stage.orbitFaceHeightOffset ?? 0}"></label>
       <label>Base radius, tiles<input id="editOrbitDistance" type="number" min=".5" max="30" step=".1" value="${stage.orbitDistanceTiles ?? 3.7}"></label>
-      <label>Speed, degrees/sec<input id="editOrbitSpeed" type="number" min="-30" max="30" step=".5" value="${stage.orbitSpeedDegPerSec ?? 6}"></label>
-      <label>Reset blend, seconds<input id="editOrbitBlend" type="number" min="0" max="8" step=".1" value="${stage.orbitBlendSeconds ?? 1}"></label>
-      <p class="tip">Each card resets the same continuous-speed orbit. Face-height modes use each avatar's live head anchor; the tilted mode traces a circle between their face elevations and always looks across its diameter. Initial zoom affects the first visited card, then the increment accumulates. The game camera's colliders can compress the requested radius. Use Preview in Game to inspect actual wall and terrain clearance.</p>` : ''; // Editable options share the existing cutscene stage format.
+      <label>Angular speed, degrees/sec<input id="editOrbitSpeed" type="number" min="0" max="30" step=".5" value="${Math.abs(stage.orbitSpeedDegPerSec ?? 6)}"></label>
+      <label>Starting direction<select id="editOrbitDirection">
+        <option value="clockwise" ${(stage.orbitDirection || (stage.orbitSpeedDegPerSec < 0 ? 'clockwise' : 'counterclockwise')) === 'clockwise' ? 'selected' : ''}>Clockwise</option>
+        <option value="counterclockwise" ${(stage.orbitDirection || (stage.orbitSpeedDegPerSec < 0 ? 'clockwise' : 'counterclockwise')) === 'counterclockwise' ? 'selected' : ''}>Counterclockwise</option>
+      </select></label>
+      <label>Reverse direction every N visited orbit cards (0 = never)<input id="editOrbitDirectionSwitchEvery" type="number" min="0" max="20" step="1" value="${stage.orbitDirectionSwitchEvery ?? 0}"></label>
+      <label>Start angle offset in the chosen direction, degrees<input id="editOrbitDirectionalStartOffset" type="number" min="0" max="180" step="5" value="${stage.orbitDirectionalStartOffsetDeg ?? 0}"></label>
+      <label><input id="editOrbitInstantCut" type="checkbox" ${stage.orbitInstantCut === true ? 'checked' : ''}> Instant cut on orbit reset (no camera lerp)</label>
+      <label>Reset blend, seconds (when instant cut is off)<input id="editOrbitBlend" type="number" min="0" max="8" step=".1" value="${stage.orbitBlendSeconds ?? 1}"></label>
+      <p class="tip">Each visited orbit card resets focus and angle. Direction can flip every N cards (2 = CW/CW/CCW/CCW), with a signed start offset matching its direction. Instant cut replaces the reset lerp; uncheck it to retain the authored blend duration. The tilted face-height mode follows both actors' live face elevations and looks across the diameter. The game camera's colliders can compress the intended radius. Use Preview in Game for wall and furniture collision.</p>` : ''; // Editable options share the existing cutscene stage format.
     const index = stageIndex(stage.id);
     els.stageEditor.innerHTML = `<div class="editor-fields">
       <div class="editor-title"><span class="round-icon">${stageIcon(stage.type)}</span><div><strong>${escapeHtml(stageLabel(stage,index))}</strong><div style="color:var(--muted)">${stageName(stage.type)} card</div></div></div>
@@ -3025,7 +3032,9 @@
     for (const [id, property, min, max] of [
       ['editOrbitZoom', 'orbitZoomPercent', 25, 500], ['editOrbitInitialZoom', 'orbitInitialZoomPercent', 25, 500],
       ['editOrbitZoomStep', 'orbitZoomStepPercent', 0, 30], ['editOrbitFaceHeightOffset', 'orbitFaceHeightOffset', -10, 10],
-      ['editOrbitDistance', 'orbitDistanceTiles', 0.5, 30], ['editOrbitSpeed', 'orbitSpeedDegPerSec', -30, 30],
+      ['editOrbitDistance', 'orbitDistanceTiles', 0.5, 30], ['editOrbitSpeed', 'orbitSpeedDegPerSec', 0, 30],
+      ['editOrbitDirectionSwitchEvery', 'orbitDirectionSwitchEvery', 0, 20],
+      ['editOrbitDirectionalStartOffset', 'orbitDirectionalStartOffsetDeg', 0, 180],
       ['editOrbitBlend', 'orbitBlendSeconds', 0, 8],
     ]) {
       $(id)?.addEventListener('change', event => {
@@ -3043,6 +3052,8 @@
     }
     bindSelect('editOrbitFocus', 'orbitFocusActorId');
     bindSelect('editOrbitHeightMode', 'orbitHeightMode');
+    bindSelect('editOrbitDirection', 'orbitDirection');
+    $('editOrbitInstantCut')?.addEventListener('change', event => { stage.orbitInstantCut = event.target.checked; changed('Orbit reset transition updated.'); });
     $('editOrbitAlternating')?.addEventListener('change', event => { stage.orbitAlternateFocus = event.target.checked; changed('Orbit focus alternation updated.'); });
 
     els.stageEditor.querySelectorAll('[data-transform-kind]').forEach(input => input.addEventListener('change', () => { stage.transform ||= {}; stage.transform[input.dataset.transformKind] ||= {}; stage.transform[input.dataset.transformKind][input.dataset.transformAxis] = Number(input.value) || 0; changed('Furniture transform updated.'); }));
