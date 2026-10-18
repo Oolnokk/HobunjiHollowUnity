@@ -64,6 +64,7 @@ assert.equal(first.object.position.y, 5);
 assert.ok(Math.abs(first.attachmentGap(5) + .05) < 1e-9, 'Ceiling plate embeds into the roof instead of hovering');
 assert.equal(first.object.children.length, 9, 'Five joined solids plus four decaled aiming faces');
 assert.ok(first.object.userData.devRuinFootprintIgnore, 'Ceiling target never blocks walking paths');
+assert.equal(first.object.userData.devRuinProjectileHumOffsetY, Visuals.BLOCK_CENTER_Y, 'Hum is anchored to the actual glyph block instead of the carriage');
 const stones = first.object.children.filter(item => item.geometry?.type === 'box');
 assert.equal(stones.length, 5);
 const bounds = stone => ({
@@ -87,6 +88,7 @@ first.object.position.y = 4.95; // Rail carriage is placed .05 under a rail at w
 assert.ok(Math.abs(first.attachmentGap(5)) < 1e-9, 'Moving target plate touches its rail exactly');
 
 const simple = source(files[1]), rail = source(files[2]), ceiling = source(files[3]), bootstrap = source(files[4]);
+assert.ok(source('docs/js/dev-random-ruin-target-hum.js').includes('devRuinProjectileHumOffsetY'), 'Shared target hum reads the block offset');
 assert.ok(simple.includes('consider(glyph.hitMesh||glyph.mesh'), 'Fixed glyph hits use the stone block, not the overhead plate');
 assert.ok(simple.includes('consider(target.hitMesh||target.object'), 'Moving glyph hits use the stone block');
 assert.ok(!simple.includes("glyph.rune=window.DevRandomRuinGlyphCircuits?.attachRune"), 'No detached ceiling rune sprites');
