@@ -383,7 +383,9 @@
       cameraMode: 'orbit', orbitActorIds: ['player', 'jubmir'], orbitAlternateFocus: true,
       orbitInitialZoomPercent: 131.25, orbitZoomStepPercent: 5, // First paragraph is exactly 20% closer in boom distance than the former 105% zoom shot.
       orbitHeightMode: 'oppositeFaceArc', // Tilt endpoints to the player's/Jubmir's real face heights, and look toward the antipodal point.
-      orbitDistanceTiles: 1.85, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1, // Halve the desired boom radius again across every paragraph.
+      orbitDistanceTiles: 1.85, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1, // Keep the former smooth reset available in the Director.
+      orbitInstantCut: true, // Jubmir's paragraphs hard-cut between camera positions rather than blending.
+      orbitDirection: 'clockwise', orbitDirectionSwitchEvery: 2, orbitDirectionalStartOffsetDeg: 30, // Jubmir CW, player CW, Jubmir CCW, player CCW; repeat.
     });
     return {
       version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir', // Dialogue partners occupy adjacent, furniture-free floor tiles.
