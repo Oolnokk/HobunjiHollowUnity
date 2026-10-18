@@ -51,15 +51,19 @@
   }
   function playRockPulse(gain) {
     try {
+      const settings = window.AudioSystem?.gameAudioConfig?.() || {}; // All three warning pulses respect the game's master SFX/mute setting.
+      if (settings.enabled === false) return;
+      const configuredVolume = Number(settings.sfxVolume);
+      const volume = Number.isFinite(configuredVolume) ? between(configuredVolume, 0, 1) : 1;
       const audio = new Audio(ROCK_SFX); // Reused audio asset; each scheduled pulse has its own playback.
-      audio.volume = Math.min(1, gain * (Number(window.AudioSystem?.gameAudioConfig?.()?.sfxVolume) || 1));
+      audio.volume = Math.min(1, gain * volume);
       if (gain > 1 && (window.AudioContext || window.webkitAudioContext)) {
         const Context = window.AudioContext || window.webkitAudioContext;
         audioContext ||= new Context();
         const source = audioContext.createMediaElementSource(audio);
         const amplifier = audioContext.createGain();
         amplifier.gain.value = gain; // WebAudio permits 150% volume without HTMLMediaElement's hard 1.0 ceiling.
-        audio.volume = Math.min(1, Number(window.AudioSystem?.gameAudioConfig?.()?.sfxVolume) || 1);
+        audio.volume = volume;
         source.connect(amplifier).connect(audioContext.destination);
       }
       audio.play().catch(() => {});
@@ -430,7 +434,8 @@
     if (world.sink >= 1) {
       world.sink = 0;
       resetPlasmRoom(kit,room);
-      kit.deps.handlePlayerDeath?.('kanthic-plasm'); // Existing player death authority owns reset/respawn.
+      player.health = 0; // PlayerVitals owns the guaranteed next-tick death transition if the optional direct hook is not injected into DevSpawner.
+      kit.deps.handlePlayerDeath?.('kanthic-plasm'); // Prefer an immediate canonical respawn when the hook is present.
       lastEvent = 'kanthic:plasm-death';
     }
   }
