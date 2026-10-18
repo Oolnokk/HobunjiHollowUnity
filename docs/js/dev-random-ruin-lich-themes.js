@@ -70,7 +70,10 @@
     } catch (_) {}
   }
   function addLight(x, y, z, radius, strength, color) {
-    if (world.lights.length < LIGHT_CAP) world.lights.push({ x, y, z, radius, strength, color });
+    if (world.lights.length >= LIGHT_CAP) return null;
+    const light = { x, y, z, radius, strength, color }; // Native Hronal cracked pillars mutate their own emitted glow during warning and eruption.
+    world.lights.push(light);
+    return light;
   }
   function makeRoomLights(kit) {
     for (const room of world.rooms) {
@@ -189,11 +192,135 @@
       burst.mesh.instanceMatrix.needsUpdate = true;
     }
   }
+
+  function findMixedPillarRooms(context) {
+    const result = new Map(); // Room -> original support pillars and active hollow glyph housings, discovered once from V50's source scene.
+    const rooms = world.rooms; // Room bounds are already translated to the same world units as the generated locale root.
+    for (const room of rooms) result.set(room.id, { room, targets:[], supports:[] });
+    context.root?.updateWorldMatrix?.(true, true);
+    context.root?.traverse?.(node => {
+      const meta = node.userData || {};
+      const isTarget = meta.squarePillarHousing === true && meta.hiddenActivatorMount === 'pillarNiche'
+        && meta.activatorType === 'glyphObelisk' && !!meta.linkedMechanismId;
+      const isSupport = meta.squarePillar === true && /ceiling support pillar/i.test(String(meta.interiorRuinRole || ''))
+        && meta.usedAuthoredPillarSquare === true && node.visible !== false;
+      if (!isTarget && !isSupport) return;
+      const position = node.getWorldPosition?.(new THREE.Vector3()); // Cached at generation: source pillars are stationary.
+      if (!position) return;
+      const room = rooms.find(entry => position.x >= entry.bounds.minX && position.x < entry.bounds.maxX
+        && position.z >= entry.bounds.minZ && position.z < entry.bounds.maxZ);
+      if (!room) return;
+      const record = result.get(room.id);
+      if (isTarget) record.targets.push(node);
+      else record.supports.push(node);
+    });
+    return result;
+  }
+  function pillarShaft(support) {
+    let best = null, tallest = 0; // The authored square-pillar shaft is preferred over its plinth/collar/capital.
+    support.traverse(mesh => {
+      if (!mesh?.isMesh || !/square tapered shaft/i.test(String(mesh.name || '')) || !mesh.geometry) return;
+      mesh.geometry.computeBoundingBox?.();
+      const bounds = mesh.geometry.boundingBox;
+      const h = Number(bounds?.max?.y) - Number(bounds?.min?.y);
+      if (Number.isFinite(h) && h > tallest) { best = mesh; tallest = h; }
+    });
+    return best;
+  }
+  function crackSurfaceProfile(shaft) {
+    const geometry = shaft.geometry; // Sample the actual tapered shaft's vertices; the source mesh itself is unchanged.
+    geometry.computeBoundingBox?.();
+    const bounds = geometry.boundingBox, positions = geometry.getAttribute?.('position') || geometry.attributes?.position;
+    if (!bounds || !positions?.count) return null;
+    const min = bounds.min, max = bounds.max, span = max.y - min.y;
+    if (!(span > .1)) return null;
+    const low = {x:0,z:0}, high = {x:0,z:0}; // Extreme lower/upper-face radii approximate the tapered/wonky authored sides.
+    let lowCount = 0, highCount = 0;
+    for (let i = 0; i < positions.count; i++) {
+      const y = positions.getY(i), x = Math.abs(positions.getX(i)), z = Math.abs(positions.getZ(i));
+      if (y < min.y + span * .14) { low.x = Math.max(low.x,x); low.z = Math.max(low.z,z); lowCount++; }
+      if (y > max.y - span * .14) { high.x = Math.max(high.x,x); high.z = Math.max(high.z,z); highCount++; }
+    }
+    if (!lowCount || !highCount) return null;
+    return {min,max,span,low,high};
+  }
+  function crackRibbon(shaft, profile, face, stage, salt) {
+    const vertices = []; // Triangles follow the real shaft's taper, not a generic rectangular replacement.
+    const positive = face % 2 === 0, axisX = face >= 2;
+    const horizontalSpan = axisX ? Math.max(Math.abs(profile.min.z),Math.abs(profile.max.z)) : Math.max(Math.abs(profile.min.x),Math.abs(profile.max.x));
+    const start = stage === 1 ? .11 : stage === 2 ? .28 : .41;
+    const end = stage === 1 ? .85 : stage === 2 ? .75 : .93;
+    const offset = stage === 1 ? 0 : stage === 2 ? -.20 : .23;
+    const pointAt = step => {
+      const portion = step / 8, y = profile.min.y + profile.span * (start + (end - start) * portion);
+      const t = (y - profile.min.y) / profile.span;
+      const extent = THREE.MathUtils.lerp(axisX ? profile.low.x : profile.low.z,
+        axisX ? profile.high.x : profile.high.z, t);
+      const cross = (offset + Math.sin(step * 1.75 + salt) * .08 + Math.sin(step * 3.2 + salt) * .04) * horizontalSpan * 2;
+      const facePosition = (positive ? 1 : -1) * (extent + .014); // Slight surface bias prevents z-fighting on the textured stone.
+      return axisX ? {x:facePosition,y,z:cross} : {x:cross,y,z:facePosition};
+    };
+    const halfWidth = stage === 1 ? .010 : .008;
+    for (let i = 0; i < 8; i++) {
+      const a = pointAt(i), b = pointAt(i+1);
+      const leftA = axisX ? {x:a.x,y:a.y,z:a.z-halfWidth} : {x:a.x-halfWidth,y:a.y,z:a.z};
+      const rightA = axisX ? {x:a.x,y:a.y,z:a.z+halfWidth} : {x:a.x+halfWidth,y:a.y,z:a.z};
+      const leftB = axisX ? {x:b.x,y:b.y,z:b.z-halfWidth} : {x:b.x-halfWidth,y:b.y,z:b.z};
+      const rightB = axisX ? {x:b.x,y:b.y,z:b.z+halfWidth} : {x:b.x+halfWidth,y:b.y,z:b.z};
+      for (const vertex of [leftA,rightA,leftB,rightA,rightB,leftB]) vertices.push(vertex.x,vertex.y,vertex.z);
+    }
+    const geometry = new THREE.BufferGeometry(); // One tiny unlit mesh per face/stage, with no runtime geometry regeneration.
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+    geometry.computeVertexNormals?.();
+    const material = new THREE.MeshBasicMaterial({
+      color:0xff8a21, transparent:true, opacity:stage===1?.20:0,
+      depthWrite:false, side:THREE.DoubleSide
+    });
+    const crack = new THREE.Mesh(geometry,material);
+    crack.name = 'hronal_crack_decal';
+    crack.userData.devRuinFootprintIgnore = true; // Decorative fissures never add fake body collision.
+    crack.userData.ruinCrackStage = stage; // updatePillars reveals each branch on its matching pulse.
+    crack.visible = stage === 1;
+    shaft.add(crack); // Parent transform copies the *exact* source pillar's taper, scale, rotation and floor height.
+    return crack;
+  }
+  function convertDecoyPillar(kit, room, support) {
+    const shaft = pillarShaft(support), profile = shaft && crackSurfaceProfile(shaft);
+    if (!profile) return false; // No mismatched fallback: only transform shapes whose original tapered shaft is readable.
+    const box = new THREE.Box3().setFromObject(support);
+    if (box.isEmpty?.()) return false;
+    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    if (!(size.y >= 1.7) || !(Math.max(size.x,size.z) > .1)) return false;
+    const cracks = []; // Native decals are separately owned and explicitly removed on a reroll.
+    for (let face = 0; face < 4; face++) {
+      for (let stage = 1; stage <= 3; stage++) cracks.push(crackRibbon(shaft,profile,face,stage,room.index + face));
+    }
+    const light = addLight(center.x,center.y,center.z,1.85,.12,[255,109,28]); // Slight steady glow until the timed three-pulse rupture.
+    world.pillars.push({
+      x:center.x,z:center.z,y:box.min.y,height:size.y,width:Math.max(size.x,size.z),
+      group:support,sourcePillar:support,cracks,light,phase:'idle',elapsed:0,pulses:0,roomId:room.id,
+    }); // The normal V50 mesh + static collision are reused without replacement or duplicate geometry.
+    return true;
+  }
+  function convertMixedRoomDecoys(kit, room, record) {
+    if (!record?.targets.length || !record.supports.length) return 0;
+    const candidates = record.supports.map((support,index) => {
+      const p = support.getWorldPosition(new THREE.Vector3());
+      return {support,sort:seeded(Math.round(p.x*61+p.z*109)+index, room.index^0x7b201)};
+    }).sort((a,b) => a.sort-b.sort);
+    const count = Math.max(1,Math.ceil(candidates.length * .4)); // Some false pillars become traps; others remain inert decoys.
+    let converted = 0;
+    for (const candidate of candidates) {
+      if (converted >= count) break;
+      if (convertDecoyPillar(kit,room,candidate.support)) converted++;
+    }
+    return converted;
+  }
   function makePillars(kit) {
-    // Decorative traps are placed in accessible room corners, grounded to their support
-    // and ceiling. They do not replace progression-critical V50 support columns.
+    const mixedRooms = findMixedPillarRooms(world.context); // Hollow-target rooms reuse their original non-target square support meshes.
     for (const room of world.rooms) {
-      if (room.index % 2 !== 0) continue;
+      if (convertMixedRoomDecoys(kit,room,mixedRooms.get(room.id))) continue; // Never insert a differently shaped box among real/false target pillars.
+      if (room.index % 2 !== 0) continue; // Other Hronal rooms retain the earlier supplemental corner hazard.
       const b = room.bounds;
       const candidates = [
         { x:b.minX + 1.1, z:b.minZ + 1.1 }, { x:b.maxX - 1.1, z:b.maxZ - 1.1 },
@@ -219,7 +346,7 @@
         group.add(crack); cracks.push(crack);
       }
       world.group.add(group);
-      const pillar = { x:point.x, z:point.z, y, height, group, cracks, phase:'idle', elapsed:0, pulses:0 }; // Explosion state is also the live collision-footprint gate.
+      const pillar = { x:point.x, z:point.z, y, height, width:.62, group, cracks, phase:'idle', elapsed:0, pulses:0 }; // Explosion state is also the live collision-footprint gate.
       world.pillars.push(pillar);
       window.DevRandomRuinTileOccupancy?.addSolidBox?.('hronal-pillar-'+room.id,
         {cx:point.x,cz:point.z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent','lich-theme-pillars'); // The intact stone blocks movement; the blasted column does not.
@@ -238,16 +365,24 @@
         playRockPulse(gain);
         pillar.pulses++;
         for (const crack of pillar.cracks) {
-          crack.material.opacity = .14 + pillar.pulses * .25;
-          crack.scale.x = 1 + pillar.pulses * 1.5;
+          const stage = crack.userData?.ruinCrackStage; // Native square pillars reveal more glowing fracture branches each second.
+          if (stage) {
+            crack.visible = stage <= pillar.pulses;
+            crack.material.opacity = stage <= pillar.pulses ? Math.min(.95,.16 + pillar.pulses*.26) : 0;
+          } else {
+            crack.material.opacity = .14 + pillar.pulses * .25;
+            crack.scale.x = 1 + pillar.pulses * 1.5;
+          }
         }
+        if (pillar.light) pillar.light.strength = .12 + pillar.pulses * .21;
         lastEvent = 'hronal:pulse-' + pillar.pulses;
       }
       if (pillar.elapsed < 3) continue; // Blast one second after the third pulse.
       pillar.phase = 'spent';
-      pillar.group.visible = false;
+      pillar.group.visible = false; // Existing V50 support footprints automatically become inactive when the ancestor is hidden.
+      if (pillar.light) pillar.light.strength = 0; // No ghost glow remains after the native pillar explodes.
       window.DevRandomRuinTileOccupancy?.refresh?.(); // Remove destroyed pillar collision on the same frame as the explosion.
-      emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64, pillar.height, .62);
+      emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64, pillar.height, pillar.width || .62);
       emitShards(pillar.x, pillar.y + pillar.height * .5, pillar.z, 0xff6419, PILLAR_RADIUS * .85, 24);
       for (const actor of actors) {
         if (distance(pointOf(actor, kit.deps.TILE), pillar) <= PILLAR_RADIUS) {
@@ -482,6 +617,15 @@
     for (const spike of world.icicles) spike.mesh.parent?.remove(spike.mesh); // Shared geometry belongs to the composer instance.
     if (world.icicles.length) {world.icicles[0].mesh.geometry.dispose();world.icicles[0].mesh.material.dispose();}
     for (const burst of world.bursts) {burst.mesh.geometry.dispose();burst.mesh.material.dispose();}
+    for (const pillar of world.pillars) {
+      if (!pillar.sourcePillar) continue;
+      pillar.sourcePillar.visible = true; // A reused V50 generator root must never retain the previous run's exploded state.
+      for (const crack of pillar.cracks) {
+        crack.parent?.remove(crack);
+        crack.geometry.dispose();
+        crack.material.dispose();
+      }
+    }
     window.DevRandomRuinTileOccupancy?.clearSolids?.('lich-theme-pillars'); // Reroll/leave cannot strand invisible, still-colliding Hronal columns.
     window.DevRandomRuinTileOccupancy?.refresh?.();
     world.plasmGeometry?.dispose(); world.plasmMaterial?.dispose(); world.ownedTexture?.dispose();
@@ -499,7 +643,8 @@
       theme:world.theme,rooms:world.rooms.length,lightSources:world.lights.length,
       chargedPillars:world.pillars.filter(p=>p.phase==='charging').length,
       burstPillars:world.pillars.filter(p=>p.phase==='spent').length,
-      totalPillars:world.pillars.length,iceTiles:world.iceTiles.size,
+      totalPillars:world.pillars.length,reusedDecoyPillars:world.pillars.filter(p=>!!p.sourcePillar).length,
+      iceTiles:world.iceTiles.size,
       icicles:world.icicles.length,fallenIcicles:world.icicles.filter(p=>p.phase==='done').length,
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
       sinking:world.sink,lastEvent,
