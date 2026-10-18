@@ -18,6 +18,7 @@
   const PROJECTILE_MAX_TRAVEL_S = 0.9; // Distant throws remain readable without feeling sluggish.
   const RELEASE_DELAY_S = 0.28; // Authored windup→strike release point.
   const LANDING_SHADOW_TERRAIN_STEPS = 8; // The shadow re-drapes over the terrain this many times per flight rather than every frame.
+  const LANDING_SHADOW_MIN_OPACITY = 0.62; // The shared character-shadow opacity (~0.28) is too faint for a telegraph the player must read mid-fight.
   const LANDING_SHADOW_FADE_IN_S = 0.12; // Ground cue appears almost immediately at release, independent of flight length.
   const impactEffects = []; // Bounded, module-owned Three.js splash presentations.
   const projectileTrails = []; // Short luminous motes shed by active flask projectiles.
@@ -115,7 +116,7 @@
   function makeTargetRing() {
     if (targetRing || !deps?.THREE) return targetRing;
     const geometry = new deps.THREE.RingGeometry(0, 1, 48, 6); // Filled AoE plane with radial subdivisions for terrain projection.
-    const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.5, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
+    const material = new deps.THREE.MeshBasicMaterial({ color: 0x55ff82, transparent: true, opacity: 0.24, side: deps.THREE.DoubleSide, depthWrite: false }); // Aim-only presentation material.
     targetRing = new deps.THREE.Mesh(geometry, material);
     window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(targetRing);
     targetRing.rotation.x = -Math.PI / 2;
@@ -232,7 +233,7 @@
     const config = window.CharacterGroundShadow.config(); // Player shadow footprint the cue shrinks toward.
     const mesh = make('flask_landing_shadow');
     const radiusTiles = splashRadius(record.definition, record.playerOwned !== false); // Same radius as the aim ring and impact query.
-    const baseOpacity = mesh.material.opacity; // Character-shadow opacity, restored after the quick fade-in.
+    const baseOpacity = Math.max(mesh.material.opacity, LANDING_SHADOW_MIN_OPACITY); // Telegraph opacity reached after the quick fade-in; never fainter than a character shadow.
     const groundY = record.target.y; // Landing surface shared with the projectile.
     mesh.material.opacity = 0;
     mesh.position.set(record.target.x, groundY + window.CharacterGroundShadow.surfaceOffset(), record.target.z);
