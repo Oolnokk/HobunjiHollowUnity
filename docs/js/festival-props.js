@@ -18,6 +18,9 @@
     // PNG-backed arch materials are shared across placements; the arch is a
     // walk-through ornament with no invisible posts/colliders across the road.
     const atlas = window.FestivalProps?._atlas || {}; // Reuses loaded textile/wood textures over the full town.
+    if (['road-arch','bandstand','dancefloor'].includes(dressing) && root.isGroup) {
+      for (const existingChild of root.children) existingChild.visible = false; // Suppresses the reusable furniture proxy (rug) beneath our authored walk-through mesh.
+    }
     if (dressing === 'road-arch') {
       const width = Math.max(2, Math.min(9, Number(record.festivalArchWidth) || 4)); // The authored clear span over the road.
       const woodSurface = atlas.wood ? new THREE.MeshLambertMaterial({ map: atlas.wood, color: '#ffffff' }) : wood;
@@ -51,6 +54,7 @@
     } else if (dressing === 'dancefloor') {
       const border=atlas.wood ? new THREE.MeshLambertMaterial({map:atlas.wood,color:'#e0b984'}) : wood;
       if(border!==wood)group.userData.festivalMaterials.push(border);
+      box(0,.021,0,4.82,.04,3.82,border); // Real full-footprint dance surface, not a stretched rug.
       for (const x of [-2.45,2.45])box(x,.045,0,.12,.08,3.8,border);
       for (const z of [-1.95,1.95])box(0,.045,z,4.8,.08,.12,border);
       for(let i=-2;i<=2;i++)for(let j=-1;j<=1;j++)box(i*.87,.018,j*.9,.035,.025,.75,material);
