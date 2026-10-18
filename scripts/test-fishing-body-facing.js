@@ -14,7 +14,7 @@ for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.P
     playerLegs: { group: { rotation: { y: 1 } } }, playerFacing: 2,
     activeTool: 'harpoon', fishingThrowSpinVisual: {},
     THREE: { MathUtils: { degToRad: value => value * Math.PI / 180 } },
-    chan: () => -152, combatSwingAlignToReticle: true, combatSwingAimTargetOverride: target,
+    sampled: { bodyYawRad: -152 * Math.PI / 180 }, combatSwingAlignToReticle: true, combatSwingAimTargetOverride: target,
     playerRangedReticleOrbitFrame: point => ({ yawRad: Math.atan2(point.x - 3, point.z - 7), pitchRad: -0.2 }), θ: 2,
   }; // Deliberately stale facing and authored backward twist reproduce the reported bug.
   vm.createContext(context);
@@ -22,7 +22,7 @@ for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.P
   assert(Math.abs(context.playerFacing - angle) < 1e-10);
   assert.equal(context.playerLegs.group.rotation.y, 0);
   for (const bodyYaw of [-152, 63, 2]) {
-    context.chan = () => bodyYaw;
+    context.sampled = { bodyYawRad: bodyYaw * Math.PI / 180 };
     vm.runInContext(`{${pose}}`, context);
     assert(Math.abs(context.playerMesh.rotation.y - (angle + bodyYaw * Math.PI / 180)) < 1e-10, 'fishing keeps the authored torso twist the spear frame is built on');
     assert(Math.abs(context.playerMesh.rotation.y + context.playerLegs.group.rotation.y - angle) < 1e-10, 'fishing feet face the cast during windup, strike and return');
@@ -30,7 +30,7 @@ for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.P
   context.playerLegs.group.rotation.y = 0;
   context.activeTool = 'ranged';
   context.fishingThrowSpinVisual = null;
-  context.chan = () => -152;
+  context.sampled = { bodyYawRad: -152 * Math.PI / 180 };
   vm.runInContext(`{${pose}}`, context);
   assert(Math.abs(context.playerMesh.rotation.y - (angle - 152 * Math.PI / 180)) < 1e-10, 'combat retains authored twist');
   assert.equal(context.playerLegs.group.rotation.y, 0, 'combat throws leave the legs with the body');

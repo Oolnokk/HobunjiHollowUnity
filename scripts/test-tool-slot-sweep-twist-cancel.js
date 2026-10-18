@@ -10,6 +10,7 @@ global.window = { __farmLog() {}, Combat: { deps: {} } };
 global.localStorage = { getItem() { return null; } };
 global.fetch = async () => { throw new Error('offline test'); };
 global.performance = { now: () => 1000 };
+vm.runInThisContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { filename: 'shared-attack-pose.js' }); // Shared pose math the stance runtime delegates to.
 vm.runInThisContext(fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'), { filename: 'weapon-tool-stances.js' });
 const weight = window.WeaponToolStances.sweepTwistCancelWeight;
 
