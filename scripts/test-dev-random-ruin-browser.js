@@ -396,6 +396,55 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         }
       }
 
+      const nativeCrackedPillars = (() => {
+        const context=window.DevRandomRuin?.getRuntimeContext?.();
+        const theme=context?.theme || null;
+        const report={theme,mixedRooms:0,expected:0,actual:0,invalidCracks:[],targetModified:0,genericInTargetRoom:0};
+        if(theme!=='hronal'||!context?.root||!context.meta?.rooms)return report;
+        const cell=(Number(context.meta.cellSize)||.5)*2,rooms=context.meta.rooms.map(entry=>({
+          id:String(entry.id),minX:2+entry.col*cell,maxX:2+(entry.col+entry.w)*cell,
+          minZ:2+entry.row*cell,maxZ:2+(entry.row+entry.h)*cell,
+          supports:[],targets:[]
+        }));
+        const roomFor=position=>rooms.find(room=>position.x>=room.minX&&position.x<room.maxX&&position.z>=room.minZ&&position.z<room.maxZ);
+        const p=new THREE.Vector3();
+        context.root.updateWorldMatrix(true,true);
+        context.root.traverse(node=>{
+          const d=node.userData||{};
+          const target=d.squarePillarHousing===true&&d.hiddenActivatorMount==='pillarNiche'&&d.activatorType==='glyphObelisk'&&!!d.linkedMechanismId;
+          const support=d.squarePillar===true&&/ceiling support pillar/i.test(String(d.interiorRuinRole||''))&&d.usedAuthoredPillarSquare===true;
+          if(!target&&!support)return;
+          const room=roomFor(node.getWorldPosition(p));if(!room)return;
+          if(target)room.targets.push(node);else room.supports.push(node);
+        });
+        for(const room of rooms){
+          if(!room.targets.length)continue;
+          if(room.supports.length){report.mixedRooms++;report.expected+=Math.ceil(room.supports.length*.4);}
+          for(const target of room.targets)target.traverse(node=>{if(node.name==='hronal_crack_decal')report.targetModified++;});
+          for(const support of room.supports){
+            let shafts=0,crackStages=0;
+            support.traverse(node=>{
+              if(node.isMesh&&/square tapered shaft/i.test(node.name||''))shafts++;
+              if(node.name==='hronal_crack_decal'){
+                crackStages++;
+                if(node.parent?.name!=='Square Tapered Shaft'||!node.userData?.ruinCrackStage)report.invalidCracks.push('unaligned crack mesh');
+              }
+            });
+            if(crackStages) {
+              report.actual++;
+              if(shafts<1||crackStages!==3)report.invalidCracks.push('wrong original shaft/crack count');
+            }
+          }
+        }
+        scene.traverse(node=>{
+          if(node.name!=='hronal_exploding_pillar')return;
+          const position=node.getWorldPosition(new THREE.Vector3());
+          const room=roomFor(position);
+          if(room?.targets.length)report.genericInTargetRoom++;
+        });
+        return report;
+      })();
+
       return {
         area:window.GridTileAccessors.getCurrentArea(),
         building:window.GridTileAccessors.isBuildingArea(),
@@ -416,6 +465,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         furnitureStatus,
         ladders,
         puzzleTowers,
+        nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
         runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
         runtimeHallways:generatorState?.runtimeHallways || null,
@@ -432,6 +482,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
     assert.equal(active.wallStyle, 'cavern', 'Random Test Ruin must use the game\'s combat-interior classification');
+    if(active.nativeCrackedPillars?.theme==='hronal'){
+      const cracked=active.nativeCrackedPillars;
+      assert.equal(cracked.actual,cracked.expected,'real V50 mixed rooms must convert the expected subset of original support pillars: '+JSON.stringify(cracked));
+      assert.equal(cracked.targetModified,0,'no genuine projectile target housing may receive erupting-crack meshes: '+JSON.stringify(cracked));
+      assert.equal(cracked.genericInTargetRoom,0,'no generic box pillar may spawn in a genuine target-pillar room: '+JSON.stringify(cracked));
+      assert.deepEqual(cracked.invalidCracks,[],'cracks must attach to authored shaft meshes in three stages: '+JSON.stringify(cracked));
+    }
     assert.equal(active.solvability?.ok, true, JSON.stringify(active.solvability));
     assert.equal(active.solvability?.unsolvedMechanisms?.length, 0, JSON.stringify(active.solvability));
     assert.ok(active.solvability?.rooms?.length > 0, JSON.stringify(active.solvability));
