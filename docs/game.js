@@ -20398,7 +20398,7 @@
       // beam enters a new cell. Height bounds prevent a short object acting
       // like an infinitely tall wall.
       function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ) {
-        const grid = npcGridForArea(currentArea);
+        const grid = typeof npcGridForArea === 'function' ? npcGridForArea(currentArea) : null;
         if (!grid) return null;
         const dx = toX - fromX, dy = toY - fromY, dz = toZ - fromZ;
         const len = Math.hypot(dx, dy, dz), flat = Math.hypot(dx, dz);
@@ -20462,19 +20462,22 @@
           const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Three boom rays approximate camera's horizontal width.
           const dirX = hx / boomLength, dirY = hy / boomLength, dirZ = hz / boomLength; // Probe through actual wall heights, not just the final camera Y.
           for (const side of [-1, 0, 1]) {
-            _cameraOcclusionRaycaster.set(
-              _cameraOcclusionOriginVec.set(lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side),
-              _cameraOcclusionDirVec.set(dirX, dirY, dirZ),
-            );
-            _cameraOcclusionRaycaster.near = 0.02;
-            _cameraOcclusionRaycaster.far = boomLength;
-            const hits = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true);
+            let meshDistance = Infinity;
+            if (horizontalObstacles?.length) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side),
+                _cameraOcclusionDirVec.set(dirX, dirY, dirZ),
+              );
+              _cameraOcclusionRaycaster.near = 0.02;
+              _cameraOcclusionRaycaster.far = boomLength;
+              meshDistance = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true)[0]?.distance ?? Infinity;
+            }
             const tileDistance = cameraTileCollisionDistance(
               lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side,
               idealX + rightX * side, idealY, idealZ + rightZ * side,
             );
             horizontalRays++;
-            const hitDistance = Math.min(hits[0]?.distance ?? Infinity, tileDistance ?? Infinity);
+            const hitDistance = Math.min(meshDistance, tileDistance ?? Infinity);
             if (Number.isFinite(hitDistance)) permittedReach = Math.min(permittedReach, reach * Math.max(0.025, hitDistance - 0.12) / boomLength);
           }
         }
@@ -20515,22 +20518,20 @@
           let directHitDistance = null;
           let chosenSideOffsetDeg = 0;
           if (horizontalSqueezeEnabled || (obstacles && obstacles.length)) {
-            _cameraOcclusionRaycaster.set(
-              _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
-              _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
-            );
-            // A chair can put the seated target much closer than 0.3 tiles to
-            // a wall. Use a short near plane there so the wall is not skipped;
-            // ordinary standing cameras retain the player-avoidance distance.
-            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom || horizontalSqueezeEnabled ? 0.02 : 0.3;
-            _cameraOcclusionRaycaster.far = dist;
-            // recursive:true — zone occlusion meshes are already individual
-            // tagged leaf meshes (harmless either way there), but the
-            // house/barn/furniture entries above are whole Groups.
-            const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
+            let meshDistance = Infinity;
+            if (obstacles?.length) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
+                _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
+              );
+              // A short ray start keeps nearby chairs and walls detectable.
+              _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom || horizontalSqueezeEnabled ? 0.02 : 0.3;
+              _cameraOcclusionRaycaster.far = dist;
+              meshDistance = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0]?.distance ?? Infinity;
+            }
             const tileDistance = horizontalSqueezeEnabled
               ? cameraTileCollisionDistance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) : null;
-            const obstacleDistance = Math.min(hits[0]?.distance ?? Infinity, tileDistance ?? Infinity);
+            const obstacleDistance = Math.min(meshDistance, tileDistance ?? Infinity);
             if (Number.isFinite(obstacleDistance)) {
               directHitDistance = obstacleDistance;
               wallHitDistance = directHitDistance;
