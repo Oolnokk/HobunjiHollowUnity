@@ -10,7 +10,7 @@
   const PULSE_SECONDS = 1; // Hronal pillar warning: three pulses at one-second spacing.
   const PILLAR_RADIUS = 3.1; // Hronal trigger and eruption radius, measured in tiles.
   const ICE_COVERAGE = 0.70; // Tothal floor tiles covered by an ice skin per room.
-  const ICE_GLIDE_FRACTION = 0.25; // Extra movement following intentional, lunge, dodge or knockback travel.
+  const ICE_GLIDE_FRACTION = 0.25; // After release, replay the movement vector for 25% of the preceding continuous hold time.
   const PLASM_DEPTH = 0.11; // Half the Western Slope snow height; used for Kanthic tiles.
   const PLASM_EXPANSION_MS = 1000; // One tile of hidden Kanthic growth per room per second.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
@@ -459,48 +459,60 @@
   function updateIceMotion(kit, dt, actors) {
     const tile = kit.deps.TILE;
     for (const actor of actors) {
-      const point = pointOf(actor, tile);
+      const point = pointOf(actor,tile);
       let motion = world.motion.get(actor);
       if (!motion) {
-        motion = { last:point, path:0, dir:{x:0,z:0}, still:0, slide:0, sliding:false };
-        world.motion.set(actor, motion);
+        motion = {last:point,hold:0,dir:{x:0,z:0},speed:0,still:0,remaining:0,sliding:false};
+        world.motion.set(actor,motion);
         continue;
       }
-      const dx = point.x - motion.last.x, dz = point.z - motion.last.z;
-      const delta = Math.hypot(dx, dz), icy = world.iceTiles.has(tileKey(point.x, point.z));
-      if (!icy) { motion.path = 0; motion.sliding = false; motion.slide = 0; motion.still = 0; motion.last = point; continue; }
-      if (motion.sliding) {
-        if (delta > .3) { motion.sliding = false; motion.slide = 0; motion.path = 0; }
-        else {
-          const step = Math.min(motion.slide, dt * 4);
-          if (step > 0) {
-            const target = { x:point.x + motion.dir.x * step, z:point.z + motion.dir.z * step };
-            const y = floorY(kit, point.x, point.z);
-            const permitted = clearAt(target.x, target.z, y) && Math.abs(floorY(kit,target.x,target.z) - y) < .4;
-            if (!permitted) { collisionImpact(actor, kit, motion.slide); motion.slide = 0; }
-            else {
-              actor.x = target.x * tile; actor.y = target.z * tile;
-              motion.slide -= step;
-              if (actor === kit.deps.player) window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY(kit, target.x, target.z));
-            }
+      const dx=point.x-motion.last.x,dz=point.z-motion.last.z,delta=Math.hypot(dx,dz);
+      // Real keyboard/controller input moves the player in the ordinary game frame.
+      // Record that direction and uninterrupted time, not accumulated displacement.
+      // A stopped input is resumed at its last speed, just as if the player held it.
+      const icy=world.iceTiles.has(tileKey(point.x,point.z));
+      if(!icy||delta>.65||window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.() && actor===kit.deps.player){
+        motion.hold=0;motion.still=0;motion.remaining=0;motion.sliding=false;motion.last=point;
+        continue; // Non-ice immediately cancels the simulation, including a boundary crossed mid-glide.
+      }
+      if(motion.sliding){
+        const step=Math.min(motion.speed*dt, motion.speed*motion.remaining);
+        motion.remaining=Math.max(0,motion.remaining-dt);
+        if(step>.00001) {
+          const target={x:point.x+motion.dir.x*step,z:point.z+motion.dir.z*step};
+          const y=floorY(kit,point.x,point.z);
+          // Physics and the visible ice use the same tile set. A dry cell is an
+          // absolute stop even if it is otherwise clear and walkable.
+          if(!world.iceTiles.has(tileKey(target.x,target.z))){
+            motion.remaining=0;
+          } else if(!clearAt(target.x,target.z,y)||Math.abs(floorY(kit,target.x,target.z)-y)>=.4){
+            collisionImpact(actor,kit,step);
+            motion.remaining=0;
+          } else {
+            actor.x=target.x*tile;actor.y=target.z*tile;
+            if(actor===kit.deps.player)window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY(kit,target.x,target.z));
           }
-          if (motion.slide <= .0001) motion.sliding = false;
-          motion.last = pointOf(actor, tile);
-          continue;
+        }
+        if(motion.remaining<=.00001){motion.sliding=false;motion.hold=0;motion.still=0;}
+        motion.last=pointOf(actor,tile);
+        continue;
+      }
+      if(delta>.001&&delta<.65){
+        motion.dir.x=dx/delta;motion.dir.z=dz/delta;
+        motion.speed=between(delta/Math.max(.001,dt),.1,8);
+        motion.hold+=dt;
+        motion.still=0;
+      } else if(delta<=.001){
+        motion.still+=dt;
+        // A short release grace prevents animation jitter from chopping the
+        // last held input into multiple slides.
+        if(motion.hold>.045&&motion.still>=.065){
+          motion.remaining=motion.hold*ICE_GLIDE_FRACTION;
+          motion.sliding=motion.remaining>0;
+          motion.hold=0;motion.still=0;
         }
       }
-      if (delta > .001 && delta < 1) {
-        motion.path += delta;
-        motion.dir.x = dx / delta; motion.dir.z = dz / delta;
-        motion.still = 0;
-      } else if (delta <= .001) {
-        motion.still += dt;
-        if (motion.path > .12 && motion.still >= .08 && !window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()) {
-          motion.slide = motion.path * ICE_GLIDE_FRACTION;
-          motion.sliding = true; motion.path = 0; motion.still = 0;
-        }
-      }
-      motion.last = point;
+      motion.last=point;
     }
   }
   function makePlasm(kit) {
