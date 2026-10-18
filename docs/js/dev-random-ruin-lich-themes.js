@@ -831,30 +831,34 @@
     const player=kit.deps.player,tile=kit.deps.TILE;
     if(!player||!tile)return;
     const point=pointOf(player,tile),room=roomAt(point);
-    // Every room persists and grows in the darkness: a room change never
-    // deletes or pauses other puddles. The visibility veto is GLOBAL.
+    // Every room preserves its live puddle across transitions, but only the
+    // occupied room grows in darkness. The visibility veto stays global.
     if(!alive(player)){
       if(world.playerWasAlive!==false)resetPlasmOnDeath(kit); // Covers combat, drowning, and other non-plasm causes of death.
       world.playerWasAlive=false; // Reset only once until the actor respawns.
       return;
     }
     world.playerWasAlive=true;
+    // Only the room the player currently occupies may advance. Other rooms
+    // retain both their puddle tiles and their paused growth clocks unchanged.
+    // Hallways/outside rooms cannot cause any puddle to advance.
+    if(!room?.plasm?.size){world.sink=0;return;}
     const facing=Number(player.facing);
     const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,facing,other));
-    let changed=false;
-    for(const candidate of world.rooms){
-      if(!candidate.plasm?.size)continue;
-      if(anythingVisible){candidate.plasmElapsed=0;continue;}
-      candidate.plasmElapsed+=dt*1000;
-      for(let beat=0;beat<4&&candidate.plasmElapsed>=PLASM_EXPANSION_MS;beat++){
-        candidate.plasmElapsed-=PLASM_EXPANSION_MS;
-        if(growPlasmRoom(kit,candidate,point))changed=true;
+    if(anythingVisible){
+      room.plasmElapsed=0; // A visible puddle anywhere still vetoes local growth.
+    }else{
+      room.plasmElapsed+=dt*1000;
+      let changed=false;
+      for(let beat=0;beat<4&&room.plasmElapsed>=PLASM_EXPANSION_MS;beat++){
+        room.plasmElapsed-=PLASM_EXPANSION_MS;
+        if(growPlasmRoom(kit,room,point))changed=true;
       }
+      if(changed){updatePlasmMesh(kit);lastEvent='kanthic:plasm-grow';}
     }
-    if(changed){updatePlasmMesh(kit);lastEvent='kanthic:plasm-grow';}
-    if(!room?.plasm?.size||!room.plasm.has(tileKey(point.x,point.z))){
+    if(!room.plasm.has(tileKey(point.x,point.z))){
       world.sink=0;
-      return; // Growth can continue out of sight even in another room or hallway.
+      return; // Local growth can still occur while standing off-plasm.
     }
     const patch=[...room.plasm].map(tileFromKey).map(([x,z])=>({x:x+.5,z:z+.5}))
       .sort((a,b)=>distance(a,point)-distance(b,point))[0];
