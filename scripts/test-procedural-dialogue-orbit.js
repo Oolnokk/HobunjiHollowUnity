@@ -39,6 +39,7 @@ const second = cinematic.createActorOrbitShot(actors, { id: 'next', focusActorId
 assert(second.targetProvider().x < 9.75);
 assert(second.orbitDebug.radius < radius, 'higher intended zoom requests a shorter boom');
 assert.equal(cinematic.createActorOrbitShot([actors[0]], {}), null, 'invalid orbit subjects cannot crash a cutscene');
+assert.equal(cinematic.createStageOrbitShot({id:'duplicate'}, [actors[0], actors[0]], 1), null, 'one actor cannot be both orbit subjects');
 
 const stageStart = game.indexOf('        function runStage(stageId)'); // Actual live Director stage dispatcher.
 const stageEnd = game.indexOf('        function runMove(stage)', stageStart); // Excludes unrelated movement mechanics.
@@ -51,7 +52,14 @@ const stageContext = vm.createContext({
   running: true, stagesById: cards, payload: { title: 'Orbit test' }, area: 'room',
   actorsById: new Map(actors.map(actor => [actor.id, { name: actor.id }])), entities: cutsceneActors,
   externallyDrivenActorIds: new Set(), report() {}, cinematicCameraReady: false, povShot: null,
-  window: { CinematicCameraRuntime: { createActorOrbitShot(subjects, settings) { orbitSettings.push(settings); return { id: settings.id }; }, activate() {} } },
+  window: { CinematicCameraRuntime: {
+    createStageOrbitShot(stage, subjects, sequence) {
+      const shot = cinematic.createStageOrbitShot(stage, subjects, sequence); // Use the production authoring rules, not a second test-side copy.
+      if (shot) orbitSettings.push({ ...shot.orbitDebug, id: shot.id, shotKey: shot.shotKey });
+      return shot;
+    },
+    activate() {},
+  } },
   openLine() { return Promise.resolve(); }, console, runtimeOptions: {},
   cutscenePreviewStageId: null, dialogueAddressedActorId: null,
 }); // Only the orbit-and-talk branch runs; no timers, renderer, or gameplay globals are needed.
@@ -63,6 +71,22 @@ assert.equal(orbitSettings[0].shotKey, 'one:1', 'first stage visit starts its ow
 vm.runInContext('runStage("one");', stageContext);
 assert.equal(orbitSettings[3].shotKey, 'one:4', 'revisiting the same card creates a new blend identity');
 assert.equal(orbitSettings[3].focusActorId, 'player', 'revisits count as new focus resets');
+const author = read('docs/tools/cutscene-director/camera-author.js'); // Real Director preview adapter must call this same stage orbit API.
+const authorOrbitStart = author.indexOf('    function orbitShot(st, visit) {');
+const authorOrbitEnd = author.indexOf('    function proceduralShot(st) {', authorOrbitStart);
+assert(authorOrbitStart !== -1 && authorOrbitEnd > authorOrbitStart);
+const authorContext = vm.createContext({
+  actor: id => actors.find(a => a.id === id) && ({root: actors.find(a => a.id === id).root, avatarHeight: 1.2}),
+  runtime: cinematic,
+});
+vm.runInContext(author.slice(authorOrbitStart, authorOrbitEnd) + '\nthis.previewOrbit=orbitShot;', authorContext);
+const directorStage = cards.get('one'); // The same authored stage is used in real gameplay and the Director.
+const previewOrbit = authorContext.previewOrbit(directorStage, 1);
+const liveOrbit = cinematic.createStageOrbitShot(directorStage, actors, 1);
+assert(previewOrbit && previewOrbit.orbitDebug.focusActorId === liveOrbit.orbitDebug.focusActorId
+  && previewOrbit.orbitDebug.zoomPercent === liveOrbit.orbitDebug.zoomPercent,
+  'Director preview and game agree about the first focus and requested zoom');
+assert(author.includes("st.cameraMode==='orbit'"), 'Director stage playback recognizes the new orbit mode');
 
 const solverStart = game.indexOf('      const CAMERA_FLOOR_CLEARANCE ='); // Includes the same constants and ground slide as the game camera.
 const solverEnd = game.indexOf('      // How far under a tree canopy', solverStart); // Ends at the production solver boundary.
