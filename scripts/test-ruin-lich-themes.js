@@ -165,9 +165,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   t.tick(1,.1); // Initialize native position tracking at the start of a held input.
   for(let step=0;step<8;step++){player.x+=.025*64;t.tick(1,.1);}
   const releasedAt=player.x/64;
-  t.tick(1,.1); // Movement has stopped: replay begins after a brief release grace.
-  assert.ok(Math.abs(player.x/64-releasedAt)<.00001,'Release grace should not teleport the actor');
-  t.tick(2,.1);
+  t.tick(1,.1); // The first released frame must immediately continue the held direction.
+  assert.ok(Math.abs(player.x/64-releasedAt-.025)<.004,'Ice input must continue immediately without a release-frame pause');
+  t.tick(1,.1);
   assert.ok(Math.abs(player.x/64-releasedAt-.05)<.004,
     'Eight 0.1s of moving at .25 tiles/s must replay for .2s = 25% of held duration');
   const glideEnded=player.x;
