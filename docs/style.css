@@ -353,6 +353,11 @@
       #vitalsBar, #vitalsBar .vb-fill, #vitalsBar .vb-affliction-segment { transition: none; }
       #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after,
       #vitalsBar .vb-cap.is-withered { animation: none; }
+      /* Keep a still teardrop as an affliction identifier without motion. */
+      #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after {
+        opacity: .85;
+        transform: translate3d(0, .2dvh, 0) scaleY(.65);
+      }
     }
     body.authored-cutscene #vitalsBar, body.introduction-loading #vitalsBar {
       opacity: 0 !important; visibility: hidden !important;
