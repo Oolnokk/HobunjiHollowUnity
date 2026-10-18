@@ -638,15 +638,66 @@
   // The 9-slice mapper sees one real topological surface, not a copy of
   // canvas.png on each separate tile. Adjacent caps share their full-height
   // edge, while exposed edges slope down to ground.
+  function plasmTextureCorners(patch,room) {
+    // Build a deliberately low-detail connected quad lattice solely for
+    // the shared snow nine-slice *UV solve*. Mapping thousands of curve
+    // triangles every 500ms is prohibitively expensive; resolving two
+    // triangles per cell and bilinearly transferring their mapped UVs
+    // preserves one joined PNG and perimeter-aware border protection.
+    const positions=[],indices=[];
+    for(const key of patch){
+      const [x,z]=tileFromKey(key),base=positions.length/3;
+      positions.push(x,0,z,x+1,0,z,x,0,z+1,x+1,0,z+1);
+      indices.push(base,base+2,base+3,base,base+3,base+1);
+    }
+    const source=new THREE.BufferGeometry();
+    source.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    source.setIndex(indices);
+    const corners=new Map();
+    let mapping='continuous-planar-fallback';
+    const mapper=window.HobunjiSurfaceStretchUV;
+    if(typeof mapper?.mapGeometry==='function'){
+      let mapped=null;
+      try{
+        mapped=mapper.mapGeometry(source,{
+          label:'kanthic-plasm-room-'+room.index,
+          angleToleranceDeg:89,edgeSourceFraction:.32,edgeReferenceWorldSize:6,
+        });
+        const p=mapped?.getAttribute?.('position'),uv=mapped?.getAttribute?.('uv');
+        if(p&&uv?.count===p.count){
+          for(let i=0;i<p.count;i++){
+            const x=Math.round(p.getX(i)),z=Math.round(p.getZ(i));
+            corners.set(x+','+z,[uv.getX(i),uv.getY(i)]);
+          }
+          mapping='edge-preserving-nine-slice';
+        }
+      }catch(error){console.warn?.('[kanthic-plasm] connected-surface UV mapping failed',error);}
+      if(mapped&&mapped!==source)mapped.dispose?.();
+    }
+    source.dispose();
+    return {corners,mapping};
+  }
   function makePlasmSurface(kit,room) {
     const patch=room.plasm;
     if(!patch?.size)return null;
     const axis=[0,.11,.22,.78,.89,1],width=axis.length;
-    const pos=[],idx=[];
+    const pos=[],idx=[],uv=[];
     const smooth=value=>{const t=between(value,0,1);return t*t*(3-2*t);};
+    const {corners,mapping}=plasmTextureCorners(patch,room);
+    const coordBounds=[Infinity,Infinity,-Infinity,-Infinity];
+    if(mapping!=='edge-preserving-nine-slice'){
+      for(const key of patch){
+        const [x,z]=tileFromKey(key);
+        coordBounds[0]=Math.min(coordBounds[0],x);coordBounds[1]=Math.min(coordBounds[1],z);
+        coordBounds[2]=Math.max(coordBounds[2],x+1);coordBounds[3]=Math.max(coordBounds[3],z+1);
+      }
+    }
     for(const key of patch){
       const [x,z]=tileFromKey(key);
-      const mask=surfaceMask(x,z,patch); // N/E/S/W solid neighbors eliminate corresponding exposed-edge curves.
+      const mask=surfaceMask(x,z,patch); // Only the exposed outer perimeter curves down.
+      const a=corners.get(x+','+z),b=corners.get((x+1)+','+z);
+      const c=corners.get(x+','+(z+1)),d=corners.get((x+1)+','+(z+1));
+      const mapped=!!(a&&b&&c&&d&&mapping==='edge-preserving-nine-slice');
       const base=pos.length/3;
       for(let j=0;j<width;j++)for(let i=0;i<width;i++){
         const u=axis[i],v=axis[j];
@@ -656,50 +707,23 @@
         if(!(mask&4))factor=Math.min(factor,smooth((1-v)/.22));
         if(!(mask&8))factor=Math.min(factor,smooth(u/.22));
         pos.push(x+u,floorY(kit,x+.5,z+.5)+.006+PLASM_DEPTH*factor,z+v);
+        if(mapped){
+          uv.push(a[0]*(1-u)*(1-v)+b[0]*u*(1-v)+c[0]*(1-u)*v+d[0]*u*v,
+            a[1]*(1-u)*(1-v)+b[1]*u*(1-v)+c[1]*(1-u)*v+d[1]*u*v);
+        }else{
+          uv.push((x+u-coordBounds[0])/Math.max(1,coordBounds[2]-coordBounds[0]),
+            (z+v-coordBounds[1])/Math.max(1,coordBounds[3]-coordBounds[1]));
+        }
       }
       for(let j=0;j<width-1;j++)for(let i=0;i<width-1;i++){
         const v00=base+j*width+i,v10=v00+1,v01=v00+width,v11=v01+1;
         idx.push(v00,v01,v11,v00,v11,v10);
       }
     }
-    const source=new THREE.BufferGeometry();
-    source.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-    source.setIndex(idx);
-    let geometry=source, mapping='continuous-planar-fallback';
-    const mapper=window.HobunjiSurfaceStretchUV;
-    if(typeof mapper?.mapGeometry==='function'){
-      try{
-        const mapped=mapper.mapGeometry(source,{
-          label:'kanthic-plasm-room-'+room.index,
-          angleToleranceDeg:89,
-          edgeSourceFraction:.32,
-          edgeReferenceWorldSize:6,
-        });
-        if(mapped?.getAttribute?.('uv')){
-          geometry=mapped;
-          mapping='edge-preserving-nine-slice';
-          if(geometry!==source)source.dispose();
-        }
-      }catch(error){
-        console.warn?.('[kanthic-plasm] connected-surface UV mapping failed',error);
-      }
-    }
-    if(mapping!=='edge-preserving-nine-slice'){
-      // Keep the whole patch seamless even if the shared mapper is absent;
-      // fallback UVs span room-local bounds, never restart per tile.
-      const minX=Math.min(...[...patch].map(k=>tileFromKey(k)[0]));
-      const maxX=Math.max(...[...patch].map(k=>tileFromKey(k)[0]+1));
-      const minZ=Math.min(...[...patch].map(k=>tileFromKey(k)[1]));
-      const maxZ=Math.max(...[...patch].map(k=>tileFromKey(k)[1]+1));
-      const p=geometry.getAttribute('position');
-      const uv=[];
-      for(let i=0;i<p.count;i++){
-        const u=between((p.getX(i)-minX)/Math.max(1,maxX-minX),0,1);
-        const v=between((p.getZ(i)-minZ)/Math.max(1,maxZ-minZ),0,1);
-        uv.push(u,v);
-      }
-      geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
-    }
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    geometry.setIndex(idx);
     const mesh=new THREE.Mesh(geometry,world.plasmMaterial);
     mesh.name='kanthic_plasm_connected_room_'+room.index;
     mesh.userData.plasmUvMapping=mapping;
