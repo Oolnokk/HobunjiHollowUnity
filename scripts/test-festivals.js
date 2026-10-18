@@ -84,7 +84,7 @@ assert.equal(inventory.meal, 3);
 assert.equal(perform(prop, { key: 'meal', stars: 5 }).ok, true);
 assert.equal(inventory.meal, 2); assert.equal(buckets.meal[1], 1); assert.equal(buckets.meal[5], 0);
 assert.equal(deltas.filter(d => d.reason === 'festival_potluck').length, api.residents().length);
-assert(deltas.filter(d => d.reason === 'festival_potluck').every(d => d.amount === 16));
+assert(deltas.filter(d => d.reason === 'festival_potluck').every(d => d.amount === 10), 'potluck uses ten times normal neutral gift Favor');
 assert.equal(perform(prop, { key: 'meal', stars: 1 }).ok, false);
 // Offerings validate choice before consumption, persist exact quality, and expire after one full year.
 prop = visit('tzizkhanash', 'offering');
