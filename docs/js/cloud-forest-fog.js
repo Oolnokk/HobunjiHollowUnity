@@ -494,7 +494,7 @@
     const currentArea = lightingDeps.getCurrentArea(); // Cache once for Tothal's disabled lantern and Kanthic's half-radius lantern.
     const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
-    const ruinLanternScale = ruinTradition === 'kanthic' ? .25 : 1; // Halve Kanthic again: one quarter of the normal lantern radius.
+    const ruinLanternScale = ruinTradition === 'kanthic' ? .375 : 1; // +50% versus Kanthic's prior quarter-radius lantern.
     const ctx = lightingDeps.lctx;
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
@@ -800,7 +800,7 @@
     update,
     setLayerRadius,
     setLayerOpacity,
-    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*.25, // Exact same configured falloff boundary consumed by Kanthic plasm sight checks.
+    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*.375, // Same expanded falloff boundary consumed by Kanthic plasm sight checks.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
