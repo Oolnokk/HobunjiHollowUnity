@@ -166,7 +166,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   // Step out of the chamber; no room transition is allowed to cull the patch.
   t.player.x=30*64;t.player.y=30*64;
   t.tick(2,.25);
-  assert.equal(t.api.snapshot().plasmTiles,grown,'Room exit retains every plasm tile until the entire ruin is left');
+  assert.ok(t.api.snapshot().plasmTiles>=grown,'Room exit preserves every tile while out-of-sight plasm continues growing');
   // Re-enter with an illuminated edge within .6 tiles: even unseen outer
   // edges must stop growing if ANY puddle tile is currently visible.
   const boundary=[];
@@ -216,7 +216,32 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   const beforeLeaving=t.api.snapshot().plasmTiles;
   t.player.x=40*64;t.player.y=40*64;t.tick(3,.25);
-  assert.equal(t.api.snapshot().plasmTiles,beforeLeaving,'Leaving all generated rooms while still in the dungeon preserves every patch');
+  assert.ok(t.api.snapshot().plasmTiles>=beforeLeaving,
+    'Leaving all rooms does not delete tiles; unseen puddles continue to grow elsewhere inside the same dungeon');
+  const grownEast=[];
+  for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))grownEast.push(x+','+z);
+  assert.ok(grownEast.length>seedEast.length,
+    'When no plasm is visible, even another room grows without the player entering it');
+  // An illuminated edge in the west room must freeze growth in *both* rooms.
+  let observer=null;
+  for(let z=2;z<12&&!observer;z++)for(let x=2;x<12&&!observer;x++){
+    if(!t.api.isPlasmAt(x+.5,z+.5))continue;
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=x+dx,nz=z+dz;
+      if(nx<2||nx>=12||nz<2||nz>=12||t.api.isPlasmAt(nx+.5,nz+.5))continue;
+      observer={x:dx>0?x+1.025:dx<0?x-.025:x+.5,
+                z:dz>0?z+1.025:dz<0?z-.025:z+.5,
+                targetX:x+.5,targetZ:z+.5};
+      break;
+    }
+  }
+  assert.ok(observer,'The two-room fixture has a dry vantage point beside the west puddle');
+  t.player.x=observer.x*64;t.player.y=observer.z*64;
+  t.player.facing=Math.atan2(observer.targetZ-observer.z,observer.targetX-observer.x);
+  const globallySeen=t.api.snapshot().plasmTiles;
+  t.tick(4,.25);
+  assert.equal(t.api.snapshot().plasmTiles,globallySeen,
+    'Seeing ANY tile in one room freezes the otherwise unseen plasm in every room');
   // Fatal immersion must not erase the patch either; only full runtime clear
   // on dungeon exit is permitted to destroy it.
   const [sx,sz]=seedWest[0].split(',').map(Number);
