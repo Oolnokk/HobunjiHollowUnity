@@ -44,7 +44,7 @@
   const INDOOR_WEATHER_VOLUME_SCALE = 0.32; // Lets outdoor weather remain audible at a distance through building walls.
   const INDOOR_WEATHER_CUTOFF_HZ = 780; // Removes outdoor rain/wind brightness while the player is inside.
   const OUTDOOR_WEATHER_CUTOFF_HZ = 18000; // Restores nearly unfiltered weather on exit.
-  const _weatherBgsFilters = new Map(); // Keeps each loop's single Web Audio media source and low-pass filter alive across area changes.
+  const _weatherBgsFilters = new Map(); // Keeps each loop's single Web Audio media source or failed-filter fallback alive across area changes.
   const _audioDebugLast = new Map();
   const _gameAudioElements = new Set();
   const _gameplayCueDuckOwners = new Set(); // Tracks active one-shot gameplay cues that temporarily suppress the scheduled background soundtrack.
@@ -1487,6 +1487,7 @@
   function updateWeatherBgsFilter(id, snd, indoors) {
     if (!WEATHER_BGS_IDS.has(id) || (!indoors && !_weatherBgsFilters.has(snd))) return;
     let node = _weatherBgsFilters.get(snd); // Reuses the same MediaElementAudioSourceNode when an audio loop comes back outside.
+    if (node?.failed) return; // A captured HTMLMediaElement cannot be captured again after a partial Web Audio setup failure.
     if (!node) {
       const ctx = getMusicAudioCtx(); // Reuses the game's gesture-unlocked audio context, not a separately suspended one.
       if (!ctx || ctx.state !== 'running') return; // The volume-only path must remain audible on browsers without working Web Audio.
@@ -1502,6 +1503,7 @@
         _weatherBgsFilters.set(snd, node);
       } catch (error) {
         if (source) try { source.connect(ctx.destination); } catch (_) {} // Keeps the sound audible even after an unsuccessful media-source capture.
+        _weatherBgsFilters.set(snd, { failed: true, source, ctx }); // Prevents a repeated capture attempt and per-frame exception storm.
         audioDebug('weather low-pass unavailable for ' + id + ': ' + (error?.message || error), 'weather-filter-' + id, 5000, 'bgs');
         return; // Direct HTML playback and the indoor volume attenuation still work.
       }
@@ -1511,8 +1513,13 @@
     node.cutoffHz = cutoffHz;
     const frequency = node.filter.frequency; // Smooths a doorway transition without restarting the recording.
     const now = node.ctx.currentTime;
-    frequency.cancelScheduledValues(now);
-    frequency.setTargetAtTime(cutoffHz, now, 0.17);
+    try {
+      frequency.cancelScheduledValues(now);
+      frequency.setTargetAtTime(cutoffHz, now, 0.17);
+    } catch (error) {
+      frequency.value = cutoffHz; // An unsupported filter-automation method must not break the per-frame weather mixer.
+      audioDebug('weather filter ramp unavailable for ' + id + ': ' + (error?.message || error), 'weather-ramp-' + id, 5000, 'bgs');
+    }
   }
 
   function getWeatherAudioDebugState() {
@@ -1523,7 +1530,8 @@
         volume: Number(snd.volume.toFixed(3)),
         target: Number((snd._bgsTargetVolume || 0).toFixed(3)),
         paused: snd.paused,
-        filtered: _weatherBgsFilters.has(snd),
+        filtered: !!_weatherBgsFilters.get(snd)?.filter,
+        filterFallback: _weatherBgsFilters.get(snd)?.failed === true, // Mobile diagnostics distinguish an audible unfiltered fallback from a working low-pass.
       },
     ])); // Captures weather-layer actual/target levels without relying on desktop devtools.
     return { area, indoors: acoustics.indoors, volumeScale: acoustics.volume, cutoffHz: acoustics.cutoffHz, contextState: _musicAudioCtx?.state || 'none', loops };
