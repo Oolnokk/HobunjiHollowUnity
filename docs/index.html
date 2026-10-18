@@ -359,14 +359,14 @@
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
-  <script src="js/effect-buff-bar.js?v=20260811a"></script>
+  <script src="js/effect-buff-bar.js?v=20261018hgorkunash1"></script>
   <script src="js/skill-system.js?v=20261015h31a0bda"></script>
   <script src="js/perk-system.js?v=20261016h23d3bfa"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261015h587b47e"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
-  <script src="js/cooking-system.js?v=20261018h2a4aedc"></script>
+  <script src="js/cooking-system.js?v=20261018hgorkunash1"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -491,8 +491,8 @@
        load-order dependency on anything else here; game.js calls into it
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
-  <script src="js/festival-calendar.js?v=20261008festivals1"></script>
-  <script src="js/map-layout-system.js?v=20261017hf1b21a1"></script>
+  <script src="js/festival-calendar.js?v=20261018hgorkunash1"></script>
+  <script src="js/map-layout-system.js?v=20261018hgorkunash1"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
@@ -2523,9 +2523,9 @@
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
-  <script src="js/festival-props.js?v=20261008festivals1"></script>
-  <script src="js/festival-system.js?v=20261008festivals1"></script>
-  <script src="js/festival-ui.js?v=20261008festivals1"></script>
+  <script src="js/festival-props.js?v=20261018hgorkunash1"></script>
+  <script src="js/festival-system.js?v=20261018hgorkunash1"></script>
+  <script src="js/festival-ui.js?v=20261018hgorkunash1"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
@@ -2574,7 +2574,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261018a"></script>
+  <script src="js/npc-scheduling.js?v=20261018hgorkunash1"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
