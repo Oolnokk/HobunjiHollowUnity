@@ -6,6 +6,7 @@
     const three = state.three, $ = id => document.getElementById(id); // Director renderer and panel element lookup.
     let selected = '', endpoint = 'position', dragging = false, inspecting = false; // Selected shot/handle and temporary look-through state.
     let savedView = null; // Free author view restored after looking through a shot.
+    let orbitResetCount = 0; // Preview-only count of visited orbit cards, reset at the start of each scene.
     const group = new T.Group(), handle = new T.Object3D(); // Camera markers and the selected transform-control anchor.
     three.scene.add(group,handle);
     const lookPoint = three.controls.target.clone(); // Current actual aim retained as the start of a camera blend.
@@ -31,7 +32,7 @@
       for (const c of p.cinematicCameras || []) list.push({key:'map:'+c.id,label:c.label||c.id,camera:c});
       for (const st of p.stages) {
         if (st.camera) list.push({key:'stage:'+st.id,label:'Card '+st.id,camera:st.camera,stage:st});
-        else if (['pov','follow','npcRelative'].includes(st.cameraMode)) list.push({key:'stage:'+st.id,label:st.cameraMode+' · '+st.id,stage:st,procedural:true});
+        else if (['pov','follow','npcRelative','orbit'].includes(st.cameraMode)) list.push({key:'stage:'+st.id,label:st.cameraMode+' · '+st.id,stage:st,procedural:true});
       }
       return list;
     }
@@ -51,7 +52,17 @@
       const c=e.camera; // Fixed camera or captured scene-local view.
       return e.local ? {id:'director_establishing',position:toWorld(c.localPos),target:toWorld(c.localTarget),fovDeg:c.fovDeg||42,blendSeconds:c.blendSeconds??.45} : c;
     }
+    function orbitShot(st, visit) {
+      const ids = st.orbitActorIds || [st.actorId || st.speakerId, st.targetActorId || st.addressedActorId]; // Mirrors live cutscene actor selection.
+      const subjects = ids.map(id => {
+        const preview = actor(id); // Existing actor render rig, including a possible player stand-in.
+        return preview ? { id, root: preview.root, walker: { avatarHeight: preview.avatarHeight || 1.2 } } : null;
+      }).filter(Boolean);
+      if (subjects.length !== 2 || ids[0] === ids[1]) return null;
+      return runtime.createStageOrbitShot(st, subjects, visit); // Same procedural implementation as the live game.
+    }
     function proceduralShot(st) {
+      if (st.cameraMode === 'orbit') return orbitShot(st, Math.max(1, orbitResetCount)); // Inspector looks through shots without advancing playback.
       const source=st.actorId||st.speakerId, target=st.targetActorId||st.addressedActorId; // Same POV source and target bindings as gameplay.
       const offset=st.cameraOffset||{x:0,y:5,z:8}; // Follow camera's editable world offset.
       const targetProvider=()=>face(target||source)||{x:Number(st.targetWorld?.c||0)+.5,y:Number(st.targetWorld?.y??.8),z:Number(st.targetWorld?.r||0)+.5};
@@ -83,13 +94,13 @@
       $('sceneCameraSelect').replaceChildren(...list.map(e=>{const o=document.createElement('option');o.value=e.key;o.textContent=e.label;return o;}));$('sceneCameraSelect').value=selected;
       const e=current(),numbers=$('sceneCameraNumbers');numbers.replaceChildren();
       if(!e){$('sceneCameraStatus').textContent='Capture a view or load a repo scene to edit cameras.';gizmo?.detach();markers();return;}
-      const c=resolveEntry(e);$('sceneCameraFov').value=c.fovDeg||42;$('sceneCameraBlend').value=c.blendSeconds??.45;
-      const fields=e.procedural ? (e.stage.cameraMode==='follow'?['offset.x','offset.y','offset.z']:['povBack','povSide','povHeight']) : ['position.x','position.y','position.z','target.x','target.y','target.z']; // Direct transforms for fixed shots; rig offsets for actor-bound shots.
+      const c=resolveEntry(e);if(!c){$('sceneCameraStatus').textContent='Selected orbit requires two distinct spawned characters.';gizmo?.detach();return;}$('sceneCameraFov').value=c.fovDeg||42;$('sceneCameraBlend').value=c.blendSeconds??.45;
+      const fields=e.procedural ? (e.stage.cameraMode==='orbit'?[]:e.stage.cameraMode==='follow'?['offset.x','offset.y','offset.z']:['povBack','povSide','povHeight']) : ['position.x','position.y','position.z','target.x','target.y','target.z']; // Direct transforms for fixed shots; rig offsets for actor-bound shots.
       for(const field of fields){const label=document.createElement('label'),input=document.createElement('input');label.textContent=field;input.type='number';input.step='.1';input.dataset.cameraField=field;
         const [part,axis]=field.split('.');const raw=e.local?(part==='position'?e.camera.localPos:e.camera.localTarget):e.camera;
         input.value=e.procedural?(axis?e.stage.cameraOffset?.[axis]??(axis==='y'?5:axis==='z'?8:0):e.stage[part]||0):(e.local?raw[axis]:raw?.[part]?.[axis])??0;
         input.onchange=()=>{const value=Number(input.value);if(!Number.isFinite(value))return;if(e.procedural){if(axis){e.stage.cameraOffset={...(e.stage.cameraOffset||{x:0,y:5,z:8}),[axis]:value};}else e.stage[part]=value;}else if(e.local)raw[axis]=value;else {e.camera[part]={...e.camera[part],[axis]:value};}save();markers();attach();};label.appendChild(input);numbers.appendChild(label);}
-      $('sceneCameraStatus').textContent=e.procedural?'Live actor-bound shot: edit its rig offsets above.':'Drag the world-axis handles or edit the transform fields.';
+      $('sceneCameraStatus').textContent=e.procedural?(e.stage.cameraMode==='orbit'?'Two-actor orbit: edit focus, zoom, radius and speed on the selected scene card.':'Live actor-bound shot: edit its rig offsets above.'):'Drag the world-axis handles or edit the transform fields.';
       markers();attach();
     }
     function attach(){const e=current();if(!gizmo||!e||e.procedural||endpoint==='none'||state.preview.running||inspecting){gizmo?.detach();return;}const c=resolveEntry(e),p=endpoint==='target'?targetWorld(c):c.position;handle.position.set(p.x,p.y,p.z);gizmo.attach(handle);}
@@ -102,11 +113,11 @@
     for(const [id,key] of [['sceneCameraFov','fovDeg'],['sceneCameraBlend','blendSeconds']])$(id).onchange=()=>{const e=current(),v=Number($(id).value);if(!e||!Number.isFinite(v))return;(e.procedural?e.stage:e.camera)[key]=key==='fovDeg'?Math.max(10,Math.min(120,v)):Math.max(0,v);save();markers();};
     function restoreView(){if(savedView){three.camera.position.copy(savedView.position);three.controls.target.copy(savedView.target);three.camera.fov=savedView.fov;three.camera.updateProjectionMatrix();three.controls.update();}savedView=null;inspecting=false;sync();}
     $('sceneCameraReturn').onclick=restoreView;
-    $('sceneCameraLook').onclick=()=>{const e=current();if(!e||state.preview.running)return;if(!savedView)savedView={position:three.camera.position.clone(),target:three.controls.target.clone(),fov:three.camera.fov};const c=resolveEntry(e),p=c.positionProvider?.()||c.position,t=c.targetProvider?.()||targetWorld(c);inspecting=true;gizmo?.detach();group.visible=false;three.camera.position.set(p.x,p.y,p.z);three.controls.target.set(t.x,t.y,t.z);three.camera.fov=c.fovDeg||42;three.camera.lookAt(three.controls.target);three.camera.updateProjectionMatrix();three.controls.update();};
+    $('sceneCameraLook').onclick=()=>{const e=current();if(!e||state.preview.running)return;if(!savedView)savedView={position:three.camera.position.clone(),target:three.controls.target.clone(),fov:three.camera.fov};const c=resolveEntry(e);if(!c){toast('Select two distinct characters for this orbit.');return;}const p=c.positionProvider?.()||c.position,t=c.targetProvider?.()||targetWorld(c);inspecting=true;gizmo?.detach();group.visible=false;three.camera.position.set(p.x,p.y,p.z);three.controls.target.set(t.x,t.y,t.z);three.camera.fov=c.fovDeg||42;three.camera.lookAt(three.controls.target);three.camera.updateProjectionMatrix();three.controls.update();};
     $('sceneCameraUseView').onclick=()=>{const e=current();if(!e||e.procedural||state.preview.running){toast('Select a fixed camera to capture this view.');return;}const p=three.camera.position,t=three.controls.target;if(e.local){e.camera.localPos=toLocal(p);e.camera.localTarget=toLocal(t);}else{e.camera.position={x:p.x,y:p.y,z:p.z};e.camera.target={x:t.x,y:t.y,z:t.z};delete e.camera.targetNpcId;e.camera.trackSpeaker=false;}e.camera.fovDeg=three.camera.fov;save();sync();};
-    function begin(){restoreView();runtime.deactivate();blend.reset();lookPoint.copy(three.controls.target);runtime.registerArea('director',state.project.cinematicCameras||[]);const e=entries().find(e=>e.key==='scene')||entries().find(e=>e.key==='map:'+state.project.cinematicCameraId)||entries().find(e=>e.local);if(e)runtime.activate('director',resolveEntry(e));gizmo?.detach();group.visible=false;}
+    function begin(){orbitResetCount=0;restoreView();runtime.deactivate();blend.reset();lookPoint.copy(three.controls.target);runtime.registerArea('director',state.project.cinematicCameras||[]);const e=entries().find(e=>e.key==='scene')||entries().find(e=>e.key==='map:'+state.project.cinematicCameraId)||entries().find(e=>e.local);if(e)runtime.activate('director',resolveEntry(e));gizmo?.detach();group.visible=false;}
     function actorIdFor(st){return state.project.actors.find(a=>a.id===(st.speakerId||st.actorId))?.npcId||st.speakerId||st.actorId;}
-    function enterStage(st){const a=actor(st.speakerId||st.actorId), targetWalker=a?{root:a.root,rec:{id:actorIdFor(st)}}:null;const options={targetWalker};if(st.cameraId&&!st.cameraMode)runtime.activate('director',st.cameraId,options);else if(st.cameraMode==='establishing'){const e=entries().find(e=>e.local);if(e)runtime.activate('director',resolveEntry(e));else runtime.deactivate();}else if(['pov','follow','npcRelative'].includes(st.cameraMode))runtime.activate('director',proceduralShot(st));else if(st.cameraMode==='authored'&&st.camera)runtime.activate('director',st.camera);else if(st.cameraMode==='wall')runtime.activate('director',state.project.cinematicCamera||state.project.cinematicCameraId,options);}
+    function enterStage(st){const a=actor(st.speakerId||st.actorId), targetWalker=a?{root:a.root,rec:{id:actorIdFor(st)}}:null;const options={targetWalker};if(st.cameraId&&!st.cameraMode)runtime.activate('director',st.cameraId,options);else if(st.cameraMode==='establishing'){const e=entries().find(e=>e.local);if(e)runtime.activate('director',resolveEntry(e));else runtime.deactivate();}else if(st.cameraMode==='orbit'){const shot=orbitShot(st,orbitResetCount+1);if(shot){orbitResetCount++;runtime.activate('director',shot);}else{runtime.deactivate();toast('Two distinct spawned actors are required for an orbit.');}}else if(['pov','follow','npcRelative'].includes(st.cameraMode))runtime.activate('director',proceduralShot(st));else if(st.cameraMode==='authored'&&st.camera)runtime.activate('director',st.camera);else if(st.cameraMode==='wall')runtime.activate('director',state.project.cinematicCamera||state.project.cinematicCameraId,options);}
     runtime.init({getNpcWalker:id=>{const def=state.project.actors.find(a=>a.npcId===id);const a=def&&actor(def.id);return a?{root:a.root,rec:{id}}:null;},getNpcFacePosition:w=>({x:w.root.position.x,y:w.root.position.y+1,z:w.root.position.z})});
     sync();
     return {sync,begin,enterStage,update(){if(state.preview.running&&blend.apply())three.controls.target.copy(lookPoint);},end(){runtime.deactivate();blend.reset();gizmo?.detach();group.visible=!panel.hidden;},isDragging:()=>dragging||!!gizmo?.axis,snapshot:()=>({...blend.snapshot(),selected,latestChange:'Visible scene cameras, transform handles and persistent playback shots.'})};
