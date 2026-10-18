@@ -158,7 +158,11 @@
             ? 'Uses status-specific decay or a separate slow recovery rule, not standard passive recovery.'
             : '';
         const capacityNote = definition?.reducesEffectiveMax
-          ? 'Reduces effective capacity; the afflicted player-HUD segment narrows in a starved curve.' : '';
+          ? id === 'woundedHealth'
+            ? 'Reduces effective capacity; the wounded band drips while the missing-cap section narrows.'
+            : 'Reduces effective capacity; both the afflicted band and its missing-cap section narrow into starved curves.'
+          : id === 'drunkenFooting'
+            ? 'Reserves Footing capacity, displayed by a narrowed missing-cap section.' : '';
         return {
           title: definition?.name || pretty(id),
           icon: definition?.resource === 'stamina' ? '◆' : definition?.resource === 'footing' ? '⬡' : '♥',
