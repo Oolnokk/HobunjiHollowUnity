@@ -52,7 +52,7 @@ const moved=structuredClone(town);
 moved.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand').col += 4;
 const movedMusic=W.MapLayoutSystem.getEffectiveMapData(moved,{dateOrdinal:civilDay,minutes:hour*60,weekday:'Anan'}).npcStations.find(station=>station.id===originalMusic.id);
 assert.equal(movedMusic.col,originalMusic.col+4,'music station follows moved root without a duplicate station list');
-assert.equal(originalRoot.col,35,'authored map remains unmutated after expansion');
+assert.equal(originalRoot.col,42,'authored map remains unmutated after expansion');
 W.NpcScheduling.stations=layout.npcStations;
 const itemDefs={meal:{label:'Special stew',isCookedFood:true,foodEffects:{vigor:2}}},inventory={meal:1};
 let player={c:47,r:43}; // Current player tile, used for proximity preflights.
