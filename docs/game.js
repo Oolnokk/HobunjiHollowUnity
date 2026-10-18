@@ -20455,6 +20455,10 @@
           _cameraHorizontalUpdatedAt = 0;
           _cameraHorizontalArea = currentArea;
           _cameraHorizontalShotSignature = shotSignature;
+          // Instant cuts must discard the older direct-ray distance too;
+          // otherwise an unobstructed new paragraph inherits a slow push-out.
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
         }
         const hx = idealX - lookAtX, hy = idealY - lookAtY, hz = idealZ - lookAtZ; // True tilted camera trajectory; a fixed-Y probe would miss lower walls.
         const reach = Math.hypot(hx, hz);
