@@ -132,6 +132,64 @@
     return active;
   }
 
+
+  function createActorOrbitShot(subjects, options = {}) {
+    const T = window.THREE; // The same Three.js vectors and scene-root actors as the shipping cinematic system.
+    if (!T?.Vector3 || !Array.isArray(subjects) || subjects.length !== 2 || subjects.some(actor => !actor?.root?.position)) return null;
+    const [a, b] = subjects; // Two actors define the orbit midpoint, including a player stand-in if selected.
+    const pA = new T.Vector3(), pB = new T.Vector3(), mid = new T.Vector3(); // Reused world-space anchors, no per-frame allocations.
+    const position = new T.Vector3(), target = new T.Vector3(); // Stable callback results consumed by the existing blend/collider.
+    const started = performance.now(); // Clock resets for each cutscene paragraph or explicit orbit camera card.
+    const zoomPercent = Math.max(25, Math.min(500, finite(options.zoomPercent, 100))); // Desired zoom; collision may compress the boom further.
+    const radius = Math.max(0.5, finite(options.distanceTiles, 3.7)) * 100 / zoomPercent; // World-space orbit radius.
+    const speedRad = finite(options.speedDegPerSec, 6) * Math.PI / 180; // Uniform angle advance independent of frame rate.
+    const focusActorId = String(options.focusActorId || ''); // Optional initial character focus, otherwise aim at the midpoint.
+    const focusActor = subjects.find(actor => String(actor.id) === focusActorId) || null;
+    const eyeRatio = Math.max(0.1, finite(options.targetHeight, 0.68)); // Scales the chest/eye anchor with each character's own height.
+    function anchor(actor, out) {
+      if (typeof actor.root.getWorldPosition === 'function') actor.root.getWorldPosition(out);
+      else out.copy(actor.root.position);
+      out.y += Math.max(0.3, finite(actor.walker?.avatarHeight, 1.2) * eyeRatio);
+      return out;
+    }
+    function updateMidpoint() {
+      anchor(a, pA);
+      anchor(b, pB);
+      mid.copy(pA).add(pB).multiplyScalar(0.5);
+      return mid;
+    }
+    updateMidpoint();
+    const lineAngle = Math.atan2(pB.x - pA.x, pB.z - pA.z); // Perpendicular starting angle keeps the two actors from visually overlapping.
+    const defaultAngle = lineAngle + Math.PI / 2 + (focusActor === b ? 0.38 : focusActor === a ? -0.38 : 0);
+    const initialAngle = Number.isFinite(Number(options.startAzimuthDeg))
+      ? Number(options.startAzimuthDeg) * Math.PI / 180 : defaultAngle; // An authored starting side overrides the default.
+    const elapsed = () => Math.max(0, (performance.now() - started) / 1000); // Single real-time clock shared by all orbit providers.
+    const targetProvider = () => {
+      updateMidpoint();
+      target.copy(mid);
+      if (focusActor) {
+        const source = focusActor === a ? pA : pB; // Already refreshed by updateMidpoint.
+        target.lerp(source, 0.78 * Math.exp(-elapsed() / 2.3)); // Begin on this person, settle toward the true two-person midpoint.
+      }
+      return target;
+    };
+    const positionProvider = () => {
+      updateMidpoint();
+      const angle = initialAngle + elapsed() * speedRad; // Slow continuous orbit, reset only by creating a new shot.
+      return position.set(mid.x + Math.sin(angle) * radius, mid.y + 0.55 + radius * 0.12, mid.z + Math.cos(angle) * radius);
+    };
+    return {
+      id: String(options.id || 'actor_orbit'),
+      shotKey: String(options.shotKey || String(started)),
+      positionProvider, targetProvider,
+      position: positionProvider().clone(), target: targetProvider().clone(),
+      fovDeg: Math.max(15, Math.min(95, finite(options.fovDeg, 52))),
+      blendSeconds: Math.max(0, finite(options.blendSeconds, 1)),
+      dialogueFraming: false, // Dialogue panel must not re-center the pair on only the current speaker.
+      orbitDebug: { actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null, zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI },
+    };
+  }
+
   function createBlendController({ camera, lookPoint, safePosition, aspect, framing }) {
     const T = window.THREE; // Uses the caller's existing Three.js camera/render loop.
     const desiredPosition = new T.Vector3(), desiredTarget = new T.Vector3(), target = new T.Vector3(); // Reused interpolation vectors for game and Director playback.
@@ -159,6 +217,7 @@
         const safe = safePosition?.(target.x, target.y, target.z, camera.position.x, camera.position.y, camera.position.z); // Game keeps its collision boom; private tool scenes may omit it.
         if (safe) camera.position.set(safe.x, safe.y, safe.z);
         camera.lookAt(target);
+        camera.near = Math.min(0.1, Math.max(0.01, camera.position.distanceTo(target) * 0.22)); // Walls may shorten cinematics to less than the default near plane.
         lookPoint.copy(target);
         camera.fov = blend.fov + (shot.fovDeg - blend.fov) * alpha;
         if (aspect) camera.aspect = aspect();
@@ -411,6 +470,7 @@
       resolvedTarget: target ? { ...target } : null,
       targetNpcId: camera?.targetNpcId || null,
       targetNpcPoint: camera?.targetNpcPoint || null,
+      orbit: camera?.orbitDebug || null, // Cutscene/Pixel Probe diagnostics expose the reset/focus/zoom currently in use.
       petFade,
       registeredAreas: camerasByArea.size,
       latestChange: 'World-space dialogue framing; live face/root targeting; cinematic player staging opt-in; in-game Map Edit camera transform authoring',
@@ -429,6 +489,7 @@
     deactivate,
     beginDialogue,
     createBlendController,
+    createActorOrbitShot,
     applyDialogueNodeCamera,
     endDialogue,
     activeCamera,
