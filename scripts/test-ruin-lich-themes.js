@@ -9,6 +9,7 @@ const themeSource = fs.readFileSync('docs/js/dev-random-ruin-lich-themes.js', 'u
 const ruinSource = fs.readFileSync('docs/js/dev-random-ruin-interior-map.js', 'utf8'); // Static checks preserve the seeded boss-theme handoff and Hronal-only lava setting.
 const puzzlesSource = fs.readFileSync('docs/js/dev-random-ruin-simple-puzzles.js', 'utf8'); // Confirms non-Hronal ropes never create lava.
 const fogSource = fs.readFileSync('docs/js/cloud-forest-fog.js', 'utf8'); // Confirms themed tint, light source and lantern rules are wired into the shared overlay.
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Native player movement owns Tothal ice friction and its ordinary collision.
 const bootstrapSource = fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js', 'utf8'); // Ensures module is loaded after the composer runtime.
 assert.match(ruinSource, /const theme = .*requestedSeed/, 'Ruin theme must remain stable across generation retries');
 assert.match(ruinSource, /puzzleOptions\.lavaBasin = theme === 'hronal'/, 'Only Hronal generates lava basins');
@@ -78,7 +79,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     deps:{TILE:64,player,hostileObjects:new Set(),playerMesh:{userData:{portraitModelHeight:1.8}},handlePlayerDeath() {}},
     root:new Node(),state:{context},group(){return this.root;},sampleSupport(){return {y:0};},
     roomBounds(_meta,room){return room.bounds||{minX:2,maxX:12,minZ:2,maxZ:12};},makeBasic(){return new Material({color:0x777777});},
-  }; // 10×10 walkable room makes 70% ice coverage an exact 70-cell assertion.
+  }; // The 10×10 fixture plus shared floorSet verifies the entire room is iced.
   composer.buildRooms(kit, context);
   const api = window.DevRandomRuinLichThemes;
   const tick = (frames, seconds = .25) => {for (let index = 0; index < frames; index++) composer.update(kit, index * seconds * 1000, seconds);};
@@ -106,7 +107,16 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const t = setup('tothal');
   const before = t.api.snapshot();
   assert.equal(before.theme, 'tothal');
-  assert.equal(before.iceTiles, 70, '70% of the room is ice');
+  assert.equal(before.iceTiles, t.context.floorSet.size, 'Every walkable Tothal floor cell is icy, with no random clear tiles');
+  for(const key of t.context.floorSet){
+    const [x,z]=key.split(',').map(Number);
+    assert.equal(t.api.isIceAt(x+.5,z+.5),true,'The same floor tiles drive ice physics and surface render: '+key);
+  }
+  assert.equal(t.api.isIceAt(12.5,6.5),false,'Outside the generated floor, normal traction resumes');
+  const physics=t.api.movementPhysicsAt(6.5,6.5);
+  assert.ok(physics?.retention20Hz>.85&&physics.retention20Hz<1,'Tothal ice preserves momentum between frames');
+  assert.ok(physics?.accelerationFactor<.5&&physics.turningFactor<.5,'Ice uses weak traction for acceleration and steering');
+  assert.equal(t.api.movementPhysicsAt(12.5,6.5),null,'Normal ground must not inherit ice physics');
   assert.ok(before.icicles >= 5,'Evenly distributed Tothal clusters must be more numerous than the old sparse icicles');
   assert.ok(before.lightSources > 0);
   assert.equal(before.totalPillars, 0);
@@ -162,9 +172,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   t.player.facing=Math.atan2(seed[0].z+.5-far[1],seed[0].x+.5-far[0]);
   t.tick(4,.25);
   const grown=t.api.snapshot().plasmTiles;
-  assert.ok(grown>=initial+8,'An entirely unseen puddle must add approximately 12 cells per second');
+  assert.equal(grown,initial+2,'A fully unseen local puddle grows exactly two cells per second');
   assert.ok(firstInstanced.every(mesh=>mesh.disposed),'Rebuilding a fast-growing puddle must free its previous instanced GPU buffers');
-  // Step out of the chamber; no room transition is allowed to cull the patch.
+  // Step out of the chamber; no room transition may grow or cull the patch.
   t.player.x=30*64;t.player.y=30*64;
   t.tick(2,.25);
   assert.equal(t.api.snapshot().plasmTiles,grown,
@@ -327,10 +337,10 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     t.player.x=(candidates[0].x+.5)*64;t.player.y=(candidates[0].z+.5)*64;
     t.tick(1,.25);
   };
-  for(let frame=0;frame<18;frame++)tickFromDryTile(); // Enough local, unseen growth to reach capacity and exercise safe replacement before sinking can kill the test player.
+  for(let frame=0;frame<102;frame++)tickFromDryTile(); // 25.5s of local growth at 2 tiles/s reaches the 50-cell cap and exercises replacement.
   const report=t.api.snapshot();
   assert.equal(report.plasmTiles,report.plasmCapacity,'Plasm must never exceed half the room');
-  assert.ok(report.plasmCulled>0,'After reaching its cap, new leading growth replaces farthest edge tiles');
+  assert.ok(report.plasmCulled>0,'After reaching the cap, new leading growth replaces farthest edge tiles');
   const actual=new Set();
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))actual.add(x+','+z);
   assert.equal(actual.size,50,'The cap must match the exact visible/gameplay footprint');
@@ -344,7 +354,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   assert.equal(visited.size,actual.size,'Farthest-tile culling must not split the plasm into unconnected islands');
   // Growth cannot increase the overall area after capacity has been reached.
-  for(let frame=0;frame<2;frame++)tickFromDryTile();
+  for(let frame=0;frame<4;frame++)tickFromDryTile();
   assert.equal(t.api.snapshot().plasmTiles,50,'Plasm remains capped while growth continues at its boundary');
   t.player.health=0;
   t.tick(1,.25);
@@ -358,36 +368,48 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
 }
 {
   const t=setup('tothal');
-  let chosen=null,dryBoundary=null;
-  for(let x=3;x<11;x++)for(let z=3;z<11;z++){
-    if(!t.api.isIceAt(x+.5,z+.5))continue;
-    chosen||={x,z};
-    if(!t.api.isIceAt(x+1.5,z+.5))dryBoundary={x,z};
-  }
-  assert.ok(chosen&&dryBoundary,'Seeded Tothal ice provides icy tiles and at least one dry boundary');
-  const player=t.player, startX=chosen.x+.25,startZ=chosen.z+.4;
-  player.x=startX*64;player.y=startZ*64;
-  t.tick(1,.1); // Initialize native position tracking at the start of a held input.
-  for(let step=0;step<8;step++){player.x+=.025*64;t.tick(1,.1);}
-  const releasedAt=player.x/64;
-  t.tick(1,.1); // The first released frame must immediately continue the held direction.
-  assert.ok(Math.abs(player.x/64-releasedAt-.025)<.004,'Ice input must continue immediately without a release-frame pause');
-  t.tick(1,.1);
-  assert.ok(Math.abs(player.x/64-releasedAt-.05)<.004,
-    'Eight 0.1s of moving at .25 tiles/s must replay for .2s = 25% of held duration');
-  const glideEnded=player.x;
-  t.tick(3,.1);
-  assert.ok(Math.abs(player.x-glideEnded)<.05,'After the timed glide expires, no residual movement remains');
-  // Repeat at an exposed tile edge: the next non-ice tile must cancel the glide,
-  // not turn into a hidden carry on normal terrain.
-  player.x=(dryBoundary.x+.78)*64;player.y=(dryBoundary.z+.5)*64;t.tick(1,.1);
-  for(let step=0;step<8;step++){player.x+=.025*64;t.tick(1,.1);}
-  t.tick(1,.1);
-  assert.ok(player.x/64>=dryBoundary.x+1 && player.x/64<dryBoundary.x+1.06,
-    'Momentum must enter the first un-iced tile, not collide with an invisible edge');
-  const stoppedOnDry=player.x;
-  t.tick(3,.1);
-  assert.ok(Math.abs(player.x-stoppedOnDry)<.05,'The first dry tile cancels every remaining glide frame');
+  // Extract and execute the actual native velocity block, rather than a
+  // parallel imitation of ice logic. This catches broken integration when
+  // the game replaces player.vx/vy after the hazard composer runs.
+  const start=gameSource.indexOf('        const icePhysics = currentArea ===');
+  const end=gameSource.indexOf('        // ── Axis-separated collision',start);
+  assert.ok(start>0&&end>start,'Tothal traction must live before game.js native collision handling');
+  const native=gameSource.slice(start,end);
+  assert.match(native,/DevRandomRuinLichThemes\?\.movementPhysicsAt/,
+    'Native game movement must consume the Tothal physics API');
+  assert.doesNotMatch(themeSource,/function updateIceMotion\(/,
+    'The old after-the-fact ice slide must no longer move the player');
+  const move=new Function('window','player','currentArea','TILE','inputStrength','ix','iy',
+    'targetSpeed','dt','ACCEL','TURN_ACCEL','DECEL','footingSpeedMul',native+
+    '\nreturn {vx:player.vx,vy:player.vy};');
+  const window={DevRandomRuinLichThemes:t.api,FormatUtils:{
+    clamp:(value,lo,hi)=>Math.max(lo,Math.min(hi,value))
+  }};
+  const step=(speed,ix,iy,dt,area='map_i_dev_random_ruin',x=6.5,z=6.5)=>{
+    const player={x:x*64,y:z*64,vx:speed,vy:0};
+    return move(window,player,area,64,Math.hypot(ix,iy),ix,iy,
+      238,dt,980,1320,1850,1);
+  };
+  const icyStart=step(0,1,0,.05),ordinaryStart=step(0,1,0,.05,'farm');
+  assert.ok(icyStart.vx>0&&icyStart.vx<ordinaryStart.vx,
+    'Ice accelerates more slowly than normal ground while holding movement');
+  const icyRelease=step(238,0,0,.05),ordinaryRelease=step(238,0,0,.05,'farm');
+  assert.ok(icyRelease.vx>ordinaryRelease.vx+35,
+    'Letting go preserves real velocity on ice instead of using a post-frame push');
+  const icyReverse=step(238,-1,0,.05),ordinaryReverse=step(238,-1,0,.05,'farm');
+  assert.ok(icyReverse.vx>ordinaryReverse.vx,
+    'Changing direction has less traction on ice: existing momentum persists');
+  const dried=step(238,0,0,.05,'map_i_dev_random_ruin',12.5,6.5);
+  assert.equal(dried.vx,ordinaryRelease.vx,
+    'Crossing off the icy floor restores the normal ground deceleration immediately');
+  let sixty={x:6.5*64,y:6.5*64,vx:238,vy:0};
+  for(let i=0;i<60;i++)move(window,sixty,'map_i_dev_random_ruin',64,0,0,0,238,
+    1/60,980,1320,1850,1);
+  let thirty={x:6.5*64,y:6.5*64,vx:238,vy:0};
+  for(let i=0;i<30;i++)move(window,thirty,'map_i_dev_random_ruin',64,0,0,0,238,
+    1/30,980,1320,1850,1);
+  assert.ok(Math.abs(sixty.vx-thirty.vx)<.1,
+    'Friction decay must be frame-rate-independent at 30 and 60 fps');
   t.composer.clear();
 }
-console.log('Harlyao ruin lich-theme tests passed: stable theme, 70% curved ice, distributed tapered icicle clusters, Kanthic curved plasm expansion, teardown.');
+console.log('Harlyao ruin lich-theme tests passed: stable theme, entire icy floor with Minecraft-style native friction, clustered icicles, Kanthic player-safe growth at 2 tiles/s, teardown.');
