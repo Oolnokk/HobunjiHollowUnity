@@ -68,7 +68,7 @@
     kit.group().add(group);
     const metal = kit.makeBasic(0x4b4238), slotMat = kit.makeBasic(0x0c0a08);
     const along = (len, thick, tall) => frame.axis === 'x' ? kit.sharedBoxGeometry(len, tall, thick) : kit.sharedBoxGeometry(thick, tall, len);
-    const rail = new THREE.Mesh(along(frame.span - .04, .1, .07), metal);
+    const rail = new THREE.Mesh(along(frame.span + .12, .1, .07), metal); // Extend 0.06 into each end wall; the track must not stop short of its recess.
     rail.position.copy(at(frame.span * .5, railY));
     rail.name = 'dev_ruin_ceiling_rail_bar_' + room.id;
     group.add(rail);
