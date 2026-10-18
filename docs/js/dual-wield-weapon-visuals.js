@@ -14,7 +14,7 @@
   const grips = global.HobunjiHandToolGrips;
   if (!grips || global.HobunjiDualWieldWeaponVisuals) return;
 
-  const DUPLICATE_Z_GAP = 0.30; // Total plane-normal distance between visible copies.
+  const DUPLICATE_Z_GAP = 0.15; // Total plane-normal distance between visible copies, halved from 0.30; shared by attack, idle and hand sockets.
   const HALF_Z_SEPARATION = DUPLICATE_Z_GAP * 0.5; // Each copy sits on one side of the hidden sprite plane.
   const MAIN_HAND_LAG_MS = 45; // Small visual follow lag behind the offhand/original weapon transform.
   const HISTORY_WINDOW_MS = 240; // Keeps enough parent poses to resolve the short lag through low-FPS frames.

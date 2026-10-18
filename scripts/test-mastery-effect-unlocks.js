@@ -92,7 +92,10 @@ async function main() {
   window.DevRandomRuin = { getState: () => ({ theme: 'kanthic' }) };
   vm.runInNewContext(fs.readFileSync('docs/js/loot-rolling.js', 'utf8'), context);
   const loot = window.LootRolling; // Production roll entry point used by chests and corpses.
-  loot.init({ calendar: {}, getPlayerData: () => null, getCurrentArea: () => 'map_eastern_mire', weaponDamageTypeForTool: key => key === 'mace' ? 'blunt' : 'sharp' });
+  const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Reuse the live crafted-weapon shape metadata rather than independently assuming Kylie's damage type.
+  const generatedShapeCatalog = gameSource.slice(gameSource.indexOf('      const TOOL_SHAPE_DEFS ='), gameSource.indexOf('      window.ModularWeapons?.registerDefinitions')); // Executes only the existing weapon definition + smith-crafted registration block.
+  const toolDefs = vm.runInNewContext(`const TOOL_ITEM_DEFS = {}; const METAL_DEFS = { nativeCopper: {label:'Native Copper'} }; const VERDIGRIS_METAL_KEYS = ['nativeCopper']; ${generatedShapeCatalog}; TOOL_ITEM_DEFS;`, { window: {} }); // Canonical runtime keys, including Kylie, feed the actual mastery loot type lookup.
+  loot.init({ calendar: {}, getPlayerData: () => null, getCurrentArea: () => 'map_eastern_mire', weaponDamageTypeForTool: key => toolDefs[key]?.dmgType || (key === 'mace' ? 'blunt' : 'sharp') });
   await loot.loadLootShopConfig();
   for (const [id, pool] of Object.entries(pools)) if (pool.mastery) for (const type of ['sharp', 'blunt']) for (const rank of Object.keys(pool.mastery.rankWeights)) {
     const weights = Object.entries(pool.mastery.rankWeights); // Sample the midpoint of every authored rank interval.
@@ -119,6 +122,11 @@ async function main() {
   assert.equal(loot.masteryPoolForLoot('bandit_captain', { entity: { enemyClass: 'bandit' } }), 'mastery_captain');
   assert.ok(Object.keys(loot.rollLootPool('bandit_grunt', { entity: skeleton }))[0].includes(':blunt:'), 'enemy weapon determines the damage type');
   assert.ok(Object.keys(loot.rollLootPool('bandit_captain', { entity: { enemyClass: 'bandit', def: { weaponKey: 'sword' } } }))[0].includes(':sharp:'));
+  const kylieBandit = { enemyClass: 'bandit', def: { weaponKey: 'kylie_nativeCopper', attackTag: 'blunt' } }; // A real generated Kylie on a bandit must route to the existing blunt scroll pool.
+  const kylieDrops = loot.rollLootPool('bandit_captain', { entity: kylieBandit });
+  const kylieScroll = Object.keys(kylieDrops)[0];
+  assert(kylieScroll?.startsWith('masteryScroll:blunt:'), 'Kylie bandits drop blunt mastery scrolls, not sharp ones');
+  assert.equal(items.ITEM_DEFS[kylieScroll]?.masteryUnlock?.type, 'blunt');
 
   const noop = () => {}; // Minimal existing initialization owners let the held-item integration run without a browser.
   let held = null; // Simulate Inventory Hold while the item arch is inactive.
