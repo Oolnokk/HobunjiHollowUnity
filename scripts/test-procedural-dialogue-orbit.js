@@ -153,16 +153,23 @@ const raycaster = {
     return []; // The center 3D ray alone incorrectly allows full boom clearance.
   },
 };
+const roomTiles = Object.create(null); // Dense clear room allows an isolated furniture/wall tile to be swapped into the actual camera ray.
+for (let r = -2; r < 8; r++) {
+  roomTiles[r] = Object.create(null);
+  for (let c = -3; c < 4; c++) roomTiles[r][c] = { type: 'floor' };
+}
 const collisionContext = vm.createContext({
   activeCameraMode: 'npcDialogue', SHOULDER_SURF_MODE: 'shoulderSurf',
   cutscenePreviewActive: true, dialogueZoomActive: () => false,
   camTargetY: 0, _playerGroundY: () => 0, activeSurfaceYAtWorld: () => 0,
   currentArea: 'map_i_inn_F2_jubmir', _isBuildingArea: () => true, currentAreaOcclusionMeshes: () => [{}],
+  npcGridForArea: () => roomTiles, tileSurfaceYInArea: () => 0,
+  isNpcTileWalkable: (_, c, r) => !!roomTiles[r]?.[c] && roomTiles[r][c].type !== 'rock' && !roomTiles[r][c].npcFurnitureCollider,
   performance: { now: () => elapsedMs }, THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
   window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true } },
   _cameraOcclusionOriginVec: rayOrigin, _cameraOcclusionDirVec: rayDirection, _cameraOcclusionRaycaster: raycaster,
 });
-vm.runInContext(game.slice(solverStart, solverEnd) + '\nthis.solve=occlusionSafeCameraPosition;this.horizontalDebug=()=>_cameraHorizontalDebug;', collisionContext);
+vm.runInContext(game.slice(solverStart, solverEnd) + '\nthis.solve=occlusionSafeCameraPosition;this.horizontalDebug=()=>_cameraHorizontalDebug;this.tileDistance=cameraTileCollisionDistance;', collisionContext);
 const squeezed = collisionContext.solve(0, 1, 0, 0, 1.6, 3); // A wall barely crossing the camera's right edge must pull the X/Z orbit inward.
 assert(squeezed.z < 1.1, 'horizontal wall squeeze shortens the orbit despite a clear central 3D ray');
 assert(Math.abs(squeezed.y - 1.6) < 1e-9, 'horizontal squeeze preserves intentional camera height');
@@ -175,4 +182,17 @@ assert(recovering.z > blockedReach && recovering.z < 3, 'camera extends smoothly
 elapsedMs = 1200;
 const recoveredMore = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
 assert(recoveredMore.z > recovering.z, 'clearance recovery progresses with elapsed real time');
-console.log('Procedural dialogue orbit: timing, replay reset, face-height and antipodal tilt modes, exact 20% closer initial zoom, angled wall collision, and smoothing passed.');
+const emptyFloorDistance = collisionContext.tileDistance(0.5, 1, 0.5, 0.5, 1.6, 4.5);
+assert.equal(emptyFloorDistance, null, 'unobstructed floor tiles do not constrain the camera');
+roomTiles[2][0].type = 'rock'; // Authored map collider (including nonrendered wall tile).
+const wallTileDistance = collisionContext.tileDistance(0.5, 1, 0.5, 0.5, 1.6, 4.5);
+assert(wallTileDistance > 1.4 && wallTileDistance < 2.0, 'solid collision-grid tile intersects the camera even with zero mesh hits');
+roomTiles[2][0].type = 'floor';
+roomTiles[2][0].npcFurnitureCollider = true; // Nonrendered footprint such as a bed occupies the otherwise walkable floor.
+const furnitureTileDistance = collisionContext.tileDistance(0.5, 1, 0.5, 0.5, 1.6, 4.5);
+assert(furnitureTileDistance > 1.4 && furnitureTileDistance < 2.0, 'furniture collision tile also blocks the boom');
+roomTiles[2][0].npcFurnitureCollider = false;
+const sceneSource = game.slice(game.indexOf('const buildingFurniture ='), game.indexOf('const buildingFurniture =') + 11000);
+assert(sceneSource.includes('buildingCameraFurniture.push(renderedFurniture)')
+  && game.includes('occlusionMeshes.push(furniture)'), 'camera also raycasts real built furniture meshes where available');
+console.log('Procedural dialogue orbit: timing, face-height arc, wall/furniture grid blockers, mesh collision and smooth 3-ray clearance passed.');
