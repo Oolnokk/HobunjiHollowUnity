@@ -366,7 +366,10 @@
 
   function tourComplete(profile) {
     const saved = storedStory(profile);
-    return saved ? saved.farmTourComplete === true : legacyValue(tourKey(profile)) === 'complete';
+    // Portable data wins when it explicitly records a decision. A partial
+    // in-memory fallback in older worlds must not hide a completed legacy tour.
+    if (saved?.farmTourComplete != null) return saved.farmTourComplete === true;
+    return legacyValue(tourKey(profile)) === 'complete';
   }
 
   function gameHours() {
@@ -391,7 +394,8 @@
   function feyVisitState(profile = window.__hobunjiPlayerProfile) {
     const now = gameHours(); // Used for eligibility and mobile diagnostics, never wall-clock time.
     const saved = storedStory(profile);
-    const raw = saved ? saved.farmTourCompletedAtHours : legacyValue(tourKey(profile) + ':completed-hours');
+    const raw = saved?.farmTourCompletedAtHours !== undefined
+      ? saved.farmTourCompletedAtHours : legacyValue(tourKey(profile) + ':completed-hours');
     const completedAt = raw === null || raw === '' || raw === undefined ? NaN : Number(raw);
     return {
       completed: saved ? saved.jubmirFeyComplete === true : legacyValue(stateKey(profile) + ':jubmir-fey') === 'complete',
