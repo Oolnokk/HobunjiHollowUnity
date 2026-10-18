@@ -108,7 +108,8 @@
   // every tick; the short jagged shapes are seeded, stable and memoized.
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const SVG_HEIGHT = 40;
-  const STARVED_PATH = 'M 0 0 C 6 5.7 14 6.2 32 6.2 L 68 6.2 C 86 6.2 94 5.7 100 0 L 100 40 C 94 34.3 86 33.8 68 33.8 L 32 33.8 C 14 33.8 6 34.3 0 40 Z';
+  // Severely pinched throat: 13.34 of 40 units, or ~1/3 normal height.
+  const STARVED_PATH = 'M 0 0 C 7 10.5 16 13.33 34 13.33 L 66 13.33 C 84 13.33 93 10.5 100 0 L 100 40 C 93 29.5 84 26.67 66 26.67 L 34 26.67 C 16 26.67 7 29.5 0 40 Z';
   const jaggedPaths = new Map();
 
   function stableSeed(text) {
@@ -259,8 +260,8 @@
       if (!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
         const motion = svgElement('animate');
         motion.setAttribute('attributeName', 'd');
-        motion.setAttribute('dur', '4.6s');
-        motion.setAttribute('keyTimes', '0;0.17;0.24;0.34;0.5;0.67;0.74;0.84;1');
+        motion.setAttribute('dur', '1.45s');
+        motion.setAttribute('keyTimes', '0;0.06;0.12;0.20;0.5;0.56;0.62;0.70;1');
         motion.setAttribute('values', [flat, left, left, flat, flat, right, right, flat, flat].join(';'));
         motion.setAttribute('repeatCount', 'indefinite');
         path.appendChild(motion);
