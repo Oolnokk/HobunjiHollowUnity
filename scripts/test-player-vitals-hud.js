@@ -193,6 +193,10 @@ assert(css.includes('#vitalsBar .vb-normal-segment'), 'normal resource sections 
 assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.corrodedHealth, '#b6d94c', 'Corroded Health palette is shared');
 assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.woundedHealth, '#b35f6b', 'Wounded Health no longer defaults to white');
 assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.scentMarkedHealth, '#82ae6c', 'Scent-marked Health has its own palette');
+// Corroded Health normally registers in combat-corroded-health.js after ResourceSystem.
+context.ResourceSystem.AFFLICTIONS.corrodedHealth = {
+  name: 'Corroded Health', resource: 'health', extend: 'currentBack', priority: 75, recovers: false,
+};
 player.afflictions.corrodedHealth = 13;
 player.health = 87;
 refresh();
