@@ -75,6 +75,16 @@ Placement.placeTerrainAwareLocales(flatWorkspace, [cave], { seed: 'unit', scale:
 assert.strictEqual(flatWorkspace.localeInstances.length, 0);
 assert.strictEqual(flatWorkspace.localeTerrainDiagnostics[0].status, 'skipped');
 
+// Two copies of the same locale (e.g. same-facing ruin-entrance copies) must
+// not stack on one spot: the first copy's painted tiles look like plain ground.
+const pairWorkspace = makeWorkspace();
+const copyA = { ...JSON.parse(JSON.stringify(cave)), id: 'locale_test_cave_a' };
+const copyB = { ...JSON.parse(JSON.stringify(cave)), id: 'locale_test_cave_b' };
+Placement.placeTerrainAwareLocales(pairWorkspace, [copyA, copyB], { seed: 'unit', scale: 1 });
+assert.strictEqual(pairWorkspace.localeInstances.length, 2, 'the west cliff has room for both copies');
+const [rowA, rowB] = pairWorkspace.localeTerrainDiagnostics.map(entry => entry.selected.anchorR);
+assert.ok(Math.abs(rowA - rowB) >= 2, `copies must not overlap (rows ${rowA} and ${rowB})`);
+
 // Installing the adapter must keep a legacy locale on the old generator path.
 const legacy = { id: 'legacy', tiles: { '0,0': { type: 'grass' } }, placement: {} };
 let receivedLocales = null;
