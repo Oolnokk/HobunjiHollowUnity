@@ -210,44 +210,88 @@
     .sb-water  { font-size: 11px; color: #6ec6f0; flex-shrink: 0; }
     .sb-gold   { font-size: 11px; color: #f0d040; flex-shrink: 0; }
 
-    /* ── Vitals bar: health + stamina, anchored top-left ─────── */
-    /* Superseded by the ground-projected resource rings rendered under the
-       player in the 3D scene (see docs/js/combat/resource-rings.js); kept
-       in the DOM/JS but hidden so a fallback exists if that ever fails to
-       render (canvas context lost, three.js missing, etc). */
+    /* ── Bottom resource HUD: visible only while depleted or afflicted ── */
     #vitalsBar {
-      display: none;
       position: fixed;
-      left: var(--play-left); top: var(--oy);
-      width: calc(8 * var(--col)); height: calc(2 * var(--row));
+      left: var(--play-center);
+      bottom: calc(max(12px, env(safe-area-inset-bottom)) + 36px);
+      transform: translate(-50%, 6px);
+      width: min(370px, calc(100vw - 24px));
       z-index: 20;
-      flex-direction: column; justify-content: center;
-      gap: 4px; padding: 6px 10px;
-      background: var(--glass);
-      border: 1px solid var(--border-bright);
-      border-top: none;
-      border-radius: 0 0 18px 18px;
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 7px 10px;
+      background: rgba(5, 12, 11, 0.78);
+      border: 1px solid rgba(210, 220, 200, 0.22);
+      border-radius: 12px;
+      box-shadow: 0 3px 17px rgba(0, 0, 0, 0.48);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       pointer-events: none;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.32);
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
     }
-    .vb-row  { display: flex; align-items: center; gap: 6px; }
-    .vb-icon { font-size: 11px; flex-shrink: 0; width: 14px; text-align: center; }
-    .vb-track {
-      flex: 1; height: 8px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid var(--border);
-      border-radius: 5px;
+    #vitalsBar.is-active { visibility: visible; opacity: 1; transform: translate(-50%, 0); }
+    #vitalsBar .vb-row { display: none; align-items: center; width: 100%; gap: 6px; min-height: 16px; }
+    #vitalsBar .vb-row.is-active { display: flex; }
+    #vitalsBar .vb-icon { width: 13px; flex: 0 0 13px; font-size: 13px; line-height: 1; text-align: center; }
+    #vitalsBar #vbHealthRow .vb-icon { color: #55d76f; }
+    #vitalsBar #vbStaminaRow .vb-icon { color: #67b7ff; }
+    #vitalsBar #vbFootingRow .vb-icon { color: #d9a441; }
+    #vitalsBar .vb-label { flex: 0 0 48px; font-size: 10px; color: #eee8cd; text-shadow: 0 1px 2px #000; }
+    #vitalsBar .vb-value { flex: 0 0 80px; font: 10px/1.3 'DM Mono', monospace; text-align: right; color: #d4dfd5; }
+    #vitalsBar .vb-track {
+      position: relative;
+      flex: 1 1 auto;
+      min-width: 18px;
+      height: 10px;
       overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.96);
+      border-radius: 3px;
+      background: rgba(135, 141, 145, 0.23);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.85), 0 0 0 1px rgba(221,222,202,.25);
     }
-    .vb-fill {
-      height: 100%; width: 100%;
-      border-radius: 5px;
+    #vitalsBar .vb-fill {
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      width: 100%;
       transition: width 0.15s ease-out;
     }
-    .vb-health  { background: linear-gradient(90deg, #d44848, #ff8060); }
-    .vb-stamina { background: linear-gradient(90deg, #d4a838, #f9e28a); }
-    .vb-footing { background: linear-gradient(90deg, #a8781f, #e0b04a); }
+    #vitalsBar .vb-health { background-color: #55d76f; }
+    #vitalsBar .vb-stamina { background-color: #67b7ff; }
+    #vitalsBar .vb-footing { background-color: #d9a441; }
+    #vitalsBar .vb-segments { position: absolute; inset: 0; pointer-events: none; }
+    #vitalsBar .vb-affliction-segment {
+      position: absolute;
+      top: 0; bottom: 0;
+      box-shadow: inset 1px 0 rgba(0,0,0,.7), inset -1px 0 rgba(0,0,0,.45);
+      transition: left 0.15s ease-out, width 0.15s ease-out;
+    }
+    #vitalsBar .vb-cap {
+      position: absolute; top: 0; bottom: 0;
+      background: repeating-linear-gradient(135deg, rgba(0,0,0,.75) 0 3px, rgba(255,255,255,.12) 3px 5px);
+      border-left: 1px solid rgba(240,240,240,.85);
+      pointer-events: none;
+    }
+    #vitalsBar .vb-cap[hidden] { display: none; }
+    #vitalsBar .vb-row.is-exhausted .vb-track {
+      border-color: #b8aabd;
+      box-shadow: inset 0 0 2px 1px rgba(255,255,255,.17), 0 0 0 1px rgba(183,160,191,.5);
+    }
+    #vitalsBar .vb-row.is-exhausted .vb-fill { border-right: 2px solid #a5a1ac; }
+    @media (max-width: 600px) {
+      #vitalsBar { width: min(315px, calc(100vw - 16px)); padding: 6px 8px; gap: 3px; }
+      #vitalsBar .vb-label { flex-basis: 43px; font-size: 9px; }
+      #vitalsBar .vb-value { flex-basis: 72px; font-size: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #vitalsBar, #vitalsBar .vb-fill, #vitalsBar .vb-affliction-segment { transition: none; }
+    }
+    body.authored-cutscene #vitalsBar, body.introduction-loading #vitalsBar {
+      opacity: 0 !important; visibility: hidden !important;
+    }
 
     /* ── Buff bar: active timed effects, anchored top-right ─────── */
     #buffBar {

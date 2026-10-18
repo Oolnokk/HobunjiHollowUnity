@@ -10,34 +10,136 @@
   function init(injectedDeps) { deps = injectedDeps; }
   let deathHandled = false; // Prevents repeated respawn requests if a caller leaves the player at zero for more than one tick.
 
-  // Looked up lazily (on first refreshVitalsHud() call, not at module-load
-  // time) since this script tag loads in <head> before <body> exists —
-  // game.js itself got away with a top-level document.getElementById()
-  // only because it's the very last script tag, running after the whole
-  // document (including these elements) is already parsed.
-  let _vbHealthFill = null, _vbStaminaFill = null, _vbFootingFill = null, _vbElsResolved = false;
-  // Rounded so idle frames (no regen/damage delta, sub-1% drift) don't
-  // rewrite the same style.width value every frame.
-  let _vbLastHealthPct = -1, _vbLastStaminaPct = -1, _vbLastFootingPct = -1;
+  // These three resource rows mirror the rings while remaining readable when
+  // the avatar is tiny or obscured. The live ResourceSystem owns all values.
+  const HUD_RESOURCES = Object.freeze([
+    { key: 'health', value: 'health', max: 'maxHealth', label: 'Health' },
+    { key: 'stamina', value: 'stamina', max: 'maxStamina', label: 'Stamina' },
+    { key: 'footing', value: 'footing', max: 'maxFooting', label: 'Footing' },
+  ]); // Drives the shared renderer without maintaining three separate HUD algorithms.
+  const hudNodes = Object.create(null); // Lazily caches each row, fill, segment layer, cap overlay and number label.
+  let hudRoot = null; // The bottom-center #vitalsBar; resolved after the body exists.
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  function resolveHudNodes() {
+    if (hudRoot) return true;
+    hudRoot = document.getElementById('vitalsBar');
+    if (!hudRoot) return false; // The script loads before <body>; retry on the next tick.
+    for (const spec of HUD_RESOURCES) {
+      hudNodes[spec.key] = {
+        row: document.getElementById('vb' + spec.label + 'Row'),
+        fill: document.getElementById('vb' + spec.label + 'Fill'),
+        segments: document.getElementById('vb' + spec.label + 'Segments'),
+        cap: document.getElementById('vb' + spec.label + 'Cap'),
+        value: document.getElementById('vb' + spec.label + 'Value'),
+        segmentSignature: '',
+        fillColor: '', // Tracks the CSS color assigned to the ordinary/exhausted bar across frames.
+      };
+    }
+    return true;
+  }
+
+  // Clip lower-priority afflictions against higher-priority occupied portions,
+  // as ResourceRings does. Normal-colored fill is drawn beneath the segments.
+  function visibleAfflictionSegments(entity, resourceKey, entries, denominator, rs) {
+    const claimed = []; // Keeps already-painted intervals from overlapping lower-priority afflictions.
+    const visible = []; // Supplies exact [start,end] intervals to the DOM renderer.
+    const palette = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
+    for (const [id, def] of entries.sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))) {
+      const box = rs.getSegmentBox(entity, resourceKey, id);
+      if (!box) continue;
+      const start = clamp(Number(box.leftPoints) || 0, 0, denominator);
+      const end = clamp(start + Math.max(0, Number(box.widthPoints) || 0), 0, denominator);
+      if (end <= start) continue;
+      let remaining = [{ start, end }]; // Portions of this affliction not already claimed by a stronger one.
+      for (const occupied of claimed) {
+        remaining = remaining.flatMap(piece => {
+          if (occupied.end <= piece.start || occupied.start >= piece.end) return [piece];
+          const cuts = []; // Pieces before/after this overlap, retained for the next subtraction.
+          if (piece.start < occupied.start) cuts.push({ start: piece.start, end: occupied.start });
+          if (piece.end > occupied.end) cuts.push({ start: occupied.end, end: piece.end });
+          return cuts;
+        });
+      }
+      for (const piece of remaining) {
+        claimed.push(piece);
+        visible.push({ ...piece, id, name: def.name || id, color: palette[id] || '#ffffff' });
+      }
+    }
+    return visible;
+  }
+
+  function drawAfflictionSegments(nodes, pieces, denominator) {
+    const signature = pieces.map(piece => [
+      piece.id, (piece.start / denominator * 100).toFixed(1),
+      (piece.end / denominator * 100).toFixed(1), piece.color,
+    ].join(':')).join('|'); // Limits DOM replacements to meaningful visible segment changes.
+    if (signature === nodes.segmentSignature) return;
+    nodes.segmentSignature = signature;
+    const elements = pieces.map(piece => {
+      const segment = document.createElement('span'); // Each colored interval overlays the normal resource fill.
+      segment.className = 'vb-affliction-segment';
+      segment.style.left = (piece.start / denominator * 100).toFixed(1) + '%';
+      segment.style.width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
+      segment.style.backgroundColor = piece.color;
+      segment.title = piece.name;
+      return segment;
+    });
+    nodes.segments.replaceChildren(...elements);
+  }
+
   function refreshVitalsHud() {
-    if (!_vbElsResolved) {
-      _vbElsResolved = true;
-      _vbHealthFill  = document.getElementById('vbHealthFill');
-      _vbStaminaFill = document.getElementById('vbStaminaFill');
-      _vbFootingFill = document.getElementById('vbFootingFill');
+    if (!deps?.player || !resolveHudNodes()) return;
+    const rs = window.ResourceSystem; // Supplies authoritative affliction, capacity and exhausted state.
+    if (!rs?.AFFLICTIONS || !rs.getEffectiveMax || !rs.getAffliction) return;
+    const player = deps.player; // The stable local player entity injected at initialization.
+    const colors = window.HOBUNJI_CONFIG?.resourceRings?.colors || {};
+    let visibleCount = 0; // Controls container visibility when no resource needs attention.
+
+    for (const spec of HUD_RESOURCES) {
+      const nodes = hudNodes[spec.key]; // DOM elements for this resource row.
+      if (!nodes?.row || !nodes.fill || !nodes.segments || !nodes.cap || !nodes.value) continue;
+      const authoredMax = Math.max(0, Number(player[spec.max]) || 0); // Original resource capacity used for band positions.
+      const effectiveMax = Math.max(0, Number(rs.getEffectiveMax(player, spec.key)) || 0); // Buffs, reservations and capacity damage.
+      const current = Math.max(0, Number(player[spec.value]) || 0); // Live ordinary Health/Stamina/Footing level.
+      const exhausted = spec.key === 'stamina' && player.exhaustion?.active === true;
+      const activeAfflictions = Object.entries(rs.AFFLICTIONS)
+        .filter(([id, def]) => def.resource === spec.key && rs.getAffliction(player, id) > 0); // Same resource-specific active set the rings use.
+      const active = exhausted || activeAfflictions.length > 0 || (effectiveMax > 0 && current < effectiveMax - 0.05);
+      nodes.row.classList.toggle('is-active', active);
+      if (!active) continue;
+      visibleCount++;
+
+      const denominator = Math.max(1, authoredMax, effectiveMax); // Allows maximum-resource buffs to show their increased capacity accurately.
+      const fillFraction = exhausted
+        ? clamp((Number(player.exhaustion.blackStamina) || 0) / 100, 0, 1)
+        : clamp(current / denominator, 0, 1); // Exhausted displays black-Stamina recovery, not the forced-zero ordinary Stamina.
+      const percent = Math.round(fillFraction * 1000) / 10;
+      const desiredWidth = percent + '%';
+      if (nodes.fill.style.width !== desiredWidth) nodes.fill.style.width = desiredWidth;
+      const fillColor = exhausted ? (colors.exhausted || '#050608') : (colors[spec.key] || '#ffffff');
+      if (nodes.fillColor !== fillColor) { nodes.fillColor = fillColor; nodes.fill.style.backgroundColor = fillColor; }
+      nodes.row.classList.toggle('is-exhausted', exhausted);
+
+      const missingCapacity = Math.max(0, authoredMax - effectiveMax); // Hatches capacity removed by afflictions (rather than treating it as spent).
+      nodes.cap.hidden = exhausted || missingCapacity <= 0.05;
+      if (!nodes.cap.hidden) {
+        nodes.cap.style.left = (effectiveMax / denominator * 100).toFixed(1) + '%';
+        nodes.cap.style.width = (missingCapacity / denominator * 100).toFixed(1) + '%';
+      }
+      const pieces = exhausted ? [] : visibleAfflictionSegments(player, spec.key, activeAfflictions, denominator, rs);
+      drawAfflictionSegments(nodes, pieces, denominator);
+      const amountLabel = exhausted
+        ? 'Exhausted ' + percent.toFixed(0) + '%'
+        : Math.round(current) + ' / ' + Math.round(effectiveMax);
+      if (nodes.value.textContent !== amountLabel) nodes.value.textContent = amountLabel;
+      nodes.row.setAttribute('aria-valuenow', String(Math.round(percent)));
+      nodes.row.title = spec.label + ': ' + amountLabel +
+        (activeAfflictions.length ? '\n' + activeAfflictions.map(([id, def]) =>
+          (def.name || id) + ' ' + Math.round(rs.getAffliction(player, id))).join(', ') : '');
     }
-    if (_vbHealthFill) {
-      const pct = Math.round(Math.max(0, Math.min(100, deps.player.health / deps.player.maxHealth * 100)));
-      if (pct !== _vbLastHealthPct) { _vbLastHealthPct = pct; _vbHealthFill.style.width = `${pct}%`; }
-    }
-    if (_vbStaminaFill) {
-      const pct = Math.round(Math.max(0, Math.min(100, deps.player.stamina / deps.player.maxStamina * 100)));
-      if (pct !== _vbLastStaminaPct) { _vbLastStaminaPct = pct; _vbStaminaFill.style.width = `${pct}%`; }
-    }
-    if (_vbFootingFill && deps.player.maxFooting) {
-      const pct = Math.round(Math.max(0, Math.min(100, deps.player.footing / deps.player.maxFooting * 100)));
-      if (pct !== _vbLastFootingPct) { _vbLastFootingPct = pct; _vbFootingFill.style.width = `${pct}%`; }
-    }
+    hudRoot.classList.toggle('is-active', visibleCount > 0);
   }
 
   function updatePlayerVitals(dt) {
@@ -76,6 +178,16 @@
       health: Number(deps?.player?.health) || 0,
       maxHealth: Number(deps?.player?.maxHealth) || 0,
       deathHandled,
+      hud: {
+        visible: !!hudRoot?.classList.contains('is-active'),
+        rows: Object.fromEntries(HUD_RESOURCES.map(spec => [
+          spec.key, {
+            visible: !!hudNodes[spec.key]?.row?.classList.contains('is-active'),
+            text: hudNodes[spec.key]?.value?.textContent || '',
+            afflictionSegments: hudNodes[spec.key]?.segments?.children?.length || 0,
+          },
+        ])),
+      }, // Visible in PlayerVitals.getDebug() for mobile-compatible in-game diagnostics.
     }),
   };
 })();
