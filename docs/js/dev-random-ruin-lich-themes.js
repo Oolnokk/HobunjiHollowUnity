@@ -9,14 +9,13 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const PULSE_SECONDS = 1; // Hronal pillar warning: three pulses at one-second spacing.
   const PILLAR_RADIUS = 3.1; // Hronal trigger and eruption radius, measured in tiles.
-  const ICE_COVERAGE = 0.70; // Tothal floor tiles covered by an ice skin per room.
   // Minecraft-like ground friction (ice slipperiness .98 x normal drag .91 ≈ .892)
   // at a 20 Hz reference step. Normal movement's collision/swept handling stays
   // authoritative; no post-frame position override or accumulated hold timer.
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.11; // Half the Western Slope snow height; used for Kanthic tiles.
-  const PLASM_EXPANSION_MS = 250; // Four growth beats per second while the entire patch is unobserved.
-  const PLASM_TILES_PER_BEAT = 3; // Up to twelve new walkable cells per second; one curved-cap rebuild per beat batch.
+  const PLASM_EXPANSION_MS = 500; // Two growth beats per second while no plasm is visible.
+  const PLASM_TILES_PER_BEAT = 1; // Exactly one new tile per beat (2 tiles/s, capped by room geometry).
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
@@ -221,19 +220,10 @@
     return root;
   }
   function makeIce(kit) {
-    for(const room of world.rooms){
-      const keys=[];
-      for(const key of world.context.floorSet||[]){
-        const [x,z]=tileFromKey(key),p={x:x+.5,z:z+.5};
-        if(p.x>=room.bounds.minX&&p.x<room.bounds.maxX&&p.z>=room.bounds.minZ&&p.z<room.bounds.maxZ)keys.push(key);
-      }
-      const ranked=keys.map((key,i)=>({key,sort:seeded(i,room.index+0x3107)})).sort((a,b)=>a.sort-b.sort);
-      for(const entry of ranked.slice(0,Math.round(keys.length*ICE_COVERAGE))){
-        const [x,z]=tileFromKey(entry.key),cx=x+.5,cz=z+.5;
-        if(!clearAt(cx,cz,floorY(kit,cx,cz)))continue;
-        world.iceTiles.add(entry.key);
-      }
-    }
+    // Tothal's *entire* generated floor, including corridor links and room
+    // thresholds, is iced. Do not randomly discard 30% of tiles or skip
+    // tile skins underneath furniture: visuals and physics share floorSet.
+    for(const key of world.context.floorSet || [])world.iceTiles.add(key);
     if(!world.iceTiles.size)return;
     world.iceMaterial=new THREE.MeshBasicMaterial({color:0x8bcdf5,transparent:true,opacity:.31,depthWrite:false,side:THREE.DoubleSide});
     world.iceMesh=renderCurvedTiles(kit,world.iceTiles,world.iceMaterial,.025,'tothal_ice_sheen');
@@ -722,6 +712,7 @@
   function growPlasmRoom(kit,room,point) {
     const patch=room.plasm;
     if(!patch?.size||!room.plasmCap)return false;
+    const occupiedKey=tileKey(point.x,point.z); // The player's current tile is inviolable when growth chooses a frontier.
     let changed=false;
     for(let count=0;count<PLASM_TILES_PER_BEAT;count++){
       const frontier=new Map();
@@ -729,7 +720,7 @@
         const [x,z]=tileFromKey(key);
         for(const [dx,dz] of PLASM_NEIGHBORS){
           const px=x+dx,pz=z+dz,nk=px+','+pz;
-          if(patch.has(nk)||frontier.has(nk))continue;
+          if(nk===occupiedKey||patch.has(nk)||frontier.has(nk))continue; // Never expand into the tile currently supporting the player.
           const n={x:px+.5,z:pz+.5};
           if(n.x<=room.bounds.minX||n.x>=room.bounds.maxX||n.z<=room.bounds.minZ||n.z>=room.bounds.maxZ)continue;
           if(!clearAt(n.x,n.z,floorY(kit,n.x,n.z)))continue;
