@@ -60,7 +60,7 @@ const first = Visuals.create(kit, {parent:root,name:'test-ceiling',x:3,y:5,z:7})
 const second = Visuals.create(kit, {parent:root,name:'second-ceiling',x:6,y:5,z:8});
 assert.equal(root.children.length, 2);
 assert.equal(first.object.position.y, 5);
-assert.equal(first.attachmentGap(5), -0.05, 'Ceiling plate embeds into the roof instead of hovering');
+assert.ok(Math.abs(first.attachmentGap(5) + .05) < 1e-9, 'Ceiling plate embeds into the roof instead of hovering');
 assert.equal(first.object.children.length, 9, 'Five joined solids plus four decaled aiming faces');
 assert.ok(first.object.userData.devRuinFootprintIgnore, 'Ceiling target never blocks walking paths');
 const stones = first.object.children.filter(item => item.geometry?.type === 'box');
