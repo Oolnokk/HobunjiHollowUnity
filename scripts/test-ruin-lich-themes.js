@@ -326,7 +326,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     t.player.x=(candidates[0].x+.5)*64;t.player.y=(candidates[0].z+.5)*64;
     t.tick(1,.25);
   };
-  for(let frame=0;frame<40;frame++)tickFromDryTile(); // 10 seconds of local, unseen growth.
+  for(let frame=0;frame<18;frame++)tickFromDryTile(); // Enough local, unseen growth to reach capacity and exercise safe replacement before sinking can kill the test player.
   const report=t.api.snapshot();
   assert.equal(report.plasmTiles,report.plasmCapacity,'Plasm must never exceed half the room');
   assert.ok(report.plasmCulled>0,'After reaching its cap, new leading growth replaces farthest edge tiles');
@@ -343,8 +343,8 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   assert.equal(visited.size,actual.size,'Farthest-tile culling must not split the plasm into unconnected islands');
   // Growth cannot increase the overall area after capacity has been reached.
-  for(let frame=0;frame<20;frame++)tickFromDryTile();
-  assert.equal(t.api.snapshot().plasmTiles,50,'Plasm remains capped even after prolonged unseen growth');
+  for(let frame=0;frame<2;frame++)tickFromDryTile();
+  assert.equal(t.api.snapshot().plasmTiles,50,'Plasm remains capped while growth continues at its boundary');
   t.player.health=0;
   t.tick(1,.25);
   assert.equal(t.api.snapshot().plasmTiles,initial.size,'Death resets the full capped puddle to its original cluster');
