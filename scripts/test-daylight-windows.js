@@ -588,7 +588,7 @@ const enclosedBranch = cloudFog.slice(enclosedBranchStart, enclosedBranchEnd);
 assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors and underground spaces must retain the stable positional carried-lantern reveal');
 assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors and underground spaces must retain stable positional furniture-light reveals');
 assert.doesNotMatch(enclosedBranch, /drawBlendedInteriorAtmosphere\(darknessAlpha, rect\)/, 'ordinary interiors must not use the whole-room smoothed atmosphere path that regressed farmhouse readability');
-assert.match(enclosedBranch, /if \(ordinaryBuildingInterior\(currentArea\)\) drawWindowLightMasks\(\)/, 'ordinary building interiors must keep daylight windows as positional light reveals; mines/dens stay window-free');
+assert.match(enclosedBranch, /if \(ordinaryBuildingInterior\(currentArea\) && !ruinTradition\) drawWindowLightMasks\(\)/, 'ordinary authored building interiors retain positional daylight-window reveals, but lich ruins remain independent of windows');
 assert.doesNotMatch(cloudFog, /function sampleEnclosedAtmosphere|function drawBlendedInteriorAtmosphere/, 'the retired whole-room atmosphere blend must not linger as dead code');
 assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the unified lighting compositor');
 assert.match(gameIndex, /daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the canonical daylight-window visual hierarchy');
