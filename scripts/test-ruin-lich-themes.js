@@ -27,12 +27,12 @@ class Vector {
   applyAxisAngle() { return this; }
 }
 class Node {
-  constructor() { this.children = []; this.position = new Vector(); this.rotation = new Vector(); this.scale = new Vector(); this.matrix = {}; this.visible = true; }
+  constructor() { this.children = []; this.position = new Vector(); this.rotation = new Vector(); this.scale = new Vector(); this.matrix = {}; this.visible = true; this.disposed=false; }
   add(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
   remove(node) { this.children = this.children.filter(child => child !== node); node.parent = null; }
   traverse(visitor) { visitor(this); for (const child of this.children) child.traverse(visitor); }
   updateMatrix() {}
-  dispose() {}
+  dispose() {this.disposed=true;}
 }
 class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
 class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
@@ -150,6 +150,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const caps=[];
   t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('kanthic_plasm_snow_shelf_edge_'))caps.push(mesh);});
   assert.ok(caps.length,'Plasm must use tapered-edge surface variants');
+  const firstInstanced=caps.slice(); // Each subsequent growth rebuild must retire these per-instance GPU buffers.
   assert.equal(t.api.snapshot().lightSources, 0, 'Kanthic relies on lantern alone');
   // Turn toward the seed from outside the narrowed radius; the player can
   // still see the direction, but not the actual puddle at lantern range.
@@ -161,6 +162,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   t.tick(4,.25);
   const grown=t.api.snapshot().plasmTiles;
   assert.ok(grown>=initial+8,'An entirely unseen puddle must add approximately 12 cells per second');
+  assert.ok(firstInstanced.every(mesh=>mesh.disposed),'Rebuilding a fast-growing puddle must free its previous instanced GPU buffers');
   // Step out of the chamber; no room transition is allowed to cull the patch.
   t.player.x=30*64;t.player.y=30*64;
   t.tick(2,.25);
@@ -174,7 +176,6 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
       const px=p.x+dx,pz=p.z+dz;
       if(px<2||px>=12||pz<2||pz>=12||t.api.isPlasmAt(px+.5,pz+.5))continue;
-      observer={x:px+.025*(dx>0?1:dx<0?-1:0)+.5*(dz!==0?1:0),z:pz+.5};
       // Stand 0.525 tiles away from the observed edge but in the dry neighbour.
       observer={x:dx>0?p.x+1.025:dx<0?p.x-.025:p.x+.5,
         z:dz>0?p.z+1.025:dz<0?p.z-.025:p.z+.5, target:{x:p.x+.5,z:p.z+.5}};
@@ -192,6 +193,42 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   assert.equal(t.api.snapshot().active,false,'Only leaving/clearing the entire ruin removes the puddle');
   // Teardown is idempotent; repeated clear is safe.
   t.composer.clear();
+}
+{
+  // Two rooms are independently seeded. Crossing their boundary can make
+  // new plasm grow, but must never reset either room's previous footprint.
+  const rooms=[
+    {id:'west',bounds:{minX:2,maxX:12,minZ:2,maxZ:12}},
+    {id:'east',bounds:{minX:12,maxX:22,minZ:2,maxZ:12}},
+  ];
+  const t=setup('kanthic',3,3,{rooms,maxX:22});
+  const seedWest=[],seedEast=[];
+  for(let z=2;z<12;z++)for(let x=2;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5)){
+    (x<12?seedWest:seedEast).push(x+','+z);
+  }
+  assert.ok([4,9,16].includes(seedWest.length)&&[4,9,16].includes(seedEast.length),
+    'Each room receives its own initial solid 2x2–4x4 puddle');
+  t.player.x=16.3*64;t.player.y=7.3*64;
+  t.tick(4,.25);
+  for(const key of seedWest.concat(seedEast)){
+    const [x,z]=key.split(',').map(Number);
+    assert.ok(t.api.isPlasmAt(x+.5,z+.5),'Changing rooms may never cull a pre-existing plasm tile: '+key);
+  }
+  const beforeLeaving=t.api.snapshot().plasmTiles;
+  t.player.x=40*64;t.player.y=40*64;t.tick(3,.25);
+  assert.equal(t.api.snapshot().plasmTiles,beforeLeaving,'Leaving all generated rooms while still in the dungeon preserves every patch');
+  // Fatal immersion must not erase the patch either; only full runtime clear
+  // on dungeon exit is permitted to destroy it.
+  const [sx,sz]=seedWest[0].split(',').map(Number);
+  t.player.x=(sx+.5)*64;t.player.y=(sz+.5)*64;
+  t.tick(13,.25);
+  assert.equal(t.player.health,0,'Plasm remains lethal after repeated room transitions');
+  for(const key of seedWest.concat(seedEast)){
+    const [x,z]=key.split(',').map(Number);
+    assert.ok(t.api.isPlasmAt(x+.5,z+.5),'Player death may not cull persistent plasm: '+key);
+  }
+  t.composer.clear();
+  assert.equal(t.api.isPlasmAt(sx+.5,sz+.5),false,'Exiting and clearing the dungeon finally releases all plasm');
 }
 {
   const t=setup('tothal');
