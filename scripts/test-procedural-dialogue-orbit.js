@@ -224,6 +224,7 @@ const rayOrigin = { set(x, y, z) { Object.assign(this, { x, y, z }); return this
 const rayDirection = { set(x, y, z) { Object.assign(this, { x, y, z }); return this; } }; // Shared Raycaster direction scratch.
 let lateralCalls = 0, directCalls = 0; // Distinguishes off-center clearance rays from the direct 3D sightline.
 let wallVisible = true; // Toggles a side wall without changing the camera heading.
+let shotSignature = 'paragraph:1'; // Switching authored orbit shots must clear the previous paragraph's camera squeeze.
 let elapsedMs = 1000; // Allows frame-rate-independent outward camera recovery checks.
 const raycaster = {
   set(origin, direction) { this.origin = { ...origin }; this.direction = { ...direction }; },
@@ -247,7 +248,7 @@ const collisionContext = vm.createContext({
   npcGridForArea: () => roomTiles, tileSurfaceYInArea: () => 0,
   isNpcTileWalkable: (_, c, r) => !!roomTiles[r]?.[c] && roomTiles[r][c].type !== 'rock' && !roomTiles[r][c].npcFurnitureCollider,
   performance: { now: () => elapsedMs }, THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
-  window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true } },
+  window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true, activeRecord: () => ({signature:shotSignature}) } },
   _cameraOcclusionOriginVec: rayOrigin, _cameraOcclusionDirVec: rayDirection, _cameraOcclusionRaycaster: raycaster,
 });
 vm.runInContext(game.slice(solverStart, solverEnd) + '\nthis.solve=occlusionSafeCameraPosition;this.horizontalDebug=()=>_cameraHorizontalDebug;this.tileDistance=cameraTileCollisionDistance;', collisionContext);
@@ -263,6 +264,15 @@ assert(recovering.z > blockedReach && recovering.z < 3, 'camera extends smoothly
 elapsedMs = 1200;
 const recoveredMore = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
 assert(recoveredMore.z > recovering.z, 'clearance recovery progresses with elapsed real time');
+wallVisible = true;
+elapsedMs = 1300;
+const priorParagraph = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
+assert(priorParagraph.z < 1.1, 'prior paragraph is still clamped by a nearby wall');
+wallVisible = false;
+shotSignature = 'paragraph:2';
+elapsedMs = 1301;
+const hardCut = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
+assert(hardCut.z > 2.95, 'a newly activated instant-cut orbit discards stale horizontal collision smoothing');
 const emptyFloorDistance = collisionContext.tileDistance(0.5, 1, 0.5, 0.5, 1.6, 4.5);
 assert.equal(emptyFloorDistance, null, 'unobstructed floor tiles do not constrain the camera');
 roomTiles[2][0].type = 'rock'; // Authored map collider (including nonrendered wall tile).
