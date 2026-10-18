@@ -1,11 +1,11 @@
 # Weeklong town festivals
 
-All five festivals last seven civil days, starting and ending at midnight. Decorations stay throughout the week; residents gather from 10:00 to 22:00 and otherwise resume their ordinary schedules. Roads, building entrances, terrain, and every town exit remain unchanged. The normal town returns automatically, including when the player stays in town across a date change.
+All five festivals last seven civil days, starting and ending at midnight. Decorations stay throughout the week; residents gather from 15:00 to 01:00 and otherwise resume their ordinary schedules. Roads, building entrances, terrain, and every town exit remain unchanged. The normal town returns automatically, including when the player stays in town across a date change.
 
 | Festival | Dates | Working activities |
 | --- | --- | --- |
 | Hachutukara | Firstrise 22–28 | Permanent animal-mask gift, temporary resident costumes, a sweet from each resident, Hunundi's story through ordinary dialogue, dance, supervised live sparring with Oddclaw |
-| Gorkunash | Highheat 8–14 | Quality-based cooked-meal potluck, dance, existing music minigame and live musician, bottle usable through the ordinary drink/share system |
+| Gorkunash | Highheat 8–14 | Movable bandstand (Foroji/Kaboku alternating Kurraya sets), dance floor, outdoor dining and six-pot feast with one contributed meal; 200 Festival Fun converts to one heart overnight |
 | Tzizkhanash | Firstfall 22–28 | Wooden ancestor shrines, remembrance text, quality-based offering and choice of a 336-day blessing |
 | Feast of the Five Blossoms | Thirdfall 15–21 | Five Blossom Dance, music, five-petal decorations and gathering court |
 | Mountaindawn | Shallowfrost 1–7 | Double gift Favor and gift Rapport; a high-potency restorative gift from every available NPC with at least three hearts, including friends outside town |
@@ -16,9 +16,9 @@ The seasonal dates use the existing regional calendar, not an invented month-to-
 
 ## Playing the skeleton
 
-The guide near town tile 32,34 lists the current activity locations. Most activity courts are on the southern lawn beyond the shop road; Hunundi's Hachutukara storytelling circle and a secondary ancestor shrine sit beside the temple. Each activity has an in-world sign, reusable placeholder ornaments, and a normal action-bar entry. The menus support touch, keyboard, and the existing controller UI. Every festival menu includes **Copy diagnostics**.
+The Gorkunash festival guide board has been retired. Its dining, dancing, and music attractions are relocatable locale roots whose furnishings and NPC activity destinations follow them in the festival Map Editor. The other festival layouts still have their individual activity prompts. Most active courts are on the southern lawn beyond the shop road; Hunundi's Hachutukara storytelling circle and a secondary ancestor shrine sit beside the temple. Each activity has an in-world sign, reusable placeholder ornaments, and a normal action-bar entry. The menus support touch, keyboard, and the existing controller UI. Every festival menu includes **Copy diagnostics**.
 
-- Potluck consumes exactly one chosen quality of cooked food. Quality 1–5 earns 1/3/6/10/16 Favor with each resident, through normal relationship handling.
+- Gorkunash's single potluck donation consumes one selected-quality cooked meal and awards each eligible resident ten times their normal positive gift Favor; villagers who dislike or hate it receive no Favor. Five dishes change daily, and the contributed sixth pot is replaced by another daily meal from the following day onward. A festival-only bowl carries ten portions, each adding five minutes of a separate food buff up to a fifty-minute cap. Fullness lasts eighteen game hours starting at the first portion and blocks further meals at ten stacks.
 - Offerings consume exactly one chosen quality of a physical giftable item. Quality is the blessing level, 1–5. Choose movement speed (+2% per level), stamina regeneration (+4%), or positive Favor (+5%). The blessing replaces the prior ancestor blessing and expires after 336 civil days, including sleep and reloads.
 - Mountaindawn gifts and Hachutukara sweets can be received directly from nearby friends or collected from the communal table. Both routes share the same annual claim. Three hearts means 120 Favor points.
 - Dance participation uses the existing social dance animation for 20 seconds and earns +2 Favor with residents once per festival. Dodge or the leave-dance action cancels. Further dancing is allowed without repeat rewards.
@@ -53,3 +53,9 @@ Annual claims and the ancestor blessing live in `member.festivals`. Dance progre
 Festival tests execute shipped rules and layout selection, exact-quality consumption, inventory-capacity rejection, remote-friend eligibility, annual renewal, save/restore, blessing expiry across a year boundary, costume immutability, and interrupted dancing. Integration tests execute editor copy-on-write/JSON round-trips, station cleanup, live town start/end/failure recovery, and spatial checks against actual furniture footprints, rotated buildings, paths, exits, and other props. Combat tests execute transient world-space sparring and cleanup.
 
 Visual browser playtesting remains necessary before merging: inspect each layout in the editor and game, navigate every exit, and try activity menus on a phone. The implementation environment could not install its browser runtime, so automated validation is not a claim of a completed visual playthrough.
+
+## Gorkunash implementation note (draft)
+
+The Gorkunash Map Editor uses `festivalLocale` metadata on the decor root to define nested `parts` and `slots`. `MapLayoutSystem.getEffectiveMapData` expands them after the active layout resolves; moving or rotating the root automatically moves both ordinary rendered furniture and NPC pathfinding destinations. The base town is not modified. Festival dancing and meals accumulate independent Festival Fun; at each midnight 200 Festival Fun becomes 40 Favor (one heart). A mobile-readable `FestivalSystem.diagnostics()` snapshot reports the selected locale, bowl, fullness, food effects and claims.
+
+**Still in progress:** two-avatar Festival Wheel Dance gameplay playback; a proper held-item bowl with equipment-change cancellation and seated bite animation; distinct inventory furniture definitions for the overhead arch. The current festival feast menu permits portion selection but is not yet a fully world-targeted table/pot interaction.
