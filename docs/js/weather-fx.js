@@ -347,16 +347,20 @@
     }
   }
   function playThunderSfx() {
-    // Prefer the game's shared one-shot path so the global SFX volume and
-    // audio-enabled settings stay authoritative. The preload above still
-    // warms the browser cache even though AudioSystem creates the playback voice.
+    // Thunder shares the same building attenuation/low-pass settings as the
+    // rain and wind layers, while still honoring the global object-SFX mixer.
+    const area = deps?.getCurrentArea?.() || ''; // Identifies the player's active scene at the moment lightning strikes.
+    const acoustics = window.Music?.weatherAcousticsForArea?.(area); // Shares indoor settings with the loop mixer instead of inventing a second weather profile.
+    const indoors = acoustics?.indoors ?? (area === 'interior' || !!deps?._isBuildingArea?.(area));
+    const volumeScale = indoors ? (acoustics?.volume ?? 0.32) : 1; // Keeps thunder audible, but outside the walls.
+    const sfx = indoors ? { ...THUNDER_SFX, lowpassHz: acoustics?.cutoffHz ?? 780 } : THUNDER_SFX; // Only indoor thunder needs the Web Audio filter.
     if (window.AudioSystem?.playObjectSfx) {
-      window.AudioSystem.playObjectSfx(THUNDER_SFX);
+      window.AudioSystem.playObjectSfx(sfx, volumeScale);
       return;
     }
     if (typeof Audio !== 'function') return;
     const snd = thunderPreload?.cloneNode?.(true) || new Audio(THUNDER_SFX.url);
-    snd.volume = THUNDER_SFX.volume;
+    snd.volume = THUNDER_SFX.volume * volumeScale; // Volume-only fallback still sounds distant without the shared SFX player.
     try { snd.play?.()?.catch?.(() => {}); } catch (_) {}
   }
   let debugWeatherOverride = null; // Read by updateRainState while Testing Arena weather buttons are active.

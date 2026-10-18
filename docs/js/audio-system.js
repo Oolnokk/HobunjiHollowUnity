@@ -730,23 +730,40 @@
   // playHeavyFilteredClip uses for a heavy landing thud, minus the
   // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
   // is unavailable or gainBoost isn't set.
-  function playSfxAudioElement(snd, volume, gainBoost) {
-    if (!(gainBoost > 1)) {
+  function playSfxAudioElement(snd, volume, gainBoost, lowpassHz = 0) {
+    const filtered = Number.isFinite(lowpassHz) && lowpassHz > 0; // Only specifically authored occluded SFX (such as indoor thunder) use a low-pass.
+    if (!(gainBoost > 1) && !filtered) {
       snd.volume = Math.min(1, volume);
       snd.play().catch(() => {});
       return;
     }
+    let source = null; // Allows sound effects to fall back to direct output when the optional filter graph fails halfway through.
+    let ctx = null; // Holds the shared audio context for the direct-output recovery path below.
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) throw new Error('no AudioContext');
-      const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+      ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
       if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      const source = ctx.createMediaElementSource(snd);
-      const gain = ctx.createGain();
+      if (filtered && ctx.state !== 'running') {
+        snd.volume = Math.min(1, volume); // Avoid sending the weather one-shot into a silent context on restricted mobile browsers.
+        snd.play().catch(() => {});
+        return;
+      }
+      source = ctx.createMediaElementSource(snd); // One source per one-shot; other object SFX remain on their existing transport.
+      const gain = ctx.createGain(); // Applies the original loudness/boost after optional low-pass filtering.
       gain.gain.value = Math.max(0, volume * gainBoost);
-      source.connect(gain).connect(ctx.destination);
+      if (filtered) {
+        const filter = ctx.createBiquadFilter(); // Muffles thunder without affecting unrelated game audio.
+        filter.type = 'lowpass';
+        filter.frequency.value = lowpassHz;
+        filter.Q.value = 0.65;
+        source.connect(filter).connect(gain).connect(ctx.destination);
+      } else {
+        source.connect(gain).connect(ctx.destination);
+      }
       snd.play().catch(() => {});
     } catch (e) {
+      if (source && ctx) try { source.connect(ctx.destination); } catch (_) {} // A failed optional DSP graph must not swallow weather SFX.
       snd.volume = Math.min(1, volume);
       snd.play().catch(() => {});
     }
@@ -784,10 +801,10 @@
         if ('preservesPitch' in fallback) fallback.preservesPitch = false;
         if ('webkitPreservesPitch' in fallback) fallback.webkitPreservesPitch = false;
         if ('mozPreservesPitch' in fallback) fallback.mozPreservesPitch = false;
-        playSfxAudioElement(fallback, volume, gainBoost);
+        playSfxAudioElement(fallback, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
       }, { once: true });
     }
-    playSfxAudioElement(snd, volume, gainBoost);
+    playSfxAudioElement(snd, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
   }
 
   function playGeneratedStoneKchunk(volume = 1) {
