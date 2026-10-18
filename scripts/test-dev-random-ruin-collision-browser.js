@@ -29,7 +29,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     return render?.sourceDoorMeshes > 0 && render.visibleDoorSources === render.sourceDoorMeshes
       && render.sourceActivatorMeshes > 0 && render.visibleActivatorSources === render.sourceActivatorMeshes
       && render.totalProxyCount === 0;
-  }, null, { timeout:10000 }).catch(async error => {
+  }, null, { timeout:10000, polling:250 }).catch(async error => { // Headless/WebGL rAF can stall even after all visibility conditions are true.
     // Keep the original assertion, but report the exact failed counts when CI
     // cannot display WebGL. These are also available from Pixel Probe in-game.
     const sceneDebug = await page.evaluate(() => ({
