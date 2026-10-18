@@ -244,44 +244,48 @@
     if (!lowCount || !highCount) return null;
     return {min,max,span,low,high};
   }
-  function crackRibbon(shaft, profile, face, stage, salt) {
-    const vertices = []; // Triangles follow the real shaft's taper, not a generic rectangular replacement.
-    const positive = face % 2 === 0, axisX = face >= 2;
-    const horizontalSpan = axisX ? Math.max(Math.abs(profile.min.z),Math.abs(profile.max.z)) : Math.max(Math.abs(profile.min.x),Math.abs(profile.max.x));
+  function crackRibbon(shaft, profile, stage, salt) {
+    const vertices = []; // Four tapered source faces batched into one mesh for each crack stage (three draw calls per converted pillar).
     const start = stage === 1 ? .11 : stage === 2 ? .28 : .41;
     const end = stage === 1 ? .85 : stage === 2 ? .75 : .93;
     const offset = stage === 1 ? 0 : stage === 2 ? -.20 : .23;
-    const pointAt = step => {
-      const portion = step / 8, y = profile.min.y + profile.span * (start + (end - start) * portion);
-      const t = (y - profile.min.y) / profile.span;
-      const extent = THREE.MathUtils.lerp(axisX ? profile.low.x : profile.low.z,
-        axisX ? profile.high.x : profile.high.z, t);
-      const cross = (offset + Math.sin(step * 1.75 + salt) * .08 + Math.sin(step * 3.2 + salt) * .04) * horizontalSpan * 2;
-      const facePosition = (positive ? 1 : -1) * (extent + .014); // Slight surface bias prevents z-fighting on the textured stone.
-      return axisX ? {x:facePosition,y,z:cross} : {x:cross,y,z:facePosition};
-    };
     const halfWidth = stage === 1 ? .010 : .008;
-    for (let i = 0; i < 8; i++) {
-      const a = pointAt(i), b = pointAt(i+1);
-      const leftA = axisX ? {x:a.x,y:a.y,z:a.z-halfWidth} : {x:a.x-halfWidth,y:a.y,z:a.z};
-      const rightA = axisX ? {x:a.x,y:a.y,z:a.z+halfWidth} : {x:a.x+halfWidth,y:a.y,z:a.z};
-      const leftB = axisX ? {x:b.x,y:b.y,z:b.z-halfWidth} : {x:b.x-halfWidth,y:b.y,z:b.z};
-      const rightB = axisX ? {x:b.x,y:b.y,z:b.z+halfWidth} : {x:b.x+halfWidth,y:b.y,z:b.z};
-      for (const vertex of [leftA,rightA,leftB,rightA,rightB,leftB]) vertices.push(vertex.x,vertex.y,vertex.z);
+    for (let face = 0; face < 4; face++) {
+      const positive = face % 2 === 0, axisX = face >= 2;
+      const horizontalSpan = axisX ? Math.max(Math.abs(profile.min.z),Math.abs(profile.max.z))
+        : Math.max(Math.abs(profile.min.x),Math.abs(profile.max.x));
+      const pointAt = step => {
+        const portion = step / 8, y = profile.min.y + profile.span * (start + (end - start) * portion);
+        const t = (y - profile.min.y) / profile.span;
+        const extent = THREE.MathUtils.lerp(axisX ? profile.low.x : profile.low.z,
+          axisX ? profile.high.x : profile.high.z, t);
+        const cross = (offset + Math.sin(step * 1.75 + salt + face) * .08
+          + Math.sin(step * 3.2 + salt + face) * .04) * horizontalSpan * 2;
+        const position = (positive ? 1 : -1) * (extent + .014); // Keep fracture triangles just above the original textured stone.
+        return axisX ? {x:position,y,z:cross} : {x:cross,y,z:position};
+      };
+      for (let i = 0; i < 8; i++) {
+        const a = pointAt(i), b = pointAt(i+1);
+        const leftA = axisX ? {x:a.x,y:a.y,z:a.z-halfWidth} : {x:a.x-halfWidth,y:a.y,z:a.z};
+        const rightA = axisX ? {x:a.x,y:a.y,z:a.z+halfWidth} : {x:a.x+halfWidth,y:a.y,z:a.z};
+        const leftB = axisX ? {x:b.x,y:b.y,z:b.z-halfWidth} : {x:b.x-halfWidth,y:b.y,z:b.z};
+        const rightB = axisX ? {x:b.x,y:b.y,z:b.z+halfWidth} : {x:b.x+halfWidth,y:b.y,z:b.z};
+        for (const vertex of [leftA,rightA,leftB,rightA,rightB,leftB]) vertices.push(vertex.x,vertex.y,vertex.z);
+      }
     }
-    const geometry = new THREE.BufferGeometry(); // One tiny unlit mesh per face/stage, with no runtime geometry regeneration.
+    const geometry = new THREE.BufferGeometry(); // Draw once for all four jagged crack ribbons at this stage.
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
     geometry.computeVertexNormals?.();
     const material = new THREE.MeshBasicMaterial({
-      color:0xff8a21, transparent:true, opacity:stage===1?.20:0,
+      color:0xff8a21, transparent:true, opacity:stage === 1 ? .20 : 0,
       depthWrite:false, side:THREE.DoubleSide
     });
     const crack = new THREE.Mesh(geometry,material);
     crack.name = 'hronal_crack_decal';
-    crack.userData.devRuinFootprintIgnore = true; // Decorative fissures never add fake body collision.
-    crack.userData.ruinCrackStage = stage; // updatePillars reveals each branch on its matching pulse.
+    crack.userData.devRuinFootprintIgnore = true; // Crack art must never become a horizontal blocker.
+    crack.userData.ruinCrackStage = stage; // Each pulse reveals one additional four-sided fissure layer.
     crack.visible = stage === 1;
-    shaft.add(crack); // Parent transform copies the *exact* source pillar's taper, scale, rotation and floor height.
+    shaft.add(crack); // The original authored support's shaft/parent transform still determines the final silhouette.
     return crack;
   }
   function convertDecoyPillar(kit, room, support) {
@@ -292,9 +296,7 @@
     const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
     if (!(size.y >= 1.7) || !(Math.max(size.x,size.z) > .1)) return false;
     const cracks = []; // Native decals are separately owned and explicitly removed on a reroll.
-    for (let face = 0; face < 4; face++) {
-      for (let stage = 1; stage <= 3; stage++) cracks.push(crackRibbon(shaft,profile,face,stage,room.index + face));
-    }
+    for (let stage = 1; stage <= 3; stage++) cracks.push(crackRibbon(shaft,profile,stage,room.index)); // Three batched meshes, each drawing four crack faces.
     const light = addLight(center.x,center.y,center.z,1.85,.12,[255,109,28]); // Slight steady glow until the timed three-pulse rupture.
     world.pillars.push({
       x:center.x,z:center.z,y:box.min.y,height:size.y,width:Math.max(size.x,size.z),
