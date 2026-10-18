@@ -14,12 +14,21 @@
   const BLOCK_HEIGHT = 0.48;
   const BLOCK_DEPTH = 0.32;
   let runeTexture = null; // Cached for every generated target; never destroyed during a ruin reroll.
+  let runeGeometry = null; // One immutable rune plane shared by all target decals instead of four allocations per target.
 
   function texture() {
     if (runeTexture) return runeTexture;
     runeTexture = new THREE.TextureLoader().load(RUNE_PATH);
     if (THREE.SRGBColorSpace) runeTexture.colorSpace = THREE.SRGBColorSpace;
     return runeTexture;
+  }
+
+  function sharedRuneGeometry() {
+    if (!runeGeometry) {
+      runeGeometry = new THREE.PlaneGeometry(.25, .27);
+      runeGeometry.userData = Object.assign({}, runeGeometry.userData, { devRuinSharedPrimitive:true }); // SimplePuzzles.disposeObject must not free a shared plane on reroll.
+    }
+    return runeGeometry;
   }
 
   function create(kit, { parent, name = 'dev_ruin_ceiling_sconce_target', x = 0, y = 0, z = 0 } = {}) {
@@ -29,14 +38,17 @@
     object.position.set(x, y, z);
     object.userData.devRuinCeilingSconceTarget = true;
     object.userData.devRuinFootprintIgnore = true; // Ceiling furniture must not enter the ground-navigation footprint scan.
+    const fallbackStone = kit.makeBasic(0x7a746b); // Reused by all five stone parts when the authored stone material runtime is unavailable.
+    const stoneParts = []; // Used to dispose the unused fallback material after NaturalSurfaceMaterials replaces it.
 
     function stone(nameSuffix, width, height, depth, px, py, pz) {
-      const mesh = new THREE.Mesh(kit.sharedBoxGeometry(width, height, depth), kit.makeBasic(0x7a746b));
+      const mesh = new THREE.Mesh(kit.sharedBoxGeometry(width, height, depth), fallbackStone);
       mesh.name = name + '_' + nameSuffix;
       mesh.position.set(px, py, pz);
       kit.naturalizeStone?.(mesh); // Uses the same stretched carved_smooth.png finish as ordinary ruin stone.
       mesh.userData.devRuinFootprintIgnore = true;
       object.add(mesh);
+      stoneParts.push(mesh);
       return mesh;
     }
 
@@ -48,6 +60,7 @@
     stone('support_cap', .39, .08, .39, 0, -.445, 0);       // top -.405, bottom -.485
     const hitMesh = stone('decaled_block', BLOCK_WIDTH, BLOCK_HEIGHT, BLOCK_DEPTH, 0, BLOCK_CENTER_Y, 0); // top -.45
     stone('base_trim', .38, .06, .38, 0, -.91, 0);          // overlaps block bottom -.93
+    if (stoneParts.every(part => part.material !== fallbackStone)) fallbackStone.dispose?.(); // Avoid five leaked Basic materials per reroll.
 
     const material = new THREE.MeshBasicMaterial({
       map:texture(), color:IDLE_COLOR, transparent:true,
@@ -61,7 +74,7 @@
     ]; // Four vertical aiming faces match the wall-mounted V50 short-obelisk core.
     for (let i = 0; i < faces.length; i++) {
       const face = faces[i];
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(.25, .27), material);
+      const plane = new THREE.Mesh(sharedRuneGeometry(), material);
       plane.name = name + '_glyph_decal_' + i;
       plane.position.set(face.x, BLOCK_CENTER_Y, face.z);
       plane.rotation.y = face.yaw;
