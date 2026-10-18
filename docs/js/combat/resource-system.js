@@ -342,9 +342,36 @@
     return multiplier;
   }
 
+  // The natural recovery scalars are shared by base and late-installed status
+  // modules; DoTs deliberately retain their original damage/tick semantics.
+  const PASSIVE_RECOVERY_SCALES = Object.freeze({
+    bruisedHealth: .25, corrodedHealth: .25,
+    woundedStamina: .25, infectedStamina: .25,
+    frostbittenStamina: .25, shatteredStamina: .25,
+    scentMarkedHealth: .25, drunkenHealth: .25,
+    congealedHealth: .8, woundedHealth: .8,
+    windedStamina: .8, drunkenFooting: .8,
+    shamblingFooting: .8, // Immutable; it cannot naturally recover.
+  });
+  const getAfflictionNaturalRecoveryScale = id => PASSIVE_RECOVERY_SCALES[id] ?? 1;
+  const recoveryRemainders = new WeakMap();
+  function recoverAfflictionNaturally(entity, id, amount) {
+    if (!(amount > 0) || !entity || !(getAffliction(entity, id) > 0)) return 0;
+    let balances = recoveryRemainders.get(entity);
+    if (!balances) { balances = new Map(); recoveryRemainders.set(entity, balances); }
+    const total = (balances.get(id) || 0) + amount;
+    const steps = Math.floor(total * 10 + 1e-7);
+    if (!steps) { balances.set(id, total); return 0; }
+    balances.set(id, Math.max(0, total - steps / 10));
+    const actual = (window.ResourceSystem?.removeAffliction || removeAffliction)(entity, id, steps / 10);
+    if (!(getAffliction(entity, id) > 0)) balances.delete(id);
+    return actual;
+  }
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
     .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
-    .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
+    .map(([id]) => id);
+  // Wounded Health is registered later by amphibious-fishing.js.
+  RECOVERING_AFFLICTIONS.push('woundedHealth');
 
   // Baseline afflictions a creature's plain attackTag applies (see game.js's
   // CREATURE_DB attackTag field — gar-wolves 'sharp', dabinggi-hounds
@@ -1056,9 +1083,9 @@
   function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
     const congealed = getAffliction(entity, "congealedHealth");
     if (congealed <= 0) return;
-    const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt);
-    removeAffliction(entity, "congealedHealth", amount);
-    if (!healthRecoveryBlocked) applyHealthRecovery(entity, amount);
+    const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * getAfflictionNaturalRecoveryScale('congealedHealth') * (rest.rested ? 2 : 1) * dt);
+    const recovered = recoverAfflictionNaturally(entity, "congealedHealth", amount);
+    if (!healthRecoveryBlocked && recovered > 0) applyHealthRecovery(entity, recovered);
   }
 
   function getAfflictionRecoveryMultiplier(entity, id, rested = false) {
@@ -1071,14 +1098,14 @@
       const elapsedSinceActionMs = getPunishedActionElapsedMs(entity, def.punishedAction); // Used after prone ends to reward refraining from whichever action this affliction explicitly punishes.
       if (forcedAvoidanceRecovery || elapsedSinceActionMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
     }
-    return multiplier;
+    return multiplier * getAfflictionNaturalRecoveryScale(id);
   }
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
     for (const id of RECOVERING_AFFLICTIONS) {
       if (getAffliction(entity, id) <= 0) continue;
       const recoveryMultiplier = getAfflictionRecoveryMultiplier(entity, id, rest.rested); // Keeps ordinary recovery unchanged while action-punishing afflictions accelerate after their punished action is avoided.
-      removeAffliction(entity, id, cfg.afflictionRecoveryPerSec * recoveryMultiplier * dt);
+      recoverAfflictionNaturally(entity, id, cfg.afflictionRecoveryPerSec * recoveryMultiplier * dt);
     }
   }
 
@@ -1159,6 +1186,8 @@
     applyHealthAfflictionDamage,
     getExhaustionSpeed,
     getAfflictionRecoveryMultiplier,
+    getAfflictionNaturalRecoveryScale,
+    recoverAfflictionNaturally,
     getPunishedActionElapsedMs,
     setStaminaRegenBlocked,
     isStaminaRegenBlocked,

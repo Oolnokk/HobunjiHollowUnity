@@ -122,7 +122,7 @@ function makeContext({
   harness.window.ResourceSystem.tick(harness.entity, 1, { healthRegenPerSec: 7 });
   assert.strictEqual(harness.entity.health, 45, 'recent-combat hostile keeps Bleeding damage and gains no passive or Congealed Health');
   assert.strictEqual(harness.window.ResourceSystem.getAffliction(harness.entity, 'bleedingHealth'), 0, 'Bleeding still resolves during combat');
-  assert.strictEqual(harness.window.ResourceSystem.getAffliction(harness.entity, 'congealedHealth'), 6.4, 'Congealed buildup still recovers during combat without restoring current Health');
+  assert.strictEqual(harness.window.ResourceSystem.getAffliction(harness.entity, 'congealedHealth'), 7.2, 'Congealed buildup recovers at 80% of the old rate without restoring Health');
 }
 
 {
@@ -130,7 +130,7 @@ function makeContext({
   harness.window.ResourceSystem.tick(harness.entity, 1, { healthRegenPerSec: 7 });
   assert.strictEqual(harness.entity.health, 45, 'amphibious fish cannot heal during a long combat lull');
   assert.strictEqual(harness.window.ResourceSystem.getAffliction(harness.entity, 'bleedingHealth'), 0, 'rested-timer Bleeding still damages an actively chasing fish instead of healing it');
-  assert.strictEqual(harness.window.ResourceSystem.getAffliction(harness.entity, 'congealedHealth'), 2.8, 'rested-rate Congealed maintenance may continue without restoring fish Health');
+  assert.strictEqual(harness.window.ResourceSystem.getAffliction(harness.entity, 'congealedHealth'), 4.3, 'rested Congealed recovery is 25% longer without restoring fish Health');
   assert.strictEqual(harness.window.CombatHealthRecoveryPolicy.getDebug().lastBlockedTick.reason, 'state:chasing', 'debug state identifies the persistent Gurumahi combat state that blocked recovery');
 }
 

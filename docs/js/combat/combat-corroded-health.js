@@ -67,7 +67,13 @@
 
     for (const [id, definition] of Object.entries(RS.AFFLICTIONS)) {
       if (definition?.recovers !== false || !(RS.getAffliction(entity, id) > 0)) continue;
-      RS.removeAffliction(entity, id, amount);
+      // These have dedicated recovery paths; applying the fallback would
+      // double-pay their natural recovery.
+      if (id === 'drunkenFooting' || id === 'drunkenHealth'
+        || id === 'congealedHealth' || id === 'scentMarkedHealth') continue;
+      const scale = RS.getAfflictionNaturalRecoveryScale?.(id) ?? 1;
+      if (scale < 1) RS.recoverAfflictionNaturally(entity, id, amount * scale);
+      else RS.removeAffliction(entity, id, amount); // DoTs unchanged.
     }
     RS.enforceCaps?.(entity);
   }

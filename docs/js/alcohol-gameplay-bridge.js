@@ -380,11 +380,10 @@
       const recovery = Math.max(0, elapsedTickSeconds * DRUNK_RECOVERY_PER_SEC);
       if (!(recovery > 0)) return result;
 
-      const beforeFootingDrunk = Number(entity.afflictions?.[DRUNK_FOOTING_ID]) || 0;
-      RS.removeAffliction(entity, DRUNK_FOOTING_ID, recovery);
-      const footingRecovered = Math.max(0,
-        beforeFootingDrunk - (Number(entity.afflictions?.[DRUNK_FOOTING_ID]) || 0));
-      RS.removeAffliction(entity, DRUNK_HEALTH_ID, recovery);
+      const footingRecovered = RS.recoverAfflictionNaturally(entity, DRUNK_FOOTING_ID,
+        recovery * RS.getAfflictionNaturalRecoveryScale(DRUNK_FOOTING_ID));
+      RS.recoverAfflictionNaturally(entity, DRUNK_HEALTH_ID,
+        recovery * RS.getAfflictionNaturalRecoveryScale(DRUNK_HEALTH_ID));
       if (footingRecovered > 0) {
         entity.footing = Math.min(
           RS.getEffectiveMax(entity, 'footing'),
