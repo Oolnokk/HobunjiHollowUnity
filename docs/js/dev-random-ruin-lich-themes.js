@@ -94,39 +94,86 @@
       }
     }
   }
-  function addSurfaceInstance(mesh, index, x, y, z, scale = 1) {
-    const dummy = world.dummy; // One reusable Object3D for all instance matrices.
-    dummy.position.set(x, y, z);
-    dummy.rotation.set(0, 0, 0);
-    dummy.scale.set(scale, 1, scale);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(index, dummy.matrix);
+  // Snow-style caps: adjacent tiles meet flush, but an exposed boundary drops
+  // through a smooth curved shoulder to the original floor. 16 shared
+  // neighbour-mask geometries avoid generating unique vertices for each tile.
+  // N=1 E=2 S=4 W=8; mask selection also works for growing plasm patches.
+  function surfaceMask(x,z,tiles) {
+    return (tiles.has(x+','+(z-1))?1:0) |
+      (tiles.has((x+1)+','+z)?2:0) |
+      (tiles.has(x+','+(z+1))?4:0) |
+      (tiles.has((x-1)+','+z)?8:0);
+  }
+  function curvedCapGeometry(mask,height) {
+    const g=new THREE.BufferGeometry();
+    const axis=[0,.17,.83,1],verts=[],uv=[],indices=[];
+    const smooth=t=>{t=between(t,0,1);return t*t*(3-2*t);};
+    for(let zi=0;zi<4;zi++)for(let xi=0;xi<4;xi++){
+      const u=axis[xi],v=axis[zi];
+      let factor=1;
+      if(!(mask&1))factor=Math.min(factor,smooth(v/.25));
+      if(!(mask&2))factor=Math.min(factor,smooth((1-u)/.25));
+      if(!(mask&4))factor=Math.min(factor,smooth((1-v)/.25));
+      if(!(mask&8))factor=Math.min(factor,smooth(u/.25));
+      verts.push(u-.5,height*factor,v-.5);
+      uv.push(u,v);
+    }
+    for(let z=0;z<3;z++)for(let x=0;x<3;x++){
+      const i=z*4+x;indices.push(i,i+4,i+1,i+1,i+4,i+5);
+    }
+    g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    g.setIndex(indices);
+    return g;
+  }
+  function capGeometry(mask,height) {
+    const key=(height>.05?'plasm':'ice')+mask;
+    let geometry=world.surfaceGeometries.get(key);
+    if(!geometry){geometry=curvedCapGeometry(mask,height);world.surfaceGeometries.set(key,geometry);}
+    return geometry;
+  }
+  function addSurfaceInstance(mesh,index,x,y,z) {
+    const dummy=world.dummy; // Shared instance transform avoids per-tile allocations.
+    dummy.position.set(x,y,z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);
+    dummy.updateMatrix();mesh.setMatrixAt(index,dummy.matrix);
+  }
+  function renderCurvedTiles(kit,tiles,material,height,label) {
+    const byMask=Array.from({length:16},()=>[]);
+    for(const key of tiles){
+      const [x,z]=tileFromKey(key),mask=surfaceMask(x,z,tiles);
+      byMask[mask].push({x:x+.5,z:z+.5,y:floorY(kit,x+.5,z+.5)});
+    }
+    const root=new THREE.Group();
+    root.name=label;
+    byMask.forEach((items,mask)=>{
+      if(!items.length)return;
+      const mesh=new THREE.InstancedMesh(capGeometry(mask,height),material,items.length);
+      mesh.name=label+'_edge_'+mask;
+      items.forEach((p,i)=>addSurfaceInstance(mesh,i,p.x,p.y+.006,p.z));
+      mesh.instanceMatrix.needsUpdate=true;
+      mesh.frustumCulled=false;
+      root.add(mesh);
+    });
+    world.group.add(root);
+    return root;
   }
   function makeIce(kit) {
-    const tiles = []; // Coverage and movement test share this one exact set.
-    for (const room of world.rooms) {
-      const keys = [];
-      for (const key of world.context.floorSet || []) {
-        const [x, z] = tileFromKey(key), p = { x:x + .5, z:z + .5 };
-        if (p.x >= room.bounds.minX && p.x < room.bounds.maxX && p.z >= room.bounds.minZ && p.z < room.bounds.maxZ) keys.push(key);
+    for(const room of world.rooms){
+      const keys=[];
+      for(const key of world.context.floorSet||[]){
+        const [x,z]=tileFromKey(key),p={x:x+.5,z:z+.5};
+        if(p.x>=room.bounds.minX&&p.x<room.bounds.maxX&&p.z>=room.bounds.minZ&&p.z<room.bounds.maxZ)keys.push(key);
       }
-      const ranked = keys.map((key, i) => ({ key, sort:seeded(i, room.index + 0x3107) })).sort((a, b) => a.sort - b.sort);
-      for (const entry of ranked.slice(0, Math.round(keys.length * ICE_COVERAGE))) {
-        const [x, z] = tileFromKey(entry.key), cx = x + .5, cz = z + .5;
-        if (!clearAt(cx, cz, floorY(kit, cx, cz))) continue; // Do not bury a solid puzzle/door in a slippery tile.
-        world.iceTiles.add(entry.key); tiles.push({ x:cx, z:cz, y:floorY(kit, cx, cz) });
+      const ranked=keys.map((key,i)=>({key,sort:seeded(i,room.index+0x3107)})).sort((a,b)=>a.sort-b.sort);
+      for(const entry of ranked.slice(0,Math.round(keys.length*ICE_COVERAGE))){
+        const [x,z]=tileFromKey(entry.key),cx=x+.5,cz=z+.5;
+        if(!clearAt(cx,cz,floorY(kit,cx,cz)))continue;
+        world.iceTiles.add(entry.key);
       }
     }
-    if (!tiles.length) return;
-    const geo = new THREE.PlaneGeometry(.985, .985); // Almost-flat ice skin, slightly inset to avoid tile-edge z fighting.
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color:0x8bcdf5, transparent:true, opacity:.31, depthWrite:false, side:THREE.DoubleSide });
-    const mesh = new THREE.InstancedMesh(geo, mat, tiles.length); // One draw call for all icy tiles.
-    mesh.name = 'tothal_ice_sheen';
-    for (let i = 0; i < tiles.length; i++) addSurfaceInstance(mesh, i, tiles[i].x, tiles[i].y + .018, tiles[i].z);
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
-    world.group.add(mesh);
+    if(!world.iceTiles.size)return;
+    world.iceMaterial=new THREE.MeshBasicMaterial({color:0x8bcdf5,transparent:true,opacity:.31,depthWrite:false,side:THREE.DoubleSide});
+    world.iceMesh=renderCurvedTiles(kit,world.iceTiles,world.iceMaterial,.025,'tothal_ice_sheen');
   }
   function makeIcicles(kit) {
     const geo = new THREE.ConeGeometry(.16, .94, 6);
@@ -528,24 +575,16 @@
     const loader = new THREE.TextureLoader();
     const texture = loader.load(OIL_TEXTURE, t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; });
     world.ownedTexture = texture;
-    world.plasmGeometry = new THREE.BoxGeometry(.99, PLASM_DEPTH, .99);
+    // Plasm uses the same snow-style curved cap geometry as the ice, at 0.11u depth.
     world.plasmMaterial = new THREE.MeshBasicMaterial({color:0x251c34, map:texture, transparent:true, opacity:.88, depthWrite:false});
     updatePlasmMesh(kit);
   }
   function updatePlasmMesh(kit) {
-    const patches = world.rooms.flatMap(room => [...(room.plasm || [])]);
-    world.plasmMesh?.parent?.remove(world.plasmMesh);
-    world.plasmMesh?.dispose?.();
-    if (!patches.length) { world.plasmMesh = null; return; }
-    const mesh = new THREE.InstancedMesh(world.plasmGeometry, world.plasmMaterial, patches.length);
-    mesh.name = 'kanthic_plasm_snow_shelf';
-    patches.forEach((key, index) => {
-      const [x,z] = tileFromKey(key);
-      addSurfaceInstance(mesh, index, x+.5, floorY(kit,x+.5,z+.5) + PLASM_DEPTH*.4, z+.5);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
-    world.group.add(mesh); world.plasmMesh = mesh;
+    const patches=new Set(world.rooms.flatMap(room=>[...(room.plasm||[])]));
+    world.plasmMesh?.parent?.remove(world.plasmMesh); // Geometry variants remain shared until composer teardown.
+    world.plasmMesh=null;
+    if(!patches.size)return;
+    world.plasmMesh=renderCurvedTiles(kit,patches,world.plasmMaterial,PLASM_DEPTH,'kanthic_plasm_snow_shelf');
   }
   function obstructed(a,b,kit) {
     const count = Math.ceil(distance(a,b) * 3);
@@ -621,7 +660,7 @@
     world = {
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
-      lights:[],pillars:[],iceTiles:new Set(),icicles:[],bursts:[],motion:new WeakMap(),
+      lights:[],pillars:[],iceTiles:new Set(),icicles:[],bursts:[],motion:new WeakMap(),surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
       plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,lastPlasmRoom:null,sink:0,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
@@ -666,13 +705,19 @@
     }
     window.DevRandomRuinTileOccupancy?.clearSolids?.('lich-theme-pillars'); // Reroll/leave cannot strand invisible, still-colliding Hronal columns.
     window.DevRandomRuinTileOccupancy?.refresh?.();
-    world.plasmGeometry?.dispose(); world.plasmMaterial?.dispose(); world.ownedTexture?.dispose();
+    world.ownedTexture?.dispose();
+    const ownedGeometries=new Set(world.surfaceGeometries.values());
+    const ownedMaterials=new Set([world.iceMaterial,world.plasmMaterial].filter(Boolean));
     world.group.parent?.remove(world.group);
-    world.group.traverse(obj => {
-      if (obj.isMesh && obj !== world.plasmMesh && !world.icicles.some(i=>i.mesh===obj) && !world.bursts.some(b=>b.mesh===obj)) {
-        obj.geometry?.dispose?.(); obj.material?.dispose?.();
-      }
+    const icicleMeshes=new Set(world.icicles.map(spike=>spike.mesh));
+    const burstMeshes=new Set(world.bursts.map(b=>b.mesh));
+    world.group.traverse(obj=>{
+      if(!obj.isMesh||icicleMeshes.has(obj)||burstMeshes.has(obj))return;
+      if(obj.geometry)ownedGeometries.add(obj.geometry);
+      for(const material of Array.isArray(obj.material)?obj.material:[obj.material])if(material)ownedMaterials.add(material);
     });
+    for(const geometry of ownedGeometries)geometry.dispose?.();
+    for(const material of ownedMaterials)material.dispose?.();
     world = null;
     badgeClock = 0;
   }
