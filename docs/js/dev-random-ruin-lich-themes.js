@@ -13,7 +13,7 @@
   // at a 20 Hz reference step. Normal movement's collision/swept handling stays
   // authoritative; no post-frame position override or accumulated hold timer.
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
-  const PLASM_DEPTH = 0.11; // Half the Western Slope snow height; used for Kanthic tiles.
+  const PLASM_DEPTH = 0.22; // Match Western Slope snow's visibly raised cap and .22-wide curved perimeter lip.
   const PLASM_EXPANSION_MS = 500; // Two growth beats per second while no plasm is visible.
   const PLASM_TILES_PER_BEAT = 1; // Exactly one new tile per beat (2 tiles/s, capped by room geometry).
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
