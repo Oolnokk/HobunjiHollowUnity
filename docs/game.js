@@ -12087,7 +12087,8 @@
             } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
-            root.position.set(spawnPos.c + 0.5, npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5); // Buildings/caverns can carry nonzero rendered floor surfaces; never force animal/person walkers to Y=0.
+            const arrival = window.NpcPathfinding.nearestWalkableTile(area, spawnPos.c, spawnPos.r); // Never arrive off the destination map's walkable floor (js/npc-pathfinding.js).
+            root.position.set(arrival.c + 0.5, npcSurfaceY(area, arrival.c, arrival.r), arrival.r + 0.5); // Buildings/caverns can carry nonzero rendered floor surfaces; never force animal/person walkers to Y=0.
           },
           // Surface/interior-aware placeholder footstep hook — shared by every
           // NPC movement path since they all funnel through moveToward().

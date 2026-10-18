@@ -316,7 +316,39 @@
     return false;
   }
 
+  // Smoked/dried/jerky stacks and queued batches saved before processed goods carried cooking
+  // metadata hold output snapshots (or no definition at all after a reload) without
+  // cookingCategories, so the hearth never offered them. The current recipe is the authority.
+  const PRESERVED_SUFFIX = /^(.+?)(Smoked|Dried|Jerky)$/;
+  function currentPreservedOutput(key, sourceKey) {
+    if (!sourceKey || !deps.ITEM_DEFS[sourceKey]) return null;
+    for (const method of ['smoking', 'drying']) {
+      const current = getProcessingOutput(method, sourceKey);
+      if (current?.key === key) return current;
+    }
+    return null;
+  }
+
+  // stock: { itemKey: count }; repairs the definition of every held preserved good.
+  function repairPreservedDefs(stock) {
+    let repaired = 0;
+    for (const key of Object.keys(stock || {})) {
+      if (!(Number(stock[key]) > 0)) continue;
+      const match = PRESERVED_SUFFIX.exec(key);
+      if (!match || deps.ITEM_DEFS[key]?.cookingCategories?.length) continue;
+      const current = currentPreservedOutput(key, match[1]);
+      if (!current?.cookingCategories?.length) continue;
+      ensureProcessedItemDef(current);
+      repaired++;
+    }
+    return repaired;
+  }
+
   function ensureProcessedItemDef(output) {
+    if (!output?.cookingCategories?.length) { // Saved batch snapshots predate cooking metadata.
+      const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
+      if (current) output = { ...output, ...current, ingredientKeys: output.ingredientKeys, giftIngredientKeys: output.giftIngredientKeys };
+    }
     const presentationMetadata = {
       ...(output.icon ? { icon: output.icon } : {}),
       ...(output.label ? { label: output.label } : {}),
@@ -375,5 +407,6 @@
     getProcessingOutputs,
     isWheelEligible,
     ensureProcessedItemDef,
+    repairPreservedDefs,
   };
 })();

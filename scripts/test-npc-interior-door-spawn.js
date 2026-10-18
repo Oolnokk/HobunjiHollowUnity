@@ -56,4 +56,27 @@ for (const room of ['map_i_inn_F2_hreesh', 'map_i_inn_F2_jubmir']) {
   const toHall = window.NpcPathfinding.findNpcAreaLink(room, 'map_i_inn_F2', { warmBuildings: false });
   assert.ok(floorSet('map_i_inn_F2').has(`${toHall.spawn.c},${toHall.spawn.r}`), `hallway arrival from ${room} is on the hallway floor`);
 }
+
+// Defensive arrival guard: a spawn that lands off the destination floor is moved onto it.
+{
+  const hall = loadMap('map_i_inn_F2');
+  const hallFloor = floorSet('map_i_inn_F2');
+  const grid = Array.from({ length: hall.rows }, (_, r) => Array.from({ length: hall.cols }, (_, c) => ({ type: hallFloor.has(`${c},${r}`) ? 'floor' : 'wall' })));
+  window.NpcPathfinding.init({
+    isBuildingArea: area => String(area).startsWith('map_i_'),
+    isZoneArea: () => false,
+    isSolid: type => type === 'wall',
+    npcGridForArea: area => (area === 'map_i_inn_F2' ? grid : null),
+    npcMovementConfig: () => ({}),
+    furnitureBlocksMovementAt: () => false,
+    npcTransitionPool: area => scenes.get(area)?.transitions || [],
+    buildingScenes: scenes,
+    loadBuildingScene() {},
+    buildingSpawnFromExit: window.BuildingEntrySpawn.fromExit,
+  });
+  assert.deepEqual({ ...window.NpcPathfinding.nearestWalkableTile('map_i_inn_F2', 5, 9) }, { c: 5, r: 9 }, 'a floor tile is kept');
+  const snapped = window.NpcPathfinding.nearestWalkableTile('map_i_inn_F2', 5, 12);
+  assert.ok(hallFloor.has(`${snapped.c},${snapped.r}`), `an off-floor spawn (5,12) snaps onto the hallway floor, got (${snapped.c},${snapped.r})`);
+  assert.deepEqual({ ...window.NpcPathfinding.nearestWalkableTile('map_i_inn_F2_hreesh', 0, 0) }, { c: 0, r: 0 }, 'an unloaded destination is left alone');
+}
 console.log('NPC interior door spawns land on authored walkable tiles: ok');
