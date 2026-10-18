@@ -210,17 +210,20 @@
     .sb-water  { font-size: 11px; color: #6ec6f0; flex-shrink: 0; }
     .sb-gold   { font-size: 11px; color: #f0d040; flex-shrink: 0; }
 
-    /* ── Minimal bottom resource bars: black-outlined tracks, no container ── */
+    /* ── Player-only resource bars: viewport-relative dimensions.
+       At 1440x720: 320px -> 400px wide; 11px -> 16.5px tall;
+       2px -> 4px black border. On 400px-wide touch: 260px -> 325px. ── */
     #vitalsBar {
       position: fixed;
       left: var(--play-center);
-      bottom: calc(max(12px, env(safe-area-inset-bottom)) + 36px);
-      transform: translate(-50%, 6px);
-      width: min(320px, calc(100vw - 30px));
+      bottom: max(2.2dvh, env(safe-area-inset-bottom));
+      transform: translate(-50%, .6dvh);
+      width: 27.78vw;
+      max-width: 92vw;
       z-index: 20;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: .5dvh;
       padding: 0;
       border: 0;
       background: transparent;
@@ -235,12 +238,14 @@
     #vitalsBar .vb-track {
       position: relative;
       width: 100%;
-      height: 11px;
-      overflow: hidden;
-      border: 2px solid #000;
-      border-radius: 2px;
+      height: 2.29dvh;
+      min-height: 12px;
+      overflow: visible; /* Required for droplets to fall past the edge. */
+      border: .556dvh solid #000;
+      border-radius: .22dvh;
       background: rgba(0, 0, 0, .45);
       box-sizing: border-box;
+      isolation: isolate;
     }
     #vitalsBar .vb-fill {
       position: absolute;
@@ -257,32 +262,97 @@
       top: 0; bottom: 0;
       box-shadow: inset 1px 0 #000, inset -1px 0 #000;
       transition: left .15s ease-out, width .15s ease-out;
+      pointer-events: none;
     }
+
+    /* Two composited droplets per live band, not JS-spawned particles.
+       Poison oozes slowly, Wounded Health drips more softly. */
+    #vitalsBar .vb-effect-drip::before,
+    #vitalsBar .vb-effect-drip::after {
+      content: '';
+      position: absolute;
+      z-index: 4;
+      top: 65%;
+      width: min(.34dvw, 5px);
+      min-width: 2px;
+      height: .85dvh;
+      border-radius: 45% 45% 65% 65%;
+      background: currentColor;
+      opacity: 0;
+      animation: vb-drip-fall 2s ease-in infinite;
+      pointer-events: none;
+    }
+    #vitalsBar .vb-effect-drip::before { left: 28%; }
+    #vitalsBar .vb-effect-drip::after { left: 72%; animation-delay: -1s; }
+    #vitalsBar .vb-effect-poison::before,
+    #vitalsBar .vb-effect-poison::after {
+      border-radius: 60% 45% 70% 50%;
+      animation-duration: 3.1s;
+    }
+    #vitalsBar .vb-effect-wound::before,
+    #vitalsBar .vb-effect-wound::after { animation-duration: 2.7s; height: .6dvh; }
+    @keyframes vb-drip-fall {
+      0%, 12% { transform: translate3d(0, 0, 0) scaleY(.3); opacity: 0; }
+      25% { opacity: .92; }
+      73% { transform: translate3d(0, 1.7dvh, 0) scaleY(1.15); opacity: .83; }
+      100% { transform: translate3d(0, 2.3dvh, 0) scaleY(.85); opacity: 0; }
+    }
+
+    /* Short, thin missing chips for afflictions that punish later hits
+       or resource spending (Bruised, Wounded/Infected Stamina, etc.). */
+    #vitalsBar .vb-effect-brittle::before,
+    #vitalsBar .vb-effect-brittle::after {
+      content: '';
+      position: absolute;
+      z-index: 3;
+      width: min(9px, 13%);
+      height: max(1px, .13dvh);
+      background: #000;
+      pointer-events: none;
+    }
+    #vitalsBar .vb-effect-brittle::before { left: 21%; top: 25%; transform: rotate(-16deg); }
+    #vitalsBar .vb-effect-brittle::after { right: 20%; bottom: 19%; transform: rotate(17deg); }
+
+    /* Shriveled/ragged unavailable capacity for Congealed, Winded, Drunken
+       Footing, Shambling, Wounded Health and later reducers. Preserve exact
+       capacity boundary in geometry; only animate its decorative surface. */
     #vitalsBar .vb-cap {
       position: absolute; top: 0; bottom: 0;
-      background: repeating-linear-gradient(135deg, rgba(0,0,0,.75) 0 3px, rgba(255,255,255,.12) 3px 5px);
-      border-left: 1px solid #000;
+      background: repeating-linear-gradient(135deg, rgba(0,0,0,.83) 0 .5dvh, rgba(255,255,255,.16) .5dvh .8dvh);
+      border-left: .17dvh solid #000;
       pointer-events: none;
     }
     #vitalsBar .vb-cap[hidden] { display: none; }
-    #vitalsBar .vb-row.is-exhausted .vb-fill { border-right: 2px solid #000; }
-    @media (max-width: 600px) {
-      #vitalsBar { width: min(260px, calc(100vw - 30px)); }
+    #vitalsBar .vb-cap.is-withered {
+      clip-path: polygon(0 15%, 11% 34%, 22% 10%, 36% 45%, 47% 31%, 62% 67%, 76% 51%, 90% 78%, 100% 67%, 100% 100%, 0 100%);
+      transform-origin: center bottom;
+      animation: vb-cap-wither 3.8s ease-in-out infinite alternate;
     }
-    /* Keep desktop resource bars above the persistent keyboard legend rather than under it. */
+    @keyframes vb-cap-wither {
+      from { transform: translate3d(0, 0, 0) scaleY(.96); }
+      to { transform: translate3d(0, 0, 0) scaleY(.72); }
+    }
+    #vitalsBar .vb-row.is-exhausted .vb-fill { border-right: .22dvh solid #000; }
+
+    /* Keep the bars at the bottom; move the desktop key guide out of the way. */
     @media (pointer: fine) {
-      #vitalsBar {
-        bottom: max(calc(max(12px, env(safe-area-inset-bottom)) + 36px), calc(100vh - var(--oy) - 16.3 * var(--row) + 12px));
+      @supports selector(body:has(#vitalsBar.is-active)) {
+        body:has(#vitalsBar.is-active) #keyHud { top: calc(var(--oy) + 13.4 * var(--row)); }
       }
     }
-    /* World-interaction prompts occupy the same center strip; lift vitals above an open prompt on touch and desktop. */
+    @media (max-width: 600px) {
+      #vitalsBar { width: 81.25vw; }
+    }
+    /* Only lift bars when a centered interactive prompt actually opens. */
     @supports selector(body:has(#actionPrompt.open)) {
       body:has(#actionPrompt.open) #vitalsBar {
-        bottom: max(calc(max(12px, env(safe-area-inset-bottom)) + 36px), calc(100vh - var(--oy) - 15.2 * var(--row) + 12px));
+        bottom: max(2.2dvh, calc(100dvh - var(--oy) - 15.2 * var(--row) + 1.2dvh));
       }
     }
     @media (prefers-reduced-motion: reduce) {
       #vitalsBar, #vitalsBar .vb-fill, #vitalsBar .vb-affliction-segment { transition: none; }
+      #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after,
+      #vitalsBar .vb-cap.is-withered { animation: none; }
     }
     body.authored-cutscene #vitalsBar, body.introduction-loading #vitalsBar {
       opacity: 0 !important; visibility: hidden !important;

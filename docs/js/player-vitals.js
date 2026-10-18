@@ -17,7 +17,7 @@
     { key: 'stamina', value: 'stamina', max: 'maxStamina', label: 'Stamina' },
     { key: 'footing', value: 'footing', max: 'maxFooting', label: 'Footing' },
   ]); // Drives the shared renderer without maintaining three separate HUD algorithms.
-  const hudNodes = Object.create(null); // Lazily caches each row, fill, segment layer, cap overlay and number label.
+  const hudNodes = Object.create(null); // Caches row, fill, segment nodes and cap overlays for lightweight updates.
   let hudRoot = null; // The bottom-center #vitalsBar; resolved after the body exists.
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -32,7 +32,7 @@
         fill: document.getElementById('vb' + spec.label + 'Fill'),
         segments: document.getElementById('vb' + spec.label + 'Segments'),
         cap: document.getElementById('vb' + spec.label + 'Cap'),
-        segmentSignature: '',
+        segmentsByKey: new Map(), // Preserve CSS animations between ordinary resource ticks.
         fillColor: '', // Tracks the CSS color assigned to the ordinary/exhausted bar across frames.
       };
     }
@@ -69,23 +69,54 @@
     return visible;
   }
 
+  // Player HUD only: symbolic visuals deliberately do not touch enemy rings.
+  const DRIP_EFFECTS = Object.freeze({
+    bleedingHealth: 'drip',
+    poisonedHealth: 'drip poison',
+    woundedHealth: 'drip wound',
+  });
+  const BRITTLE_EFFECTS = new Set([
+    'bruisedHealth', 'woundedStamina', 'infectedStamina',
+    'frostbittenStamina', 'shatteredStamina',
+    'scentMarkedHealth', 'drunkenHealth',
+  ]);
+
+  function effectClasses(id) {
+    const kinds = DRIP_EFFECTS[id] || (BRITTLE_EFFECTS.has(id) ? 'brittle' : '');
+    return kinds.split(' ').filter(Boolean).map(kind => ' vb-effect-' + kind).join('');
+  }
+
   function drawAfflictionSegments(nodes, pieces, denominator) {
-    const signature = pieces.map(piece => [
-      piece.id, (piece.start / denominator * 100).toFixed(1),
-      (piece.end / denominator * 100).toFixed(1), piece.color,
-    ].join(':')).join('|'); // Limits DOM replacements to meaningful visible segment changes.
-    if (signature === nodes.segmentSignature) return;
-    nodes.segmentSignature = signature;
-    const elements = pieces.map(piece => {
-      const segment = document.createElement('span'); // Each colored interval overlays the normal resource fill.
-      segment.className = 'vb-affliction-segment';
-      segment.style.left = (piece.start / denominator * 100).toFixed(1) + '%';
-      segment.style.width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
-      segment.style.backgroundColor = piece.color;
-      segment.title = piece.name;
-      return segment;
-    });
-    nodes.segments.replaceChildren(...elements);
+    const previous = nodes.segmentsByKey;
+    const next = new Map();
+    const order = [];
+    const occurrences = Object.create(null);
+    for (const piece of pieces) {
+      const nth = occurrences[piece.id] || 0;
+      occurrences[piece.id] = nth + 1;
+      const key = piece.id + ':' + nth;
+      let segment = previous.get(key);
+      if (!segment) {
+        segment = document.createElement('span');
+        segment.className = 'vb-affliction-segment' + effectClasses(piece.id);
+        segment.title = piece.name;
+      }
+      const left = (piece.start / denominator * 100).toFixed(1) + '%';
+      const width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
+      if (segment.style.left !== left) segment.style.left = left;
+      if (segment.style.width !== width) segment.style.width = width;
+      if (segment.style.backgroundColor !== piece.color) segment.style.backgroundColor = piece.color;
+      if (segment.style.color !== piece.color) segment.style.color = piece.color;
+      next.set(key, segment);
+      order.push(segment);
+    }
+    const rendered = nodes.segments.children;
+    // Never replace the span merely because an affliction amount changed:
+    // doing so would reset its CSS drop animation dozens of times a second.
+    if (rendered.length !== order.length || order.some((item, index) => rendered[index] !== item)) {
+      nodes.segments.replaceChildren(...order);
+    }
+    nodes.segmentsByKey = next;
   }
 
   function refreshVitalsHud() {
@@ -123,6 +154,11 @@
 
       const missingCapacity = Math.max(0, authoredMax - effectiveMax); // Hatches capacity removed by afflictions (rather than treating it as spent).
       nodes.cap.hidden = exhausted || missingCapacity <= 0.05;
+      // Late-registered reducer definitions sometimes lack the canonical
+      // reducesEffectiveMax metadata; honor the observed drop in capacity.
+      const capAfflicted = activeAfflictions.some(([id, def]) =>
+        def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth');
+      nodes.cap.classList.toggle('is-withered', !nodes.cap.hidden && capAfflicted);
       if (!nodes.cap.hidden) {
         nodes.cap.style.left = (effectiveMax / denominator * 100).toFixed(1) + '%';
         nodes.cap.style.width = (missingCapacity / denominator * 100).toFixed(1) + '%';
