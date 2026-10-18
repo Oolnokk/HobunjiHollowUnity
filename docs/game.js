@@ -16112,6 +16112,7 @@
       }
 
       function cycleActiveInventoryItem(delta) {
+        window.FestivalSystem?.discardFestivalBowl?.('selected-another-item'); // A bowl is a temporary held item, not part of the ordinary inventory carousel.
         const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         activeItemIndex = (activeItemIndex + delta + stacks.length) % stacks.length;
@@ -18802,6 +18803,7 @@
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) {
           if (activeAction === 'obj_stand') endSitInteraction();
+          else if (activeAction === 'festival_eat_bowl') window.FestivalSystem?.toggleSeatedMeal?.();
           else if (activeAction === 'calendar_wait') window.CalendarSystem?.openTimePassage?.('wait');
           else if (activeAction === 'temple_pray') window.TemplePrayerRestBlessings?.openMenu?.();
           return;
@@ -18915,6 +18917,11 @@
           return;
         }
         if (activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet') { window.FestivalSystem?.receiveNpcReward?.(nearbyNpcWalker, activeAction); refreshActionBar(); return; }
+        if (activeAction === 'festival_take_bowl') { window.FestivalSystem?.takeFestivalBowl?.(); refreshActionBar(); return; }
+        if (activeAction === 'festival_fill_bowl') {
+          window.FestivalSystem?.fillFestivalBowl?.(window.FestivalSystem?.potIndexAtAim?.());
+          refreshActionBar(); return;
+        }
         if (activeAction === 'festival_activity') { window.FestivalUI?.open?.(); return; }
         if (activeAction === 'festival_stop_dance') { window.FestivalSystem?.cancelDance?.(); refreshActionBar(); return; }
         if (activeAction === 'npc_offer_gift') {
@@ -22468,8 +22475,9 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        const bowl = heldMode === 'item' ? window.FestivalSystem?.festivalBowl?.() : null; // Display the festival serving as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || getActiveInventoryItem(); // Performance reuses its equipped prop descriptor instead of allocating one every frame.
+          || (bowl ? { key:'festival_bowl', icon:'🥣', label:bowl.meal?.label || 'Festival Bowl', spriteIcon:'festival-bowl.png' } : getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -25092,6 +25100,8 @@
           seatedActions.push({ icon: '⏳', label: 'Wait', action: 'calendar_wait', inputAction: 'action2', style: 'secondary', allowed: sitInteraction.phase === 'active' && !!window.CalendarSystem?.openTimePassage });
           const prayerAction = window.TemplePrayerRestBlessings?.getPrayerAction?.(); // The blessing owner supplies the same eligible prayer used by its menu.
           if (prayerAction) seatedActions.push(prayerAction);
+          const mealAction = sitInteraction.phase === 'active' ? window.FestivalSystem?.seatedMealAction?.() : null; // Eating becomes a real seated Action button next to Stand/Wait, with the bowl's n/10 badge.
+          if (mealAction) seatedActions.push(mealAction);
           return seatedActions;
         }
         // Fishing gets its own arc buttons instead of the harpoon's normal
@@ -29047,6 +29057,18 @@
         getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],
         getArea: () => currentArea,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }),
+        getAimPosition: () => { const aim = getReticleTile(); return {c:aim.probeX/TILE, r:aim.probeY/TILE}; }, // Fractional reticle probe selects one of the six nearby pots without a second targeter.
+        getActiveItemKey: () => getActiveInventoryItem()?.key || '', // Used only to cancel temporary festival bowls when the selection wheel changes.
+        getHeldMode: () => heldMode,
+        isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active',
+        equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        playFestivalBowlDrink: onBite => {
+          if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
+          updateHeldItemHolder(0);
+          if(!beginHeldDrinkAnimation('festival_bowl',onBite))return false;
+          continueHeldDrinkAnimation();
+          return true;
+        }, // Uses the authored Drink animation's strike event to expend exactly one portion.
         isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || _layoutSwapInProgress || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
         isFestivalSuspended: () => !!window.WaterSystem?.isTownFloodEmergency?.(),
         save: saveMemberWorldData,
