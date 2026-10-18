@@ -12,7 +12,8 @@
   const ICE_COVERAGE = 0.70; // Tothal floor tiles covered by an ice skin per room.
   const ICE_GLIDE_FRACTION = 0.25; // After release, replay the movement vector for 25% of the preceding continuous hold time.
   const PLASM_DEPTH = 0.11; // Half the Western Slope snow height; used for Kanthic tiles.
-  const PLASM_EXPANSION_MS = 1000; // One tile of hidden Kanthic growth per room per second.
+  const PLASM_EXPANSION_MS = 250; // Four growth beats per second while the entire patch is unobserved.
+  const PLASM_TILES_PER_BEAT = 3; // Up to twelve new walkable cells per second; one curved-cap rebuild per beat batch.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
@@ -654,21 +655,45 @@
       motion.last=point;
     }
   }
-  function makePlasm(kit) {
-    for (const room of world.rooms) {
-      const keys = [...(world.context.floorSet || [])].filter(key => {
-        const [x,z] = tileFromKey(key), b = room.bounds;
-        return x + .5 >= b.minX + .4 && x + .5 < b.maxX - .4 && z + .5 >= b.minZ + .4 && z + .5 < b.maxZ - .4;
-      });
-      if (keys.length < 9) continue;
-      const origin = keys[Math.floor(seeded(room.index, 0x1919) * keys.length)];
-      room.plasmOriginal = origin; room.plasm = new Set([origin]); room.plasmElapsed = 0;
+  function initialPlasmCluster(kit,room) {
+    const b=room.bounds;
+    // Deterministically pick a 2x2, 3x3 or 4x4 contiguous puddle. A full
+    // clear square is required: the seed can never be split around furniture
+    // or through a wall. If the chosen size cannot fit, try smaller squares.
+    const size=2+Math.floor(seeded(room.index,0x1919)*3);
+    const candidates=[];
+    for(let z=Math.ceil(b.minZ);z+1<b.maxZ;z++){
+      for(let x=Math.ceil(b.minX);x+1<b.maxX;x++){
+        candidates.push({x,z,sort:seeded(x*97+z*137,room.index+0x61b)});
+      }
     }
-    const loader = new THREE.TextureLoader();
-    const texture = loader.load(OIL_TEXTURE, t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; });
-    world.ownedTexture = texture;
-    // Plasm uses the same snow-style curved cap geometry as the ice, at 0.11u depth.
-    world.plasmMaterial = new THREE.MeshBasicMaterial({color:0x251c34, map:texture, transparent:true, opacity:.88, depthWrite:false});
+    candidates.sort((a,b)=>a.sort-b.sort);
+    for(let side=size;side>=2;side--){
+      for(const origin of candidates){
+        if(origin.x+side>b.maxX||origin.z+side>b.maxZ)continue;
+        const cluster=[];
+        let fits=true;
+        for(let dz=0;dz<side&&fits;dz++)for(let dx=0;dx<side;dx++){
+          const x=origin.x+dx,z=origin.z+dz,cx=x+.5,cz=z+.5;
+          if(!clearAt(cx,cz,floorY(kit,cx,cz))){fits=false;break;}
+          cluster.push(x+','+z);
+        }
+        if(fits)return new Set(cluster);
+      }
+    }
+    return null; // No clear 2x2: do not plant a puddle through a solid or outside a room.
+  }
+  function makePlasm(kit) {
+    for(const room of world.rooms){
+      room.plasm=initialPlasmCluster(kit,room);
+      room.plasmElapsed=0;
+    }
+    const loader=new THREE.TextureLoader();
+    const texture=loader.load(OIL_TEXTURE,t=>{t.wrapS=t.wrapT=THREE.RepeatWrapping;});
+    world.ownedTexture=texture;
+    // Snow-style curved edges; an individual patch is contiguous at birth and
+    // remains in place until the entire ruin is left or regenerated.
+    world.plasmMaterial=new THREE.MeshBasicMaterial({color:0x251c34,map:texture,transparent:true,opacity:.88,depthWrite:false});
     updatePlasmMesh(kit);
   }
   function updatePlasmMesh(kit) {
@@ -686,63 +711,93 @@
     }
     return false;
   }
-  function resetPlasmRoom(kit,room) {
-    if (!room.plasmOriginal) return;
-    room.plasm = new Set([room.plasmOriginal]); room.plasmElapsed = 0;
-    world.sink = 0;
-    updatePlasmMesh(kit);
-    lastEvent = 'kanthic:room-reset';
+  function visiblePlasmTile(kit,point,facing,room) {
+    const radius=Number(window.CloudForestFog?.getKanthicLanternRadiusTiles?.())||.6;
+    const r2=radius*radius;
+    // Every tile matters; checking only the original seed falsely allows
+    // spreading while newly advanced edges are illuminated.
+    for(const key of room.plasm||[]){
+      const [x,z]=tileFromKey(key),cx=x+.5,cz=z+.5;
+      const dx=cx-point.x,dz=cz-point.z;
+      if(dx*dx+dz*dz>r2)continue; // Outside the *actual* lantern circle always counts as unseen.
+      if(Number.isFinite(facing)&&Math.hypot(dx,dz)>.15 &&
+        Math.cos(Math.atan2(dz,dx)-facing)<.35)continue;
+      if(!obstructed(point,{x:cx,z:cz},kit))return true;
+    }
+    return false;
   }
-  function updatePlasm(kit, dt) {
-    const player = kit.deps.player, tile = kit.deps.TILE;
-    if (!player || !tile) return;
-    const point = pointOf(player, tile), room = roomAt(point);
-    if (world.lastPlasmRoom && world.lastPlasmRoom !== room) resetPlasmRoom(kit, world.lastPlasmRoom);
-    world.lastPlasmRoom = room;
-    if (!room?.plasm?.size || !alive(player)) { world.sink = 0; return; }
-    const patch = [...room.plasm].map(tileFromKey).map(([x,z]) => ({x:x+.5,z:z+.5})).sort((a,b)=>distance(a,point)-distance(b,point))[0];
-    const inside = room.plasm.has(tileKey(point.x,point.z));
-    if (!inside) {
-      world.sink = 0;
-      const first = tileFromKey(room.plasmOriginal), center = {x:first[0]+.5,z:first[1]+.5};
-      const facing = Number(player.facing); // Used with occluders to test player sight, not camera visibility (which depends on third-person orbit).
-      const bearing = Math.atan2(center.z-point.z, center.x-point.x);
-      const outOfView = Number.isFinite(facing) && Math.cos(bearing - facing) < .35;
-      if (!outOfView && !obstructed(point, center, kit)) return; // Behind the player's gaze or physically occluded, never visible directly ahead.
-      room.plasmElapsed += dt * 1000;
-      if (room.plasmElapsed >= PLASM_EXPANSION_MS) {
-        room.plasmElapsed -= PLASM_EXPANSION_MS;
-        const frontier = [];
-        for (const key of room.plasm) {
-          const [x,z] = tileFromKey(key);
-          for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-            const nk = (x+dx)+','+(z+dz), n = {x:x+dx+.5,z:z+dz+.5};
-            if (room.plasm.has(nk) || !clearAt(n.x,n.z,floorY(kit,n.x,n.z))) continue;
-            if (n.x <= room.bounds.minX || n.x >= room.bounds.maxX || n.z <= room.bounds.minZ || n.z >= room.bounds.maxZ) continue;
-            frontier.push({ key:nk, d:distance(n,point) });
-          }
+  function growPlasmRoom(kit,room,point) {
+    const patch=room.plasm;
+    if(!patch?.size)return false;
+    let changed=false;
+    for(let count=0;count<PLASM_TILES_PER_BEAT;count++){
+      const frontier=new Map();
+      for(const key of patch){
+        const [x,z]=tileFromKey(key);
+        for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const px=x+dx,pz=z+dz,nk=px+','+pz;
+          if(patch.has(nk)||frontier.has(nk))continue;
+          const n={x:px+.5,z:pz+.5};
+          if(n.x<=room.bounds.minX||n.x>=room.bounds.maxX||n.z<=room.bounds.minZ||n.z>=room.bounds.maxZ)continue;
+          if(!clearAt(n.x,n.z,floorY(kit,n.x,n.z)))continue;
+          // Prefer growing toward the player, but retain a seeded nonuniform
+          // edge rather than forming a perfectly rectangular marching wall.
+          frontier.set(nk,{key:nk,rank:distance(n,point)+seeded(px*73+pz*41,room.index+0x882)*.25});
         }
-        frontier.sort((a,b)=>a.d-b.d);
-        if (frontier.length) { room.plasm.add(frontier[0].key); updatePlasmMesh(kit); lastEvent = 'kanthic:plasm-grow'; }
       }
+      if(!frontier.size)break;
+      const next=[...frontier.values()].sort((a,b)=>a.rank-b.rank)[0];
+      patch.add(next.key);changed=true;
+    }
+    return changed;
+  }
+  function updatePlasm(kit,dt) {
+    const player=kit.deps.player,tile=kit.deps.TILE;
+    if(!player||!tile)return;
+    const point=pointOf(player,tile),room=roomAt(point);
+    // Leaving an individual room NEVER culls it. Every room's seed and
+    // expansion survive until composer clear() on exit/reroll.
+    if(!room?.plasm?.size||!alive(player)){
+      world.sink=0;
       return;
     }
-    world.sink = Math.min(1, world.sink + dt / PLASM_SINK_SECONDS);
-    const pull = Math.min(distance(point,patch), PLASM_PULL_TILES_S * dt * (1 + world.sink));
-    if (pull > 0) {
-      const vx = (patch.x-point.x)/Math.max(.001,distance(point,patch)), vz = (patch.z-point.z)/Math.max(.001,distance(point,patch));
-      const nx = point.x + vx*pull, nz = point.z + vz*pull;
-      if (clearAt(nx,nz,floorY(kit,point.x,point.z))) { player.x=nx*tile;player.y=nz*tile; }
+    const facing=Number(player.facing);
+    // An illuminated puddle anywhere in the dungeon stops growth in the
+    // current room. No one puddle can secretly grow while another is seen.
+    const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,facing,other));
+    const inside=room.plasm.has(tileKey(point.x,point.z));
+    if(!inside){
+      world.sink=0;
+      if(anythingVisible){room.plasmElapsed=0;return;} // Never bank hidden-growth time while visible.
+      room.plasmElapsed+=dt*1000;
+      let changed=false;
+      for(let beat=0;beat<4&&room.plasmElapsed>=PLASM_EXPANSION_MS;beat++){
+        room.plasmElapsed-=PLASM_EXPANSION_MS;
+        if(growPlasmRoom(kit,room,point))changed=true;
+      }
+      if(changed){updatePlasmMesh(kit);lastEvent='kanthic:plasm-grow';}
+      return;
     }
-    const baseY = floorY(kit,player.x/tile,player.y/tile);
-    const bodyHeight = Math.max(.9, Number(kit.deps.playerMesh?.userData?.portraitModelHeight) || 1.8); // A full sink hides the entire rendered body, not merely its knees.
-    window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY - world.sink * bodyHeight);
-    if (world.sink >= 1) {
-      world.sink = 0;
-      resetPlasmRoom(kit,room);
-      player.health = 0; // PlayerVitals owns the guaranteed next-tick death transition if the optional direct hook is not injected into DevSpawner.
-      kit.deps.handlePlayerDeath?.('kanthic-plasm'); // Prefer an immediate canonical respawn when the hook is present.
-      lastEvent = 'kanthic:plasm-death';
+    room.plasmElapsed=0;
+    const patch=[...room.plasm].map(tileFromKey).map(([x,z])=>({x:x+.5,z:z+.5}))
+      .sort((a,b)=>distance(a,point)-distance(b,point))[0];
+    world.sink=Math.min(1,world.sink+dt/PLASM_SINK_SECONDS);
+    const pull=Math.min(distance(point,patch),PLASM_PULL_TILES_S*dt*(1+world.sink));
+    if(pull>0){
+      const dx=patch.x-point.x,dz=patch.z-point.z,d=Math.max(.001,Math.hypot(dx,dz));
+      const nx=point.x+dx/d*pull,nz=point.z+dz/d*pull;
+      if(clearAt(nx,nz,floorY(kit,point.x,point.z))){player.x=nx*tile;player.y=nz*tile;}
+    }
+    const baseY=floorY(kit,player.x/tile,player.y/tile);
+    const bodyHeight=Math.max(.9,Number(kit.deps.playerMesh?.userData?.portraitModelHeight)||1.8);
+    window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
+    if(world.sink>=1){
+      world.sink=0;
+      // Dying does NOT erase the world hazard: respawning inside this ruin
+      // leaves every puddle exactly where the player last saw it.
+      player.health=0;
+      kit.deps.handlePlayerDeath?.('kanthic-plasm');
+      lastEvent='kanthic:plasm-death';
     }
   }
   function buildRooms(kit,context) {
@@ -753,7 +808,7 @@
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
       lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],motion:new WeakMap(),surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
-      plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,lastPlasmRoom:null,sink:0,
+      plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
     kit.group().add(world.group);
