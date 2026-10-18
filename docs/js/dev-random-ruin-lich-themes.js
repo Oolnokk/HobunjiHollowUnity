@@ -21,6 +21,7 @@
   let world = null; // Active composer state, invalidated on reroll/exit.
   let audioContext = null; // Lazily used for the 150%-gain third Hronal pulse.
   let lastEvent = 'none'; // Shown in the mobile Dev Random Ruin diagnostic.
+  let badgeClock = 0; // Throttles mobile-visible hazard counts to four updates a second.
 
   const between = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
   const tileKey = (x, z) => Math.floor(x) + ',' + Math.floor(z);
@@ -279,9 +280,11 @@
     impact?.resolveStrength?.(actor, {kind:'stone', label:'Tothal ice slide'}, deficitTiles * .25, kit.deps.TILE, {
       dealHealthDamage: (target, damage) => {
         const previous = Number(target.health) || 0;
-        target.health = Math.max(0, previous - damage);
-        if (target === kit.deps.player && previous > 0 && target.health <= 0) kit.deps.handlePlayerDeath?.('ice-slide');
-        return { applied:Math.min(previous, damage), lethal:previous > 0 && target.health <= 0 };
+        const options = {tag:'blunt',environmentalImpact:true,friendlyFire:true}; // The existing damage/death authority, never ad-hoc Health subtraction.
+        if (target === kit.deps.player) (kit.deps.damagePlayer || window.Combat?.deps?.damagePlayer)?.(damage,target.x,target.y,0,options);
+        else (kit.deps.damageCreature || window.Combat?.deps?.damageCreature)?.(target,damage,target.x,target.y,0,options);
+        const applied = Math.max(0,previous - Math.max(0,Number(target.health) || 0));
+        return {applied,lethal:previous > 0 && target.health <= 0};
       },
     }, { mode:'ice-slide' });
     lastEvent = 'tothal:slide-collision';
@@ -456,6 +459,18 @@
     if (world.theme === 'tothal') { updateIceMotion(kit,dt,actors); updateIcicles(kit,dt,actors); }
     if (world.theme === 'kanthic') updatePlasm(kit,dt);
     updateBursts(dt);
+    badgeClock += dt;
+    if (badgeClock >= .25) { // The composer snapshot already feeds mobile Pixel Probe; echo a compact live state in the in-game badge.
+      badgeClock = 0;
+      const badge = document.getElementById('devRandomRuinBadge');
+      if (badge) {
+        const report = snapshot();
+        const suffix = ' · lich '+world.theme[0].toUpperCase()+' P'+report.burstPillars+'/'+report.totalPillars+
+          ' I'+report.iceTiles+' C'+report.fallenIcicles+'/'+report.icicles+' K'+report.plasmTiles+
+          ' sink'+Math.round(report.sinking*100)+'% '+report.lastEvent;
+        badge.textContent = badge.textContent.replace(/ · lich [HTK] P[^·]+/, '') + suffix;
+      }
+    }
   }
   function clear() {
     if (!world) return;
@@ -472,6 +487,7 @@
       }
     });
     world = null;
+    badgeClock = 0;
   }
   function snapshot() {
     return world ? {
@@ -489,5 +505,6 @@
     lightSources:()=>world?.lights||[],
     activeTheme:()=>world?.theme||null,
     snapshot,
+    isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Mobile/test query reads the same authored slippery footprint as locomotion.
   });
 })();
