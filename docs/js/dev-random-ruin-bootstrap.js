@@ -38,7 +38,7 @@
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261018ceilingmount1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20261016hd25cc1c"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-rope-variants.js?v=20261016ropevariants1"></scr' + 'ipt>'); // Pump-to-height and rope-to-rope standalone rope rooms.
-  document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018ceilingmount1"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
+  document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261016h8a7c09d"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
   document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261016heb40829"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261016h0a192e6"></scr' + 'ipt>');
