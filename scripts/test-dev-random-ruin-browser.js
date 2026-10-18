@@ -169,6 +169,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       if (object.userData?.runtimePuzzleBypass) bypassed++;
     });
     return {
+      theme:state?.theme || null,
       puzzleOptions:state?.puzzleOptions || null,
       counts:Object.values(state?.puzzleGeneration?.countsByRoom || {}).map(Number),
       activatorTypes:[...activatorTypes].sort(),
@@ -239,7 +240,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.match(constrained.badge, /solvable ✓/, constrained.badge);
   assert.match(constrained.badge, /puzzles \d+\/1 max-room/, constrained.badge);
   assert.deepEqual(constrained.darkness, { enabled:false, severity:1 }, JSON.stringify(constrained));
-  assert.equal(constrained.darknessDebug?.undergroundDarknessOverlayAlpha, 0, JSON.stringify(constrained.darknessDebug));
+  const constrainedBaseDarkness={hronal:.91,tothal:.73,kanthic:1}[constrained.theme];
+  assert.ok(Number.isFinite(constrainedBaseDarkness),'constrained ruin must use a recognized lich theme: '+JSON.stringify(constrained));
+  assert.ok(Math.abs(constrained.darknessDebug?.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
+    'ruin default lighting must follow its lich theme instead of the retired bright-mode default: '+JSON.stringify(constrained.darknessDebug));
   assert.match(constrained.badge, /dark off/, constrained.badge);
 
   const darknessCycle = await page.evaluate(async () => {
@@ -260,9 +264,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(darknessCycle.on.settings.enabled,true,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.on.settings.severity,0.5,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.on.label,'50%',JSON.stringify(darknessCycle));
-  assert.ok(darknessCycle.on.debug.undergroundDarknessOverlayAlpha > 0.4 && darknessCycle.on.debug.undergroundDarknessOverlayAlpha < 0.5,JSON.stringify(darknessCycle));
+  assert.ok(Math.abs(darknessCycle.on.debug.undergroundDarknessOverlayAlpha-constrainedBaseDarkness*.5)<.002,
+    '50% test severity must halve the active lich lighting baseline: '+JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.off.settings.enabled,false,JSON.stringify(darknessCycle));
-  assert.equal(darknessCycle.off.debug.undergroundDarknessOverlayAlpha,0,JSON.stringify(darknessCycle));
+  assert.ok(Math.abs(darknessCycle.off.debug.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
+    'disabling the test override must restore the original lich-themed darkness: '+JSON.stringify(darknessCycle));
   await page.evaluate(async () => window.DevRandomRuin.leave());
   await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:30000 });
 
