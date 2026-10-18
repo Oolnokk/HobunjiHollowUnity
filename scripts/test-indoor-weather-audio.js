@@ -125,4 +125,32 @@ check(thunderCalls[0][0].lowpassHz === 780 && thunderCalls[0][1] === 0.32, 'indo
 area = 'farm';
 weatherThunder();
 check(thunderCalls[1][0].lowpassHz === undefined && thunderCalls[1][1] === 1, 'outdoor thunder stays unchanged');
+
+// Web Audio setup can fail AFTER createMediaElementSource has permanently
+// captured a recording; retrying that capture each frame throws forever.
+const priorCreateFilter = graph.createBiquadFilter; // Restores the shared mock graph after the isolated failure scenario.
+let failedFilterRequests = 0; // Counts DSP setup attempts in the simulated unsupported browser.
+graph.createBiquadFilter = () => { failedFilterRequests++; throw new Error('filter construction disabled'); };
+area = 'map_i_farmhouse';
+audioContextState = 'running';
+const brokenWindow = { __hobunjiGameStarted: true, _footstepAudioCtx: graph,
+  AudioSystem: { gameAudioConfig: () => cfg }, addEventListener() {} }; // Builds a separate real Music instance for fallback tests.
+const brokenMusic = new Function('window','document','Audio','performance','URL',
+  musicSource + '\nreturn window.Music;')(brokenWindow,document,MockAudio,performance,MockURL);
+brokenMusic.init(deps);
+brokenMusic.updateExteriorBgs();
+brokenMusic.updateRainAudio();
+const failedCaptures = mediaCaptures; // Freezes the captured-source count after the first failure for all five weather loops.
+check(failedFilterRequests === 5, 'failed filtering occurs at most once per weather layer');
+check(brokenMusic.getWeatherAudioDebugState().loops.rainheavy.filterFallback === true,
+  'mobile diagnostic reports the unfiltered audible fallback');
+check(brokenMusic.getWeatherAudioDebugState().loops.rainheavy.filtered === false,
+  'broken filter is not falsely reported as working');
+check(brokenMusic.getWeatherAudioDebugState().loops.rainheavy.target > 0,
+  'filter failure does not mute indoor precipitation');
+brokenMusic.updateExteriorBgs();
+brokenMusic.updateRainAudio();
+check(mediaCaptures === failedCaptures && failedFilterRequests === 5,
+  'subsequent weather ticks do not retry permanently captured recordings');
+graph.createBiquadFilter = priorCreateFilter;
 console.log('Indoor weather audio tests passed:', { weatherFilters: count, indoorHeavyRain: 0.208, mediaCaptures });
