@@ -121,7 +121,25 @@
     }
     return nearest;
   }
+  function diningSeats() {
+    return (layout()?.decor || []).filter(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple'); // Runtime-expanded seating follows the moveable feast footprint exactly.
+  }
+  function nearestDiningSeat() {
+    if(festival()?.id!=='gorkunash' || !festivalHours() || deps?.getArea?.()!=='town')return null;
+    const pos=deps?.getPlayerTile?.();if(!pos)return null;
+    let near=null,best=1.65;
+    for(const seat of diningSeats()){
+      const spot=propCenter(seat);const dist=Math.hypot(pos.c-spot.c,pos.r-spot.r);
+      if(dist<best){near=seat;best=dist;}
+    }
+    return near;
+  }
+  function isDiningSeat(col,row,furnitureKey){
+    return festival()?.id==='gorkunash' && furnitureKey==='chairSimple'
+      && diningSeats().some(seat=>Math.abs(seat.col-col)<.01 && Math.abs(seat.row-row)<.01);
+  }
   function seatedMealAction() {
+    if(deps?.isPlayerSeated?.()===false)return null;
     if(!heldBowl?.meal || !heldBowl.uses || festival()?.id!=='gorkunash'||!festivalHours()||!nearestActivityOfType('potluck'))return null;
     return {icon:'🥣',label:seatedMeal?'Stop eating':`Eat ${heldBowl.meal.label}`,action:'festival_eat_bowl',style:'secondary',allowed:true,swigFraction:`${heldBowl.uses}/${MAX_FOOD_PORTIONS}`};
   }
@@ -236,7 +254,9 @@
   function actionButton() {
     if (dance) return { icon: '■', label: 'Leave festival dance', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
     if(festival()?.id==='gorkunash'&&festivalHours()&&nearestActivityOfType('potluck')){
+      const seat=nearestDiningSeat();
       const aimedPot=potIndexAtAim();
+      if(seat && heldBowl?.meal)return {icon:'🪑',label:'Sit at festival table',action:'festival_sit_dining',style:'primary',allowed:true,worldInteraction:true};
       if(!heldBowl && aimedPot<0)return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
       if(!heldBowl)return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
       if(!heldBowl.meal&&aimedPot>=0)return {icon:'🍲',label:`Fill bowl: ${feastMenu()[aimedPot].label}`,action:'festival_fill_bowl',style:'primary',allowed:true,worldInteraction:true,potIndex:aimedPot};
@@ -517,5 +537,5 @@
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
     festivalHours, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
-    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal,get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
+    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, nearestDiningSeat, isDiningSeat,get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
