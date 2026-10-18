@@ -13611,6 +13611,7 @@
           // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
           // dev-placed/moved/removed pieces; returns the authored list untouched otherwise.
           const buildingFurniture = window.DevMapFurniture?.mergeBuildingFurniture?.(mapId, mapData.furniture) || mapData.furniture || [];
+          const buildingCameraFurniture = []; // Capture true rendered furniture geometry once, not an entire interior-scene traverse every camera frame.
           for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
@@ -13664,6 +13665,7 @@
               bScene.add(ph);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
+            buildingCameraFurniture.push(renderedFurniture); // Wardrobes, beds, tables, and other physical fixtures must obstruct cameras even without cameraObstacle tags.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
@@ -13947,6 +13949,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          for (const furniture of buildingCameraFurniture) if (!occlusionMeshes.includes(furniture)) occlusionMeshes.push(furniture); // Track even furniture that has no collision-grid marker.
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
@@ -20387,6 +20390,56 @@
         return 1;
       }
 
+      // The navigation grid is the second authority for collision in addition
+      // to visible wall/furniture meshes. Most solid room tiles have no
+      // cameraObstacle mesh, and furniture footprints can be collision-solid
+      // without any render triangle at the ray's center. Sample the boom
+      // through every crossed tile, caching tile-level walkability until the
+      // beam enters a new cell. Height bounds prevent a short object acting
+      // like an infinitely tall wall.
+      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ) {
+        const grid = npcGridForArea(currentArea);
+        if (!grid) return null;
+        const dx = toX - fromX, dy = toY - fromY, dz = toZ - fromZ;
+        const len = Math.hypot(dx, dy, dz), flat = Math.hypot(dx, dz);
+        if (flat < 0.025 || len < 0.025) return null;
+        const samples = Math.max(1, Math.min(160, Math.ceil(flat / 0.12))); // Sub-tile heights and near corners cannot slip between adjacent cells.
+        let lastC = null, lastR = null, isBlocked = false, floor = 0, roof = 0;
+        for (let i = 1; i <= samples; i++) {
+          const fraction = i / samples;
+          const x = fromX + dx * fraction, z = fromZ + dz * fraction;
+          const c = Math.floor(x), r = Math.floor(z);
+          if (c !== lastC || r !== lastR) {
+            lastC = c; lastR = r;
+            const tile = grid[r]?.[c];
+            // The same collision-grid authority used by NPC pathing covers
+            // manual colliders, structural walls, occupied furniture tiles,
+            // closed doors, and area footprint blockers.
+            isBlocked = !isNpcTileWalkable(currentArea, c, r);
+            if (!isBlocked) continue;
+            floor = tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+            const furnitureFootprint = !!tile?.npcFurnitureCollider;
+            roof = floor + (furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
+          }
+          if (!isBlocked) continue;
+          const y = fromY + dy * fraction;
+          if (y >= floor - 0.04 && y <= roof) {
+            // Refine the entry distance so dense tile clipping does not make
+            // the camera jump in discrete .12-tile increments.
+            let before = (i - 1) / samples, after = fraction;
+            for (let j = 0; j < 6; j++) {
+              const mid = (before + after) * 0.5;
+              const mc = Math.floor(fromX + dx * mid), mr = Math.floor(fromZ + dz * mid);
+              const my = fromY + dy * mid;
+              if (mc === c && mr === r && my >= floor - 0.04 && my <= roof) after = mid;
+              else before = mid;
+            }
+            return len * after;
+          }
+        }
+        return null;
+      }
+
       let _cameraHorizontalDebug = null; // Last horizontal clearance calculation, included in cutscene Pixel Probe reports.
       let _cameraHorizontalSafeDistance = null; // Smoothed X/Z boom extension; obstructions retract immediately, clear space extends gradually.
       let _cameraHorizontalUpdatedAt = 0; // Real-time reference for frame-rate-independent horizontal collision recovery.
@@ -20405,7 +20458,7 @@
         const boomLength = Math.hypot(hx, hy, hz);
         let permittedReach = reach; // Maximum unobstructed horizontal camera offset along the requested trajectory.
         let horizontalRays = 0; // Exposed on the mobile diagnostic to identify when expensive lateral checks run.
-        if (horizontalSqueezeEnabled && horizontalObstacles?.length && reach > 0.08 && boomLength > 0.08) {
+        if (horizontalSqueezeEnabled && reach > 0.08 && boomLength > 0.08) { // Also check grid colliders when no tagged meshes exist.
           const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Three boom rays approximate camera's horizontal width.
           const dirX = hx / boomLength, dirY = hy / boomLength, dirZ = hz / boomLength; // Probe through actual wall heights, not just the final camera Y.
           for (const side of [-1, 0, 1]) {
@@ -20416,8 +20469,13 @@
             _cameraOcclusionRaycaster.near = 0.02;
             _cameraOcclusionRaycaster.far = boomLength;
             const hits = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true);
+            const tileDistance = cameraTileCollisionDistance(
+              lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side,
+              idealX + rightX * side, idealY, idealZ + rightZ * side,
+            );
             horizontalRays++;
-            if (hits.length) permittedReach = Math.min(permittedReach, reach * Math.max(0.025, hits[0].distance - 0.12) / boomLength);
+            const hitDistance = Math.min(hits[0]?.distance ?? Infinity, tileDistance ?? Infinity);
+            if (Number.isFinite(hitDistance)) permittedReach = Math.min(permittedReach, reach * Math.max(0.025, hitDistance - 0.12) / boomLength);
           }
         }
         if (horizontalSqueezeEnabled && reach > 0.08) {
@@ -20456,7 +20514,7 @@
           let desiredSafeDist = dist;
           let directHitDistance = null;
           let chosenSideOffsetDeg = 0;
-          if (obstacles && obstacles.length) {
+          if (horizontalSqueezeEnabled || (obstacles && obstacles.length)) {
             _cameraOcclusionRaycaster.set(
               _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
               _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
@@ -20470,8 +20528,11 @@
             // tagged leaf meshes (harmless either way there), but the
             // house/barn/furniture entries above are whole Groups.
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
-            if (hits.length) {
-              directHitDistance = hits[0].distance;
+            const tileDistance = horizontalSqueezeEnabled
+              ? cameraTileCollisionDistance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) : null;
+            const obstacleDistance = Math.min(hits[0]?.distance ?? Infinity, tileDistance ?? Infinity);
+            if (Number.isFinite(obstacleDistance)) {
+              directHitDistance = obstacleDistance;
               wallHitDistance = directHitDistance;
               const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
               if (activeCameraMode === 'seated' || interiorStanding || shoulderBoom) {
@@ -20488,7 +20549,7 @@
                 const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
                   cameraCollisionMinDistance,
-                  hits[0].distance - wallClearance,
+                  obstacleDistance - wallClearance,
                 ));
 
                 // If the wall leaves too little room to frame the seated
@@ -20512,8 +20573,13 @@
                     _cameraOcclusionRaycaster.near = 0.02;
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
-                    const candidateSafeDist = candidateHits.length
-                      ? Math.max(cameraCollisionMinDistance, candidateHits[0].distance - wallClearance)
+                    const candidateTileDistance = horizontalSqueezeEnabled ? cameraTileCollisionDistance(
+                      lookAtX, lookAtY, lookAtZ,
+                      lookAtX + candidateDir.x * dist, lookAtY + candidateDir.y * dist, lookAtZ + candidateDir.z * dist,
+                    ) : null;
+                    const candidateDistance = Math.min(candidateHits[0]?.distance ?? Infinity, candidateTileDistance ?? Infinity);
+                    const candidateSafeDist = Number.isFinite(candidateDistance)
+                      ? Math.max(cameraCollisionMinDistance, candidateDistance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20523,7 +20589,7 @@
                   chosenSideOffsetDeg = best.offsetDeg;
                 }
               } else {
-                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, hits[0].distance - 0.6));
+                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, obstacleDistance - 0.6));
               }
             }
           }
