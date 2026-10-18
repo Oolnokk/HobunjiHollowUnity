@@ -15,7 +15,57 @@
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); // Small geometry per ornament, created only when a layout is built.
       mesh.position.set(x, y, z); group.add(mesh); return mesh;
     }
-    if (dressing === 'gifts') {
+    // PNG-backed arch materials are shared across placements; the arch is a
+    // walk-through ornament with no invisible posts/colliders across the road.
+    const atlas = window.FestivalProps?._atlas || {}; // Reuses loaded textile/wood textures over the full town.
+    if (dressing === 'road-arch') {
+      const width = Math.max(2, Math.min(9, Number(record.festivalArchWidth) || 4)); // The authored clear span over the road.
+      const woodSurface = atlas.wood ? new THREE.MeshLambertMaterial({ map: atlas.wood, color: '#ffffff' }) : wood;
+      const flagsSurface = atlas.flags ? new THREE.MeshLambertMaterial({ map: atlas.flags, transparent: true, alphaTest: .1, side: THREE.DoubleSide }) : material;
+      if (woodSurface !== wood) group.userData.festivalMaterials.push(woodSurface);
+      if (flagsSurface !== material) group.userData.festivalMaterials.push(flagsSurface);
+      const beam = (x1,y1,x2,y2, thickness, mat) => {
+        const length = Math.hypot(x2-x1,y2-y1);
+        const piece=box((x1+x2)/2,(y1+y2)/2,0,length,thickness,.09,mat);
+        piece.rotation.z=Math.atan2(y2-y1,x2-x1);
+      }; // Used to build the curved lintel without a flat impostor spanning the roadway.
+      const archY = x => 2.15 + .42*(1-Math.pow(2*x/width,2));
+      for (const side of [-1,1]) box(side*width/2,1.08,0,.16,2.16,.16,woodSurface);
+      for (let i=0;i<16;i++) {
+        const a=-width/2+i*width/16,b=a+width/16;
+        beam(a,archY(a),b,archY(b),.13,woodSurface);
+      }
+      for (let i=0;i<Math.max(6,Math.round(width*3));i++) {
+        const x=-width/2+.22+(i+.5)*(width-.44)/Math.max(6,Math.round(width*3));
+        const flag=new THREE.Mesh(new THREE.PlaneGeometry(.24,.38),flagsSurface);
+        flag.position.set(x,archY(x)-.23,.08);group.add(flag);
+      }
+    } else if (dressing === 'bandstand') {
+      const planks = atlas.wood ? new THREE.MeshLambertMaterial({map:atlas.wood,color:'#ffffff'}) : wood;
+      if (planks!==wood) group.userData.festivalMaterials.push(planks);
+      box(0,.28,0,3.8,.34,2.5,planks);
+      for(let i=-4;i<=4;i++) box(i*.42,.465,0,.025,.02,2.45,wood);
+      for(const x of [-1.7,1.7])for(const z of [-1,1])box(x,.72,z,.11,.9,.11,planks);
+      for(const x of [-1.2,0,1.2])box(x,.08,1.43,.9,.16,.42,planks);
+      box(0,.88,-1.02,3.55,.17,.12,planks);
+    } else if (dressing === 'dancefloor') {
+      const border=atlas.wood ? new THREE.MeshLambertMaterial({map:atlas.wood,color:'#e0b984'}) : wood;
+      if(border!==wood)group.userData.festivalMaterials.push(border);
+      for (const x of [-2.45,2.45])box(x,.045,0,.12,.08,3.8,border);
+      for (const z of [-1.95,1.95])box(0,.045,z,4.8,.08,.12,border);
+      for(let i=-2;i<=2;i++)for(let j=-1;j<=1;j++)box(i*.87,.018,j*.9,.035,.025,.75,material);
+    } else if (dressing === 'six-pot-feast') {
+      const potColors=['#ab6042','#9f772e','#866b48','#6c8d48','#bb7052','#aa8746'];
+      for(let i=0;i<6;i++) {
+        const x=((i%3)-1)*.98,z=(Math.floor(i/3)-.5)*.63;
+        const potMat=new THREE.MeshLambertMaterial({color:'#52433e'});group.userData.festivalMaterials.push(potMat);
+        const broth=new THREE.MeshLambertMaterial({color:potColors[i]});group.userData.festivalMaterials.push(broth);
+        const pot=new THREE.Mesh(new THREE.CylinderGeometry(.34,.27,.25,12),potMat);pot.position.set(x,.87,z);group.add(pot);
+        const soup=new THREE.Mesh(new THREE.CylinderGeometry(.295,.295,.013,12),broth);soup.position.set(x,1.01,z);group.add(soup);
+        const handle=new THREE.Mesh(new THREE.TorusGeometry(.27,.035,6,16),potMat);handle.rotation.x=Math.PI/2;handle.position.set(x,1.015,z);group.add(handle);
+      }
+      for(let i=0;i<7;i++){const bowl=new THREE.Mesh(new THREE.CylinderGeometry(.155,.10,.075,9),wood);bowl.position.set(-1.62,.80+i*.064,0);group.add(bowl);}
+    } else if (dressing === 'gifts') {
       for (let i = 0; i < 3; i++) { const x = (i - 1) * .28; box(x, .82, 0, .22, .23, .22); box(x, .95, 0, .25, .035, .055, wood); }
     } else if (dressing === 'ancestors') {
       for (let i = 0; i < 5; i++) {
@@ -45,7 +95,7 @@
         flag.rotation.z = Math.PI; flag.position.set((i - 2) * .15, 1.42, 0); group.add(flag);
       }
     }
-    if (record.activity && window.HobunjiSpritePngSurface) {
+    if (record.activity && !['road-arch', 'bandstand', 'dancefloor', 'six-pot-feast'].includes(dressing) && window.HobunjiSpritePngSurface) {
       const canvas = document.createElement('canvas'); // Text is generated locally, so no external texture/CORS request is needed.
       canvas.width = 512; canvas.height = 96;
       const context = canvas.getContext('2d');
@@ -74,5 +124,18 @@
       object.userData.festivalTexture = null;
     });
   }
-  window.FestivalProps = { decorate, dispose };
+  const atlas = {}; // Shared PNG texture atlas, used for arches, stage boards, and dance-floor borders.
+  function loadAtlas() {
+    if (!window.THREE?.TextureLoader) return;
+    const loader = new window.THREE.TextureLoader();
+    for (const name of ['wood','flags']) {
+      loader.load('assets/furniture/festival-' + name + '.png', texture => {
+        texture.wrapS = texture.wrapT = window.THREE.RepeatWrapping;
+        texture.anisotropy = 4;
+        atlas[name] = texture;
+      }, undefined, () => window.__farmLog?.('[festival] PNG texture unavailable: ' + name, 'warn'));
+    }
+  }
+  loadAtlas();
+  window.FestivalProps = { decorate, dispose, _atlas: atlas };
 })();
