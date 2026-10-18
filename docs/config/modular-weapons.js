@@ -106,7 +106,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "x": 203,
         "y": 736
       },
-      "dmgType": "sharp"
+      "dmgType": "blunt"
     },
     "pick-shovel-pick": {
       "label": "Pick Shovel Pick",

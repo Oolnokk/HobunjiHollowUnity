@@ -1841,7 +1841,7 @@
         daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
         plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
         dagger:       { label: 'Dagger',        icon: '🗡️', baseSprite: 'assets/toolsprites/dagger.png',             slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light' },
-        kylie:        { label: 'Kylie',         icon: '🗡️', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        kylie:        { label: 'Kylie',         icon: '🪃', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'blunt', weaponIdleClass: 'light' },
         warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
       };
       const HELD_SHAPE_DEFS = { ...TOOL_SHAPE_DEFS, ...MELEE_WEAPON_SHAPE_DEFS }; // Shared smithing/equipment catalog used by the existing generated-item pipeline.
