@@ -8,18 +8,18 @@
     return;
   }
 
-  let FIRST_STRIKE_DELAY_S = 0.38;
+  let FIRST_STRIKE_DELAY_S = 0.19;
   let COST_BASE = 5, COST_PER_STRIKE = 1.5;
   let DAMAGE_MUL_BASE = 0.43, DAMAGE_MUL_PER_STRIKE = 0.17;
   let KNOCKBACK_MUL_BASE = 0.255, KNOCKBACK_MUL_PER_STRIKE = 0.054;
   let HALF_CONE_DEG_BASE = 29, HALF_CONE_DEG_MAX_GROWTH = 22;
   let HALF_CONE_DEG_GROWTH_PER_STRIKE = 1.4;
   let SIDE_OFFSET_DEG = 15;
-  let WINDUP_S = 0.0525, STRIKE_S = 0.085;
-  let NEXT_STRIKE_MIN_S = 0.10, NEXT_STRIKE_BASE_S = 0.42, NEXT_STRIKE_DECAY_PER_STRIKE = 0.026;
+  let WINDUP_S = 0.02625, STRIKE_S = 0.0425;
+  let NEXT_STRIKE_MIN_S = 0.05, NEXT_STRIKE_BASE_S = 0.21, NEXT_STRIKE_DECAY_PER_STRIKE = 0.013;
   let MOVE_SPEED_MUL_BASE = 1.15, MOVE_SPEED_MUL_PER_STRIKE = 0.05, MOVE_SPEED_MUL_MAX = 1.9;
-  let HOLD_S = 0.49125;
-  let GLOW_FULL_S = 3.0; // Used to expand/brighten the Counter-Shield-style weapon glow while the button remains held.
+  let HOLD_S = 0.245625;
+  let GLOW_FULL_S = 1.5; // Used to expand/brighten the Counter-Shield-style weapon glow while the button remains held.
   const GLOW_COLOR = 0xc7a7ff;
 
   let debugState = { active: false, heldSeconds: 0, glowIntensity: 0, strikes: 0 }; // Used by mobile-friendly diagnostics.
