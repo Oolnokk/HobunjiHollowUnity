@@ -26,7 +26,7 @@
   const MAX_SOLVABILITY_ATTEMPTS = 6; // Rejects impossible candidates before entry while keeping generation bounded.
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
-  const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Tests are bright by default; 1.0 restores the full authored den darkness when enabled.
+  const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Theme darkness is always active; enabling the dev toggle only permits a severity override.
   const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
   const PUZZLE_OPTION_ROWS = Object.freeze([ // Only the simple-mode families are user-facing; disabled V50 families remain false in the normalized payload.
     ['glyphObelisk','Projectile glyph targets'],
@@ -1067,7 +1067,7 @@
     const capLabel=ruin.puzzleOptions?.maxPerRoom?String(ruin.puzzleOptions.maxPerRoom):'∞'; // Used to distinguish a finite cap from the default unlimited setting.
     const solvabilityLabel=ruin.solvability?.ok?('solvable ✓'+(ruin.generationAttempt>1?' after '+ruin.generationAttempt+' tries':'')):'solvability ?'; // Mobile-visible proof that this accepted seed passed the pre-entry audit.
     const darkness=getDarknessSettings(); // Shows whether the test-only darkness override is active without requiring desktop devtools.
-    const darknessLabel=darkness.enabled?(Math.round(darkness.severity*100)+'%'):'off';
+    const darknessLabel=darkness.enabled?(Math.round(darkness.severity*100)+'% override'):'themed';
     b.textContent=MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0);
     b.style.display='';
   }
@@ -1094,7 +1094,7 @@
     const darknessRow=document.createElement('div'); // Test-only lighting control kept separate from puzzle-generation options.
     darknessRow.className='settings-row';
     darknessRow.setAttribute('data-dev-only','');
-    darknessRow.innerHTML='<div class="settings-label"><div class="settings-name">Test Ruin Darkness</div><div class="settings-desc">Off by default for puzzle inspection. Enable to preview the normal den darkness; severity scales the authored darkness level.</div></div><div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 12px"><label style="display:flex;align-items:center;gap:6px"><input id="devRandomRuinDarknessEnabled" type="checkbox"><span>Darkness</span></label><label style="display:flex;align-items:center;gap:6px"><span>Severity</span><input id="devRandomRuinDarknessSeverity" type="range" min="0" max="100" step="1" value="100" style="width:min(180px,32vw)"><output id="devRandomRuinDarknessSeverityValue">100%</output></label></div>';
+    darknessRow.innerHTML='<div class="settings-label"><div class="settings-name">Test Ruin Darkness</div><div class="settings-desc">Lich-themed darkness is always active. Enable the severity override for easier puzzle inspection.</div></div><div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 12px"><label style="display:flex;align-items:center;gap:6px"><input id="devRandomRuinDarknessEnabled" type="checkbox"><span>Darkness</span></label><label style="display:flex;align-items:center;gap:6px"><span>Severity</span><input id="devRandomRuinDarknessSeverity" type="range" min="0" max="100" step="1" value="100" style="width:min(180px,32vw)"><output id="devRandomRuinDarknessSeverityValue">100%</output></label></div>';
     optionsRow.insertAdjacentElement('afterend',darknessRow);
     bindDarknessControls(darknessRow);
   }
