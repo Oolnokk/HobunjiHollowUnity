@@ -33,13 +33,14 @@ class Node {
   updateMatrix() {}
   dispose() {}
 }
-class Geometry { rotateX() { return this; } rotateZ() { return this; } dispose() {} }
+class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
 class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
 class Mesh extends Node { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class Instances extends Mesh { constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = {}; } setMatrixAt() {} }
 const THREE = {
   Group:Node, Object3D:Node, Vector3:Vector, Mesh, InstancedMesh:Instances,
   PlaneGeometry:Geometry, ConeGeometry:Geometry, TetrahedronGeometry:Geometry, BoxGeometry:Geometry,
+  BufferGeometry:Geometry,Float32BufferAttribute:class {constructor(array,itemSize){this.array=array;this.itemSize=itemSize;this.count=array.length/itemSize;}},
   MeshBasicMaterial:Material, DoubleSide:2, RepeatWrapping:1,
   TextureLoader:class { load(_url, done) { const texture = {dispose(){}}; done?.(texture); return texture; } },
 }; // Lightweight renderer stand-ins preserve creation, instance batching and cleanup code paths.
@@ -103,13 +104,26 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   const before = t.api.snapshot();
   assert.equal(before.theme, 'tothal');
   assert.equal(before.iceTiles, 70, '70% of the room is ice');
-  assert.ok(before.icicles > 0);
+  assert.ok(before.icicles >= 5,'Evenly distributed Tothal clusters must be more numerous than the old sparse icicles');
   assert.ok(before.lightSources > 0);
   assert.equal(before.totalPillars, 0);
   assert.equal(before.plasmTiles, 0);
   const target = [];
   t.kit.root.traverse(mesh => { if (mesh.name === 'tothal_falling_icicle') target.push(mesh); });
-  assert.ok(target.length, 'An icicle must hang from the ceiling');
+  assert.ok(target.length>=5,'Every 3x3 clear room cell should produce a cluster with just one draw call');
+  for(const mesh of target){
+    const attr=mesh.geometry.attributes.position;
+    assert.ok(attr.count>=5*7*3,'Icicle meshes must contain several needles, batched in one mesh');
+    const verts=attr.array;
+    const triangles=verts.length/9;
+    assert.ok(triangles>=35,'Each cluster contains at least five irregular cone needles');
+  }
+  const caps=[];
+  t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('tothal_ice_sheen_edge_'))caps.push(mesh);});
+  assert.ok(caps.length>1,'Connected ice and exposed outer edges must use shared curved-cap variants');
+  const curved=caps.some(mesh=>mesh.geometry.attributes.position.array.some((v,i,arr)=>
+    i%3===1 && v>0 && v<.025)); // Smooth falling shoulder vertices around snow-like edges.
+  assert.ok(curved,'Ice caps need intermediate-height bevels, not flat square tiles');
   t.player.x = target[0].position.x * 64;
   t.player.y = target[0].position.z * 64;
   t.tick(20, .25);
@@ -121,6 +135,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
 {
   const t = setup('kanthic');
   assert.equal(t.api.snapshot().plasmTiles, 1, 'Each room starts with one seeded plasm tile');
+  const caps=[];
+  t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('kanthic_plasm_snow_shelf_edge_'))caps.push(mesh);});
+  assert.ok(caps.length,'Plasm must use tapered-edge surface variants');
   assert.equal(t.api.snapshot().lightSources, 0, 'Kanthic relies on lantern alone');
   t.tick(16);
   assert.ok(t.api.snapshot().plasmTiles > 1, 'Out-of-sight plasm spreads toward the player at 1 tile/s');
@@ -130,4 +147,4 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   t.composer.clear();
   assert.equal(t.api.snapshot().active, false);
 }
-console.log('Harlyao ruin lich-theme tests passed: stable theme, lava gates, lighting, Hronal eruption, 70% ice and falling icicles, Kanthic spread/reset, lifecycle cleanup.');
+console.log('Harlyao ruin lich-theme tests passed: stable theme, 70% curved ice, distributed tapered icicle clusters, Kanthic curved plasm expansion, teardown.');
