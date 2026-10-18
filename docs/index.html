@@ -133,7 +133,7 @@
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
        window.*.init(...) calls. -->
-  <script src="js/player-vitals.js?v=20261018enhancedshapes1"></script>
+  <script src="js/player-vitals.js?v=20261018hudrecover4"></script>
   <!-- Processing-station recipe resolution, berry/dew/alcohol key & color
        derivation, and item-wheel eligibility, extracted out of game.js.
        Must load before game.js, which calls window.ItemProcessing.init(...)
@@ -146,7 +146,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261016hbfaf2c3"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20261018hudpalette2"></script>
+  <script src="config/config.js?v=20261018hudrecover4"></script>
   <script src="config/scratchbones-config.js?v=20261017h35a414b"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
@@ -156,7 +156,7 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261017hdd91890"></script>
-  <link rel="stylesheet" href="style.css?v=20261018enhancedshapes1">
+  <link rel="stylesheet" href="style.css?v=20261018hudrecover4">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -278,12 +278,12 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261017h0133a62"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/resource-system.js?v=20261018hudrecover4"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
-  <script src="js/combat/combat-core.js?v=20261016h917d5d5"></script>
+  <script src="js/combat/combat-core.js?v=20261018hudrecover4"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
