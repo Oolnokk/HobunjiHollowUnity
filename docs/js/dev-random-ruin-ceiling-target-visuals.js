@@ -37,6 +37,7 @@
     object.name = name;
     object.position.set(x, y, z);
     object.userData.devRuinCeilingSconceTarget = true;
+    object.userData.devRuinProjectileHumOffsetY = BLOCK_CENTER_Y; // TargetHum offsets moving-carriage hums to the visible block without losing the group's hidden-state visibility.
     object.userData.devRuinFootprintIgnore = true; // Ceiling furniture must not enter the ground-navigation footprint scan.
     const fallbackStone = kit.makeBasic(0x7a746b); // Reused by all five stone parts when the authored stone material runtime is unavailable.
     const stoneParts = []; // Used to dispose the unused fallback material after NaturalSurfaceMaterials replaces it.
