@@ -270,6 +270,42 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   assert.equal(t.api.isPlasmAt(sx+.5,sz+.5),false,'Exiting and clearing the dungeon finally releases all plasm');
 }
 {
+  // Cap is half of the room's walkable area. Beyond the limit the farthest
+  // exposed tiles retreat so the growing perimeter never fragments.
+  const t=setup('kanthic',30,30);
+  const initial=new Set();
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initial.add(x+','+z);
+  assert.equal(t.api.snapshot().plasmCapacity,50,'100 walkable cells allow at most 50 plasm tiles');
+  t.tick(40,.25); // 10 seconds of completely unseen growth, far more than the cap permits.
+  const report=t.api.snapshot();
+  assert.equal(report.plasmTiles,report.plasmCapacity,'Plasm must never exceed half the room');
+  assert.ok(report.plasmCulled>0,'After reaching its cap, new leading growth replaces farthest edge tiles');
+  const actual=new Set();
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))actual.add(x+','+z);
+  assert.equal(actual.size,50,'The cap must match the exact visible/gameplay footprint');
+  const seed=actual.values().next().value,visited=new Set([seed]),queue=[seed];
+  for(let i=0;i<queue.length;i++){
+    const [x,z]=queue[i].split(',').map(Number);
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const key=(x+dx)+','+(z+dz);
+      if(actual.has(key)&&!visited.has(key)){visited.add(key);queue.push(key);}
+    }
+  }
+  assert.equal(visited.size,actual.size,'Farthest-tile culling must not split the plasm into unconnected islands');
+  // Growth cannot increase the overall area after capacity has been reached.
+  t.tick(20,.25);
+  assert.equal(t.api.snapshot().plasmTiles,50,'Plasm remains capped even after prolonged unseen growth');
+  t.player.health=0;
+  t.tick(1,.25);
+  assert.equal(t.api.snapshot().plasmTiles,initial.size,'Death resets the full capped puddle to its original cluster');
+  assert.equal(t.api.snapshot().plasmCulled,0,'Death resets the culling counter along with the active patch');
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++){
+    const key=x+','+z;
+    assert.equal(t.api.isPlasmAt(x+.5,z+.5),initial.has(key),'Death restores exact initial coverage: '+key);
+  }
+  t.composer.clear();
+}
+{
   const t=setup('tothal');
   let chosen=null,dryBoundary=null;
   for(let x=3;x<11;x++)for(let z=3;z<11;z++){
