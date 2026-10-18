@@ -50,9 +50,9 @@ const THREE={
   MeshBasicMaterial:Mat,DoubleSide:2,MathUtils:{lerp:(a,b,t)=>a+(b-a)*t}
 };
 
-function makeFixture(hasTarget=true){
+function makeFixture(hasTarget=true,supportCount=4){
   const root=new Obj(),supports=[];let composer,refreshCount=0,sounds=0;
-  for(let i=0;i<4;i++){
+  for(let i=0;i<supportCount;i++){
     const support=new Obj(),shaft=new Mesh(new Geo(),new Mat({color:0x777777}));
     support.userData={squarePillar:true,usedAuthoredPillarSquare:true,interiorRuinRole:'ceiling support pillar'};
     support.name='repo_furniture_pillar_square';
@@ -64,12 +64,13 @@ function makeFixture(hasTarget=true){
   target.userData=hasTarget?{squarePillarHousing:true,hiddenActivatorMount:'pillarNiche',activatorType:'glyphObelisk',linkedMechanismId:'doorA'}:{};
   root.add(target);
   const player={x:2.5*64,y:2.5*64,health:100};
+  const occlusion=supports.map(entry=>entry.shaft);
   const window={
     THREE,DevRandomRuinSimplePuzzles:{registerComposer:c=>composer=c},
     DevRandomRuinTileOccupancy:{solidAt:()=>false,addSolidBox(){},clearSolids(){},refresh(){refreshCount++;}},
     ResourceSystem:{addAffliction(){},spendFooting(){}},
     AudioSystem:{gameAudioConfig:()=>({sfxVolume:1})},
-    DevRandomRuin:{syncPlayerPresentationHeight(){}}
+    DevRandomRuin:{syncPlayerPresentationHeight(){},getOcclusionMeshes:()=>occlusion,getRuntimeContext:()=>context}
   };
   const Audio=class{play(){sounds++;return Promise.resolve();}};
   const document={getElementById:()=>null};
@@ -81,7 +82,7 @@ function makeFixture(hasTarget=true){
     roomBounds(){return {minX:2,maxX:13,minZ:2,maxZ:13};},makeBasic(){return new Mat();}
   };
   composer.buildRooms(kit,context);
-  return {composer,kit,window,supports,target,player,
+  return {composer,kit,window,supports,target,player,occlusion,
     tick(frames){for(let i=0;i<frames;i++)composer.update(kit,i*500,.5);},
     get refreshCount(){return refreshCount;},get sounds(){return sounds;}
   };
@@ -95,6 +96,7 @@ function makeFixture(hasTarget=true){
   const cracked=f.supports.filter(({shaft})=>shaft.children.length===3);
   assert.equal(cracked.length,2,'Exactly two authored shafts get three batched four-face warning stages');
   assert.equal(cracked[0].shaft.children.filter(c=>c.visible).length,1,'Only the first four-sided fissure glows initially');
+  assert.ok(cracked[0].shaft.children[0].material.opacity>=.4,'Initial cracks are readable under the dark Hronal lighting');
   assert.ok(cracked[0].shaft.children.every(c=>c.geometry.attributes.position.values.length===576),'Each crack stage contains all four tapered faces in one mesh');
   for(const {shaft,geometry,material} of f.supports){
     assert.strictEqual(shaft.geometry,geometry,'Original shaft geometry must not be replaced');
@@ -106,11 +108,14 @@ function makeFixture(hasTarget=true){
   assert.ok(f.sounds>=3,'All rock warning pulses play');
   f.tick(4);
   assert.equal(cracked[0].support.visible,false,'The exact original support disappears at detonation');
+  assert.ok(!f.occlusion.includes(cracked[0].shaft),'A hidden pillar cannot block the normal camera raycast');
   assert.equal(f.target.visible,true,'The puzzle target survives the blast');
   assert.ok(f.refreshCount>=2,'Collision occupancy refreshes when the support disappears');
   f.composer.clear();
   for(const {support,shaft,geometry,material} of f.supports){
     assert.equal(support.visible,true,'Teardown restores the generator-owned support visibility');
+    assert.ok(f.occlusion.includes(shaft),'Teardown restores the original camera occluder exactly once');
+    assert.equal(f.occlusion.filter(value=>value===shaft).length,1,'Restoration may not duplicate camera occluders');
     assert.equal(shaft.children.length,0,'All crack decals are disposed and removed');
     assert.equal(geometry.disposed,false,'The original shaft geometry stays owned by the ruin');
     assert.equal(material.disposed,false,'The original shaft material stays owned by the ruin');
@@ -125,4 +130,11 @@ function makeFixture(hasTarget=true){
   assert.ok(f.supports.every(({shaft})=>shaft.children.length===0),'Normal supports remain unmodified without a target');
   f.composer.clear();
 }
-console.log('Cracked decoy-pillar tests passed: native shape retained, target safe, pulses, collision cleanup and deterministic reroll.');
+{
+  const f=makeFixture(true,0);
+  assert.equal(f.window.DevRandomRuinLichThemes.snapshot().totalPillars,0,
+    'Rooms containing only true pillar-niche targets must not receive rectangular fallback traps');
+  assert.equal(f.target.visible,true);
+  f.composer.clear();
+}
+console.log('Cracked decoy-pillar tests passed: native silhouette, target-only exclusion, staged visibility, camera + body collision cleanup, and reroll.');
