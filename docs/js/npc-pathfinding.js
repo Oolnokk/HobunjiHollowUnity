@@ -17,6 +17,7 @@
   const lastBlockLogAt = new WeakMap(); // Rate-limits mobile-visible collision diagnostics per walker.
   const debugStats = { decoratedWalkers: 0, blockedMoves: 0, pathReplans: 0, pathFailuresSkipped: 0, cutsceneMovesUpgraded: 0, lastBlock: null }; // Read by debugSnapshot() for mobile diagnostics.
   const PATH_FAILURE_RETRY_MS = 750; // How long a walker waits before repeating a grid search that just failed from the same tile.
+  const FURNITURE_SAMPLE_OFFSETS = Object.freeze([[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]); // Reused by every per-frame footprint probe instead of allocating nine offsets per check.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -61,12 +62,12 @@
   function isNpcPositionWalkable(area, x, z, radius = npcCollisionRadiusTiles(), { ignoreFurniture = false, ignoreFurnitureTile = null } = {}) {
     if (!isNpcPositionStructurallyWalkable(area, x, z, radius)) return false;
     if (ignoreFurniture) return true;
-    const d = radius * 0.82;
-    const samples = [[0, 0], [-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]];
-    for (const [dx, dz] of samples) {
-      const sx = x + dx, sz = z + dz;
+    const d = radius * 0.82; // Sample spacing for walls of furniture surrounding the body.
+    const buildingGrid = deps.isBuildingArea(area) ? deps.npcGridForArea(area) : null; // Shared by all nine samples rather than looking up the scene/grid each time.
+    for (const [dx, dz] of FURNITURE_SAMPLE_OFFSETS) {
+      const sx = x + dx * d, sz = z + dz * d;
       if (ignoreFurnitureTile && Math.floor(sx) === ignoreFurnitureTile.c && Math.floor(sz) === ignoreFurnitureTile.r) continue;
-      if (deps.isBuildingArea(area) && deps.npcGridForArea(area)?.[Math.floor(sz)]?.[Math.floor(sx)]?.npcFurnitureCollider) return false;
+      if (buildingGrid?.[Math.floor(sz)]?.[Math.floor(sx)]?.npcFurnitureCollider) return false;
       if (deps.furnitureBlocksMovementAt(area, sx, sz)) return false;
     }
     return true;
@@ -86,7 +87,7 @@
   // keep their authored arrival tile. Maps that are not loaded yet are left alone.
   function nearestWalkableTile(area, c, r, maxRadius = 6) {
     if (!deps || !deps.isBuildingArea(area) || !deps.npcGridForArea(area)) return { c, r };
-    if (isNpcTileStructurallyWalkable(area, c, r)) return { c, r };
+    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5)) return { c, r };
     let fallback = null; // Structurally clear but furniture-blocked tile, used only when no free tile is in range.
     for (let radius = 1; radius <= maxRadius; radius++) {
       let best = null, bestDist = Infinity;
@@ -94,7 +95,7 @@
         for (let dc = -radius; dc <= radius; dc++) {
           if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
           const tc = c + dc, tr = r + dr;
-          if (!isNpcTileStructurallyWalkable(area, tc, tr)) continue;
+          if (!isNpcPositionStructurallyWalkable(area, tc + 0.5, tr + 0.5)) continue;
           if (!isNpcTileWalkable(area, tc, tr)) { fallback ||= { c: tc, r: tr }; continue; }
           const dist = Math.hypot(dc, dr);
           if (dist < bestDist) { best = { c: tc, r: tr }; bestDist = dist; }
@@ -193,6 +194,7 @@
     const minC = Math.min(startC, targetC) - padding, maxC = Math.max(startC, targetC) + padding;
     const minR = Math.min(startR, targetR) - padding, maxR = Math.max(startR, targetR) + padding;
     const key = (c, r) => c + ',' + r;
+    const heuristic = (c, r) => { const dx = Math.abs(targetC - c), dr = Math.abs(targetR - r); return dx + dr + (Math.SQRT2 - 2) * Math.min(dx, dr); }; // Exact octile lower bound for 8-direction movement.
     const targetKey = key(targetC, targetR);
     const startKey = key(startC, startR);
     const centerClearCache = new Map(); // Reuses footprint/furniture checks while A* revisits neighboring tiles.
@@ -207,29 +209,40 @@
     };
     if (!centerClear(targetC, targetR)) return null;
 
-    const open = [{ c: startC, r: startR, key: startKey, f: Math.hypot(targetC - startC, targetR - startR) }]; // Small bounded searches make a compact array faster/simpler than another heap implementation here.
+    const heap = window.TilePathfinding?.MinHeap ? new window.TilePathfinding.MinHeap() : null; // Reuses the generic pathfinder's binary heap in game; the small-array fallback keeps isolated NPC tooling compatible.
+    const open = heap ? null : []; // Used only by standalone consumers that did not load tile-pathfinding.js.
+    const addOpen = node => { if (heap) heap.push(node, node.f); else open.push(node); }; // Enqueues new A* candidates in either environment.
+    const nextOpen = () => { // Pops the best f-score; avoids an O(open-set-size) scan for every game search.
+      if (heap) return heap.pop();
+      let best = 0;
+      for (let i = 1; i < open.length; i++) if (open[i].f < open[best].f) best = i;
+      return open.splice(best, 1)[0];
+    };
+    addOpen({ c: startC, r: startR, key: startKey, f: heuristic(startC, startR) });
     const gScore = new Map([[startKey, 0]]);
     const cameFrom = new Map();
     const closed = new Set();
     let expanded = 0;
+    const startStructuralClear = isNpcPositionStructurallyWalkable(area, fromX, fromZ); // Checked once per search, not once per neighbor of the first node.
+    const startFullyClear = startStructuralClear && isNpcPositionWalkable(area, fromX, fromZ); // Chooses the seated/legacy-overlap escape rule for the first edge.
+    debugStats.pathSearches = (debugStats.pathSearches || 0) + 1;
 
-    while (open.length && expanded < maxNodes) {
-      let bestIndex = 0;
-      for (let i = 1; i < open.length; i++) if (open[i].f < open[bestIndex].f) bestIndex = i;
-      const cur = open.splice(bestIndex, 1)[0];
+    while ((heap ? heap.size : open.length) && expanded < maxNodes) {
+      const cur = nextOpen();
       if (closed.has(cur.key)) continue;
       closed.add(cur.key);
       expanded++;
+      debugStats.pathNodesExpanded = (debugStats.pathNodesExpanded || 0) + 1; // Cumulative node count exposed to the mobile diagnostics panel.
       if (cur.key === targetKey) {
         const path = [];
         let k = targetKey;
         while (k !== startKey) {
           const [col, row] = k.split(',').map(Number);
-          path.unshift({ col, row });
+          path.push({ col, row });
           k = cameFrom.get(k);
           if (!k) return null;
         }
-        return path;
+        return path.reverse();
       }
 
       for (const [dc, dr, cost] of PATH_DIRS) {
@@ -241,8 +254,6 @@
         const firstEdge = cur.key === startKey; // The first hop must originate at the NPC's real sub-tile position, not an assumed tile center.
         const edgeFromX = firstEdge ? fromX : cur.c + 0.5; // Used only for this edge's swept collision validation.
         const edgeFromZ = firstEdge ? fromZ : cur.r + 0.5; // Used only for this edge's swept collision validation.
-        const startStructuralClear = firstEdge ? isNpcPositionStructurallyWalkable(area, fromX, fromZ) : true; // Allows a seated/legacy-overlap start to escape without granting wall tunneling.
-        const startFullyClear = firstEdge && startStructuralClear ? isNpcPositionWalkable(area, fromX, fromZ) : !firstEdge; // Selects the narrow escape-prefix validator only when the actual start is blocked.
         const edgeClear = firstEdge && !startFullyClear
           ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep })
           : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
@@ -256,7 +267,7 @@
         if (tentative >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, tentative);
         cameFrom.set(nk, cur.key);
-        open.push({ c: nc, r: nr, key: nk, f: tentative + Math.hypot(targetC - nc, targetR - nr) });
+        addOpen({ c: nc, r: nr, key: nk, f: tentative + heuristic(nc, nr) });
       }
     }
     return null;
@@ -394,10 +405,11 @@
     walker.moveToward = function collisionAwareNpcMoveToward(tx, tz, dt) {
       if (!deps || !this.root?.position) return originalMoveToward.call(this, tx, tz, dt);
       const startX = this.root.position.x, startZ = this.root.position.z;
-      const startStructuralClear = isNpcPositionStructurallyWalkable(this.area, startX, startZ);
-      const startFullyClear = startStructuralClear && isNpcPositionWalkable(this.area, startX, startZ);
       const arrived = originalMoveToward.call(this, tx, tz, dt);
       const desiredX = this.root.position.x, desiredZ = this.root.position.z;
+      if (arrived && Math.abs(desiredX - startX) + Math.abs(desiredZ - startZ) < 1e-8) return arrived; // Only genuinely completed stationary movement skips collision probes; failed/stuck moves still enter recovery.
+      const startStructuralClear = isNpcPositionStructurallyWalkable(this.area, startX, startZ); // Checked only for actual movement to distinguish legacy overlap escapes.
+      const startFullyClear = startStructuralClear && isNpcPositionWalkable(this.area, startX, startZ); // Preserves the existing chair/blocked-save escape guard.
 
       const seatOverlap = _walkerAllowsFurnitureOverlap(this, tx, tz);
       const seatFurnitureTile = seatOverlap ? { c: Math.floor(tx), r: Math.floor(tz) } : null; // Used by every per-frame check so only the actual chair tile is exempted.
@@ -539,9 +551,9 @@
   function findNpcAreaLink(fromArea, toArea, { warmBuildings = true } = {}) {
     if (fromArea === toArea) return null;
     const visited = new Set([fromArea]);
-    const queue = [{ area: fromArea, firstHop: null }];
-    while (queue.length) {
-      const { area, firstHop } = queue.shift();
+    const queue = [{ area: fromArea, firstHop: null }]; // Breadth-first traversal queue for a one-hop map-transition route.
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const { area, firstHop } = queue[cursor]; // O(1) dequeue avoids repeated array shifting when many maps are reachable.
       for (const link of areaLinksFrom(area, { warmBuildings })) {
         const hop = firstHop || link;
         if (link.toArea === toArea) return hop;
@@ -558,7 +570,7 @@
     return {
       ...debugStats,
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'Blocked NPCs recalculate toward the current map exit or wander goal, follow exit detours, and safely replace active paths during recovery.',
+      latestChange: 'NPC detour A* uses the shared priority queue and octile heuristic; overnight scheduling now carries across weekdays.',
     };
   }
 

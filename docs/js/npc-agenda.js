@@ -188,12 +188,23 @@
   // single legacy-compatibility beat or an authored "idle at home"
   // catch-all) are always time-eligible; the planner's obligation-weight
   // ordering is what keeps them from starving anything more specific.
+  const WEEKDAYS = Object.freeze(['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']); // Used to attribute the post-midnight part of an overnight beat to its starting weekday.
   function isBeatActiveNow(beat, { npcId, day, weekdayName, nowMin } = {}) {
-    if (!isBeatActiveOnDay(beat, weekdayName)) return false;
-    if (beat.alwaysEligible) return true;
-    const win = resolveBeatWindow(beat, { npcId, day });
-    if (!win) return beat.window == null && beat.daypart == null; // no time info authored at all → treat as always-on, same as alwaysEligible.
-    return isWithinWindow(nowMin, win.startMin, win.endMin);
+    const activeToday = isBeatActiveOnDay(beat, weekdayName); // Today's day restrictions apply to starts occurring today.
+    if (beat.alwaysEligible) return activeToday;
+    const win = resolveBeatWindow(beat, { npcId, day }); // Today's window uses today's deterministic jitter seed.
+    if (!win) return activeToday && beat.window == null && beat.daypart == null;
+    if (activeToday && isWithinWindow(nowMin, win.startMin, win.endMin)
+      && (win.startMin <= win.endMin || nowMin >= win.startMin)) return true;
+    // A wrapped beat beginning yesterday must use yesterday's weekday AND
+    // yesterday's jittered window. Otherwise Friday-only night shifts end at
+    // midnight, and a changed daily seed can cut their last hours short.
+    const weekdayIndex = WEEKDAYS.indexOf(weekdayName); // Index used to find yesterday across the seven-day boundary.
+    if (weekdayIndex < 0) return false;
+    const previousWeekday = WEEKDAYS[(weekdayIndex + WEEKDAYS.length - 1) % WEEKDAYS.length]; // The originating weekday for post-midnight activity.
+    if (!isBeatActiveOnDay(beat, previousWeekday)) return false;
+    const previousWindow = resolveBeatWindow(beat, { npcId, day: Number.isFinite(day) ? day - 1 : day }); // Keeps randomized shifts stable across midnight.
+    return !!previousWindow && previousWindow.startMin > previousWindow.endMin && nowMin < previousWindow.endMin;
   }
 
   function normalizeAgendaBeat(raw, index) {
