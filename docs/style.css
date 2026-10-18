@@ -261,8 +261,8 @@
       opacity: 0; /* Numeric width remains authoritative; split spans paint the fill. */
     }
     #vitalsBar .vb-health { background-color: #55d76f; }
-    #vitalsBar .vb-stamina { background-color: #67b7ff; }
-    #vitalsBar .vb-footing { background-color: #d9a441; }
+    #vitalsBar .vb-stamina { background-color: #d9a441; }
+    #vitalsBar .vb-footing { background-color: #67b7ff; }
     #vitalsBar .vb-normal-segments,
     #vitalsBar .vb-segments { position: absolute; inset: 0; pointer-events: none; }
     #vitalsBar .vb-normal-segment,
@@ -279,6 +279,7 @@
     }
     #vitalsBar .vb-effect-drip,
     #vitalsBar .vb-effect-brittle,
+    #vitalsBar .vb-effect-starved,
     #vitalsBar .vb-effect-balloon,
     #vitalsBar .vb-effect-crenellated {
       border: 0;
