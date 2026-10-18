@@ -311,18 +311,54 @@
   // Merges the active layout's overrides onto `mapData`, returning a new
   // object — `mapData` itself (and its `layouts` array) is left untouched so
   // this can be called again later once the calendar/flags have moved on.
+  // A festival locale is one editor-movable root decoration whose child furniture
+  // and NPC stations use offsets in its local footprint. Expansion occurs after
+  // layout selection, without changing the saved map or its base NPC schedule.
+  function resolveFestivalLocales(mapData) {
+    const roots = Array.isArray(mapData?.decor) ? mapData.decor : [];
+    if (!roots.some(root => root?.festivalLocale)) return mapData;
+    const decor = roots.slice(); // Used as the rendered children of movable locale footprints.
+    const npcStations = (mapData.npcStations || []).slice(); // Used by ordinary pathfinding and timed NPC overrides.
+    for (const root of roots) {
+      const locale = root?.festivalLocale;
+      if (!locale || !root.id || !Number.isFinite(root.col) || !Number.isFinite(root.row)) continue;
+      const angle = (Number(root.rotY) || 0) * Math.PI / 180;
+      const c = Math.cos(angle), s = Math.sin(angle);
+      const transform = (col, row) => ({
+        col: root.col + (Number(root.postX) || 0) + col * c - row * s,
+        row: root.row + (Number(root.postZ) || 0) + col * s + row * c,
+      }); // Used by both furniture children and pathfinding destinations.
+      for (const [index, part] of (locale.parts || []).entries()) {
+        if (!part?.key) continue;
+        const location = transform(Number(part.dx) || 0, Number(part.dz) || 0);
+        decor.push({ ...part, ...location, id: `${root.id}:part:${index}`,
+          rotY: (Number(root.rotY) || 0) + (Number(part.rotY) || 0),
+          festivalLocaleParent: root.id, festivalColor: part.festivalColor || root.festivalColor });
+      }
+      for (const [index, slot] of (locale.slots || []).entries()) {
+        const location = transform(Number(slot.dx) || 0, Number(slot.dz) || 0);
+        npcStations.push({ ...slot, ...location, id: `${root.id}:station:${slot.id || index}`,
+          label: slot.label || `${locale.kind || 'Festival'} gathering`,
+          rotY: (Number(root.rotY) || 0) + (Number(slot.rotY) || 0),
+          festivalLocaleParent: root.id, festivalLocaleKind: locale.kind,
+          festivalRole: slot.festivalRole || 'guest' });
+      }
+    }
+    return { ...mapData, decor, npcStations };
+  }
+
   function getEffectiveMapData(mapData, now) {
     if (!mapData) return mapData;
     const layout = resolveActiveLayout(mapData, now);
     if (!layout) {
       const effective = mapData.activeLayoutId === 'default' ? mapData : { ...mapData, activeLayoutId: 'default' };
-      return resolveFurnitureBoundStations(effective);
+      return resolveFestivalLocales(resolveFurnitureBoundStations(effective));
     }
     const merged = { ...mapData, activeLayoutId: layout.id };
     for (const key of OVERRIDABLE_KEYS) {
       if (Object.prototype.hasOwnProperty.call(layout, key)) merged[key] = layout[key];
     }
-    return resolveFurnitureBoundStations(merged);
+    return resolveFestivalLocales(resolveFurnitureBoundStations(merged));
   }
 
   // Where to place the player after a layout switch (or a fresh entry into a
