@@ -285,9 +285,8 @@
       background: transparent;
     }
 
-    /* Detached SVG-surface droplets. 4.6s matches the two morphs of the
-       bottom outline; each painted drop crosses *every* bar below its row.
-       Only transform/opacity animate on these tiny compositor-friendly bits. */
+    /* Fast, continuously staggered droplets, synchronized with the 1.45s
+       SVG bottom-edge morph; they fall across all lower resource bars. */
     #vitalsBar .vb-effect-drip::before,
     #vitalsBar .vb-effect-drip::after {
       content: '';
@@ -301,21 +300,21 @@
       border-radius: 44% 44% 65% 65%;
       background: currentColor;
       opacity: 0;
-      animation: vb-fluid-drop 4.6s ease-in infinite;
+      animation: vb-fluid-drop 1.45s linear infinite;
       pointer-events: none;
     }
     #vitalsBar .vb-effect-drip::before { left: 28%; }
-    #vitalsBar .vb-effect-drip::after { left: 72%; animation-delay: -2.3s; }
+    #vitalsBar .vb-effect-drip::after { left: 72%; animation-delay: -.725s; }
     #vitalsBar .vb-effect-poison::before,
     #vitalsBar .vb-effect-poison::after { border-radius: 60% 42% 70% 50%; }
     #vitalsBar .vb-effect-wound::before,
     #vitalsBar .vb-effect-wound::after { height: .7dvh; }
     @keyframes vb-fluid-drop {
-      0%, 12% { transform: translate3d(0, 0, 0) scaleY(.3); opacity: 0; }
-      17% { transform: translate3d(0, .25dvh, 0) scaleY(1.7); opacity: 1; }
-      24% { transform: translate3d(0, .8dvh, 0) scaleY(1); opacity: 1; }
-      45% { transform: translate3d(0, 9dvh, 0) scaleY(.85); opacity: .94; }
-      50%, 100% { transform: translate3d(0, 10dvh, 0) scaleY(.65); opacity: 0; }
+      0% { transform: translate3d(0, 0, 0) scaleY(.35); opacity: .2; }
+      6% { transform: translate3d(0, .18dvh, 0) scaleY(1.8); opacity: 1; }
+      16% { transform: translate3d(0, .65dvh, 0) scaleY(1.05); opacity: 1; }
+      70% { transform: translate3d(0, 9.5dvh, 0) scaleY(.88); opacity: .97; }
+      100% { transform: translate3d(0, 10.5dvh, 0) scaleY(.72); opacity: 0; }
     }
 
     /* Behavioral HUD language shared by future effects with the same tags
