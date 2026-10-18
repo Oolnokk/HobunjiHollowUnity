@@ -29,7 +29,19 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     return render?.sourceDoorMeshes > 0 && render.visibleDoorSources === render.sourceDoorMeshes
       && render.sourceActivatorMeshes > 0 && render.visibleActivatorSources === render.sourceActivatorMeshes
       && render.totalProxyCount === 0;
-  }, null, { timeout:10000 });
+  }, null, { timeout:10000 }).catch(async error => {
+    // Keep the original assertion, but report the exact failed counts when CI
+    // cannot display WebGL. These are also available from Pixel Probe in-game.
+    const sceneDebug = await page.evaluate(() => ({
+      render:window.DevRandomRuinWallRenderProxy?.snapshot?.() || null,
+      occupancy:window.DevRandomRuin?.getOccupancySnapshot?.()?.revision ?? null,
+      area:window.GridTileAccessors?.getCurrentArea?.() || null,
+      ruin:window.DevRandomRuin?.getState?.()?.materialStats || null,
+    }));
+    console.error('[ruin collision smoke] wall proxy readiness:', JSON.stringify(sceneDebug));
+    console.error('[ruin collision smoke] page errors:', JSON.stringify(errors.slice(-12)));
+    throw error;
+  });
 
   const result = await page.evaluate(() => {
     const first = window.DevRandomRuin.getOccupancySnapshot();
