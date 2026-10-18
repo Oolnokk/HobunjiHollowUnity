@@ -286,6 +286,18 @@
       #vitalsBar .vb-label { flex-basis: 43px; font-size: 9px; }
       #vitalsBar .vb-value { flex-basis: 72px; font-size: 9px; }
     }
+    /* Keep desktop resource bars above the persistent keyboard legend rather than under it. */
+    @media (pointer: fine) {
+      #vitalsBar {
+        bottom: max(calc(max(12px, env(safe-area-inset-bottom)) + 36px), calc(100vh - var(--oy) - 16.3 * var(--row) + 12px));
+      }
+    }
+    /* World-interaction prompts occupy the same center strip; lift vitals above an open prompt on touch and desktop. */
+    @supports selector(body:has(#actionPrompt.open)) {
+      body:has(#actionPrompt.open) #vitalsBar {
+        bottom: max(calc(max(12px, env(safe-area-inset-bottom)) + 36px), calc(100vh - var(--oy) - 15.2 * var(--row) + 12px));
+      }
+    }
     @media (prefers-reduced-motion: reduce) {
       #vitalsBar, #vitalsBar .vb-fill, #vitalsBar .vb-affliction-segment { transition: none; }
     }

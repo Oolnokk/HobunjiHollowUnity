@@ -39,7 +39,13 @@ const context = {
 context.window = context;
 context.globalThis = context;
 vm.createContext(context);
-for (const path of ['docs/config/config.js', 'docs/js/combat/resource-system.js', 'docs/js/player-vitals.js']) {
+// The actual config is loaded in <head> and its optional town-geometry DOM hooks
+// must not run in this intentionally Three.js-free HUD unit test.
+const hudDocument = context.document; // Restored after config initialization for the HUD renderer.
+delete context.document;
+vm.runInContext(fs.readFileSync('docs/config/config.js', 'utf8'), context, { filename: 'docs/config/config.js' });
+context.document = hudDocument;
+for (const path of ['docs/js/combat/resource-system.js', 'docs/js/player-vitals.js']) {
   vm.runInContext(fs.readFileSync(path, 'utf8'), context, { filename: path });
 }
 
@@ -105,6 +111,15 @@ assert.equal(shown('vbHealthRow'), false);
 player.footing = 100;
 refresh();
 assert.equal(shown('vitalsBar'), false, 'HUD disappears again on full unafflicted recovery');
+
+// A temporary Stamina-capacity buff should expose unfilled capacity even at the old maximum.
+context.AlchemySystem = { getMaxStaminaMultiplier: () => 1.25 }; // Simulates Endurance against the live getEffectiveMax multiplier API.
+refresh();
+assert.equal(shown('vbStaminaRow'), true, 'a buffed maximum reveals the unfilled portion of Stamina');
+assert.equal(bar('Stamina').style.width, '80%', 'buffed capacity denominator is respected');
+context.AlchemySystem = null;
+refresh();
+assert.equal(shown('vbStaminaRow'), false, 'the Stamina bar disappears when the bonus ends');
 
 player.afflictions.shamblingFooting = 30;
 refresh();
