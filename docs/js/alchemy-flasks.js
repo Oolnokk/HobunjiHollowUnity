@@ -18,7 +18,7 @@
   const PROJECTILE_MAX_TRAVEL_S = 0.9; // Distant throws remain readable without feeling sluggish.
   const RELEASE_DELAY_S = 0.28; // Authored windup→strike release point.
   const LANDING_SHADOW_TERRAIN_STEPS = 8; // The shadow re-drapes over the terrain this many times per flight rather than every frame.
-  const LANDING_SHADOW_MIN_OPACITY = 0.62; // The shared character-shadow opacity (~0.28) is too faint for a telegraph the player must read mid-fight.
+  const LANDING_SHADOW_MIN_OPACITY = 0.75; // The shared character-shadow opacity (~0.28) is too faint for a telegraph the player must read mid-fight.
   const LANDING_SHADOW_FADE_IN_S = 0.12; // Ground cue appears almost immediately at release, independent of flight length.
   const impactEffects = []; // Bounded, module-owned Three.js splash presentations.
   const projectileTrails = []; // Short luminous motes shed by active flask projectiles.
