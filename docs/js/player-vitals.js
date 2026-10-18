@@ -164,11 +164,12 @@
   function ensureBrittleShape(segment, key, fraction, color) {
     if (!segment._vbShape) {
       segment._vbShape = shapeSvg('brittle');
+      segment._vbShape.path.setAttribute('d', jaggedPath(key, fraction));
       segment.appendChild(segment._vbShape.svg);
     }
-    const path = jaggedPath(key, fraction);
+    // Lock the generated vertices for this segment's lifetime: a changing
+    // affliction amount only scales the same jagged mesh, never rerolls it.
     const shape = segment._vbShape.path;
-    if (shape.getAttribute('d') !== path) shape.setAttribute('d', path);
     if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
   }
 

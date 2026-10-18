@@ -102,9 +102,10 @@ const bruisePath = bruisedSpan.children[0].children[1].getAttribute('d');
 assert(bruisePath.includes('L') && bruisePath.includes('Z'), 'closed jagged outline path');
 const topInset = [...bruisePath.matchAll(/L [\d.]+ ([\d.]+)/g)].map(match => +match[1]);
 assert(topInset.some(y => y >= 10 && y <= 16), 'inward cuts are 25-40% of path height');
+player.afflictions.bruisedHealth = 17;
 refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged mesh remains stable across frames');
-assert.equal(bruisedSpan.children[0].children[1].getAttribute('d'), bruisePath, 'seeded geometry stays deterministic');
+assert.equal(bruisedSpan.children[0].children[1].getAttribute('d'), bruisePath, 'vertices do not reroll as the segment shrinks');
 player.afflictions.bruisedHealth = 0;
 
 player.afflictions.congealedHealth = 30;
