@@ -61,7 +61,12 @@
   function entryCard(definition) {
     const card = element('article', 'compendium-entry');
     const heading = element('div', 'compendium-entry-head');
-    if (definition.icon) heading.appendChild(element('span', 'compendium-entry-icon', definition.icon));
+    if (definition.icon) {
+      const icon = element('span', 'compendium-entry-icon', definition.icon);
+      // Match the actual color of the resource/ring or affliction being taught.
+      if (definition.iconColor) icon.style.color = definition.iconColor;
+      heading.appendChild(icon);
+    }
     const copy = element('div', 'compendium-entry-title-wrap');
     copy.appendChild(element('div', 'compendium-entry-title', definition.title));
     if (definition.kicker) copy.appendChild(element('div', 'compendium-entry-kicker', definition.kicker));
@@ -100,29 +105,30 @@
   }
 
   function resourceSection() {
+    const ringColors = window.HOBUNJI_CONFIG?.resourceRings?.colors || {};
     return section({
       id: 'resources',
       icon: '◉',
       title: 'Resources',
-      intro: 'The three ground rings are not interchangeable: Health keeps you alive, Stamina pays for effort, and Footing keeps you upright. Exhaustion is what happens when you force actions past normal Stamina.',
+      intro: 'Green Health keeps you alive, yellow-gold Stamina pays for effort, and light-blue Footing keeps you upright. The ground rings and player HUD use the same colors. Exhaustion follows spending past normal Stamina.',
       entries: [
         {
-          title: 'Health', icon: '♥', kicker: 'Survival',
+          title: 'Health', icon: '♥', iconColor: ringColors.health, kicker: 'Survival · Green',
           text: 'Damage removes Health. Some afflictions deal Health damage directly or temporarily reduce how much Health you can hold.',
           notes: ['Health can recover while you are out of active danger.', 'At 0 Health, the character is defeated.'],
-          keywords: ['red ring hp life'],
+          keywords: ['green ring hp life'],
         },
         {
-          title: 'Stamina', icon: '◆', kicker: 'Effort',
+          title: 'Stamina', icon: '◆', iconColor: ringColors.stamina, kicker: 'Effort · Yellow-gold',
           text: 'Attacks and other strenuous actions spend Stamina. It normally refills when you have room to recover.',
           notes: ['Winded Stamina lowers your effective Stamina maximum.', 'Several Stamina afflictions turn spending afflicted portions into other penalties.'],
           keywords: ['yellow ring energy attacks dodge'],
         },
         {
-          title: 'Footing', icon: '⬡', kicker: 'Balance',
+          title: 'Footing', icon: '⬡', iconColor: ringColors.footing, kicker: 'Balance · Light blue',
           text: 'Footing measures how stable you are against stagger, knockback, and knockdown instead of how tired or injured you are.',
           notes: ['Taking Footing damage can stagger you.', 'Reaching 0 Footing puts you prone; Footing begins recovering after the knockdown delay.'],
-          keywords: ['balance stagger prone knockdown poise'],
+          keywords: ['light blue silver-blue ring balance stagger prone knockdown poise'],
         },
         {
           title: 'Exhaustion / Black Stamina', icon: '◐', kicker: 'Overexertion',
@@ -143,17 +149,27 @@
         const family = definition?.family ? `${pretty(definition.family)} family` : '';
         const tags = Array.isArray(definition?.tags) && definition.tags.length
           ? `Tags: ${definition.tags.map(pretty).join(', ')}.` : '';
+        const scale = window.ResourceSystem?.getAfflictionNaturalRecoveryScale?.(id) ?? 1;
         const recovery = definition?.recovers === true
-          ? 'Uses the standard passive affliction-recovery rule.'
+          ? scale === .25 ? 'Natural recovery is one-quarter of its former rate (four times the duration).'
+            : scale === .8 ? 'Natural recovery is 80% of its former rate (25% longer).'
+            : 'Uses the standard passive affliction-recovery rule.'
           : definition?.recovers === false
-            ? 'Not cleared by the standard passive affliction-recovery rule.'
+            ? 'Uses status-specific decay or a separate slow recovery rule, not standard passive recovery.'
             : '';
+        const capacityNote = definition?.reducesEffectiveMax
+          ? id === 'woundedHealth'
+            ? 'Reduces effective capacity; the wounded band drips while the missing-cap section narrows.'
+            : 'Reduces effective capacity; both the afflicted band and its missing-cap section narrow into starved curves.'
+          : id === 'drunkenFooting'
+            ? 'Reserves Footing capacity, displayed by a narrowed missing-cap section.' : '';
         return {
           title: definition?.name || pretty(id),
-          icon: definition?.resource === 'stamina' ? '◆' : '♥',
+          icon: definition?.resource === 'stamina' ? '◆' : definition?.resource === 'footing' ? '⬡' : '♥',
+          iconColor: window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[id],
           kicker: [resource, family].filter(Boolean).join(' · '),
           text: definition?.desc || 'A status effect tracked by the resource system.',
-          notes: [recovery, tags],
+          notes: [recovery, capacityNote, tags],
           keywords: [id, definition?.resource, definition?.family, ...(definition?.tags || [])],
         };
       });
@@ -169,7 +185,7 @@
       id: 'afflictions',
       icon: '☣',
       title: 'Afflictions',
-      intro: 'Afflictions are buildup attached to Health or Stamina. Their exact behavior comes from the live combat resource registry below, so this list follows the game as new central afflictions are added.',
+      intro: 'Afflictions modify Health, Stamina, or Footing. Their colors and recovery behavior follow the live resource registry. Capacity-reducing segments pinch inward; others may drip, chip, or change outline based on their effect.',
       entries,
     });
   }

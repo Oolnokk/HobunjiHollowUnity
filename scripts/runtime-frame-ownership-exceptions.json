@@ -627,7 +627,7 @@
     "function": "clearBootCover",
     "reason": "Defers clearing the startup cover opacity to the next paint once the opening scene is ready; it never reschedules.",
     "migrationStage": "not-planned",
-    "line": 63
+    "line": 156
   },
   {
     "file": "docs/js/controller-select-steppers.js",

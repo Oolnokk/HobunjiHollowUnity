@@ -7,7 +7,7 @@
   if (window.LoadingScreenRuntime?.installed) return;
 
   const CONFIG_URL = 'config/loading-screens.json';
-  const COMPENDIUM_URL = 'js/compendium-ui.js?v=20260918blackstamina1';
+  const COMPENDIUM_URL = 'js/compendium-ui.js?v=20261018ringswap1';
   const LORE_FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf';
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf';
   const MIN_VISIBLE_MS = 5000; // Used by hide() so boot/map loaders stay readable for at least five seconds.
@@ -197,8 +197,8 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
 .hlsProperNoun{color:#e8c86b}
 .hlsSystemTerm{color:#8fd0ff}
 .hlsResourceHealth{color:var(--hls-resource-health,#55d76f)}
-.hlsResourceStamina{color:var(--hls-resource-stamina,#67b7ff)}
-.hlsResourceFooting{color:var(--hls-resource-footing,#d9a441)}
+.hlsResourceStamina{color:var(--hls-resource-stamina,#d9a441)}
+.hlsResourceFooting{color:var(--hls-resource-footing,#67b7ff)}
 .hlsAfflictedResource{font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:.14em}
 .hlsAttackQuick{color:#f6a65c;font-weight:700}
 .hlsAttackHeld{color:#bd9cff;font-weight:700}
@@ -211,8 +211,8 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     root.id = 'hobunjiLoadScreen';
     const resourceColors = window.HOBUNJI_CONFIG?.resourceRings?.colors || {}; // Used to keep ordinary resource-name highlighting synchronized with the actual ground-ring palette.
     root.style.setProperty('--hls-resource-health', visibleRingColor(resourceColors.health) || '#55d76f');
-    root.style.setProperty('--hls-resource-stamina', visibleRingColor(resourceColors.stamina) || '#67b7ff');
-    root.style.setProperty('--hls-resource-footing', visibleRingColor(resourceColors.footing) || '#d9a441');
+    root.style.setProperty('--hls-resource-stamina', visibleRingColor(resourceColors.stamina) || '#d9a441');
+    root.style.setProperty('--hls-resource-footing', visibleRingColor(resourceColors.footing) || '#67b7ff');
     root.innerHTML = `
 <img id="hlsImage" alt="" />
 <div id="hlsScriptViewport"><div id="hlsScriptFloat"><div id="hlsScriptWords"></div></div></div>
