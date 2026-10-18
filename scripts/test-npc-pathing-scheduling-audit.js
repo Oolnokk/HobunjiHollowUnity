@@ -53,8 +53,8 @@ window.NpcActivityPlanner.init({
 weekday = 'Tothu';
 hour = 1;
 const beforeRawRollover = window.NpcActivityPlanner.debugSnapshot(midnightWalker.rec.id); // Should use civil day 46 despite raw calendar day 45.
-assert.equal(beforeRawRollo.intendedBeatId, 'night', 'the agenda still considers an overnight shift active just after midnight');
-assert.equal(beforeRawRollo.dailySeed, agenda.dailySeed('night_worker', 46, 'debug'),
+assert.equal(beforeRawRollover.intendedBeatId, 'night', 'the agenda still considers an overnight shift active just after midnight');
+assert.equal(beforeRawRollover.dailySeed, agenda.dailySeed('night_worker', 46, 'debug'),
   'planner seeds use the current civil day before the 06:00 raw rollover');
 rawCalendar.day = 46;
 hour = 7;
