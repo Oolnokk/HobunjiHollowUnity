@@ -1898,7 +1898,7 @@
   // How long the weapon keeps showing its last (strike) pose once
   // c._banditAction completes, before resetting straight to neutral --
   // a cheap stand-in for the player's own eased return-to-neutral tail.
-  const BANDIT_TOOL_SETTLE_S = 0.15;
+  const BANDIT_TOOL_SETTLE_S = 0.075; // Strike-pose dwell before returning the bandit weapon to idle.
 
   // ── Bandit weapon swing trail ────────────────────────────────────
   //
