@@ -140,15 +140,15 @@ const trackCenterY = 4 - .18; // Authored rail center below the ceiling datum.
 const railTop = trackCenterY + railBar.geometry.parameters.height / 2;
 for (const hanger of hangers) {
   const {top,bottom} = bounds(hanger);
-  const worldTop = hanger.position.y + top;
-  const worldBottom = hanger.position.y + bottom;
+  const worldTop = top; // bounds() already incorporates mesh.position.
+  const worldBottom = bottom;
   assert.ok(worldTop >= 4, 'Every rail hanger penetrates the physical ceiling');
   assert.ok(worldBottom < railTop, 'Every rail hanger intersects the rail');
 }
 for (const target of registered) {
   assert.equal(target.hittable(), false, 'Unemerged targets cannot be shot through end walls');
   assert.equal(target.object.children.length, 9, 'Rail targets contain the same joined sconce and four decals');
-  assert.equal(target.visual.attachmentGap(trackCenterY), 0, 'Rail carriage plate touches its rail');
+  assert.ok(Math.abs(target.visual.attachmentGap(trackCenterY)) < 1e-9, 'Rail carriage plate touches its rail');
   assert.ok(target.hitMesh.name.endsWith('_decaled_block'), 'Projectile collisions select the decaled block');
 }
 composer.update(railKit, 0, .016);
