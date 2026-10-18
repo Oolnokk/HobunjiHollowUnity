@@ -687,6 +687,13 @@
     for(const room of world.rooms){
       room.plasm=initialPlasmCluster(kit,room);
       room.plasmInitial=room.plasm ? new Set(room.plasm) : null; // Immutable per-room seed for death reset; room transitions preserve live growth.
+      let walkable=0;
+      for(const key of world.context.floorSet){
+        const [x,z]=tileFromKey(key),cx=x+.5,cz=z+.5,b=room.bounds;
+        if(cx>=b.minX&&cx<b.maxX&&cz>=b.minZ&&cz<b.maxZ&&clearAt(cx,cz,floorY(kit,cx,cz)))walkable++;
+      }
+      room.plasmCap=room.plasm ? Math.max(room.plasm.size,Math.floor(walkable*.5)) : 0;
+      room.plasmCulls=0;
       room.plasmElapsed=0;
     }
     const loader=new THREE.TextureLoader();
@@ -735,28 +742,74 @@
     }
     return false;
   }
+  const PLASM_NEIGHBORS=[[1,0],[-1,0],[0,1],[0,-1]];
+  function connectedWithoutPlasmTile(patch,exclude) {
+    // Culling a bridge would fragment a puddle into islands. Check the
+    // candidate's removal only at the capacity ceiling (never per-frame).
+    const size=patch.size-1;
+    if(size<=1)return true;
+    let first=null;
+    for(const key of patch)if(key!==exclude){first=key;break;}
+    const visited=new Set([first]),queue=[first];
+    for(let i=0;i<queue.length;i++){
+      const [x,z]=tileFromKey(queue[i]);
+      for(const [dx,dz] of PLASM_NEIGHBORS){
+        const key=(x+dx)+','+(z+dz);
+        if(key===exclude||!patch.has(key)||visited.has(key))continue;
+        visited.add(key);queue.push(key);
+      }
+    }
+    return visited.size===size;
+  }
+  function cullFarthestPlasmTile(room,point) {
+    const patch=room.plasm,candidates=[];
+    for(const key of patch){
+      const [x,z]=tileFromKey(key);
+      let neighbors=0;
+      for(const [dx,dz] of PLASM_NEIGHBORS)if(patch.has((x+dx)+','+(z+dz)))neighbors++;
+      if(neighbors===4)continue; // Interior cells are never culled.
+      const distanceSquared=(x+.5-point.x)**2+(z+.5-point.z)**2;
+      candidates.push({key,neighbors,distanceSquared});
+    }
+    candidates.sort((a,b)=>b.distanceSquared-a.distanceSquared||a.key.localeCompare(b.key));
+    for(const candidate of candidates){
+      if(candidate.neighbors>1&&!connectedWithoutPlasmTile(patch,candidate.key))continue;
+      patch.delete(candidate.key);
+      room.plasmCulls++;
+      return candidate.key;
+    }
+    return null; // Safeguard: prefer to leave the cap intact over disconnecting a puddle.
+  }
   function growPlasmRoom(kit,room,point) {
     const patch=room.plasm;
-    if(!patch?.size)return false;
+    if(!patch?.size||!room.plasmCap)return false;
     let changed=false;
     for(let count=0;count<PLASM_TILES_PER_BEAT;count++){
       const frontier=new Map();
       for(const key of patch){
         const [x,z]=tileFromKey(key);
-        for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        for(const [dx,dz] of PLASM_NEIGHBORS){
           const px=x+dx,pz=z+dz,nk=px+','+pz;
           if(patch.has(nk)||frontier.has(nk))continue;
           const n={x:px+.5,z:pz+.5};
           if(n.x<=room.bounds.minX||n.x>=room.bounds.maxX||n.z<=room.bounds.minZ||n.z>=room.bounds.maxZ)continue;
           if(!clearAt(n.x,n.z,floorY(kit,n.x,n.z)))continue;
-          // Prefer growing toward the player, but retain a seeded nonuniform
-          // edge rather than forming a perfectly rectangular marching wall.
+          // Favor the player-facing growth front with some deterministic roughness.
           frontier.set(nk,{key:nk,rank:distance(n,point)+seeded(px*73+pz*41,room.index+0x882)*.25});
         }
       }
       if(!frontier.size)break;
       const next=[...frontier.values()].sort((a,b)=>a.rank-b.rank)[0];
-      patch.add(next.key);changed=true;
+      patch.add(next.key);
+      if(patch.size>room.plasmCap){
+        // Maximum size is half the traversable room, *not* a permanent stop.
+        // Old perimeter cells farthest from the player retract as the leading
+        // edge advances. Keep the remaining puddle a single connected patch.
+        const removed=cullFarthestPlasmTile(room,point);
+        if(!removed){patch.delete(next.key);break;}
+        if(removed===next.key)continue; // A losing frontier tile causes no visual change.
+      }
+      changed=true;
     }
     return changed;
   }
@@ -768,6 +821,7 @@
     for(const room of world.rooms){
       room.plasm=room.plasmInitial ? new Set(room.plasmInitial) : null;
       room.plasmElapsed=0;
+      room.plasmCulls=0;
     }
     world.sink=0;
     updatePlasmMesh(kit); // Single rebuild for all rooms, disposing superseded instance buffers.
@@ -902,6 +956,8 @@
       iceTiles:world.iceTiles.size,
       icicles:world.icicles.length,fallenIcicles:world.icicles.filter(p=>p.phase==='done').length,
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
+      plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),
+      plasmCulled:world.rooms.reduce((n,r)=>n+(r.plasmCulls||0),0),
       sinking:world.sink,lastEvent,
     } : {active:false,lastEvent};
   }
