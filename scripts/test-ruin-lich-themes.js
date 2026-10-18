@@ -177,8 +177,12 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   // not turn into a hidden carry on normal terrain.
   player.x=(dryBoundary.x+.78)*64;player.y=(dryBoundary.z+.5)*64;t.tick(1,.1);
   for(let step=0;step<8;step++){player.x+=.025*64;t.tick(1,.1);}
-  t.tick(1,.1);t.tick(3,.1);
-  assert.ok(player.x/64<dryBoundary.x+1,'A glide must stop BEFORE crossing onto non-iced ground');
+  t.tick(1,.1);
+  assert.ok(player.x/64>=dryBoundary.x+1 && player.x/64<dryBoundary.x+1.06,
+    'Momentum must enter the first un-iced tile, not collide with an invisible edge');
+  const stoppedOnDry=player.x;
+  t.tick(3,.1);
+  assert.ok(Math.abs(player.x-stoppedOnDry)<.05,'The first dry tile cancels every remaining glide frame');
   t.composer.clear();
 }
 console.log('Harlyao ruin lich-theme tests passed: stable theme, 70% curved ice, distributed tapered icicle clusters, Kanthic curved plasm expansion, teardown.');
