@@ -139,10 +139,14 @@ assert.equal(smoothShot.blendSeconds, 1);
 const smoothCamera = { position: new Vec3(-10, 5, -10), fov: 42, lookAt() {}, updateProjectionMatrix() {} };
 const smoothTarget = new Vec3();
 const smoothBlend = cinematic.createBlendController({ camera: smoothCamera, lookPoint: smoothTarget });
-smoothBlend.apply({ camera: smoothShot });
+const smoothRecord = { camera: smoothShot };
+smoothBlend.apply(smoothRecord);
 assert(Math.abs(smoothCamera.position.x + 10) < 1e-9, 'unchecked instant cut starts from the old camera pose');
 clock += 500;
-smoothBlend.apply({ camera: smoothShot }); // Match the same active record, not a new transition.
+const halfwayDesiredX = smoothShot.positionProvider().x;
+smoothBlend.apply(smoothRecord); // A stable active record preserves progress through the transition.
+assert(Math.abs(smoothCamera.position.x - (-10 + (halfwayDesiredX + 10) * 0.5)) < 1e-9,
+  'unchecked instant cut preserves the previous smoothstep blend exactly halfway through the authored second');
 clock -= 500;
 const cutShot = cinematic.createStageOrbitShot(pairedDirectionStage, unequalActors, 2);
 const cutCamera = { position: new Vec3(-10, 5, -10), fov: 42, lookAt() {}, updateProjectionMatrix() {} };
