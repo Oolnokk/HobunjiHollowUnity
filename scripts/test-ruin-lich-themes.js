@@ -16,8 +16,8 @@ assert.match(ruinSource, /floorSet:ruin\.floorSet,ceilingY:ruin\.ceilingY/, 'Com
 assert.match(puzzlesSource, /state\?\.context\?\.theme !== 'hronal'\) return null/, 'Rope lava is Hronal-only');
 assert.match(fogSource, /tradition === 'kanthic' \? 1/, 'Kanthic rooms retain pure blackness');
 assert.match(fogSource, /ruinTradition === 'tothal'\) return/, 'Tothal lantern illumination is disabled');
-assert.match(fogSource, /ruinTradition === 'kanthic' \? \.25 : 1/, 'Kanthic lantern radius is halved again to one-quarter normal size');
-assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles\*\.25/, 'Plasm visibility uses the same tunable radius as actual lantern lighting');
+assert.match(fogSource, /ruinTradition === 'kanthic' \? \.375 : 1/, 'Kanthic lantern radius grows 50% from .25 to .375 of the regular radius');
+assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles\*\.375/, 'Plasm visibility uses the same expanded .375 lantern radius as actual lighting');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');
 
@@ -63,6 +63,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     ResourceSystem:{addAffliction() { afflictionCount++; }, spendFooting() { afflictionCount++; }},
     DevRandomRuin:{syncPlayerPresentationHeight() {}},
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
+    CloudForestFog:{getKanthicLanternRadiusTiles:()=>.9}, // Matches actual default 2.4 × 37.5%; sight check must not use old .6 radius.
   }; // Gameplay APIs stubbed at the contract boundaries, not duplicated in the tests.
   const document = {getElementById:() => null}; // The mobile diagnostics path intentionally handles a missing badge.
   const Audio = class {constructor(url){this.url=url;this.playbackRate=1;}play(){audioEvents.push({url:this.url,rate:this.playbackRate});return Promise.resolve();}};
@@ -177,9 +178,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
       const px=p.x+dx,pz=p.z+dz;
       if(px<2||px>=12||pz<2||pz>=12||t.api.isPlasmAt(px+.5,pz+.5))continue;
-      // Stand 0.525 tiles away from the observed edge but in the dry neighbour.
-      observer={x:dx>0?p.x+1.025:dx<0?p.x-.025:p.x+.5,
-        z:dz>0?p.z+1.025:dz<0?p.z-.025:p.z+.5, target:{x:p.x+.5,z:p.z+.5}};
+      // Stand 0.82 tiles from the nearest puddle edge, inside the new 0.9 radius but outside the old 0.6 radius.
+      observer={x:dx>0?p.x+1.8:dx<0?p.x-.8:p.x+.5,
+        z:dz>0?p.z+1.8:dz<0?p.z-.8:p.z+.5, target:{x:p.x+.5,z:p.z+.5}};
       break;
     }
     if(observer)break;
@@ -189,7 +190,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x);
   const seenCount=t.api.snapshot().plasmTiles;
   t.tick(4,.25);
-  assert.equal(t.api.snapshot().plasmTiles,seenCount,'Seeing one plasm tile inside lantern radius freezes all growth');
+  assert.equal(t.api.snapshot().plasmTiles,seenCount,'The 50%-larger lantern freezes growth even 0.82 tiles from the nearest puddle edge');
   t.composer.clear();
   assert.equal(t.api.snapshot().active,false,'Only leaving/clearing the entire ruin removes the puddle');
   // Teardown is idempotent; repeated clear is safe.
@@ -260,8 +261,8 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
       const nx=x+dx,nz=z+dz;
       if(nx<2||nx>=12||nz<2||nz>=12||t.api.isPlasmAt(nx+.5,nz+.5))continue;
-      observer={x:dx>0?x+1.025:dx<0?x-.025:x+.5,
-                z:dz>0?z+1.025:dz<0?z-.025:z+.5,
+      observer={x:dx>0?x+1.8:dx<0?x-.8:x+.5,
+                z:dz>0?z+1.8:dz<0?z-.8:z+.5,
                 targetX:x+.5,targetZ:z+.5};
       break;
     }
