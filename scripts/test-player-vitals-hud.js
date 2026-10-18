@@ -262,9 +262,9 @@ const hudHtml = html.slice(html.indexOf('<div id="vitalsBar"'), html.indexOf('<!
 assert(!/class="vb-(icon|label|value)"/.test(hudHtml), 'HUD contains no visible icon, label or numeric text');
 assert(css.includes('border-left: .556dvh solid #000') && css.includes('border-top: 0'), 'track retains only its left/right endcaps');
 assert(css.includes('#vitalsBar .vb-normal-segment'), 'normal resource sections own their straight outline');
-assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.corrodedHealth, '#b6d94c', 'Corroded Health palette is shared');
-assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.woundedHealth, '#b35f6b', 'Wounded Health no longer defaults to white');
-assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.scentMarkedHealth, '#82ae6c', 'Scent-marked Health has its own palette');
+assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.corrodedHealth, '#c8cf2a', 'Corroded Health palette is shared');
+assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.woundedHealth, '#8b3f64', 'Wounded Health no longer defaults to white');
+assert.equal(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.scentMarkedHealth, '#7dbb69', 'Scent-marked Health has its own palette');
 // Corroded Health normally registers in combat-corroded-health.js after ResourceSystem.
 context.ResourceSystem.AFFLICTIONS.corrodedHealth = {
   name: 'Corroded Health', resource: 'health', extend: 'currentBack', priority: 75, recovers: false,
@@ -276,8 +276,12 @@ assert(elements.get('vbHealthSegments').children.some(span => span.className.inc
 player.afflictions.corrodedHealth = 0;
 player.health = 100;
 assert(css.includes('border: max(1px, .14dvh) solid #000'), 'droplets have their own black outlines');
-assert(css.includes('translate3d(0, 9dvh, 0)'), 'droplets cross lower resource rows');
+assert(css.includes('translate3d(0, 9.5dvh, 0)'), 'faster droplets still cross lower resource rows');
 assert(css.includes('#vbHealthRow { z-index: 30; }'), 'upper bar paints its droplets over the bars below it');
+assert(css.includes('vb-fluid-drop 1.45s linear infinite'), 'droplets fall constantly on a fast loop');
+assert(css.includes('animation-delay: -.725s'), 'drip emitters stagger by half a cycle');
+assert.equal(bleedingSpan.children[0].children[1].children[0].getAttribute('dur'), '1.45s', 'SVG neck follows the faster droplet cycle');
+assert(congealedShape.includes('13.33') && congealedShape.includes('26.67'), 'starved throat is one-third of normal height');
 assert(css.includes('height: 2.29dvh') && css.includes('width: 27.78vw') && css.includes('width: 81.25vw'), 'bar width and height are viewport percentages');
 assert(css.includes('bottom: max(2.2dvh, env(safe-area-inset-bottom))'), 'bar hugs viewport safe-area bottom');
 assert(css.includes('.vb-shape-svg'), 'actual inline SVG silhouette styling exists');
