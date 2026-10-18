@@ -83,9 +83,25 @@
     'scentMarkedHealth', 'drunkenHealth',
   ]);
 
-  function effectClasses(id) {
-    const kinds = DRIP_EFFECTS[id] || (BRITTLE_EFFECTS.has(id) ? 'brittle' : '');
-    return kinds.split(' ').filter(Boolean).map(kind => ' vb-effect-' + kind).join('');
+  // Semantic effect classes are derived from the SAME metadata that governs
+  // enhanced transactions. Future 2x/3x efficient bands automatically inherit
+  // crenellations; future accelerated Held resources inherit ballooning.
+  function visualTreatment(id, def, rs) {
+    if (DRIP_EFFECTS[id]) return DRIP_EFFECTS[id];
+    if (BRITTLE_EFFECTS.has(id)) return 'brittle';
+    const enhanced = rs.ENHANCED_RESOURCE_DEFS?.[id];
+    if (Number(enhanced?.tempoMultiplier) > 1) return 'balloon';
+    if (Number(enhanced?.conversionRate) > 1) return 'crenellated';
+    const tags = def?.tags || [];
+    if (tags.includes('mirror')) return 'mirror';
+    if (tags.includes('kindling')) return 'ember';
+    if (tags.includes('fire')) return 'fire';
+    if (tags.includes('entrancement')) return 'entranced';
+    return '';
+  }
+
+  function effectClasses(treatment) {
+    return treatment.split(' ').filter(Boolean).map(kind => ' vb-effect-' + kind).join('');
   }
 
   // Real player-HUD silhouettes. Normalized SVG viewBoxes avoid measuring layout
@@ -133,6 +149,48 @@
     top.push('L 0 ' + SVG_HEIGHT, 'Z');
     const path = top.join(' ');
     jaggedPaths.set(cacheKey, path);
+    return path;
+  }
+
+  // Swelling displays tempo rather than enhanced resource quantity. The
+  // outline expands above and below its normal baseline, but its x endcaps
+  // and underlying gameplay segment boundaries stay untouched.
+  const BALLOON_REST = 'M 0 0 C 14 -2 24 -3 38 -3 L 62 -3 C 76 -3 86 -2 100 0 L 100 40 C 86 42 76 43 62 43 L 38 43 C 24 43 14 42 0 40 Z';
+  const BALLOON_FULL = 'M 0 0 C 14 -7 24 -10 38 -10 L 62 -10 C 76 -10 86 -7 100 0 L 100 40 C 86 47 76 50 62 50 L 38 50 C 24 50 14 47 0 40 Z';
+  const crenellatedPaths = new Map();
+
+  function crenellatedPath(fraction) {
+    // Castle-like merlons extend 10% out and recess 10% in, evenly spaced
+    // with flat ledges (not triangular spikes). Each segment is generated only
+    // once at creation, even if it subsequently drains or shrinks.
+    const bays = Math.max(3, Math.min(10, Math.round(fraction * 12)));
+    if (crenellatedPaths.has(bays)) return crenellatedPaths.get(bays);
+    const side = [];
+    const top = ['M 0 0'];
+    for (let i = 0; i < bays; i++) {
+      const left = i * 100 / bays, width = 100 / bays;
+      const a = (left + width * .18).toFixed(2);
+      const b = (left + width * .46).toFixed(2);
+      const c = (left + width * .70).toFixed(2);
+      const d = ((i + 1) * 100 / bays).toFixed(2);
+      top.push('L ' + a + ' 0', 'L ' + a + ' -4', 'L ' + b + ' -4',
+        'L ' + b + ' 4', 'L ' + c + ' 4', 'L ' + c + ' 0', 'L ' + d + ' 0');
+      side.push([left, width]);
+    }
+    top.push('L 100 40');
+    for (let i = side.length - 1; i >= 0; i--) {
+      const [left, width] = side[i];
+      const a = (left + width * .18).toFixed(2);
+      const b = (left + width * .46).toFixed(2);
+      const c = (left + width * .70).toFixed(2);
+      const d = ((i + 1) * 100 / bays).toFixed(2);
+      top.push('L ' + c + ' 40', 'L ' + c + ' 44', 'L ' + b + ' 44',
+        'L ' + b + ' 36', 'L ' + a + ' 36', 'L ' + a + ' 40',
+        'L ' + left.toFixed(2) + ' 40');
+    }
+    top.push('Z');
+    const path = top.join(' ');
+    crenellatedPaths.set(bays, path);
     return path;
   }
 
@@ -213,6 +271,29 @@
     if (path.getAttribute('fill') !== color) path.setAttribute('fill', color);
   }
 
+  function ensureEnhancedShape(segment, treatment, fraction, color) {
+    if (!segment._vbShape) {
+      segment._vbShape = shapeSvg(treatment);
+      const path = segment._vbShape.path;
+      if (treatment === 'crenellated') path.setAttribute('d', crenellatedPath(fraction));
+      else {
+        path.setAttribute('d', BALLOON_REST);
+        if (!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+          const pulse = svgElement('animate');
+          pulse.setAttribute('attributeName', 'd');
+          pulse.setAttribute('values', [BALLOON_REST, BALLOON_FULL, BALLOON_REST].join(';'));
+          pulse.setAttribute('keyTimes', '0;0.52;1');
+          pulse.setAttribute('dur', '1.15s');
+          pulse.setAttribute('repeatCount', 'indefinite');
+          path.appendChild(pulse);
+        }
+      }
+      segment.appendChild(segment._vbShape.svg);
+    }
+    const path = segment._vbShape.path;
+    if (path.getAttribute('fill') !== color) path.setAttribute('fill', color);
+  }
+
   function ensureStarvedCap(cap, color) {
     if (!cap._vbShape) {
       cap._vbShape = shapeSvg('starved');
@@ -223,7 +304,7 @@
     if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
   }
 
-  function drawAfflictionSegments(nodes, pieces, denominator) {
+  function drawAfflictionSegments(nodes, pieces, denominator, rs) {
     const previous = nodes.segmentsByKey;
     const next = new Map();
     const order = [];
@@ -235,20 +316,26 @@
       let segment = previous.get(key);
       if (!segment) {
         segment = document.createElement('span');
-        segment.className = 'vb-affliction-segment' + effectClasses(piece.id);
+        segment._vbTreatment = visualTreatment(piece.id, rs.AFFLICTIONS[piece.id], rs);
+        segment.className = 'vb-affliction-segment' + effectClasses(segment._vbTreatment);
         segment.title = piece.name;
       }
       const left = (piece.start / denominator * 100).toFixed(1) + '%';
       const width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
       if (segment.style.left !== left) segment.style.left = left;
       if (segment.style.width !== width) segment.style.width = width;
-      const brittle = BRITTLE_EFFECTS.has(piece.id);
-      const dripping = Object.prototype.hasOwnProperty.call(DRIP_EFFECTS, piece.id);
-      const base = brittle || dripping ? 'transparent' : piece.color;
+      const treatment = segment._vbTreatment;
+      const brittle = treatment === 'brittle';
+      const dripping = treatment.includes('drip');
+      const shaped = brittle || dripping || treatment === 'balloon' || treatment === 'crenellated';
+      const base = shaped ? 'transparent' : piece.color;
       if (segment.style.backgroundColor !== base) segment.style.backgroundColor = base;
       if (segment.style.color !== piece.color) segment.style.color = piece.color;
       if (brittle) ensureBrittleShape(segment, key, (piece.end - piece.start) / denominator, piece.color);
       if (dripping) ensureDripShape(segment, piece.color);
+      if (treatment === 'balloon' || treatment === 'crenellated') {
+        ensureEnhancedShape(segment, treatment, (piece.end - piece.start) / denominator, piece.color);
+      }
       next.set(key, segment);
       order.push(segment);
     }
@@ -350,7 +437,7 @@
         nodes.cap.style.width = (missingCapacity / denominator * 100).toFixed(1) + '%';
       }
       const pieces = exhausted ? [] : visibleAfflictionSegments(player, spec.key, activeAfflictions, denominator, rs);
-      drawAfflictionSegments(nodes, pieces, denominator);
+      drawAfflictionSegments(nodes, pieces, denominator, rs);
       drawNormalSegments(nodes, pieces, fillFraction * denominator, denominator, fillColor);
       const amountLabel = exhausted
         ? 'Exhausted ' + percent.toFixed(0) + '%'
