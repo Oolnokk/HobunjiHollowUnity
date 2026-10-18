@@ -2985,12 +2985,20 @@
       <label>Orbit character B<select id="editOrbitActorB">${actorSelectHtml(stage.orbitActorIds?.[1] || stage.targetActorId || stage.addressedActorId)}</select></label>
       <label>Initial focus<select id="editOrbitFocus"><option value="">Midpoint</option>${actorSelectHtml(stage.orbitFocusActorId)}</select></label>
       <label><input id="editOrbitAlternating" type="checkbox" ${stage.orbitAlternateFocus ? 'checked' : ''}> Alternate initial focus between characters</label>
-      <label>Intended zoom % (blank = progressive)<input id="editOrbitZoom" type="number" min="25" max="500" step="5" value="${stage.orbitZoomPercent ?? ''}"></label>
-      <label>Zoom increase per orbit reset %<input id="editOrbitZoomStep" type="number" min="0" max="30" step="1" value="${stage.orbitZoomStepPercent ?? 0}"></label>
+      <label>Fixed zoom % (blank = progressive)<input id="editOrbitZoom" type="number" min="25" max="500" step=".25" value="${stage.orbitZoomPercent ?? ''}"></label>
+      <label>Initial zoom % (first visited orbit; blank = 100 + step)<input id="editOrbitInitialZoom" type="number" min="25" max="500" step=".25" value="${stage.orbitInitialZoomPercent ?? ''}"></label>
+      <label>Zoom increase per subsequent orbit reset, percentage points<input id="editOrbitZoomStep" type="number" min="0" max="30" step=".25" value="${stage.orbitZoomStepPercent ?? 0}"></label>
+      <label>Height and look-at behavior<select id="editOrbitHeightMode">
+        <option value="default" ${!stage.orbitHeightMode || stage.orbitHeightMode === 'default' ? 'selected' : ''}>Midpoint height, initial face focus</option>
+        <option value="focusFace" ${stage.orbitHeightMode === 'focusFace' ? 'selected' : ''}>At initially focused character's face height</option>
+        <option value="focusFaceOffset" ${stage.orbitHeightMode === 'focusFaceOffset' ? 'selected' : ''}>At focused face height plus offset</option>
+        <option value="oppositeFaceArc" ${stage.orbitHeightMode === 'oppositeFaceArc' ? 'selected' : ''}>Tilt through both face heights; look at opposite end</option>
+      </select></label>
+      <label>Face height offset, world tiles (offset mode)<input id="editOrbitFaceHeightOffset" type="number" min="-10" max="10" step=".05" value="${stage.orbitFaceHeightOffset ?? 0}"></label>
       <label>Base radius, tiles<input id="editOrbitDistance" type="number" min=".5" max="30" step=".1" value="${stage.orbitDistanceTiles ?? 3.7}"></label>
       <label>Speed, degrees/sec<input id="editOrbitSpeed" type="number" min="-30" max="30" step=".5" value="${stage.orbitSpeedDegPerSec ?? 6}"></label>
       <label>Reset blend, seconds<input id="editOrbitBlend" type="number" min="0" max="8" step=".1" value="${stage.orbitBlendSeconds ?? 1}"></label>
-      <p class="tip">Each card resets a continuous midpoint orbit; initial gaze eases from the chosen character. The game camera's colliders may squeeze the requested radius. Use Preview in Game to inspect actual geometry.</p>` : ''; // Editable options share the existing cutscene stage format.
+      <p class="tip">Each card resets the same continuous-speed orbit. Face-height modes use each avatar's live head anchor; the tilted mode traces a circle between their face elevations and always looks across its diameter. Initial zoom affects the first visited card, then the increment accumulates. The game camera's colliders can compress the requested radius. Use Preview in Game to inspect actual wall and terrain clearance.</p>` : ''; // Editable options share the existing cutscene stage format.
     const index = stageIndex(stage.id);
     els.stageEditor.innerHTML = `<div class="editor-fields">
       <div class="editor-title"><span class="round-icon">${stageIcon(stage.type)}</span><div><strong>${escapeHtml(stageLabel(stage,index))}</strong><div style="color:var(--muted)">${stageName(stage.type)} card</div></div></div>
@@ -3015,7 +3023,8 @@
     bindSelect("editFadeDirection","direction"); bindSelect("editAnimKind","animKind"); bindSelect("editEmoteName","emoteName");
     // Orbit stage controls update existing serialized runtime fields, rather than creating another camera subsystem.
     for (const [id, property, min, max] of [
-      ['editOrbitZoom', 'orbitZoomPercent', 25, 500], ['editOrbitZoomStep', 'orbitZoomStepPercent', 0, 30],
+      ['editOrbitZoom', 'orbitZoomPercent', 25, 500], ['editOrbitInitialZoom', 'orbitInitialZoomPercent', 25, 500],
+      ['editOrbitZoomStep', 'orbitZoomStepPercent', 0, 30], ['editOrbitFaceHeightOffset', 'orbitFaceHeightOffset', -10, 10],
       ['editOrbitDistance', 'orbitDistanceTiles', 0.5, 30], ['editOrbitSpeed', 'orbitSpeedDegPerSec', -30, 30],
       ['editOrbitBlend', 'orbitBlendSeconds', 0, 8],
     ]) {
@@ -3033,6 +3042,7 @@
       });
     }
     bindSelect('editOrbitFocus', 'orbitFocusActorId');
+    bindSelect('editOrbitHeightMode', 'orbitHeightMode');
     $('editOrbitAlternating')?.addEventListener('change', event => { stage.orbitAlternateFocus = event.target.checked; changed('Orbit focus alternation updated.'); });
 
     els.stageEditor.querySelectorAll('[data-transform-kind]').forEach(input => input.addEventListener('change', () => { stage.transform ||= {}; stage.transform[input.dataset.transformKind] ||= {}; stage.transform[input.dataset.transformKind][input.dataset.transformAxis] = Number(input.value) || 0; changed('Furniture transform updated.'); }));
