@@ -133,50 +133,89 @@
   }
 
 
+  // Orbit height authoring:
+  //   default           = legacy midpoint-height orbit and eased initial face focus.
+  //   focusFace         = camera stays level with the initially favored character's face.
+  //   focusFaceOffset   = same face height plus orbitFaceHeightOffset world units.
+  //   oppositeFaceArc   = a circular orbit tilted across the two actual face heights;
+  //                       camera aims through the diameter at its antipodal point.
   function createActorOrbitShot(subjects, options = {}) {
-    const T = window.THREE; // The same Three.js vectors and scene-root actors as the shipping cinematic system.
-    if (!T?.Vector3 || !Array.isArray(subjects) || subjects.length !== 2 || subjects.some(actor => !actor?.root?.position)) return null;
-    const [a, b] = subjects; // Two actors define the orbit midpoint, including a player stand-in if selected.
-    const pA = new T.Vector3(), pB = new T.Vector3(), mid = new T.Vector3(); // Reused world-space anchors, no per-frame allocations.
-    const position = new T.Vector3(), target = new T.Vector3(); // Stable callback results consumed by the existing blend/collider.
-    const started = performance.now(); // Clock resets for each cutscene paragraph or explicit orbit camera card.
-    const zoomPercent = Math.max(25, Math.min(500, finite(options.zoomPercent, 100))); // Desired zoom; collision may compress the boom further.
-    const radius = Math.max(0.5, finite(options.distanceTiles, 3.7)) * 100 / zoomPercent; // World-space orbit radius.
-    const speedRad = finite(options.speedDegPerSec, 6) * Math.PI / 180; // Uniform angle advance independent of frame rate.
-    const focusActorId = String(options.focusActorId || ''); // Optional initial character focus, otherwise aim at the midpoint.
+    const T = window.THREE;
+    if (!T?.Vector3 || !Array.isArray(subjects) || subjects.length !== 2
+      || subjects[0]?.id === subjects[1]?.id || subjects.some(actor => !actor?.root?.position)) return null;
+    const [a, b] = subjects;
+    const pA = new T.Vector3(), pB = new T.Vector3(), mid = new T.Vector3();
+    const position = new T.Vector3(), target = new T.Vector3();
+    const started = performance.now();
+    const zoomPercent = Math.max(25, Math.min(500, finite(options.zoomPercent, 100)));
+    const radius = Math.max(0.5, finite(options.distanceTiles, 3.7)) * 100 / zoomPercent;
+    const speedRad = finite(options.speedDegPerSec, 6) * Math.PI / 180;
+    const focusActorId = String(options.focusActorId || '');
     const focusActor = subjects.find(actor => String(actor.id) === focusActorId) || null;
-    const eyeRatio = Math.max(0.1, finite(options.targetHeight, 0.68)); // Scales the chest/eye anchor with each character's own height.
+    const heightMode = ['focusFace', 'focusFaceOffset', 'oppositeFaceArc'].includes(options.heightMode)
+      ? options.heightMode : 'default';
+    const faceHeightOffset = finite(options.faceHeightOffset, 0);
+    const eyeRatio = Math.max(0.1, finite(options.targetHeight, 0.68));
+    const faceRatio = Math.max(0.1, finite(options.faceHeightRatio, 0.85));
+    // Game cutscenes pass their rig-derived face resolver. Tool-only preview scenes
+    // fall back to the avatar's scaled face ratio when skinned bones are unavailable.
     function anchor(actor, out) {
       if (typeof actor.root.getWorldPosition === 'function') actor.root.getWorldPosition(out);
       else out.copy(actor.root.position);
-      out.y += Math.max(0.3, finite(actor.walker?.avatarHeight, 1.2) * eyeRatio);
+      const fallbackRatio = heightMode === 'default' ? eyeRatio : faceRatio;
+      out.y += Math.max(0.3, finite(actor.walker?.avatarHeight, 1.2) * fallbackRatio);
+      if (heightMode !== 'default') {
+        const liveFace = actor.faceWorldPosition?.();
+        if (Number.isFinite(Number(liveFace?.y))) out.y = Number(liveFace.y);
+      }
       return out;
     }
     function updateMidpoint() {
-      anchor(a, pA);
-      anchor(b, pB);
+      anchor(a, pA); anchor(b, pB);
       mid.copy(pA).add(pB).multiplyScalar(0.5);
       return mid;
     }
     updateMidpoint();
-    const lineAngle = Math.atan2(pB.x - pA.x, pB.z - pA.z); // Perpendicular starting angle keeps the two actors from visually overlapping.
+    const lineAngle = Math.atan2(pB.x - pA.x, pB.z - pA.z);
     const defaultAngle = lineAngle + Math.PI / 2 + (focusActor === b ? 0.38 : focusActor === a ? -0.38 : 0);
+    const facingA = focusActor !== b; // Without an initial focus, start from the B-side and face A.
     const initialAngle = options.startAzimuthDeg != null && Number.isFinite(Number(options.startAzimuthDeg))
-      ? Number(options.startAzimuthDeg) * Math.PI / 180 : defaultAngle; // An authored starting side overrides the default.
-    const elapsed = () => Math.max(0, (performance.now() - started) / 1000); // Single real-time clock shared by all orbit providers.
+      ? Number(options.startAzimuthDeg) * Math.PI / 180
+      : heightMode === 'oppositeFaceArc' ? (facingA ? Math.PI : 0) : defaultAngle;
+    const elapsed = () => Math.max(0, (performance.now() - started) / 1000);
+    function arcPoint(angle, out) {
+      updateMidpoint();
+      const dx = pB.x - pA.x, dz = pB.z - pA.z, span = Math.hypot(dx, dz);
+      const alongX = span > 1e-5 ? dx / span : 1, alongZ = span > 1e-5 ? dz / span : 0;
+      const acrossX = -alongZ, acrossZ = alongX;
+      const halfHeightDifference = (pB.y - pA.y) * 0.5;
+      const acrossRadius = Math.hypot(radius, halfHeightDifference); // True circle in the plane tilted between the face elevations.
+      const along = Math.cos(angle) * radius, across = Math.sin(angle) * acrossRadius;
+      return out.set(
+        mid.x + alongX * along + acrossX * across,
+        mid.y + halfHeightDifference * Math.cos(angle),
+        mid.z + alongZ * along + acrossZ * across,
+      );
+    }
     const targetProvider = () => {
+      if (heightMode === 'oppositeFaceArc') return arcPoint(initialAngle + elapsed() * speedRad + Math.PI, target);
       updateMidpoint();
       target.copy(mid);
       if (focusActor) {
-        const source = focusActor === a ? pA : pB; // Already refreshed by updateMidpoint.
-        target.lerp(source, 0.78 * Math.exp(-elapsed() / 2.3)); // Begin on this person, settle toward the true two-person midpoint.
+        const source = focusActor === a ? pA : pB;
+        target.lerp(source, 0.78 * Math.exp(-elapsed() / 2.3));
       }
       return target;
     };
     const positionProvider = () => {
+      const angle = initialAngle + elapsed() * speedRad;
+      if (heightMode === 'oppositeFaceArc') return arcPoint(angle, position);
       updateMidpoint();
-      const angle = initialAngle + elapsed() * speedRad; // Slow continuous orbit, reset only by creating a new shot.
-      return position.set(mid.x + Math.sin(angle) * radius, mid.y + 0.55 + radius * 0.12, mid.z + Math.cos(angle) * radius);
+      const height = heightMode === 'focusFace' || heightMode === 'focusFaceOffset'
+        ? (focusActor === b ? pB.y : focusActor === a ? pA.y : mid.y)
+          + (heightMode === 'focusFaceOffset' ? faceHeightOffset : 0)
+        : mid.y + 0.55 + radius * 0.12;
+      return position.set(mid.x + Math.sin(angle) * radius, height, mid.z + Math.cos(angle) * radius);
     };
     return {
       id: String(options.id || 'actor_orbit'),
@@ -185,24 +224,34 @@
       position: positionProvider().clone(), target: targetProvider().clone(),
       fovDeg: Math.max(15, Math.min(95, finite(options.fovDeg, 52))),
       blendSeconds: Math.max(0, finite(options.blendSeconds, 1)),
-      dialogueFraming: false, // Dialogue panel must not re-center the pair on only the current speaker.
-      orbitDebug: { actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null, zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI },
+      dialogueFraming: false,
+      orbitDebug: {
+        actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null,
+        zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI,
+        heightMode, faceHeightOffset, targetMode: heightMode === 'oppositeFaceArc' ? 'antipodal' : 'eased-focus',
+      },
     };
   }
-
 
   function createStageOrbitShot(stage, subjects, sequence = 1) {
     if (!stage || !Array.isArray(subjects) || subjects.length !== 2 || subjects[0]?.id === subjects[1]?.id) return null;
     const visit = Math.max(1, Math.floor(finite(sequence, 1))); // Count actual visited orbit cards, not authored stage indices or optional branches.
-    const explicit = Number(stage.orbitZoomPercent); // An optional fixed zoom overrides the scene's progressive paragraph zoom.
-    const zoomPercent = Number.isFinite(explicit) && explicit > 0
-      ? explicit : 100 + Math.max(0, finite(stage.orbitZoomStepPercent, 0)) * visit;
+    const explicit = stage.orbitZoomPercent == null || stage.orbitZoomPercent === '' ? NaN : Number(stage.orbitZoomPercent);
+    const initial = stage.orbitInitialZoomPercent == null || stage.orbitInitialZoomPercent === ''
+      ? NaN : Number(stage.orbitInitialZoomPercent);
+    const step = Math.max(0, finite(stage.orbitZoomStepPercent, 0));
+    // A specified initial zoom is the first *visited* paragraph's zoom; later
+    // resets add the same authored percentage-point step. Legacy cards preserve 100 + step * visit.
+    const zoomPercent = Number.isFinite(explicit) && explicit > 0 ? explicit
+      : Number.isFinite(initial) && initial > 0 ? initial + step * (visit - 1) : 100 + step * visit;
     const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[visit % 2].id : null); // First visit favors the second actor.
     return createActorOrbitShot(subjects, {
       id: 'cutscene_orbit_' + stage.id, shotKey: stage.id + ':' + visit, // Replaying the exact same card produces a fresh transition record.
       focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
       speedDegPerSec: stage.orbitSpeedDegPerSec, startAzimuthDeg: stage.orbitStartAzimuthDeg,
-      targetHeight: stage.orbitTargetHeight, fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
+      targetHeight: stage.orbitTargetHeight, heightMode: stage.orbitHeightMode,
+      faceHeightOffset: stage.orbitFaceHeightOffset, faceHeightRatio: stage.orbitFaceHeightRatio,
+      fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
     });
   }
 
