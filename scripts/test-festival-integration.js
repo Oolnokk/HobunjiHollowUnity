@@ -31,7 +31,7 @@ for (const layout of town.layouts) {
     assert(!props.slice(0, index).some(other => overlaps(rect, rectangle(other))), `${prop.id} overlaps another prop`);
     for (let row = Math.floor(rect[1]); row < Math.ceil(rect[3]); row++) for (let col = Math.floor(rect[0]); col < Math.ceil(rect[2]); col++) {
       const tile = town.tiles[`${col},${row}`];
-      assert(!['path', 'stream', 'river', 'trench', 'tilled'].includes(tile?.type), `${prop.id} obstructs ${tile?.type} at ${col},${row}`);
+      assert(prop.festivalRoadArch || !['path', 'stream', 'river', 'trench', 'tilled'].includes(tile?.type), `${prop.id} obstructs ${tile?.type} at ${col},${row}`); // Tall arches explicitly span unobstructed roads.
     }
     for (const exit of town.transitions) {
       const dx = Math.max(rect[0] - exit.col - .5, 0, exit.col + .5 - rect[2]);
