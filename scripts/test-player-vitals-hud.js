@@ -100,7 +100,7 @@ assert.equal(bruisedSpan.style.backgroundColor, 'transparent', 'rectangular band
 assert.equal(bruisedSpan.children[0].id, 'svg', 'inline SVG renders the bar mesh');
 const bruisePath = bruisedSpan.children[0].children[1].getAttribute('d');
 assert(bruisePath.includes('L') && bruisePath.includes('Z'), 'closed jagged outline path');
-const topInset = [...bruisePath.matchAll(/L [\\d.]+ ([\\d.]+)/g)].map(match => +match[1]);
+const topInset = [...bruisePath.matchAll(/L [\d.]+ ([\d.]+)/g)].map(match => +match[1]);
 assert(topInset.some(y => y >= 10 && y <= 16), 'inward cuts are 25-40% of path height');
 refresh();
 assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged mesh remains stable across frames');
