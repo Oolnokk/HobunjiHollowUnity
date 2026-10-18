@@ -23,7 +23,7 @@ function element(id) {
 const elements = new Map(); // Provides the exact HUD ids expected by the game's HTML.
 elements.set('vitalsBar', element('vitalsBar'));
 for (const resource of ['Health', 'Stamina', 'Footing']) {
-  for (const part of ['Row', 'Fill', 'Segments', 'Cap', 'Value']) {
+  for (const part of ['Row', 'Fill', 'Segments', 'Cap']) {
     const id = 'vb' + resource + part; // Matches the existing in-game #vb<resource><part> naming pattern.
     elements.set(id, element(id));
   }
@@ -99,7 +99,7 @@ player.exhaustion.blackStamina = 57;
 refresh();
 assert.equal(shown('vbStaminaRow'), true, 'exhaustion is never homeostatic');
 assert.equal(bar('Stamina').style.width, '57%', 'exhaustion displays black-Stamina recovery rather than normal Stamina');
-assert.equal(elements.get('vbStaminaValue').textContent, 'Exhausted 57%');
+assert.equal(elements.get('vbStaminaRow').title, 'Stamina: Exhausted 57%');
 assert.equal(elements.get('vbStaminaSegments').children.length, 0, 'exhausted bands do not show ordinary affliction colors');
 player.exhaustion.active = false;
 player.stamina = 100;
@@ -127,4 +127,10 @@ assert.equal(shown('vbFootingRow'), true, 'Footing afflictions also reveal their
 assert.equal(elements.get('vbFootingSegments').children.length, 1);
 assert.equal(context.PlayerVitals.getDebug().hud.rows.footing.afflictionSegments, 1, 'mobile-readable debug snapshot includes HUD state');
 
+const html = fs.readFileSync('docs/index.html', 'utf8');
+const css = fs.readFileSync('docs/style.css', 'utf8');
+const hudHtml = html.slice(html.indexOf('<div id="vitalsBar"'), html.indexOf('<!-- Active alchemy buffs/'));
+assert(!/class="vb-(icon|label|value)"/.test(hudHtml), 'HUD contains no visible icon, label or numeric text');
+assert(css.includes('border: 2px solid #000'), 'resource tracks use black outlines');
+assert(css.slice(css.indexOf('/* ── Minimal bottom resource bars'), css.indexOf('/* Keep desktop resource bars')).includes('background: transparent'), 'HUD root has no visible panel');
 console.log('player vitals HUD tests passed');
