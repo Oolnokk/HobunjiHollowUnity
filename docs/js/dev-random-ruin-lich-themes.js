@@ -630,14 +630,11 @@
     badgeClock += dt;
     if (badgeClock >= .25) { // The composer snapshot already feeds mobile Pixel Probe; echo a compact live state in the in-game badge.
       badgeClock = 0;
-      const badge = document.getElementById('devRandomRuinBadge');
-      if (badge) {
-        const report = snapshot();
-        const suffix = ' · lich '+world.theme[0].toUpperCase()+' P'+report.burstPillars+'/'+report.totalPillars+
-          ' I'+report.iceTiles+' C'+report.fallenIcicles+'/'+report.icicles+' K'+report.plasmTiles+
-          ' sink'+Math.round(report.sinking*100)+'% '+report.lastEvent;
-        badge.textContent = badge.textContent.replace(/ · lich [HTK] P[^·]+/, '') + suffix;
-      }
+      const report = snapshot();
+      const segment = ' · lich '+world.theme[0].toUpperCase()+' P'+report.burstPillars+'/'+report.totalPillars+
+        ' I'+report.iceTiles+' C'+report.fallenIcicles+'/'+report.icicles+' K'+report.plasmTiles+
+        ' sink'+Math.round(report.sinking*100)+'% '+report.lastEvent;
+      window.DevRandomRuin?.setDebugBadgePart?.('lich',segment); // A keyed segment cannot accumulate duplicate warnings over time.
     }
   }
   function clear() {
