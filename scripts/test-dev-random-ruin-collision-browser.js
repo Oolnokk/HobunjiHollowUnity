@@ -26,8 +26,15 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   await page.waitForFunction(() => window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin', null, { timeout:30000 });
   await page.waitForFunction(() => {
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.();
+    const root = window.DevRandomRuin?.getRuntimeContext?.()?.root;
+    let hiddenPatternOverlays = 0; // Intentionally hidden pattern:sides helper geometry is not an activator surface players should see.
+    root?.traverse?.(node => {
+      if (node.userData?.devRuinNativeRenderKind === 'activator'
+        && node.name === 'pattern:sides' && node.visible === false) hiddenPatternOverlays++;
+    });
     return render?.sourceDoorMeshes > 0 && render.visibleDoorSources === render.sourceDoorMeshes
-      && render.sourceActivatorMeshes > 0 && render.visibleActivatorSources === render.sourceActivatorMeshes
+      && render.sourceActivatorMeshes > 0
+      && render.visibleActivatorSources + hiddenPatternOverlays === render.sourceActivatorMeshes
       && render.totalProxyCount === 0;
   }, null, { timeout:10000, polling:250 }).catch(async error => { // Headless/WebGL rAF can stall even after all visibility conditions are true.
     // Keep the original assertion, but report the exact failed counts when CI
