@@ -16,7 +16,8 @@ assert.match(ruinSource, /floorSet:ruin\.floorSet,ceilingY:ruin\.ceilingY/, 'Com
 assert.match(puzzlesSource, /state\?\.context\?\.theme !== 'hronal'\) return null/, 'Rope lava is Hronal-only');
 assert.match(fogSource, /tradition === 'kanthic' \? 1/, 'Kanthic rooms retain pure blackness');
 assert.match(fogSource, /ruinTradition === 'tothal'\) return/, 'Tothal lantern illumination is disabled');
-assert.match(fogSource, /ruinTradition === 'kanthic' \? \.5 : 1/, 'Kanthic lantern radius must be halved');
+assert.match(fogSource, /ruinTradition === 'kanthic' \? \.25 : 1/, 'Kanthic lantern radius is halved again to one-quarter normal size');
+assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles\*\.25/, 'Plasm visibility uses the same tunable radius as actual lantern lighting');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');
 
@@ -45,7 +46,7 @@ const THREE = {
   TextureLoader:class { load(_url, done) { const texture = {dispose(){}}; done?.(texture); return texture; } },
 }; // Lightweight renderer stand-ins preserve creation, instance batching and cleanup code paths.
 
-function setup(theme, playerX = 3.1, playerZ = 3.1) {
+function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   let composer = null; // Registered composer is the subject of each isolated runtime test.
   let impactCount = 0; // Tracks shared collision impact calls when an ice slide is obstructed.
   let afflictionCount = 0; // Confirms area hazards affect the same ResourceSystem as normal combat.
@@ -67,15 +68,15 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   const Audio = class {constructor(url){this.url=url;this.playbackRate=1;}play(){audioEvents.push({url:this.url,rate:this.playbackRate});return Promise.resolve();}};
   vm.runInNewContext(themeSource, {window, document, Audio, console}, {filename:'dev-random-ruin-lich-themes.js'});
   const floorSet = new Set();
-  for (let x = 2; x < 12; x++) for (let z = 2; z < 12; z++) floorSet.add(x + ',' + z);
+  for(let x=2;x<(options.maxX||12);x++)for(let z=2;z<12;z++)floorSet.add(x+','+z);
   const context = {
     theme, seed:123, root:new Node(), ceilingY:3, floorSet,
-    meta:{floorSurfaceY:0,wallHeight:3,rooms:[{id:'test',col:0,row:0,w:10,h:10}]},
+    meta:{floorSurfaceY:0,wallHeight:3,rooms:options.rooms||[{id:'test',col:0,row:0,w:10,h:10}]},
   };
   const kit = {
     deps:{TILE:64,player,hostileObjects:new Set(),playerMesh:{userData:{portraitModelHeight:1.8}},handlePlayerDeath() {}},
     root:new Node(),state:{context},group(){return this.root;},sampleSupport(){return {y:0};},
-    roomBounds(){return {minX:2,maxX:12,minZ:2,maxZ:12};},makeBasic(){return new Material({color:0x777777});},
+    roomBounds(_meta,room){return room.bounds||{minX:2,maxX:12,minZ:2,maxZ:12};},makeBasic(){return new Material({color:0x777777});},
   }; // 10×10 walkable room makes 70% ice coverage an exact 70-cell assertion.
   composer.buildRooms(kit, context);
   const api = window.DevRandomRuinLichThemes;
@@ -138,18 +139,59 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
 }
 {
   const t = setup('kanthic');
-  assert.equal(t.api.snapshot().plasmTiles, 1, 'Each room starts with one seeded plasm tile');
+  const initial=t.api.snapshot().plasmTiles;
+  assert.ok([4,9,16].includes(initial),'A clear Kanthic room must start with a contiguous 2x2, 3x3 or 4x4 puddle');
+  const seed=[];
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))seed.push({x,z});
+  assert.equal(seed.length,initial,'Plasm tile query must reflect exact render and physics footprint');
+  const minX=Math.min(...seed.map(p=>p.x)),maxX=Math.max(...seed.map(p=>p.x));
+  const minZ=Math.min(...seed.map(p=>p.z)),maxZ=Math.max(...seed.map(p=>p.z));
+  assert.equal((maxX-minX+1)*(maxZ-minZ+1),initial,'Seed is a solid square, not a scattered set of puddles');
   const caps=[];
   t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('kanthic_plasm_snow_shelf_edge_'))caps.push(mesh);});
   assert.ok(caps.length,'Plasm must use tapered-edge surface variants');
   assert.equal(t.api.snapshot().lightSources, 0, 'Kanthic relies on lantern alone');
-  t.tick(16);
-  assert.ok(t.api.snapshot().plasmTiles > 1, 'Out-of-sight plasm spreads toward the player at 1 tile/s');
-  t.player.x = 30 * 64; t.player.y = 30 * 64;
-  t.tick(1);
-  assert.equal(t.api.snapshot().plasmTiles, 1, 'Leaving the room resets the patch to its original tile');
+  // Turn toward the seed from outside the narrowed radius; the player can
+  // still see the direction, but not the actual puddle at lantern range.
+  const corners=[[2.1,2.1],[11.8,2.1],[2.1,11.8],[11.8,11.8]];
+  const far=corners.sort((a,b)=>Math.min(...seed.map(p=>Math.hypot(b[0]-p.x-.5,b[1]-p.z-.5)))-
+                               Math.min(...seed.map(p=>Math.hypot(a[0]-p.x-.5,a[1]-p.z-.5))))[0];
+  t.player.x=far[0]*64;t.player.y=far[1]*64;
+  t.player.facing=Math.atan2(seed[0].z+.5-far[1],seed[0].x+.5-far[0]);
+  t.tick(4,.25);
+  const grown=t.api.snapshot().plasmTiles;
+  assert.ok(grown>=initial+8,'An entirely unseen puddle must add approximately 12 cells per second');
+  // Step out of the chamber; no room transition is allowed to cull the patch.
+  t.player.x=30*64;t.player.y=30*64;
+  t.tick(2,.25);
+  assert.equal(t.api.snapshot().plasmTiles,grown,'Room exit retains every plasm tile until the entire ruin is left');
+  // Re-enter with an illuminated edge within .6 tiles: even unseen outer
+  // edges must stop growing if ANY puddle tile is currently visible.
+  const boundary=[];
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))boundary.push({x,z});
+  let observer=null;
+  for(const p of boundary){
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const px=p.x+dx,pz=p.z+dz;
+      if(px<2||px>=12||pz<2||pz>=12||t.api.isPlasmAt(px+.5,pz+.5))continue;
+      observer={x:px+.025*(dx>0?1:dx<0?-1:0)+.5*(dz!==0?1:0),z:pz+.5};
+      // Stand 0.525 tiles away from the observed edge but in the dry neighbour.
+      observer={x:dx>0?p.x+1.025:dx<0?p.x-.025:p.x+.5,
+        z:dz>0?p.z+1.025:dz<0?p.z-.025:p.z+.5, target:{x:p.x+.5,z:p.z+.5}};
+      break;
+    }
+    if(observer)break;
+  }
+  assert.ok(observer,'A clear 10x10 room must have at least one dry neighbour of the puddle');
+  t.player.x=observer.x*64;t.player.y=observer.z*64;
+  t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x);
+  const seenCount=t.api.snapshot().plasmTiles;
+  t.tick(4,.25);
+  assert.equal(t.api.snapshot().plasmTiles,seenCount,'Seeing one plasm tile inside lantern radius freezes all growth');
   t.composer.clear();
-  assert.equal(t.api.snapshot().active, false);
+  assert.equal(t.api.snapshot().active,false,'Only leaving/clearing the entire ruin removes the puddle');
+  // Teardown is idempotent; repeated clear is safe.
+  t.composer.clear();
 }
 {
   const t=setup('tothal');
