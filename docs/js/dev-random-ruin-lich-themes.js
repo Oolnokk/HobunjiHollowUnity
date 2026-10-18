@@ -10,7 +10,10 @@
   const PULSE_SECONDS = 1; // Hronal pillar warning: three pulses at one-second spacing.
   const PILLAR_RADIUS = 3.1; // Hronal trigger and eruption radius, measured in tiles.
   const ICE_COVERAGE = 0.70; // Tothal floor tiles covered by an ice skin per room.
-  const ICE_GLIDE_FRACTION = 0.25; // After release, replay the movement vector for 25% of the preceding continuous hold time.
+  // Minecraft-like ground friction (ice slipperiness .98 x normal drag .91 ≈ .892)
+  // at a 20 Hz reference step. Normal movement's collision/swept handling stays
+  // authoritative; no post-frame position override or accumulated hold timer.
+  const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.11; // Half the Western Slope snow height; used for Kanthic tiles.
   const PLASM_EXPANSION_MS = 250; // Four growth beats per second while the entire patch is unobserved.
   const PLASM_TILES_PER_BEAT = 3; // Up to twelve new walkable cells per second; one curved-cap rebuild per beat batch.
@@ -591,70 +594,6 @@
       }
     }
   }
-  function collisionImpact(actor, kit, deficitTiles) {
-    const impact = window.KnockbackCollisionImpact;
-    impact?.resolveStrength?.(actor, {kind:'stone', label:'Tothal ice slide'}, deficitTiles * .25, kit.deps.TILE, {
-      dealHealthDamage: (target, damage) => {
-        const previous = Number(target.health) || 0;
-        const options = {tag:'blunt',environmentalImpact:true,friendlyFire:true}; // The existing damage/death authority, never ad-hoc Health subtraction.
-        if (target === kit.deps.player) (kit.deps.damagePlayer || window.Combat?.deps?.damagePlayer)?.(damage,target.x,target.y,0,options);
-        else (kit.deps.damageCreature || window.Combat?.deps?.damageCreature)?.(target,damage,target.x,target.y,0,options);
-        const applied = Math.max(0,previous - Math.max(0,Number(target.health) || 0));
-        return {applied,lethal:previous > 0 && target.health <= 0};
-      },
-    }, { mode:'ice-slide' });
-    lastEvent = 'tothal:slide-collision';
-  }
-  function updateIceMotion(kit, dt, actors) {
-    const tile=kit.deps.TILE;
-    for(const actor of actors){
-      const point=pointOf(actor,tile);
-      let motion=world.motion.get(actor);
-      if(!motion){
-        motion={last:point,hold:0,dir:{x:0,z:0},speed:0,remaining:0,sliding:false};
-        world.motion.set(actor,motion);continue;
-      }
-      const dx=point.x-motion.last.x,dz=point.z-motion.last.z,delta=Math.hypot(dx,dz);
-      const icy=world.iceTiles.has(tileKey(point.x,point.z));
-      if(!icy||delta>.65||(actor===kit.deps.player&&window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())){
-        motion.hold=0;motion.remaining=0;motion.sliding=false;motion.last=point;
-        continue; // Dry ground, teleports and authored traversal cancel glide immediately.
-      }
-      const advance=()=>{
-        const step=Math.min(motion.speed*dt,motion.speed*motion.remaining);
-        motion.remaining=Math.max(0,motion.remaining-dt);
-        if(step>.00001){
-          const target={x:point.x+motion.dir.x*step,z:point.z+motion.dir.z*step};
-          const y=floorY(kit,point.x,point.z);
-          // Cross onto the first dry tile normally, then immediately cancel
-          // inertia. A dry boundary is a brake, not an invisible collision wall.
-          if(!clearAt(target.x,target.z,y)||Math.abs(floorY(kit,target.x,target.z)-y)>=.4){
-            collisionImpact(actor,kit,step);motion.remaining=0;
-          }else{
-            actor.x=target.x*tile;actor.y=target.z*tile;
-            if(actor===kit.deps.player)window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY(kit,target.x,target.z));
-            if(!world.iceTiles.has(tileKey(target.x,target.z)))motion.remaining=0;
-          }
-        }
-        if(motion.remaining<=.00001){motion.sliding=false;motion.hold=0;}
-        motion.last=pointOf(actor,tile);
-      };
-      if(motion.sliding){advance();continue;}
-      if(delta>.001&&delta<.65){
-        motion.dir.x=dx/delta;motion.dir.z=dz/delta;
-        motion.speed=between(delta/Math.max(.001,dt),.1,8);
-        motion.hold+=dt;
-      }else if(delta<=.001&&motion.hold>.045){
-        // Do not pause for a separate 'stillness' timer: the FIRST released
-        // input frame already advances along the previously held vector.
-        motion.remaining=motion.hold*ICE_GLIDE_FRACTION;
-        motion.sliding=true;motion.hold=0;
-        advance();
-        continue;
-      }
-      motion.last=point;
-    }
-  }
   function initialPlasmCluster(kit,room) {
     const b=room.bounds;
     // Deterministically pick a 2x2, 3x3 or 4x4 contiguous puddle. A full
@@ -888,7 +827,7 @@
     world = {
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
-      lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],motion:new WeakMap(),surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
+      lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
       plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
@@ -903,7 +842,7 @@
     if (!world || world.context.root !== kit.state?.context?.root || dt <= 0) return;
     const actors = getActors(kit);
     if (world.theme === 'hronal') updatePillars(kit,dt,actors);
-    if (world.theme === 'tothal') { updateIceMotion(kit,dt,actors); updateIcicles(kit,dt,actors); }
+    if (world.theme === 'tothal') updateIcicles(kit,dt,actors); // Player ice physics run inside native game.js movement, before collision.
     if (world.theme === 'kanthic') updatePlasm(kit,dt);
     updateBursts(dt);
     badgeClock += dt;
@@ -970,7 +909,8 @@
     lightSources:()=>world?.lights||[],
     activeTheme:()=>world?.theme||null,
     snapshot,
-    isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Mobile/test query reads the same authored slippery footprint as locomotion.
+    isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
+    movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
     isPlasmAt:(x,z)=>!!world?.rooms?.some(room=>room.plasm?.has(tileKey(x,z))), // Verifies the exact persistent puddle occupancy for gameplay/debug QA.
   });
 })();
