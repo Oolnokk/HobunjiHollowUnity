@@ -381,7 +381,9 @@
     const talk = (id, text) => ({ // Every spoken paragraph resets the shared two-person orbit, including whichever optional answer the player hears.
       id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__',
       cameraMode: 'orbit', orbitActorIds: ['player', 'jubmir'], orbitAlternateFocus: true,
-      orbitZoomStepPercent: 5, orbitDistanceTiles: 3.7, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1,
+      orbitInitialZoomPercent: 131.25, orbitZoomStepPercent: 5, // First paragraph is exactly 20% closer in boom distance than the former 105% zoom shot.
+      orbitHeightMode: 'oppositeFaceArc', // Tilt endpoints to the player's/Jubmir's real face heights, and look toward the antipodal point.
+      orbitDistanceTiles: 3.7, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1,
     });
     return {
       version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir', // Dialogue partners occupy adjacent, furniture-free floor tiles.
