@@ -50,6 +50,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   let impactCount = 0; // Tracks shared collision impact calls when an ice slide is obstructed.
   let afflictionCount = 0; // Confirms area hazards affect the same ResourceSystem as normal combat.
   let footprint = null; // Captures a Hronal column's live collision enabled gate.
+  const audioEvents=[]; // Verifies release plays the existing rock sample at double speed/pitch.
   const player = {x:playerX * 64, y:playerZ * 64, health:100, facing:3};
   const window = {
     THREE, DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; }},
@@ -63,7 +64,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
   }; // Gameplay APIs stubbed at the contract boundaries, not duplicated in the tests.
   const document = {getElementById:() => null}; // The mobile diagnostics path intentionally handles a missing badge.
-  const Audio = class {play() { return Promise.resolve(); }};
+  const Audio = class {constructor(url){this.url=url;this.playbackRate=1;}play(){audioEvents.push({url:this.url,rate:this.playbackRate});return Promise.resolve();}};
   vm.runInNewContext(themeSource, {window, document, Audio, console}, {filename:'dev-random-ruin-lich-themes.js'});
   const floorSet = new Set();
   for (let x = 2; x < 12; x++) for (let z = 2; z < 12; z++) floorSet.add(x + ',' + z);
@@ -79,7 +80,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   composer.buildRooms(kit, context);
   const api = window.DevRandomRuinLichThemes;
   const tick = (frames, seconds = .25) => {for (let index = 0; index < frames; index++) composer.update(kit, index * seconds * 1000, seconds);};
-  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}};
+  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents};
 }
 
 {
@@ -129,6 +130,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   t.tick(20, .25);
   assert.ok(t.api.snapshot().fallenIcicles >= 1, 'Icicles triggered by a passing actor eventually shatter');
   assert.ok(t.afflictionCount > 0, 'Shatter damage uses ordinary status and Footing APIs');
+  assert.ok(t.audioEvents.some(event=>event.rate===2&&event.url.includes('sfx_break_rock')),'Icicles drop with the break-rock sample at double pitch and speed');
+  assert.ok(t.audioEvents.some(event=>event.rate===1&&event.url.includes('sfx_break_rock')),'If WebAudio is unavailable, impact keeps the original-length break-rock sound');
+  assert.match(themeSource,/pitchRockWithoutSpeedChange\(decoded,audioContext,1\.5\)/,'Supported WebAudio uses an offline 1.5x pitch transform at the original duration');
   t.composer.clear();
   assert.equal(t.api.snapshot().active, false);
 }
@@ -146,5 +150,35 @@ function setup(theme, playerX = 3.1, playerZ = 3.1) {
   assert.equal(t.api.snapshot().plasmTiles, 1, 'Leaving the room resets the patch to its original tile');
   t.composer.clear();
   assert.equal(t.api.snapshot().active, false);
+}
+{
+  const t=setup('tothal');
+  let chosen=null,dryBoundary=null;
+  for(let x=3;x<11;x++)for(let z=3;z<11;z++){
+    if(!t.api.isIceAt(x+.5,z+.5))continue;
+    chosen||={x,z};
+    if(!t.api.isIceAt(x+1.5,z+.5))dryBoundary={x,z};
+  }
+  assert.ok(chosen&&dryBoundary,'Seeded Tothal ice provides icy tiles and at least one dry boundary');
+  const player=t.player, startX=chosen.x+.25,startZ=chosen.z+.4;
+  player.x=startX*64;player.y=startZ*64;
+  t.tick(1,.1); // Initialize native position tracking at the start of a held input.
+  for(let step=0;step<8;step++){player.x+=.025*64;t.tick(1,.1);}
+  const releasedAt=player.x/64;
+  t.tick(1,.1); // Movement has stopped: replay begins after a brief release grace.
+  assert.ok(Math.abs(player.x/64-releasedAt)<.00001,'Release grace should not teleport the actor');
+  t.tick(2,.1);
+  assert.ok(Math.abs(player.x/64-releasedAt-.05)<.004,
+    'Eight 0.1s of moving at .25 tiles/s must replay for .2s = 25% of held duration');
+  const glideEnded=player.x;
+  t.tick(3,.1);
+  assert.ok(Math.abs(player.x-glideEnded)<.05,'After the timed glide expires, no residual movement remains');
+  // Repeat at an exposed tile edge: the next non-ice tile must cancel the glide,
+  // not turn into a hidden carry on normal terrain.
+  player.x=(dryBoundary.x+.78)*64;player.y=(dryBoundary.z+.5)*64;t.tick(1,.1);
+  for(let step=0;step<8;step++){player.x+=.025*64;t.tick(1,.1);}
+  t.tick(1,.1);t.tick(3,.1);
+  assert.ok(player.x/64<dryBoundary.x+1,'A glide must stop BEFORE crossing onto non-iced ground');
+  t.composer.clear();
 }
 console.log('Harlyao ruin lich-theme tests passed: stable theme, 70% curved ice, distributed tapered icicle clusters, Kanthic curved plasm expansion, teardown.');
