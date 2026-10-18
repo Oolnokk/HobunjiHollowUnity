@@ -19,7 +19,8 @@
   const OIL_TEXTURE = 'assets/textures/canvas.png'; // Same petroleum-surface texture as HarlyaoLichCombat.
   const LIGHT_CAP = 120; // Bound per-frame 2D light-mask work on large generated sites.
   let world = null; // Active composer state, invalidated on reroll/exit.
-  let audioContext = null; // Lazily used for the 150%-gain third Hronal pulse.
+  let audioContext = null; // Hronal warning gain and independently pitched icicle-impact playback.
+  let rockHitBuffer=null,rockHitLoading=null; // Once-per-session 1.5x-pitched, 1x-duration break-rock sample.
   let lastEvent = 'none'; // Shown in the mobile Dev Random Ruin diagnostic.
   let badgeClock = 0; // Throttles mobile-visible hazard counts to four updates a second.
 
@@ -49,7 +50,7 @@
     n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
     return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
   }
-  function playRockPulse(gain) {
+  function playRockPulse(gain,rate=1) {
     try {
       const settings = window.AudioSystem?.gameAudioConfig?.() || {}; // All three warning pulses respect the game's master SFX/mute setting.
       if (settings.enabled === false) return;
@@ -57,6 +58,8 @@
       const volume = Number.isFinite(configuredVolume) ? between(configuredVolume, 0, 1) : 1;
       const audio = new Audio(ROCK_SFX); // Reused audio asset; each scheduled pulse has its own playback.
       audio.volume = Math.min(1, gain * volume);
+      audio.playbackRate=rate; // Icicle release: double pitch AND double playback speed.
+      audio.preservesPitch=false; // Modern browsers otherwise hold pitch constant while changing playback rate.
       if (gain > 1 && (window.AudioContext || window.webkitAudioContext)) {
         const Context = window.AudioContext || window.webkitAudioContext;
         audioContext ||= new Context();
@@ -68,6 +71,62 @@
       }
       audio.play().catch(() => {});
     } catch (_) {}
+  }
+  function pitchRockWithoutSpeedChange(source,context,factor=1.5) {
+    // Offline granular overlap-add: each ~70ms grain is read at 1.5x pitch
+    // but its *centres* advance at normal time. Output lasts exactly as long
+    // as the source; this avoids playbackRate's unwanted impact-speed change.
+    // Stone impacts are broadband, so the short crossfades hide the seams.
+    const count=source.length,rate=source.sampleRate;
+    const output=context.createBuffer(source.numberOfChannels,count,rate);
+    const hop=Math.max(128,Math.round(rate*.017));
+    const grain=hop*4;
+    for(let channel=0;channel<source.numberOfChannels;channel++){
+      const input=source.getChannelData(channel),dest=output.getChannelData(channel);
+      const weights=new Float32Array(count);
+      for(let center=0;center<count+grain/2;center+=hop){
+        for(let j=0;j<grain;j++){
+          const outputAt=center+j-grain/2;
+          if(outputAt<0||outputAt>=count)continue;
+          const sampleAt=center+(j-grain/2)*factor;
+          const index=Math.floor(sampleAt);
+          if(index<0||index+1>=count)continue;
+          const weight=.5-.5*Math.cos((j+.5)*Math.PI*2/grain);
+          const sample=input[index]+(input[index+1]-input[index])*(sampleAt-index);
+          dest[outputAt]+=sample*weight;
+          weights[outputAt]+=weight;
+        }
+      }
+      for(let i=0;i<count;i++)if(weights[i]>.001)dest[i]/=weights[i];
+    }
+    return output;
+  }
+  function preloadRockImpact() {
+    if(rockHitLoading||rockHitBuffer||!(window.AudioContext||window.webkitAudioContext)||!window.fetch)return;
+    const Context=window.AudioContext||window.webkitAudioContext;
+    try{
+      audioContext||=new Context();
+      rockHitLoading=window.fetch(ROCK_SFX).then(response=>{
+        if(!response.ok)throw new Error('Rock impact sample unavailable');
+        return response.arrayBuffer();
+      }).then(data=>audioContext.decodeAudioData(data)).then(decoded=>{
+        rockHitBuffer=pitchRockWithoutSpeedChange(decoded,audioContext,1.5);
+      }).catch(()=>{rockHitLoading=null;}); // Standard sample remains available if decoding fails.
+    }catch(_){}
+  }
+  function playRockImpact() {
+    const config=window.AudioSystem?.gameAudioConfig?.()||{};
+    if(config.enabled===false)return;
+    const volume=Number.isFinite(Number(config.sfxVolume))?between(Number(config.sfxVolume),0,1):1;
+    if(!rockHitBuffer){preloadRockImpact();playRockPulse(.8,1);return;}
+    try{
+      audioContext.resume?.().catch?.(()=>{});
+      const source=audioContext.createBufferSource(),gain=audioContext.createGain();
+      source.buffer=rockHitBuffer;source.playbackRate.value=1;
+      gain.gain.value=.8*volume;
+      source.connect(gain).connect(audioContext.destination);
+      source.start(); // Same original duration, reconstructed at 1.5x source pitch.
+    }catch(_){playRockPulse(.8,1);}
   }
   function addLight(x, y, z, radius, strength, color) {
     if (world.lights.length >= LIGHT_CAP) return null;
@@ -705,7 +764,7 @@
     kit.group().add(world.group);
     makeRoomLights(kit);
     if (world.theme === 'hronal') { makePillars(kit); window.DevRandomRuinTileOccupancy?.refresh?.(); }
-    if (world.theme === 'tothal') { makeIce(kit); makeIcicles(kit); }
+    if (world.theme === 'tothal') { makeIce(kit); makeIcicles(kit); preloadRockImpact(); }
     if (world.theme === 'kanthic') makePlasm(kit);
     lastEvent = 'generated:'+world.theme;
   }
