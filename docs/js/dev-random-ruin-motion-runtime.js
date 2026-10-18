@@ -386,7 +386,7 @@
     snapLoosePushBlocksToSupport();
     updatePrompt();
     const badge = document.getElementById('devRandomRuinBadge');
-    if (badge && !badge.dataset.motionBase) updateBadge();
+    if (badge && !badge._ruinDebugBadgeParts?.motion) updateBadge();
   }
 
   async function auditSeeds(count = 12) {
