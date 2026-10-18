@@ -351,17 +351,13 @@
   }
 
   function updateBadge() {
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (!badge || !root) return;
-    const base = badge.dataset.prototypeHookBase || badge.textContent;
-    badge.dataset.prototypeHookBase = base;
-    badge.textContent = `${base} · hooks ${audit.controlsAdded}/${audit.surfacesAdded}/${audit.blockersAdded} · unhandled ${audit.unhandled.length}`;
+    if (!root) return;
+    window.DevRandomRuin?.setDebugBadgePart?.('hooks',` · hooks ${audit.controlsAdded}/${audit.surfacesAdded}/${audit.blockersAdded}`); // Effective unhandled count comes from the coverage segment.
   }
 
   function clearHookState(resetAudit = true) {
     DS.clearScope(SCOPE);
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (badge) delete badge.dataset.prototypeHookBase;
+    window.DevRandomRuin?.setDebugBadgePart?.('hooks',''); // No stale source string survives a reroll.
     root = null;
     extraControls = [];
     transitDoors = [];
