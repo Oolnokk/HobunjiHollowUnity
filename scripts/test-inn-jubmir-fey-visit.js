@@ -138,8 +138,8 @@ storage.set(api.stateKey(profile), 'complete');
   assert(orbitParagraphs.length > 30);
   assert(orbitParagraphs.every(stage => stage.orbitActorIds.join(',') === 'player,jubmir'
     && stage.orbitAlternateFocus === true && stage.orbitZoomStepPercent === 5
-    && stage.orbitInitialZoomPercent === 131.25 && stage.orbitHeightMode === 'oppositeFaceArc'),
-    'all Jubmir paragraphs alternate focus, start 20% closer, and use opposite-end face-height tilt');
+    && stage.orbitInitialZoomPercent === 131.25 && stage.orbitHeightMode === 'oppositeFaceArc' && stage.orbitDistanceTiles === 1.85),
+    'all Jubmir paragraphs alternate focus, use a further 50% shorter boom and opposite-end face-height tilt');
   assert(orbitParagraphs.some(stage => stage.id === 'fey_why'), 'optional answer also follows the orbit progression');
   assert(orbitParagraphs.some(stage => stage.id === 'fey_final'), 'final spoken paragraph keeps the orbit');
   assert.equal(provider.next(), null, 'completed scene never queues another visit');
