@@ -8,7 +8,7 @@ const driver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'
 const held = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
 const runtimeEntries = ['docs/index.html', 'docs/tools/animation-author/index.html', 'docs/tools/attack-animation-editor/index.html']; // All entry points must request the current shared hand bootstrap.
-assert.match(dual, /const DUPLICATE_Z_GAP = 0\.30/, 'dual weapons use the requested 0.30 total plane-normal gap');
+assert.match(dual, /const DUPLICATE_Z_GAP = 0\.15/, 'dual weapons use the requested halved 0.15 total plane-normal gap');
 assert.match(dual, /const MAIN_HAND_LAG_MS = 45/, 'main-hand duplicate keeps the requested small transform lag');
 assert.match(dual, /plane\.add\(offRoot\)[\s\S]*plane\.add\(mainRoot\)/, 'both visible weapon roots are children of the hidden original plane');
 assert.match(dual, /record\.material\.visible = false/, 'original weapon material is hidden without hiding child duplicates');
@@ -56,7 +56,7 @@ class DuplicateMesh {
 }
 const builderSource = dual.slice(dual.indexOf('  function makeDuplicateMesh('), dual.indexOf('  function makeRoot(')); // Isolates the unchanged production factory dependencies.
 const builder = vm.runInNewContext(`(${builderSource.trim()})`, {
-  HALF_Z_SEPARATION: 0.15,
+  HALF_Z_SEPARATION: 0.075,
   cloneOwnedMaterial: material => ({ ...material }),
 }); // Calls the actual factory for both anatomical sides.
 const sourcePlane = new DuplicateMesh({ axeBlade: true }, {}); // Shared source geometry must retain its authored handedness.
@@ -66,7 +66,7 @@ for (const side of ['main', 'off']) {
   assert.equal(copy.scale.x, 1, `${side} axe blade must face the authored direction`);
   assert.equal(copy.scale.y, 1);
   assert.equal(copy.scale.z, 1);
-  assert.equal(copy.position.z, side === 'main' ? -0.15 : 0.15);
+  assert.equal(copy.position.z, side === 'main' ? -0.075 : 0.075);
 }
 
 class GripQuaternion {
@@ -88,7 +88,7 @@ class GripPoint {
 }
 const gripMatrix = z => ({ z, clone() { return gripMatrix(this.z); }, invert() { this.z *= -1; return this; } }); // Translation-only fixture isolates the hand direction from the weapon position.
 const gripWeapon = z => ({ matrixWorld: gripMatrix(z), quaternion: new GripQuaternion(), scale: { x: 1 }, updateMatrixWorld() {} }); // Both visible sprites retain the corrected forward facing.
-const gripState = { influence: 1, idleBlend: 0, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.15), offMesh: gripWeapon(0.15) }; // Supplies a live dual pair to the production socket resolver.
+const gripState = { influence: 1, idleBlend: 0, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.075), offMesh: gripWeapon(0.075) }; // Supplies a live dual pair to the production socket resolver.
 const mirrorStart = dual.indexOf('  function mirrorQuaternionAcrossLocalX('); // Bounds of the production direction conversion.
 const mirrorEnd = dual.indexOf('  function currentPlanePose(', mirrorStart);
 const socketStart = dual.indexOf('  function transformSocketForHand('); // Bounds of the production per-hand dispatch.
@@ -98,7 +98,7 @@ const socketResolver = vm.runInNewContext(`${dual.slice(mirrorStart, mirrorEnd)}
   state: null,
   ACTIVE_EPSILON: 0.0001,
   hierarchyWorldQuaternion: (node, target) => target.set(node.quaternion.x, node.quaternion.y, node.quaternion.z, node.quaternion.w),
-  DUPLICATE_Z_GAP: 0.30,
+  DUPLICATE_Z_GAP: 0.15,
   MAIN_HAND_LAG_MS: 45,
 }); // Exercises the real branch selecting the offhand frame even though neither weapon is reflected.
 const authoredSocket = { position: new GripPoint(-0.04, -0.04, -0.1), quaternion: new GripQuaternion(0.5, -0.5, 0.5, 0.5) }; // A normalized nontrivial grip makes yaw/roll reversal observable.
@@ -109,7 +109,7 @@ assert.deepEqual([leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quatern
 assert.equal(leftGrip.dualWield.mirroredGripFrame, true);
 assert.equal(rightGrip.dualWield.mirroredGripFrame, false);
 assert.equal(leftGrip.position.x, authoredSocket.position.x);
-assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.15)) < 1e-9);
+assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.075)) < 1e-9);
 assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mutate the shared authored grip');
 
 const runtimeDeps = { toolHolder: { children: [] }, playerMesh: {} }; // Mirrors the real hand-runtime injection, which omits toolMeshMap.

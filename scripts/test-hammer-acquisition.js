@@ -12,7 +12,12 @@ for (const metal of ['nativeCopper', 'tinBronze']) {
   assert.deepEqual(Array.from(window.defs[`workhammer_${metal}`].slots), ['pick', 'weapon']);
   assert.deepEqual(Array.from(window.defs[`warhammer_${metal}`].slots), ['weapon']);
   assert.equal(window.defs[`warhammer_${metal}`].dmgType, 'blunt');
+  assert.equal(window.defs[`workhammer_${metal}`].dmgType, 'blunt', 'work hammer keeps blunt melee damage');
+  assert.equal(window.defs[`kylie_${metal}`].dmgType, 'blunt', 'crafted kylies use blunt melee mastery and impact effects');
 }
+const banditWeaponPool = vm.runInNewContext(`${fs.readFileSync('docs/config/weapon-trust-visits.js', 'utf8')}; window.WEAPON_TRUST_VISIT_CONFIG.bandits.weaponShapePool`, { window: {} }); // The production cultural bandit pool must admit ordinary work hammers.
+assert(banditWeaponPool.includes('workhammer'), 'bandits can spawn with a work hammer');
+assert.equal(banditWeaponPool.filter(shape => shape === 'workhammer').length, 1, 'work hammer receives one ordinary equal-weight pool entry');
 vm.runInContext(fs.readFileSync('docs/js/weapon-trust-visits.js', 'utf8'), context);
 const gear = { tools: {}, harlyaoRelics: {} }; // Simulates purchasing and unbinding across smith menu refreshes.
 window.MetalCraftShop.init({ UNLOCKED_TOOL_SHAPES: window.unlocked, TOOL_SHAPE_DEFS: window.shapes, TOOL_ITEM_DEFS: window.defs, getGearInventory: () => gear });
