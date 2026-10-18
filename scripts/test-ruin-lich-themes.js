@@ -64,7 +64,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     ResourceSystem:{addAffliction() { afflictionCount++; }, spendFooting() { afflictionCount++; }},
     DevRandomRuin:{syncPlayerPresentationHeight() {}},
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
-    CloudForestFog:{getKanthicLanternRadiusTiles:()=>.9}, // Matches actual default 2.4 × 37.5%; sight check must not use old .6 radius.
+    CloudForestFog:{getKanthicLanternRadiusTiles:()=>options.lanternRadius??.9}, // Default: 2.4 × .375. Cap stress tests may suppress visibility without changing production logic.
   }; // Gameplay APIs stubbed at the contract boundaries, not duplicated in the tests.
   const document = {getElementById:() => null}; // The mobile diagnostics path intentionally handles a missing badge.
   const Audio = class {constructor(url){this.url=url;this.playbackRate=1;}play(){audioEvents.push({url:this.url,rate:this.playbackRate});return Promise.resolve();}};
@@ -313,9 +313,29 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   assert.equal(t.api.isPlasmAt(sx+.5,sz+.5),false,'Exiting and clearing the dungeon finally releases all plasm');
 }
 {
+  // Even in the dark with growth allowed, no new cell may cover the
+  // player's current tile. The lantern's visual suppression is deliberately
+  // disabled here to exercise the explicit occupied-cell rejection.
+  const t=setup('kanthic',30,30,{lanternRadius:.02});
+  let playerTile=null;
+  for(let z=2;z<12&&!playerTile;z++)for(let x=2;x<12&&!playerTile;x++){
+    if(t.api.isPlasmAt(x+.5,z+.5))continue;
+    const adjacent=[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>t.api.isPlasmAt(x+dx+.5,z+dz+.5));
+    if(adjacent)playerTile={x,z};
+  }
+  assert.ok(playerTile,'Fixture seed provides a dry tile next to a growing puddle');
+  t.player.x=(playerTile.x+.5)*64;t.player.y=(playerTile.z+.5)*64;
+  const originalSize=t.api.snapshot().plasmTiles;
+  t.tick(8,.25);
+  assert.equal(t.api.isPlasmAt(playerTile.x+.5,playerTile.z+.5),false,
+    'Plasm can never select the current player tile as a growth candidate');
+  assert.ok(t.api.snapshot().plasmTiles>originalSize,'Other, unoccupied frontier tiles must still grow');
+  t.composer.clear();
+}
+{
   // Cap is half of the room's walkable area. Beyond the limit the farthest
   // exposed tiles retreat so the growing perimeter never fragments.
-  const t=setup('kanthic',3,3);
+  const t=setup('kanthic',3,3,{lanternRadius:.02}); // Cap-only stress test: visibility is deliberately absent so maximum coverage is attainable.
   const initial=new Set();
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initial.add(x+','+z);
   assert.equal(t.api.snapshot().plasmCapacity,50,'100 walkable cells allow at most 50 plasm tiles');
