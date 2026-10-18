@@ -129,11 +129,11 @@
     if (!window.THREE?.TextureLoader) return;
     const loader = new window.THREE.TextureLoader();
     for (const name of ['wood','flags']) {
-      loader.load('assets/furniture/festival-' + name + '.png', texture => {
+      atlas[name] = loader.load('assets/furniture/festival-' + name + '.png', texture => {
         texture.wrapS = texture.wrapT = window.THREE.RepeatWrapping;
         texture.anisotropy = 4;
-        atlas[name] = texture;
-      }, undefined, () => window.__farmLog?.('[festival] PNG texture unavailable: ' + name, 'warn'));
+        texture.needsUpdate = true;
+      }, undefined, () => window.__farmLog?.('[festival] PNG texture unavailable: ' + name, 'warn')); // Immediate texture object makes first-scene arches textured when the PNG loads.
     }
   }
   loadAtlas();
