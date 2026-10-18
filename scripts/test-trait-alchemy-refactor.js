@@ -238,12 +238,13 @@ window.AlchemyFlasks.confirmThrow();
 window.AlchemyFlasks.update(.27);
 window.AlchemyFlasks.update(.02); // Crosses the release delay and starts the flight 0.01s in.
 const landingShadow = scene.children.find(mesh => mesh.name === 'flask_landing_shadow');
+const telegraphOpacity = Math.max(shadowCfg.opacity, 0.75); // The telegraph is never fainter than the readability floor, even if the character shadow is.
 assert.ok(landingShadow, 'a released flask must place a ground cue at its landing point');
-assert.ok(landingShadow.material.opacity > 0 && landingShadow.material.opacity < shadowCfg.opacity, 'cue fades in rather than popping');
+assert.ok(landingShadow.material.opacity > 0 && landingShadow.material.opacity < telegraphOpacity, 'cue fades in rather than popping');
 assert.ok(Math.abs(landingShadow.scale.x - A.RECIPE_DEFS.venomFlask.splashRadius) < 0.1, 'cue starts at the splash radius');
 assert.ok(Math.abs(landingShadow.position.x - 2) < 0.00001 && Math.abs(landingShadow.position.z) < 0.00001, 'cue is fixed on the landing point');
 window.AlchemyFlasks.update(.1);
-assert.ok(Math.abs(landingShadow.material.opacity - shadowCfg.opacity) < 0.00001, 'cue reaches full shadow opacity quickly');
+assert.ok(Math.abs(landingShadow.material.opacity - telegraphOpacity) < 0.00001 && telegraphOpacity > shadowCfg.opacity, 'cue reaches its raised telegraph opacity quickly');
 const shrinkingScale = landingShadow.scale.x;
 window.AlchemyFlasks.update(.05);
 assert.ok(landingShadow.scale.x < shrinkingScale, 'cue contracts during flight');

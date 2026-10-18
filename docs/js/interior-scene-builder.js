@@ -573,7 +573,19 @@
     return group;
   }
 
+  // Every wall construction (brick, generated log, fallback box, mine, cavern) must pull the
+  // follow camera in; only the canvas style used to carry the tag, so interior booms passed through
+  // the other walls. game.js gathers tagged meshes once per building scene (occlusionMeshes).
+  function tagCameraObstacles(group) {
+    group?.traverse?.(node => { if (node.isMesh) node.userData.cameraObstacle = true; });
+    return group;
+  }
+
   function buildWallGroup(THREE, wallBuilder, wallPanels, wallStyle, wbOpts) {
+    return tagCameraObstacles(buildWallGroupUntagged(THREE, wallBuilder, wallPanels, wallStyle, wbOpts));
+  }
+
+  function buildWallGroupUntagged(THREE, wallBuilder, wallPanels, wallStyle, wbOpts) {
     if (!wallPanels || !wallPanels.length) return markInteriorWallSurfaceGroup(new THREE.Group());
     const buildOptions = Object.assign({}, DEFAULT_WB_OPTS, wbOpts); // Copy keeps house-window-only options from leaking into WallBuilder.
     const renderPanels = applyWallOpenings(wallPanels, buildOptions.wallOpenings); // Silhouette holes are resolved before any brick/canvas/fallback geometry is created.

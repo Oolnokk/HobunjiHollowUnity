@@ -80,6 +80,31 @@
     return isNpcPositionWalkable(area, c + 0.5, r + 0.5);
   }
 
+  // Arrival guard: a spawn that lands off the destination map's floor (outside the
+  // walkable interior footprint) is moved to the closest tile an NPC can stand on.
+  // Only a tile that is structurally blocked is moved, so seats and beds (furniture)
+  // keep their authored arrival tile. Maps that are not loaded yet are left alone.
+  function nearestWalkableTile(area, c, r, maxRadius = 6) {
+    if (!deps || !deps.isBuildingArea(area) || !deps.npcGridForArea(area)) return { c, r };
+    if (isNpcTileStructurallyWalkable(area, c, r)) return { c, r };
+    let fallback = null; // Structurally clear but furniture-blocked tile, used only when no free tile is in range.
+    for (let radius = 1; radius <= maxRadius; radius++) {
+      let best = null, bestDist = Infinity;
+      for (let dr = -radius; dr <= radius; dr++) {
+        for (let dc = -radius; dc <= radius; dc++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          const tc = c + dc, tr = r + dr;
+          if (!isNpcTileStructurallyWalkable(area, tc, tr)) continue;
+          if (!isNpcTileWalkable(area, tc, tr)) { fallback ||= { c: tc, r: tr }; continue; }
+          const dist = Math.hypot(dc, dr);
+          if (dist < bestDist) { best = { c: tc, r: tr }; bestDist = dist; }
+        }
+      }
+      if (best) return best;
+    }
+    return fallback || { c, r };
+  }
+
   function canNpcTraverse(area, fromX, fromZ, toX, toZ, {
     ignoreFurnitureAtEnd = false,
     ignoreFurnitureTile = null,
@@ -540,6 +565,7 @@
   window.NpcPathfinding = {
     init,
     isNpcTileWalkable,
+    nearestWalkableTile,
     isNpcPositionWalkable,
     canNpcTraverse,
     canNpcBeeline,

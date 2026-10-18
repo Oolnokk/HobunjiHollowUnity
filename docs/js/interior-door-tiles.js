@@ -116,7 +116,7 @@
       group.userData = Object.assign(group.userData || {}, { interiorDoorTile: { col: c, row: r }, interiorDoorFacing: facing.facing });
       scene.add(group);
       decorate?.(group);
-      const entry = { id, col: c, row: r, group, facing: facing.facing, active: false, handOpened: false, idleFor: 0 };
+      const entry = { id, puzzleMapId: state.puzzleMapId, col: c, row: r, group, facing: facing.facing, active: false, handOpened: false, idleFor: 0 }; // setOpen() addresses the mechanism through the entry's own puzzle map id.
       state.doors.push(entry);
       records.push({ id, itemKey: 'woodenDoorFurniture' });
       objectById.set(id, group);

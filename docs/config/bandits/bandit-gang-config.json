@@ -71,8 +71,8 @@
     "lieutenantsMin": 1,
     "lieutenantsMax": 2,
     "captains": 1,
-    "flaskersMin": 1,
-    "flaskersMax": 2
+    "regularBanditsPerFlasker": 4,
+    "_flaskerComment": "One Flasker for every N regular bandits (grunts): floor(grunts / N), so a camp with fewer than N grunts has none. Reinforcements are drawn in proportion to the reserve left, so refills keep the same mix."
   },
   "gruntVariants": {
     "_comment": "Rare grunt replacements. The Slagothim Beastmaster uses the Tletingan avatar/species data (Tletingans use Slagothim culture and names) and brings one deliberately weak Dabinggi-hound driven by the normal companion follow/fight cadence.",

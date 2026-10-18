@@ -63,4 +63,21 @@ assertCooks(outputFor('squeezing', 'garWolfMilk'), 'butter', ITEM_DEFS.garWolfMi
 const jerky = outputFor('drying', 'garWolfMeat');
 assert.equal(jerky.key, 'garWolfMeatJerky');
 assert.equal(jerky.cookingCategories.join(), 'meat');
+
+// Saves from before processed goods carried cooking metadata: held stacks whose definition is
+// missing or bare, and queued production batches holding a stale output snapshot.
+{
+  const jerkyKey = 'garWolfMeatJerky', smokedKey = 'riverFishSmoked';
+  delete ITEM_DEFS[jerkyKey];
+  ITEM_DEFS[smokedKey] = { icon: '🐟', label: 'Smoked River Fish', cat: 'processed', sellPrice: 20, tags: ['Processed', 'Smoked', 'Fish'] }; // Bare definition, no cooking categories.
+  assert.equal(window.ItemProcessing.repairPreservedDefs({ [jerkyKey]: 2, [smokedKey]: 1, unrelated: 4 }), 2);
+  assert.equal(ITEM_DEFS[jerkyKey].cookingCategories.join(), 'meat', 'a held jerky stack with no definition is offered for meat slots');
+  assert.equal(ITEM_DEFS[smokedKey].cookingCategories.join(), 'fish', 'a held smoked fish stack with a bare definition is offered for fish slots');
+  assert.equal(window.ItemProcessing.repairPreservedDefs({ [jerkyKey]: 2, [smokedKey]: 1 }), 0, 'repair is idempotent');
+
+  delete ITEM_DEFS[smokedKey];
+  const { cookingCategories, cookingPrimaryEffect, cookingBaseBoost, cookingProcessingTier, cookingDefaultStars, ...staleSnapshot } = outputFor('smoking', 'riverFish');
+  window.ItemProcessing.ensureProcessedItemDef(staleSnapshot);
+  assert.equal(ITEM_DEFS[smokedKey].cookingCategories.join(), 'fish', 'a queued batch from an older save registers with cooking categories');
+}
 console.log('processed goods cooking ok');

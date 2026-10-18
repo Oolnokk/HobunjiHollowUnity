@@ -584,6 +584,7 @@
   }
 
   function render() {
+    window.ItemProcessing?.repairPreservedDefs?.(deps.inventory); // Held smoked/dried/jerky goods from older saves regain their cooking categories.
     if (!selectedRecipeId) selectedRecipeId = data().recipes[0]?.id || null;
     renderRecipeList();
     renderDetail();
