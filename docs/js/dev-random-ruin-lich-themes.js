@@ -175,26 +175,63 @@
     world.iceMaterial=new THREE.MeshBasicMaterial({color:0x8bcdf5,transparent:true,opacity:.31,depthWrite:false,side:THREE.DoubleSide});
     world.iceMesh=renderCurvedTiles(kit,world.iceTiles,world.iceMaterial,.025,'tothal_ice_sheen');
   }
-  function makeIcicles(kit) {
-    const geo = new THREE.ConeGeometry(.16, .94, 6);
-    geo.rotateZ(Math.PI); // Cone tip points down from the structural ceiling.
-    const mat = new THREE.MeshBasicMaterial({ color:0xa0d7ef, transparent:true, opacity:.82 });
-    for (const room of world.rooms) {
-      const candidates = [];
-      for (const key of world.iceTiles) {
-        const [x, z] = tileFromKey(key);
-        if (x + .5 > room.bounds.minX + 1 && x + .5 < room.bounds.maxX - 1 &&
-            z + .5 > room.bounds.minZ + 1 && z + .5 < room.bounds.maxZ - 1) candidates.push({x:x + .5, z:z + .5});
+  function clusterGeometry(variant) {
+    // One authored cluster draws as one mesh: 5–8 narrow, nonuniform tapered
+    // cones fused into a single BufferGeometry (instead of 5–8 draw calls).
+    // Each individual needle is at most .052 radius: under one-third of the
+    // previous .16u cone. Heights and offsets vary within each cluster.
+    const vertices=[],spikes=5+variant%4;
+    let deepest=0;
+    for(let n=0;n<spikes;n++){
+      const jitter=seeded(variant*43+n*11,0x8172),angle=n*2.399963+variant*.47;
+      const radial=n===0?0:.11+seeded(variant*71+n,0x109b)*.23;
+      const cx=Math.cos(angle)*radial,cz=Math.sin(angle)*radial;
+      const radius=.021+seeded(variant*19+n,0x222f)*.031;
+      const height=.56+seeded(variant*37+n,0x8891)*.86;
+      const top=-seeded(variant*27+n,0x331c)*.11;
+      deepest=Math.max(deepest,height-top);
+      for(let side=0;side<7;side++){
+        const a=side*Math.PI*2/7,b=(side+1)*Math.PI*2/7;
+        const pa=[cx+Math.cos(a)*radius,top,cz+Math.sin(a)*radius];
+        const pb=[cx+Math.cos(b)*radius,top,cz+Math.sin(b)*radius];
+        vertices.push(...pa,cx+jitter*.035,height*-1+top,cz+jitter*.03,...pb);
       }
-      candidates.sort((a, b) => seeded(Math.round(a.x * 57 + a.z * 83), room.index) - seeded(Math.round(b.x * 57 + b.z * 83), room.index));
-      for (const p of candidates.slice(0, Math.min(6, Math.floor(candidates.length / 9)))) {
-        const ground = floorY(kit, p.x, p.z);
-        if (world.ceilingY - ground < 2.1) continue;
-        const mesh = new THREE.Mesh(geo, mat); // Shared icicle geometry/material, individually movable on release.
-        mesh.position.set(p.x, world.ceilingY - .47, p.z);
-        mesh.name = 'tothal_falling_icicle';
-        world.group.add(mesh);
-        world.icicles.push({ ...p, ground, mesh, phase:'hanging', speed:0 });
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+    return {geometry:geo,deepest};
+  }
+  function makeIcicles(kit) {
+    const variants=Array.from({length:5},(_,i)=>clusterGeometry(i));
+    world.icicleGeometries=variants.map(v=>v.geometry);
+    world.icicleMaterial=new THREE.MeshBasicMaterial({color:0xa0d7ef,transparent:true,opacity:.82,side:THREE.DoubleSide});
+    const spacing=3; // Even spatial coverage (about one cluster per 9 walkable cells), not a ranked clump.
+    for(const room of world.rooms){
+      const b=room.bounds;
+      let count=0;
+      for(let z=Math.floor(b.minZ+1);z<b.maxZ-1;z+=spacing){
+        for(let x=Math.floor(b.minX+1);x<b.maxX-1;x+=spacing){
+          if(count>=48)break; // Stable per-room draw-call ceiling even in very large generated rooms.
+          const candidates=[];
+          for(let dz=0;dz<spacing;dz++)for(let dx=0;dx<spacing;dx++){
+            const px=x+dx+.5,pz=z+dz+.5;
+            if(px>=b.maxX-.75||pz>=b.maxZ-.75)continue;
+            if(!clearAt(px,pz,floorY(kit,px,pz)))continue;
+            candidates.push({x:px,z:pz,key:seeded((x+dx)*61+(z+dz)*97,room.index+0x49a2)});
+          }
+          if(!candidates.length)continue;
+          candidates.sort((a,b)=>a.key-b.key);
+          const p=candidates[0],ground=floorY(kit,p.x,p.z);
+          if(world.ceilingY-ground<2.1)continue;
+          const variant=Math.floor(seeded(x*17+z*29,room.index+0x1817)*variants.length);
+          const shape=variants[variant];
+          const mesh=new THREE.Mesh(shape.geometry,world.icicleMaterial);
+          mesh.position.set(p.x,world.ceilingY-.04,p.z);
+          mesh.name='tothal_falling_icicle';
+          world.group.add(mesh);
+          world.icicles.push({...p,ground,mesh,deepest:shape.deepest,phase:'hanging',speed:0,variant});
+          count++;
+        }
       }
     }
   }
@@ -472,14 +509,15 @@
     for (const spike of world.icicles) {
       if (spike.phase === 'done') continue;
       if (spike.phase === 'hanging') {
-        if (actors.some(a => distance(pointOf(a, kit.deps.TILE), spike) < .55)) {
-          spike.phase = 'falling'; spike.speed = .5; lastEvent = 'tothal:icicle-fall';
+        if (actors.some(a => distance(pointOf(a, kit.deps.TILE), spike) < 2)) {
+          spike.phase = 'falling'; spike.speed = .5; playRockPulse(.8,2); lastEvent = 'tothal:icicle-fall';
         }
       } else {
         spike.speed = Math.min(3.4, spike.speed + dt * 2.3); // Enough fall time to step or dodge out.
         spike.mesh.position.y -= spike.speed * dt;
-        if (spike.mesh.position.y > spike.ground + .2) continue;
+        if (spike.mesh.position.y - spike.deepest > spike.ground + .06) continue;
         spike.mesh.visible = false; spike.phase = 'done';
+        playRockImpact();
         emitShards(spike.x, spike.ground + .1, spike.z, 0xaad9ff, 2, 28);
         for (const actor of actors) if (distance(pointOf(actor, kit.deps.TILE), spike) < 2) {
           window.ResourceSystem?.addAffliction?.(actor, 'shatteredStamina', 13);
@@ -660,7 +698,7 @@
     world = {
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
-      lights:[],pillars:[],iceTiles:new Set(),icicles:[],bursts:[],motion:new WeakMap(),surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
+      lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],motion:new WeakMap(),surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
       plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,lastPlasmRoom:null,sink:0,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
@@ -690,8 +728,9 @@
   }
   function clear() {
     if (!world) return;
-    for (const spike of world.icicles) spike.mesh.parent?.remove(spike.mesh); // Shared geometry belongs to the composer instance.
-    if (world.icicles.length) {world.icicles[0].mesh.geometry.dispose();world.icicles[0].mesh.material.dispose();}
+    for(const spike of world.icicles)spike.mesh.parent?.remove(spike.mesh); // Each cluster is a shared-variant single-mesh draw.
+    for(const geometry of world.icicleGeometries||[])geometry.dispose();
+    world.icicleMaterial?.dispose();
     for (const burst of world.bursts) {burst.mesh.geometry.dispose();burst.mesh.material.dispose();}
     for (const pillar of world.pillars) {
       if (!pillar.sourcePillar) continue;
