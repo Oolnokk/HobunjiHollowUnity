@@ -32,7 +32,6 @@
         fill: document.getElementById('vb' + spec.label + 'Fill'),
         segments: document.getElementById('vb' + spec.label + 'Segments'),
         cap: document.getElementById('vb' + spec.label + 'Cap'),
-        value: document.getElementById('vb' + spec.label + 'Value'),
         segmentSignature: '',
         fillColor: '', // Tracks the CSS color assigned to the ordinary/exhausted bar across frames.
       };
@@ -99,7 +98,7 @@
 
     for (const spec of HUD_RESOURCES) {
       const nodes = hudNodes[spec.key]; // DOM elements for this resource row.
-      if (!nodes?.row || !nodes.fill || !nodes.segments || !nodes.cap || !nodes.value) continue;
+      if (!nodes?.row || !nodes.fill || !nodes.segments || !nodes.cap) continue;
       const authoredMax = Math.max(0, Number(player[spec.max]) || 0); // Original resource capacity used for band positions.
       const effectiveMax = Math.max(0, Number(rs.getEffectiveMax(player, spec.key)) || 0); // Buffs, reservations and capacity damage.
       const current = Math.max(0, Number(player[spec.value]) || 0); // Live ordinary Health/Stamina/Footing level.
@@ -133,7 +132,6 @@
       const amountLabel = exhausted
         ? 'Exhausted ' + percent.toFixed(0) + '%'
         : Math.round(current) + ' / ' + Math.round(effectiveMax);
-      if (nodes.value.textContent !== amountLabel) nodes.value.textContent = amountLabel;
       nodes.row.setAttribute('aria-valuenow', String(Math.round(percent)));
       nodes.row.title = spec.label + ': ' + amountLabel +
         (activeAfflictions.length ? '\n' + activeAfflictions.map(([id, def]) =>
@@ -183,7 +181,7 @@
         rows: Object.fromEntries(HUD_RESOURCES.map(spec => [
           spec.key, {
             visible: !!hudNodes[spec.key]?.row?.classList.contains('is-active'),
-            text: hudNodes[spec.key]?.value?.textContent || '',
+            text: hudNodes[spec.key]?.row?.title || '',
             afflictionSegments: hudNodes[spec.key]?.segments?.children?.length || 0,
           },
         ])),
