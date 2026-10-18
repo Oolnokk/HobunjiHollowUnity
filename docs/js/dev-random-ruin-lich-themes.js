@@ -722,12 +722,15 @@
     // Every tile matters; checking only the original seed falsely allows
     // spreading while newly advanced edges are illuminated.
     for(const key of room.plasm||[]){
-      const [x,z]=tileFromKey(key),cx=x+.5,cz=z+.5;
-      const dx=cx-point.x,dz=cz-point.z;
-      if(dx*dx+dz*dz>r2)continue; // Outside the *actual* lantern circle always counts as unseen.
+      const [x,z]=tileFromKey(key);
+      // The nearest point of the 1x1 surface, not its centre, determines
+      // whether the lit circle actually overlaps *any* part of the puddle.
+      const px=between(point.x,x+.02,x+.98),pz=between(point.z,z+.02,z+.98);
+      const dx=px-point.x,dz=pz-point.z;
+      if(dx*dx+dz*dz>r2)continue; // Anything completely outside the real lantern circle is unseen.
       if(Number.isFinite(facing)&&Math.hypot(dx,dz)>.15 &&
         Math.cos(Math.atan2(dz,dx)-facing)<.35)continue;
-      if(!obstructed(point,{x:cx,z:cz},kit))return true;
+      if(!obstructed(point,{x:px,z:pz},kit))return true;
     }
     return false;
   }
@@ -760,30 +763,26 @@
     const player=kit.deps.player,tile=kit.deps.TILE;
     if(!player||!tile)return;
     const point=pointOf(player,tile),room=roomAt(point);
-    // Leaving an individual room NEVER culls it. Every room's seed and
-    // expansion survive until composer clear() on exit/reroll.
-    if(!room?.plasm?.size||!alive(player)){
-      world.sink=0;
-      return;
-    }
+    // Every room persists and grows in the darkness: a room change never
+    // deletes or pauses other puddles. The visibility veto is GLOBAL.
+    if(!alive(player)){world.sink=0;return;}
     const facing=Number(player.facing);
-    // An illuminated puddle anywhere in the dungeon stops growth in the
-    // current room. No one puddle can secretly grow while another is seen.
     const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,facing,other));
-    const inside=room.plasm.has(tileKey(point.x,point.z));
-    if(!inside){
-      world.sink=0;
-      if(anythingVisible){room.plasmElapsed=0;return;} // Never bank hidden-growth time while visible.
-      room.plasmElapsed+=dt*1000;
-      let changed=false;
-      for(let beat=0;beat<4&&room.plasmElapsed>=PLASM_EXPANSION_MS;beat++){
-        room.plasmElapsed-=PLASM_EXPANSION_MS;
-        if(growPlasmRoom(kit,room,point))changed=true;
+    let changed=false;
+    for(const candidate of world.rooms){
+      if(!candidate.plasm?.size)continue;
+      if(anythingVisible){candidate.plasmElapsed=0;continue;}
+      candidate.plasmElapsed+=dt*1000;
+      for(let beat=0;beat<4&&candidate.plasmElapsed>=PLASM_EXPANSION_MS;beat++){
+        candidate.plasmElapsed-=PLASM_EXPANSION_MS;
+        if(growPlasmRoom(kit,candidate,point))changed=true;
       }
-      if(changed){updatePlasmMesh(kit);lastEvent='kanthic:plasm-grow';}
-      return;
     }
-    room.plasmElapsed=0;
+    if(changed){updatePlasmMesh(kit);lastEvent='kanthic:plasm-grow';}
+    if(!room?.plasm?.size||!room.plasm.has(tileKey(point.x,point.z))){
+      world.sink=0;
+      return; // Growth can continue out of sight even in another room or hallway.
+    }
     const patch=[...room.plasm].map(tileFromKey).map(([x,z])=>({x:x+.5,z:z+.5}))
       .sort((a,b)=>distance(a,point)-distance(b,point))[0];
     world.sink=Math.min(1,world.sink+dt/PLASM_SINK_SECONDS);
@@ -798,8 +797,8 @@
     window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
     if(world.sink>=1){
       world.sink=0;
-      // Dying does NOT erase the world hazard: respawning inside this ruin
-      // leaves every puddle exactly where the player last saw it.
+      // Only exiting/tearing down the dungeon clears the plasm. In-ruin death
+      // cannot quietly erase what is now a permanent room hazard.
       player.health=0;
       kit.deps.handlePlayerDeath?.('kanthic-plasm');
       lastEvent='kanthic:plasm-death';
