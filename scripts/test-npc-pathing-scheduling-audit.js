@@ -59,7 +59,7 @@ assert.equal(beforeRawRollover.dailySeed, agenda.dailySeed('night_worker', 46, '
 rawCalendar.day = 46;
 hour = 7;
 const afterRawRollover = window.NpcActivityPlanner.debugSnapshot(midnightWalker.rec.id); // The civil day stays 46 after raw maintenance.
-assert.equal(afterRawRollo.dailySeed, beforeRawRollover.dailySeed,
+assert.equal(afterRawRollover.dailySeed, beforeRawRollover.dailySeed,
   'planner seeds do not change again at the 06:00 raw-day rollover');
 
 const schedulingDeps = {
