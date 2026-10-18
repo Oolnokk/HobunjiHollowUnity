@@ -601,60 +601,51 @@
     lastEvent = 'tothal:slide-collision';
   }
   function updateIceMotion(kit, dt, actors) {
-    const tile = kit.deps.TILE;
-    for (const actor of actors) {
-      const point = pointOf(actor,tile);
-      let motion = world.motion.get(actor);
-      if (!motion) {
-        motion = {last:point,hold:0,dir:{x:0,z:0},speed:0,still:0,remaining:0,sliding:false};
-        world.motion.set(actor,motion);
-        continue;
+    const tile=kit.deps.TILE;
+    for(const actor of actors){
+      const point=pointOf(actor,tile);
+      let motion=world.motion.get(actor);
+      if(!motion){
+        motion={last:point,hold:0,dir:{x:0,z:0},speed:0,remaining:0,sliding:false};
+        world.motion.set(actor,motion);continue;
       }
       const dx=point.x-motion.last.x,dz=point.z-motion.last.z,delta=Math.hypot(dx,dz);
-      // Real keyboard/controller input moves the player in the ordinary game frame.
-      // Record that direction and uninterrupted time, not accumulated displacement.
-      // A stopped input is resumed at its last speed, just as if the player held it.
       const icy=world.iceTiles.has(tileKey(point.x,point.z));
-      if(!icy||delta>.65||window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.() && actor===kit.deps.player){
-        motion.hold=0;motion.still=0;motion.remaining=0;motion.sliding=false;motion.last=point;
-        continue; // Non-ice immediately cancels the simulation, including a boundary crossed mid-glide.
+      if(!icy||delta>.65||(actor===kit.deps.player&&window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())){
+        motion.hold=0;motion.remaining=0;motion.sliding=false;motion.last=point;
+        continue; // Dry ground, teleports and authored traversal cancel glide immediately.
       }
-      if(motion.sliding){
-        const step=Math.min(motion.speed*dt, motion.speed*motion.remaining);
+      const advance=()=>{
+        const step=Math.min(motion.speed*dt,motion.speed*motion.remaining);
         motion.remaining=Math.max(0,motion.remaining-dt);
-        if(step>.00001) {
+        if(step>.00001){
           const target={x:point.x+motion.dir.x*step,z:point.z+motion.dir.z*step};
           const y=floorY(kit,point.x,point.z);
-          // Physics and the visible ice use the same tile set. A dry cell is an
-          // absolute stop even if it is otherwise clear and walkable.
-          if(!world.iceTiles.has(tileKey(target.x,target.z))){
-            motion.remaining=0;
-          } else if(!clearAt(target.x,target.z,y)||Math.abs(floorY(kit,target.x,target.z)-y)>=.4){
-            collisionImpact(actor,kit,step);
-            motion.remaining=0;
-          } else {
+          // The curved cap is visual only; the exact ice tile set determines
+          // whether the continuation is still permitted. Never drift onto land.
+          if(!world.iceTiles.has(tileKey(target.x,target.z)))motion.remaining=0;
+          else if(!clearAt(target.x,target.z,y)||Math.abs(floorY(kit,target.x,target.z)-y)>=.4){
+            collisionImpact(actor,kit,step);motion.remaining=0;
+          }else{
             actor.x=target.x*tile;actor.y=target.z*tile;
             if(actor===kit.deps.player)window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY(kit,target.x,target.z));
           }
         }
-        if(motion.remaining<=.00001){motion.sliding=false;motion.hold=0;motion.still=0;}
+        if(motion.remaining<=.00001){motion.sliding=false;motion.hold=0;}
         motion.last=pointOf(actor,tile);
-        continue;
-      }
+      };
+      if(motion.sliding){advance();continue;}
       if(delta>.001&&delta<.65){
         motion.dir.x=dx/delta;motion.dir.z=dz/delta;
         motion.speed=between(delta/Math.max(.001,dt),.1,8);
         motion.hold+=dt;
-        motion.still=0;
-      } else if(delta<=.001){
-        motion.still+=dt;
-        // A short release grace prevents animation jitter from chopping the
-        // last held input into multiple slides.
-        if(motion.hold>.045&&motion.still>=.065){
-          motion.remaining=motion.hold*ICE_GLIDE_FRACTION;
-          motion.sliding=motion.remaining>0;
-          motion.hold=0;motion.still=0;
-        }
+      }else if(delta<=.001&&motion.hold>.045){
+        // Do not pause for a separate 'stillness' timer: the FIRST released
+        // input frame already advances along the previously held vector.
+        motion.remaining=motion.hold*ICE_GLIDE_FRACTION;
+        motion.sliding=true;motion.hold=0;
+        advance();
+        continue;
       }
       motion.last=point;
     }
