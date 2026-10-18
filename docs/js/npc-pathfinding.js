@@ -407,7 +407,7 @@
       const startX = this.root.position.x, startZ = this.root.position.z;
       const arrived = originalMoveToward.call(this, tx, tz, dt);
       const desiredX = this.root.position.x, desiredZ = this.root.position.z;
-      if (Math.abs(desiredX - startX) + Math.abs(desiredZ - startZ) < 1e-8) return arrived; // Idle/already-arrived walkers skip expensive footprint checks when no position changes.
+      if (arrived && Math.abs(desiredX - startX) + Math.abs(desiredZ - startZ) < 1e-8) return arrived; // Only genuinely completed stationary movement skips collision probes; failed/stuck moves still enter recovery.
       const startStructuralClear = isNpcPositionStructurallyWalkable(this.area, startX, startZ); // Checked only for actual movement to distinguish legacy overlap escapes.
       const startFullyClear = startStructuralClear && isNpcPositionWalkable(this.area, startX, startZ); // Preserves the existing chair/blocked-save escape guard.
 
