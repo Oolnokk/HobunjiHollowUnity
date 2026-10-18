@@ -319,7 +319,11 @@
   function makePillars(kit) {
     const mixedRooms = findMixedPillarRooms(world.context); // Hollow-target rooms reuse their original non-target square support meshes.
     for (const room of world.rooms) {
-      if (convertMixedRoomDecoys(kit,room,mixedRooms.get(room.id))) continue; // Never insert a differently shaped box among real/false target pillars.
+      const mixed = mixedRooms.get(room.id); // Only exact authored square-pillar geometry qualifies in a room with real niche targets.
+      if (mixed?.targets.length && mixed.supports.length) {
+        convertMixedRoomDecoys(kit,room,mixed);
+        continue; // Even when an asset is unavailable, do not substitute the old box-shaped trap in a mixed room.
+      }
       if (room.index % 2 !== 0) continue; // Other Hronal rooms retain the earlier supplemental corner hazard.
       const b = room.bounds;
       const candidates = [
