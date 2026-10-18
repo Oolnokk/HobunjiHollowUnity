@@ -85,6 +85,74 @@ assert(Math.abs(tighter.orbitDebug.radius / (3.7 * 100 / 105) - 0.8) < 1e-12,
   'Jubmir initial boom is exactly 20% shorter than the old 105% zoom framing');
 clock = 20000;
 
+// The spoken paragraphs alternate focus each time but orbit direction in PAIRS:
+// Jubmir clockwise, player clockwise, Jubmir counterclockwise, player
+// counterclockwise, then back to the first state. Starting angles are offset
+// by 30 degrees *in that direction*, and the gaze stays on the antipodal end.
+const pairedDirectionStage = {
+  id: 'fey_turn', orbitActorIds: ['player', 'jubmir'],
+  orbitAlternateFocus: true, orbitDirection: 'clockwise',
+  orbitDirectionSwitchEvery: 2, orbitDirectionalStartOffsetDeg: 30,
+  orbitHeightMode: 'oppositeFaceArc', orbitInstantCut: true,
+  orbitBlendSeconds: 1, orbitSpeedDegPerSec: 6,
+};
+const orbitSequence = [];
+for (let visit = 1; visit <= 8; visit++) {
+  const orbit = cinematic.createStageOrbitShot(pairedDirectionStage, unequalActors, visit);
+  const p0 = orbit.positionProvider().clone();
+  const gaze = orbit.targetProvider().clone();
+  const baseDeg = visit % 2 ? 180 : 0; // Camera begins opposite the focused character.
+  const offset = orbit.orbitDebug.startOffsetDeg;
+  const expectedAngle = (baseDeg + offset) * Math.PI / 180;
+  const halfHeightDifference = (2.8 - 1.4) * 0.5;
+  const actualAngle = Math.atan2((p0.z - 8.5) / Math.hypot(orbit.orbitDebug.radius, halfHeightDifference), (p0.x - 10) / orbit.orbitDebug.radius);
+  const angularError = Math.atan2(Math.sin(actualAngle - expectedAngle), Math.cos(actualAngle - expectedAngle));
+  assert(Math.abs(angularError) < 1e-9, 'initial angle follows the focus and signed 30-degree offset');
+  assert(Math.abs(p0.x + gaze.x - 20) < 1e-9 && Math.abs(p0.y + gaze.y - 4.2) < 1e-9,
+    'each offset cut keeps the opposite-end look-at aligned to the pair');
+  clock += 1000;
+  const p1 = orbit.positionProvider().clone();
+  const nextAngle = Math.atan2((p1.z - 8.5) / Math.hypot(orbit.orbitDebug.radius, halfHeightDifference), (p1.x - 10) / orbit.orbitDebug.radius);
+  const angularChange = Math.atan2(Math.sin(nextAngle - actualAngle), Math.cos(nextAngle - actualAngle));
+  assert(Math.abs(angularChange - orbit.orbitDebug.speedDegPerSec * Math.PI / 180) < 1e-9,
+    'constant angular speed uses the authored clockwise or counterclockwise sign');
+  assert.equal(orbit.blendSeconds, 0, 'instant cut disables the camera reset interpolation');
+  orbitSequence.push({
+    focus: orbit.orbitDebug.focusActorId, direction: orbit.orbitDebug.direction,
+    offset, blendSeconds: orbit.blendSeconds,
+  });
+  clock -= 1000;
+}
+assert.deepEqual(orbitSequence.map(({focus, direction}) => [focus, direction]), [
+  ['jubmir', 'clockwise'], ['player', 'clockwise'],
+  ['jubmir', 'counterclockwise'], ['player', 'counterclockwise'],
+  ['jubmir', 'clockwise'], ['player', 'clockwise'],
+  ['jubmir', 'counterclockwise'], ['player', 'counterclockwise'],
+], 'the direction reverses after every two visited paragraphs, not every paragraph');
+assert.deepEqual(orbitSequence.map(({offset}) => offset), [-30,-30,30,30,-30,-30,30,30],
+  'each pair begins with a thirty-degree offset matching its rotation direction');
+
+// Keeping the checkbox off preserves the original one-second smooth lerp.
+const smoothStage = { ...pairedDirectionStage, orbitInstantCut: false };
+const smoothShot = cinematic.createStageOrbitShot(smoothStage, unequalActors, 2);
+assert.equal(smoothShot.blendSeconds, 1);
+const smoothCamera = { position: new Vec3(-10, 5, -10), fov: 42, lookAt() {}, updateProjectionMatrix() {} };
+const smoothTarget = new Vec3();
+const smoothBlend = cinematic.createBlendController({ camera: smoothCamera, lookPoint: smoothTarget });
+smoothBlend.apply({ camera: smoothShot });
+assert(Math.abs(smoothCamera.position.x + 10) < 1e-9, 'unchecked instant cut starts from the old camera pose');
+clock += 500;
+smoothBlend.apply({ camera: smoothShot }); // Match the same active record, not a new transition.
+clock -= 500;
+const cutShot = cinematic.createStageOrbitShot(pairedDirectionStage, unequalActors, 2);
+const cutCamera = { position: new Vec3(-10, 5, -10), fov: 42, lookAt() {}, updateProjectionMatrix() {} };
+const cutBlend = cinematic.createBlendController({ camera: cutCamera, lookPoint: new Vec3() });
+const cutRecord = { camera: cutShot };
+cutBlend.apply(cutRecord);
+assert(Math.abs(cutCamera.position.x - cutShot.positionProvider().x) < 1e-9
+  && Math.abs(cutCamera.fov - cutShot.fovDeg) < 1e-9,
+  'checked instant cut applies the actual camera position and field of view on its first frame');
+
 const stageStart = game.indexOf('        function runStage(stageId)'); // Actual live Director stage dispatcher.
 const stageEnd = game.indexOf('        function runMove(stage)', stageStart); // Excludes unrelated movement mechanics.
 assert(stageStart !== -1 && stageEnd > stageStart);
@@ -133,8 +201,17 @@ assert(previewOrbit && previewOrbit.orbitDebug.focusActorId === liveOrbit.orbitD
 assert(author.includes("st.cameraMode==='orbit'"), 'Director stage playback recognizes the new orbit mode');
 assert(read('docs/tools/cutscene-director/index.html').includes('editOrbitHeightMode')
   && read('docs/tools/cutscene-director/index.html').includes('editOrbitInitialZoom')
-  && read('docs/tools/cutscene-director/index.html').includes('editOrbitFaceHeightOffset'),
-  'Director exposes all height and initial zoom authoring controls');
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitFaceHeightOffset')
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitInstantCut')
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitDirectionSwitchEvery')
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitDirectionalStartOffset'),
+  'Director exposes face height, initial zoom, instant cut and paired direction authoring controls');
+const previewDirection = authorContext.previewOrbit(pairedDirectionStage, 3);
+const liveDirection = cinematic.createStageOrbitShot(pairedDirectionStage, actors, 3);
+assert(previewDirection.orbitDebug.direction === liveDirection.orbitDebug.direction
+  && previewDirection.orbitDebug.startOffsetDeg === liveDirection.orbitDebug.startOffsetDeg
+  && previewDirection.blendSeconds === liveDirection.blendSeconds,
+  'Director and live runtime agree on direction, phase offset and instant cuts');
 
 const solverStart = game.indexOf('      const CAMERA_FLOOR_CLEARANCE ='); // Includes the same constants and ground slide as the game camera.
 const solverEnd = game.indexOf('      // How far under a tree canopy', solverStart); // Ends at the production solver boundary.
@@ -195,4 +272,4 @@ roomTiles[2][0].npcFurnitureCollider = false;
 const sceneSource = game.slice(game.indexOf('const buildingFurniture ='), game.indexOf('const buildingFurniture =') + 11000);
 assert(sceneSource.includes('buildingCameraFurniture.push(renderedFurniture)')
   && game.includes('occlusionMeshes.push(furniture)'), 'camera also raycasts real built furniture meshes where available');
-console.log('Procedural dialogue orbit: timing, face-height arc, wall/furniture grid blockers, mesh collision and smooth 3-ray clearance passed.');
+console.log('Procedural dialogue orbit: paired directional resets, signed start offset, instant cuts and optional lerp, face-height arc and wall/furniture clearance passed.');
