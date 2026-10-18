@@ -37,7 +37,7 @@
   // interrupted track's fade-out (see stopAmbientCue) actually finishes
   // fading to silence before anything new starts on top of it, instead of
   // the two overlapping audibly for the fade's duration.
-  let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, combatOverrideActive: false, combatSchedulerPausedAt: 0, currentCombatBgm: null, blockUntil: 0 };
+  let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, combatOverrideActive: false, combatSchedulerPausedAt: 0, currentCombatBgm: null, blockUntil: 0, cueOverlayNextAt: 0, cueOverlayDucking: false }; // Independently schedules regional cues over long-form music.
   const _furnitureSfxSources = [];
   const _loopingBgs = new Map();
   const WEATHER_BGS_IDS = new Set(['wind1', 'wind2', 'raingentle', 'rainmid', 'rainheavy']); // Restricts indoor filtering to weather, never birds, nighttime wildlife, furniture, or music.
@@ -745,7 +745,7 @@
   function setGameplayCueBackgroundDuck(duck, fadeMs) {
     const keepDucked = duck || isLyreMusicPlaying(); // Preserves the existing instrument duck if a gameplay sting finishes while live music is still sounding.
     const tracks = new Set([_ambientCueState.currentBgm, _ambientCueState.currentCue, _ambientCueState.currentCombatBgm].filter(Boolean)); // Deduplicates scheduler-owned tracks before changing their shared duck state.
-    for (const track of tracks) track?._setDuck?.(keepDucked, fadeMs);
+    for (const track of tracks) track?._setDuck?.(keepDucked || (track === _ambientCueState.currentBgm && _ambientCueState.cueOverlayDucking), fadeMs); // Keep BGM ducked if an ambient cue outlasts a gameplay sting.
   }
 
   function playGameplayCue(key) {
@@ -992,6 +992,7 @@
     _ambientCueState.indexId = resolveAreaAudioIndex(area);
     _ambientCueState.mode = 'bgm';
     _ambientCueState.nextAt = 0;
+    _ambientCueState.cueOverlayNextAt = 0; // A new area gets a fresh cue interval instead of inheriting an expired one.
     audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0, 'bgm');
     describeAudioConfigForArea(area);
   }
@@ -1000,6 +1001,10 @@
     const snd = _ambientCueState[key];
     _ambientCueState[key] = null;
     if (!snd) return false;
+    if (key === 'currentCue' && _ambientCueState.cueOverlayDucking) {
+      _ambientCueState.cueOverlayDucking = false;
+      _ambientCueState.currentBgm?._setDuck?.(_lyreDucked || _gameplayCueDuckOwners.size > 0, fadeMs); // Restore the song when an overlay is interrupted.
+    }
     const stopFadeMs = Math.max(0, Number(fadeMs) || 0); // Controls the fade and replacement delay for this retiring scheduler slot.
     if (snd._stopMusic) snd._stopMusic(stopFadeMs);
     else retireMusicTrack(snd);
@@ -1047,6 +1052,7 @@
     const resumedAt = performance.now(); // End timestamp used to shift only waits that were still pending when combat started.
     const pausedMs = pausedAt > 0 ? Math.max(0, resumedAt - pausedAt) : 0; // Preserved duration added to an outstanding normal-music wait.
     if (pausedMs > 0 && _ambientCueState.nextAt > pausedAt) _ambientCueState.nextAt += pausedMs;
+    if (pausedMs > 0 && _ambientCueState.cueOverlayNextAt > pausedAt) _ambientCueState.cueOverlayNextAt += pausedMs; // Combat does not consume the exploration cue interval.
     _ambientCueState.combatSchedulerPausedAt = 0;
   }
 
@@ -1080,7 +1086,7 @@
     _lyreDucked = shouldDuck;
     const fadeMs = 900;
     for (const key of ['currentBgm', 'currentCue', 'currentCombatBgm']) {
-      _ambientCueState[key]?._setDuck?.(shouldDuck || _gameplayCueDuckOwners.size > 0, fadeMs);
+      _ambientCueState[key]?._setDuck?.(shouldDuck || _gameplayCueDuckOwners.size > 0 || (key === 'currentBgm' && _ambientCueState.cueOverlayDucking), fadeMs); // Instrument exit must preserve an ongoing regional cue overlay.
     }
     audioDebug('lyre ducking ' + (shouldDuck ? 'engaged' : 'released'), 'lyre-duck-' + shouldDuck, 0, 'bgm');
   }
@@ -1201,6 +1207,13 @@
     const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
     const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 45);
     _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
+  }
+
+  function scheduleNextOverlayCueDelay() {
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Authored timing for regional cues during long-form BGM.
+    const minSec = Math.max(1, Number(audioCfg.ambientCueOverlayMinDelaySec) || 45); // Earliest cue after BGM starts or another cue is selected.
+    const maxSec = Math.max(minSec, Number(audioCfg.ambientCueOverlayMaxDelaySec) || 90); // Randomized upper bound for the next cue.
+    _ambientCueState.cueOverlayNextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
   }
 
   function isCombatMusicRequested() {
@@ -1348,6 +1361,14 @@
 
     const idx = _audioCueIndexes.get(_ambientCueState.indexId);
     const cues = idx?.ambient_cues || [];
+    const song = _ambientCueState.currentBgm; // Existing song stays at its current playhead beneath any regional cue.
+    const songAllowsOverlay = !!(song && !song.ended && !song._musicEntry?.exclusiveSoundtrack && cues.length && audioCfg.ambientCuesOverBgm !== false); // Respect authored exclusive scores.
+    if (songAllowsOverlay && !_ambientCueState.cueOverlayNextAt) scheduleNextOverlayCueDelay();
+    if (songAllowsOverlay && !_ambientCueState.currentCue && _ambientCueState.mode !== 'cue_wait'
+        && !_lyreDucked && !_gameplayCueDuckOwners.size && performance.now() >= _ambientCueState.cueOverlayNextAt) {
+      _ambientCueState.mode = 'cue_wait';
+      _ambientCueState.nextAt = performance.now(); // Enter the existing cue playback path without restarting the BGM.
+    }
     // updateAmbientCues runs every frame; skip building this trace string
     // (and the Math.round/negation work in it) on the frames it would just
     // get throttle-discarded on anyway.
@@ -1363,8 +1384,14 @@
         const cueUrl = (idx?.__basePath || '') + (cue?.file || '');
         return cue?.file && isAudioEntryEligible(cue, currentArea) && !audioUrlFailed(cueUrl);
       });
-      if (!eligibleCues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
+      if (!eligibleCues.length) {
+        _ambientCueState.mode = 'bgm';
+        _ambientCueState.nextAt = performance.now() + 5000;
+        if (songAllowsOverlay) scheduleNextOverlayCueDelay(); // Do not retry an ineligible library every frame.
+        return;
+      }
       const cue = eligibleCues[Math.floor(Math.random() * eligibleCues.length)];
+      if (songAllowsOverlay) scheduleNextOverlayCueDelay(); // Next overlay is delayed even if playback later fails.
       if (!cue?.file) { scheduleNextCueDelay(); return; }
       const fade = musicFadeConfig();
       const cueUrl = (idx.__basePath || '') + cue.file;
@@ -1375,11 +1402,20 @@
         const ownsSlot = _ambientCueState.currentCue === snd;
         if (ownsSlot) {
           _ambientCueState.currentCue = null;
+          if (_ambientCueState.cueOverlayDucking) {
+            _ambientCueState.cueOverlayDucking = false;
+            _ambientCueState.currentBgm?._setDuck?.(_lyreDucked || _gameplayCueDuckOwners.size > 0, fade.cueFadeMs); // Restore the still-playing song without changing its playhead.
+          }
           _ambientCueState.mode = nextMode;
           if (retryMs > 0) _ambientCueState.nextAt = performance.now() + retryMs;
         }
         retireMusicTrack(snd);
       };
+      snd.addEventListener('play', () => {
+        if (_ambientCueState.currentCue !== snd || !_ambientCueState.currentBgm || _ambientCueState.currentBgm.ended) return;
+        _ambientCueState.cueOverlayDucking = true;
+        _ambientCueState.currentBgm._setDuck?.(true, fade.cueFadeMs); // Duck rather than pause or restart the song.
+      }, { once: true });
       snd.addEventListener('ended', finishCue, { once: true });
       snd.addEventListener('error', () => {
         audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue');
@@ -1737,6 +1773,10 @@
       ' ambientPaused=' + !!ambientSnd?.paused +
       ' tutorialActive=' + !!window.CombatTutorial?.active?.() +
       ' blockForMs=' + Math.max(0, Math.round(_ambientCueState.blockUntil - performance.now())) +
+      ' cueIndex=' + (_ambientCueState.indexId || 'none') +
+      ' cuePool=' + (_audioCueIndexes.get(_ambientCueState.indexId)?.ambient_cues?.length || 0) +
+      ' overlayNextInMs=' + (_ambientCueState.cueOverlayNextAt ? Math.max(0, Math.round(_ambientCueState.cueOverlayNextAt - performance.now())) : 'unscheduled') +
+      ' overlayDucking=' + !!_ambientCueState.cueOverlayDucking +
       ' conditions=' + [world.maps, world.weather, world.timesOfDay, world.seasons, world.weekdays].join('/') +
       ' rainActive=' + deps.calendar.isRaining +
       ' ctxState=' + (_musicAudioCtx?.state || 'none') +
