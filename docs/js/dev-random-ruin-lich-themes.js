@@ -277,7 +277,7 @@
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
     geometry.computeVertexNormals?.();
     const material = new THREE.MeshBasicMaterial({
-      color:0xff8a21, transparent:true, opacity:stage === 1 ? .20 : 0,
+      color:0xff8a21, transparent:true, opacity:stage === 1 ? .48 : 0,
       depthWrite:false, side:THREE.DoubleSide
     });
     const crack = new THREE.Mesh(geometry,material);
@@ -297,12 +297,33 @@
     if (!(size.y >= 1.7) || !(Math.max(size.x,size.z) > .1)) return false;
     const cracks = []; // Native decals are separately owned and explicitly removed on a reroll.
     for (let stage = 1; stage <= 3; stage++) cracks.push(crackRibbon(shaft,profile,stage,room.index)); // Three batched meshes, each drawing four crack faces.
-    const light = addLight(center.x,center.y,center.z,1.85,.12,[255,109,28]); // Slight steady glow until the timed three-pulse rupture.
+    const light = addLight(center.x,center.y,center.z,2.2,.34,[255,109,28]); // Readable orange glow before the first pulse even under Hronal's heavy darkness.
     world.pillars.push({
       x:center.x,z:center.z,y:box.min.y,height:size.y,width:Math.max(size.x,size.z),
       group:support,sourcePillar:support,cracks,light,phase:'idle',elapsed:0,pulses:0,roomId:room.id,
     }); // The normal V50 mesh + static collision are reused without replacement or duplicate geometry.
     return true;
+  }
+  function releasePillarCameraOcclusion(pillar) {
+    if (!pillar.sourcePillar) return;
+    const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
+    if (!Array.isArray(occlusion)) return;
+    const members = new Set();
+    pillar.sourcePillar.traverse(node => { if (node.isMesh) members.add(node); });
+    const removed = [];
+    for (let i = occlusion.length - 1; i >= 0; i--) {
+      if (members.has(occlusion[i])) removed.push(occlusion.splice(i, 1)[0]);
+    }
+    pillar.removedOccluders = removed; // Raycast cameras can still hit hidden THREE.Mesh objects; keep no invisible boom obstruction.
+    pillar.occlusionList = occlusion;
+  }
+  function restorePillarCameraOcclusion(pillar) {
+    if (!pillar.removedOccluders?.length) return;
+    const current = window.DevRandomRuin?.getRuntimeContext?.();
+    const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
+    if (current?.root !== world.context.root || occlusion !== pillar.occlusionList) return;
+    for (const mesh of pillar.removedOccluders) if (!occlusion.includes(mesh)) occlusion.push(mesh);
+    pillar.removedOccluders.length = 0; // Restored originals remain in the cache once, even across composer rebuilds.
   }
   function convertMixedRoomDecoys(kit, room, record) {
     if (!record?.targets.length || !record.supports.length) return 0;
@@ -322,9 +343,9 @@
     const mixedRooms = findMixedPillarRooms(world.context); // Hollow-target rooms reuse their original non-target square support meshes.
     for (const room of world.rooms) {
       const mixed = mixedRooms.get(room.id); // Only exact authored square-pillar geometry qualifies in a room with real niche targets.
-      if (mixed?.targets.length && mixed.supports.length) {
-        convertMixedRoomDecoys(kit,room,mixed);
-        continue; // Even when an asset is unavailable, do not substitute the old box-shaped trap in a mixed room.
+      if (mixed?.targets.length) {
+        if (mixed.supports.length) convertMixedRoomDecoys(kit,room,mixed);
+        continue; // A room made entirely of real target housings must never gain an extra false generic box pillar.
       }
       if (room.index % 2 !== 0) continue; // Other Hronal rooms retain the earlier supplemental corner hazard.
       const b = room.bounds;
@@ -374,18 +395,19 @@
           const stage = crack.userData?.ruinCrackStage; // Native square pillars reveal more glowing fracture branches each second.
           if (stage) {
             crack.visible = stage <= pillar.pulses;
-            crack.material.opacity = stage <= pillar.pulses ? Math.min(.95,.16 + pillar.pulses*.26) : 0;
+            crack.material.opacity = stage <= pillar.pulses ? Math.min(.96,.48 + pillar.pulses*.16) : 0;
           } else {
             crack.material.opacity = .14 + pillar.pulses * .25;
             crack.scale.x = 1 + pillar.pulses * 1.5;
           }
         }
-        if (pillar.light) pillar.light.strength = .12 + pillar.pulses * .21;
+        if (pillar.light) pillar.light.strength = .34 + pillar.pulses * .20;
         lastEvent = 'hronal:pulse-' + pillar.pulses;
       }
       if (pillar.elapsed < 3) continue; // Blast one second after the third pulse.
       pillar.phase = 'spent';
       pillar.group.visible = false; // Existing V50 support footprints automatically become inactive when the ancestor is hidden.
+      releasePillarCameraOcclusion(pillar); // Drop the matching source mesh from camera raycasting as well.
       if (pillar.light) pillar.light.strength = 0; // No ghost glow remains after the native pillar explodes.
       window.DevRandomRuinTileOccupancy?.refresh?.(); // Remove destroyed pillar collision on the same frame as the explosion.
       emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64, pillar.height, pillar.width || .62);
@@ -626,6 +648,7 @@
     for (const pillar of world.pillars) {
       if (!pillar.sourcePillar) continue;
       pillar.sourcePillar.visible = true; // A reused V50 generator root must never retain the previous run's exploded state.
+      restorePillarCameraOcclusion(pillar);
       for (const crack of pillar.cracks) {
         crack.parent?.remove(crack);
         crack.geometry.dispose();
