@@ -179,9 +179,12 @@
     const lineAngle = Math.atan2(pB.x - pA.x, pB.z - pA.z);
     const defaultAngle = lineAngle + Math.PI / 2 + (focusActor === b ? 0.38 : focusActor === a ? -0.38 : 0);
     const facingA = focusActor !== b; // Without an initial focus, start from the B-side and face A.
-    const initialAngle = options.startAzimuthDeg != null && Number.isFinite(Number(options.startAzimuthDeg))
+    const baseAngle = options.startAzimuthDeg != null && Number.isFinite(Number(options.startAzimuthDeg))
       ? Number(options.startAzimuthDeg) * Math.PI / 180
       : heightMode === 'oppositeFaceArc' ? (facingA ? 0 : Math.PI) : defaultAngle; // Camera starts opposite the focused actor's end.
+    // Positive angle in this X/Z parameterization is counterclockwise viewed from above.
+    // Apply a signed start offset before the first frame, so reversing direction also reverses its lead-in.
+    const initialAngle = baseAngle + finite(options.startOffsetDeg, 0) * Math.PI / 180;
     const elapsed = () => Math.max(0, (performance.now() - started) / 1000);
     function arcPoint(angle, out) {
       updateMidpoint();
@@ -228,6 +231,8 @@
       orbitDebug: {
         actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null,
         zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI,
+        direction: speedRad < 0 ? 'clockwise' : 'counterclockwise',
+        startOffsetDeg: finite(options.startOffsetDeg, 0),
         heightMode, faceHeightOffset, targetMode: heightMode === 'oppositeFaceArc' ? 'antipodal' : 'eased-focus',
       },
     };
@@ -245,14 +250,25 @@
     const zoomPercent = Number.isFinite(explicit) && explicit > 0 ? explicit
       : Number.isFinite(initial) && initial > 0 ? initial + step * (visit - 1) : 100 + step * visit;
     const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[visit % 2].id : null); // First visit favors the second actor.
-    return createActorOrbitShot(subjects, {
+    const speed = finite(stage.orbitSpeedDegPerSec, 6);
+    // Legacy signed-speed shots remain unchanged. Explicit direction supports the authored
+    // clockwise/clockwise/counterclockwise/counterclockwise cycle independent of focus.
+    const authoredDirection = stage.orbitDirection === 'clockwise' ? -1
+      : stage.orbitDirection === 'counterclockwise' ? 1 : Math.sign(speed) || 1;
+    const switchEvery = Math.max(0, Math.floor(finite(stage.orbitDirectionSwitchEvery, 0)));
+    const reverse = switchEvery > 0 && (Math.floor((visit - 1) / switchEvery) % 2 === 1);
+    const direction = authoredDirection * (reverse ? -1 : 1);
+    const startOffsetDeg = direction * Math.abs(finite(stage.orbitDirectionalStartOffsetDeg, 0));
+    const shot = createActorOrbitShot(subjects, {
       id: 'cutscene_orbit_' + stage.id, shotKey: stage.id + ':' + visit, // Replaying the exact same card produces a fresh transition record.
       focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
-      speedDegPerSec: stage.orbitSpeedDegPerSec, startAzimuthDeg: stage.orbitStartAzimuthDeg,
+      speedDegPerSec: Math.abs(speed) * direction, startAzimuthDeg: stage.orbitStartAzimuthDeg, startOffsetDeg,
       targetHeight: stage.orbitTargetHeight, heightMode: stage.orbitHeightMode,
       faceHeightOffset: stage.orbitFaceHeightOffset, faceHeightRatio: stage.orbitFaceHeightRatio,
-      fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
+      fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitInstantCut === true ? 0 : stage.orbitBlendSeconds,
     });
+    if (shot) shot.orbitDebug.instantCut = stage.orbitInstantCut === true;
+    return shot;
   }
 
   function createBlendController({ camera, lookPoint, safePosition, aspect, framing }) {
