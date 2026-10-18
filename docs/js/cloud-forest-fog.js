@@ -344,7 +344,7 @@
 
   const MINE_DARKNESS_OVERLAY_ALPHA = 0.99; // Raised from 0.90 so untouched mine-screen edges retain only about one percent of the rendered image.
   const DEN_DARKNESS_OVERLAY_ALPHA = clamp01(0.82 + GLOBAL_DARKNESS_DELTA); // Applies the mine's +0.09 darkness change to the previous den level.
-  const INTERIOR_DARKNESS_OVERLAY_ALPHA = 0.97; // Unlit building areas retain only three percent of their image; windows and lamps reveal local pools.
+  const INTERIOR_DARKNESS_OVERLAY_ALPHA = 0.80; // Unlit building areas retain twenty percent of their image; windows and lamps reveal local pools.
   const INTERIOR_LIGHT_RADIUS_MULTIPLIER = 2; // Broad indoor pools fade linearly from the source to their outer edge.
 
   let skyPolicyDeps = null;
@@ -778,7 +778,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Spirit Communion preserves windows and gables; pew item keys resolve to seats; interiors use 97% darkness and doubled linear light radii.',
+        latestChange: 'Spirit Communion preserves windows and gables; pew item keys resolve to seats; interiors use ' + Math.round(INTERIOR_DARKNESS_OVERLAY_ALPHA * 100) + '% darkness and doubled linear light radii.',
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'linear',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),

@@ -173,6 +173,7 @@
       holder.position.copy(p); // Preserve the exact identity path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
     } else {
+      const sourceWorldQ = sourceParent.getWorldQuaternion(new three.Quaternion()); // Rig parent's world rotation: orients the pose and gives the orbit frame's yaw.
       const worldP = sourceParent.localToWorld(p.clone()); // Finished point after the character hierarchy has contributed its real body scale once.
       if (avatar && needsPoseMap) {
         avatar.updateWorldMatrix?.(true, false);
@@ -182,9 +183,9 @@
           Number(avatar.userData?.visualCentroidLocalZ) || 0,
         );
         const centroid = avatar.localToWorld(centroidLocal); // Horizontal X/Z orbit center in world space.
-        const poseFrameQ = sourceParent.getWorldQuaternion(new three.Quaternion()); // The pose is authored in the rig parent's frame; per-axis orbits scale its lateral/forward axes.
-        const poseFrameForward = new three.Vector3(0, 0, 1).applyQuaternion(poseFrameQ);
-        const poseYawRad = Math.atan2(poseFrameForward.x, poseFrameForward.z);
+        // The pose is authored in the rig parent's frame; per-axis orbits scale its lateral/forward axes. Yaw of the
+        // frame's +Z axis, read straight off the quaternion so no extra vector is allocated.
+        const poseYawRad = Math.atan2(2 * (sourceWorldQ.x * sourceWorldQ.z + sourceWorldQ.w * sourceWorldQ.y), 1 - 2 * (sourceWorldQ.x * sourceWorldQ.x + sourceWorldQ.y * sourceWorldQ.y));
         const baseWorld = sourceParent.localToWorld(new three.Vector3(anchor.x, anchor.y, 0)); // Actual already-scaled raw hand base.
         const floorWorld = sourceParent.localToWorld(new three.Vector3(0, 0, 0)); // Actual already-scaled character floor.
         if (scaler?.transformPosePoint) {
@@ -197,7 +198,7 @@
           scaler?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale, poseYawRad);
         }
       }
-      const worldQ = sourceParent.getWorldQuaternion(new three.Quaternion()).multiply(q);
+      const worldQ = sourceWorldQ.multiply(q); // After the orbit's yaw above has been read from it.
       const parentQ = holderParent.getWorldQuaternion(new three.Quaternion()).invert();
       holder.position.copy(holderParent.worldToLocal(worldP));
       holder.quaternion.copy(parentQ.multiply(worldQ));

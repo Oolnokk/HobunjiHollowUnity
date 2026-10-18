@@ -17,6 +17,7 @@
   const PROJECTILE_MIN_TRAVEL_S = 0.42; // Near throws remain responsive.
   const PROJECTILE_MAX_TRAVEL_S = 0.9; // Distant throws remain readable without feeling sluggish.
   const RELEASE_DELAY_S = 0.28; // Authored windup→strike release point.
+  const LANDING_SHADOW_TERRAIN_STEPS = 8; // The shadow re-drapes over the terrain this many times per flight rather than every frame.
   const LANDING_SHADOW_FADE_IN_S = 0.12; // Ground cue appears almost immediately at release, independent of flight length.
   const impactEffects = []; // Bounded, module-owned Three.js splash presentations.
   const projectileTrails = []; // Short luminous motes shed by active flask projectiles.
@@ -237,7 +238,7 @@
     mesh.position.set(record.target.x, groundY + window.CharacterGroundShadow.surfaceOffset(), record.target.z);
     mesh.scale.set(radiusTiles, 1, radiusTiles);
     scene.add(mesh);
-    return { mesh, baseOpacity, groundY, startX: radiusTiles, startZ: radiusTiles, endX: (config.radiusX ?? 0.34) * 0.5, endZ: (config.radiusZ ?? 0.22) * 0.5 };
+    return { mesh, baseOpacity, groundY, terrainStep: -1, startX: radiusTiles, startZ: radiusTiles, endX: (config.radiusX ?? 0.34) * 0.5, endZ: (config.radiusZ ?? 0.22) * 0.5 };
   }
 
   function updateLandingShadow(projectile, ratio) {
@@ -247,6 +248,9 @@
     const scaleZ = shadow.startZ + (shadow.endZ - shadow.startZ) * ratio;
     shadow.mesh.scale.set(scaleX, 1, scaleZ);
     shadow.mesh.material.opacity = shadow.baseOpacity * Math.min(1, projectile.t / LANDING_SHADOW_FADE_IN_S);
+    const terrainStep = Math.floor(Math.min(1, Math.max(0, ratio)) * LANDING_SHADOW_TERRAIN_STEPS); // Sampling terrain per vertex and re-uploading the buffer every frame is wasted on a slowly contracting disc.
+    if (terrainStep === shadow.terrainStep) return;
+    shadow.terrainStep = terrainStep;
     const positions = shadow.mesh.geometry.attributes?.position; // Unit disc in the XZ plane; local Y carries terrain height.
     if (!positions?.setY) return;
     const centerX = projectile.target.x; // Landing point in Three units.

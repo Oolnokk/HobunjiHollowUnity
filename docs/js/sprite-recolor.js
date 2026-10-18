@@ -141,11 +141,11 @@
 
   function loadFishCatalogForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fish-catalog.js','fish-catalog','20260924perf5',()=>!!window.FishCatalog);
+    parserOrderedScript('fish-catalog.js','fish-catalog','20261018h1c2396a',()=>!!window.FishCatalog);
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fishing-events.js','fishing-events','20261017h3f28cfc');
+    parserOrderedScript('fishing-events.js','fishing-events','20261018h19942c7');
   }
   function loadAmphibiousFishingForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
