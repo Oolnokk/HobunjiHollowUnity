@@ -104,7 +104,13 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
 
     const probe = window.DevRandomRuinCollisionPrecision.snapshot();
     const render = window.DevRandomRuinWallRenderProxy.snapshot();
+    let hiddenPatternOverlays = 0; // Invisible pattern:sides decoration remains in the source-mesh inventory but is not player-facing activator geometry.
+    window.DevRandomRuin?.getRuntimeContext?.()?.root?.traverse?.(node => {
+      if (node.userData?.devRuinNativeRenderKind === 'activator'
+        && node.name === 'pattern:sides' && node.visible === false) hiddenPatternOverlays++;
+    });
     return {
+      hiddenPatternOverlays,
       counts:{ blocked:first.blocked.length, causes:first.causes.length, effects:first.effects.length },
       aggregate:aggregate.length,
       legacy:legacy.length,
@@ -141,7 +147,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   assert.equal(result.render.visibleDoorArchSources, result.render.sourceDoorArchMeshes, JSON.stringify(result.render));
   assert.ok(result.render.normalizedDoorAssemblies > 0, JSON.stringify(result.render));
   assert.ok(result.render.sourceActivatorMeshes > 0, JSON.stringify(result.render));
-  assert.equal(result.render.visibleActivatorSources, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.visibleActivatorSources + result.hiddenPatternOverlays, result.render.sourceActivatorMeshes, JSON.stringify({render:result.render,hiddenPatternOverlays:result.hiddenPatternOverlays}));
   assert.equal(result.render.totalProxyCount, 0, JSON.stringify(result.render));
   assert.equal(result.render.frustumCulledSources, result.render.nativeSourceMeshCount, JSON.stringify(result.render));
   assert.equal(result.render.allNativeMainRealmMaterials, result.render.nativeSourceMeshCount, JSON.stringify(result.render));
