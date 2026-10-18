@@ -686,6 +686,7 @@
   function makePlasm(kit) {
     for(const room of world.rooms){
       room.plasm=initialPlasmCluster(kit,room);
+      room.plasmInitial=room.plasm ? new Set(room.plasm) : null; // Immutable per-room seed for death reset; room transitions preserve live growth.
       room.plasmElapsed=0;
     }
     const loader=new THREE.TextureLoader();
@@ -759,13 +760,31 @@
     }
     return changed;
   }
+  function resetPlasmOnDeath(kit) {
+    // Dying (from plasm OR any other cause) restores every room to the
+    // original seeded 2x2–4x4 puddle, without rerolling their placement.
+    // A normal room transition must never call this function.
+    if(!world)return;
+    for(const room of world.rooms){
+      room.plasm=room.plasmInitial ? new Set(room.plasmInitial) : null;
+      room.plasmElapsed=0;
+    }
+    world.sink=0;
+    updatePlasmMesh(kit); // Single rebuild for all rooms, disposing superseded instance buffers.
+    lastEvent='kanthic:death-reset';
+  }
   function updatePlasm(kit,dt) {
     const player=kit.deps.player,tile=kit.deps.TILE;
     if(!player||!tile)return;
     const point=pointOf(player,tile),room=roomAt(point);
     // Every room persists and grows in the darkness: a room change never
     // deletes or pauses other puddles. The visibility veto is GLOBAL.
-    if(!alive(player)){world.sink=0;return;}
+    if(!alive(player)){
+      if(world.playerWasAlive!==false)resetPlasmOnDeath(kit); // Covers combat, drowning, and other non-plasm causes of death.
+      world.playerWasAlive=false; // Reset only once until the actor respawns.
+      return;
+    }
+    world.playerWasAlive=true;
     const facing=Number(player.facing);
     const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,facing,other));
     let changed=false;
@@ -797,11 +816,11 @@
     window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
     if(world.sink>=1){
       world.sink=0;
-      // Only exiting/tearing down the dungeon clears the plasm. In-ruin death
-      // cannot quietly erase what is now a permanent room hazard.
       player.health=0;
+      resetPlasmOnDeath(kit); // All rooms reset immediately, even if the death hook teleports/respawns synchronously.
+      world.playerWasAlive=false;
       kit.deps.handlePlayerDeath?.('kanthic-plasm');
-      lastEvent='kanthic:plasm-death';
+      lastEvent='kanthic:plasm-death-reset';
     }
   }
   function buildRooms(kit,context) {
@@ -812,7 +831,7 @@
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
       lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],motion:new WeakMap(),surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
-      plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,
+      plasmMesh:null,plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
     kit.group().add(world.group);
