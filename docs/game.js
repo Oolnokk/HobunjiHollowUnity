@@ -20387,7 +20387,38 @@
         return 1;
       }
 
+      let _cameraHorizontalDebug = null; // Most recent camera horizontal squeeze, available in cutscene/Pixel Probe diagnostics.
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
+        const originalIdealX = idealX, originalIdealZ = idealZ; // Unobstructed horizontal offsets shown separately in the mobile debug snapshot.
+        const horizontalObstacles = currentAreaOcclusionMeshes(); // One obstacle collection reused for both lateral and normal 3D boom tests.
+        const horizontalSqueezeEnabled = _isBuildingArea(currentArea) || cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.(); // Avoid extra rays outdoors unless a cinematic requires them.
+        let horizontalSqueeze = 1; // Fraction of the originally desired X/Z offset still available beside walls.
+        if (horizontalSqueezeEnabled && horizontalObstacles?.length) {
+          const hx = idealX - lookAtX, hz = idealZ - lookAtZ; // Planar boom, independent of intentional vertical camera framing.
+          const reach = Math.hypot(hx, hz);
+          if (reach > 0.08) {
+            const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Probe camera center plus left/right 0.18-tile clearance.
+            let clearReach = reach; // Shortest unobstructed horizontal boom across all three probes.
+            for (const side of [-1, 0, 1]) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX + rightX * side, idealY, lookAtZ + rightZ * side),
+                _cameraOcclusionDirVec.set(hx / reach, 0, hz / reach),
+              );
+              _cameraOcclusionRaycaster.near = 0.02;
+              _cameraOcclusionRaycaster.far = reach;
+              const hits = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true);
+              if (hits.length) clearReach = Math.min(clearReach, Math.max(0.025, hits[0].distance - 0.12));
+            }
+            horizontalSqueeze = clearReach / reach;
+            idealX = lookAtX + hx * horizontalSqueeze;
+            idealZ = lookAtZ + hz * horizontalSqueeze;
+          }
+        }
+        _cameraHorizontalDebug = horizontalSqueezeEnabled ? {
+          area: currentArea, factor: horizontalSqueeze,
+          intended: { x: originalIdealX, z: originalIdealZ },
+          solved: { x: idealX, z: idealZ },
+        } : null; // Read-only; the regular terrain and full 3D occlusion checks still run after the sideways squeeze.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
         let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
@@ -20396,7 +20427,8 @@
           _seatedOcclusionUpdatedAt = 0;
           _occlusionCameraMode = activeCameraMode;
         }
-        const obstacles = currentAreaOcclusionMeshes();
+        const obstacles = horizontalObstacles;
+        const cameraCollisionMinDistance = horizontalSqueezeEnabled ? 0.025 : SEATED_CAMERA_MIN_DISTANCE; // Never leave a tight room camera embedded solely to satisfy the seated boom's minimum.
         const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
         const dist = Math.hypot(dx, dy, dz);
         if (dist >= (shoulderBoom ? SEATED_CAMERA_MIN_DISTANCE : 0.5)) {
@@ -20412,7 +20444,7 @@
             // A chair can put the seated target much closer than 0.3 tiles to
             // a wall. Use a short near plane there so the wall is not skipped;
             // ordinary standing cameras retain the player-avoidance distance.
-            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom ? 0.02 : 0.3;
+            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom || horizontalSqueezeEnabled ? 0.02 : 0.3;
             _cameraOcclusionRaycaster.far = dist;
             // recursive:true — zone occlusion meshes are already individual
             // tagged leaf meshes (harmless either way there), but the
@@ -20435,7 +20467,7 @@
                 // leaving the camera embedded despite a correct ray hit.
                 const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
-                  SEATED_CAMERA_MIN_DISTANCE,
+                  cameraCollisionMinDistance,
                   hits[0].distance - wallClearance,
                 ));
 
@@ -20461,7 +20493,7 @@
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
                     const candidateSafeDist = candidateHits.length
-                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - wallClearance)
+                      ? Math.max(cameraCollisionMinDistance, candidateHits[0].distance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20496,7 +20528,7 @@
               const alpha = 1 - Math.exp(-8 * dt);
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
-            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, cameraCollisionMinDistance, dist);
             _seatedCameraDebug = interiorBoom || shoulderBoom ? null : {
               idealDistance: dist,
               directHitDistance,
@@ -31184,6 +31216,7 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
+        let orbitResetCount = 0; // Counts only visited orbit paragraphs, so optional branches cannot make zoom/focus skip an increment.
         // Authored logical rotation remains separate from the rendered camera
         // deadzone. This is the single source of truth for every actor's
         // rotation from here on, kept in sync with the mesh only through
@@ -31441,6 +31474,27 @@
               const positionProvider = () => position.copy(targetProvider()).add(offset);
               window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
             }
+          } else if (stage.cameraMode === 'orbit') {
+            const subjectIds = stage.orbitActorIds || [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId]; // Actor IDs are authored independently of the speaker.
+            const subjects = subjectIds.map(id => entities.get(id) && { id, ...entities.get(id) }).filter(Boolean); // Reuse the live stand-ins, including the player, instead of making new avatars.
+            if (subjects.length === 2) {
+              const paragraphNumber = orbitResetCount + 1; // Advance only when the required pair really exists.
+              const zoomSetting = Number(stage.orbitZoomPercent);
+              const zoomPercent = Number.isFinite(zoomSetting) && zoomSetting > 0
+                ? zoomSetting : 100 + Math.max(0, Number(stage.orbitZoomStepPercent) || 0) * paragraphNumber; // 5% per spoken paragraph even through either choice branch.
+              const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[paragraphNumber % 2].id : null); // First Jubmir, then player, alternating on resets.
+              const orbit = window.CinematicCameraRuntime?.createActorOrbitShot?.(subjects, {
+                id: 'cutscene_orbit_' + stage.id, shotKey: stage.id,
+                focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
+                speedDegPerSec: stage.orbitSpeedDegPerSec, startAzimuthDeg: stage.orbitStartAzimuthDeg,
+                targetHeight: stage.orbitTargetHeight, fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
+              }); // Providers feed the existing blending, room collider and floor-clearance solve on every frame.
+              if (orbit) {
+                orbitResetCount = paragraphNumber;
+                cinematicCameraReady = false;
+                window.CinematicCameraRuntime.activate(area, orbit, { reason: 'authored-cutscene-orbit' });
+              }
+            } else console.warn('[cutscene orbit] requires two spawned actors:', stage.id, subjectIds);
           } else if (stage.cameraMode === 'pov') {
             clearPovShot();
             const source = entities.get(stage.actorId || stage.speakerId); // View origin is the same face anchor used by dialogue and shoulder-style aiming.
@@ -31942,7 +31996,7 @@
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {
