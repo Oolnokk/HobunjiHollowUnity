@@ -312,6 +312,8 @@
       overflow: visible;
       pointer-events: none;
     }
+    /* Match the viewport-scaled 4px-equivalent outer rim, even in SVG. */
+    #vitalsBar .vb-shape-svg path { stroke-width: .556dvh; }
     #vitalsBar .vb-cap {
       position: absolute;
       top: 0;

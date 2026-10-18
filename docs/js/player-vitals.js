@@ -116,13 +116,11 @@
       x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
       return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
     };
-    const vertices = [];
     const top = ['M 0 0'];
     for (let i = 1; i < intervals; i++) {
       const x = (i + (rand() - .5) * .22) * 100 / intervals;
       const inset = i % 2 === 1 ? SVG_HEIGHT * (.25 + rand() * .15) : 0;
       top.push('L ' + x.toFixed(2) + ' ' + inset.toFixed(2));
-      vertices.push([x, inset]);
     }
     top.push('L 100 0', 'L 100 ' + SVG_HEIGHT);
     for (let i = intervals - 1; i >= 1; i--) {
@@ -157,7 +155,7 @@
     const path = svgElement('path');
     path.setAttribute('fill', '#777');
     path.setAttribute('stroke', '#000');
-    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-width', '4');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
     svg.append(ground, path);
     return { svg, path };
