@@ -19,8 +19,9 @@ class V {
   lengthSq() { return this.x*this.x+this.y*this.y+this.z*this.z; }
 }
 const body = { quaternion: new Q(), localToWorld: v => v }; // Represents the character after weapon yaw and camera-facing correction.
-const held = { quaternion: new Q() }; // External attachments receive the same movement lean.
-const roots = [{ root: body, kind: 'player' }, { root: held, kind: 'external' }]; // Matches the composer's existing ownership list.
+const held = { quaternion: new Q() }; // Scene-sibling weapon/tool holder should stay upright under movement lean.
+const pet = { quaternion: new Q() }; // Shoulder-mounted animals should still follow the moving torso.
+const roots = [{ root: body, kind: 'player', providerName: 'player' }, { root: held, kind: 'external', providerName: 'equippedTool' }, { root: pet, kind: 'external', providerName: 'shoulderPets' }]; // Matches the actual named attachment providers.
 const context = {
   THREE: { Quaternion: Q, Vector3: V }, channels: new Map(), playerMesh: body, playerPosteriorY: 0.5,
   finite: (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback,
@@ -42,22 +43,29 @@ for (let movement = 0; movement < 8; movement++) {
     const lean = new Q(Math.cos(yaw)*Math.sin(Math.PI/12),0,-Math.sin(yaw)*Math.sin(Math.PI/12),Math.cos(Math.PI/12)); // Thirty-degree lean toward movement.
     body.quaternion = new Q(0,Math.sin(stance/2),0,Math.cos(stance/2));
     held.quaternion.copy(body.quaternion);
+    pet.quaternion.copy(body.quaternion);
     context.setChannel('stance', { quaternion: new Q(0,Math.sin(stance/2),0,Math.cos(stance/2)) });
-    context.setChannel('run-lean', { space: 'world', quaternion: lean });
+    context.setChannel('run-lean', { space: 'world', quaternion: lean, excludeExternalProviders: ['equippedTool'] });
     assert.deepStrictEqual(Array.from(context.resolveDelta('player').applied), ['stance'], 'world lean never participates in portrait-local composition');
+    assert.deepStrictEqual(Array.from(context.resolveDelta('external').applied), ['stance'], 'held tools retain authored local stance channels');
+    assert.deepStrictEqual(Array.from(context.resolveDelta('external', 'world', 'equippedTool').applied), [], 'movement lean never rotates the held weapon/tool');
+    assert.deepStrictEqual(Array.from(context.resolveDelta('external', 'world', 'shoulderPets').applied), ['run-lean'], 'shoulder pets still follow movement lean');
     const undo = []; // Runs the same final-phase restoration used by the renderer.
     const debug = { appliedOrder: ['stance'] }; // Existing yaw contributions remain visible in diagnostics.
     context.applyWorldChannels(undo, debug);
-    for (const root of [body,held]) {
+    for (const root of [body, pet]) {
       const q = root.quaternion; // Rotated up must point toward velocity for every stance.
       assert(Math.abs(2*(q.x*q.y-q.w*q.z)-Math.sin(yaw)*0.5)<1e-12);
       assert(Math.abs(2*(q.y*q.z+q.w*q.x)-Math.cos(yaw)*0.5)<1e-12);
       assert(Math.abs(1-2*(q.x*q.x+q.z*q.z)-Math.cos(Math.PI/6))<1e-12);
     }
     assert(debug.appliedOrder.includes('run-lean'));
+    assert.deepStrictEqual([held.quaternion.x,held.quaternion.y,held.quaternion.z,held.quaternion.w],
+      [0,Math.sin(stance/2),0,Math.cos(stance/2)], 'held weapon/tool retains its stance orientation through the render');
     for (const restore of undo.reverse()) restore();
+    assert.strictEqual(pet.quaternion.x, 0, 'shoulder-pet world tilt is transient');
     assert.strictEqual(body.quaternion.x,0, 'render lean never accumulates into gameplay facing');
     assert.strictEqual(body.quaternion.z,0);
   }
 }
-console.log('World movement lean follows travel across 40 stance/heading combinations and restores after render.');
+console.log('World movement lean follows travel across 40 stance/heading combinations, excludes tools, preserves pets, and restores after render.');
