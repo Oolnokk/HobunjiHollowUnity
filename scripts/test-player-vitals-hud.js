@@ -97,7 +97,7 @@ assert.equal(elements.get('vbHealthSegments').children.length, 1, 'lower-priorit
 const bruisedSpan = elements.get('vbHealthSegments').children[0];
 assert(bruisedSpan.className.includes('vb-effect-brittle'), 'bruising gets a real jagged path');
 assert.equal(bruisedSpan.style.backgroundColor, 'transparent', 'rectangular band replaced by actual silhouette');
-assert.equal(bruisedSpan.children[0].tag, 'svg', 'inline SVG renders the bar mesh');
+assert.equal(bruisedSpan.children[0].id, 'svg', 'inline SVG renders the bar mesh');
 const bruisePath = bruisedSpan.children[0].children[1].getAttribute('d');
 assert(bruisePath.includes('L') && bruisePath.includes('Z'), 'closed jagged outline path');
 const topInset = [...bruisePath.matchAll(/L [\\d.]+ ([\\d.]+)/g)].map(match => +match[1]);
@@ -114,7 +114,7 @@ assert.equal(elements.get('vbHealthCap').hidden, false, 'lost effective maximum 
 assert.equal(elements.get('vbHealthCap').style.left, '70.0%');
 const congealedCap = elements.get('vbHealthCap');
 assert.equal(congealedCap.classList.contains('is-withered'), true, 'capacity damage creates a starved outline');
-assert.equal(congealedCap.children[0].tag, 'svg', 'cap draws with a real SVG');
+assert.equal(congealedCap.children[0].id, 'svg', 'cap draws with a real SVG');
 const congealedShape = congealedCap.children[0].children[1].getAttribute('d');
 assert(congealedShape.includes(' C ') && congealedShape.includes(' L '), 'cap is a smooth spline with a flat central section');
 assert.equal(congealedCap.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
