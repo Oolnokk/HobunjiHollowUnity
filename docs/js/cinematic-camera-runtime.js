@@ -181,7 +181,7 @@
     const facingA = focusActor !== b; // Without an initial focus, start from the B-side and face A.
     const initialAngle = options.startAzimuthDeg != null && Number.isFinite(Number(options.startAzimuthDeg))
       ? Number(options.startAzimuthDeg) * Math.PI / 180
-      : heightMode === 'oppositeFaceArc' ? (facingA ? Math.PI : 0) : defaultAngle;
+      : heightMode === 'oppositeFaceArc' ? (facingA ? 0 : Math.PI) : defaultAngle; // Camera starts opposite the focused actor's end.
     const elapsed = () => Math.max(0, (performance.now() - started) / 1000);
     function arcPoint(angle, out) {
       updateMidpoint();
