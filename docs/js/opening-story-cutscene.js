@@ -378,12 +378,16 @@
       "My point in saying this is that there is more than one way to skin a turg-rat. Finding ways to make the journey to Hobunji Hollow more worthwhile would be just as helpful as removing the obstacles that make it difficult.",
       "Father Hunundi has been asking around the village for ideas on how to do that. I would seek him out when you have time.",
     ];
-    const talk = (id, text) => ({ id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__' }); // Every line uses the canonical NPC speaker and faces the player.
+    const talk = (id, text) => ({ // Every spoken paragraph resets the shared two-person orbit, including whichever optional answer the player hears.
+      id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__',
+      cameraMode: 'orbit', orbitActorIds: ['player', 'jubmir'], orbitAlternateFocus: true,
+      orbitZoomStepPercent: 5, orbitDistanceTiles: 3.7, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1,
+    });
     return {
-      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir',
+      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir', // Dialogue partners occupy adjacent, furniture-free floor tiles.
       actors: [
         { id: 'player', name: profile?.nickname || 'Farmer', isPlayer: true, worldC: 9, worldR: 8, rotation: 90, pose: 'standing' },
-        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 11, worldR: 8, rotation: 270, pose: 'standing' }),
+        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 10, worldR: 8, rotation: 270, pose: 'standing' }),
       ],
       stages: [
         { id: 'fey_fade_in', type: 'fade', direction: 'in', duration: 0.6, next: '__next__' },
