@@ -22,8 +22,8 @@
     windup:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
     strike:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
   };
-  let BLOCK_WINDUP_S = 0.06, BLOCK_STRIKE_S = 0.06;
-  let COUNTER_WINDUP_S = 0.02625, COUNTER_STRIKE_S = 0.08, COUNTER_HOLD_S = 0.245625;
+  let BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
+  let COUNTER_WINDUP_S = 0.0525, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 0.245625;
 
   // Counter Shield keeps four under-weapon layers. Offensive holds reuse
   // those plus six initially-transparent over-layers (two per Charged
@@ -709,7 +709,7 @@
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
-      const counterReturnTailS = Math.max(0.06, counterDurationS * 0.35); // Recovery tail scales with the shortened held riposte stages.
+      const counterReturnTailS = Math.max(0.12, counterDurationS * 0.35);
       reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S;
 
       window.Combat.beginStagedAction({
