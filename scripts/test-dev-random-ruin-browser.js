@@ -244,7 +244,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.ok(Number.isFinite(constrainedBaseDarkness),'constrained ruin must use a recognized lich theme: '+JSON.stringify(constrained));
   assert.ok(Math.abs(constrained.darknessDebug?.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
     'ruin default lighting must follow its lich theme instead of the retired bright-mode default: '+JSON.stringify(constrained.darknessDebug));
-  assert.match(constrained.badge, /dark off/, constrained.badge);
+  assert.match(constrained.badge, /dark themed/, 'default ruin darkness badge must identify the active lich-theme baseline: '+constrained.badge);
 
   const darknessCycle = await page.evaluate(async () => {
     const enabled=document.getElementById('devRandomRuinDarknessEnabled');
