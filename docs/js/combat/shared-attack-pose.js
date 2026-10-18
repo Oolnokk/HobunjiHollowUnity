@@ -301,6 +301,23 @@
     return { windup, strike };
   }
 
+  // A whole attack against a weapon's Light/Heavy (or dual-wield main) stance: the baked Windup/Strike endpoints, the
+  // replacement Neutral, and the Neutral the swing RETURNS to. Heavy weapons alternate: a swing finishes ready on the
+  // opposite side, so a mirrored/backhand swing starts mirrored and returns to the regular idle while a regular swing
+  // does the inverse; Light weapons keep their one-sided idle. Shared by the player (weapon-tool-stances.js, which
+  // adds its hand-flag decoration) and every enemy (enemy-weapon-stances.js). Allocates: run once per swing.
+  function bakeStanceSequence(anim, authoredPose, requestedSign, power, targetNeutral, { alternatesHeavyNeutral = false, meleeSpacing = true } = {}) {
+    const effectiveSign = effectiveDirSign(anim, authoredPose, requestedSign);
+    const startNeutralSign = alternatesHeavyNeutral ? effectiveSign : 1;
+    const returnNeutralSign = alternatesHeavyNeutral ? -effectiveSign : 1;
+    const { windup, strike } = bakeAttackEndpoints(anim, authoredPose, power, { meleeSpacing });
+    return {
+      effectiveSign, startNeutralSign, returnNeutralSign, windup, strike,
+      neutral: neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign),
+      returnNeutral: neutralInputForSigns(targetNeutral, returnNeutralSign, effectiveSign),
+    };
+  }
+
   window.SharedAttackPose = Object.freeze({
     version: 1,
     POSE_KEYS,
@@ -322,5 +339,6 @@
     effectiveDirSign,
     neutralInputForSigns,
     bakeAttackEndpoints,
+    bakeStanceSequence,
   });
 })();

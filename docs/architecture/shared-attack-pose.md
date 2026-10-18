@@ -29,7 +29,12 @@ Enemies therefore play the player's swing **clock** too: `swingTimeline` turns t
 
 - **Placement** of the sampled channels: the player's hand anchor, reticle orbit and species scaling vs. an enemy's own avatar anchor.
 - **Where the elapsed time comes from**: the player's `toolSwingT` vs. an enemy's staged action + tail.
-- **Heavy-weapon alternating Neutral** (a heavy swing finishing on the opposite side, `returnNeutral` / mirror signs in `weapon-tool-stances.js`) is still player-only; enemies return to their ordinary stance Neutral.
+
+## Heavy weapons and dual-wield work for every actor
+
+- **Heavy-weapon alternating Neutral.** `SharedAttackPose.bakeStanceSequence` holds the rule: a Heavy swing finishes ready on the opposite side, so a Backhand starts mirrored and returns to the regular idle, a Forehand does the inverse, and Light weapons never alternate. The player's `prepareCombatOptions` and every enemy's `EnemyWeaponStances` bake with it; the renderers sample the resulting `returnNeutral` / mirror signs, blend the hand anchor across the midline and flip the weapon sprite when the blend crosses it.
+- **Dual-wield stance.** A weapon that `HobunjiHandToolGrips.isDualWieldWeapon` accepts rests in the authored `dualWieldMain` stance for the player and for enemies alike.
+- **Dual-wield hands and weapons.** An enemy's `updateBanditToolMesh` evaluates `animationGripAt` with its own weapon key, so the hand mode (one-hand / two-hand / dual) comes from the weapon, and a dual-wield weapon rests with the grip state's `dualWieldIdleBlend` of 1. `dual-wield-weapon-visuals.js` keeps one state per actor (the player under a fixed key, every other actor keyed by its avatar root): each gets its own hidden-original plane, two duplicates with the plane-normal gap, the authored offhand idle stance mirrored across *that actor's* body, and the small main-hand lag. The hand driver already resolved sockets through the actor's own record; the pre-render sync now covers every actor with duplicates and tears one down when its holder leaves the scene.
 
 ## Performance
 
@@ -41,6 +46,6 @@ Everything on the per-frame path (`fourPhaseLerp`, `samplePose`, `sampleLegacyTh
 
 ## Hand grips
 
-`animationGripAt` (`hand-tool-grips.js`) already defaults an attack's windup/strike to two-handed and its Neutral to one-handed, which is exactly what the player's `prepareCombatOptions` spells out as explicit `secondaryGrip` / `dualWield` flags. Enemies therefore get the same two-hand behavior from the same flags (authored flags on Windup/Strike ride through the baker). **Dual-wield is player-only on purpose:** `dual-wield-weapon-visuals.js` keeps one global duplicate-weapon state bound to the player's holder, so enemies must not be put in dual mode until that is per-actor (`BanditCombat` passes no tool key to `animationGripAt`, which keeps them out of it).
+`animationGripAt` (`hand-tool-grips.js`) defaults an attack's windup/strike to two-handed and its Neutral to one-handed, which is exactly what the player's `prepareCombatOptions` spells out as explicit `secondaryGrip` / `dualWield` flags, so enemies get the same behavior from the same flags (authored flags on Windup/Strike ride through the baker). See above for the weapon-driven hand mode.
 
-Tests: `node scripts/run-tests.js shared-attack-pose player-pose-golden attack-editor-shared enemy-weapon-stances`.
+Tests: `node scripts/run-tests.js shared-attack-pose player-pose-golden attack-editor-shared enemy-weapon-stances dual-wield`.

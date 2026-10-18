@@ -41,13 +41,26 @@
     return stanceClass === 'light' || stanceClass === 'heavy' ? stanceClass : null;
   }
 
-  // The live Light/Heavy stance pose object (updated in place when stance config
-  // or a Local Override loads), NOT a copy -- callers compare its values against
-  // their cache instead of re-normalizing it every frame.
+  function holdsDualWieldWeapon(entity) {
+    const weaponKey = entity?.def?.weaponKey;
+    if (!weaponKey) return false;
+    const cached = entity._enemyDualWeapon; // The key test normalizes strings, so it runs once per weapon rather than every frame.
+    if (cached && cached.key === weaponKey) return cached.value;
+    const test = window.HobunjiHandToolGrips?.isDualWieldWeapon; // Same weapon test the player's stance selection and hand grips use.
+    if (typeof test !== 'function') return false; // Grip data not loaded yet: ask again next frame.
+    const value = test(weaponKey) === true;
+    entity._enemyDualWeapon = { key: weaponKey, value };
+    return value;
+  }
+
+  // The live stance pose object (updated in place when stance config or a Local Override loads), NOT a copy --
+  // callers compare its values against their cache instead of re-normalizing it every frame. A dual-wield weapon
+  // rests in its authored main-hand stance, exactly like the player's WeaponToolStances.targetPoseFor.
   function stanceSourceFor(entity) {
     const stanceClass = stanceClassFor(entity); // Selects which stable authored player stance object the enemy should use.
     const poses = window.WeaponToolStances?.poses; // Shared Light/Heavy pose objects updated in place when stance config/local overrides load.
     if (!stanceClass || !poses) return null;
+    if (poses.dualWieldMain && holdsDualWieldWeapon(entity)) return poses.dualWieldMain;
     return (stanceClass === 'heavy' ? poses.heavyWeapon : poses.lightWeapon) || null;
   }
 
@@ -95,33 +108,36 @@
     const action = entity?._banditAction || null; // A new staged action is a new attack: rebake once so edited pose data is picked up.
     const spacing = !!window.MeleePoseSpacing?.adjustEndpoint; // Spacing can finish loading after the first idle frame; rebake when it appears.
 
+    const alternatesHeavyNeutral = stanceClassFor(entity) === 'heavy'; // Heavy swings finish ready on the opposite side (the player's rule).
     const cached = entity._enemyPreparedPose;
-    if (cached && cached.source === source && cached.action === action && cached.originalAnim === originalAnim
+    if (cached && cached.source === source && cached.alternatesHeavyNeutral === alternatesHeavyNeutral && cached.action === action && cached.originalAnim === originalAnim
       && cached.originalPose === originalPose && cached.requestedSign === requestedSign && cached.power === power
       && cached.spacing === spacing && stanceValuesMatch(cached, source)) {
       return cached.prepared;
     }
 
     const SAP = window.SharedAttackPose;
-    const effectiveSign = SAP.effectiveDirSign(originalAnim, originalPose, requestedSign); // Matches WeaponToolStances: legacy thrust/chop do not mirror, authored/sweep attacks do.
-    // Enemy melee weapons use the exact same character-local spacing transform
-    // as the player.  It is applied after the enemy's original attack/power
-    // endpoint is baked, before BanditCombat's own dirSign mirror step.
-    const { windup, strike } = SAP.bakeAttackEndpoints(originalAnim, originalPose, power);
+    // The same stance sequence the player bakes (SharedAttackPose.bakeStanceSequence): endpoints with power and the
+    // melee spacing baked in, the replacement Neutral pre-unmirrored so BanditCombat's own mirror step lands on the
+    // visible stance for forehand/backhand, and the Neutral the swing returns to (Heavy weapons alternate sides).
     const targetNeutral = SAP.normalizePose(source, {}); // Snapshot of the live stance; revalidated against `source` by stanceValuesMatch.
+    const sequence = SAP.bakeStanceSequence(originalAnim, originalPose, requestedSign, power, targetNeutral, { alternatesHeavyNeutral });
     const prepared = {
       originalAnim,
       requestedSign,
-      effectiveSign,
+      effectiveSign: sequence.effectiveSign,
       stanceClass: stanceClassFor(entity),
       pose: {
-        neutral: SAP.neutralInputForSigns(targetNeutral, 1, effectiveSign), // Pre-unmirrored so BanditCombat's own mirror step still lands on the same stance for forehand/backhand attacks.
-        windup,
-        strike,
+        neutral: sequence.neutral,
+        returnNeutral: sequence.returnNeutral,
+        neutralMirrorSign: sequence.startNeutralSign,
+        returnNeutralMirrorSign: sequence.returnNeutralSign,
+        windup: sequence.windup,
+        strike: sequence.strike,
       },
     };
     entity._enemyPreparedPose = {
-      source, action, originalAnim, originalPose, requestedSign, power, spacing,
+      source, alternatesHeavyNeutral, action, originalAnim, originalPose, requestedSign, power, spacing,
       stanceValues: POSE_KEYS.map(key => source[key]),
       prepared,
     };
@@ -195,7 +211,8 @@
       const neutralWeight = attackNeutralWeight(entity); // Shared neutral contribution used to cancel sweep's legacy -90° plane twist at idle/start and fade it back by windup.
       if (toolPlane) {
         const toolMesh = entity?._banditToolHolder?.children?.[0] || null; // Parent of the plane: Backhand mirrors it across the body midline exactly like the player (see game.js updateToolMesh).
-        const mirrored = prepared.originalAnim === 'sweep' && prepared.effectiveSign < 0;
+        const planeMirrorSign = entity._banditToolTimeline?.planeMirrorSign; // Set when the pose flips across the midline mid-swing (Heavy weapons): the sprite follows the blend like the player's.
+        const mirrored = prepared.originalAnim === 'sweep' && (planeMirrorSign != null ? planeMirrorSign < 0 : prepared.effectiveSign < 0);
         if (prepared.originalAnim === 'sweep') toolPlane.rotation.z = -Math.PI / 2 + Math.PI / 2 * neutralWeight;
         else toolPlane.rotation.z = 0;
         toolPlane.scale.x = 1;

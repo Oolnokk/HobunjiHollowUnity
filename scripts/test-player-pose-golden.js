@@ -191,6 +191,16 @@ for (let i = 0; i < 30000; i += 1) {
   assert.deepEqual({ ...SAP.neutralInputForSigns(target, visible, runtime) }, neutralInputForSigns(target, visible, runtime), 'neutral handedness');
   assert.equal(SAP.effectiveDirSign(anim, rawOpts.pose, sign), rawOpts.pose || anim === 'sweep' ? sign : 1, 'dirSign policy');
 
+  // Player Heavy/Light neutral sequence (weapon-tool-stances.js prepareCombatOptions, pre-change).
+  const alternates = rnd() < 0.5; const stanceNeutral = normalizePose(randomChannels(false), {});
+  const goldenEffective = rawOpts.pose || anim === 'sweep' ? (sign === -1 ? -1 : 1) : 1;
+  const goldenStart = alternates ? goldenEffective : 1; const goldenReturn = alternates ? -goldenEffective : 1;
+  const sequenceResult = SAP.bakeStanceSequence(anim, rawOpts.pose, sign, power, stanceNeutral, { alternatesHeavyNeutral: alternates, meleeSpacing: rawOpts.meleeSpacing !== false });
+  assert.equal(sequenceResult.effectiveSign, goldenEffective, 'stance sequence sign'); assert.equal(sequenceResult.startNeutralSign, goldenStart); assert.equal(sequenceResult.returnNeutralSign, goldenReturn);
+  assert.deepEqual({ ...sequenceResult.neutral }, neutralInputForSigns(stanceNeutral, goldenStart, goldenEffective), 'stance sequence neutral');
+  assert.deepEqual({ ...sequenceResult.returnNeutral }, neutralInputForSigns(stanceNeutral, goldenReturn, goldenEffective), 'stance sequence returnNeutral');
+  assert.deepEqual(JSON.parse(JSON.stringify({ windup: sequenceResult.windup, strike: sequenceResult.strike })), JSON.parse(JSON.stringify(goldenBaked)), 'stance sequence endpoints');
+
   // Enemy timeline as it was: rise to the windup, hold the strike.
   const wf = rnd() * 0.9; const bp = Math.min(1, rnd());
   const bn = { ...STYLE_NEUTRAL_POSE[pick(['sweep', 'chop'])], ...(pose.neutral || {}) };

@@ -1991,6 +1991,19 @@
     mesh.material.opacity = alpha * 0.85;
   }
 
+  // A dual-wield weapon rests in its two-weapon idle stance, exactly like the player's (the grip state at Neutral
+  // carries dualWieldIdleBlend 1); every other weapon rests one-handed, which is "no animation grip". Computed once
+  // per weapon: the grip sampler allocates, and this is the same object every idle frame.
+  function restGripFor(c, toolKey) {
+    const grips = window.HobunjiHandToolGrips;
+    if (!toolKey || !grips?.isDualWieldWeapon?.(toolKey)) return null;
+    const cached = c._banditRestGrip;
+    if (cached && cached.key === toolKey) return cached.grip;
+    const grip = grips.animationGripAt?.(0, { windupFrac: 0.16, strikeFrac: 0.16, holdFrac: 1, poseScale: 1 }, {}, 'attack', toolKey) ?? null;
+    c._banditRestGrip = { key: toolKey, grip };
+    return grip;
+  }
+
   function updateBanditToolMesh(c) {
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
     const flaskActive = !!c._banditFlaskActionActive && !!c._banditFlaskToolHolder; // During a staged Flasker throw the held flask replaces the backup melee weapon.
@@ -2045,7 +2058,7 @@
       } else timelineLive = true;
     }
     if (timelineLive) c._banditToolSettleUntil = nowMs + Math.max(0, banditTimeline.totalS - elapsedS) * 1000; // Keeps the idle-stance adapter, sleep gate and combat log aware the swing is still playing.
-    if (!timelineLive && handDriverRoot?.userData) handDriverRoot.userData.proceduralHandAnimationGrip = null;
+    if (!timelineLive && handDriverRoot?.userData) handDriverRoot.userData.proceduralHandAnimationGrip = restGripFor(c, handDriverRoot.userData.proceduralHandToolKey);
     const anim = c._banditSwingAnim || 'thrust';
     const pose = c._banditSwingPose;
     const dirSign = c._banditSwingDirSign || 1;
@@ -2081,7 +2094,9 @@
       progress = Math.min(1, elapsedS / banditTimeline.totalS);
       wf = banditTimeline.wf; sf = banditTimeline.sf; hf = banditTimeline.hf;
       if (handDriverRoot?.userData) {
-        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: sf, holdFrac: hf, poseScale: power }, pose || {}) ?? null; // Same timing the player's hands get for the same swing.
+        // Same timing AND weapon the player's hands get for the same swing: the tool key picks the hand mode, so a dual-wield
+        // weapon swings with both hands and a thrown flask with one.
+        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: sf, holdFrac: hf, poseScale: power }, pose || {}, 'attack', handDriverRoot.userData.proceduralHandToolKey || '') ?? null;
       }
     }
     const timelineState = c._banditToolTimeline || (c._banditToolTimeline = { live: false, progress: 0, wf: 0.16, hf: 1 }); // Read by EnemyWeaponStances for the sweep-plane twist fade; one object per enemy, updated in place.
@@ -2139,7 +2154,11 @@
       const yawRad = sampled.yawRad;
       const rollRad = sampled.rollRad;
       const bodyYawRad = sampled.bodyYawRad;
-      const handBaseX = base.x * sampled.mirrorBlend; // 1 unless the pose authors a midline-flip sequence, exactly like the player's hand anchor.
+      const handBaseX = base.x * sampled.mirrorBlend; // 1 unless the pose authors a midline-flip sequence (Heavy weapons), exactly like the player's hand anchor.
+      // A true midline flip also reverses the sprite once the blend crosses the midpoint, as the player's does.
+      const planeMirrorSign = sampled.hasMirrorSequence ? (sampled.mirrorBlend < 0 ? -1 : 1) : null;
+      timelineState.planeMirrorSign = planeMirrorSign;
+      if (planeMirrorSign != null && spinMesh && anim === 'sweep') spinMesh.scale.x = Math.abs(spinMesh.scale.x) * planeMirrorSign;
       const vθ = θ + bodyYawRad;
       // Leans the avatar body itself into the swing too, not just the
       // weapon -- matches the player's own updateToolMesh, which sets
@@ -2178,6 +2197,7 @@
       // the 10.31 degree held-up tilt -- the authored attack-animation-editor
       // rest values -- so a bandit's thrust weapon sits at true idle exactly
       // where the player's does instead of staying pulled back mid-windup.
+      timelineState.planeMirrorSign = null;
       const thrustSample = SAP.sampleLegacyThrust(banditPoseSample, progress, wf, sf, hf, power);
       const jabOff = thrustSample.z;
       const lateral = thrustSample.x;

@@ -176,12 +176,18 @@ for (const power of [1, 1.4]) {
   vm.createContext(sandbox);
   vm.runInContext(read('docs/js/combat/combat-bandit.js'), sandbox, { filename: 'combat-bandit.js' });
 
+  const gripCalls = [];
+  const restGrip = { dualWieldInfluence: 1, dualWieldIdleBlend: 1, source: 'rest' };
+  sandbox.window.HobunjiHandToolGrips = {
+    isDualWieldWeapon: key => key === 'fixture_dagger',
+    animationGripAt: (progress, timing, poseSet, sequence, toolKey) => { gripCalls.push({ progress, timing, poseSet, sequence, toolKey }); return toolKey === 'fixture_dagger' && progress === 0 ? restGrip : { dualWieldInfluence: toolKey === 'fixture_dagger' ? 1 : 0, source: 'live' }; },
+  };
   const angles = {};
   const quat = name => ({ setFromAxisAngle(axis, angle) { angles[name] = angle; return this; } });
   const holderQuaternion = { copy() { return this; }, multiply() { return this; } };
   sandbox.window.BanditCombat.init({
     TILE: 32, qFac: quat('fac'), qToolYaw: quat('yaw'), qAnim: quat('pitch'), qRoll: quat('roll'),
-    tUp: 'up', xAxis: 'x', zAxis: 'z', TOOL_ITEM_DEFS: { fixture_axe: { animStyle: 'sweep' } },
+    tUp: 'up', xAxis: 'x', zAxis: 'z', TOOL_ITEM_DEFS: { fixture_axe: { animStyle: 'sweep' }, fixture_dagger: { animStyle: 'thrust' } },
   });
 
   function makeBandit(extra = {}) {
@@ -191,7 +197,7 @@ for (const power of [1, 1.4]) {
       c: {
         x: 64, y: 96, facing: 0.5, halfHeight: 0.4,
         def: { weaponKey: 'fixture_axe', aimAngleOffset: 0.1 },
-        avatarRef: { group: { position: { x: 2, y: 1, z: 3 }, rotation: { y: 0 }, userData: {} }, handAttachX: -0.25, handAttachY: 0.6 },
+        avatarRef: { group: { position: { x: 2, y: 1, z: 3 }, rotation: { y: 0 }, userData: {} }, handAttachX: -0.25, handAttachY: 0.6, handRigAvatarRoot: { userData: { proceduralHandToolKey: undefined } } },
         _banditToolHolder: holder, _banditAction: { windupS: 0.3, strikeS: 0.1, t: 0.2 },
         _banditSwingAnim: 'sweep', _banditSwingPose: pose, _banditSwingDirSign: -1, _banditSwingPower: 1.25, _banditSwingPoseScale: 1,
         ...extra,
@@ -225,6 +231,13 @@ for (const power of [1, 1.4]) {
   approx(angles.pitch, sentinel.pitchRad, 'pitch'); approx(angles.yaw, sentinel.yawRad, 'yaw'); approx(angles.roll, sentinel.rollRad, 'roll'); approx(angles.fac, want.v, 'facing + bodyYaw');
   approx(c.groupRot, want.v - c.def.aimAngleOffset, 'the avatar body leans with the weapon'); approx(c.avatarRef.group.rotation.y, c.groupRot, 'body rotation');
   assert.ok(c._banditToolSettleUntil > 1000, 'a swinging enemy reports its swing as still playing');
+  // The hand grip is evaluated for THIS enemy's weapon on the same clock, so the weapon picks the hand mode.
+  assert.equal(gripCalls.length, 1); assert.equal(gripCalls[0].sequence, 'attack'); assert.equal(gripCalls[0].toolKey, 'fixture_axe');
+  approx(gripCalls[0].timing.windupFrac, expected.wf, 'grip windupFrac'); approx(gripCalls[0].timing.strikeFrac, expected.sf, 'grip strikeFrac'); approx(gripCalls[0].timing.holdFrac, expected.hf, 'grip holdFrac');
+  assert.equal(c.avatarRef.handRigAvatarRoot.userData.proceduralHandToolKey, 'fixture_axe');
+  // A pose that flips across the midline (Heavy weapons) also reverses the sprite once the blend crosses the midpoint.
+  assert.equal(holder.children[0].scale.x, -1, 'sweep sprite follows the mirror blend');
+  assert.equal(c._banditToolTimeline.planeMirrorSign, -1);
 
   // The player keeps animating after the strike lands: a completed action hands the rest of the clock to a tail.
   c._banditToolTail = { startMs: 1000, baseElapsedS: 0.4, durationS: 0.4, windupFrac: 0.75, strikeFrac: 1, holdS: 0.43 };
@@ -274,6 +287,20 @@ for (const power of [1, 1.4]) {
   flask.c._banditAction = { windupS: 0.3, strikeS: 0.1, t: 0.4, cancelled: false, data: { isBandit: true, flasker: true } };
   sandbox.window.BanditCombat.finishAction(flask.c);
   assert.equal(flask.c._banditToolTail, null, 'a Flasker throw has no melee tail');
+
+  // A dual-wield weapon rests in its two-weapon idle stance (the grip state at Neutral); other weapons rest one-handed.
+  const daggerDef = { weaponKey: 'fixture_dagger', aimAngleOffset: 0 };
+  const dagger = makeBandit({ def: daggerDef, _banditAction: null, _banditSwingAnim: 'thrust', _banditSwingPose: null });
+  gripCalls.length = 0;
+  sandbox.window.BanditCombat.updateToolMesh(dagger.c);
+  const daggerRoot = dagger.c.avatarRef.handRigAvatarRoot.userData;
+  assert.equal(daggerRoot.proceduralHandToolKey, 'fixture_dagger');
+  assert.equal(daggerRoot.proceduralHandAnimationGrip, restGrip, 'rest grip carries the dual-wield idle blend');
+  sandbox.window.BanditCombat.updateToolMesh(dagger.c);
+  assert.equal(gripCalls.length, 1, 'the rest grip is computed once per weapon, not per frame');
+  const axeRest = makeBandit({ _banditAction: null });
+  sandbox.window.BanditCombat.updateToolMesh(axeRest.c);
+  assert.equal(axeRest.c.avatarRef.handRigAvatarRoot.userData.proceduralHandAnimationGrip, null, 'non-dual weapons rest one-handed');
 }
 
 console.log('shared attack pose tests passed');

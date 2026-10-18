@@ -253,37 +253,31 @@
 
     const anim = rawOpts.anim || state.def?.animStyle || 'thrust';
     const authoredPose = rawOpts.pose && typeof rawOpts.pose === 'object' ? rawOpts.pose : null;
-    const requestedSign = rawOpts.dirSign === -1 ? -1 : 1;
-    // Legacy procedural thrust/chop never used combatSwingSign; preserve that.
-    const effectiveSign = SAP.effectiveDirSign(anim, authoredPose, requestedSign);
-    const alternatesHeavyNeutral = weaponIdleClass(state.itemKey, state.def) === 'heavy';
-    // Heavy swings finish ready on the opposite side. A mirrored/backhand swing
-    // therefore starts mirrored and returns to the regular Heavy idle; a regular
-    // swing does the inverse. Light weapons retain their one-sided idle stance.
-    const startNeutralSign = alternatesHeavyNeutral ? effectiveSign : 1;
-    const returnNeutralSign = alternatesHeavyNeutral ? -effectiveSign : 1;
     const powerValue = Number(rawOpts.power);
     const power = Number.isFinite(powerValue) ? powerValue : 1;
 
-    // Windup/Strike endpoints with the attack's own power baked in, then the shared
-    // Mao'ao-space melee spacing calibration (applies the uploaded +Y lift and the
-    // Forehand-derived range delta to every offensive melee endpoint).
-    const { windup, strike } = SAP.bakeAttackEndpoints(anim, authoredPose, power, { meleeSpacing: rawOpts.meleeSpacing !== false });
+    // The stance policy (legacy-arc / authored endpoints with power baked in, the shared melee spacing calibration,
+    // the sign rule, and Heavy weapons' alternating start/return Neutral) is SharedAttackPose.bakeStanceSequence,
+    // the same function every enemy bakes with. Only the hand-flag decoration below is player-side.
+    const sequence = SAP.bakeStanceSequence(anim, authoredPose, rawOpts.dirSign === -1 ? -1 : 1, power, targetNeutral, {
+      alternatesHeavyNeutral: weaponIdleClass(state.itemKey, state.def) === 'heavy',
+      meleeSpacing: rawOpts.meleeSpacing !== false,
+    });
 
     return {
       ...rawOpts,
       anim,
-      dirSign: effectiveSign,
+      dirSign: sequence.effectiveSign,
       // Windup/strike are already baked to the exact endpoints the old animation
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...SAP.neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign) },
-        returnNeutral: SAP.neutralInputForSigns(targetNeutral, returnNeutralSign, effectiveSign),
-        neutralMirrorSign: startNeutralSign,
-        returnNeutralMirrorSign: returnNeutralSign,
-        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...windup },
-        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...strike },
+        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral },
+        returnNeutral: sequence.returnNeutral,
+        neutralMirrorSign: sequence.startNeutralSign,
+        returnNeutralMirrorSign: sequence.returnNeutralSign,
+        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.windup },
+        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.strike },
       },
     };
   }

@@ -151,10 +151,16 @@ function approx(actual, expected, epsilon = 1e-9) {
   const prepared = renderCalls[0];
   assert.strictEqual(prepared.dirSign, -1);
   assert.strictEqual(prepared.power, 1);
-  assert.strictEqual(prepared.pose.neutral.x, -heavyPose.x);
-  assert.strictEqual(prepared.pose.neutral.yaw, -heavyPose.yaw);
-  assert.strictEqual(prepared.pose.neutral.bodyYaw, -heavyPose.bodyYaw);
-  assert.strictEqual(prepared.pose.neutral.roll, -heavyPose.roll);
+  // Heavy weapons alternate sides like the player's: a Backhand starts mirrored (BanditCombat's own mirror step
+  // flips this pre-unmirrored input back to the mirrored stance) and returns to the regular Heavy idle.
+  assert.strictEqual(prepared.pose.neutral.x, heavyPose.x);
+  assert.strictEqual(prepared.pose.neutral.yaw, heavyPose.yaw);
+  assert.strictEqual(prepared.pose.neutral.bodyYaw, heavyPose.bodyYaw);
+  assert.strictEqual(prepared.pose.neutral.roll, heavyPose.roll);
+  assert.strictEqual(prepared.pose.neutralMirrorSign, -1);
+  assert.strictEqual(prepared.pose.returnNeutralMirrorSign, 1);
+  assert.strictEqual(prepared.pose.returnNeutral.x, -heavyPose.x);
+  assert.strictEqual(prepared.pose.returnNeutral.yaw, -heavyPose.yaw);
   assert.strictEqual(prepared.pose.neutral.y, heavyPose.y);
   assert.strictEqual(prepared.pose.neutral.pitch, heavyPose.pitch);
   const bakedWindup = {
@@ -318,4 +324,34 @@ function approx(actual, expected, epsilon = 1e-9) {
   window.BanditCombat.updateToolMesh(normal);
   assert.strictEqual(normal._banditSwingAnim, 'sweep'); assert.strictEqual(normal._banditSwingPower, 1.5);
 }
+// Heavy forehand starts regular and returns mirrored (ready for the backhand); Light weapons never alternate.
+{
+  const fore = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } }, sign: 1 });
+  const foreSeq = window.EnemyWeaponStances.preparedEnemyPose(fore).pose;
+  assert.strictEqual(foreSeq.neutralMirrorSign, 1); assert.strictEqual(foreSeq.returnNeutralMirrorSign, -1);
+  assert.strictEqual(foreSeq.neutral.x, -(-heavyPose.x)); assert.strictEqual(foreSeq.returnNeutral.x, -heavyPose.x);
+  const lightBack = makeEntity({ weaponKey: 'light_weapon', anim: 'sweep', pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } }, sign: -1 });
+  const lightSeq = window.EnemyWeaponStances.preparedEnemyPose(lightBack).pose;
+  assert.strictEqual(lightSeq.neutralMirrorSign, 1); assert.strictEqual(lightSeq.returnNeutralMirrorSign, 1);
+  assert.strictEqual(lightSeq.returnNeutral.x, -lightPose.x, 'light return Neutral equals its (pre-unmirrored) start Neutral');
+  assert.strictEqual(lightSeq.neutral.x, -lightPose.x);
+}
+
+// A dual-wield weapon rests in the authored dual-wield main stance (the player's WeaponToolStances.targetPoseFor).
+{
+  const dualMainPose = { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 };
+  const dualMain = { ...dualMainPose, x: -0.05, pitch: 30 }; // Distinct from Light so the selection is observable.
+  window.WeaponToolStances.poses.dualWieldMain = dualMain;
+  window.HobunjiHandToolGrips = { isDualWieldWeapon: key => key === 'dagger_weapon' };
+  toolDefs.dagger_weapon = { shapeKey: 'dagger', animStyle: 'thrust', weaponIdleClass: 'light' };
+  const dual = makeEntity({ weaponKey: 'dagger_weapon', anim: 'thrust' });
+  const prepared = window.EnemyWeaponStances.preparedEnemyPose(dual);
+  assert.strictEqual(prepared.pose.neutral.x, dualMain.x); assert.strictEqual(prepared.pose.neutral.pitch, dualMain.pitch);
+  assert.strictEqual(dual._enemyDualWeapon.value, true);
+  // Same class, not a dual weapon: ordinary Light stance.
+  const plain = makeEntity({ weaponKey: 'light_weapon', anim: 'thrust' });
+  assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(plain).pose.neutral.x, lightPose.x);
+  delete window.WeaponToolStances.poses.dualWieldMain; delete window.HobunjiHandToolGrips; delete toolDefs.dagger_weapon;
+}
+
 console.log('test-enemy-weapon-stances: ok');
