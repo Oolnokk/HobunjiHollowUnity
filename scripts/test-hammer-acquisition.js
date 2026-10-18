@@ -18,6 +18,12 @@ for (const metal of ['nativeCopper', 'tinBronze']) {
 const banditWeaponPool = vm.runInNewContext(`${fs.readFileSync('docs/config/weapon-trust-visits.js', 'utf8')}; window.WEAPON_TRUST_VISIT_CONFIG.bandits.weaponShapePool`, { window: {} }); // The production cultural bandit pool must admit ordinary work hammers.
 assert(banditWeaponPool.includes('workhammer'), 'bandits can spawn with a work hammer');
 assert.equal(banditWeaponPool.filter(shape => shape === 'workhammer').length, 1, 'work hammer receives one ordinary equal-weight pool entry');
+const liveBanditConfig = vm.runInNewContext(fs.readFileSync('docs/config/weapon-trust-visits.js', 'utf8') + '; window.WEAPON_TRUST_VISIT_CONFIG', { window: {} }); // Uses the shipped cultural-bandit config rather than a synthetic pool.
+const banditTestWindow = { WEAPON_TRUST_VISIT_CONFIG: liveBanditConfig, BanditCombat: { init() {} } }; // Minimal singleton needed for the actual cultural bandit bridge to accept combat dependencies.
+vm.runInNewContext(fs.readFileSync('docs/js/weapon-trust-bandit-loadouts.js', 'utf8'), { window: banditTestWindow });
+banditTestWindow.BanditCombat.init({ HELD_SHAPE_DEFS: window.shapes, TOOL_ITEM_DEFS: window.defs }); // Supplies the same generated catalog consumed by the real selection filter.
+const allowedBanditShapes = banditTestWindow.WeaponTrustBanditLoadouts.allowedMeleeShapes('unrelated-species'); // Ensures a non-cultural bandit can genuinely select a hammer.
+assert(allowedBanditShapes.includes('workhammer'), 'real bandit loadout filter admits work hammers for ordinary species');
 vm.runInContext(fs.readFileSync('docs/js/weapon-trust-visits.js', 'utf8'), context);
 const gear = { tools: {}, harlyaoRelics: {} }; // Simulates purchasing and unbinding across smith menu refreshes.
 window.MetalCraftShop.init({ UNLOCKED_TOOL_SHAPES: window.unlocked, TOOL_SHAPE_DEFS: window.shapes, TOOL_ITEM_DEFS: window.defs, getGearInventory: () => gear });

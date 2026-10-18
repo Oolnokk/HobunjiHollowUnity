@@ -12,6 +12,16 @@ load('docs/js/town-mine.js');
 load('docs/js/foundry-shop.js');
 load('docs/js/hand-tool-grips.js');
 const api = window.ModularWeapons, mine = window.TownMine; // Public feature APIs under test.
+assert.equal(api.getConfig().heads.kylie.dmgType, 'blunt', 'the shipped modular Kylie head must be blunt');
+const staleKylieDraft = JSON.parse(JSON.stringify(api.getConfig())); // Simulates a player-authored attachment draft saved before Kylies became blunt.
+staleKylieDraft.heads.kylie.dmgType = 'sharp';
+api.replace(staleKylieDraft);
+assert.equal(api.getConfig().heads.kylie.dmgType, 'blunt', 'imported older attachment drafts cannot silently restore sharp Kylie damage');
+const modularEditorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8'); // Checks that the standalone editor loads the same committed Kylie catalog as gameplay.
+const gameplayHtml = fs.readFileSync('docs/index.html', 'utf8');
+const modularEditorConfigVersion = modularEditorHtml.match(/\.\.\/\.\.\/config\/modular-weapons\.js\?v=([^"']+)/)?.[1]; // Referenced only in this runtime/editor version parity assertion.
+const gameplayConfigVersion = gameplayHtml.match(/config\/modular-weapons\.js\?v=([^"']+)/)?.[1]; // The game page's current modular config cache token.
+assert(modularEditorConfigVersion && modularEditorConfigVersion === gameplayConfigVersion, 'standalone Modular Weapon Editor and gameplay load the same Kylie head config version');
 const defs = {}, shapes = { dagger: { animStyle: 'thrust', weaponIdleClass: 'light' }, bshuakauitl: { animStyle: 'sweep', weaponIdleClass: 'light' } }; // Donor behavior must remain independent of head type.
 const metals = { nativeCopper: { label: 'Copper', hex: '#B87333' } }; // Single tier is enough to exercise deterministic registration.
 api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
