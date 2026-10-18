@@ -505,28 +505,48 @@
 
   // Hands follow the held-item holder directly. Bottle: right hand on the neck (+Z of the
   // holder because the plane is laid flat end-for-end). Large: right/left hands on either side.
+  // Runs for each hand every frame, so the vectors/quaternions it builds are reused (the sockets it hands
+  // on are clones, so nothing retains them) and the fixed hand rotations are composed once per record.
+  const HELD_ITEM_HAND_ROTATIONS = Object.freeze({
+    bottle: { pitch: 90, yaw: -90, roll: 0 },
+    right: { pitch: 0, yaw: -90, roll: 0 },
+    left: { pitch: 0, yaw: 90, roll: 0 },
+  });
+  function heldItemScratch(record) {
+    if (!record.heldItemScratch) {
+      const THREE = record.THREE;
+      record.heldItemScratch = {
+        holderQuat: new THREE.Quaternion(),
+        position: new THREE.Vector3(),
+        quaternion: new THREE.Quaternion(),
+        rotations: Object.fromEntries(Object.entries(HELD_ITEM_HAND_ROTATIONS).map(([name, rotation]) => [name, quaternionFromDeg(record, rotation)])),
+      };
+    }
+    return record.heldItemScratch;
+  }
+
   function syncRigToHeldItem(record, target) {
-    const THREE = record.THREE;
     const holder = target.holder;
     holder.updateWorldMatrix(true, false);
-    const holderQuat = hierarchyWorldQuaternion(record, holder, new THREE.Quaternion());
+    const scratch = heldItemScratch(record);
+    const holderQuat = hierarchyWorldQuaternion(record, holder, scratch.holderQuat);
     const modelCalibration = modelCalibrationForRecord(record);
-    const place = (side, local, rotationDeg) => {
-      const position = holder.localToWorld(new THREE.Vector3(local.x, local.y, local.z));
-      const quaternion = holderQuat.clone().multiply(quaternionFromDeg(record, rotationDeg));
+    const place = (side, x, y, z, rotationName) => {
+      const position = holder.localToWorld(scratch.position.set(x, y, z));
+      const quaternion = scratch.quaternion.copy(holderQuat).multiply(scratch.rotations[rotationName]);
       const socket = handSocketAfterGripMode(record, { position, quaternion, visualBasis: null });
       record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
     };
     const owners = ensureFallbackState(record).owners;
     if (target.mode === 'large') {
       const edge = target.width / 2 + HELD_LARGE_EDGE_MARGIN;
-      place('right', { x: edge, y: 0, z: 0 }, { pitch: 0, yaw: -90, roll: 0 });
-      place('left', { x: -edge, y: 0, z: 0 }, { pitch: 0, yaw: 90, roll: 0 });
+      place('right', edge, 0, 0, 'right');
+      place('left', -edge, 0, 0, 'left');
       owners.right = 'held-item-two-hand-right';
       owners.left = 'held-item-two-hand-left';
       record.secondaryActive = true;
     } else {
-      place('right', { x: 0, y: 0, z: target.height * (Number(target.neckFraction) || 0.2) }, { pitch: 90, yaw: -90, roll: 0 });
+      place('right', 0, 0, target.height * (Number(target.neckFraction) || 0.2), 'bottle');
       applyFallbackSide(record, 'left');
       owners.right = 'held-item-bottle-neck';
       record.secondaryActive = false;

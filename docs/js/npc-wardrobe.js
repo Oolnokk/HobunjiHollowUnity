@@ -444,19 +444,18 @@
       panel.querySelector('#npcWardrobeClose').addEventListener('click', closeWardrobePanel);
       panel.querySelectorAll('.npc-wardrobe-store').forEach(btn => btn.addEventListener('click', async () => {
         if (await storeWornItem(npcId, btn.dataset.cosmeticId)) {
-          deps?.showToast?.('Stored ' + (btn.dataset.label || 'the garment') + '. Outfit updated.', true);
+          deps?.showToast?.('Stored ' + (btn.dataset.label || 'the garment') + '. They will change at bedtime.', true);
           render();
         }
       }));
       panel.querySelectorAll('.npc-wardrobe-take-worn').forEach(btn => btn.addEventListener('click', async () => {
-        if (await takeWornItem(npcId, btn.dataset.cosmeticId)) {
-          deps?.showToast?.('Took ' + (btn.dataset.label || 'the garment') + '. They will change at bedtime.', true);
-          render();
-        }
+        const taken = await takeWornItem(npcId, btn.dataset.cosmeticId);
+        if (taken) deps?.showToast?.('Took ' + (btn.dataset.label || 'the garment') + '. They will change at bedtime.', true);
+        render(); // The garment has left the worn list even if the bag transfer then failed, so redraw either way.
       }));
       panel.querySelectorAll('.npc-wardrobe-wear').forEach(btn => btn.addEventListener('click', async () => {
         if (await wearStoredItem(npcId, btn.dataset.uid)) {
-          deps?.showToast?.('Put on ' + (btn.dataset.label || 'the garment') + '.', true);
+          deps?.showToast?.('Put on ' + (btn.dataset.label || 'the garment') + '. They will change at bedtime.', true);
           render();
         }
       }));

@@ -71,7 +71,7 @@ function draw() {
   lightingWindow.WeatherFX.drawLightingOverlay();
 }
 draw();
-assert.equal(fills[0], 'rgba(0,0,0,0.97)', 'windowless rooms are nearly black outside local light pools');
+assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'windowless rooms are 80% dark outside local light pools');
 assert.equal(gradients[0].radius, 4.8, 'carried interior lantern radius doubles');
 assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 1], 'interior lantern fades linearly across its whole radius');
 localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];

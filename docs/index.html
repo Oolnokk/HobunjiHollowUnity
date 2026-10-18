@@ -173,7 +173,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261010h76d5f7b"></script>
   <script src="js/png-plane-avatar.js?v=20261017h64afb2a"></script>
-  <script src="js/species-pose-scaling.js?v=20261017h7ae8f70"></script>
+  <script src="js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
@@ -181,7 +181,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261017hde78e84"></script>
+  <script src="js/held-action-animations.js?v=20261018hd4b0473"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261017hf727ba3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -351,7 +351,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261017h1203e14"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261018had66c1f"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -373,7 +373,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261008he9050ff"></script>
-  <script src="js/alchemy-flasks.js?v=20261017hfeaf043"></script>
+  <script src="js/alchemy-flasks.js?v=20261018h0709af9"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -685,7 +685,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261017h8c2a3b0"></script>
+  <script src="js/cloud-forest-fog.js?v=20261018hf0a8f2f"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -2479,7 +2479,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20261017h15f80ae"></script>
-  <script src="js/sprite-recolor.js?v=20261017h71c197e"></script>
+  <script src="js/sprite-recolor.js?v=20261018heb4dd84"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>

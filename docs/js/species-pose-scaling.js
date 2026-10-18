@@ -208,6 +208,8 @@
 
   // Compatibility surface retained for older callers. Y must never be derived from a plain-number poseOrbitScale:
   // the orbit's own Y multiplier is 1 unless a species authors it, and Y is otherwise owned by the rigger-height mapping below.
+  // An authored Y multiplier pivots on the centroid here but on the hand anchor (baseY) in transformPosePoint, which is the
+  // authority: every shipped consumer calls it first and only falls back to this when it is missing.
   function scalePointAroundCentroid(point, cx, cy, cz, armLength, poseOrbitScale, yawRad = 0) {
     if (!point) return point;
     const axes = axesForPose(poseOrbitScale, armLength);
