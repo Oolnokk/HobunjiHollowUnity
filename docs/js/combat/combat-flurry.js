@@ -18,7 +18,7 @@
   let WINDUP_S = 0.0525, STRIKE_S = 0.085;
   let NEXT_STRIKE_MIN_S = 0.10, NEXT_STRIKE_BASE_S = 0.42, NEXT_STRIKE_DECAY_PER_STRIKE = 0.026;
   let MOVE_SPEED_MUL_BASE = 1.15, MOVE_SPEED_MUL_PER_STRIKE = 0.05, MOVE_SPEED_MUL_MAX = 1.9;
-  let HOLD_S = 0.49125;
+  let HOLD_S = 0.245625;
   let GLOW_FULL_S = 3.0; // Used to expand/brighten the Counter-Shield-style weapon glow while the button remains held.
   const GLOW_COLOR = 0xc7a7ff;
 

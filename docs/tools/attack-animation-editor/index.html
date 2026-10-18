@@ -298,7 +298,7 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-<script src="../../js/held-action-animations.js?v=20261018hd4b0473"></script>
+<script src="../../js/held-action-animations.js?v=20261018h50191f0"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -1259,11 +1259,11 @@ const TOOL_PRESETS = [
   { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'attack', toolKey: 'crossbow', still: false,
     neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
   { id: 'crossbow_fire', label: 'Crossbow — Fire', name: 'Crossbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'crossbowLoaded', still: false,
-    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
+    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.052356020942408384, strikeFrac: 0.08376963350785342, holdFrac: 0.13089005235602094, durationS: 0.9932 },
   { id: 'scatterbow_load', label: 'Scatterbow — Load', name: 'Scatterbow Load', style: 'ranged', sequence: 'attack', toolKey: 'scatterbow', still: false,
     neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
   { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'scatterbowLoaded', still: false,
-    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
+    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.052356020942408384, strikeFrac: 0.08376963350785342, holdFrac: 0.13089005235602094, durationS: 0.9932 },
 ];
 // TOOL_PRESETS are internal animation templates now. The user selects a real
 // gameplay Action; the action registry below chooses the appropriate template.

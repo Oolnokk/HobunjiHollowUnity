@@ -32,7 +32,7 @@
 
   let STRIKE_S = 0.30;
   let POWER = 1.70;
-  let HOLD_S = 0.5;
+  let HOLD_S = 0.25;
   let LUNGE_HOP_UNITS = 0.45;
   const GLOW_COLOR = 0xffc85a;
   const GLOW_FLARE_DURATION_S = 0.17; // Short enough for the 48% and 50% milestones to read as two distinct flashes.

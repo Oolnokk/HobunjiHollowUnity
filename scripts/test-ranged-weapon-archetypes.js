@@ -53,7 +53,7 @@ const windowObject = {
     },
     weaponThrowSpin: {
       name: 'Weapon Throw (Spin)', style: 'chop', sequence: 'attack', gripMode: 'palm-parallel',
-      durationS: 1.04, windupFrac: 0.49, strikeFrac: 0.57, holdFrac: 0.82,
+      durationS: 0.91, windupFrac: 0.56, strikeFrac: 0.6514285714285714, holdFrac: 0.7942857142857143,
       spinBasisDeg: 0, spinRevolutions: 2.5, projectileSpin: true,
       poses: {
         neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { grip: true, palmNormal: true } },
@@ -63,7 +63,7 @@ const windowObject = {
     },
     weaponThrowSpearSpin: {
       name: 'Fishing Spear Throw (Offset Spin)', style: 'chop', sequence: 'attack', gripMode: 'palm-parallel',
-      durationS: 1.04, windupFrac: 0.49, strikeFrac: 0.57, holdFrac: 0.82,
+      durationS: 0.91, windupFrac: 0.56, strikeFrac: 0.6514285714285714, holdFrac: 0.7942857142857143,
       toolEndFlip: true, spinBasisDeg: 90, spinRevolutions: 2.5, projectileSpin: false, projectileLockAlignment: true, projectileBasisDeg: -90,
       poses: {
         neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { grip: true, palmNormal: true } },
@@ -236,7 +236,7 @@ assert.match(attackEditorSource, /anim\.toolEndFlip = data\.toolEndFlip === true
 assert.match(heldActionSource, /name:\s*'Weapon Throw \(Spin\)'/, 'Shared held-action library must expose Weapon Throw (Spin).');
 assert.match(heldActionSource, /name:\s*'Fishing Spear Throw \(Offset Spin\)'[\s\S]*toolEndFlip:\s*true[\s\S]*spinBasisDeg:\s*90/, 'Fishing spear shared action must preview the same end-flipped +90-degree held basis that runtime uses.');
 
-assert.match(heldActionSource, /durationS:\s*1\.04[\s\S]*windupFrac:\s*0\.49[\s\S]*strikeFrac:\s*0\.57[\s\S]*holdFrac:\s*0\.82/, 'Weapon Throw (Spin) must retain the supplied authored timing.');
+assert.match(heldActionSource, /durationS:\s*0\.91[\s\S]*windupFrac:\s*0\.56[\s\S]*strikeFrac:\s*0\.651428[\s\S]*holdFrac:\s*0\.794285/, 'Weapon Throw (Spin) must preserve non-Hold stage lengths while shortening Strike hold.');
 assert.match(heldActionSource, /gripMode:\s*'palm-parallel'/, 'Weapon Throw (Spin) must retain the supplied palm-parallel grip mode.');
 assert.match(rangedWeaponsSource, /gripMode:\s*def\.gripMode\s*\|\|\s*null/, 'Ranged action playback must forward authored grip mode metadata.');
 assert.match(gripRuntimeSource, /beginHeld:\s*beginHeldMode/, 'Procedural hand grip runtime must expose the held-grip lifecycle to ranged visuals.');
@@ -324,8 +324,8 @@ assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.projecti
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.projectileEmbedOnTerrain, false, 'Blowgun darts do not inherit thrown-weapon terrain embedding by accident.');
 for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
-  assert.ok(Math.abs(cfg.chargeWindupS - 0.5096) < 1e-9, `${key} must use Weapon Throw (Spin)'s 1.04s × 0.49 authored windup.`);
-  assert.ok(Math.abs(cfg.fireDurationS - 0.5304) < 1e-9, `${key} release must use the remainder of Weapon Throw (Spin)'s authored duration.`);
+  assert.ok(Math.abs(cfg.chargeWindupS - 0.5096) < 1e-9, `${key} must use Weapon Throw (Spin)'s 0.91s × 0.56 authored windup.`);
+  assert.ok(Math.abs(cfg.fireDurationS - 0.4004) < 1e-9, `${key} release must use the remainder of Weapon Throw (Spin)'s authored duration.`);
   assert.strictEqual(cfg.gripMode, 'palm-parallel', `${key} must use Weapon Throw (Spin)'s authored palm-parallel grip.`);
 }
 assert.strictEqual(windowObject.RangedWeapons.config.hatchet_copper.chargePose.neutral.roll, -82, 'Hatchet uses Weapon Throw (Spin) exactly as authored.');
@@ -400,7 +400,7 @@ equippedRanged = 'kylie_copper';
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin a thrown hold.');
 assert.match(windowObject.RangedWeapons.playerActionLabel('kylie_copper'), /^Release /);
-assert.strictEqual(rangedVisuals.at(-1).durationS, 1.04, 'Thrown hold must use the real authored animation duration, not a synthetic hours-long timer.');
+assert.strictEqual(rangedVisuals.at(-1).durationS, 0.91, 'Thrown hold must use the real authored animation duration, not a synthetic hours-long timer.');
 assert.strictEqual(rangedVisuals.at(-1).options.held, true, 'Thrown press must hold the real ranged animation at Windup.');
 assert.strictEqual(rangedVisuals.at(-1).options.pose.windup.roll, -92, 'Thrown hold visual must use Weapon Throw (Spin) Windup rather than the old flask throw.');
 assert.strictEqual(rangedVisuals.at(-1).options.pose.strike.roll, -88, 'Thrown hold/release visual must retain the authored Strike endpoint for the post-release rotation.');

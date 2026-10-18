@@ -51,9 +51,9 @@ assert.ok(stagedCall, 'expected the first sweep to start a gameplay hit action')
 const visualStrikeAtS = visualCall.durationS * visualCall.opts.strikeFrac; // Exact time the pose interpolation reaches authored Strike.
 assert.ok(Math.abs(stagedCall.windupS - visualStrikeAtS) < 1e-9, `impact ${stagedCall.windupS}s must equal visual Strike ${visualStrikeAtS}s`);
 assert.strictEqual(stagedCall.strikeS, 0, 'the hit fires at the endpoint rather than starting another post-impact strike interval');
-// Forehand: windup 0.345s, strike interpolation 0.07s, hold 0.43s (halved).
+// Forehand: windup 0.345s, strike interpolation 0.07s, hold 0.215s (halved).
 assert.ok(Math.abs(stagedCall.windupS - (0.345 + 0.07)) < 1e-9, 'Forehand impact lands at windup + strike');
-assert.ok(Math.abs(visualCall.opts.holdS - 0.43) < 1e-9, 'Forehand hold is 0.43s');
+assert.ok(Math.abs(visualCall.opts.holdS - 0.215) < 1e-9, 'Forehand hold is 0.215s');
 
 // The editor shows Forehand Swing with its 'hatchet_swing' template (ACTION_DEFS);
 // the game must play exactly those poses.

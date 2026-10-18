@@ -32,12 +32,12 @@ const progressAfter = (wallElapsedMs, remainingS) => {
   return window.WeaponToolStances.getRuntimeState().combatProgress;
 };
 
-// Forehand-like swing: 0.415s windup+strike, 0.43s hold, ~0.145s automatic return tail.
-deps.triggerWeaponSwingVisual(0.415, { anim: 'sweep', windupFrac: 0.83, strikeFrac: 1, holdS: 0.43, pose: window.AttackPoseTemplates?.poseFor?.('hatchet_swing') || undefined });
-assert.ok(Math.abs(window.WeaponToolStances.getRuntimeState().combatHoldFrac - 0.853) < 0.01, 'normalized hold end');
+// Forehand-like swing: 0.415s windup+strike, 0.215s hold, ~0.145s automatic return tail.
+deps.triggerWeaponSwingVisual(0.415, { anim: 'sweep', windupFrac: 0.83, strikeFrac: 1, holdS: 0.215, pose: window.AttackPoseTemplates?.poseFor?.('hatchet_swing') || undefined });
+assert.ok(Math.abs(window.WeaponToolStances.getRuntimeState().combatHoldFrac - 0.813) < 0.01, 'normalized hold end');
 
 // One real second passes, but game.js only advanced 0.3s of its capped clock.
-const totalS = 0.415 + 0.415 * 0.35 + 0.43; // Matches game.js: windup+strike, proportional return tail, then the explicit hold.
+const totalS = 0.415 + 0.415 * 0.35 + 0.215; // Matches game.js: windup+strike, proportional return tail, then the explicit hold.
 const followed = progressAfter(1000, totalS - 0.3);
 assert.ok(Math.abs(followed - 0.3 / totalS) < 1e-6, `stance follows the game clock, got ${followed}`);
 assert.ok(followed < window.WeaponToolStances.getRuntimeState().combatWindupFrac, 'the game is still in Windup, so no later phase may be reported');
