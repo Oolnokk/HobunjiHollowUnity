@@ -277,6 +277,12 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   assert.ok([4,9,16].includes(seedWest.length)&&[4,9,16].includes(seedEast.length),
     'Each room receives its own initial solid 2x2–4x4 puddle');
+  const meshes=()=>{const result=new Map();t.kit.root.traverse(mesh=>{
+    if(mesh.name?.startsWith('kanthic_plasm_connected_room_'))result.set(mesh.name,mesh);
+  });return result;};
+  const originalWest=meshes().get('kanthic_plasm_connected_room_0');
+  const originalEast=meshes().get('kanthic_plasm_connected_room_1');
+  assert.ok(originalWest&&originalEast,'Each room has its own one-piece connected nine-slice surface');
   const pickFarthestCorner=(minX,maxX,seed)=>{
     const points=[[minX+.1,2.1],[maxX-.2,2.1],[minX+.1,11.8],[maxX-.2,11.8]];
     return points.sort((a,b)=>{
@@ -294,6 +300,12 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterGrowth.push(x+','+z);
   assert.ok(eastAfterGrowth.length>seedEast.length,
     'An unseen puddle grows in the room the player actually occupies');
+  assert.equal(meshes().get('kanthic_plasm_connected_room_0'),originalWest,
+    'Updating the east-room grid must not remap or replace the unchanged west-room mesh');
+  assert.equal(originalWest.geometry.disposed,false,'Dormant rooms retain their live nine-slice UV geometry');
+  assert.equal(originalEast.geometry.disposed,true,'Only the changed east room must retire its previous UV geometry');
+  assert.ok(meshes().get('kanthic_plasm_connected_room_1')!==originalEast,
+    'The active room is retextured after its grid changes');
   const westWhileEast=[];
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))westWhileEast.push(x+','+z);
   assert.equal(westWhileEast.length,seedWest.length,
