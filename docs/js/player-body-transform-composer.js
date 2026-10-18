@@ -215,6 +215,7 @@
   function isHeldVisualRoot(child) {
     if (!child?.isObject3D || child === playerLegRoot || isAvatarBodyRoot(child)) return false;
     return child.type === 'Group'
+      && child.userData?.isPngPlane === true // game.js tags the unnamed heldItemHolder via _markPngPlane; do not counter-tilt unrelated rig groups.
       && child.visible !== false
       && !String(child.name || '').trim()
       && hasRenderableDescendant(child);
@@ -266,12 +267,13 @@
     ));
   }
 
-  function resolveDelta(targetKind = 'all', space = 'local') {
+  function resolveDelta(targetKind = 'all', space = 'local', providerName = null) {
     const ordered = Array.from(channels.entries())
       .filter(([, channel]) => {
         if (!channel || channel.enabled === false || channel.space !== space) return false;
         if (targetKind === 'player' && channel.includePlayer === false) return false;
         if (targetKind === 'external' && channel.includeExternal === false) return false;
+        if (targetKind === 'external' && providerName && channel.excludeExternalProviders?.includes(providerName)) return false; // Exclude individual attachments without dropping shoulder pets.
         return true;
       })
       .sort((a, b) => finite(a[1].priority) - finite(b[1].priority) || a[0].localeCompare(b[0]));
@@ -343,6 +345,7 @@
       enabled: contribution.enabled !== false,
       includePlayer: contribution.includePlayer !== false,
       includeExternal: contribution.includeExternal !== false,
+      excludeExternalProviders: Array.isArray(contribution.excludeExternalProviders) ? contribution.excludeExternalProviders.filter(name => typeof name === 'string') : [], // Checked for each scene-sibling attachment during render.
       order: contribution.order || 'YXZ',
       rotation: contribution.rotation ? { ...contribution.rotation } : undefined,
       quaternion: contribution.quaternion?.isQuaternion ? contribution.quaternion.clone() : undefined,
@@ -399,14 +402,33 @@
   function applyWorldChannels(undo, renderDebug) {
     if (!playerMesh) return;
     const bodyDelta = resolveDelta('player', 'world'); // World-aligned movement tilt must survive stance yaw and the final portrait clamp.
-    const externalDelta = resolveDelta('external', 'world'); // Held objects and shoulder pets share the same posterior pivot and tilt.
+    const externalDelta = resolveDelta('external', 'world'); // Early check for any world-space external contributions.
     if (!hasResolvedDelta(bodyDelta) && !hasResolvedDelta(externalDelta)) return;
     const pivot = playerMesh.localToWorld(worldChannelPivot.set(0, playerPosteriorY, 0)); // Uses the final pose's posterior before leaning the whole character.
+    const appliedChannels = new Set(); // Records only channels actually rendered on the player or a registered attachment.
     for (const entry of currentOwnedRootEntries()) {
-      const delta = entry.kind === 'player' ? bodyDelta : externalDelta; // Selects the contribution intended for this visual root.
-      if (hasResolvedDelta(delta)) applyWorldDelta(entry.root, pivot, delta.rotation, delta.translation, undo);
+      const delta = entry.kind === 'player' ? bodyDelta : resolveDelta('external', 'world', entry.providerName); // Tools may opt out of movement lean while shoulder pets keep it.
+      if (!hasResolvedDelta(delta)) continue;
+      applyWorldDelta(entry.root, pivot, delta.rotation, delta.translation, undo);
+      for (const name of delta.applied) appliedChannels.add(name);
     }
-    renderDebug.appliedOrder.push(...new Set([...bodyDelta.applied, ...externalDelta.applied]));
+    // Bag items (including the Kurraya) are children of playerMesh, unlike scene-sibling
+    // toolHolder. They inherit the player's lean even when no external provider selected
+    // that channel. Counter only the inherited channels excluded for 'heldItem', retaining
+    // any world effects explicitly shared with scene-level attachments.
+    const heldDelta = resolveDelta('external', 'world', 'heldItem'); // The desired world transform for held inventory items, excluding run-lean.
+    const heldCorrectionRotation = heldDelta.rotation.clone().multiply(bodyDelta.rotation.clone().invert()); // Converts the already-inherited body delta to the held-item-specific delta.
+    const heldCorrectionTranslation = heldDelta.translation.clone()
+      .sub(bodyDelta.translation.clone().applyQuaternion(heldCorrectionRotation)); // Reverses the inherited translation while preserving allowed world-channel offsets.
+    let compensatedHeldItems = 0; // Exposed in mobile diagnostics to confirm the in-rig correction ran.
+    if (hasResolvedDelta({ rotation: heldCorrectionRotation, translation: heldCorrectionTranslation })) {
+      for (const heldRoot of playerMesh.children.filter(isHeldVisualRoot)) {
+        applyWorldDelta(heldRoot, pivot, heldCorrectionRotation, heldCorrectionTranslation, undo);
+        compensatedHeldItems++;
+      }
+    }
+    renderDebug.heldItemLeanCompensated = compensatedHeldItems;
+    renderDebug.appliedOrder.push(...appliedChannels);
     renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
   }
 
@@ -579,6 +601,7 @@
           enabled: channel.enabled !== false,
           includePlayer: channel.includePlayer !== false,
           includeExternal: channel.includeExternal !== false,
+          excludeExternalProviders: channel.excludeExternalProviders.slice(), // Shown by existing mobile composer diagnostics.
           rotation: channel.rotation || null,
           translation: channel.translation || null,
         })),

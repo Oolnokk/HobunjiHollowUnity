@@ -80,7 +80,7 @@
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
     ['js/controller-modern-flow-bridge.js?v=20261015h04b0f9f', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
-    ['js/player-body-transform-composer.js?v=20261017h195c463', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20261018h298f8c3', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260918shoulderparity3', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
@@ -132,7 +132,7 @@
     ['js/combat/ranged-camera-focus.js?v=20260930rangedconverge1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 12],
     ['js/combat/combat-camera-alignment-bridge.js?v=20260928meleereticle1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 6],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
-    ['js/drunk-prone-composition-bridge.js?v=20261017h74ca59c', () => !!window.HobunjiDrunkProneCompositionBridge],
+    ['js/drunk-prone-composition-bridge.js?v=20261018h298f8c3', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
     ['js/combat/combat-grehlr-burrow.js?v=20261015h500aab2', () => !!window.HobunjiGrehlrBurrow],
