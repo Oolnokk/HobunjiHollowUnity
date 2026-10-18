@@ -28,16 +28,20 @@
 
   const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261017toolstance1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
-  const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
-  const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']);
-  const RAD_TO_DEG = 180 / Math.PI;
+  // The pose schema, the legacy rest poses and the stance-baking policy (power,
+  // spacing, Neutral handedness) are window.SharedAttackPose's, shared with
+  // EnemyWeaponStances so the player and every BanditCombat humanoid bake an
+  // attack against a Light/Heavy stance identically.
+  const SAP = window.SharedAttackPose;
+  const POSE_KEYS = SAP.POSE_KEYS;
+  const normalizePose = SAP.normalizePose;
 
   // game.js's legacy rest poses. These remain the source basis for ordinary tool
-  // mode and for converting old procedural combat arcs into pose-driven attacks.
+  // mode (the idle holder pose below).
   const ENGINE_NEUTRAL_POSES = Object.freeze({
-    thrust: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
-    sweep: Object.freeze({ x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0 }),
-    chop: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }),
+    thrust: SAP.STYLE_NEUTRAL_POSE.thrust,
+    sweep: SAP.STYLE_NEUTRAL_POSE.sweep,
+    chop: SAP.STYLE_NEUTRAL_POSE.chop,
   });
 
   // Mirrors docs/config/combat/weapon-idle-stances.json so a missing fetch never
@@ -66,15 +70,6 @@
     dualWieldMain: { ...DEFAULT_IDLE_STANCES.dualWieldMain },
     dualWieldOffhand: { ...DEFAULT_IDLE_STANCES.dualWieldOffhand },
   };
-
-  function normalizePose(raw, fallback) {
-    const pose = {};
-    for (const key of POSE_KEYS) {
-      const value = Number(raw?.[key]);
-      pose[key] = Number.isFinite(value) ? value : Number(fallback?.[key]) || 0;
-    }
-    return pose;
-  }
 
   function clonePose(pose) {
     return normalizePose(pose, {});
@@ -250,57 +245,6 @@
     return now < holderMotionBusyUntil;
   }
 
-  // Bake game.js's old procedural attack endpoints into the generic pose schema.
-  // Once an attack has a pose object, game.js's own fourPhaseLerp() can use the
-  // active Heavy/Light stance as Neutral for the real Neutral→Windup→Strike→Neutral cycle.
-  function legacyProceduralEndpoints(anim, power) {
-    const p = Number.isFinite(Number(power)) ? Number(power) : 1;
-    if (anim === 'chop') {
-      const neutral = ENGINE_NEUTRAL_POSES.chop;
-      const rawWindup = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13, bodyYaw: -29, roll: -112 };
-      const rawStrike = { x: 0, y: 0, z: 0.12, pitch: 13, yaw: -28, bodyYaw: 29, roll: -91 };
-      const scaleFromNeutral = raw => {
-        const out = {};
-        for (const key of POSE_KEYS) out[key] = neutral[key] + (raw[key] - neutral[key]) * p;
-        return out;
-      };
-      return { windup: scaleFromNeutral(rawWindup), strike: scaleFromNeutral(rawStrike) };
-    }
-    if (anim === 'sweep') {
-      return {
-        windup: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: -2.20 * RAD_TO_DEG * p, roll: 0 },
-        strike: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 2.12 * RAD_TO_DEG * p, roll: 0 },
-      };
-    }
-    // Thrust's pitch is intentionally not power-scaled in game.js; the reach,
-    // lateral offset, tool yaw and body yaw are.
-    return {
-      windup: { x: 0, y: 0, z: -0.40 * p, pitch: 10.31, yaw: 0, bodyYaw: -45 * p, roll: 0 },
-      strike: { x: -0.23 * p, y: 0, z: 0.32 * p, pitch: 1, yaw: -45 * p, bodyYaw: 46 * p, roll: 0 },
-    };
-  }
-
-  function bakeAuthoredEndpoint(raw, sourceNeutral, power) {
-    const out = { ...raw }; // Keep independently authored hand flags while baking only transform channels.
-    for (const key of POSE_KEYS) {
-      const rawValue = Number(raw?.[key]);
-      const endpoint = Number.isFinite(rawValue) ? rawValue : sourceNeutral[key];
-      out[key] = sourceNeutral[key] + (endpoint - sourceNeutral[key]) * power;
-    }
-    return out;
-  }
-
-  // game.js mirrors x/yaw/roll/bodyYaw after interpolating them whenever dirSign
-  // is -1. Convert a desired visible Neutral handedness back into the input pose
-  // that will produce it after that runtime mirror is applied.
-  function neutralInputForSigns(targetNeutral, visibleSign, runtimeSign) {
-    const out = {};
-    for (const key of POSE_KEYS) {
-      out[key] = MIRRORED_POSE_KEYS.has(key) ? targetNeutral[key] * visibleSign * runtimeSign : targetNeutral[key];
-    }
-    return out;
-  }
-
   function prepareCombatOptions(rawOpts = {}) {
     const state = activeState();
     const useDualWieldIdle = dualWieldIdleRequested(rawOpts);
@@ -309,53 +253,31 @@
 
     const anim = rawOpts.anim || state.def?.animStyle || 'thrust';
     const authoredPose = rawOpts.pose && typeof rawOpts.pose === 'object' ? rawOpts.pose : null;
-    const requestedSign = rawOpts.dirSign === -1 ? -1 : 1;
-    // Legacy procedural thrust/chop never used combatSwingSign; preserve that.
-    const effectiveSign = authoredPose || anim === 'sweep' ? requestedSign : 1;
-    const alternatesHeavyNeutral = weaponIdleClass(state.itemKey, state.def) === 'heavy';
-    // Heavy swings finish ready on the opposite side. A mirrored/backhand swing
-    // therefore starts mirrored and returns to the regular Heavy idle; a regular
-    // swing does the inverse. Light weapons retain their one-sided idle stance.
-    const startNeutralSign = alternatesHeavyNeutral ? effectiveSign : 1;
-    const returnNeutralSign = alternatesHeavyNeutral ? -effectiveSign : 1;
     const powerValue = Number(rawOpts.power);
     const power = Number.isFinite(powerValue) ? powerValue : 1;
-    let windup;
-    let strike;
 
-    if (authoredPose) {
-      const styleNeutral = ENGINE_NEUTRAL_POSES[anim] || ENGINE_NEUTRAL_POSES.thrust;
-      const sourceNeutral = normalizePose(authoredPose.neutral, styleNeutral);
-      windup = bakeAuthoredEndpoint(authoredPose.windup, sourceNeutral, power);
-      strike = bakeAuthoredEndpoint(authoredPose.strike, sourceNeutral, power);
-    } else {
-      ({ windup, strike } = legacyProceduralEndpoints(anim, power));
-    }
-
-    // All offensive melee endpoints pass through one shared Mao'ao-space
-    // calibration after their original power/pose math is baked.  The helper
-    // applies the uploaded +Y lift, measures this endpoint's character-local
-    // direction/range, and extends it by the Forehand-derived phase delta
-    // without replacing its original direction with Forehand's accidental X.
-    if (rawOpts.meleeSpacing !== false && anim !== 'ranged' && window.MeleePoseSpacing?.adjustEndpoint) {
-      windup = window.MeleePoseSpacing.adjustEndpoint(windup, 'windup');
-      strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
-    }
+    // The stance policy (legacy-arc / authored endpoints with power baked in, the shared melee spacing calibration,
+    // the sign rule, and Heavy weapons' alternating start/return Neutral) is SharedAttackPose.bakeStanceSequence,
+    // the same function every enemy bakes with. Only the hand-flag decoration below is player-side.
+    const sequence = SAP.bakeStanceSequence(anim, authoredPose, rawOpts.dirSign === -1 ? -1 : 1, power, targetNeutral, {
+      alternatesHeavyNeutral: weaponIdleClass(state.itemKey, state.def) === 'heavy',
+      meleeSpacing: rawOpts.meleeSpacing !== false,
+    });
 
     return {
       ...rawOpts,
       anim,
-      dirSign: effectiveSign,
+      dirSign: sequence.effectiveSign,
       // Windup/strike are already baked to the exact endpoints the old animation
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign) },
-        returnNeutral: neutralInputForSigns(targetNeutral, returnNeutralSign, effectiveSign),
-        neutralMirrorSign: startNeutralSign,
-        returnNeutralMirrorSign: returnNeutralSign,
-        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...windup },
-        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...strike },
+        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral },
+        returnNeutral: sequence.returnNeutral,
+        neutralMirrorSign: sequence.startNeutralSign,
+        returnNeutralMirrorSign: sequence.returnNeutralSign,
+        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.windup },
+        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.strike },
       },
     };
   }

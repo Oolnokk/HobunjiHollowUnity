@@ -1,4 +1,8 @@
-// Dual-wield presentation shared by gameplay and the Attack Animation Editor.
+// Dual-wield presentation shared by gameplay, the Attack Animation Editor and every
+// humanoid that holds a dual-wield weapon. The player has one state; each enemy that
+// holds a dual-wield weapon gets its own (keyed by its avatar root, driven by that
+// actor's own grip state and animated holder), so a Dagger-wielding bandit shows the
+// same two copies, offhand idle stance and main-hand lag the player does.
 //
 // The authored/original weapon plane remains the transform authority but becomes
 // material-hidden while dual wield is active. Two transform-following roots live
@@ -19,7 +23,8 @@
   const MAIN_HAND_LAG_MS = 45; // Small visual follow lag behind the offhand/original weapon transform.
   const HISTORY_WINDOW_MS = 240; // Keeps enough parent poses to resolve the short lag through low-FPS frames.
   const ACTIVE_EPSILON = 0.0001;
-  let state = null;
+  const PLAYER_KEY = 'player'; // The local player's state; every other actor is keyed by its avatar root.
+  const states = new Map(); // key -> per-actor duplicate state.
   let editorOffhandAuthoring = false; // Attack Editor only: the holder IS the offhand weapon while its idle stance is being dragged.
 
   function clamp01(value) {
@@ -67,6 +72,28 @@
       idleBlend: clamp01(fallback?.dualWieldIdleBlend),
       source: fallback?.source || 'animation',
     };
+  }
+
+  // ── Per-actor contexts ─────────────────────────────────────────────
+  // A humanoid that is not the local player publishes its animated holder and its own grip state on
+  // its avatar root (see combat-bandit.js updateBanditToolMesh); that root is its key.
+  function keyFor(record) {
+    const root = record?.avatarRoot;
+    return root?.userData?.proceduralHandToolHolder ? root : PLAYER_KEY;
+  }
+
+  function actorContext(record) {
+    const root = record?.avatarRoot;
+    const holder = root?.userData?.proceduralHandToolHolder || null;
+    const visual = holder?.children?.find(child => child.visible !== false && child.userData?.toolPlane?.isObject3D) || holder?.children?.[0] || null;
+    const plane = visual?.userData?.toolPlane || null;
+    return { visual, plane, holder, bodyRoot: root || null, source: 'actor' };
+  }
+
+  // The actor's own animation grip (hand-tool-grips animationGripAt, evaluated against ITS weapon and swing).
+  function actorDualState(record) {
+    const grip = record?.avatarRoot?.userData?.proceduralHandAnimationGrip || null;
+    return { influence: clamp01(grip?.dualWieldInfluence), idleBlend: clamp01(grip?.dualWieldIdleBlend), source: grip?.source || 'animation' };
   }
 
   function materialList(material) {
@@ -141,15 +168,15 @@
     for (const record of current?.originalMaterials || []) if (record.material) record.material.visible = false;
   }
 
-  function teardown() {
-    const old = state;
+  function teardown(key = PLAYER_KEY) {
+    const old = states.get(key);
     if (!old) return;
     restoreOriginalMaterial(old);
     old.mainRoot?.parent?.remove?.(old.mainRoot);
     old.offRoot?.parent?.remove?.(old.offRoot);
     disposeOwnedMaterial(old.mainMesh?.material);
     disposeOwnedMaterial(old.offMesh?.material);
-    state = null;
+    states.delete(key);
   }
 
   function hierarchyWorldQuaternion(node, target) {
@@ -169,9 +196,9 @@
     return target.set(source.x, -source.y, -source.z, source.w).normalize();
   }
 
-  function bakedWorldQuaternion(node, target) {
-    if (state && node.matrixWorld?.decompose) {
-      node.matrixWorld.decompose(state.worldPositionScratch, target, state.worldScaleScratch);
+  function bakedWorldQuaternion(node, target, current) {
+    if (current?.worldPositionScratch && node.matrixWorld?.decompose) {
+      node.matrixWorld.decompose(current.worldPositionScratch, target, current.worldScaleScratch);
       return target.normalize();
     }
     return hierarchyWorldQuaternion(node, target);
@@ -204,7 +231,7 @@
   function currentPlanePose(current, target = null) {
     const pose = target || { position: new current.plane.position.constructor(), quaternion: new current.plane.quaternion.constructor() };
     pose.position.setFromMatrixPosition(current.plane.matrixWorld);
-    bakedWorldQuaternion(current.plane, pose.quaternion);
+    bakedWorldQuaternion(current.plane, pose.quaternion, current);
     return pose;
   }
 
@@ -277,7 +304,7 @@
     // the part Mirror Animation also mirrors by negating toolBase.x. Runtime's
     // holder is scene-level, so deriving the anchor from the baked holder pose is
     // more reliable than assuming a particular parent hierarchy.
-    const bakedHolderWorld = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
+    const bakedHolderWorld = !inAttackEditor() && current.source === 'runtime' ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null; // Only the player's holder goes through the stance owner's baked matrix; an actor's holder matrix is its own.
     const holderWorld = s.holderWorld.copy(bakedHolderWorld || current.holder.matrixWorld);
     const holderPosition = s.holderPosition;
     const holderQuaternion = s.holderQuaternion;
@@ -337,7 +364,7 @@
     if (!root) return;
     const { localPosition, desiredWorldPosition, basePosition, baseQuaternion, localQuaternion, inverseCurrentQuaternion } = current.lagScratch;
 
-    if (state !== current || !current.plane?.parent) return;
+    if (states.get(current.key) !== current || !current.plane?.parent) return;
     const now = global.performance?.now?.() ?? Date.now();
     recordParentHistory(current, now);
     const currentPose = currentPlanePose(current, frameScratch(current).currentPose);
@@ -352,7 +379,7 @@
     setRootToward(root, localPosition, localQuaternion, current.influence);
   }
 
-  function buildState(context) {
+  function buildState(context, key, record) {
     const plane = context.plane;
     if (!plane?.parent) return null;
     const mainRoot = makeRoot(plane, 'main');
@@ -370,6 +397,8 @@
     plane.add(mainRoot);
     const next = {
       ...context,
+      key,
+      record,
       mainRoot,
       offRoot,
       mainMesh,
@@ -387,20 +416,23 @@
       lastHistoryFrame: null,
       originalMaterials: materialList(plane.material).map(material => ({ material, visible: material.visible !== false })),
     };
-    state = next;
+    states.set(key, next);
     return next;
   }
 
-  function syncNow() {
-    const context = currentContext();
+  function syncNow(record = null) {
+    const key = keyFor(record);
+    const context = key === PLAYER_KEY ? currentContext() : actorContext(record);
     if (!context.visual || !context.plane) {
-      teardown();
+      teardown(key);
       return null;
     }
-    if (state && (state.visual !== context.visual || state.plane !== context.plane)) teardown();
-    const dual = currentDualState();
-    if (!state && dual.influence <= ACTIVE_EPSILON) return null;
-    const current = state || buildState(context);
+    const existing = states.get(key);
+    if (existing && (existing.visual !== context.visual || existing.plane !== context.plane)) teardown(key);
+    const dual = key === PLAYER_KEY ? currentDualState() : actorDualState(record);
+    const found = states.get(key);
+    if (!found && dual.influence <= ACTIVE_EPSILON) return null;
+    const current = found || buildState(context, key, record);
     if (!current) return null;
     current.influence = dual.influence;
     current.idleBlend = dual.idleBlend;
@@ -448,7 +480,7 @@
   }
 
   function transformSocketForHand(record, side, socketFrame) {
-    const current = syncNow();
+    const current = syncNow(record);
     if (!current || current.influence <= ACTIVE_EPSILON || !socketFrame?.position || !socketFrame?.quaternion) return socketFrame;
     const weapon = side === 'right' ? current.mainMesh : current.offMesh;
     if (!weapon?.matrixWorld || !current.plane?.matrixWorld) return socketFrame;
@@ -464,8 +496,8 @@
     const position = planeLocalPosition.clone().applyMatrix4(weapon.matrixWorld);
 
     const Quaternion = weapon.quaternion.constructor;
-    const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion());
-    const weaponWorldQ = bakedWorldQuaternion(weapon, new Quaternion());
+    const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion(), current);
+    const weaponWorldQ = bakedWorldQuaternion(weapon, new Quaternion(), current);
     const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
     const mirroredChild = side === 'left'; // Flip the offhand grip independently of the weapon sprite's facing.
     const childLocalQ = mirroredChild
@@ -488,11 +520,12 @@
     };
   }
 
-  function resetPoseHistory() {
-    if (!state) return;
-    state.history.length = 0;
-    state.lastHistoryAt = -Infinity;
-    state.lastHistoryFrame = null;
+  function resetPoseHistory(record = null) {
+    const current = states.get(keyFor(record));
+    if (!current) return;
+    current.history.length = 0;
+    current.lastHistoryAt = -Infinity;
+    current.lastHistoryFrame = null;
   }
 
   function setEditorIdlePreview(active) {
@@ -512,7 +545,9 @@
   }
 
   function debugSnapshot() {
+    const state = states.get(PLAYER_KEY) || null; // The local player's duplicates; actors are counted separately below.
     return {
+      actorStates: states.size - (state ? 1 : 0),
       active: !!state && state.influence > ACTIVE_EPSILON,
       influence: state?.influence || 0,
       idleBlend: state?.idleBlend || 0,
@@ -534,6 +569,17 @@
     };
   }
 
+  // Pre-render: the player, then every actor that currently has duplicates. An actor whose holder left the scene
+  // (despawned, or its animated holder was cleared) is torn down here, so no removal path needs its own hook.
+  function syncAll() {
+    syncNow();
+    for (const [key, actor] of [...states]) {
+      if (key === PLAYER_KEY) continue;
+      if (!actor.holder?.parent || !actor.record?.avatarRoot?.parent) teardown(key);
+      else syncNow(actor.record);
+    }
+  }
+
   global.HobunjiDualWieldWeaponVisuals = {
     syncNow,
     teardown,
@@ -541,14 +587,14 @@
     transformSocketForHand,
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
-    editorMainCopy: () => (state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null), // The visible main-hand weapon when Dual Wield is showing both copies.
-    editorOffhandCopy: () => (state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null), // The visible offhand weapon the Attack Editor gizmo should pivot on.
+    editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.
+    editorOffhandCopy: () => { const state = states.get(PLAYER_KEY); return state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null; }, // The visible offhand weapon the Attack Editor gizmo should pivot on.
     debugSnapshot,
     constants: Object.freeze({ DUPLICATE_Z_GAP, HALF_Z_SEPARATION, MAIN_HAND_LAG_MS }),
   };
 
   if (global.RuntimeFrameScheduler?.register) {
-    global.RuntimeFrameScheduler.register('dual-wield-weapon-visuals', syncNow, {
+    global.RuntimeFrameScheduler.register('dual-wield-weapon-visuals', syncAll, {
       phase: 'pre-render',
       owner: 'HobunjiDualWieldWeaponVisuals',
       description: 'Maintains hidden-original dual weapon duplicates, plane-normal separation, authored idle offhand placement, and small main-hand attack lag.',

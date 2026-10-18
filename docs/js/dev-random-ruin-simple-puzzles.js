@@ -299,8 +299,8 @@
       nearest={t:interval.enter,object,kind,record};
     };
     for(const canopy of state.canopies)consider(canopy.slab,'canopy',canopy);
-    for(const glyph of state.ceilingGlyphs)if(!glyph.active){consider(glyph.mesh,'glyph',glyph);if(glyph.rune)consider(glyph.rune,'glyph',glyph);}
-    for(const target of state.projectileTargets)if(!target.active&&target.hittable?.()!==false)consider(target.object,'target',target); // Composer-owned targets (e.g. js/dev-random-ruin-rail-targets.js).
+    for(const glyph of state.ceilingGlyphs)if(!glyph.active)consider(glyph.hitMesh||glyph.mesh,'glyph',glyph); // Aim at the decaled block, not its ceiling sconce.
+    for(const target of state.projectileTargets)if(!target.active&&target.hittable?.()!==false)consider(target.hitMesh||target.object,'target',target); // Rail support hardware is not an oversized projectile hitbox.
     return nearest;
   }
 
@@ -308,7 +308,7 @@
     if(!glyph||glyph.active)return false;
     glyph.active=true;glyph.hitCount++;
     playStoneUnlockKchunk();
-    glyph.material.color.setHex(0x4dff6e);
+    glyph.visual?.setActive(true); // All four decaled block faces turn green together.
     deps?.showToast?.(glyph.message,true);
     try{glyph.onActivate?.(glyph);}catch(error){console.warn('[Random Test Ruin] ceiling glyph activation failed',error);}
     return true;
@@ -1241,20 +1241,16 @@
 
   function buildCeilingGlyphModule(context,room,anchor,options={}) {
     const ceilingBase=Number(context.meta?.floorSurfaceY)||0,wallHeight=Number(context.meta?.wallHeight)||3;
-    const ceilingY=ceilingBase+wallHeight-.34;
+    const ceilingY=ceilingBase+wallHeight; // Actual textured-ceiling/wall-top datum; no -0.34 floating target translation.
     const x=Number(anchor?.x),z=Number(anchor?.z);
     if(!Number.isFinite(x)||!Number.isFinite(z))return null;
-    const material=makeBasic(0xff8a2a); // Orange until struck, green after — same language as the V50 glyph block decals.
-    const mesh=new THREE.Mesh(sharedCylinderGeometry(.29,.29,.10,8),material);
-    mesh.rotation.x=Math.PI*.5; // Thin octagonal stone target faces horizontally into the room just below the ceiling.
-    mesh.position.set(x,ceilingY,z);
-    mesh.name='dev_ruin_modular_ceiling_glyph_'+room.id+'_'+state.ceilingGlyphs.length;
-    mesh.userData.devRandomRuinModularGlyph=true;
-    state.group.add(mesh);
-    const glyph={id:'ceiling-glyph-'+room.id+'-'+state.ceilingGlyphs.length,roomId:String(room.id),mesh,material,active:false,hitCount:0,onActivate:typeof options.onActivate==='function'?options.onActivate:null,message:options.message||'Ceiling glyph struck.'};
-    // A dull disc on the ceiling was nearly invisible; the shared glowing rune
-    // hangs just below it (and is the part players aim at).
-    glyph.rune=window.DevRandomRuinGlyphCircuits?.attachRune?.(state.group,new THREE.Vector3(x,ceilingY-.24,z),{hex:0x8fe6ff,name:'dev_ruin_glyph_marker_'+glyph.id,isActive:()=>glyph.active})||null;
+    const visual=window.DevRandomRuinCeilingTargetVisuals?.create?.(
+      {sharedBoxGeometry,makeBasic,naturalizeStone},
+      {parent:state.group,name:'dev_ruin_modular_ceiling_glyph_'+room.id+'_'+state.ceilingGlyphs.length,x,y:ceilingY,z}
+    );
+    if(!visual)return null;
+    visual.object.userData.devRandomRuinModularGlyph=true;
+    const glyph={id:'ceiling-glyph-'+room.id+'-'+state.ceilingGlyphs.length,roomId:String(room.id),mesh:visual.object,hitMesh:visual.hitMesh,visual,ceilingY,active:false,hitCount:0,onActivate:typeof options.onActivate==='function'?options.onActivate:null,message:options.message||'Ceiling glyph struck.'};
     state.ceilingGlyphs.push(glyph);
     recordModulePlacement('ceilingProjectileGlyph','ceiling',glyph.id,{roomId:String(room.id)});
     return glyph;
@@ -1270,7 +1266,7 @@
       if(!rope){removeCyclingElevator(elevator);continue;} // Without its rope chain the lift has no purpose here; withdrawing it keeps the pit free (a leftover lift here once shared a pit with a later ambient one).
       const glyph=buildCeilingGlyphModule(context,room,{x:elevator.x,z:elevator.z},{onActivate:()=>activateCyclingElevator(elevator),message:'Ceiling glyph struck — the stone lift starts moving.'});
       if(!glyph){elevator.active=true;return rope;}
-      const canopy=buildStoneCanopyModule(context,room,rope.startPlatform,{occludePoint:{x:glyph.mesh.position.x,y:glyph.mesh.position.y,z:glyph.mesh.position.z}}); // Balcony roof is dimensioned from the actual target ray, so it physically prevents the shortcut shot before the rope crossing.
+      const canopy=buildStoneCanopyModule(context,room,rope.startPlatform,{occludePoint:{x:glyph.mesh.position.x,y:glyph.mesh.position.y+glyph.visual.hitOffsetY,z:glyph.mesh.position.z}}); // Balcony roof is dimensioned from the actual target ray, so it physically prevents the shortcut shot before the rope crossing.
 
       let lowerShell=null,ossuary=null,nextDoorMechanismId=null;
       if(elevator.annexBounds&&elevator.annexDoorway){
@@ -2318,7 +2314,7 @@
       chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount),pitches:set.plates.map(plate=>CHORD_PITCHES[plate.index]||1)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
-      ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount})),
+      ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount,ceilingMountGap:+glyph.visual.attachmentGap(glyph.ceilingY).toFixed(3),mountConnected:glyph.visual.attachmentGap(glyph.ceilingY)<=0})),
       liftRejects:state.liftRejects.slice(),
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,ambientLift:!!elevator.liftEnd,width:+elevator.width.toFixed(3),depth:+elevator.depth.toFixed(3),chestId:elevator.chest?.id||null,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3),currentY:+(elevator.currentTopY??elevator.topTopY).toFixed(3),playerRiding:!!elevator.playerRiding})),
       sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length,released:module.coffins.filter(coffin=>coffin.released).length})),
@@ -2353,7 +2349,7 @@
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
     // composer targets), for the proximity hum; [] outside the ruin.
     listProjectileTargets:()=>!state||!inRuin()?[]:[
-      ...state.ceilingGlyphs.map(glyph=>({object:glyph.rune||glyph.mesh,active:glyph.active})),
+      ...state.ceilingGlyphs.map(glyph=>({object:glyph.hitMesh||glyph.mesh,active:glyph.active})),
       ...state.projectileTargets.map(target=>({object:target.object,active:target.active||target.hittable?.()===false})),
     ],
     snapshot,

@@ -743,8 +743,16 @@
   }
 
   function buildTexturedCeiling(meta) {
-    const cells=Array.isArray(meta?.floorCells)?meta.floorCells:[]; // Uses the authored walkable ruin footprint so ceiling coverage follows rooms/hallways instead of becoming one giant rectangle.
-    if(!cells.length)return null;
+    const walkableCells=Array.isArray(meta?.floorCells)?meta.floorCells:[]; // Hallways and ordinary traversable surfaces.
+    const ceilingCells=new Map(); // Includes the full room footprint, even above sunken elevator/basin openings without walkable floor cells.
+    for(const pair of walkableCells)if(Array.isArray(pair)&&pair.length>=2&&Number.isFinite(Number(pair[0]))&&Number.isFinite(Number(pair[1])))ceilingCells.set(Number(pair[0])+','+Number(pair[1]),[Number(pair[0]),Number(pair[1])]);
+    for(const room of meta?.rooms||[]) {
+      const col=Number(room.col),row=Number(room.row),w=Math.floor(Number(room.w)),h=Math.floor(Number(room.h));
+      if(![col,row,w,h].every(Number.isFinite)||w<1||h<1||w>128||h>128)continue;
+      for(let dx=0;dx<w;dx++)for(let dz=0;dz<h;dz++)ceilingCells.set((col+dx)+','+(row+dz),[col+dx,row+dz]);
+    }
+    const cells=ceilingCells.values(); // A single ceiling mesh, not separate floating patches above each target.
+    if(!ceilingCells.size)return null;
     const cs=worldCellSize(meta); // Converts V50's half-cell layout into the same 2x game-world scale used by the floor and walls.
     const ceilingY=(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Shared wall-top datum; sunken rooms keep the same structural ceiling height and longer support pillars.
     const positions=[]; // Downward-wound cell quads make the ceiling visible from inside but invisible from the overhead camera.
@@ -763,7 +771,7 @@
     const mesh=new THREE.Mesh(geometry,fallback);
     mesh.name='dev_random_ruin_textured_ceiling';
     mesh.userData.devRandomRuinCeiling=true;
-    mesh.userData.devRandomRuinCeilingCells=cells.length;
+    mesh.userData.devRandomRuinCeilingCells=ceilingCells.size;
     mesh.userData.devRandomRuinCeilingY=ceilingY;
     mesh.material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'});
     window.HobunjiSurfaceStretchUV?.mapMesh?.(mesh,{label:'ruin-ceiling',maxPatchWorldSize:6});

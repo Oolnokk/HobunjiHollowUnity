@@ -21590,7 +21590,15 @@
       let combatSwingAimTargetOverride = null; // Optional finite world point used by fishing so a camera move cannot redirect the held throw away from the selected water tile.
       let combatSwingToolEndFlip = false; // Requests the same visible tip↔handle in-plane reversal previewed by the Attack Animation Editor.
       let fishingThrowSpinVisual = null; // Carries the shared thrown-weapon spin basis/revolutions while the harpoon slot owns a fishing throw pose.
-      const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
+      // Swing interpolation, per-style rest poses and pose / legacy-arc sampling
+      // are shared with every BanditCombat humanoid (bandits, ghouls, skeletons,
+      // ...): editing js/combat/shared-attack-pose.js changes the player and
+      // enemies together. Only WHERE the sampled channels are placed stays here.
+      const SharedAttackPose = window.SharedAttackPose;
+      const fourPhaseLerp = SharedAttackPose.fourPhaseLerp; // Also used by heldActionPoseAt for held-item actions.
+      const STYLE_NEUTRAL_POSE = SharedAttackPose.STYLE_NEUTRAL_POSE; // Each tool style's rest pose; also handed to BanditCombat.init.
+      const _toolPoseSample = SharedAttackPose.createSample(); // Reused every frame by updateToolMesh's SharedAttackPose sampling.
+      const _swingTimelineScratch = { totalS: 0, wf: 0, sf: 0, hf: 0 }; // Reused by triggerWeaponSwingVisual's SharedAttackPose.swingTimeline.
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
@@ -21731,23 +21739,17 @@
         // auto-derived from SF in updateToolMesh, without needing any
         // per-ability changes in the combat-*.js files. Callers that already
         // reserved their own returnS (strikeFrac < 1) are left untouched.
-        const hasOwnReturn = strikeFrac < 0.999;
-        const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
-        // Reserve an explicit post-strike hold (if this ability's config asked
-        // for one) on top of whatever windup/strike/return it already
-        // budgeted — additive, rather than carving it out of durationS, so
-        // the windup/strike/return real-world timings stay exactly as
-        // authored; the pause is just inserted between strike and return.
+        // The tail / hold / fraction math is SharedAttackPose.swingTimeline, shared with enemies so their swings last as long.
         const holdS = Math.max(0, opts.holdS || 0);
-        const totalS = durationS + returnTailS + holdS;
-        toolSwingDur = Math.max(0.05, totalS);
+        const timeline = SharedAttackPose.swingTimeline(_swingTimelineScratch, durationS, windupFrac, strikeFrac, holdS);
+        toolSwingDur = timeline.totalS;
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
         combatSwingAnim = opts.anim || null;
         combatSwingSign = opts.dirSign || 1;
-        combatSwingWindupFrac = windupFrac * durationS / totalS;
-        combatSwingStrikeFrac = strikeFrac * durationS / totalS;
+        combatSwingWindupFrac = timeline.wf;
+        combatSwingStrikeFrac = timeline.sf;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
@@ -22620,44 +22622,10 @@
         return style || 'thrust';
       }
 
-      // Four-phase neutral→windup→strike→hold→neutral interpolation, shared by
-      // every pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
-      // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
-      // the editor's authored pose JSON describe the exact same motion. The
-      // hold phase (sf→hf) dwells exactly at the strike value before easing
-      // back to neutral, so an impact reads as a clean hit instead of
-      // snapping straight into its recovery.
-      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
-        if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
-        if (progress <= hf) return strikeV;
-        return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / (1.0 - hf));
-      }
-
-      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (combatSwingSequence === 'load') {
-          if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-          return windupV + (returnNeutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
-        }
-        if (combatSwingSequence === 'fire') {
-          if (progress <= sf) return neutralV + (strikeV - neutralV) * (progress / Math.max(0.0001, sf));
-          if (progress <= hf) return strikeV;
-          return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
-        }
-        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV);
-      }
-
-      // Each tool style's natural at-rest pose (degrees for angle channels) —
-      // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
-      // (docs/tools/attack-animation-editor/index.html). Used as the fallback
-      // neutral for the pose-driven combat branch below when a step's own
-      // pose.neutral doesn't specify a channel.
-      const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
-        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
-        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2,   scale: 1 },
-        ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
-      };
+      // fourPhaseLerp, STYLE_NEUTRAL_POSE and the pose / legacy-arc sampling now
+      // live in js/combat/shared-attack-pose.js (window.SharedAttackPose), shared
+      // with every BanditCombat humanoid -- see the declarations near
+      // combatSwingPose above.
 
       const _speciesPoseScaling = window.HobunjiSpeciesPoseScale; // X/Z weapon orbit + rigger-derived Y body-height mapping shared with the Attack Editor.
       const _toolPoseCentroidDebug = {
@@ -22890,9 +22858,7 @@
         // timing is; otherwise fall back to the old proportional-to-
         // what's-left formula (dig/fill/refill, and any combat swing that
         // didn't set holdS).
-        const HF = (combatSwingAnim && combatSwingHoldS > 0)
-          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
-          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        const HF = SharedAttackPose.holdFrac(SF, combatSwingAnim ? combatSwingHoldS : 0, toolSwingDur); // Shared with enemies.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {
@@ -22907,60 +22873,34 @@
           // un-mirrored or mirrored. power scales every channel's deviation
           // from its own neutral, for a heavier-telegraphed finisher,
           // without needing a dedicated bespoke formula per style.
-          const pose = combatSwingPose;
-          const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
-          // pose/styleNeutral are stable references for the whole windup/strike/
-          // return of a single swing (only reassigned at swing start/end), so
-          // the merge below is memoized on those two references instead of
-          // rebuilding both objects every frame of every attack.
-          let neutral, returnNeutral;
-          if (_toolMeshPoseMergeCache.pose === pose && _toolMeshPoseMergeCache.styleNeutral === styleNeutral) {
-            ({ neutral, returnNeutral } = _toolMeshPoseMergeCache);
-          } else {
-            neutral = { ...styleNeutral, ...(pose.neutral || {}) };
-            returnNeutral = { ...neutral, ...(pose.returnNeutral || {}) };
-            _toolMeshPoseMergeCache.pose = pose;
-            _toolMeshPoseMergeCache.styleNeutral = styleNeutral;
-            _toolMeshPoseMergeCache.neutral = neutral;
-            _toolMeshPoseMergeCache.returnNeutral = returnNeutral;
-          }
-          toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
-          const sign = combatSwingSign;
-          const power = combatSwingPower;
+          // All channel math (merge over the style neutral, power, mirroring,
+          // load/fire sequencing, the midline-flip blend) is SharedAttackPose's,
+          // so enemies play the identical pose with the identical formula.
           const poseHoldFrac = combatSwingSequenceHoldFrac ?? HF; // Used to preserve authored ranged holds while melee keeps its derived hold.
-          const hasNeutralMirrorSequence = pose.neutralMirrorSign != null || pose.returnNeutralMirrorSign != null;
-          const startMirrorSign = pose.neutralMirrorSign === -1 ? -1 : 1;
-          const returnMirrorSign = pose.returnNeutralMirrorSign === -1 ? -1 : 1;
-          const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
-          const chan = (ch, mirror = false) => {
-            const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
-            const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
-            const n = neutral[ch] * (mirror ? sign : 1);
-            const rn = returnNeutral[ch] * (mirror ? sign : 1);
-            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n, rn);
-          };
+          const sampled = SharedAttackPose.samplePose(
+            _toolPoseSample, combatSwingPose, STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust,
+            progress, WF, SF, poseHoldFrac, combatSwingSign, combatSwingPower, combatSwingSequence,
+          );
+          toolHolder.scale.setScalar(sampled.scale);
 
           // The hand attachment itself is part of a true midline flip. Keep it
           // on the attack side through impact, then carry it smoothly across
           // during recovery. The flat sprite changes handedness at the midpoint
           // rather than scaling through zero and briefly disappearing.
-          const mirrorBlend = hasNeutralMirrorSequence
-            ? sequencedPoseLerp(progress, WF, SF, poseHoldFrac, sign, sign, startMirrorSign, returnMirrorSign)
-            : 1;
-          const handBaseX = playerToolBaseX * mirrorBlend;
-          posePlaneMirrorSign = hasNeutralMirrorSequence ? (mirrorBlend < 0 ? -1 : 1) : null;
+          const handBaseX = playerToolBaseX * sampled.mirrorBlend;
+          posePlaneMirrorSign = sampled.hasMirrorSequence ? (sampled.mirrorBlend < 0 ? -1 : 1) : null;
 
-          const x = chan('x', true);
-          const y = chan('y');
-          const z = chan('z');
-          const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
-          const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
-          const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
+          const x = sampled.x;
+          const y = sampled.y;
+          const z = sampled.z;
+          const pitchRad   = sampled.pitchRad;
+          const yawRad     = sampled.yawRad;
+          const rollRad    = sampled.rollRad;
           // Fishing holds this throw's windup indefinitely. The authored -152°
           // body twist stays (the spear's frame is authored against it); only
           // the legs counter-rotate below so the feet face the cast tile.
           const fishingThrowHold = activeTool === 'harpoon' && !!fishingThrowSpinVisual;
-          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+          const bodyYawRad = sampled.bodyYawRad;
 
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
@@ -23045,17 +22985,19 @@
           // still arrives at the same +0.32 extension either way.
           // power scales reach/turn for an extra-telegraphed finisher (e.g. a
           // combo's final lunge) without needing its own bespoke anim branch.
+          // The jab arc itself (and its pitch resting at 10.31° rather than 0)
+          // is SharedAttackPose.sampleLegacyThrust, shared with enemy thrusts.
           const power       = combatSwingAnim ? combatSwingPower : 1;
-          const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
-          const jabOff      = fourPhaseLerp(progress, WF, SF, HF, windupBack, 0.32 * power);
-          const lateral     = fourPhaseLerp(progress, WF, SF, HF, 0, -0.23 * power);
-          // Pitch's neutral matches its own windup value (10.31°) rather than
-          // the other channels' implicit 0 — a thrust weapon rests at this
-          // held-up tilt, drops to a near-flat 1° at the strike, then eases
-          // back to the resting tilt instead of snapping flat.
-          const pitchRad    = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
-          const yawRad      = fourPhaseLerp(progress, WF, SF, HF, 0, THREE.MathUtils.degToRad(-45) * power);
-          const bodyYawRad  = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
+          const legacyThrust = SharedAttackPose.LEGACY_THRUST;
+          const thrustSample = SharedAttackPose.sampleLegacyThrust(
+            _toolPoseSample, progress, WF, SF, HF, power,
+            (combatSwingAnim ? legacyThrust.windupBackCombat : legacyThrust.windupBackTool) * power,
+          );
+          const jabOff      = thrustSample.z;
+          const lateral     = thrustSample.x;
+          const pitchRad    = thrustSample.pitchRad;
+          const yawRad      = thrustSample.yawRad;
+          const bodyYawRad  = thrustSample.bodyYawRad;
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -23085,19 +23027,20 @@
           // plays this branch — see combat-charged-breaker.js) doesn't need
           // its own bespoke formula.
           const power   = combatSwingAnim ? combatSwingPower : 1;
-          const neutral = { x: 0.03,  y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2,   roll: -82 };
-          const windup  = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13,  bodyYaw: -29, roll: -112 };
-          const strike  = { x: 0,     y: 0,    z: 0.12,  pitch: 13,   yaw: -28, bodyYaw: 29,  roll: -91 };
-          const scale = (ch, v) => neutral[ch] + (v - neutral[ch]) * power;
-          const chanLerp = ch => fourPhaseLerp(progress, WF, SF, HF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
+          // The raise/slam/return table is SharedAttackPose.LEGACY_CHOP_POSE
+          // (the same endpoints the Light/Heavy stance baker converts).
+          const chopSample = SharedAttackPose.samplePose(
+            _toolPoseSample, SharedAttackPose.LEGACY_CHOP_POSE, STYLE_NEUTRAL_POSE.chop,
+            progress, WF, SF, HF, 1, power, 'attack',
+          );
 
-          const x = chanLerp('x');
-          const y = chanLerp('y');
-          const z = chanLerp('z');
-          const pitchRad   = THREE.MathUtils.degToRad(chanLerp('pitch'));
-          const yawRad     = THREE.MathUtils.degToRad(chanLerp('yaw'));
-          const rollRad    = THREE.MathUtils.degToRad(chanLerp('roll'));
-          const bodyYawRad = THREE.MathUtils.degToRad(chanLerp('bodyYaw'));
+          const x = chopSample.x;
+          const y = chopSample.y;
+          const z = chopSample.z;
+          const pitchRad   = chopSample.pitchRad;
+          const yawRad     = chopSample.yawRad;
+          const rollRad    = chopSample.rollRad;
+          const bodyYawRad = chopSample.bodyYawRad;
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -23222,7 +23165,7 @@
           // combatSwingSign; power (Cleave) scales the whole arc for a heavier finisher.
           const sweepSign = combatSwingAnim ? combatSwingSign : 1;
           const sweepPower = combatSwingAnim ? combatSwingPower : 1;
-          const WINDUP_ANGLE = -2.20 * sweepPower * sweepSign, STRIKE_ANGLE = 2.12 * sweepPower * sweepSign;
+          const WINDUP_ANGLE = SharedAttackPose.LEGACY_SWEEP.windupRad * sweepPower * sweepSign, STRIKE_ANGLE = SharedAttackPose.LEGACY_SWEEP.strikeRad * sweepPower * sweepSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);

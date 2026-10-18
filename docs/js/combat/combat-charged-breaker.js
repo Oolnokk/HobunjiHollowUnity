@@ -447,6 +447,7 @@
     STRIKE_S,
     LUNGE_HOP_UNITS,
     POWER,
+    HOLD_S, // Post-strike pause; enemies hold their strike pose this long before easing back, like the player.
     // Bandit code historically reads WINDUP_S from this table. It now means
     // the real time required to reach the full Windup pose.
     WINDUP_S: MAX_CHARGE_S,
@@ -532,6 +533,7 @@
       STRIKE_S,
       LUNGE_HOP_UNITS,
       POWER,
+      HOLD_S,
       WINDUP_S: MAX_CHARGE_S,
       holdSecondsForPoseCharge,
       chargeCostForPose,

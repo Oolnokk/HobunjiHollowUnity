@@ -28,6 +28,7 @@ Drawn from the commit history (~9k commits) and the periodic review-fix commits.
 8. **Code that is never wired in.** A new module or builder function isn't done until something calls it. Trace the call from `index.html` / the loader / `game.js` to your code, and cover it with a test that executes it.
 9. **Missing-key math.** Inventory/stat lookups that can be `undefined` become `NaN`, and every `NaN < cost` comparison is false — which makes things free. Default missing keys to `0`.
 10. **New CI workflows.** Don't add them; `scripts/test-*.js` is picked up by `regression-suite.yml` automatically (per-feature workflows and ones scoped to scratch branches have gone stale before).
+11. **Forking attack-pose math.** The swing timeline, per-style rest poses, mirroring, legacy thrust/chop/sweep arcs and Light/Heavy stance baking live once in `docs/js/combat/shared-attack-pose.js` (`window.SharedAttackPose`) and drive the player *and* every `BanditCombat` humanoid (bandits, ghouls, skeletons, …). Change them there; don't re-implement a lerp or a neutral table in `game.js`, `combat-bandit.js` or a stance adapter. See `docs/architecture/shared-attack-pose.md`.
 
 Before finishing: `node --check` the files you touched, `node scripts/check-cache-busts.js --fix`, then `node scripts/run-tests.js`.
 

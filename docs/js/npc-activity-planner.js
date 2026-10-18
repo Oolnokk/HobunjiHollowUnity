@@ -103,7 +103,7 @@
   }
 
   function buildCtx(rec, walker) {
-    const day = deps.calendar.day;
+    const day = window.CalendarSystem?.civilDayForRawDay?.() ?? deps.calendar.day; // Agenda seeds track the midnight civil day, not the raw simulation day that advances at 06:00.
     const weekdayName = window.CalendarSystem.currentWeekdayName();
     const nowMin = currentGameMinutes();
     return {

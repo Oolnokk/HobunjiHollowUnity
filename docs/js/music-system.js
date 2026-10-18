@@ -40,6 +40,11 @@
   let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, combatOverrideActive: false, combatSchedulerPausedAt: 0, currentCombatBgm: null, blockUntil: 0 };
   const _furnitureSfxSources = [];
   const _loopingBgs = new Map();
+  const WEATHER_BGS_IDS = new Set(['wind1', 'wind2', 'raingentle', 'rainmid', 'rainheavy']); // Restricts indoor filtering to weather, never birds, nighttime wildlife, furniture, or music.
+  const INDOOR_WEATHER_VOLUME_SCALE = 0.32; // Lets outdoor weather remain audible at a distance through building walls.
+  const INDOOR_WEATHER_CUTOFF_HZ = 780; // Removes outdoor rain/wind brightness while the player is inside.
+  const OUTDOOR_WEATHER_CUTOFF_HZ = 18000; // Restores nearly unfiltered weather on exit.
+  const _weatherBgsFilters = new Map(); // Keeps each loop's single Web Audio media source or failed-filter fallback alive across area changes.
   const _audioDebugLast = new Map();
   const _gameAudioElements = new Set();
   const _gameplayCueDuckOwners = new Set(); // Tracks active one-shot gameplay cues that temporarily suppress the scheduled background soundtrack.
@@ -1469,7 +1474,70 @@
     });
   }
 
-  function setLoopingBgs(id, url, volume) {
+
+  function weatherAcousticsForArea(area) {
+    const indoors = area === 'interior' || !!deps?._isBuildingArea?.(area); // Uses the same building classification as weather lighting and rain rendering.
+    return {
+      indoors,
+      volume: indoors ? INDOOR_WEATHER_VOLUME_SCALE : 1,
+      cutoffHz: indoors ? INDOOR_WEATHER_CUTOFF_HZ : OUTDOOR_WEATHER_CUTOFF_HZ,
+    };
+  }
+
+  function updateWeatherBgsFilter(id, snd, indoors) {
+    if (!WEATHER_BGS_IDS.has(id) || (!indoors && !_weatherBgsFilters.has(snd))) return;
+    let node = _weatherBgsFilters.get(snd); // Reuses the same MediaElementAudioSourceNode when an audio loop comes back outside.
+    if (node?.failed) return; // A captured HTMLMediaElement cannot be captured again after a partial Web Audio setup failure.
+    if (!node) {
+      const ctx = getMusicAudioCtx(); // Reuses the game's gesture-unlocked audio context, not a separately suspended one.
+      if (!ctx || ctx.state !== 'running') return; // The volume-only path must remain audible on browsers without working Web Audio.
+      let source = null; // Allows the fallback to reconnect captured media if a Web Audio filter fails midway through setup.
+      try {
+        source = ctx.createMediaElementSource(snd); // Each weather HTML audio loop can be captured only once.
+        const filter = ctx.createBiquadFilter(); // Filters the loop itself, leaving songs, wildlife, and object SFX untouched.
+        filter.type = 'lowpass';
+        filter.frequency.value = OUTDOOR_WEATHER_CUTOFF_HZ;
+        filter.Q.value = 0.65;
+        source.connect(filter).connect(ctx.destination);
+        node = { ctx, source, filter, cutoffHz: OUTDOOR_WEATHER_CUTOFF_HZ };
+        _weatherBgsFilters.set(snd, node);
+      } catch (error) {
+        if (source) try { source.connect(ctx.destination); } catch (_) {} // Keeps the sound audible even after an unsuccessful media-source capture.
+        _weatherBgsFilters.set(snd, { failed: true, source, ctx }); // Prevents a repeated capture attempt and per-frame exception storm.
+        audioDebug('weather low-pass unavailable for ' + id + ': ' + (error?.message || error), 'weather-filter-' + id, 5000, 'bgs');
+        return; // Direct HTML playback and the indoor volume attenuation still work.
+      }
+    }
+    const cutoffHz = indoors ? INDOOR_WEATHER_CUTOFF_HZ : OUTDOOR_WEATHER_CUTOFF_HZ; // Target used only when the player crosses the building boundary.
+    if (node.cutoffHz === cutoffHz) return;
+    node.cutoffHz = cutoffHz;
+    const frequency = node.filter.frequency; // Smooths a doorway transition without restarting the recording.
+    const now = node.ctx.currentTime;
+    try {
+      frequency.cancelScheduledValues(now);
+      frequency.setTargetAtTime(cutoffHz, now, 0.17);
+    } catch (error) {
+      frequency.value = cutoffHz; // An unsupported filter-automation method must not break the per-frame weather mixer.
+      audioDebug('weather filter ramp unavailable for ' + id + ': ' + (error?.message || error), 'weather-ramp-' + id, 5000, 'bgs');
+    }
+  }
+
+  function getWeatherAudioDebugState() {
+    const area = deps?.getCurrentArea?.() || ''; // Identifies the current scene for mobile-readable audio diagnostics.
+    const acoustics = weatherAcousticsForArea(area); // Reports the same indoor multiplier and cutoff used by the live mixer.
+    const loops = Object.fromEntries([..._loopingBgs.entries()].filter(([id]) => WEATHER_BGS_IDS.has(id)).map(([id, snd]) => [
+      id, {
+        volume: Number(snd.volume.toFixed(3)),
+        target: Number((snd._bgsTargetVolume || 0).toFixed(3)),
+        paused: snd.paused,
+        filtered: !!_weatherBgsFilters.get(snd)?.filter,
+        filterFallback: _weatherBgsFilters.get(snd)?.failed === true, // Mobile diagnostics distinguish an audible unfiltered fallback from a working low-pass.
+      },
+    ])); // Captures weather-layer actual/target levels without relying on desktop devtools.
+    return { area, indoors: acoustics.indoors, volumeScale: acoustics.volume, cutoffHz: acoustics.cutoffHz, contextState: _musicAudioCtx?.state || 'none', loops };
+  }
+
+  function setLoopingBgs(id, url, volume, indoors = false) {
     const v = Math.max(0, Math.min(1, Number(volume) || 0));
     let snd = _loopingBgs.get(id);
     if (!snd && url) {
@@ -1480,6 +1548,7 @@
       _loopingBgs.set(id, snd);
     }
     if (!snd) return;
+    updateWeatherBgsFilter(id, snd, indoors);
     const now = performance.now();
     const elapsedMs = Math.max(0, Math.min(250, now - (snd._bgsLastUpdateAt ?? now)));
     const fadeMs = musicFadeConfig().bgsFadeMs;
@@ -1512,6 +1581,7 @@
     }
     const bgs = audioCfg.bgs || {};
     const exterior = currentArea === 'farm' || currentArea === 'town' || deps._isZoneArea(currentArea);
+    const acoustics = weatherAcousticsForArea(currentArea); // Exterior weather persists through interior transitions at a distant, muffled level.
     const rainy = deps.calendar.isRaining;
     const night = isNightTime();
     // updateExteriorBgs runs every frame; same throttle-peek as the ambient
@@ -1521,9 +1591,10 @@
     }
     setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
     setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night && !rainy ? (bgs.nightbugsVolume ?? 0.34) : 0);
-    const wind01 = exterior ? Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3)) : 0;
-    setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65);
-    setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (exterior ? Math.max(0.15, wind01 * 0.75) : 0));
+    const weatherAudible = exterior || acoustics.indoors; // Wind travels through buildings but never leaks into unrelated underground areas.
+    const wind01 = weatherAudible ? Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3)) : 0;
+    setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65 * acoustics.volume, acoustics.indoors);
+    setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (weatherAudible ? Math.max(0.15, wind01 * 0.75) : 0) * acoustics.volume, acoustics.indoors);
   }
 
   // ── Layered rain audio ──────────────────────────────────────────────
@@ -1559,15 +1630,15 @@
       return;
     }
     const outdoors = currentArea === 'farm' || currentArea === 'town' || deps._isZoneArea(currentArea);
-    const indoors = currentArea === 'interior' || deps._isBuildingArea(currentArea);
-    const intensity = (outdoors && !indoors && deps.calendar.isRaining)
+    const acoustics = weatherAcousticsForArea(currentArea); // Keeps the outdoor rain mix alive, but muffled, throughout building interiors.
+    const intensity = ((outdoors || acoustics.indoors) && deps.calendar.isRaining)
       ? Math.min(1, (deps.calendar.rainStrength || 0) / 3)
       : 0;
     const weights = rainLayerWeights(intensity);
     const master = Math.max(0, Number(audioCfg.rainVolume ?? 1));
-    setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master);
-    setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master);
-    setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master);
+    setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master * acoustics.volume, acoustics.indoors);
+    setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master * acoustics.volume, acoustics.indoors);
+    setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master * acoustics.volume, acoustics.indoors);
   }
 
   function resolveFurnitureSfx(def) {
@@ -1657,6 +1728,7 @@
     const activeKind = _ambientCueState.currentCombatBgm ? 'combat-bgm' : _ambientCueState.currentBgm ? 'bgm' : _ambientCueState.currentCue ? 'cue' : 'none'; // Labels the actual soundtrack owner in the mobile-copyable debug log.
     const world = audioConditionWorld(); // Captures the exact condition values used by live eligibility checks.
     const nightbugs = _loopingBgs.get('nightbugs'); // Reports the formerly inaudible layer's actual and requested mix levels.
+    const weatherMix = getWeatherAudioDebugState(); // Exposes indoor attenuation and low-pass availability in the existing mobile-copyable audio log.
     audioDebug(
       'music scheduler mode=' + _ambientCueState.mode +
       ' owner=' + activeKind +
@@ -1676,6 +1748,12 @@
       'music-gain-diag',
       5000,
       'bgm'
+    );
+    audioDebug(
+      'weather mix area=' + weatherMix.area + ' indoors=' + weatherMix.indoors +
+      ' indoorScale=' + weatherMix.volumeScale + ' cutoffHz=' + weatherMix.cutoffHz +
+      ' ctx=' + weatherMix.contextState + ' loops=' + JSON.stringify(weatherMix.loops),
+      'weather-audio-diag', 5000, 'bgs'
     );
     audioDebug(
       'nightbugs mix volume=' + (nightbugs ? nightbugs.volume.toFixed(3) : 'not-loaded') +
@@ -1708,6 +1786,8 @@
     updateLyreDucking,
     updateExteriorBgs,
     updateRainAudio,
+    weatherAcousticsForArea,
+    getWeatherAudioDebugState,
     updateFurnitureSfxSources,
     resolveFurnitureSfx,
     registerFurnitureSfxSource,

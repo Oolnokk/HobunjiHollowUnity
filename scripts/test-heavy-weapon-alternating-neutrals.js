@@ -18,6 +18,7 @@ global.window = { __farmLog() {} }; // Browser namespace consumed by the runtime
 global.localStorage = { getItem() { return null; } }; // No editor override: exercise committed defaults.
 global.fetch = async () => { throw new Error('offline test'); }; // Prevents a real config request while preserving the fallback path.
 global.performance = { now: () => 1000 }; // Deterministic clock for runtime setup.
+vm.runInThisContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { filename: 'shared-attack-pose.js' }); // Shared pose math the stance runtime delegates to.
 vm.runInThisContext(spacingSource, { filename: spacingPath });
 vm.runInThisContext(source, { filename: modulePath });
 

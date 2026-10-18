@@ -27,7 +27,7 @@
   <script src="js/interior-scene-builder.js?v=20261018h3d30302&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
-  <script src="js/tile-pathfinding.js?v=20260808a"></script>
+  <script src="js/tile-pathfinding.js?v=20261018a"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
@@ -181,7 +181,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261018kyliebluntdw015"></script>
+  <script src="js/held-action-animations.js?v=20261018h032d79e"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261017hf727ba3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -239,7 +239,7 @@
   <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
   <script src="js/wilderness-map-generator.js?v=20261013h80d4318"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20261010h185827e"></script>
+  <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -283,6 +283,10 @@
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
+  <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
+       Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
+       weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
+  <script src="js/combat/shared-attack-pose.js?v=20261018a"></script>
   <script src="js/combat/combat-core.js?v=20261018hudrecover4"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -293,7 +297,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-loadout.js?v=20261017h57a8b88"></script>
+  <script src="js/combat/combat-loadout.js?v=20261018hc14a25d"></script>
   <script src="js/combat/combat-progression.js?v=20261016h8734814"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -307,7 +311,7 @@
   <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261017h4fe16a4"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20261017h77ab128"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261018colors-starved-compendium1"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
@@ -332,7 +336,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261017hdcd3097"></script>
+  <script src="js/combat/combat-bandit.js?v=20261018h7461c9c"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -351,7 +355,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261018had66c1f"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261018h73097dd"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -512,7 +516,7 @@
        then), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.BanditCombatLog.init(...) during its own setup. -->
-  <script src="js/bandit-combat-log.js?v=20260915enemydodge1"></script>
+  <script src="js/bandit-combat-log.js?v=20261018h99fb547"></script>
   <!-- Wilderness AI snapshot capture, AI/Claude review tool for the whole
        Porakaneki camp network + den wildlife (window.WildernessAiSnapshot) —
        reads window.PorakanekiCamps/window.CalendarSystem at capture time
@@ -660,7 +664,7 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20261010h4dceade"></script>
+  <script src="js/weather-fx.js?v=20261018indoorweather"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261013h3b89898"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
@@ -2482,7 +2486,7 @@
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261012he2aea15"></script>
+  <script src="js/audio-system.js?v=20261018indoorweather"></script>
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20261017h17ab1e9"></script>
@@ -2491,7 +2495,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261017hd26af6b"></script>
+  <script src="js/music-system.js?v=20261018indoorweather"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2561,16 +2565,16 @@
        call time, not parse time) but all four must load before
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
-  <script src="js/npc-agenda.js?v=20260902a"></script>
+  <script src="js/npc-agenda.js?v=20261018a"></script>
   <script src="js/npc-activities.js?v=20260902d"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
-  <script src="js/npc-activity-planner.js?v=20260902d"></script>
+  <script src="js/npc-activity-planner.js?v=20261018b"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
        checks — window.NpcScheduling) — must load before game.js, which
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261017hf291bfa"></script>
+  <script src="js/npc-scheduling.js?v=20261018a"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2594,7 +2598,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261018h3370480"></script>
+  <script src="js/npc-pathfinding.js?v=20261018a"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
@@ -2636,7 +2640,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261016hf7502f8"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261018targethum1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2666,7 +2670,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261018kyliebluntdw015"></script>
+  <script src="game.js?v=20261018hba33e03"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261018worldstory1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

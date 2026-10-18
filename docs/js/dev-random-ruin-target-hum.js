@@ -113,7 +113,9 @@
       }
       return out.copy(center);
     }
-    return entry.object.getWorldPosition(out);
+    entry.object.getWorldPosition(out);
+    out.y += Number(entry.object.userData?.devRuinProjectileHumOffsetY) || 0; // Moving ceiling targets hum at their decaled block, not at the attached carriage; hidden-state checks still use the parent group.
+    return out;
   }
 
   function update(kit, now) {
