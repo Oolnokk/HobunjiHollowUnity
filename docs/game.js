@@ -20444,14 +20444,17 @@
       let _cameraHorizontalSafeDistance = null; // Smoothed X/Z boom extension; obstructions retract immediately, clear space extends gradually.
       let _cameraHorizontalUpdatedAt = 0; // Real-time reference for frame-rate-independent horizontal collision recovery.
       let _cameraHorizontalArea = null; // Prevents a previous building's wall from shortening another area's camera.
+      let _cameraHorizontalShotSignature = null; // A hard cut must not inherit the preceding paragraph's eased wall clearance.
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         const originalIdealX = idealX, originalIdealZ = idealZ; // Authored X/Z intent, preserved for diagnostics.
         const horizontalObstacles = currentAreaOcclusionMeshes(); // Same tagged walls/furniture used by the existing full 3D boom collision.
         const horizontalSqueezeEnabled = _isBuildingArea(currentArea) || cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.(); // Do not add lateral rays to ordinary outdoor gameplay.
-        if (_cameraHorizontalArea !== currentArea || _occlusionCameraMode !== activeCameraMode) {
+        const shotSignature = window.CinematicCameraRuntime?.activeRecord?.()?.signature || null;
+        if (_cameraHorizontalArea !== currentArea || _occlusionCameraMode !== activeCameraMode || _cameraHorizontalShotSignature !== shotSignature) {
           _cameraHorizontalSafeDistance = null;
           _cameraHorizontalUpdatedAt = 0;
           _cameraHorizontalArea = currentArea;
+          _cameraHorizontalShotSignature = shotSignature;
         }
         const hx = idealX - lookAtX, hy = idealY - lookAtY, hz = idealZ - lookAtZ; // True tilted camera trajectory; a fixed-Y probe would miss lower walls.
         const reach = Math.hypot(hx, hz);
