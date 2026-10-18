@@ -388,7 +388,7 @@
     if (activeRoot && activeRoot !== root) buildAuditForRoot(activeRoot);
     if (!root) return;
     const badge = document.getElementById('devRandomRuinBadge');
-    if (badge && !badge.dataset.prototypeHookBase) updateBadge();
+    if (badge && !badge._ruinDebugBadgeParts?.hooks) updateBadge();
     const now = performance.now();
     const last = frameUpdate._last || now;
     const dt = clamp((now-last)/1000, 0, .05);
