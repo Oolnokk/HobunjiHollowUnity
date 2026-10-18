@@ -110,7 +110,14 @@
     if (saved) return saved.opening || '';
     const progress = legacyValue(stateKey(profile));
     if (progress) return progress;
-    return legacyValue(STATE_PREFIX + ':' + profile?.characterId + ':' + profile?.worldId) === 'complete' ? 'complete' : '';
+    const legacyComplete = legacyValue(STATE_PREFIX + ':' + profile?.characterId + ':' + profile?.worldId) === 'complete';
+    if (legacyComplete) {
+      // Carry old per-character completion into the current world-scoped key
+      // when a legacy session does not yet expose its portable world record.
+      changeStory(profile, { opening: 'complete' });
+      return 'complete';
+    }
+    return '';
   }
 
   function writeProgress(profile, value) {
@@ -374,6 +381,10 @@
     const hours = gameHours(); // Recorded at the final farm-tour Continue, rather than when the tour starts.
     if (hours === null) return;
     if (Number.isFinite(storedStory(profile)?.farmTourCompletedAtHours)) return;
+    // In a legacy/no-portable-world session, preserve the stored completion
+    // time rather than restarting Jubmir's 12-hour countdown after a reload.
+    const legacyRaw = legacyValue(tourKey(profile) + ':completed-hours');
+    if (legacyRaw != null && legacyRaw.trim() !== '' && Number.isFinite(Number(legacyRaw))) return;
     changeStory(profile, { farmTourCompletedAtHours: hours }); // Portable world-scoped farm-tour timestamp.
   }
 
