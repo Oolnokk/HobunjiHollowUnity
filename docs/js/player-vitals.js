@@ -86,6 +86,104 @@
     return kinds.split(' ').filter(Boolean).map(kind => ' vb-effect-' + kind).join('');
   }
 
+  // Real player-HUD silhouettes. Normalized SVG viewBoxes avoid measuring layout
+  // every tick; the short jagged shapes are seeded, stable and memoized.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const SVG_HEIGHT = 40;
+  const STARVED_PATH = 'M 0 0 C 6 5.7 14 6.2 32 6.2 L 68 6.2 C 86 6.2 94 5.7 100 0 L 100 40 C 94 34.3 86 33.8 68 33.8 L 32 33.8 C 14 33.8 6 34.3 0 40 Z';
+  const jaggedPaths = new Map();
+
+  function stableSeed(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function jaggedPath(key, fraction) {
+    // Approximately one cut per second interval, with 25-40% inward depth.
+    // Fewer vertices on narrower segments keep chips short and legible.
+    const intervals = Math.max(4, Math.min(24, 2 * Math.round(fraction * 12)));
+    const cacheKey = key + ':' + intervals;
+    if (jaggedPaths.has(cacheKey)) return jaggedPaths.get(cacheKey);
+    let random = stableSeed(key);
+    const rand = () => {
+      random += 0x6D2B79F5;
+      let x = random;
+      x = Math.imul(x ^ (x >>> 15), x | 1);
+      x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+    const vertices = [];
+    const top = ['M 0 0'];
+    for (let i = 1; i < intervals; i++) {
+      const x = (i + (rand() - .5) * .22) * 100 / intervals;
+      const inset = i % 2 === 1 ? SVG_HEIGHT * (.25 + rand() * .15) : 0;
+      top.push('L ' + x.toFixed(2) + ' ' + inset.toFixed(2));
+      vertices.push([x, inset]);
+    }
+    top.push('L 100 0', 'L 100 ' + SVG_HEIGHT);
+    for (let i = intervals - 1; i >= 1; i--) {
+      const x = (i + (rand() - .5) * .22) * 100 / intervals;
+      const inset = i % 2 === 1 ? SVG_HEIGHT * (.25 + rand() * .15) : 0;
+      top.push('L ' + x.toFixed(2) + ' ' + (SVG_HEIGHT - inset).toFixed(2));
+    }
+    top.push('L 0 ' + SVG_HEIGHT, 'Z');
+    const path = top.join(' ');
+    jaggedPaths.set(cacheKey, path);
+    return path;
+  }
+
+  function svgElement(tag) {
+    return document.createElementNS(SVG_NS, tag);
+  }
+
+  function shapeSvg(kind) {
+    const svg = svgElement('svg');
+    svg.setAttribute('viewBox', '0 0 100 ' + SVG_HEIGHT);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add('vb-shape-svg', 'vb-' + kind + '-svg');
+    // The opaque dark backing removes the former rectangular fill AND its
+    // straight rim, so the coloured outline really follows the deformed mesh.
+    const ground = svgElement('rect');
+    ground.setAttribute('x', '0');
+    ground.setAttribute('y', '0');
+    ground.setAttribute('width', '100');
+    ground.setAttribute('height', String(SVG_HEIGHT));
+    ground.setAttribute('fill', '#000');
+    const path = svgElement('path');
+    path.setAttribute('fill', '#777');
+    path.setAttribute('stroke', '#000');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.append(ground, path);
+    return { svg, path };
+  }
+
+  function ensureBrittleShape(segment, key, fraction, color) {
+    if (!segment._vbShape) {
+      segment._vbShape = shapeSvg('brittle');
+      segment.appendChild(segment._vbShape.svg);
+    }
+    const path = jaggedPath(key, fraction);
+    const shape = segment._vbShape.path;
+    if (shape.getAttribute('d') !== path) shape.setAttribute('d', path);
+    if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
+  }
+
+  function ensureStarvedCap(cap, color) {
+    if (!cap._vbShape) {
+      cap._vbShape = shapeSvg('starved');
+      cap._vbShape.path.setAttribute('d', STARVED_PATH);
+      cap.appendChild(cap._vbShape.svg);
+    }
+    const shape = cap._vbShape.path;
+    if (shape.getAttribute('fill') !== color) shape.setAttribute('fill', color);
+  }
+
   function drawAfflictionSegments(nodes, pieces, denominator) {
     const previous = nodes.segmentsByKey;
     const next = new Map();
@@ -105,8 +203,11 @@
       const width = ((piece.end - piece.start) / denominator * 100).toFixed(1) + '%';
       if (segment.style.left !== left) segment.style.left = left;
       if (segment.style.width !== width) segment.style.width = width;
-      if (segment.style.backgroundColor !== piece.color) segment.style.backgroundColor = piece.color;
+      const brittle = BRITTLE_EFFECTS.has(piece.id);
+      const base = brittle ? 'transparent' : piece.color;
+      if (segment.style.backgroundColor !== base) segment.style.backgroundColor = base;
       if (segment.style.color !== piece.color) segment.style.color = piece.color;
+      if (brittle) ensureBrittleShape(segment, key, (piece.end - piece.start) / denominator, piece.color);
       next.set(key, segment);
       order.push(segment);
     }
@@ -158,7 +259,15 @@
       // reducesEffectiveMax metadata; honor the observed drop in capacity.
       const capAfflicted = activeAfflictions.some(([id, def]) =>
         def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth');
-      nodes.cap.classList.toggle('is-withered', !nodes.cap.hidden && capAfflicted);
+      const withered = !nodes.cap.hidden && capAfflicted;
+      nodes.cap.classList.toggle('is-withered', withered);
+      if (withered) {
+        const reducer = activeAfflictions
+          .filter(([id, def]) => def.reducesEffectiveMax === true || id === 'drunkenFooting' || id === 'woundedHealth')
+          .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))[0];
+        const reducerColor = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors?.[reducer?.[0]] || '#666';
+        ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
+      }
       if (!nodes.cap.hidden) {
         nodes.cap.style.left = (effectiveMax / denominator * 100).toFixed(1) + '%';
         nodes.cap.style.width = (missingCapacity / denominator * 100).toFixed(1) + '%';

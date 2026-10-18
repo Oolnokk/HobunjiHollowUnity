@@ -8,15 +8,20 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function element(id) {
-  const classes = new Set(); // Tracks visibility/exhaustion classes without requiring a browser.
+  const classes = new Set();
+  const attributes = {};
   return {
     id, children: [], textContent: '', style: {}, hidden: true, title: '',
     classList: {
+      add(...items) { for (const item of items) classes.add(item); },
       toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
       contains(name) { return classes.has(name); },
     },
+    append(...children) { this.children.push(...children); },
+    appendChild(child) { this.children.push(child); return child; },
     replaceChildren(...children) { this.children = children; },
-    setAttribute(name, value) { this[name] = value; },
+    setAttribute(name, value) { attributes[name] = String(value); this[name] = String(value); },
+    getAttribute(name) { return attributes[name] ?? null; },
   };
 }
 
@@ -33,7 +38,8 @@ const context = {
   performance: { now: () => 0 },
   document: {
     getElementById: id => elements.get(id) || null,
-    createElement: tag => ({ tag, className: '', style: {}, title: '' }),
+    createElement: tag => element(tag),
+    createElementNS: (_namespace, tag) => element(tag),
   },
 };
 context.window = context;
@@ -88,7 +94,17 @@ assert.equal(elements.get('vbHealthSegments').children[0], bleedingSpan, 'CSS an
 player.afflictions.bleedingHealth = 0;
 refresh();
 assert.equal(elements.get('vbHealthSegments').children.length, 1, 'lower-priority affliction becomes visible after strong one clears');
-assert(elements.get('vbHealthSegments').children[0].className.includes('vb-effect-brittle'), 'bruising shows short fractures');
+const bruisedSpan = elements.get('vbHealthSegments').children[0];
+assert(bruisedSpan.className.includes('vb-effect-brittle'), 'bruising gets a real jagged path');
+assert.equal(bruisedSpan.style.backgroundColor, 'transparent', 'rectangular band replaced by actual silhouette');
+assert.equal(bruisedSpan.children[0].tag, 'svg', 'inline SVG renders the bar mesh');
+const bruisePath = bruisedSpan.children[0].children[1].getAttribute('d');
+assert(bruisePath.includes('L') && bruisePath.includes('Z'), 'closed jagged outline path');
+const topInset = [...bruisePath.matchAll(/L [\\d.]+ ([\\d.]+)/g)].map(match => +match[1]);
+assert(topInset.some(y => y >= 10 && y <= 16), 'inward cuts are 25-40% of path height');
+refresh();
+assert.equal(elements.get('vbHealthSegments').children[0], bruisedSpan, 'jagged mesh remains stable across frames');
+assert.equal(bruisedSpan.children[0].children[1].getAttribute('d'), bruisePath, 'seeded geometry stays deterministic');
 player.afflictions.bruisedHealth = 0;
 
 player.afflictions.congealedHealth = 30;
@@ -96,7 +112,12 @@ player.health = 70;
 refresh();
 assert.equal(elements.get('vbHealthCap').hidden, false, 'lost effective maximum receives a distinct hatched region');
 assert.equal(elements.get('vbHealthCap').style.left, '70.0%');
-assert.equal(elements.get('vbHealthCap').classList.contains('is-withered'), true, 'capacity damage gives the cap a withered contour');
+const congealedCap = elements.get('vbHealthCap');
+assert.equal(congealedCap.classList.contains('is-withered'), true, 'capacity damage creates a starved outline');
+assert.equal(congealedCap.children[0].tag, 'svg', 'cap draws with a real SVG');
+const congealedShape = congealedCap.children[0].children[1].getAttribute('d');
+assert(congealedShape.includes(' C ') && congealedShape.includes(' L '), 'cap is a smooth spline with a flat central section');
+assert.equal(congealedCap.children[0].children[1].getAttribute('fill'), context.HOBUNJI_CONFIG.resourceRings.afflictionColors.congealedHealth, 'withered cap retains its affliction color');
 player.afflictions.congealedHealth = 0;
 player.health = 100;
 
@@ -159,6 +180,8 @@ assert(!/class="vb-(icon|label|value)"/.test(hudHtml), 'HUD contains no visible 
 assert(css.includes('border: .556dvh solid #000'), 'outline is doubled relative to old 2px reference at 720px viewport');
 assert(css.includes('height: 2.29dvh') && css.includes('width: 27.78vw') && css.includes('width: 81.25vw'), 'bar width and height are viewport percentages');
 assert(css.includes('bottom: max(2.2dvh, env(safe-area-inset-bottom))'), 'bar hugs viewport safe-area bottom');
-assert(css.includes('width: min(9px, 13%)'), 'conditional impact chips are short');
+assert(css.includes('.vb-shape-svg'), 'actual inline SVG silhouette styling exists');
+assert(!css.includes('.vb-effect-brittle::before'), 'old fake chip slashes are gone');
+assert(!css.includes('clip-path: polygon('), 'starved cap no longer clips a rectangular border');
 assert(css.slice(css.indexOf('/* ── Player-only resource bars'), css.indexOf('/* ── Buff bar: active timed effects')).includes('background: transparent'), 'HUD root has no visible panel');
 console.log('player vitals HUD tests passed');

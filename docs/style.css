@@ -298,40 +298,35 @@
       100% { transform: translate3d(0, 2.3dvh, 0) scaleY(.85); opacity: 0; }
     }
 
-    /* Short, thin missing chips for afflictions that punish later hits
-       or resource spending (Bruised, Wounded/Infected Stamina, etc.). */
-    #vitalsBar .vb-effect-brittle::before,
-    #vitalsBar .vb-effect-brittle::after {
-      content: '';
+    /* The actual brittle/starved bars are single reusable inline-SVG meshes.
+       SVG draws over the straight underlying rim, and its opaque black ground
+       reveals genuine notches instead of green fill peeking through. */
+    #vitalsBar .vb-effect-brittle { box-shadow: none; background: transparent; }
+    #vitalsBar .vb-shape-svg {
+      display: block;
       position: absolute;
-      z-index: 3;
-      width: min(9px, 13%);
-      height: max(1px, .13dvh);
-      background: #000;
+      left: 0;
+      top: calc(-1 * .556dvh);
+      width: 100%;
+      height: calc(100% + 1.112dvh);
+      overflow: visible;
       pointer-events: none;
     }
-    #vitalsBar .vb-effect-brittle::before { left: 21%; top: 25%; transform: rotate(-16deg); }
-    #vitalsBar .vb-effect-brittle::after { right: 20%; bottom: 19%; transform: rotate(17deg); }
-
-    /* Shriveled/ragged unavailable capacity for Congealed, Winded, Drunken
-       Footing, Shambling, Wounded Health and later reducers. Preserve exact
-       capacity boundary in geometry; only animate its decorative surface. */
     #vitalsBar .vb-cap {
-      position: absolute; top: 0; bottom: 0;
+      position: absolute;
+      top: 0;
+      bottom: 0;
       background: repeating-linear-gradient(135deg, rgba(0,0,0,.83) 0 .5dvh, rgba(255,255,255,.16) .5dvh .8dvh);
       border-left: .17dvh solid #000;
       pointer-events: none;
     }
     #vitalsBar .vb-cap[hidden] { display: none; }
     #vitalsBar .vb-cap.is-withered {
-      clip-path: polygon(0 15%, 11% 34%, 22% 10%, 36% 45%, 47% 31%, 62% 67%, 76% 51%, 90% 78%, 100% 67%, 100% 100%, 0 100%);
-      transform-origin: center bottom;
-      animation: vb-cap-wither 3.8s ease-in-out infinite alternate;
+      background: transparent;
+      border-left: 0;
     }
-    @keyframes vb-cap-wither {
-      from { transform: translate3d(0, 0, 0) scaleY(.96); }
-      to { transform: translate3d(0, 0, 0) scaleY(.72); }
-    }
+    /* Static bell-shaped spline; shape itself, not just a mask, owns outline. */
+    #vitalsBar .vb-starved-svg { overflow: visible; }
     #vitalsBar .vb-row.is-exhausted .vb-fill { border-right: .22dvh solid #000; }
 
     /* Keep the bars at the bottom; move the desktop key guide out of the way. */
@@ -351,8 +346,7 @@
     }
     @media (prefers-reduced-motion: reduce) {
       #vitalsBar, #vitalsBar .vb-fill, #vitalsBar .vb-affliction-segment { transition: none; }
-      #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after,
-      #vitalsBar .vb-cap.is-withered { animation: none; }
+      #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after { animation: none; }
       /* Keep a still teardrop as an affliction identifier without motion. */
       #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after {
         opacity: .85;
