@@ -887,5 +887,6 @@
     activeTheme:()=>world?.theme||null,
     snapshot,
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Mobile/test query reads the same authored slippery footprint as locomotion.
+    isPlasmAt:(x,z)=>!!world?.rooms?.some(room=>room.plasm?.has(tileKey(x,z))), // Verifies the exact persistent puddle occupancy for gameplay/debug QA.
   });
 })();
