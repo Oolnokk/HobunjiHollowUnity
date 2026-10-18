@@ -202,7 +202,7 @@
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
         if (pitch && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
           priority: 100, mode: 'additive', space: 'world',
-          excludeExternalProviders: ['equippedTool'], // Tools and weapons keep their authored orientation; shoulder pets still lean with the body.
+          excludeExternalProviders: ['equippedTool', 'heldItem'], // Scene-level weapons/tools and player-nested bag items (including Kurraya) ignore movement lean.
           quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Math.atan2(Number(player?.vx) || 0, Number(player?.vy) || 0)),
         });
         else composer.clearChannel(RUN_CHANNEL);

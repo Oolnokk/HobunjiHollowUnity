@@ -215,6 +215,7 @@
   function isHeldVisualRoot(child) {
     if (!child?.isObject3D || child === playerLegRoot || isAvatarBodyRoot(child)) return false;
     return child.type === 'Group'
+      && child.userData?.isPngPlane === true // game.js tags the unnamed heldItemHolder via _markPngPlane; do not counter-tilt unrelated rig groups.
       && child.visible !== false
       && !String(child.name || '').trim()
       && hasRenderableDescendant(child);
@@ -411,6 +412,22 @@
       applyWorldDelta(entry.root, pivot, delta.rotation, delta.translation, undo);
       for (const name of delta.applied) appliedChannels.add(name);
     }
+    // Bag items (including the Kurraya) are children of playerMesh, unlike scene-sibling
+    // toolHolder. They inherit the player's lean even when no external provider selected
+    // that channel. Counter only the inherited channels excluded for 'heldItem', retaining
+    // any world effects explicitly shared with scene-level attachments.
+    const heldDelta = resolveDelta('external', 'world', 'heldItem'); // The desired world transform for held inventory items, excluding run-lean.
+    const heldCorrectionRotation = heldDelta.rotation.clone().multiply(bodyDelta.rotation.clone().invert()); // Converts the already-inherited body delta to the held-item-specific delta.
+    const heldCorrectionTranslation = heldDelta.translation.clone()
+      .sub(bodyDelta.translation.clone().applyQuaternion(heldCorrectionRotation)); // Reverses the inherited translation while preserving allowed world-channel offsets.
+    let compensatedHeldItems = 0; // Exposed in mobile diagnostics to confirm the in-rig correction ran.
+    if (hasResolvedDelta({ rotation: heldCorrectionRotation, translation: heldCorrectionTranslation })) {
+      for (const heldRoot of playerMesh.children.filter(isHeldVisualRoot)) {
+        applyWorldDelta(heldRoot, pivot, heldCorrectionRotation, heldCorrectionTranslation, undo);
+        compensatedHeldItems++;
+      }
+    }
+    renderDebug.heldItemLeanCompensated = compensatedHeldItems;
     renderDebug.appliedOrder.push(...appliedChannels);
     renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
   }

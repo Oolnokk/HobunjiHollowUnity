@@ -41,6 +41,9 @@ assert.ok(composer.includes("includeExternal: contribution.includeExternal !== f
 assert.ok(composer.includes("resolveDelta('external')"), 'render composition resolves external-root channels separately from the player body');
 assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current visual roots instead of pinning stale avatar objects');
 assert.ok(composer.includes('discoverAvatarBodyRoots'), 'composer recursively discovers nested player PNG visual roots');
+assert.ok(composer.includes("resolveDelta('external', 'world', 'heldItem')"), 'in-rig bag items compensate for movement lean separately from scene-sibling tools');
+assert.ok(composer.includes('playerMesh.children.filter(isHeldVisualRoot)'), 'in-rig correction uses the existing tagged held-item group discovery');
+assert.ok(composer.includes('heldItemLeanCompensated'), 'mobile render diagnostics show whether in-rig items were compensated');
 assert.ok(composer.includes('isDescendantOf'), 'composer can dedupe nested visual branches before applying a body delta');
 assert.ok(composer.includes("mode === 'override'"), 'composer supports physical-state override channels');
 assert.ok(composer.includes('hierarchyWorldQuaternion'), 'composer derives facing orientation from quaternion hierarchy only');

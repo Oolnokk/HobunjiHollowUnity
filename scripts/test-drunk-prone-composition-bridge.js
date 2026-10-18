@@ -211,7 +211,7 @@ vm.runInContext(source, context, { filename: modulePath });
   playerLegs.update(0.016, 3, false, undefined, { combat: true });
   assert.strictEqual(composerSet.name, 'run-lean');
   assert.strictEqual(composerSet.contribution.space, 'world');
-  assert.deepStrictEqual(Array.from(composerSet.contribution.excludeExternalProviders), ['equippedTool'], 'only the equipped tool opts out of run lean');
+  assert.deepStrictEqual(Array.from(composerSet.contribution.excludeExternalProviders), ['equippedTool', 'heldItem'], 'both scene-level tools and player-nested held items opt out of run lean');
   assert(Math.abs(composerSet.contribution.quaternion.x - Math.sin(mockedRunLean / 2)) < 1e-12);
   for (let i = 0; i < 8; i++) {
     const yaw = i * Math.PI / 4; // Covers cardinal and diagonal logical headings relative to a held billboard.
