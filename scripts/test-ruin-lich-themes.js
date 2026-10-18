@@ -166,7 +166,8 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   // Step out of the chamber; no room transition is allowed to cull the patch.
   t.player.x=30*64;t.player.y=30*64;
   t.tick(2,.25);
-  assert.ok(t.api.snapshot().plasmTiles>=grown,'Room exit preserves every tile while out-of-sight plasm continues growing');
+  assert.equal(t.api.snapshot().plasmTiles,grown,
+    'When the player stands outside every room, even unseen plasm must not grow');
   // Re-enter with an illuminated edge within .6 tiles: even unseen outer
   // edges must stop growing if ANY puddle tile is currently visible.
   const boundary=[];
@@ -195,8 +196,8 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   t.composer.clear();
 }
 {
-  // Two rooms are independently seeded. Crossing their boundary can make
-  // new plasm grow, but must never reset either room's previous footprint.
+  // Each room has an independent seed and an independent growth clock.
+  // Entering another room pauses the old puddle without erasing or advancing it.
   const rooms=[
     {id:'west',bounds:{minX:2,maxX:12,minZ:2,maxZ:12}},
     {id:'east',bounds:{minX:12,maxX:22,minZ:2,maxZ:12}},
@@ -208,21 +209,51 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   assert.ok([4,9,16].includes(seedWest.length)&&[4,9,16].includes(seedEast.length),
     'Each room receives its own initial solid 2x2–4x4 puddle');
-  t.player.x=16.3*64;t.player.y=7.3*64;
+  const pickFarthestCorner=(minX,maxX,seed)=>{
+    const points=[[minX+.1,2.1],[maxX-.2,2.1],[minX+.1,11.8],[maxX-.2,11.8]];
+    return points.sort((a,b)=>{
+      const far=p=>Math.min(...seed.map(key=>{
+        const [x,z]=key.split(',').map(Number);
+        return Math.hypot(p[0]-x-.5,p[1]-z-.5);
+      }));
+      return far(b)-far(a);
+    })[0];
+  };
+  const farEast=pickFarthestCorner(12,22,seedEast);
+  t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;
   t.tick(4,.25);
+  const eastAfterGrowth=[];
+  for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterGrowth.push(x+','+z);
+  assert.ok(eastAfterGrowth.length>seedEast.length,
+    'An unseen puddle grows in the room the player actually occupies');
+  const westWhileEast=[];
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))westWhileEast.push(x+','+z);
+  assert.equal(westWhileEast.length,seedWest.length,
+    'An unseen puddle in an unoccupied room may NOT grow');
   for(const key of seedWest.concat(seedEast)){
     const [x,z]=key.split(',').map(Number);
     assert.ok(t.api.isPlasmAt(x+.5,z+.5),'Changing rooms may never cull a pre-existing plasm tile: '+key);
   }
   const beforeLeaving=t.api.snapshot().plasmTiles;
   t.player.x=40*64;t.player.y=40*64;t.tick(3,.25);
-  assert.ok(t.api.snapshot().plasmTiles>=beforeLeaving,
-    'Leaving all rooms does not delete tiles; unseen puddles continue to grow elsewhere inside the same dungeon');
+  assert.equal(t.api.snapshot().plasmTiles,beforeLeaving,
+    'Leaving every room preserves all puddles but freezes every growth clock');
   const grownEast=[];
   for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))grownEast.push(x+','+z);
-  assert.ok(grownEast.length>seedEast.length,
-    'When no plasm is visible, even another room grows without the player entering it');
-  // An illuminated edge in the west room must freeze growth in *both* rooms.
+  assert.equal(grownEast.length,eastAfterGrowth.length,
+    'East-room plasm must not advance when the player leaves that room');
+  const farWest=pickFarthestCorner(2,12,seedWest);
+  t.player.x=farWest[0]*64;t.player.y=farWest[1]*64;
+  t.tick(4,.25);
+  const westAfterReturn=[];
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))westAfterReturn.push(x+','+z);
+  assert.ok(westAfterReturn.length>seedWest.length,
+    'Returning to an unseen west room resumes only that room’s growth');
+  const eastAfterWestReturn=[];
+  for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterWestReturn.push(x+','+z);
+  assert.equal(eastAfterWestReturn.length,eastAfterGrowth.length,
+    'Returning to west leaves east frozen at its exact former size');
+  // Seeing a west-room puddle must veto growth in the occupied room.
   let observer=null;
   for(let z=2;z<12&&!observer;z++)for(let x=2;x<12&&!observer;x++){
     if(!t.api.isPlasmAt(x+.5,z+.5))continue;
@@ -241,7 +272,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const globallySeen=t.api.snapshot().plasmTiles;
   t.tick(4,.25);
   assert.equal(t.api.snapshot().plasmTiles,globallySeen,
-    'Seeing ANY tile in one room freezes the otherwise unseen plasm in every room');
+    'Seeing ANY puddle tile prevents further growth in the occupied room');
   // Fatal immersion resets ALL rooms to the original seeded puddle clusters,
   // rather than leaving the previous unseen expansion behind.
   const [sx,sz]=seedWest[0].split(',').map(Number);
@@ -258,8 +289,9 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,'A dead player must not restart unseen plasm growth');
   // An unrelated cause of death must trigger exactly the same reset.
   t.player.health=100;
-  t.player.x=40*64;t.player.y=40*64;t.tick(4,.25);
-  assert.ok(t.api.snapshot().plasmTiles>initialSeed.size,'Plasm can resume growing after respawn');
+  t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;t.tick(4,.25);
+  assert.ok(t.api.snapshot().plasmTiles>initialSeed.size,
+    'Plasm can resume growing when a respawned player enters an unseen room');
   t.player.health=0;t.tick(1,.25);
   assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,
     'Death from another source also restores original plasm across every room');
@@ -272,11 +304,29 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
 {
   // Cap is half of the room's walkable area. Beyond the limit the farthest
   // exposed tiles retreat so the growing perimeter never fragments.
-  const t=setup('kanthic',30,30);
+  const t=setup('kanthic',3,3);
   const initial=new Set();
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initial.add(x+','+z);
   assert.equal(t.api.snapshot().plasmCapacity,50,'100 walkable cells allow at most 50 plasm tiles');
-  t.tick(40,.25); // 10 seconds of completely unseen growth, far more than the cap permits.
+  const tickFromDryTile=()=>{
+    // Keep the player in the SAME room but outside the growing puddle.
+    // Reposition to a dry tile each frame so the test measures growth/culling,
+    // not the unrelated plasm sinking/death mechanic.
+    const candidates=[];
+    for(let z=2;z<12;z++)for(let x=2;x<12;x++){
+      if(t.api.isPlasmAt(x+.5,z+.5))continue;
+      const minDistance=Math.min(...[...Array(100)].map((_,i)=>{
+        const tx=2+i%10,tz=2+Math.floor(i/10);
+        return t.api.isPlasmAt(tx+.5,tz+.5)?Math.hypot(x-tx,z-tz):Infinity;
+      }));
+      candidates.push({x,z,minDistance});
+    }
+    candidates.sort((a,b)=>b.minDistance-a.minDistance);
+    assert.ok(candidates.length>0,'Half-room cap always leaves walkable dry tiles');
+    t.player.x=(candidates[0].x+.5)*64;t.player.y=(candidates[0].z+.5)*64;
+    t.tick(1,.25);
+  };
+  for(let frame=0;frame<40;frame++)tickFromDryTile(); // 10 seconds of local, unseen growth.
   const report=t.api.snapshot();
   assert.equal(report.plasmTiles,report.plasmCapacity,'Plasm must never exceed half the room');
   assert.ok(report.plasmCulled>0,'After reaching its cap, new leading growth replaces farthest edge tiles');
@@ -293,7 +343,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   assert.equal(visited.size,actual.size,'Farthest-tile culling must not split the plasm into unconnected islands');
   // Growth cannot increase the overall area after capacity has been reached.
-  t.tick(20,.25);
+  for(let frame=0;frame<20;frame++)tickFromDryTile();
   assert.equal(t.api.snapshot().plasmTiles,50,'Plasm remains capped even after prolonged unseen growth');
   t.player.health=0;
   t.tick(1,.25);
