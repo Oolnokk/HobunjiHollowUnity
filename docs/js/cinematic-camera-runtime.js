@@ -217,7 +217,7 @@
         const safe = safePosition?.(target.x, target.y, target.z, camera.position.x, camera.position.y, camera.position.z); // Game keeps its collision boom; private tool scenes may omit it.
         if (safe) camera.position.set(safe.x, safe.y, safe.z);
         camera.lookAt(target);
-        camera.near = Math.min(0.1, Math.max(0.01, camera.position.distanceTo(target) * 0.22)); // Walls may shorten cinematics to less than the default near plane.
+        camera.near = Math.min(0.1, Math.max(0.01, Math.hypot(camera.position.x - target.x, camera.position.y - target.y, camera.position.z - target.z) * 0.22)); // Walls may shorten cinematics to less than the default near plane.
         lookPoint.copy(target);
         camera.fov = blend.fov + (shot.fovDeg - blend.fov) * alpha;
         if (aspect) camera.aspect = aspect();
