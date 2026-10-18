@@ -161,7 +161,7 @@
     updateMidpoint();
     const lineAngle = Math.atan2(pB.x - pA.x, pB.z - pA.z); // Perpendicular starting angle keeps the two actors from visually overlapping.
     const defaultAngle = lineAngle + Math.PI / 2 + (focusActor === b ? 0.38 : focusActor === a ? -0.38 : 0);
-    const initialAngle = Number.isFinite(Number(options.startAzimuthDeg))
+    const initialAngle = options.startAzimuthDeg != null && Number.isFinite(Number(options.startAzimuthDeg))
       ? Number(options.startAzimuthDeg) * Math.PI / 180 : defaultAngle; // An authored starting side overrides the default.
     const elapsed = () => Math.max(0, (performance.now() - started) / 1000); // Single real-time clock shared by all orbit providers.
     const targetProvider = () => {
@@ -188,6 +188,22 @@
       dialogueFraming: false, // Dialogue panel must not re-center the pair on only the current speaker.
       orbitDebug: { actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null, zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI },
     };
+  }
+
+
+  function createStageOrbitShot(stage, subjects, sequence = 1) {
+    if (!stage || !Array.isArray(subjects) || subjects.length !== 2 || subjects[0]?.id === subjects[1]?.id) return null;
+    const visit = Math.max(1, Math.floor(finite(sequence, 1))); // Count actual visited orbit cards, not authored stage indices or optional branches.
+    const explicit = Number(stage.orbitZoomPercent); // An optional fixed zoom overrides the scene's progressive paragraph zoom.
+    const zoomPercent = Number.isFinite(explicit) && explicit > 0
+      ? explicit : 100 + Math.max(0, finite(stage.orbitZoomStepPercent, 0)) * visit;
+    const focusActorId = stage.orbitFocusActorId || (stage.orbitAlternateFocus ? subjects[visit % 2].id : null); // First visit favors the second actor.
+    return createActorOrbitShot(subjects, {
+      id: 'cutscene_orbit_' + stage.id, shotKey: stage.id + ':' + visit, // Replaying the exact same card produces a fresh transition record.
+      focusActorId, zoomPercent, distanceTiles: stage.orbitDistanceTiles,
+      speedDegPerSec: stage.orbitSpeedDegPerSec, startAzimuthDeg: stage.orbitStartAzimuthDeg,
+      targetHeight: stage.orbitTargetHeight, fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitBlendSeconds,
+    });
   }
 
   function createBlendController({ camera, lookPoint, safePosition, aspect, framing }) {
@@ -490,6 +506,7 @@
     beginDialogue,
     createBlendController,
     createActorOrbitShot,
+    createStageOrbitShot,
     applyDialogueNodeCamera,
     endDialogue,
     activeCamera,
