@@ -375,7 +375,9 @@
       const testSettings = window.DevRandomRuin?.getDarknessSettings?.(); // Random Test Ruin defaults bright for inspection while retaining an explicit den-darkness preview control.
       const rawSeverity = Number(testSettings?.severity);
       const severity = Number.isFinite(rawSeverity) ? clamp01(rawSeverity) : 1;
-      return testSettings?.enabled === true ? DEN_DARKNESS_OVERLAY_ALPHA * severity : 0;
+      const tradition = window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme; // The lich's seeded tradition also owns darkness; no dev-only bright default in live ruins.
+      const base = tradition === 'kanthic' ? 1 : tradition === 'hronal' ? .91 : tradition === 'tothal' ? .73 : DEN_DARKNESS_OVERLAY_ALPHA;
+      return testSettings?.enabled === true ? base * severity : base;
     }
     if (isMineArea(area)) return MINE_DARKNESS_OVERLAY_ALPHA;
     if (isDenArea(area)) return DEN_DARKNESS_OVERLAY_ALPHA;
@@ -489,13 +491,16 @@
   function drawLanternMasksCompat(activation = 1, preserveOutdoorWeatherTint = false) {
     const lanternStrength = clamp01(activation); // Scales all player/watch mask alphas while the ambient-light threshold fades lanterns on or off.
     if (lanternStrength <= 0) return;
+    const currentArea = lightingDeps.getCurrentArea(); // Cache once for Tothal's disabled lantern and Kanthic's half-radius lantern.
+    const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
+    if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
+    const ruinLanternScale = ruinTradition === 'kanthic' ? .5 : 1;
     const ctx = lightingDeps.lctx;
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
       z: lightingDeps.player.y / lightingDeps.TILE,
     }];
-    const currentArea = lightingDeps.getCurrentArea();
     for (const walker of lightingDeps.npcWalkers) {
       if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
         carriers.push({ x: walker.root.position.x, y: walker.root.position.y + 0.5, z: walker.root.position.z });
@@ -507,7 +512,7 @@
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
       if (!center.visible) continue;
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
       if (!(shineR > 0)) continue;
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
@@ -532,7 +537,7 @@
       for (const carrier of carriers) {
         const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
         if (!center.visible) continue;
-        const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
+        const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale);
         if (!(shineR > 0)) continue;
         const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
@@ -622,6 +627,38 @@
     }
   }
 
+  function drawRuinTraditionLightMasks() {
+    const lights = window.DevRandomRuinLichThemes?.lightSources?.() || []; // Cached generation-time floor/wall/ceiling sources, never scene traversals.
+    if (!lights.length) return;
+    const ctx = lightingDeps.lctx;
+    const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
+    for (const light of lights) {
+      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+      if (!center.visible) continue;
+      const radius = lightScreenRadius(light.x, light.z, light.y, light.radius);
+      if (!(radius > 0)) continue;
+      visible.push({light,center,radius});
+    }
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const {light,center,radius} of visible) {
+      const grad = ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      grad.addColorStop(0,'rgba(0,0,0,'+light.strength+')');
+      grad.addColorStop(.42,'rgba(0,0,0,'+(light.strength*.42)+')');
+      grad.addColorStop(1,'rgba(0,0,0,0)'); // Steep local falloff for Hronal; blue Tothal sources have larger radii.
+      ctx.fillStyle=grad;
+      ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalCompositeOperation='source-over';
+    for (const {light,center,radius} of visible) {
+      const [r,g,b]=light.color;
+      const grad=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      grad.addColorStop(0,'rgba('+r+','+g+','+b+',.18)');
+      grad.addColorStop(.35,'rgba('+r+','+g+','+b+',.065)');
+      grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+      ctx.fillStyle=grad;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+    }
+  }
+
   function ordinaryBuildingInterior(area) {
     return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks only.
   }
@@ -701,11 +738,13 @@
     if (enclosed) {
       const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+      const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
+      ctx.fillStyle = ruinTradition === 'tothal' ? 'rgba(6,18,44,'+darknessAlpha+')' : ruinTradition === 'hronal' ? 'rgba(20,7,2,'+darknessAlpha+')' : 'rgba(0,0,0,'+darknessAlpha+')';
       ctx.fillRect(0, 0, rect.width, rect.height);
       drawLanternMasksCompat(1);
-      drawFurnitureLightMasksCompat();
-      if (ordinaryBuildingInterior(currentArea)) drawWindowLightMasks();
+      if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
+      if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
+      if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
