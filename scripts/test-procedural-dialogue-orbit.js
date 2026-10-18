@@ -59,22 +59,26 @@ vm.runInContext('let orbitResetCount=0;\n' + game.slice(stageStart, stageEnd) + 
 assert.deepEqual(orbitSettings.map(setting => setting.zoomPercent), [105, 110, 115], 'only visited paragraphs advance the 5% zoom');
 assert.deepEqual(orbitSettings.map(setting => setting.focusActorId), ['jubmir', 'player', 'jubmir'], 'each visited paragraph alternates initial focus');
 assert(!orbitSettings.some(setting => setting.id.endsWith('optional')), 'skipped branch does not affect progression');
+assert.equal(orbitSettings[0].shotKey, 'one:1', 'first stage visit starts its own transition');
+vm.runInContext('runStage("one");', stageContext);
+assert.equal(orbitSettings[3].shotKey, 'one:4', 'revisiting the same card creates a new blend identity');
+assert.equal(orbitSettings[3].focusActorId, 'player', 'revisits count as new focus resets');
 
 const solverStart = game.indexOf('      const CAMERA_FLOOR_CLEARANCE ='); // Includes the same constants and ground slide as the game camera.
 const solverEnd = game.indexOf('      // How far under a tree canopy', solverStart); // Ends at the production solver boundary.
 assert(solverStart !== -1 && solverEnd > solverStart);
 const rayOrigin = { set(x, y, z) { Object.assign(this, { x, y, z }); return this; } }; // Shared Raycaster origin scratch.
 const rayDirection = { set(x, y, z) { Object.assign(this, { x, y, z }); return this; } }; // Shared Raycaster direction scratch.
-let lateralCalls = 0, directCalls = 0; // Distinguishes lateral clearance from the existing 3D ray.
+let lateralCalls = 0, directCalls = 0; // Distinguishes off-center clearance rays from the direct 3D sightline.
+let wallVisible = true; // Toggles a side wall without changing the camera heading.
+let elapsedMs = 1000; // Allows frame-rate-independent outward camera recovery checks.
 const raycaster = {
   set(origin, direction) { this.origin = { ...origin }; this.direction = { ...direction }; },
   intersectObjects() {
-    if (Math.abs(this.direction.y) < 1e-9) {
-      lateralCalls++;
-      return this.origin.x > 0.1 ? [{ distance: 1.1 }] : []; // Only the right side of the camera collides with the wall.
-    }
-    directCalls++;
-    return []; // The center 3D ray alone would incorrectly allow the full boom.
+    if (Math.abs(this.origin.x) > 0.1) lateralCalls++;
+    else directCalls++;
+    if (wallVisible && this.origin.x > 0.1 && this.direction.y > 0.1) return [{ distance: 1.1 }]; // Camera-edge wall at the interpolated boom height; a fixed-altitude horizontal ray would miss it.
+    return []; // The center 3D ray alone incorrectly allows full boom clearance.
   },
 };
 const collisionContext = vm.createContext({
@@ -82,7 +86,7 @@ const collisionContext = vm.createContext({
   cutscenePreviewActive: true, dialogueZoomActive: () => false,
   camTargetY: 0, _playerGroundY: () => 0, activeSurfaceYAtWorld: () => 0,
   currentArea: 'map_i_inn_F2_jubmir', _isBuildingArea: () => true, currentAreaOcclusionMeshes: () => [{}],
-  performance: { now: () => 1000 }, THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
+  performance: { now: () => elapsedMs }, THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
   window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true } },
   _cameraOcclusionOriginVec: rayOrigin, _cameraOcclusionDirVec: rayDirection, _cameraOcclusionRaycaster: raycaster,
 });
@@ -90,5 +94,13 @@ vm.runInContext(game.slice(solverStart, solverEnd) + '\nthis.solve=occlusionSafe
 const squeezed = collisionContext.solve(0, 1, 0, 0, 1.6, 3); // A wall barely crossing the camera's right edge must pull the X/Z orbit inward.
 assert(squeezed.z < 1.1, 'horizontal wall squeeze shortens the orbit despite a clear central 3D ray');
 assert(Math.abs(squeezed.y - 1.6) < 1e-9, 'horizontal squeeze preserves intentional camera height');
-assert(collisionContext.horizontalDebug().factor < 1 && lateralCalls === 3 && directCalls > 0, 'camera probes all three lateral lanes and still uses the 3D collision solve');
-console.log('Procedural dialogue orbit: timing, character focus, 5% dialogue resets, zoom, and interior horizontal collision passed.');
+assert(collisionContext.horizontalDebug().factor < 1 && lateralCalls === 2 && directCalls >= 2, 'three width probes and the original direct 3D collision solve all execute');
+const blockedReach = squeezed.z; // Camera should pull in immediately but ease out after the obstruction clears.
+wallVisible = false;
+elapsedMs = 1100;
+const recovering = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
+assert(recovering.z > blockedReach && recovering.z < 3, 'camera extends smoothly after wall clearance rather than popping outward');
+elapsedMs = 1200;
+const recoveredMore = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
+assert(recoveredMore.z > recovering.z, 'clearance recovery progresses with elapsed real time');
+console.log('Procedural dialogue orbit: timing, replay reset, character focus, 5% zoom, angled lateral collision, and smoothing passed.');
