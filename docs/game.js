@@ -18917,6 +18917,14 @@
           return;
         }
         if (activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet') { window.FestivalSystem?.receiveNpcReward?.(nearbyNpcWalker, activeAction); refreshActionBar(); return; }
+        if (activeAction === 'festival_sit_dining') {
+          const chair=window.FestivalSystem?.nearestDiningSeat?.();
+          if(chair) {
+            const definition=DECORATIVE_FURNITURE_DEFS[chair.key];
+            if(definition?.sit)beginSitInteraction(chair.key,chair.col,chair.row,definition.fw,definition.fd,chair.rotY||0);
+          }
+          refreshActionBar();return;
+        }
         if (activeAction === 'festival_take_bowl') { window.FestivalSystem?.takeFestivalBowl?.(); refreshActionBar(); return; }
         if (activeAction === 'festival_fill_bowl') {
           window.FestivalSystem?.fillFestivalBowl?.(window.FestivalSystem?.potIndexAtAim?.());
@@ -25101,7 +25109,7 @@
           const prayerAction = window.TemplePrayerRestBlessings?.getPrayerAction?.(); // The blessing owner supplies the same eligible prayer used by its menu.
           if (prayerAction) seatedActions.push(prayerAction);
           const mealAction = sitInteraction.phase === 'active' ? window.FestivalSystem?.seatedMealAction?.() : null; // Eating becomes a real seated Action button next to Stand/Wait, with the bowl's n/10 badge.
-          if (mealAction) seatedActions.push(mealAction);
+          if (mealAction) seatedActions.push({ ...mealAction,worldInteraction:true,promptRoot:playerMesh }); // Shows a floating Eat prompt by the seated character as well as the n/10 portion badge on the action arch.
           return seatedActions;
         }
         // Fishing gets its own arc buttons instead of the harpoon's normal
@@ -29060,7 +29068,8 @@
         getAimPosition: () => { const aim = getReticleTile(); return {c:aim.probeX/TILE, r:aim.probeY/TILE}; }, // Fractional reticle probe selects one of the six nearby pots without a second targeter.
         getActiveItemKey: () => getActiveInventoryItem()?.key || '', // Used only to cancel temporary festival bowls when the selection wheel changes.
         getHeldMode: () => heldMode,
-        isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active',
+        isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active'
+          && window.FestivalSystem?.isDiningSeat?.(sitInteraction.col,sitInteraction.row,sitInteraction.furnitureKey) === true, // Only the outdoor feast's authored chairs can trigger the repeated meal action.
         equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
           if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
