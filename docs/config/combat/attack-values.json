@@ -23,14 +23,14 @@
     "RANGE_SCALE": 0.6, "LUNGE_SCALE": 1.5, "COMBO_RESET_S": 1.8,
     "sfxPitchByStep": [1.0, 1.5, 2.0],
     "swingCombo": [
-      { "name": "Forehand Swing", "damageMul": 1.0,  "halfConeDeg": 26, "rangeMul": 1.0,  "knockbackMul": 0.45, "staminaCost": 16, "windupS": 0.345,  "strikeS": 0.07,  "anim": "sweep", "dirSign": 1,  "holdS": 0.43, "dmgTag": "blunt", "lungeMul": 2.0 },
-      { "name": "Backhand Swing", "damageMul": 1.25, "halfConeDeg": 30, "rangeMul": 1.05, "knockbackMul": 0.55, "staminaCost": 19, "windupS": 0.345,  "strikeS": 0.07,  "anim": "sweep", "dirSign": -1, "holdS": 0.43, "dmgTag": "blunt", "lungeMul": 1.0 },
-      { "name": "Cleave",         "damageMul": 1.35, "halfConeDeg": 42, "rangeMul": 1.15, "knockbackMul": 2.4,  "staminaCost": 28, "windupS": 0.5175, "strikeS": 0.105, "returnS": 0.30, "anim": "sweep", "dirSign": 1,  "power": 1.3, "holdS": 0.41375, "dmgTag": "blunt", "heavy": true, "lungeMul": 1.0 }
+      { "name": "Forehand Swing", "damageMul": 1.0,  "halfConeDeg": 26, "rangeMul": 1.0,  "knockbackMul": 0.45, "staminaCost": 16, "windupS": 0.345,  "strikeS": 0.07,  "anim": "sweep", "dirSign": 1,  "holdS": 0.215, "dmgTag": "blunt", "lungeMul": 2.0 },
+      { "name": "Backhand Swing", "damageMul": 1.25, "halfConeDeg": 30, "rangeMul": 1.05, "knockbackMul": 0.55, "staminaCost": 19, "windupS": 0.345,  "strikeS": 0.07,  "anim": "sweep", "dirSign": -1, "holdS": 0.215, "dmgTag": "blunt", "lungeMul": 1.0 },
+      { "name": "Cleave",         "damageMul": 1.35, "halfConeDeg": 42, "rangeMul": 1.15, "knockbackMul": 2.4,  "staminaCost": 28, "windupS": 0.5175, "strikeS": 0.105, "returnS": 0.30, "anim": "sweep", "dirSign": 1,  "power": 1.3, "holdS": 0.206875, "dmgTag": "blunt", "heavy": true, "lungeMul": 1.0 }
     ],
     "pokeCombo": [
-      { "name": "Short Thrust", "damageMul": 0.95, "halfConeDeg": 9,  "rangeMul": 1.15, "knockbackMul": 0.4, "staminaCost": 13, "windupS": 0.18, "strikeS": 0.09, "anim": "thrust", "dirSign": 1,  "holdS": 0.47, "dmgTag": "sharp", "lungeMul": 2.0 },
-      { "name": "Step Thrust",  "damageMul": 1.15, "halfConeDeg": 12, "rangeMul": 1.35, "knockbackMul": 0.5, "staminaCost": 16, "windupS": 0.24, "strikeS": 0.10, "anim": "thrust", "dirSign": 1,  "holdS": 0.46, "dmgTag": "sharp", "lungeMul": 1.0 },
-      { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.405, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1,  "power": 1.35, "holdS": 0.4325, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
+      { "name": "Short Thrust", "damageMul": 0.95, "halfConeDeg": 9,  "rangeMul": 1.15, "knockbackMul": 0.4, "staminaCost": 13, "windupS": 0.18, "strikeS": 0.09, "anim": "thrust", "dirSign": 1,  "holdS": 0.235, "dmgTag": "sharp", "lungeMul": 2.0 },
+      { "name": "Step Thrust",  "damageMul": 1.15, "halfConeDeg": 12, "rangeMul": 1.35, "knockbackMul": 0.5, "staminaCost": 16, "windupS": 0.24, "strikeS": 0.10, "anim": "thrust", "dirSign": 1,  "holdS": 0.23, "dmgTag": "sharp", "lungeMul": 1.0 },
+      { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.405, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1,  "power": 1.35, "holdS": 0.21625, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
     ]
   },
 
@@ -55,7 +55,7 @@
   },
 
   "quickAttacks": {
-    "WINDUP_S": 0.1125, "STRIKE_S": 0.105, "COST_COMMIT": 60, "CONDITIONAL_REFUND_FRACTION": 0.5, "HOLD_S": 0.48125,
+    "WINDUP_S": 0.1125, "STRIKE_S": 0.105, "COST_COMMIT": 60, "CONDITIONAL_REFUND_FRACTION": 0.5, "HOLD_S": 0.240625,
     "BONUS_EFFECT_COOLDOWN_S": 5, "BONUS_EFFECT_POWER_MULTIPLIER": 2.0,
     "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 4.5,
     "techniques": {
@@ -71,13 +71,13 @@
   },
 
   "chargedBreaker": {
-    "MIN_READY_POSE": 0.48, "MAX_CHARGE_S": 2, "WINDUP_SLOWDOWN": 25, "CHARGE_DRAIN_PER_S": 4,
+    "MIN_READY_POSE": 0.48, "MAX_CHARGE_S": 4.0, "WINDUP_SLOWDOWN": 25, "CHARGE_DRAIN_PER_S": 4,
     "COST_MIN": 12, "COST_MAX": 18,
     "DAMAGE_MUL_MIN": 1.2, "DAMAGE_MUL_MAX": 2.4,
     "KNOCKBACK_MUL_MIN": 1.2, "KNOCKBACK_MUL_MAX": 3.0,
     "RANGE_MUL_MIN": 1.0, "RANGE_MUL_MAX": 1.15,
     "HALF_CONE_DEG_MIN": 34, "HALF_CONE_DEG_MAX": 70,
-    "STRIKE_S": 0.15, "POWER": 1.7, "HOLD_S": 0.25,
+    "STRIKE_S": 0.30, "POWER": 1.7, "HOLD_S": 0.25,
     "LUNGE_TILE_MUL_MIN": 1.8, "LUNGE_TILE_MUL_MAX": 4.2,
     "LUNGE_GRAVITY_RESIST_MIN": 0.0, "LUNGE_GRAVITY_RESIST_MAX": 0.9,
     "LUNGE_DIRECT_FLIGHT_MIN": 0.0, "LUNGE_DIRECT_FLIGHT_MAX": 0.98,
@@ -85,21 +85,21 @@
   },
 
   "flurry": {
-    "FIRST_STRIKE_DELAY_S": 0.19, "COST_BASE": 5, "COST_PER_STRIKE": 1.5,
+    "FIRST_STRIKE_DELAY_S": 0.38, "COST_BASE": 5, "COST_PER_STRIKE": 1.5,
     "DAMAGE_MUL_BASE": 0.43, "DAMAGE_MUL_PER_STRIKE": 0.17,
     "KNOCKBACK_MUL_BASE": 0.255, "KNOCKBACK_MUL_PER_STRIKE": 0.054,
     "HALF_CONE_DEG_BASE": 29, "HALF_CONE_DEG_MAX_GROWTH": 22, "HALF_CONE_DEG_GROWTH_PER_STRIKE": 1.4,
-    "SIDE_OFFSET_DEG": 15, "WINDUP_S": 0.02625, "STRIKE_S": 0.0425,
-    "NEXT_STRIKE_MIN_S": 0.05, "NEXT_STRIKE_BASE_S": 0.21, "NEXT_STRIKE_DECAY_PER_STRIKE": 0.013,
+    "SIDE_OFFSET_DEG": 15, "WINDUP_S": 0.0525, "STRIKE_S": 0.085,
+    "NEXT_STRIKE_MIN_S": 0.10, "NEXT_STRIKE_BASE_S": 0.42, "NEXT_STRIKE_DECAY_PER_STRIKE": 0.026,
     "MOVE_SPEED_MUL_BASE": 1.15, "MOVE_SPEED_MUL_PER_STRIKE": 0.05, "MOVE_SPEED_MUL_MAX": 1.9,
-    "HOLD_S": 0.245625, "GLOW_FULL_S": 1.5
+    "HOLD_S": 0.245625, "GLOW_FULL_S": 3.0
   },
 
   "counterShield": {
     "DRAIN_PER_S": 20, "MIN_STAMINA_TO_RAISE": 6, "COUNTER_COOLDOWN_S": 0.62,
     "COUNTER_DAMAGE_MUL": 4.4, "COUNTER_RANGE_MUL": 1.7, "COUNTER_HALF_CONE_DEG": 8, "COUNTER_KNOCKBACK_MUL": 2.25,
-    "BLOCK_WINDUP_S": 0.06, "BLOCK_STRIKE_S": 0.06,
-    "COUNTER_WINDUP_S": 0.02625, "COUNTER_STRIKE_S": 0.08, "COUNTER_HOLD_S": 0.245625
+    "BLOCK_WINDUP_S": 0.12, "BLOCK_STRIKE_S": 0.12,
+    "COUNTER_WINDUP_S": 0.0525, "COUNTER_STRIKE_S": 0.16, "COUNTER_HOLD_S": 0.245625
   },
 
   "creatureAttacks": {
@@ -177,13 +177,13 @@
       "projectileCount": 1, "spreadDeg": 0, "damage": 16, "speedPxS": 720,
       "rangeTiles": 9, "projectileRadiusPx": 7, "knockbackPxS": 130,
       "reloadDurationS": 1.04, "reloadSequence": "attack", "reloadWindupFrac": 0.55, "reloadStrikeFrac": 0.56, "reloadHoldFrac": 0.692,
-      "fireDurationS": 1.04, "fireSequence": "attack", "fireWindupFrac": 0.05, "fireAtFrac": 0.08, "fireHoldFrac": 0.17, "staminaCost": 10
+      "fireDurationS": 0.9932, "fireSequence": "attack", "fireWindupFrac": 0.052356020942408384, "fireAtFrac": 0.08376963350785342, "fireHoldFrac": 0.13089005235602094, "staminaCost": 10
     },
     "scatterbow": {
       "projectileCount": 6, "spreadDeg": 28, "damage": 5, "speedPxS": 650,
       "rangeTiles": 6.5, "projectileRadiusPx": 4, "knockbackPxS": 55,
       "reloadDurationS": 1.04, "reloadSequence": "attack", "reloadWindupFrac": 0.55, "reloadStrikeFrac": 0.56, "reloadHoldFrac": 0.692,
-      "fireDurationS": 1.04, "fireSequence": "attack", "fireWindupFrac": 0.05, "fireAtFrac": 0.08, "fireHoldFrac": 0.17, "staminaCost": 14
+      "fireDurationS": 0.9932, "fireSequence": "attack", "fireWindupFrac": 0.052356020942408384, "fireAtFrac": 0.08376963350785342, "fireHoldFrac": 0.13089005235602094, "staminaCost": 14
     }
   },
 
