@@ -194,6 +194,10 @@
       // no roles authored is simply never returned by findStationsByRole
       // below, and every existing exact-stationId lookup is unaffected.
       roles: Array.isArray(station.roles) ? station.roles.filter(r => typeof r === 'string' && r) : [],
+      festivalLocaleKind: station.festivalLocaleKind || '', // Lets the festival controller recognize dancing and dining targets after normalizing the station.
+      festivalLocaleParent: station.festivalLocaleParent || '', // Keeps a stable movable locale identity when players relocate its root in the editor.
+      festivalRole: station.festivalRole || '', // Preserves guest/musician/diner semantics across the existing pathfinding registry.
+      festivalNpcId: station.festivalNpcId || '', // Preserves named host assignment without cloning or mutating NPC schedules.
       lookAt: normalizeStationLookAt(station.lookAt),
     };
   }
