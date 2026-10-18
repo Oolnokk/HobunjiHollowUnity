@@ -31496,7 +31496,7 @@
             }
           } else if (stage.cameraMode === 'orbit') {
             const subjectIds = stage.orbitActorIds || [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId]; // Actor IDs are authored independently of the speaker.
-            const subjects = subjectIds.map(id => entities.get(id) && { id, ...entities.get(id) }).filter(Boolean); // Reuse the live stand-ins, including the player, instead of making new avatars.
+            const subjects = subjectIds.map(id => { const entity = entities.get(id); return entity && { id, ...entity, faceWorldPosition: entity.walker ? () => _npcFaceWorldPosition(entity.walker) : null }; }).filter(Boolean); // Orbit height modes follow real skinned face positions (including the stand-in player), not generic body-height estimates.
             if (subjects.length === 2 && subjectIds[0] !== subjectIds[1]) { // Never orbit one actor twice if a Director pair is incomplete.
               const paragraphNumber = orbitResetCount + 1; // Advance only when the required pair really exists.
               const orbit = window.CinematicCameraRuntime?.createStageOrbitShot?.(stage, subjects, paragraphNumber); // Shared camera owner keeps game and Director focus/zoom/reset behavior identical.
