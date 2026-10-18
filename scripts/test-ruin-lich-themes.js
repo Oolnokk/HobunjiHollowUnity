@@ -187,6 +187,31 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   assert.equal(initialSurface.userData.plasmUvMapping,'edge-preserving-nine-slice','Plasm must use the existing snow nine-slice mapping API');
   assert.equal(t.mappedPatches.length,1,'Initial seeded cluster must be UV-mapped once');
   assert.equal(t.mappedPatches[0].settings.angleToleranceDeg,89,'Shared snow mapper must preserve curved lip + top as one surface');
+  // A 2x2–4x4 blob must have NO lip where two cells meet, one UV domain
+  // across that shared edge, and a visibly tapered lip at its exterior.
+  const surfacePosition=initialGeometry.getAttribute('position');
+  const surfaceUv=initialGeometry.getAttribute('uv');
+  const minCellX=Math.min(...seed.map(p=>p.x));
+  const minCellZ=Math.min(...seed.map(p=>p.z));
+  const samples=(targetX,targetZ)=>Array.from({length:surfacePosition.count},(_,i)=>i)
+    .filter(i=>Math.abs(surfacePosition.getX(i)-targetX)<.00001&&
+               Math.abs(surfacePosition.getZ(i)-targetZ)<.00001)
+    .map(i=>({y:surfacePosition.getY(i),u:surfaceUv.getX(i),v:surfaceUv.getY(i)}));
+  const joined=samples(minCellX+1,minCellZ+.22);
+  assert.ok(joined.length>=2,'Adjoining plasm cells retain identical shared-edge vertices');
+  assert.ok(joined.every(p=>Math.abs(p.y-.226)<.00001),
+    'Internal plasm tile borders must remain at full cap height, never curve downward');
+  assert.ok(joined.every(p=>Math.abs(p.u-joined[0].u)<.00001&&Math.abs(p.v-joined[0].v)<.00001),
+    'Shared sides use matching UVs, not a restarted per-tile texture');
+  const outer=samples(minCellX,minCellZ+.22);
+  assert.ok(outer.length&&outer.every(p=>Math.abs(p.y-.006)<.00001),
+    'Only the outside edge of the entire puddle falls to ground level');
+  const tapered=samples(minCellX+.11,minCellZ+.22);
+  assert.ok(tapered.some(p=>p.y>.03&&p.y<.20),
+    'An exposed outer edge must have intermediate-height curved vertices');
+  assert.ok(t.mappedPatches[0].settings.edgeSourceFraction===.32,
+    'Nine-slice mapper protects the image border, as snow does');
+
   assert.equal(t.api.snapshot().lightSources, 0, 'Kanthic relies on lantern alone');
   // Turn toward the seed from outside the narrowed radius; the player can
   // still see the direction, but not the actual puddle at lantern range.
@@ -224,10 +249,15 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   }
   assert.ok(observer,'A clear 10x10 room must have at least one dry neighbour of the puddle');
   t.player.x=observer.x*64;t.player.y=observer.z*64;
-  t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x);
+  t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x)+Math.PI;
   const seenCount=t.api.snapshot().plasmTiles;
   t.tick(4,.25);
-  assert.equal(t.api.snapshot().plasmTiles,seenCount,'The 50%-larger lantern freezes growth even 0.82 tiles from the nearest puddle edge');
+  assert.equal(t.api.snapshot().plasmTiles,seenCount,
+    'A puddle inside the omni-directional lantern cannot spread even when the avatar faces AWAY');
+  t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x);
+  t.tick(4,.25);
+  assert.equal(t.api.snapshot().plasmTiles,seenCount,
+    'A puddle inside lantern radius remains frozen while the player looks directly at it');
   t.composer.clear();
   assert.equal(t.api.snapshot().active,false,'Only leaving/clearing the entire ruin removes the puddle');
   // Teardown is idempotent; repeated clear is safe.
