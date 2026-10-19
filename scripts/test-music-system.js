@@ -135,8 +135,16 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   assert.equal(state.currentCue.src, 'cues/general/to1.ogg', 'correct regional asset selected');
   assert.equal(state.currentBgm, song, 'the active background song is preserved');
   assert.equal(song.currentTime, 77, 'the active song does not rewind');
-  assert.equal(state.cueOverlayDucking, true, 'cue briefly ducks its background song');
-  assert.deepEqual(live.ducks, [true], 'background duck engages on actual cue playback');
+  assert.equal(state.cueOverlayDucking, false, 'starting a media element does not duck music while the cue is buffering');
+  assert.deepEqual(live.ducks, [], 'no silent interval before the cue becomes audible');
+  state.currentCue.listeners.playing();
+  assert.equal(state.cueOverlayDucking, true, 'cue ducks BGM on actual playback readiness');
+  assert.deepEqual(live.ducks, [true], 'background duck begins with audible playback');
+  state.currentCue.listeners.waiting();
+  assert.equal(state.cueOverlayDucking, false, 'buffering releases the overlay duck');
+  assert.deepEqual(live.ducks, [true, false], 'BGM returns while regional cue is buffering');
+  state.currentCue.listeners.playing();
+  assert.equal(state.cueOverlayDucking, true, 'buffering recovery re-engages the cue duck');
   state.currentCue.listeners.ended();
   assert.equal(state.currentCue, null, 'cue slot is released on completion');
   assert.equal(state.currentBgm, song, 'full song survives cue completion');
