@@ -60,10 +60,10 @@ assert.match(pixelProbe, /stopImmediatePropagation\?\.\(\)/,
   'Pixel Probe consumes its sampling pointer before gameplay handlers can attack');
 assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0\)/,
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
-assert.match(heldRender, /currentFramebufferStencilBits\(renderer\)/,
-  'held-water compositing verifies stencil support on the actually bound framebuffer');
-assert.match(heldRender, /requestedFootWaterComposite && stencilBits >= 2/,
-  'foot-only water replay is skipped rather than repainting weapons when a target lacks stencil');
+assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene\)/,
+  'the active world pass collects visible procedural feet into the selective x-ray overlay');
+assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(water.length && feet.length\)\)/,
+  'feet in water trigger the overlay even on maps without any grass/path ground');
 assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
   'held x-ray recognizes the shared grass ShaderMaterial even when a runtime consumer uses a plain Mesh');
 assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.uniforms\?\.uDensity[\s\S]{0,180}entry\.uniforms\?\.uStrength/,
@@ -119,43 +119,46 @@ assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
   'cavern walkable surfaces still carry terrain semantics, independent of their x-ray exemption');
-assert.match(heldRender, /FOOT_WATER_MASK_LAYER = 26/,
-  'procedural feet have a dedicated private stencil layer instead of sharing the weapon overlay');
-assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)/,
-  'the render policy exposes an explicit registration path for meshes that should remain under water');
-assert.match(heldRender, /prepareHeldStencilMaterials\(held\)[\s\S]{0,600}HELD_OVERLAY_MASK/,
-  'held weapons and hands still use the selective non-ground x-ray overlay');
-assert.match(heldRender, /stencilWriteMask = 0x02[\s\S]{0,140}stencilRef = 2/,
-  'held weapon/hand pixels reserve stencil bit 1 so later foot-water compositing cannot paint over them');
-assert.match(heldRender, /prepareWaterOcclusionStencilMaterials\(waterOccluded\)[\s\S]{0,500}FOOT_WATER_MASK/,
-  'only explicitly water-occluded meshes stamp the foot-water mask');
-assert.match(heldRender, /stencilWriteMask = 0x01[\s\S]{0,180}stencilFuncMask = 0xFF/,
-  'the pre-rebuild foot mask stamps bit 0 before held pixels populate bit 1');
-assert.doesNotMatch(heldRender, /function prepareWaterOcclusionStencilMaterials\([\s\S]*?function prepareWaterStencilMaterials[\s\S]*?material\.depthTest = false/,
-  'the foot mask must preserve depth testing against solid geometry');
-assert.match(heldRender, /prepareWaterStencilMaterials\(water\)[\s\S]{0,500}WATER_REPLAY_MASK/,
-  'water is replayed through its private layer only after the foot mask exists');
-assert.match(heldRender, /stencilWriteMask = 0x00[\s\S]{0,180}stencilFuncMask = 0x03/,
-  'water replay reads both stencil bits: visible foot present and no overlying weapon');
-assert.match(heldRender, /renderer\.clearStencil\?\.\(\)/,
-  'held/foot-water stencil markers are cleared around the private composite pass');
+assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)[\s\S]{0,800}mesh.layers.enable\(HELD_OVERLAY_LAYER\)/,
+  'actual procedural foot mesh is enrolled in the same held/ground selective overlay layer');
+assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
+  'held gear and feet both participate in the selective overlay and screen scissor');
+assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.\.feet\]\)/,
+  'feet are absent from the original color pass so they cannot pop over transparent water');
+assert.match(heldRender, /const hidden = hideObjects\(\[\.\.\.ground, \.\.\.overlayMeshes\]\)/,
+  'depth reconstruction ignores grass and paths as well as the foot/held meshes');
+assert.match(heldRender, /camera.layers.mask = HELD_OVERLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
+  'feet and weapons are redrawn against the reconstructed protective cover depth');
+assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, originalCameraMask\)/,
+  'the shared overlay receives the actual visible feet, not a discarded registry');
+assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
+  'obsolete secondary water-tint compositing cannot double-blend water over the selective foot overlay');
 
-const heldOverlayAt = heldRender.indexOf('const heldStencilStates = prepareHeldStencilMaterials(held);'); // Used to guard the intended weapon-before-ground replay ordering.
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials('); // Used to keep raised soil in the depth buffer before water is recomposited.
-const footMaskAt = heldRender.indexOf('const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);'); // Used to prove water targets feet rather than held gear.
-const waterCompositeAt = heldRender.indexOf('const waterStencilStates = prepareWaterStencilMaterials(water);'); // Used with footMaskAt to protect the foot-only water policy.
-const depthClearAt = heldRender.indexOf('renderer.clearDepth();'); // The foot stencil must be recorded against base depth, before the x-ray reconstructs water depth.
-assert.ok(footMaskAt >= 0 && footMaskAt < depthClearAt && heldOverlayAt > depthClearAt,
-  'visible feet are stamped against the base depth before transparent water becomes a weapon occluder');
-assert.ok(heldOverlayAt < groundDepthRestoreAt && groundDepthRestoreAt < waterCompositeAt,
-  'weapons are drawn before restoring ground depth and compositing only visible foot-water pixels');
+const heldOverlayAt = heldRender.indexOf('camera.layers.mask = HELD_OVERLAY_MASK');
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(');
+const depthClearAt = heldRender.indexOf('renderer.clearDepth();');
+assert.ok(depthClearAt >= 0 && depthClearAt < heldOverlayAt && heldOverlayAt < groundDepthRestoreAt,
+  'cover depth is rebuilt first, held sprites and feet are then drawn once, and terrain depth is restored last');
+
+// Execute the production foot registration rather than only inspecting names:
+const footRegistrarStart = heldRender.indexOf('  function markWaterOccludedMesh(');
+const footRegistrarEnd = heldRender.indexOf('  function enforceGroundMesh(', footRegistrarStart);
+assert.ok(footRegistrarStart >= 0 && footRegistrarEnd > footRegistrarStart);
+const footLayerSet = new Set([0]);
+const mockFoot = { isMesh: true, userData: {}, layers: { enable(layer) { footLayerSet.add(layer); } } };
+const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer',
+  heldRender.slice(footRegistrarStart, footRegistrarEnd) + '\nreturn markWaterOccludedMesh;')(
+    new WeakSet(), { add() {} }, 26, 29,
+    (mesh, layer) => footLayerSet.has(layer));
+assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
+assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
+assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
+assert.equal(markFoot(mockFoot), false, 'repeat registration does not duplicate the mesh');
 
 assert.match(feetParity, /markWaterOccludedMesh\?\.\(mesh\)/,
-  'procedural feet explicitly register for water occlusion');
+  'both procedural foot meshes register through the real selective renderer');
 assert.match(feetParity, /material\?\.colorWrite !== false/,
-  'the colorless foot-water stencil pass cannot replace the visible-foot transform snapshot');
-assert.match(feetParity, /return 'water-mask'/,
-  'procedural feet recognize the dedicated colorless water-mask pass for transform parity');
+  'the visible selective foot draw remains eligible for matrix snapshot capture');
 
 assert.match(stances, /function idleBodyYawSnapshot\(target = \{\}\)/,
   'weapon stances expose a lightweight idle-yaw snapshot');
