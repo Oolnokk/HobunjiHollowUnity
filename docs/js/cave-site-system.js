@@ -54,7 +54,7 @@
 
   const PROFILE_SCHEMA = 2; // contents + inhabitant layers; den.caveSite tags from older schemas are rerolled.
   const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // AlchemySystem reagent the mushroom cave grows (the game's only mushroom item).
-  const MUSHROOM_PICK_RADIUS_TILES = 0.75; // Walk-up harvest radius, like the hidden cache's open radius.
+  const MUSHROOM_INTERACT_RADIUS_TILES = 1.55; // Used only for aimed, explicit cave-cluster pickup; walking across a cluster never harvests it.
   const MUSHROOM_REGROW_DAYS = 3; // Picked clusters regrow after this many in-game days.
   const SKELETON_SPECIES_ID = 'mao-ao-skeleton'; // Catacomb bodies (js/mao-ao-skeleton-species-runtime.js).
   const SKELETON_NAME = "Mao'ao Skeleton";
@@ -79,6 +79,8 @@
   const banditPopulatedMaps = new Set(); // Session-only map ids that actually spawned a hideout; used to distinguish kills from a fresh page reload.
   const ruinTransitionMaps = new Set(); // Map ids currently transitioning into a ruin; prevents repeated proximity triggers during the fade/generation handoff.
   const mushroomMeshesByMapId = new Map(); // map id -> (cluster id -> scene group), so a pick can remove exactly that cluster.
+  const mushroomScenesByMapId = new Map(); // Retains the cave scene for visual regrowth after the in-game day changes.
+  const mushroomVisualDayByMapId = new Map(); // Last day each cave's mushroom visuals were reconciled.
   const bodiesByMapId = new Map(); // map id -> catacomb body records { body, entity, riser, armedAt, delay, rising, risen } for this page session.
   const bodySpawnPromises = new Map(); // map id -> in-flight body population.
   let lastCaveArea = null; // Arrival banners run once per cave entry, including returning to a known cave.
@@ -90,6 +92,8 @@
   let stateIdentity = null; // World|Tothal-cycle key used to reload the correct cave discovery/loot state.
   let savedCaveState = null; // { version, identity, sites } — the world-save payload (see ensureStateLoaded).
   let saveDeps = null; // { save } from game.js; persistState() asks the game to write the world save.
+  let deferredSaveQueued = false; // Coalesces expensive world-save serialization across quick mushroom picks.
+  let deferredSaveGeneration = 0; // Prevents an old world's idle save from firing after restore().
   const CAVE_SAVE_VERSION = 2;
   let integrationsInstalled = false; // Prevents double-wrapping subsystem APIs across hot reloads/tests.
   let filteringDens = false; // True while withAnimalOnlyDens has swapped layout.dens for its filtered view; sitesForZone must not re-sync from that view.
@@ -494,10 +498,14 @@
   // Mushroom clusters reuse the wild reagent-plant mesh (ReagentPlants), three
   // to a tile; clusters picked within the regrow window are skipped.
   function buildMushroomClusters(mapId, mapData, scene) {
+    const id = String(mapId); // Used to track this cave's current visual groups, scene and day consistently.
+    for (const oldGroup of mushroomMeshesByMapId.get(id)?.values() || []) oldGroup.parent?.remove(oldGroup);
     const meshes = new Map();
-    mushroomMeshesByMapId.set(String(mapId), meshes);
+    mushroomMeshesByMapId.set(id, meshes);
+    if (scene) mushroomScenesByMapId.set(id, scene);
+    mushroomVisualDayByMapId.set(id, currentDay());
     const build = window.ReagentPlants?.buildReagentPlantMesh;
-    const profile = sitesByMapId.get(String(mapId));
+    const profile = sitesByMapId.get(id);
     if (!build || !scene || !mapData?.caveMushrooms?.length) return 0;
     const state = profile ? stateFor(profile) : null;
     const rng = makeRng(`${mapId}:mushroom-visuals`);
@@ -655,10 +663,7 @@
     for (const [signature, state] of Object.entries(sites || {})) runtimeStateBySignature.set(signature, clone(state) || {});
   }
 
-  function persistState() {
-    ensureStateLoaded();
-    if (!stateIdentity || stateIdentity.startsWith('session|')) return;
-    savedCaveState = { version: CAVE_SAVE_VERSION, identity: stateIdentity, sites: clone(Object.fromEntries(runtimeStateBySignature)) };
+  function saveCaveStateToWorld() {
     try {
       saveDeps?.save?.();
     } catch (error) {
@@ -666,8 +671,28 @@
     }
   }
 
+  function persistState(deferWorldSave = false) {
+    ensureStateLoaded();
+    if (!stateIdentity || stateIdentity.startsWith('session|')) return;
+    savedCaveState = { version: CAVE_SAVE_VERSION, identity: stateIdentity, sites: clone(Object.fromEntries(runtimeStateBySignature)) };
+    if (!deferWorldSave) { saveCaveStateToWorld(); return; }
+    if (deferredSaveQueued) return;
+    deferredSaveQueued = true;
+    const generation = deferredSaveGeneration; // Used to reject a queued callback when a different world is restored.
+    const flush = () => {
+      deferredSaveQueued = false;
+      if (generation === deferredSaveGeneration) saveCaveStateToWorld();
+    };
+    // Save the small cave-state snapshot now, but serialize the whole world
+    // only during browser idle time so harvesting never blocks the pickup frame.
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(flush, { timeout: 3000 });
+    else setTimeout(flush, 500);
+  }
+
   function serialize() { return savedCaveState ? clone(savedCaveState) : null; }
   function restore(saved) {
+    deferredSaveGeneration++;
+    deferredSaveQueued = false;
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
     stateIdentity = null; // Next access reloads from the restored payload (or the legacy key).
     runtimeStateBySignature.clear();
@@ -751,7 +776,10 @@
     bodySpawnPromises.delete(mapId);
     banditSpawnPromises.delete(mapId);
     banditPopulatedMaps.delete(mapId);
+    for (const oldGroup of mushroomMeshesByMapId.get(mapId)?.values() || []) oldGroup.parent?.remove(oldGroup);
     mushroomMeshesByMapId.delete(mapId);
+    mushroomScenesByMapId.delete(mapId);
+    mushroomVisualDayByMapId.delete(mapId);
     ruinTransitionMaps.delete(mapId);
     sitesByMapId.delete(mapId);
     persistState();
@@ -875,24 +903,52 @@
     return picked == null || currentDay() - Number(picked) >= MUSHROOM_REGROW_DAYS;
   }
 
-  // Walk-up harvest, like the hidden cache: grants the Duskcap reagent through
-  // the same loot grant, with the Foraging bonus roll and XP that wild reagent
-  // plants use. The cluster regrows after MUSHROOM_REGROW_DAYS.
-  function harvestMushrooms(profile, plan, state) {
-    if (!plan.mushrooms?.length) return;
-    for (const mushroom of plan.mushrooms) {
-      if (!mushroomAvailable(state, mushroom) || caveDistanceTiles(mushroom) > MUSHROOM_PICK_RADIUS_TILES) continue;
-      state.mushroomsPickedDay = { ...(state.mushroomsPickedDay || {}), [mushroom.id]: currentDay() };
-      const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
-      const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: 1 + bonus }) || [];
-      wildlifeDeps?.awardForagingXp?.();
-      const group = mushroomMeshesByMapId.get(profile.mapId)?.get(mushroom.id);
-      group?.parent?.remove(group);
-      mushroomMeshesByMapId.get(profile.mapId)?.delete(mushroom.id);
-      persistState();
-      const label = window.AlchemySystem?.REAGENT_DEFS?.[mushroom.reagentKey]?.label || 'mushrooms';
-      wildlifeDeps?.showToast?.(parts.length ? `Picked ${parts.join(', ')}${bonus ? ' (Foraging bonus)' : ''}` : `Picked ${label}.`, true);
-    }
+  // Cave Duskcaps follow the same getButtons/onAction contract as wild
+  // ReagentPlants, but live on cavern tiles and are picked only when aimed at.
+  function objectAt(mapId, col, row) {
+    const id = String(mapId); // Used to select only this cave's authored clusters.
+    const plan = plansByMapId.get(id);
+    if (!plan?.mushrooms?.length || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
+    const mushroom = plan.mushrooms.find(item => item.col === col && item.row === row);
+    if (!mushroom || caveDistanceTiles(mushroom) > MUSHROOM_INTERACT_RADIUS_TILES) return null;
+    const profile = sitesByMapId.get(id);
+    if (!profile || !mushroomAvailable(stateFor(profile), mushroom)) return null;
+    const meshes = mushroomMeshesByMapId.get(id);
+    if (meshes && !meshes.has(mushroom.id)) return null;
+    const def = window.AlchemySystem?.REAGENT_DEFS?.[mushroom.reagentKey];
+    const label = def?.label || 'Duskcap Mushroom';
+    return {
+      id: mushroom.id, type: 'reagent_plant', col, row,
+      mesh: meshes?.get(mushroom.id) || null, reagentKey: mushroom.reagentKey,
+      label: `${def?.icon || '🍄'} ${label}`,
+      getButtons() {
+        return [{ icon: def?.icon || '🍄', label: `Pick ${label}`, action: 'obj_pick_cave_mushroom', style: 'primary', allowed: true }];
+      },
+      onAction(action) {
+        if (action !== 'obj_pick_cave_mushroom') return { ok: false, message: 'Unknown action.' };
+        // Re-evaluate on press: a cached button cannot re-pick a harvested
+        // cluster, interact across the cave, or target a previous scene.
+        if (String(wildlifeDeps?.getCurrentArea?.() || '') !== id
+          || caveDistanceTiles(mushroom) > MUSHROOM_INTERACT_RADIUS_TILES
+          || !mushroomAvailable(stateFor(profile), mushroom)
+          || (meshes && !meshes.has(mushroom.id))) return { ok: false, message: 'The Duskcap is not ready to pick.' };
+        const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
+        const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0;
+        const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
+        const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: amount }) || [];
+        stateFor(profile).mushroomsPickedDay[mushroom.id] = currentDay();
+        wildlifeDeps?.awardForagingXp?.();
+        const group = meshes?.get(mushroom.id);
+        group?.parent?.remove(group);
+        meshes?.delete(mushroom.id);
+        persistState(true);
+        window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
+        return {
+          ok: true, deferMemberSave: true,
+          message: parts.length ? `Picked ${parts.join(', ')}${bonus ? ' (Foraging bonus)' : ''}.` : `Picked ${amount} ${label}.`,
+        };
+      },
+    };
   }
 
   function makeSkeleton(mapId, x, y, extra, roster = null) {
@@ -1017,7 +1073,15 @@
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
     grantCacheLoot(profile, plan, state);
-    harvestMushrooms(profile, plan, state);
+    // The cave scene is cached across visits: restore missing stalks after
+    // their three-day regrowth window, without rebuilding the cave each tick.
+    if (mushroomVisualDayByMapId.has(mapId) && mushroomVisualDayByMapId.get(mapId) !== currentDay()) {
+      mushroomVisualDayByMapId.set(mapId, currentDay());
+      const meshes = mushroomMeshesByMapId.get(mapId);
+      if (plan.mushrooms?.some(item => mushroomAvailable(state, item) && !meshes?.has(item.id))) {
+        buildMushroomClusters(mapId, { caveMushrooms: plan.mushrooms }, mushroomScenesByMapId.get(mapId));
+      }
+    }
     ensureBodies(profile, plan, state);
     updateBodies(profile, plan, state);
     maybeEnterRuin(profile, plan, state);
@@ -1138,6 +1202,7 @@
     installIntegrations,
     debugSnapshot,
     buildInteriorProps,
+    objectAt,
     resetCave,
     isZoneOccupied,
     mapLabelFor,
