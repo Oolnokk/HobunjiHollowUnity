@@ -99,8 +99,12 @@
     return labels[snd?.readyState] || String(snd?.readyState ?? 'none');
   }
 
-  function makeGameAudio(url, { loop = false, preload = 'auto' } = {}) {
-    const snd = new Audio(resolveAudioUrl(url));
+  function makeGameAudio(url, { loop = false, preload = 'auto', crossOrigin = null } = {}) {
+    const snd = new Audio();
+    // Weather enters Web Audio indoors and stays captured outdoors. CDN
+    // redirects otherwise produce silent media sources without throwing.
+    if (crossOrigin) snd.crossOrigin = crossOrigin;
+    snd.src = resolveAudioUrl(url);
     snd.loop = !!loop;
     snd.preload = preload;
     snd.addEventListener('loadstart', () => audioTrace('loadstart ' + snd.src, 'media-loadstart-' + snd.src, 0), { once: true });
@@ -1530,6 +1534,9 @@
         volume: Number(snd.volume.toFixed(3)),
         target: Number((snd._bgsTargetVolume || 0).toFixed(3)),
         paused: snd.paused,
+        crossOrigin: snd.crossOrigin || 'none', // Reports whether CDN media was requested safely for the weather filter.
+        readyState: snd.readyState,
+        mediaError: snd.error?.code || 0,
         filtered: !!_weatherBgsFilters.get(snd)?.filter,
         filterFallback: _weatherBgsFilters.get(snd)?.failed === true, // Mobile diagnostics distinguish an audible unfiltered fallback from a working low-pass.
       },
@@ -1541,7 +1548,7 @@
     const v = Math.max(0, Math.min(1, Number(volume) || 0));
     let snd = _loopingBgs.get(id);
     if (!snd && url) {
-      snd = makeGameAudio(url, { loop: true });
+      snd = makeGameAudio(url, { loop: true, crossOrigin: WEATHER_BGS_IDS.has(id) ? 'anonymous' : null });
       snd.volume = 0;
       snd._bgsLastUpdateAt = performance.now(); // Used below to smooth this loop toward its live target.
       snd._bgsTargetVolume = 0; // Exposed in audio diagnostics and updated on every mix pass.

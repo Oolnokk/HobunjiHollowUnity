@@ -19,7 +19,9 @@ const filters = []; // Records low-pass filter targets during building transitio
 const sounds = []; // Stores the actual mocked HTMLAudioElement volume targets.
 const captured = new WeakSet(); // A Web Audio source cannot be created twice for one audio element.
 class MockAudio {
-  constructor(src) { this.src = src; this.volume = 1; this.paused = true; sounds.push(this); }
+  constructor(src) { if (src) this.src = src; this.volume = 1; this.paused = true; sounds.push(this); }
+  set src(value) { this._src = value; this.corsAtRequest = this.crossOrigin; }
+  get src() { return this._src; }
   addEventListener() {}
   load() {}
   play() { this.paused = false; return Promise.resolve(); }
@@ -32,6 +34,8 @@ const graph = {
   createMediaElementSource(audio) {
     check(!captured.has(audio), 'each HTML weather loop is captured only once');
     captured.add(audio); mediaCaptures++;
+    // CDN redirects are silent in Web Audio unless the original request used CORS.
+    audio.webAudioSilent = audio.corsAtRequest !== 'anonymous';
     return { connect(next) { return next; } };
   },
   createGain() { return { gain: { value: 1 }, connect(next) { return next; } }; },
@@ -76,6 +80,8 @@ check(Math.abs(mix.loops.rainheavy.target - 0.208) < 1e-9, 'heavy rain stays aud
 check(mix.loops.wind1.target > 0 && mix.loops.wind2.target > 0, 'both weather winds audible indoors');
 check(mix.loops.rainheavy.filtered && mix.loops.wind2.filtered, 'rain and wind are low-pass filtered');
 check(filters.length === 5 && filters.every(f => f.frequency.value === 780), 'all five weather layers use muffled cutoff');
+const weatherSounds = sounds.filter(s => captured.has(s)); // Checks browser-style CORS silencing, not just mixer targets.
+check(weatherSounds.every(s => !s.webAudioSilent), 'filtered weather must request CORS before assigning its URL');
 const birds = sounds.find(s => s.src.includes('birds')); // Confirms non-weather wildlife does not leak into a building.
 check(birds._bgsTargetVolume === 0, 'birds remain silent indoors');
 const count = mediaCaptures; // Used to verify filter nodes are reused after entering the building again.
@@ -84,6 +90,7 @@ music.updateExteriorBgs();
 music.updateRainAudio();
 check(filters.every(f => f.frequency.value === 18000), 'outdoor transition restores bright weather');
 check(music.getWeatherAudioDebugState().loops.rainheavy.target === 0.65, 'outdoor volume recovers');
+check(weatherSounds.every(s => !s.webAudioSilent), 'returning outdoors retains audible weather sources');
 area = 'map_i_farmhouse';
 music.updateExteriorBgs();
 music.updateRainAudio();
