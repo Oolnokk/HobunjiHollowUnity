@@ -12,7 +12,15 @@
 
   const params = new URLSearchParams(location.search);
   const sessionId = params.get('session') || '';
+  // A switched companion must adopt the destination game's popup name too,
+  // otherwise Settings → Dev Companion Window creates a second popup.
+  if (/^s[a-z0-9]{5,100}$/i.test(sessionId)) {
+    try { window.name = `hobunji-dev-companion-${sessionId}`; } catch (_) {}
+  }
   const CHANNEL_PREFIX = 'hobunji-dev-companion-v1:';
+  const DISCOVERY_CHANNEL = 'hobunji-dev-companion-discovery-v1'; // Read-only announcements from open game tabs.
+  const DISCOVERY_WAIT_MS = 1800;
+  const OFFLINE_TIMEOUT_MS = 12000; // A frozen game may take a while to answer; do not switch automatically.
   const PREFS_KEY = 'hobunjiDevCompanionPrefs.v1';
   const COMMAND_TIMEOUT_MS = 20000;
   const LONG_COMMAND_TIMEOUT_MS = 180000; // Time skips across many in-game days.
@@ -41,6 +49,15 @@
   let requestSeq = 0;
   let lastConversationKey = '';
   let lastMapSessionOpen = false;
+  const discoveredGames = new Map(); // Discovered session ID -> validated game URL and build for the Switch UI.
+  const conflictingSessions = new Set(); // Duplicate-tab sessions that would cross-wire commands; Switch stays disabled.
+  let discoveryChannel = null; // Shared same-origin channel; separate from the command channel.
+  let activeScanId = '';
+  let scanTimer = null;
+  let scanSequence = 0;
+  let scanning = false;
+  let scanFinished = false;
+  let discoveryPinned = false; // Find Games keeps results visible while already connected.
 
   const prefs = (() => {
     const defaults = { pauseOnLoad: true, skipRestoreConfirm: false, followContext: true, tab: 'now' };
@@ -50,6 +67,12 @@
 
   // ── Transport ───────────────────────────────────────────────────────
   const channel = sessionId && typeof BroadcastChannel === 'function' ? new BroadcastChannel(CHANNEL_PREFIX + sessionId) : null;
+  if (typeof BroadcastChannel === 'function') {
+    try {
+      discoveryChannel = new BroadcastChannel(DISCOVERY_CHANNEL);
+      discoveryChannel.onmessage = event => acceptDiscovery(event.data);
+    } catch (_) { discoveryChannel = null; }
+  }
 
   function post(message) {
     channel?.postMessage({ protocol: 1, session: sessionId, from: 'companion', sentAt: Date.now(), ...message });
@@ -149,8 +172,14 @@
     dot.className = 'dot' + (connected ? ' on' : '');
     $('connText').textContent = connected ? 'Connected' : (text || (sessionId ? 'Game session not responding' : 'No game session'));
     document.body.classList.toggle('offline', !connected);
-    for (const control of document.querySelectorAll('#header button, #autosaveToggle, #panes button, #panes select')) control.disabled = !connected;
+    for (const control of document.querySelectorAll('#header button, #autosaveToggle, #panes button, #panes select')) {
+      if (control.id === 'findGamesBtn' || control.closest('#gameDiscovery')) continue;
+      control.disabled = !connected;
+    }
     if (connected) render(true);
+    if (connected && !discoveryPinned) $('gameDiscovery').hidden = true;
+    renderDiscovery();
+    if (!connected) scanGames(); // Scan on disconnect; selecting another game always requires Switch.
   }
 
   setInterval(() => {
@@ -158,14 +187,22 @@
     post({ type: 'companion-heartbeat' });
     // A busy game (zone generation, software WebGL) can miss heartbeats for a
     // while; commands still queue on the channel, so only mark it as busy.
-    const stale = state.connected && Date.now() - state.lastAliveAt > ALIVE_TIMEOUT_MS;
+    const elapsed = Date.now() - state.lastAliveAt;
+    if (state.connected && elapsed > OFFLINE_TIMEOUT_MS) {
+      setConnected(false, 'Game session not responding.');
+      return;
+    }
+    const stale = state.connected && elapsed > ALIVE_TIMEOUT_MS;
     const dot = $('connDot');
     if (stale !== dot.classList.contains('stale') && state.connected) {
       dot.classList.toggle('stale', stale);
       $('connText').textContent = stale ? 'Game busy…' : 'Connected';
     }
   }, 1000);
-  window.addEventListener('pagehide', () => post({ type: 'companion-bye' }));
+  window.addEventListener('pagehide', () => {
+    post({ type: 'companion-bye' });
+    discoveryChannel?.close();
+  });
 
   // ── Helpers ─────────────────────────────────────────────────────────
   let toastTimer = null;
@@ -229,6 +266,125 @@
       $('textDialog').showModal();
       $('textDialogBody').select();
     }
+  }
+
+  // A scan asks only for session/build metadata. Every candidate is checked
+  // before it can appear or navigate; the command channel stays session-bound.
+  function validGameAnnouncement(message) {
+    if (!message || message.protocol !== 1 || message.type !== 'game-available' ||
+        message.requestId !== activeScanId || typeof message.session !== 'string' ||
+        !/^s[a-z0-9]{5,100}$/i.test(message.session)) return null;
+    try {
+      const gameUrl = new URL(message.gameHref);
+      const companionUrl = new URL(message.companionHref);
+      if (!['http:', 'https:'].includes(gameUrl.protocol) ||
+          gameUrl.origin !== location.origin || companionUrl.origin !== location.origin) return null;
+      const expected = new URL('tools/dev-companion/index.html', new URL('./', gameUrl));
+      if (companionUrl.pathname !== expected.pathname ||
+          companionUrl.searchParams.get('session') !== message.session) return null;
+      const gameRef = /\/Oolnokk\/HobunjiHollowUnity\/([^/]+)\/docs(?:\/|$)/i.exec(gameUrl.pathname);
+      const label = gameRef ? decodeURIComponent(gameRef[1]) : 'unidentified build';
+      return {
+        session: message.session,
+        pageLoadId: typeof message.pageLoadId === 'string' ? message.pageLoadId : '',
+        title: String(message.title || 'Hobunji Hollow').slice(0, 100),
+        buildRef: label,
+        companionHref: companionUrl.href,
+        sameBuild: companionUrl.pathname === location.pathname,
+        bootedAt: Number(message.bootedAt) || 0,
+      };
+    } catch (_) { return null; }
+  }
+
+  function acceptDiscovery(message) {
+    const game = validGameAnnouncement(message);
+    if (!game) return;
+    const existing = discoveredGames.get(game.session);
+    if (existing && existing.pageLoadId !== game.pageLoadId) {
+      conflictingSessions.add(game.session); // Both live pages answered with the same copied session ID.
+    }
+    discoveredGames.set(game.session, game);
+    renderDiscovery();
+  }
+
+  function scanGames() {
+    $('gameDiscovery').hidden = false;
+    if (!discoveryChannel) {
+      scanning = false;
+      scanFinished = true;
+      $('discoveryStatus').textContent = 'Browser tab discovery is unavailable.';
+      renderDiscovery();
+      return;
+    }
+    clearTimeout(scanTimer);
+    discoveredGames.clear();
+    conflictingSessions.clear();
+    activeScanId = `d${Date.now().toString(36)}-${++scanSequence}`; // Correlates responses with the latest scan.
+    scanning = true;
+    scanFinished = false;
+    renderDiscovery();
+    try {
+      discoveryChannel.postMessage({ protocol: 1, type: 'find-games', requestId: activeScanId });
+    } catch (error) {
+      scanning = false;
+      scanFinished = true;
+      $('discoveryStatus').textContent = 'Could not search for games.';
+      return;
+    }
+    scanTimer = setTimeout(() => {
+      scanning = false;
+      scanFinished = true;
+      renderDiscovery();
+    }, DISCOVERY_WAIT_MS);
+  }
+
+  function switchToGame(game) {
+    if (!game || !discoveredGames.has(game.session)) return;
+    if (conflictingSessions.has(game.session)) {
+      toast('Multiple game tabs share this session ID. Open the intended game in a fresh tab and search again.', true);
+      return;
+    }
+    // Recheck just before navigation; announcements are untrusted inputs.
+    const checked = validGameAnnouncement({
+      ...game, protocol: 1, type: 'game-available', requestId: activeScanId,
+      gameHref: new URL('../../index.html', game.companionHref).href,
+    });
+    if (!checked || checked.companionHref !== game.companionHref) {
+      toast('The discovered game URL is invalid. Search again.', true);
+      return;
+    }
+    if (game.session === sessionId && game.sameBuild && state.connected) return;
+    const target = new URL(game.companionHref);
+    if (state.activeTab && state.activeTab !== 'now') target.hash = state.activeTab;
+    // Never navigate due to a heartbeat, discovery reply, or disconnect:
+    // this function is called only by the selected row's Switch button.
+    location.assign(target.href);
+  }
+
+  function renderDiscovery() {
+    const status = $('discoveryStatus');
+    if (!status) return;
+    const games = [...discoveredGames.values()].sort((a, b) => Number(b.session === sessionId) - Number(a.session === sessionId) || b.bootedAt - a.bootedAt);
+    status.textContent = scanning ? `Searching… ${games.length} found` :
+      !discoveryChannel ? 'Browser tab discovery is unavailable.' :
+      games.length ? `${games.length} open game${games.length === 1 ? '' : 's'} found. Press Switch to connect.` :
+      scanFinished ? 'No responding games found. Older builds may not support discovery.' :
+      'Search for open game tabs.';
+    $('discoveryList').replaceChildren(...games.map(game => {
+      const conflict = conflictingSessions.has(game.session);
+      const current = !conflict && game.session === sessionId && game.sameBuild && state.connected;
+      const row = el('div', { class: 'discovery-game' });
+      const info = el('div', { class: 'discovery-info' },
+        el('div', { class: 'row-title', text: game.title }),
+        el('div', { class: 'row-sub mono', text: `${game.buildRef} · ${game.session.slice(0, 14)}` }),
+        el('div', { class: 'row-sub', text: conflict ? 'Duplicate session ID: cannot safely select either tab. Open a fresh game tab.' : current ? 'Connected here' : game.sameBuild ? (game.session === sessionId ? 'Same build · reconnect' : 'Same build · another session') : 'Different build · will load its companion URL' }));
+      const action = el('button', {
+        type: 'button', class: 'small', text: conflict ? 'Conflict' : current ? 'Current' : 'Switch',
+        disabled: conflict || current, onclick: () => switchToGame(game),
+      });
+      row.append(info, action);
+      return row;
+    }));
   }
 
   function selectTab(tab, { fromContext = false } = {}) {
@@ -812,6 +968,7 @@
   }, 5000);
 
   // ── Wiring ──────────────────────────────────────────────────────────
+  $('findGamesBtn').addEventListener('click', () => { discoveryPinned = true; scanGames(); });
   for (const tabButton of document.querySelectorAll('#tabs [data-tab]')) tabButton.addEventListener('click', () => selectTab(tabButton.dataset.tab));
   $('quickSaveBtn').addEventListener('click', async () => {
     if (await run('quick-save', {}, { okText: 'Quick saved.' })) refreshQuickList();
@@ -876,5 +1033,9 @@
   const hashTab = location.hash.slice(1);
   selectTab(hashTab === 'live' ? 'now' : (hashTab || prefs.tab || 'now'));
   if (channel) post({ type: 'companion-hello' });
-  window.__devCompanionDebug = { state, command, sessionId, prefs };
+  window.__devCompanionDebug = {
+    state, command, sessionId, prefs,
+    discovery: () => ({ scanning, scanFinished, scanId: activeScanId, games: [...discoveredGames.values()], conflicts: [...conflictingSessions] }),
+    scanGames,
+  }; // On-screen discovery status remains usable without mobile DevTools.
 })();

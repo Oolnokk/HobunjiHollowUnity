@@ -181,7 +181,20 @@ Town Value (raised by extending the mine ladder, `docs/js/town-mine.js`) now pay
 Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens
 `docs/tools/dev-companion/` as a second window tied to that one play session
 (a per-tab session id carried on a BroadcastChannel; it reconnects across the
-game tab's reloads and ignores other tabs).
+game tab's reloads and ignores other tabs). A separate read-only discovery
+channel supports **Find Games**: it lists other same-origin game tabs and the
+build URL each is running, including commit-pinned GitHack builds. Switching
+is **always manual** — even if just one game is found, the companion stays on
+its current session and URL until you press **Switch**. The selected game
+supplies the exact companion URL and session ID; the companion navigates to
+that build when switching. Disconnected companions can still use Find Games.
+Only game builds with discovery support, on the same browser origin/storage
+partition, can be found; ordinary websites cannot enumerate arbitrary tabs.
+On loading a selected session, the companion also adopts its popup window name
+so the game's launcher can reuse it when browser window-group rules allow it.
+If two game tabs share the same cloned sessionStorage ID, discovery marks the
+session as ambiguous and disables Switch to avoid sending commands to both tabs;
+open the intended game in a fresh tab and scan again.
 
 It is laid out around context: the header always shows who/where/when you are
 and what's active (conversation, Map Edit session, paused autosave) with
