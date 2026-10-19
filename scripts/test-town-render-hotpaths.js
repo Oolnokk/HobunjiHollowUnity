@@ -12,6 +12,7 @@ const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
 const terrainTileMaterials = read('docs/js/terrain-tile-materials.js'); // Guards grass-only material tags against seasonal texture overrides.
 const zoneGrassBillboards = read('docs/js/zone-grass-billboards.js'); // Verifies the authored path-brick group tag used by the held x-ray classifier.
+const borderTerrain = read('docs/js/border-terrain.js'); // Guards authored approach roads and fallback path ribbons outside ordinary paving chunks.
 const plateauMesa = read('docs/js/zone-plateau-mesa.js'); // Guards the semantic tag that makes elevated wilderness ground participate in the held overlay.
 const interiorBuilder = read('docs/js/interior-scene-builder.js'); // Guards cavern-floor registration for the same global held-object ground policy.
 const feetParity = read('docs/js/procedural-feet-outline-parity.js'); // Guards the explicit foot-only water-occlusion registration and transform parity.
@@ -81,6 +82,14 @@ assert.match(heldRender, /function isRoadSurface\(object\)[\s\S]{0,140}hasAncest
   'path-brick descendants use their existing semantic path tag rather than a generic material guess');
 assert.match(zoneGrassBillboards, /group\.userData\.hobunjiPathSurface = true/,
   'the authored road builder stamps path-brick groups for the held overlay');
+assert.match(game, /_townPathFallbackMesh\.userData\.hobunjiPathSurface = true/,
+  'the unpaved town fallback road remains x-rayable when paving assets fail to load');
+assert.match(borderTerrain, /pathMesh\.userData\.hobunjiPathSurface=true/,
+  'Cloud Forest authored border road is treated as a path');
+assert.match(borderTerrain, /if\(pathSurface\)m\.userData\.hobunjiPathSurface=true/,
+  'border-road ribbon generator tags only explicit path ribbons');
+assert.match(borderTerrain, /addRibbon\(c,pathMat,0\.025,null,0,true\)/,
+  'both border-road fallback paths opt into the tagged path policy');
 // Classify actual mocked scene objects through the shipped helper functions
 // rather than relying solely on string-level regex assertions.
 const classifierStart = heldRender.indexOf('  function hasLayer('); // First helper used by groundKind's classification chain.
