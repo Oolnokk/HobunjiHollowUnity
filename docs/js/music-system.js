@@ -43,6 +43,8 @@
   const WEATHER_BGS_IDS = new Set(['wind1', 'wind2', 'raingentle', 'rainmid', 'rainheavy']); // Restricts indoor filtering to weather, never birds, nighttime wildlife, furniture, or music.
   const INDOOR_WEATHER_VOLUME_SCALE = 0.32; // Lets outdoor weather remain audible at a distance through building walls.
   const INDOOR_WEATHER_CUTOFF_HZ = 780; // Removes outdoor rain/wind brightness while the player is inside.
+  const INDOOR_RAIN_VOLUME_SCALE = 0.50; // Keeps indoor rainfall distinct above the more distant wind mix.
+  const INDOOR_RAIN_CUTOFF_HZ = 3200; // Preserves raindrop detail that the wind/thunder cutoff removes.
   const OUTDOOR_WEATHER_CUTOFF_HZ = 18000; // Restores nearly unfiltered weather on exit.
   const _weatherBgsFilters = new Map(); // Keeps each loop's single Web Audio media source or failed-filter fallback alive across area changes.
   const _audioDebugLast = new Map();
@@ -99,8 +101,12 @@
     return labels[snd?.readyState] || String(snd?.readyState ?? 'none');
   }
 
-  function makeGameAudio(url, { loop = false, preload = 'auto' } = {}) {
-    const snd = new Audio(resolveAudioUrl(url));
+  function makeGameAudio(url, { loop = false, preload = 'auto', crossOrigin = null } = {}) {
+    const snd = new Audio();
+    // Weather enters Web Audio indoors and stays captured outdoors. CDN
+    // redirects otherwise produce silent media sources without throwing.
+    if (crossOrigin) snd.crossOrigin = crossOrigin;
+    snd.src = resolveAudioUrl(url);
     snd.loop = !!loop;
     snd.preload = preload;
     snd.addEventListener('loadstart', () => audioTrace('loadstart ' + snd.src, 'media-loadstart-' + snd.src, 0), { once: true });
@@ -1523,6 +1529,7 @@
       indoors,
       volume: indoors ? INDOOR_WEATHER_VOLUME_SCALE : 1,
       cutoffHz: indoors ? INDOOR_WEATHER_CUTOFF_HZ : OUTDOOR_WEATHER_CUTOFF_HZ,
+      rainVolume: indoors ? INDOOR_RAIN_VOLUME_SCALE : 1,
     };
   }
 
@@ -1550,7 +1557,9 @@
         return; // Direct HTML playback and the indoor volume attenuation still work.
       }
     }
-    const cutoffHz = indoors ? INDOOR_WEATHER_CUTOFF_HZ : OUTDOOR_WEATHER_CUTOFF_HZ; // Target used only when the player crosses the building boundary.
+    const cutoffHz = indoors
+      ? (id.startsWith('rain') ? INDOOR_RAIN_CUTOFF_HZ : INDOOR_WEATHER_CUTOFF_HZ)
+      : OUTDOOR_WEATHER_CUTOFF_HZ; // Rain retains more detail than wind when the player crosses a building boundary.
     if (node.cutoffHz === cutoffHz) return;
     node.cutoffHz = cutoffHz;
     const frequency = node.filter.frequency; // Smooths a doorway transition without restarting the recording.
@@ -1572,7 +1581,11 @@
         volume: Number(snd.volume.toFixed(3)),
         target: Number((snd._bgsTargetVolume || 0).toFixed(3)),
         paused: snd.paused,
+        crossOrigin: snd.crossOrigin || 'none', // Reports whether CDN media was requested safely for the weather filter.
+        readyState: snd.readyState,
+        mediaError: snd.error?.code || 0,
         filtered: !!_weatherBgsFilters.get(snd)?.filter,
+        cutoffHz: _weatherBgsFilters.get(snd)?.cutoffHz ?? null, // Shows each rain/wind layer's actual filter target in mobile diagnostics.
         filterFallback: _weatherBgsFilters.get(snd)?.failed === true, // Mobile diagnostics distinguish an audible unfiltered fallback from a working low-pass.
       },
     ])); // Captures weather-layer actual/target levels without relying on desktop devtools.
@@ -1583,7 +1596,7 @@
     const v = Math.max(0, Math.min(1, Number(volume) || 0));
     let snd = _loopingBgs.get(id);
     if (!snd && url) {
-      snd = makeGameAudio(url, { loop: true });
+      snd = makeGameAudio(url, { loop: true, crossOrigin: WEATHER_BGS_IDS.has(id) ? 'anonymous' : null });
       snd.volume = 0;
       snd._bgsLastUpdateAt = performance.now(); // Used below to smooth this loop toward its live target.
       snd._bgsTargetVolume = 0; // Exposed in audio diagnostics and updated on every mix pass.
@@ -1678,9 +1691,9 @@
       : 0;
     const weights = rainLayerWeights(intensity);
     const master = Math.max(0, Number(audioCfg.rainVolume ?? 1));
-    setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master * acoustics.volume, acoustics.indoors);
-    setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master * acoustics.volume, acoustics.indoors);
-    setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master * acoustics.volume, acoustics.indoors);
+    setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master * acoustics.rainVolume, acoustics.indoors);
+    setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master * acoustics.rainVolume, acoustics.indoors);
+    setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master * acoustics.rainVolume, acoustics.indoors);
   }
 
   function resolveFurnitureSfx(def) {
