@@ -936,7 +936,9 @@
         const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0;
         const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
         const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: amount }) || [];
-        stateFor(profile).mushroomsPickedDay[mushroom.id] = currentDay();
+        const liveState = stateFor(profile); // Used to migrate older cave saves that have no per-mushroom harvest map.
+        liveState.mushroomsPickedDay = liveState.mushroomsPickedDay || {};
+        liveState.mushroomsPickedDay[mushroom.id] = currentDay();
         wildlifeDeps?.awardForagingXp?.();
         const group = meshes?.get(mushroom.id);
         group?.parent?.remove(group);
