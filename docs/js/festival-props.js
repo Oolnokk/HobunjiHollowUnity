@@ -8,7 +8,7 @@
   }
   function decorate(root, record) {
     const THREE = window.THREE; // Same renderer used by game and editor preview.
-    const dressing = record.festivalDecoration; // Optional per-placement ornament preset, independent of the furniture key.
+    const dressing = record.festivalDecoration || (record.key === 'festivalArch' ? 'road-arch' : null); // Registered festivalArch furniture renders its overhead PNG arch even without a separate event dressing override.
     if (!THREE || (!dressing && !record.activity)) return;
     const group = new THREE.Group(); // Owned by the prop; rebuilding/disposal follows its normal lifecycle.
     group.name = 'festival-dressing';
