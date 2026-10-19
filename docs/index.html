@@ -326,7 +326,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261017h8208aad"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261019caskshot1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261010haf3daa5"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261010hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -779,7 +779,7 @@
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261013hfdce263"></script>
-  <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261019cavecracks1"></script>
   <script src="js/town-mine.js?v=20261015h57682f9"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
@@ -809,7 +809,10 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261016h16a390e"></script>
+  <script src="js/cave-site-system.js?v=20261019thickbarrier1"></script>
+  <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
+       hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
+  <script src="js/shattercasks.js?v=20261019casks1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -838,7 +841,7 @@
   <script src="js/crop-growth.js?v=20261015hcrop001"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261016h7dd69ee"></script>
+  <script src="js/perception-mode.js?v=20261019cracksense1"></script>
   <script src="js/world-portrait-life.js?v=20260930combatface2"></script>
 </head>
 <body>
