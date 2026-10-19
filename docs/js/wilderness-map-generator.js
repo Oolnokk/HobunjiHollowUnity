@@ -3325,7 +3325,7 @@
       let bestScore = Infinity;
       const scanSites = (x0, y0, x1, y1, outsideSectorPenalty) => {
         for (let y = y0; y <= y1 - paddedH; y++) for (let x = x0; x <= x1 - paddedW; x++) {
-          if (!areaFree(x, y, paddedW, paddedH) || !placementFilter(x, y, paddedW, paddedH, true)) continue;
+          if (!areaFree(x, y, paddedW, paddedH, { allowPlateauRing:true, allowCliffSkirt:true }) || !placementFilter(x, y, paddedW, paddedH, true)) continue; // Regrading erases old tier-ring/cliff-skirt classification.
           let minimum = Infinity, maximum = -Infinity;
           const counts = new Map(); // Mode of source heights, for regrading while retaining nearby plateau altitude.
           for (let yy = y; yy < y + paddedH; yy++) for (let xx = x; xx < x + paddedW; xx++) {
