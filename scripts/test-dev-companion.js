@@ -308,7 +308,7 @@ function makeContext(extra = {}) {
       '$': () => domNode(), renderDiscovery() {}, toast: message => { throw Error(message); },
       clearTimeout() {}, setTimeout: () => 0,
       sessionId: 'sinitial123', state: { connected: false, activeTab: 'now' },
-      discoveredGames: new Map(), activeScanId: 'd2', scanSequence: 0,
+      discoveredGames: new Map(), conflictingSessions: new Set(), activeScanId: 'd2', scanSequence: 0,
       scanning: false, scanFinished: false, scanTimer: null,
       discoveryChannel: { postMessage() {} }, DISCOVERY_WAIT_MS: 1800,
     };
@@ -329,7 +329,18 @@ function makeContext(extra = {}) {
     assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, companionHref: url.replace('raw.githack.com', 'evil.example') }), null);
     assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, companionHref: url.replace('snextgame123', 'swrong123') }), null);
     assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, companionHref: url.replace('/tools/dev-companion/', '/other/') }), null);
+    // Duplicating a tab can clone sessionStorage and therefore the session ID.
+    // Two distinct pages on one command channel must never be selectable.
+    context.discoveryAPI.acceptDiscovery({ ...game, pageLoadId: 'different-page-instance' });
+    assert.equal(context.conflictingSessions.has('snextgame123'), true, 'duplicate-tab session IDs are flagged');
+    assert.throws(
+      () => context.discoveryAPI.switchToGame(context.discoveredGames.get('snextgame123')),
+      /share this session ID/,
+      'a duplicated session is never switched into'
+    );
+    assert.equal(navigations.length, 1, 'session conflict does not navigate');
     context.discoveryAPI.scanGames();
+    assert.equal(context.conflictingSessions.size, 0, 'a new scan discards old collision reports');
     assert.equal(navigations.length, 1, 'Find Games cannot navigate');
   }
 
