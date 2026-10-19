@@ -135,6 +135,33 @@ for (const [input, expected] of [
   windowStub.ImpactRagdollPlayback.sampleCreatureDeath = originalSample;
 }
 
+// Fatal DoTs and other unforced deaths have no horizontal impulse, even if
+// callers give the victim's current position as the default damage source.
+const stationary = makeActor('poisonedHealth').actor;
+stationary.x = 106; stationary.y = 99; // Non-centered coordinates catch accidental center snapping and sideways slides.
+assert.equal(windowStub.CreatureDeath.begin(stationary, stationary.x, stationary.y), true);
+assert.equal(stationary.deathHadImpulse, false);
+assert.equal(stationary.deathTargetX, 106);
+assert.equal(stationary.deathTargetY, 99);
+for (let i = 0; i < 30; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+assert.equal(stationary.x, 106);
+assert.equal(stationary.y, 99);
+assert.equal(stationary.state, 'corpse');
+
+// Scorch must clone sprite/hand/foot material state without keeping those
+// clones alive forever after the owning corpse is butchered.
+const burning = makeActor('burningHealth');
+let baseDisposeCalled = false; // Confirms the owning avatar's original texture/rig disposal still runs.
+const unscorchedMaterials = burning.pieces.map(mesh => mesh.material);
+burning.actor.avatarRef.dispose = () => { baseDisposeCalled = true; };
+assert.equal(windowStub.CreatureDeath.begin(burning.actor), true);
+const charredMaterials = burning.pieces.map(mesh => mesh.material);
+for (const mat of charredMaterials) mat.dispose = () => { mat.disposed = true; };
+burning.actor.avatarRef.dispose();
+assert.equal(baseDisposeCalled, true);
+for (const mat of charredMaterials) assert.equal(mat.disposed, true);
+for (let i = 0; i < unscorchedMaterials.length; i++) assert.notEqual(charredMaterials[i], unscorchedMaterials[i]);
+
 // Asset-loading failure must still settle a lootable corpse, without flying.
 windowStub.ImpactBlendLibrary.getClip = () => null;
 const fallback = makeActor('untyped').actor;
