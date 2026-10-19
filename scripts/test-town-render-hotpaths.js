@@ -10,6 +10,7 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const terrainTileMaterials = read('docs/js/terrain-tile-materials.js'); // Guards grass-only material tags against seasonal texture overrides.
 const plateauMesa = read('docs/js/zone-plateau-mesa.js'); // Guards the semantic tag that makes elevated wilderness ground participate in the held overlay.
 const interiorBuilder = read('docs/js/interior-scene-builder.js'); // Guards cavern-floor registration for the same global held-object ground policy.
 const feetParity = read('docs/js/procedural-feet-outline-parity.js'); // Guards the explicit foot-only water-occlusion registration and transform parity.
@@ -41,10 +42,10 @@ assert.doesNotMatch(heldRender, /\.updateMatrixWorld = function heldGround/,
   'held/ground invariants no longer wrap every matrix update');
 assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\.setLocked\(true\)/,
   'the selective depth replay suppresses color through the renderer buffer');
-assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistry, scene\)\)/,
-  'only registered PNG cutouts receive temporary depth-material repair');
-assert.doesNotMatch(heldRender, /forceWaterDepth|waterDepthRegistry/,
-  'water must not become a hard depth occluder during the held overlay');
+assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistry, scene\), collectVisible\(protectedCoverRegistry, scene\)\)/,
+  'the colorless depth replay includes PNG silhouettes and registered protective surface layers');
+assert.match(heldRender, /for \(const object of protectedCover\)[\s\S]{0,200}material\.depthWrite = true/,
+  'otherwise-transparent snow/slush, water and billboard grass temporarily write real occlusion depth');
 assert.match(game, /stencilBuffer: needsStencil/,
   'outline render targets explicitly opt into stencil only when requested');
 assert.match(game, /_mainRT\s*=\s*_makeSceneRT\(1, 1, true\)/,
@@ -66,17 +67,27 @@ assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
 assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.uniforms\?\.uDensity[\s\S]{0,180}entry\.uniforms\?\.uStrength/,
   'grass fallback classification keys off the dedicated wind/grass shader uniforms rather than generic billboard tags');
 assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.material\)/,
-  'submerged grass material cannot survive in the non-ground depth replay and punch holes through held weapons');
-assert.match(heldRender, /data\.hobunjiGroundSurface === true \|\| data\.cavernWalkableFloor === true/,
-  'held x-ray recognizes semantically tagged walkable surfaces regardless of hierarchy or elevation');
-assert.match(heldRender, /hobunjiInteriorFloorMaterial === true/,
-  'ordinary authored building floors are removed from the held-object depth replay');
-assert.match(heldRender, /data\.wallBuilderRecipe === 'wallrecipe2\.json'[\s\S]{0,120}data\.plateauModel\?\.levelByCell/,
-  'generated stepped/sunken ruin floors participate in held-object x-ray');
+  'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
+assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,200}isGrassGroundCover\(object\) \|\| isWaterSurface\(object\)/,
+  'water and standing grass both retain depth while the held x-ray is drawn');
+assert.match(heldRender, /object\?\.userData\?\.environmentSurfaceMicroPlateau === true/,
+  'snow/slush caps are protected from ground x-ray');
+assert.match(heldRender, /if \(object\.userData\?\.environmentSurfaceMicroPlateau === true\) return false/,
+  'snow/slush cannot be misclassified as the exempt terrain layer');
+assert.match(heldRender, /isGrassGroundCover\(object\) \|\| isRoadSurface\(object\) \|\| isWaterSurface\(object\)/,
+  'grass blades, paths and water do not qualify for the ground-exemption registry');
+assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
+  'only surfaces carrying the base grass material can be removed from held-overlay depth');
+assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
+  'the live game tags the native base grass material');
+assert.match(terrainTileMaterials, /loadTerrainTileTexture[\s\S]{0,200}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
+  'authored texture overrides keep the exact same base grass tag');
+assert.doesNotMatch(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
+  'cavern shells are not hidden just because they contain an upward-facing floor');
 assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
-  'cavern walkable floors explicitly register as ground');
+  'cavern walkable surfaces still carry terrain semantics, independent of their x-ray exemption');
 assert.match(heldRender, /FOOT_WATER_MASK_LAYER = 26/,
   'procedural feet have a dedicated private stencil layer instead of sharing the weapon overlay');
 assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)/,
@@ -89,6 +100,8 @@ assert.match(heldRender, /prepareWaterOcclusionStencilMaterials\(waterOccluded\)
   'only explicitly water-occluded meshes stamp the foot-water mask');
 assert.match(heldRender, /stencilWriteMask = 0x01[\s\S]{0,180}stencilFuncMask = 0x02/,
   'the foot mask writes bit 0 only where the held-object exclusion bit is clear');
+assert.match(heldRender, /material\.depthTest = false;[^\n]*Water now owns depth/,
+  'the water-depth reconstruction does not suppress procedural feet stencil fragments');
 assert.match(heldRender, /prepareWaterStencilMaterials\(water\)[\s\S]{0,500}WATER_REPLAY_MASK/,
   'water is replayed through its private layer only after the foot mask exists');
 assert.match(heldRender, /stencilWriteMask = 0x00[\s\S]{0,180}stencilFuncMask = 0x01/,
