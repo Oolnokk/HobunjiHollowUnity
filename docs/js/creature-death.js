@@ -26,10 +26,10 @@
     if (/poison|venom|toxin|infected/.test(raw)) return 'poison';
     if (/burn|fire|flame|kindling|heat|lava/.test(raw)) return 'fire';
     if (/bleed|sharp|slash|pierc|cut|blade|shrapnel/.test(raw)) return 'sharp';
-    if (/blunt|impact|crush|hammer|punch|club|fall/.test(raw)) return 'blunt';
+    if (/blunt|impact|collision|crush|hammer|punch|club|fall/.test(raw)) return 'blunt';
     if (/frost|cold|ice/.test(raw)) return 'frost';
     if (/shock|lightning|electric/.test(raw)) return 'shock';
-    if (/acid|corros/.test(raw)) return 'acid';
+    if (/acid|corros|corrod/.test(raw)) return 'acid';
     return 'other';
   }
 
@@ -106,13 +106,14 @@
 
   function _prepareScorch(c) {
     if (c.deathCause !== 'fire') return;
-    c._deathScorch = []; // Own cloned portrait, hand, and foot materials so other actors sharing an asset stay unchanged.
+    const clonedMaterials = []; // Disposed alongside the owning avatar instead of leaking when the corpse is looted.
+    c._deathScorch = clonedMaterials; // Per-corpse tint records preserve the unmodified material color across animation frames.
     c.avatarRef?.group?.traverse?.(object => {
       if (!object.isMesh || !object.material) return;
       const clone = material => {
         if (!material?.color?.clone || !material.clone) return material;
         const individual = material.clone();
-        c._deathScorch.push({
+        clonedMaterials.push({
           material: individual, color: individual.color.clone(),
           emissive: individual.emissive?.clone?.() || null,
         });
@@ -120,6 +121,14 @@
       };
       object.material = Array.isArray(object.material) ? object.material.map(clone) : clone(object.material);
     });
+    const priorDispose = c.avatarRef?.dispose; // Original avatar teardown still owns textures, meshes and original materials.
+    if (typeof priorDispose === 'function') {
+      c.avatarRef.dispose = function disposeScorchedAvatar(...args) {
+        for (const entry of clonedMaterials) entry.material.dispose?.();
+        clonedMaterials.length = 0;
+        return priorDispose.apply(this, args);
+      };
+    }
   }
 
   function _updateScorch(c) {
@@ -175,11 +184,20 @@
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
-    const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
-    const rest = _findRestTile(c, awayAngle);
     c.deathCause = _deathCause(c); // The genuinely lethal Health transaction wins over earlier afflictions or weapon hits.
+    const sourceIsDistant = Number.isFinite(fromX) && Number.isFinite(fromY)
+      && Math.hypot(c.x - fromX, c.y - fromY) > 1e-4; // A lethal DoT normally passes the victim's own coordinates; it has no impulse.
+    const isDamageOverTime = /^(bleedingHealth|poisonedHealth|burningHealth|kindlingHealth)$/.test(String(c._lethalDamageCause || ''));
+    const hasImpactImpulse = sourceIsDistant && !isDamageOverTime; // Used to prevent ambient/DoT deaths from skidding across a tile arbitrarily.
+    const awayAngle = hasImpactImpulse ? Math.atan2(c.y - fromY, c.x - fromX) : (Number(c.facing) || 0);
+    const rest = hasImpactImpulse ? _findRestTile(c, awayAngle) : {
+      x: c.x, y: c.y,
+      col: deps.clamp(Math.floor(c.x / deps.TILE), 0, (c.areaCols || deps.COLS) - 1),
+      row: deps.clamp(Math.floor(c.y / deps.TILE), 0, (c.areaRows || deps.ROWS) - 1),
+    }; // Bleeding, poison, burning and unforced deaths collapse where they stood.
     c.deathDirection = _impactDirection(c, fromX, fromY);
     c.deathAwayAngle = awayAngle;
+    c.deathHadImpulse = hasImpactImpulse; // Mobile-readable proof of whether the corpse actually received a horizontal hit.
     c.state = 'dying';
     c.deathT = 0;
     const clipSeconds = window.ImpactRagdollPlayback?.startCreatureDeath?.(c, c.deathDirection) || 0;
@@ -227,6 +245,8 @@
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
+    window.ImpactRagdollPlayback?.stopCreatureDeath?.(c); // A failed particle/path setup cannot leave the fallback corpse with a half-played recorded pivot.
+    c.deathRecorded = false;
     c.health = 0;
     c.state = 'corpse';
     c.corpseCol = col; c.corpseRow = row;
@@ -262,6 +282,7 @@
     try {
       beginInternal(c, fromX, fromY);
       deathDebug.lastBegin.recording = !!c.deathRecorded;
+      deathDebug.lastBegin.hadImpulse = !!c.deathHadImpulse;
       return true;
     } catch (error) {
       return recover(c, fromX, fromY, error);
