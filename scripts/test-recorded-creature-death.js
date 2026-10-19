@@ -167,7 +167,10 @@ windowStub.ImpactBlendLibrary.getClip = () => null;
 const fallback = makeActor('untyped').actor;
 assert.equal(windowStub.CreatureDeath.begin(fallback), true);
 assert.equal(fallback.deathRecorded, false);
-for (let i = 0; i < 24; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+for (let i = 0; i < 16; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+const beforeFinalFrame = fallback.avatarRef.group.position.y; // The unrecorded tip-over must approach its ground height before the last frame.
+for (let i = 0; i < 8; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+assert.ok(Math.abs(fallback.avatarRef.group.position.y - beforeFinalFrame) < 0.02, 'missing-clip fallback has no final-frame vertical snap');
 assert.equal(fallback.state, 'corpse');
 assert.equal(fallback.avatarRef.group.rotation.z, Math.PI / 2);
 assert.ok(corpses.has(fallback));
