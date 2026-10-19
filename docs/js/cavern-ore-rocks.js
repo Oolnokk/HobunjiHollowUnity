@@ -82,6 +82,7 @@
       const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
       rockMesh.castShadow = rockMesh.receiveShadow = true;
       const rockGroup = new THREE.Group();
+      rockGroup.name = 'cave_ore_' + rock.col + '_' + rock.row; // Blast removes this exact rock mesh without rebuilding the cave.
       rockGroup.add(rockMesh);
       if (rock.caveSeparator) {
         const fracture = crackRibbons(THREE, rock.col, rock.row);
