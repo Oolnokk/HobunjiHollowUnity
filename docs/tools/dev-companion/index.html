@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
 <title>Hobunji Dev Companion</title>
-<link rel="stylesheet" href="dev-companion.css?v=20261002context1">
+<link rel="stylesheet" href="dev-companion.css?v=20261019handoff1">
 </head>
 <body>
 <div id="shell">
@@ -18,11 +18,17 @@
     </div>
     <div id="contextChips" class="chips"><span class="muted small-text">Open this window from the game: Settings → Dev Companion Window.</span></div>
     <div class="head-actions">
+      <button type="button" id="findGamesBtn" title="Find other open Hobunji Hollow tabs. Switching is always manual.">⌕ Find Games</button>
       <button type="button" id="quickSaveBtn" class="primary" title="Quick save: the whole save plus exact position, facing and time (Alt+S)">⚡ Quick Save</button>
       <button type="button" id="quickLoadBtn" class="primary load" title="Quick load (Alt+L)">↺ Quick Load</button>
       <label class="switch" title="Stop automatic writes to the save folder and recovery autosaves for this game tab">
         <input type="checkbox" id="autosaveToggle"><span>Autosave paused</span>
       </label>
+    </div>
+    <div id="gameDiscovery" class="game-discovery" hidden>
+      <div class="discovery-heading"><strong>Open game sessions</strong><span id="discoveryStatus" class="muted small-text" role="status">Searching…</span></div>
+      <div id="discoveryList" class="discovery-list"></div>
+      <div class="muted small-text">Only games on this browser origin with discovery support appear. No game is selected automatically.</div>
     </div>
     <div id="toast" class="toast" hidden></div>
   </header>
@@ -182,6 +188,6 @@
   </form>
 </dialog>
 
-<script src="dev-companion.js?v=20261015h8c00ece"></script>
+<script src="dev-companion.js?v=20261019handoff1"></script>
 </body>
 </html>
