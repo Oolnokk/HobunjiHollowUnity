@@ -92,6 +92,7 @@
   const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
   const occluderGeometries = new WeakMap(); // Source geometry -> geometry of only its non-upward faces, built once per geometry.
   const waterRegistry = new SceneRegistry(); // Used by the foot-only translucent-water replay.
+  const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
   const waterOccludedRegistry = new SceneRegistry(); // Used to stencil only feet (never weapons/hands) before replaying water.
   const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
   const preparedLights = new WeakSet();
@@ -168,6 +169,11 @@
     return materials.some(entry => entry?.userData?.hobunjiInteriorFloorMaterial === true);
   }
 
+  function materialMarksBaseGrass(material) {
+    const materials = Array.isArray(material) ? material : [material]; // Used to recognize only the terrain TileType.GRASS material, including map texture overrides.
+    return materials.some(entry => entry?.userData?.hobunjiBaseGrassTerrainMaterial === true);
+  }
+
   function isWalkableGroundSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
     const data = object.userData || {}; // Existing semantic floor tags are preferred over geometry/name heuristics.
@@ -183,6 +189,7 @@
 
   function isTerrainSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
+    if (object.userData?.environmentSurfaceMicroPlateau === true) return false; // Snow and slush are raised occluders, never the base grass.
 
     // Interior floors, generated ruin floors, and explicitly tagged walkable
     // terrain are ground regardless of hierarchy or elevation.
@@ -195,10 +202,6 @@
     // them inside WildernessChunk_* groups, so the scene-parent test below
     // never saw them and weapons were buried under wilderness ground.
     if (object.userData?.mapEditorTerrain) return true;
-
-    // Snow/slush micro-plateau caps ride a little above the walkable surface
-    // (plateau tops included) to bury feet; weapons x-ray them like terrain.
-    if (object.userData?.environmentSurfaceMicroPlateau === true) return true;
 
     // Farm/town/wilderness floor meshes opt into the terrain material-ID layer
     // and are attached directly to the scene. Runtime-rebuilt farm tiles cast
@@ -234,11 +237,17 @@
   }
 
   function groundKind(object) {
-    if (isTopFacesGroundSurface(object)) return null; // Never hide the whole shell; see occluderGeometryFor.
-    if (isGrassGroundCover(object)) return 'grass';
-    if (isRoadSurface(object)) return 'road';
-    if (isTerrainSurface(object)) return 'terrain';
+    if (isTopFacesGroundSurface(object)) return null; // Cavern shell walls and floors remain real occluders.
+    if (isGrassGroundCover(object) || isRoadSurface(object) || isWaterSurface(object)) return null;
+    // Only the underlying grass tile material is exempt from occlusion. Paths,
+    // indoor floors, snow/slush, water, and standing grass blades keep depth.
+    if (materialMarksBaseGrass(object?.material) && isTerrainSurface(object)) return 'terrain';
     return null;
+  }
+
+  function isProtectedCover(object) {
+    return isGrassGroundCover(object) || isWaterSurface(object)
+      || object?.userData?.environmentSurfaceMicroPlateau === true;
   }
 
   function isLegacyHeldPlane(object) {
@@ -364,6 +373,7 @@
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
     if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object);
     if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
+    if (isProtectedCover(object)) protectedCoverRegistry.add(object);
     if (isWaterSurface(object)) {
       waterRegistry.add(object);
       if (!hasLayer(object, WATER_REPLAY_LAYER)) object.layers.enable(WATER_REPLAY_LAYER);
@@ -626,6 +636,7 @@
     states.set(material, {
       colorWrite: material.colorWrite,
       depthWrite: material.depthWrite,
+      depthTest: material.depthTest,
       stencilWrite: material.stencilWrite,
       stencilWriteMask: material.stencilWriteMask,
       stencilFunc: material.stencilFunc,
@@ -641,6 +652,7 @@
     for (const [material, state] of states) {
       material.colorWrite = state.colorWrite;
       material.depthWrite = state.depthWrite;
+      material.depthTest = state.depthTest;
       material.stencilWrite = state.stencilWrite;
       material.stencilWriteMask = state.stencilWriteMask;
       material.stencilFunc = state.stencilFunc;
@@ -659,6 +671,7 @@
       const isCelestialSprite = !!object?.isSprite && object.userData?.hobunjiNoOutline === true; // Used here to suppress only the sky-dome sun/moon sprites during this colorless replay.
       if (!isMesh && !isCelestialSprite) return;
       const forceCutoutDepth = isMesh && hasLayer(object, PNG_OCCLUDER_LAYER);
+      const forceCoverDepth = isMesh && isProtectedCover(object); // Transparent water/slush and alpha-cutout grass must occlude held gear.
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
@@ -668,14 +681,20 @@
         // alpha-tested silhouette while making it capable of blocking a tool.
         // Celestial sprites keep their authored depthWrite=false; only their
         // accidental second color draw is suppressed during this replay.
-        if (isMesh && (forceCutoutDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
+        if (isMesh && (forceCutoutDepth || forceCoverDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
       });
     });
     return states;
   }
 
-  function prepareCutoutDepthMaterials(cutouts) {
+  function prepareCutoutDepthMaterials(cutouts, protectedCover) {
     const states = new Map();
+    for (const object of protectedCover) {
+      forEachMaterial(object.material, material => {
+        saveMaterialState(states, material);
+        material.depthWrite = true; // Depth-only replay: keep visible base-pass cover pixels untouched.
+      });
+    }
     for (const object of cutouts) {
       forEachMaterial(object.material, (material) => {
         if (Number(material.alphaTest || 0) <= 0 && !hasLayer(object, PNG_OCCLUDER_LAYER)) return;
@@ -713,6 +732,7 @@
         saveMaterialState(states, material);
         material.colorWrite = false;
         material.depthWrite = false;
+        material.depthTest = false; // Water now owns depth in the reconstruction; stamp the visible foot silhouette without rejecting it behind that water.
         // Compare only held bit 1: stencilRef=1 has that bit clear, so Equal
         // passes everywhere except weapon/hand pixels. Replace writes only bit
         // 0 from the same ref, producing the foot-only water mask value 1.
@@ -967,7 +987,7 @@
       const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
       const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
       const depthMaterialStates = canLockColorMask
-        ? prepareCutoutDepthMaterials(collectVisible(pngDepthRegistry, scene))
+        ? prepareCutoutDepthMaterials(collectVisible(pngDepthRegistry, scene), collectVisible(protectedCoverRegistry, scene))
         : prepareNonGroundDepthMaterials(scene);
       if (canLockColorMask) {
         colorBuffer.setMask(false);
@@ -990,9 +1010,9 @@
         restoreVisibility(hidden);
       }
 
-      // 2) Draw weapons/hands once against non-ground depth and mark their
-      // exact visible fragments in stencil bit 1. This is the actual x-ray:
-      // terrain and water can never be composited over these held pixels.
+      // 2) Draw weapons/hands against depth rebuilt with every occluder
+      // except the base grass tile. Water, snow/slush and individual grass
+      // blades still block held pixels when they are physically in front.
       if (scissored) glState.setScissorTest(false); // Stencil clears stay full-framebuffer, as before.
       renderer.clearStencil?.();
       if (scissored) glState.setScissorTest(true);
@@ -1078,7 +1098,7 @@
     const held = collectVisible(heldRegistry, scene);
     const ground = collectVisible(groundRegistry, scene);
     const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
-    const water = collectVisible(waterRegistry, scene); // Used only when explicitly water-occluded meshes (feet) need a translucent replay.
+    const water = collectVisible(waterRegistry, scene); // Used to rebuild real water depth and to composite water over submerged feet.
     const waterOccluded = collectVisible(waterOccludedRegistry, scene); // Used to keep feet under water while weapons/hands remain above it.
     if (!(ground.length || topFaceGround.length) || (!held.length && !(water.length && waterOccluded.length))) return originalRender.call(this, scene, camera);
 
