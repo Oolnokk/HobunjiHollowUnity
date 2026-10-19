@@ -1,0 +1,464 @@
+// Shattercasks: physical two-necked explosive pottery. Authored mesh is in
+// config/furniture-authored/shattercaskBlasting.json; effects reuse Hronal's
+// single-draw-call instanced shrapnel simulation with a white (not fiery) flash.
+(() => {
+  'use strict';
+  const RADIUS = 5; // Blast radius in logical tiles; also bounds environmental work to at most 121 cells.
+  const DAMAGE = 34; // Direct blast damage before armor; existing resource afflictions represent flying shards and shock.
+  const DEBRIS_COUNT = 72; // One instanced draw call for pottery shards.
+  const POLL_S = .14; // Limits interaction/area scans on mobile.
+  const records = new Map(); // Area -> {scene, vases:Map, piles:Map}, reused until its rendered scene is destroyed.
+  const burstEffects = []; // Short-lived instanced pottery shards and flashes ticked by Combat.update.
+  const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
+  const persisted = new Set(); // Already shattered/looted IDs, saved per player world.
+  const lastEquipment = { weapon:null, tool:null, item:null }; // Pickup-time equipment snapshot used to drop carried vases on selection changes.
+  let held = null; // The one intact vase held in front of the local player.
+  let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
+  let elapsed = 0, lastArea = '', lastEvent = 'not started';
+  let promptButton = null; // Mobile-visible direct-action fallback for carry, drop, and rubble looting.
+  let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
+  const THREE = window.THREE;
+  if (!THREE) return;
+
+  function deps() { return window.Combat?.deps; }
+  function area() { return String(deps()?.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || ''); }
+  function scene() { return window.GridTileAccessors?.getActiveScene?.() || deps()?.getActiveScene?.(); }
+  function grid() { return window.GridTileAccessors?.getActiveGrid?.(); }
+  function tileSize() { return Number(deps()?.TILE) || 64; }
+  function key(c,r) { return c+','+r; }
+  function distance(a,b) { return Math.hypot(a.x-b.x,a.z-b.z); }
+  function playerPosition() {
+    const p=deps()?.player, t=tileSize();
+    return p ? {x:p.x/t,z:p.y/t,angle:Number(p.angle ?? p.facing)||0} : null;
+  }
+  function worldId() {
+    return String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session');
+  }
+  function loadPersistence() {
+    const identity=worldId();
+    if (storeIdentity===identity) return;
+    storeIdentity=identity; persisted.clear();
+    if (identity==='session') return;
+    try { for(const id of JSON.parse(localStorage.getItem('hobunji.shattercasks.v1:'+identity)||'[]')) persisted.add(id); }
+    catch(_) { /* Old/incomplete store: no generated vase is consumed. */ }
+  }
+  function saveConsumed(id) {
+    loadPersistence();
+    persisted.add(id);
+    if (storeIdentity==='session') return;
+    try { localStorage.setItem('hobunji.shattercasks.v1:'+storeIdentity,JSON.stringify([...persisted])); }
+    catch(error) { window.__farmLog?.('[shattercask] could not save blast state: '+error.message,'warn'); }
+  }
+  function recordFor(mapId, targetScene) {
+    const existing=records.get(mapId);
+    if(existing?.scene===targetScene)return existing;
+    const rec={scene:targetScene,vases:new Map(),piles:new Map()};
+    records.set(mapId,rec);
+    return rec;
+  }
+  function validTile(g,c,r) {
+    const t=g?.[r]?.[c], type=String(t?.type||'').toLowerCase();
+    return !!t && type!=='rock' && type!=='tree' && type!=='river' && type!=='stream'
+      && type!=='water' && !t.caveSeparator && !t.building;
+  }
+  function nearestOpen(g,col,row,radius=3) {
+    let best=null,bestSq=Infinity;
+    for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++) {
+      const x=col+dx,z=row+dz,d=dx*dx+dz*dz;
+      if(d>=bestSq || !validTile(g,x,z))continue;
+      best={col:x,row:z}; bestSq=d;
+    }
+    return best;
+  }
+  function eligiblePlacements(mapId,g) {
+    const result=[];
+    const cave=window.CaveSiteSystem?.__test?.plansByMapId?.get?.(mapId);
+    if(cave) for(const entry of cave.shattercasks||[]) result.push({
+      id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row
+    });
+    const camps=window.BanditCamps?.campInstances?.get?.(mapId)||[];
+    camps.forEach((camp,index)=>{
+      const x=Math.floor(Number(camp.homeX)/tileSize()),z=Math.floor(Number(camp.homeY)/tileSize());
+      const spot=nearestOpen(g,x,z,4);
+      if(spot)result.push({id:'bandit_'+(camp.discoveryKey||index),...spot});
+    });
+    // Ruins: choose reproducible walkable chambers from the runtime occupancy grid,
+    // not from decorative meshes or puzzle targets.
+    if(mapId==='map_i_dev_random_ruin') {
+      const snapshot=window.DevRandomRuinTileOccupancy?.getSnapshot?.();
+      const floor=Array.isArray(snapshot?.floor)?snapshot.floor:[];
+      if(floor.length) {
+        for(let i=0;i<Math.min(2,Math.floor(floor.length/24));i++) {
+          const value=floor[Math.floor((i+.3)*floor.length/2)];
+          const pair=Array.isArray(value)?value:String(value).split(',').map(Number);
+          const c=Number(pair[0]),r=Number(pair[1]);
+          const spot=nearestOpen(g,c,r,2);
+          if(spot)result.push({id:'ruin_'+i,...spot});
+        }
+      }
+    }
+    // Mining levels already use procedural cave geometry, and may contain loose charges.
+    if(mapId.startsWith('map_i_town_mine_f_')) {
+      const p=playerPosition();
+      if(p) {
+        const spot=nearestOpen(g,Math.floor(p.x)+6,Math.floor(p.z)+3,5);
+        if(spot)result.push({id:'mine_charge',...spot});
+      }
+    }
+    return result;
+  }
+  async function ensureArea(mapId,targetScene,g) {
+    if(!mapId||!targetScene||!g)return;
+    const rec=recordFor(mapId,targetScene);
+    const placements=eligiblePlacements(mapId,g).filter(p=>Number.isInteger(p.col)&&Number.isInteger(p.row)
+      &&!persisted.has(mapId+':'+p.id)&&!rec.vases.has(p.id)&&validTile(g,p.col,p.row));
+    if(!placements.length||spawnPromises.has(mapId))return;
+    spawnPromises.add(mapId);
+    try {
+      const data=await window.AuthoredFurniture?.load?.('shattercaskBlasting');
+      if(!data || recordFor(mapId,scene())!==rec)return;
+      for(const p of placements) {
+        if(persisted.has(mapId+':'+p.id)||rec.vases.has(p.id))continue;
+        const group=window.AuthoredFurniture.buildGroup(data);
+        group.name='shattercask_'+p.id;
+        group.position.set(p.col+.5, 0, p.row+.5);
+        group.userData.shattercaskId=p.id;
+        group.userData.shattercaskMap=mapId;
+        targetScene.add(group);
+        rec.vases.set(p.id,{...p,mapId,group,exploded:false,carried:false});
+      }
+      lastEvent='placed '+placements.length+' in '+mapId;
+    } catch(error) {lastEvent='model load failed: '+error.message;console.warn('[shattercask]',error);}
+    finally{spawnPromises.delete(mapId);}
+  }
+  function allActive() {return records.get(area())?.vases || new Map();}
+  function senseTargets(targetScene) {
+    const out=[];
+    for(const rec of records.values())if(rec.scene===targetScene)for(const cask of rec.vases.values())
+      if(!cask.exploded)out.push(cask.group);
+    return out;
+  }
+  function switchEquipment() {
+    const d=deps();
+    return {
+      weapon:d?.getEquippedWeaponKey?.() ?? window.RangedWeapons?.equippedRangedKey?.() ?? null,
+      tool:d?.getEquippedToolKey?.() ?? null,
+      item:d?.getActiveInventoryItem?.()?.key ?? null,
+    };
+  }
+  function pickUp(cask) {
+    if(!cask||cask.exploded||held||cask.mapId!==area())return false;
+    held=cask;cask.carried=true;
+    Object.assign(lastEquipment,switchEquipment());
+    lastEvent='picked up '+cask.id;
+    deps()?.showToast?.('Carrying Shattercask — interact to set it down.',false);
+    return true;
+  }
+  function drop() {
+    if(!held)return false;
+    const cask=held,p=playerPosition(),g=grid();
+    const origin=p?nearestOpen(g,Math.round(p.x-.5),Math.round(p.z-.5),2):null;
+    if(origin){cask.col=origin.col;cask.row=origin.row;}
+    cask.group.position.set(cask.col+.5,0,cask.row+.5);
+    cask.carried=false;held=null;
+    lastEvent='dropped '+cask.id;
+    return true;
+  }
+  function nearInteraction() {
+    const p=playerPosition(),rec=records.get(area());
+    if(!p||!rec)return null;
+    let choice=null,smallest=1.65;
+    for(const vase of rec.vases.values()) {
+      if(vase.exploded||vase.carried)continue;
+      const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
+      if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
+    }
+    for(const pile of rec.piles.values()) {
+      const d=distance(p,{x:pile.col+.5,z:pile.row+.5});
+      if(d<smallest){smallest=d;choice={type:'pile',obj:pile};}
+    }
+    return choice;
+  }
+  function grantLoot(items) {
+    if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
+    const inv=deps()?.inventory;
+    if(!inv)return [];
+    const gained=[];
+    for(const [item,count] of Object.entries(items)) {
+      if(!(count>0))continue;
+      inv[item]=(Number(inv[item])||0)+count;
+      gained.push(item+' x'+count);
+    }
+    return gained;
+  }
+  function collectPile(pile) {
+    if(!pile||!records.get(pile.mapId)?.piles.has(pile.id))return false;
+    grantLoot(pile.kind==='tree'?{stick:3,wood:2}:{stone:3,pebble:2});
+    records.get(pile.mapId).piles.delete(pile.id);
+    pile.group.parent?.remove(pile.group);
+    pile.group.traverse(node=>{node.geometry?.dispose?.();node.material?.dispose?.();});
+    lastEvent='looted '+pile.id;
+    deps()?.showToast?.('Collected '+(pile.kind==='tree'?'wood and sticks':'stone and pebbles')+'.',true);
+    return true;
+  }
+  function interact() {
+    if(held)return drop();
+    const target=nearInteraction();
+    if(target?.type==='vase')return pickUp(target.obj);
+    if(target?.type==='pile')return collectPile(target.obj);
+    return false;
+  }
+  function prompt() {
+    if(typeof document==='undefined')return;
+    if(!promptButton) {
+      promptButton=document.createElement('button');
+      promptButton.id='shattercaskWorldAction';
+      promptButton.type='button';
+      promptButton.style.cssText='position:fixed;bottom:110px;right:18px;z-index:1200;min-width:86px;padding:10px;border:2px solid #e2cba0;border-radius:10px;background:#342c29e8;color:#fff;font:700 13px system-ui;display:none;touch-action:manipulation';
+      promptButton.addEventListener('pointerup',event=>{event.preventDefault();event.stopPropagation();interact();});
+      document.body.appendChild(promptButton);
+    }
+    const target=held?{type:'held'}:nearInteraction();
+    promptButton.style.display=target?'block':'none';
+    if(target)promptButton.textContent=target.type==='held'?'Set down Shattercask':target.type==='pile'?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
+    const claims=window.WorldActionInputClaims;
+    if(target)claims?.setClaims?.('shattercask',[{actionId:'interact',label:promptButton.textContent,priority:410,onPress:interact}]);
+    else claims?.clearClaims?.('shattercask');
+  }
+  function baseHeight(col,row) {
+    const d=deps(),t=tileSize();
+    return Number(d?.worldSurfaceY?.((col+.5)*t,(row+.5)*t)) || 0;
+  }
+  function shatterVisual(targetScene,x,z,y) {
+    // Hronal pillar's gold-angle instancing and gravity-driven shard spray,
+    // remapped to the vase's own pottery textures and colors, not fire colors.
+    const count=DEBRIS_COUNT,geometry=new THREE.TetrahedronGeometry(.10);
+    const texture=new THREE.TextureLoader().load('assets/textures/carved_smooth.png');
+    const material=new THREE.MeshBasicMaterial({color:0x987651,map:texture,side:THREE.DoubleSide,transparent:true});
+    const shards=new THREE.InstancedMesh(geometry,material,count);
+    shards.frustumCulled=false;
+    const group=new THREE.Group();group.position.set(x,y,z);group.add(shards);targetScene.add(group);
+    const parts=[];
+    for(let i=0;i<count;i++) {
+      const angle=i*2.399963, speed=RADIUS*(.45+(i%8)/13);
+      parts.push({x:(i%7/6-.5)*.68,y:((i%17)/17)*.6,z:(Math.floor(i/7)%7/6-.5)*.63,
+        vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:2+(i%7)*.32});
+    }
+    const flash=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),
+      new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.82,depthWrite:false,blending:THREE.AdditiveBlending}));
+    flash.position.set(x,y,z);flash.scale.setScalar(.15);targetScene.add(flash);
+    burstEffects.push({group,shards,parts,flash,age:0,duration:1.25,scene:targetScene,
+      dummy:new THREE.Object3D(),texture}); // Reused scratch transform matches Hronal's one-draw-call approach.
+    window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
+  }
+  function spawnPile(mapId,rec,col,row,kind,y) {
+    const id=kind+'_'+col+'_'+row;
+    if(rec.piles.has(id))return;
+    const group=new THREE.Group(),color=kind==='tree'?0x7b5936:0x817b74;
+    const material=new THREE.MeshLambertMaterial({color});
+    for(let i=0;i<4;i++) {
+      const geometry=kind==='tree'
+        ?new THREE.CylinderGeometry(.045,.065,.55,5)
+        :new THREE.DodecahedronGeometry(.18,0);
+      const piece=new THREE.Mesh(geometry,material);
+      piece.position.set(Math.cos(i*1.8)*.15,.09,Math.sin(i*1.8)*.15);
+      if(kind==='tree')piece.rotation.z=1.2+i*.08;
+      group.add(piece);
+    }
+    group.position.set(col+.5,y,row+.5);
+    group.userData.shattercaskPile=id;
+    rec.scene.add(group);
+    rec.piles.set(id,{id,col,row,kind,group,mapId});
+  }
+  function destroyTerrain(mapId,rec,x,z) {
+    const g=grid(),types=deps()?.TileType || {};
+    if(!g)return 0;
+    let count=0;
+    for(let row=Math.floor(z-RADIUS);row<=Math.ceil(z+RADIUS);row++)
+    for(let col=Math.floor(x-RADIUS);col<=Math.ceil(x+RADIUS);col++) {
+      if(Math.hypot(col+.5-x,row+.5-z)>RADIUS)continue;
+      const tile=g[row]?.[col];
+      if(!tile)continue;
+      const kind=tile.rockKind==='diggableRockOre'||tile.caveSeparator||String(tile.type).toLowerCase()==='rock'
+        ?'rock':String(tile.type).toLowerCase()==='tree'?'tree':null;
+      if(!kind)continue;
+      // Cave rim/solid cavern shell is immutable; only generated diggable ore
+      // nodes, explodable separators, and harvestable trees may be destroyed.
+      if(kind==='rock'&&tile.rockKind!=='diggableRockOre'&&!tile.caveSeparator)continue;
+      const floor=baseHeight(col,row);
+      const priorType=tile.type;
+      tile.type=types.GRASS||'grass';
+      if(kind==='rock') {
+        const visual=rec.scene.getObjectByProperty?.('name','cave_ore_'+col+'_'+row);
+        if(visual)visual.parent?.remove(visual);
+        deps()?.removeZoneMineableRockVisual?.(mapId,col,row);
+      } else {
+        window.ZoneRegrowth?.updateClearedZoneVegetationVisual?.(mapId,col,row,priorType);
+        deps()?.removeZoneVegetationVisual?.(mapId,col,row);
+      }
+      delete tile.rockKind;delete tile.oreKind;delete tile.oreKey;delete tile.caveSeparator;
+      spawnPile(mapId,rec,col,row,kind,floor);
+      count++;
+    }
+    if(count&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_')))
+      window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,Math.floor(x),Math.floor(z));
+    return count;
+  }
+  function applyBlast(mapId,x,z) {
+    const d=deps(),t=tileSize(),players=d?.player,targets=[];
+    if(players)targets.push(players);
+    for(const actor of d?.hostileObjects||[])targets.push(actor);
+    for(const actor of d?.npcWalkers||[])targets.push(actor);
+    const seen=new Set();
+    for(const actor of targets) {
+      if(!actor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
+      seen.add(actor);
+      const ax=Number(actor.x)/t, az=Number(actor.y)/t;
+      if(!Number.isFinite(ax)||!Number.isFinite(az))continue;
+      const dist=Math.hypot(ax-x,az-z);
+      if(dist>RADIUS)continue;
+      const damage=Math.max(8,DAMAGE*(1-.55*dist/RADIUS));
+      const effects={bleedingHealth:.24,bruisedHealth:.18,woundedStamina:.22,shatteredStamina:.20};
+      const opts={tag:'blunt',environmental:true,reason:'Shattercask blast',afflictionBonuses:effects,footingDamageMultiplier:1.5};
+      if(actor===players)d?.damagePlayer?.(damage,x*t,z*t,220,opts);
+      else if(d?.hostileObjects?.has?.(actor))d?.damageCreature?.(actor,damage,x*t,z*t,220,opts);
+      else window.ResourceSystem?.applyDamage?.(actor,damage,opts);
+      window.ResourceSystem?.spendFooting?.(actor,Math.max(8,24*(1-dist/RADIUS)),'Shattercask blast');
+    }
+  }
+  function detonate(cask,cause='weapon') {
+    if(!cask||cask.exploded)return false;
+    cask.exploded=true;
+    if(held===cask)held=null;
+    cask.group.parent?.remove(cask.group);
+    const rec=records.get(cask.mapId);
+    rec?.vases.delete(cask.id);
+    saveConsumed(cask.mapId+':'+cask.id);
+    const x=cask.col+.5,z=cask.row+.5,y=baseHeight(cask.col,cask.row)+.30;
+    shatterVisual(rec?.scene||scene(),x,z,y);
+    applyBlast(cask.mapId,x,z);
+    const cleared=destroyTerrain(cask.mapId,rec,x,z);
+    lastEvent='blast '+cask.id+' via '+cause+', terrain='+cleared;
+    window.__farmLog?.('[shattercask] '+lastEvent,'world');
+    return true;
+  }
+  function sweepMelee(opts={}) {
+    if(!opts.actor||!(opts.rangePx>0))return;
+    if(held && opts.actor===deps()?.player)drop();
+    const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
+    if(!collider)return;
+    for(const vase of allActive().values()) {
+      if(vase.exploded||vase.carried)continue;
+      const dx=vase.col+.5-collider.origin.x,dz=vase.row+.5-collider.origin.z;
+      const radial=Math.hypot(dx,dz);
+      if(radial>collider.horizontalRangeWorld+.3)continue;
+      const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
+      if(delta>(collider.halfConeRad||.5)+.10)continue;
+      const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
+      if(Math.abs(expectedY-(baseHeight(vase.col,vase.row)+.35))>collider.halfHeightWorld+.40)continue;
+      detonate(vase,'melee');break;
+    }
+  }
+  function projectileHit(start,end,radius,limit,mapId) {
+    let result=null;
+    for(const vase of records.get(mapId)?.vases.values()||[]) {
+      if(vase.exploded||vase.carried)continue;
+      const vx=vase.col+.5-start.x,vz=vase.row+.5-start.z;
+      const dx=end.x-start.x,dz=end.z-start.z,den=dx*dx+dz*dz;
+      const hitT=den>1e-9?Math.max(0,Math.min(1,(vx*dx+vz*dz)/den)):0;
+      if(hitT>limit||result&&hitT>=result.t)continue;
+      const x=start.x+dx*hitT,z=start.z+dz*hitT,y=start.y+(end.y-start.y)*hitT;
+      if(Math.hypot(x-(vase.col+.5),z-(vase.row+.5))>.37+radius)continue;
+      if(Math.abs(y-(baseHeight(vase.col,vase.row)+.42))>.65+radius)continue;
+      result={t:hitT,vase};
+    }
+    return result;
+  }
+  function hitProjectile(candidate) {
+    return candidate?.vase ? detonate(candidate.vase,'projectile') : false;
+  }
+  function updateBursts(dt) {
+    for(let i=burstEffects.length-1;i>=0;i--) {
+      const fx=burstEffects[i];fx.age+=dt;
+      if(fx.age>=fx.duration) {
+        fx.group.parent?.remove(fx.group);fx.flash.parent?.remove(fx.flash);
+        fx.shards.geometry.dispose();fx.shards.material.dispose();fx.texture.dispose();
+        fx.flash.geometry.dispose();fx.flash.material.dispose();burstEffects.splice(i,1);continue;
+      }
+      const f=fx.age/fx.duration;
+      fx.flash.scale.setScalar(.15+RADIUS*Math.min(1,fx.age/.16));
+      fx.flash.material.opacity=.82*Math.max(0,1-fx.age/.22);
+      fx.flash.visible=fx.age<.22;
+      for(let j=0;j<fx.parts.length;j++) {
+        const part=fx.parts[j];
+        part.x+=part.vx*dt;part.z+=part.vz*dt;part.y+=part.vy*dt;part.vy-=7.5*dt;
+        fx.dummy.position.set(part.x,part.y,part.z);
+        fx.dummy.rotation.set(f*(j%3+1)*6,f*10,0);
+        fx.dummy.scale.setScalar(Math.max(.001,1-f));
+        fx.dummy.updateMatrix();
+        fx.shards.setMatrixAt(j,fx.dummy.matrix);
+      }
+      fx.shards.instanceMatrix.needsUpdate=true;
+    }
+  }
+  function tick(dt=0) {
+    loadPersistence();
+    const mapId=area(),targetScene=scene();
+    if(held && held.mapId!==mapId)drop();
+    updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
+    elapsed+=Math.min(.2,Math.max(0,Number(dt)||0));
+    if(elapsed<POLL_S)return;
+    elapsed=0;
+    if(mapId!==lastArea) {
+      lastArea=mapId;
+      window.WorldActionInputClaims?.clearClaims?.('shattercask');
+    }
+    if(targetScene)ensureArea(mapId,targetScene,grid());
+    if(held) {
+      const p=playerPosition(),equipment=switchEquipment();
+      if(equipment.weapon!==lastEquipment.weapon||equipment.tool!==lastEquipment.tool||equipment.item!==lastEquipment.item)drop();
+      else if(p)held.group.position.set(p.x+Math.cos(p.angle)*.60,baseHeight(Math.floor(p.x),Math.floor(p.z))+.75,p.z+Math.sin(p.angle)*.60);
+    }
+    prompt();
+  }
+  function attachRuntime() {
+    const combat=window.Combat;
+    if(combat?.update&&!combat.update.__shattercaskTick) {
+      const original=combat.update.bind(combat);
+      const wrapped=function shattercaskUpdate(dt){const result=original(dt);tick(dt);return result;};
+      wrapped.__shattercaskTick=true;combat.update=wrapped;
+    }
+    if(combat?.spawnMeleeTrail&&!combat.spawnMeleeTrail.__shattercaskStrike) {
+      const original=combat.spawnMeleeTrail.bind(combat);
+      const wrapped=function shattercaskStrike(opts){const result=original(opts);sweepMelee(opts);return result;};
+      wrapped.__shattercaskStrike=true;combat.spawnMeleeTrail=wrapped;
+    }
+    const spawner=window.DevSpawner;
+    if(spawner?.init&&!spawner.init.__shattercaskLoot) {
+      const original=spawner.init.bind(spawner);
+      const wrapped=function shattercaskSpawnerInit(injected){audioDeps=injected;return original(injected);};
+      wrapped.__shattercaskLoot=true;spawner.init=wrapped;
+    }
+  }
+  if(typeof window.addEventListener==='function') {
+    window.addEventListener('keydown',event=>{
+      if(event.repeat||event.target?.closest?.('input,textarea,[contenteditable]'))return;
+      if(event.code==='KeyE'&&(!window.WorldActionInputClaims?.isClaimed?.('interact')))interact();
+    });
+    window.addEventListener('pointerdown',event=>{
+      if(!held)return;
+      const id=event.target?.closest?.('button')?.id||'';
+      if(/(?:weapon|tool|item|dequip|swap)/i.test(id))drop();
+    },true);
+  }
+  window.Shattercasks=Object.freeze({
+    RADIUS,spawn:ensureArea,pickUp,drop,interact,detonate,
+    projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
+    debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,
+      vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
+      rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
+      effects:burstEffects.length,loadedWorld:storeIdentity,
+      interactionClaim:window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId||null}),
+  });
+  attachRuntime();
+})();
