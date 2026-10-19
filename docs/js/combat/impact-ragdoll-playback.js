@@ -216,6 +216,15 @@
     return true;
   }
 
+  function stopCreatureDeath(entity) {
+    const state = entity?._deathRecordedThrow;
+    if (!state) return false;
+    state.pivot?.quaternion?.identity?.();
+    if (state.pivot?.position) state.pivot.position.y = 0;
+    entity._deathRecordedThrow = null;
+    return true;
+  }
+
   function stopCreature(entity) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return;
@@ -447,7 +456,7 @@
     isHolding,
     currentDirection,
     triggerCreature,
-    startCreatureDeath, sampleCreatureDeath,
+    startCreatureDeath, sampleCreatureDeath, stopCreatureDeath,
     updateCreature,
     stopCreature,
     getDebug,
