@@ -34,6 +34,7 @@
     deps.refresh?.();
     deps.save?.();
     window.EffectBuffBar?.refresh(true);
+    window.FestivalProps?.refreshFeast?.(); // Immediately reveal the contributed sixth stew pot without rebuilding the town.
     if (message) deps.toast?.(message, true);
     return { ok: true, message };
   }
@@ -59,10 +60,15 @@
     const defs = deps?.getItemDefs?.() || {};
     const prepared = Object.entries(defs).filter(([,def]) => def?.isCookedFood && Object.keys(def.foodEffects || {}).length);
     const indexSeed = Math.abs((day() * 1103515245 + 12345) | 0);
-    const count = claimed('potluck') && day() > (claims().potluck?.day ?? Infinity) ? 6 : 5;
+    const donated=claims().potluck; // Once an offering is accepted, pot six immediately displays the contributed recipe, then rerolls on subsequent days.
+    const count = donated ? 6 : 5;
     const meals = []; // Stable within a civil day, so closing the menu cannot reroll free food.
     for (let i=0;i<count;i++) {
-      if (recipes.length) {
+      if(i===5 && donated?.day===day()) {
+        const contribution=defs[donated.key];
+        meals.push({id:`donated:${day()}:${donated.key}`,label:contribution?.label||'Contributed meal',icon:contribution?.icon||'🍲',
+          foodEffects:{...(contribution?.foodEffects||{})}});
+      } else if (recipes.length) {
         const recipe = recipes[(indexSeed + i*7) % recipes.length];
         const ingredients = (recipe.slots || []).map((slot,j) => {
           const choices = Object.values(source.items || {}).filter(item => item.categories?.some(cat => slot.accepts?.includes(cat)));
@@ -350,6 +356,7 @@
     }
     if (window.FestivalCalendar.blessings[saved?.blessing?.stat] && Number.isFinite(saved.blessing.expiresDay) && Number.isFinite(saved.blessing.level)) state.blessing = { stat: saved.blessing.stat, level: Math.max(1, Math.min(5, Math.trunc(saved.blessing.level))), expiresDay: saved.blessing.expiresDay };
     cancelDance();
+    window.FestivalProps?.refreshFeast?.();
     window.FestivalUI?.close?.();
   }
   function npcTarget(rec) {
