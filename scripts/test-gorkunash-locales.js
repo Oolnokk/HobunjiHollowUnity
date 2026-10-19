@@ -127,4 +127,29 @@ assert(awarded.some(e=>e.id==='sloomi'&&e.amount===40&&e.reason==='festival_fun_
 assert.equal(api.serialize().festivalFun.sloomi,1,'leftover Festival Fun is preserved');
 assert(persisted>0,'activities persist through existing save hook');
 assert.equal(W.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:1}).decor.length,town.decor.length,'base town untouched outside festivals');
+let pairedActive=false, pairedSeconds=0, pairedStartCount=0, pairedStopCount=0; // Verify social invitation uses the dedicated two-avatar driver, not the solo-wheel fallback.
+W.FestivalWheelDanceRuntime={
+ start(walker,model){ assert.equal(walker.rec.id,'sloomi'); pairedActive=true;pairedStartCount++;return true; },
+ activeFor:id=>pairedActive&&id==='sloomi',
+ elapsedSeconds:id=>pairedActive&&id==='sloomi'?pairedSeconds:0,
+ stop(){pairedActive=false;pairedStopCount++;return true;},
+ diagnostics:()=>({active:pairedActive}),
+};
+W.SocialActionWheel.startDance=()=>{throw Error('festival NPC dance must not use solo social wheel');};
+const partner=walkers.find(walker=>walker.rec.id==='sloomi');
+partner.currentScheduleTarget={festivalLocaleKind:'dance'};
+partner.root.position={x:37,z:42};player={c:37,r:42};hour=17;
+api.init({getTownMap:()=>town,getNpcs:()=>residents,getWalkers:()=>walkers,getArea:()=> 'town',
+ getPlayerTile:()=>player,getPlayerMesh:()=>({name:'player-root'}),getDecorSize:key=>({fw:key==='tableLong'?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
+ getItemDefs:()=>itemDefs,inventory,save(){persisted++},refresh(){},toast(){},isBlocked:()=>false});
+assert.equal(api.askFestivalDance(partner).ok,true,'accepted NPC invitation starts the real two-avatar runtime');
+assert.equal(pairedStartCount,1);
+pairedSeconds=1.15;realMs+=400;api.update();
+assert.equal(api.serialize().festivalFun.sloomi,16,'exactly 15 Festival Fun gained for one played second plus saved overnight remainder');
+assert.equal(api.diagnostics().festivalWheel.active,true,'pair status is visible in mobile diagnostics');
+api.cancelDance();
+assert.equal(pairedStopCount,1,'festival cancel cleans up paired actor driver');
+realMs+=400;api.update();
+assert.equal(api.serialize().festivalFun.sloomi,16,'interrupted paired dance cannot continue accruing Festival Fun');
+
 console.log('Gorkunash locale placement, schedule shifts, six-pot food, potluck, save, and heart conversion passed.');
