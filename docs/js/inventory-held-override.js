@@ -145,6 +145,11 @@
     return finishClear({ clearManual: true, restorePriorMode: false, reason });
   }
 
+  function clearExhaustedBagHold(key) {
+    if (!key || rawManualBagKey() !== key || liveManualBagKey()) return false;
+    return finishClear({ clearManual: true, restorePriorMode: false, reason: 'consumed-last-copy' }); // Cleans the actual manual slot and restores wheel state after any final consumable.
+  }
+
   function captureItemDeps(injected = {}) {
     if (!injected?.inventory) return;
     itemDeps = { ...itemDeps, ...injected }; // Merged because CookingSystem/FarmCrates expose complementary item helpers.
@@ -274,7 +279,13 @@
     const ok = !!result?.ok;
     if (!ownerHandlesFeedback) itemDeps?.showToast?.(result?.message || (ok ? `${action.verb} ${action.itemLabel}.` : `Could not ${action.verb.toLowerCase()} that item.`), ok);
     if (ok && !ownerHandlesFeedback) refreshAfterInventoryUse(key);
-    else scheduleDirectUseUi();
+    else {
+      if (ok && !(Number((itemDeps?.inventory || equipmentDeps?.inventory)?.[key]) > 0)) {
+        equipmentDeps?.clearInventoryDetail?.(); // An exhausted manuscript/scroll must not leave its old detail panel selected.
+        clearExhaustedBagHold(key);
+      }
+      scheduleDirectUseUi();
+    }
     lastDirectUse = { key, kind: action.kind, verb: action.verb, ok, message: result?.message || null, at: Date.now() };
     return ok;
   }
@@ -504,6 +515,7 @@
     sync: syncFromManualHold,
     clear: () => finishClear({ clearManual: true, restorePriorMode: false, reason: 'api-clear' }),
     releaseForNormalSelection,
+    clearExhaustedBagHold,
     getInventoryUseAction: inventoryUseAction,
     useInventoryItem,
     refreshInventoryUseButton: scheduleDirectUseUi,
