@@ -107,7 +107,7 @@
   let topFaceGroundCount = 0; // Meshes registered via markTopFaceGroundMesh.
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
   let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
-  let waterReplayCount = 0; // Counts successful foot-only water compositing passes.
+  let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let scissoredReplayCount = 0; // Replays whose passes were clipped to the held/foot screen rectangle.
   let fullscreenReplayCount = 0; // Replays that fell back to full-framebuffer passes (see replayScissorRect).
   let lastReplayScissorCoverage = 1; // Fraction of the framebuffer the last replay's passes touched.
@@ -727,8 +727,9 @@
     for (const object of held) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
-        // Bit 1 marks weapon/hand pixels. The later foot mask refuses to stamp
-        // across this bit, so water can never be composited back over held gear.
+        // Reserve bit 1 for held gear for compatibility/diagnostics. Water
+        // and slush have already been tinted over feet before this draw, so
+        // weapons cannot be overpainted by either translucent surface.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x02;
         material.stencilFunc = THREE.AlwaysStencilFunc;
@@ -985,7 +986,7 @@
     const overlayMeshes = [...held, ...feet];
     // On targets without stencil, keep the conservative fully-occluded
     // fallback rather than drawing untinted feet on top of the water.
-    const tintFeet = feet.length > 0 && tintCovers.length > 0 && currentFramebufferStencilBits(renderer) >= 1;
+    const tintFeet = feet.length > 0 && tintCovers.length > 0 && lastBaseStencilBits >= 1; // Reuse the framebuffer query from wrappedRender; avoid a second GL state read.
     const scissorMeshes = overlayMeshes;
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     let replayCulled = null; // Visibility states of renderables hidden for this replay (see collectReplayCulled).
@@ -1167,7 +1168,7 @@
     const tintCovers = collectVisible(tintCoverRegistry, scene); // Water + translucent slush; not opaque snow.
     const feet = collectVisible(waterOccludedRegistry, scene); // Procedural foot meshes share selective ground x-ray.
     if (!held.length && !feet.length) return originalRender.call(this, scene, camera);
-    if (!ground.length && !topFaceGround.length && !(tintCovers.length && feet.length)) return originalRender.call(this, scene, camera);
+    if (!ground.length && !topFaceGround.length && !(tintCovers.length && (held.length || feet.length))) return originalRender.call(this, scene, camera);
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
