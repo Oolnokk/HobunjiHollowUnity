@@ -5,9 +5,9 @@ const fs = require('node:fs'); // Reads the shipped module, config, and cue mani
 const path = require('node:path'); // Resolves fixture URLs relative to the real docs root.
 const vm = require('node:vm'); // Runs the entire music module with a controllable browser boundary.
 
-async function run() {
+async function createRuntime(area = 'map_northern_cliffs') {
   const docs = path.join(__dirname, '../docs'); // Root used by the real cue-index loader.
-  const live = { now: 1000, area: 'map_northern_cliffs', combat: false, media: [], logs: [] }; // Controls browser time, area, and media-event ordering.
+  const live = { now: 1000, area, hour: 14, combat: false, media: [], logs: [], requests: [], failures: new Map() }; // Controls browser time, network failures, area, and media-event ordering.
   class Media extends EventTarget {
     constructor(url) {
       super();
@@ -15,7 +15,7 @@ async function run() {
       live.media.push(this);
     }
     load() {}
-    play() { this.paused = false; return Promise.resolve(); }
+    play() { this.paused = false; this.dispatchEvent(new Event('playing')); return Promise.resolve(); }
     pause() { this.paused = true; }
     complete(dispatch = true) {
       this.currentTime = this.duration;
@@ -25,12 +25,20 @@ async function run() {
     }
   }
   const window = { addEventListener() {} }; // Browser namespace receives the production Music API.
+  const statusButton = { addEventListener(_event, handler) { this.click = handler; } }; // Captures the real in-game report button handler.
+  const statusOutput = { hidden: true, textContent: '' }; // Models the visible/mobile-selectable report if copying fails.
   const context = vm.createContext({
     window, Audio: Media, URL, console, location: { href: 'https://example.test/docs/' },
-    document: { baseURI: 'https://example.test/docs/', addEventListener() {}, scripts: [], createElement: () => ({}), head: { appendChild() {} } },
+    document: { baseURI: 'https://example.test/docs/', addEventListener() {}, scripts: [], createElement: () => ({}), head: { appendChild() {} }, getElementById: id => id === 'debugMusicStatusBtn' ? statusButton : id === 'musicDiagnosticsStatus' ? statusOutput : null },
+    navigator: { clipboard: { async writeText(text) { live.copied = text; } } },
     performance: { now: () => live.now },
     requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {}, setInterval() {}, clearInterval() {},
-    fetch: async url => ({ ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(docs, url), 'utf8')) }),
+    fetch: async url => {
+      const file = new URL(url, 'https://example.test/docs/').pathname.replace(/^\/docs\//, ''); // Maps actual resolved requests to shipped manifests.
+      live.requests.push(file);
+      if (live.failures.has(file)) return { ok: false, status: live.failures.get(file) };
+      return { ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(docs, file), 'utf8')) };
+    },
   }); // Only browser I/O is mocked; loading, selection, transport, and transitions run unchanged.
   for (const file of ['config/scratchbones-config.js', 'js/condition-registry.js', 'js/music-system.js']) {
     vm.runInContext(fs.readFileSync(path.join(docs, file), 'utf8'), context, { filename: file });
@@ -38,19 +46,25 @@ async function run() {
   const config = window.SCRATCHBONES_CONFIG.game.assets.audio; // Uses actual Northern Cliffs authoring and cue timing.
   window.AudioSystem = { gameAudioConfig: () => ({ ...config, startupBgm: null }) };
   window.Music.init({
-    getCurrentArea: () => live.area, getHour: () => 14, getPaused: () => false, getGameStarted: () => true,
+    getCurrentArea: () => live.area, getHour: () => live.hour, getPaused: () => false, getGameStarted: () => true,
     isPlayerInCombat: () => live.combat, _isZoneArea: () => true,
     EXTERIOR_ZONES: { map_northern_cliffs: {}, map_western_slope: {} }, getWorkspaceMaps: () => [],
     calendar: { day: 1, weather: 'clear', isRaining: false }, MORNING_HOUR: 6,
     clamp: (v, min, max) => Math.min(max, Math.max(min, v)),
     debugLog: message => live.logs.push(message),
   });
+  return { live, window, statusButton, statusOutput };
+}
+
+async function run() {
+  const { live, window } = await createRuntime(); // Full production module used by the original media-event regression.
   await window.Music.loadAudioCueIndexes();
   window.Music.resetAmbientCueTimer();
   window.Music.updateAmbientCues();
   const song = live.media.at(-1); // Actual media element allocated by the production transport.
   assert.match(song.src, /bgm_what_the_winds_carry\.mp3$/);
   assert.equal(song.loop, false);
+  assert.equal(song.crossOrigin, 'anonymous', 'CORS is set before CDN audio can be routed into Web Audio');
   song.complete(false); // Browser state can report ended before its queued ended event is dispatched.
   window.Music.updateAmbientCues();
   const cue = live.media.at(-1); // The next scheduler frame must enter B even when the event is delayed.
@@ -90,8 +104,79 @@ async function run() {
   assert.equal(live.media.filter(media => !media._musicRetired).length, 0, 'the event-first cue enters a silent gap without overlapping or restarting music');
   window.Music.logAudioTickDiagnostics();
   assert.ok(live.logs.some(line => line.includes('cuePool=14')), 'mobile diagnostics report the loaded Northern Cliffs library');
-  assert.ok(live.logs.some(line => line.includes('schedulerRevision=ended-handoff-1')), 'mobile diagnostics identify the updated scheduler');
-  console.log('music-cycle-runtime: full module, real config/manifests, delayed and immediate ended events passed');
+  assert.ok(live.logs.some(line => line.includes('schedulerRevision=cue-load-retry-2')), 'mobile diagnostics identify the updated scheduler');
+  assert.ok(window.Music.getMusicDebugState().cuePlayback.started > 0, 'the report counts actual playing events');
+
+  const recovery = await createRuntime(); // A failed initial regional manifest fetch reproduces the user's suspected skipped B stage.
+  const northernPath = 'assets/audio/music/cues/northern_cliffs/index.json'; // Targets one library while the general library succeeds.
+  recovery.live.failures.set(northernPath, 503);
+  await recovery.window.Music.loadAudioCueIndexes();
+  assert.equal(recovery.window.Music.getMusicDebugState().manifest.status, 'failed');
+  assert.match(recovery.window.Music.getMusicDebugState().manifest.errors.join(), /HTTP 503/);
+  await recovery.statusButton.click();
+  assert.equal(recovery.statusOutput.hidden, false, 'the diagnostic report is visible without devtools');
+  assert.equal(recovery.live.copied, recovery.statusOutput.textContent, 'the button copies the same report it displays');
+  assert.match(recovery.live.copied, /HTTP 503/, 'the copy contains the exact manifest failure');
+  assert.equal(recovery.window.Music.getMusicDebugState().manifest.loaded.join(), 'general', 'one failed library cannot discard another successful library');
+  recovery.window.Music.updateAmbientCues();
+  recovery.live.media.at(-1).complete();
+  recovery.window.Music.updateAmbientCues();
+  assert.equal(recovery.window.Music.getMusicDebugState().stage, 'cue_wait', 'a failed manifest must not immediately restart the same song');
+  assert.equal(recovery.live.media.length, 1, 'there is no replacement song while waiting for a cue manifest retry');
+  recovery.live.now += 15000;
+  recovery.live.failures.delete(northernPath);
+  await recovery.window.Music.loadAudioCueIndexes();
+  recovery.window.Music.updateAmbientCues();
+  assert.match(recovery.live.media.at(-1).src, /northern_cliffs\/mas\d+\.ogg$/, 'a recovered manifest starts a cue in the existing B stage');
+  assert.equal(recovery.live.requests.filter(file => file.includes('/general/')).length, 1, 'successful libraries are not fetched again on retry');
+  assert.equal(recovery.window.Music.getMusicDebugState().manifest.attempts, 2);
+
+  const registryFailure = await createRuntime(); // The top-level registry can fail independently of the regional file.
+  registryFailure.live.failures.set('assets/audio/music/cues/index.json', 404);
+  await registryFailure.window.Music.loadAudioCueIndexes();
+  assert.match(registryFailure.window.Music.getMusicDebugState().manifest.errors.join(), /registry: HTTP 404/);
+  registryFailure.live.now += 15000;
+  registryFailure.live.failures.clear();
+  await registryFailure.window.Music.loadAudioCueIndexes();
+  assert.equal(registryFailure.window.Music.getMusicDebugState().pool.total, 14, 'registry failure recovers without reloading the game');
+
+  const slope = await createRuntime('map_western_slope'); // Uses actual Western Slope config in daytime and at night.
+  await slope.window.Music.loadAudioCueIndexes();
+  slope.window.Music.updateAmbientCues();
+  assert.match(slope.live.media.at(-1).src, /bgm_what_the_winds_carry\.mp3$/, 'Western Slope has a daytime song');
+  slope.live.media.at(-1).complete();
+  slope.window.Music.updateAmbientCues();
+  const slopeCue = slope.live.media.at(-1); // Shared Highland cue pool must be audible after the daytime song.
+  assert.match(slopeCue.src, /northern_cliffs\/mas\d+\.ogg$/);
+  slopeCue.error = { code: 2, message: 'transient network error' };
+  slopeCue.dispatchEvent(new Event('error'));
+  assert.equal(slope.window.Music.audioUrlFailed(slopeCue.src), true);
+  assert.match(slope.window.Music.getMusicDebugState().cuePlayback.lastError, /media code=2.*transient network error/);
+  slope.live.now += 30000;
+  assert.equal(slope.window.Music.audioUrlFailed(slopeCue.src), false, 'temporary network errors do not blacklist cues for the entire session');
+
+  const slopeNight = await createRuntime('map_western_slope'); // Night song retains priority over the new fallback.
+  slopeNight.live.hour = 22;
+  await slopeNight.window.Music.loadAudioCueIndexes();
+  slopeNight.window.Music.updateAmbientCues();
+  assert.match(slopeNight.live.media.at(-1).src, /bgm_snow_and_darkness\.m4a$/);
+
+  const unsupported = await createRuntime(); // A whole library of unplayable media must leave an explicit explanation in the copied report.
+  await unsupported.window.Music.loadAudioCueIndexes();
+  unsupported.window.Music.updateAmbientCues();
+  unsupported.live.media.at(-1).complete();
+  for (let attempt = 0; attempt < 14; attempt++) { // Exercises each authored cue once before returning to song selection.
+    unsupported.window.Music.updateAmbientCues();
+    const failedCue = unsupported.live.media.at(-1); // Current cue owns the error callback being tested.
+    assert.match(failedCue.src, /northern_cliffs\/mas\d+\.ogg$/);
+    failedCue.error = { code: 4, message: 'unsupported media' };
+    failedCue.dispatchEvent(new Event('error'));
+    unsupported.live.now += 3000;
+  }
+  unsupported.window.Music.updateAmbientCues();
+  assert.equal(unsupported.window.Music.getMusicDebugState().pool.failed, 14);
+  assert.match(unsupported.window.Music.getMusicDebugState().cuePlayback.lastPhaseExit, /no playable cues:.*pool=14 failed=14/);
+  console.log('music-cycle-runtime: event ordering, real config/manifests, HTTP recovery, playback reporting, and Western Slope day/night passed');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

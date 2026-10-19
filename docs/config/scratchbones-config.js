@@ -3596,6 +3596,7 @@ window.SCRATCHBONES_CONFIG = {
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ],
           "map_western_slope": [
+            { "url": "assets/audio/music/bgm/bgm_what_the_winds_carry.mp3", "fallback": true },
             { "url": "assets/audio/music/bgm/bgm_snow_and_darkness.m4a", "nightOnly": true, "exclusiveSoundtrack": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 }
           ],
