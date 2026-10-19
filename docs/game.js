@@ -15505,6 +15505,9 @@
               || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
+        // Cave reagent clusters share the ordinary aimed world-object contract;
+        // they are never collected by a proximity tick or registered on the farm.
+        if (_isCavernBuildingArea(currentArea)) return window.CaveSiteSystem?.objectAt?.(currentArea, col, row) || null;
         if (currentArea !== 'farm') return null;
         return worldObjects.get(col + ',' + row) || null;
       }
@@ -19094,7 +19097,7 @@
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
-          if (_res.ok !== false) saveMemberWorldData();
+          if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData(); // Cave Duskcaps queue their large world save for idle time instead of freezing pickup.
           return;
         }
 
@@ -25389,6 +25392,8 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          const caveReagent = window.CaveSiteSystem?.objectAt?.(currentArea, bReticle.col, bReticle.row); // Reuses the interior reticle so walking across Duskcaps never harvests them.
+          if (caveReagent) return caveReagent.getButtons(bReticle);
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
           // bar here, same as farm/zone (below), even though every other
