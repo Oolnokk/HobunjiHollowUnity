@@ -17,7 +17,7 @@
     id: 'combat-grants', title: 'Combat grants', order: 30,
     render: () => ({
       summary: `${window.Combat.deps?.getMotesOfProwess?.() || 0} Motes of Prowess · ${window.CombatProgression?.getDebug?.().unlocked.length || 0} learned mastery bonuses`,
-      note: 'Latest change: reusable Mastery Tablets / Scrolls unlock individual damage-type and rank bonuses; matching bonuses stack across five ranks. Last mastery loot: ' + JSON.stringify(window.LootRolling?.getMasteryDebug?.().lastRoll || null) + '. Last learned: ' + JSON.stringify(window.CombatProgression?.getDebug?.().lastEvent || null),
+      note: 'Latest change: consumable Mastery Tablets / Scrolls permanently unlock individual damage-type and rank bonuses; matching bonuses stack across five ranks. Last mastery loot: ' + JSON.stringify(window.LootRolling?.getMasteryDebug?.().lastRoll || null) + '. Last learned: ' + JSON.stringify(window.CombatProgression?.getDebug?.().lastEvent || null),
       actions: [
         { id: 'mote', label: '+1 Mote of Prowess' },
         ...[1, 2, 3].map(tier => ({ id: 'scroll', label: `+T${tier} Technique Scroll`, args: { tier } })),
