@@ -199,6 +199,71 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   assert.equal(state.mode, 'bgm', 'the empty cue library safely returns to the song-selection stage');
 }
 
+// Northern Cliffs must resolve its authored cue library even when a generated
+// wilderness zone has no audioIndex metadata (the actual reported repeat bug).
+{
+  const northern = JSON.parse(source('docs/assets/audio/music/cues/northern_cliffs/index.json'));
+  assert.equal(northern.id, 'northern_cliffs', 'the Northern Cliffs cue file declares the expected index id');
+  assert.equal(northern.ambient_cues.length, 14, 'the Northern Cliffs index has all fourteen regional motifs');
+  for (const cue of northern.ambient_cues) {
+    assert.ok(fs.existsSync(path.join(__dirname, '../docs/assets/audio/music/cues/northern_cliffs', cue.file)), 'the authored Northern Cliffs asset exists: ' + cue.file);
+  }
+  assert.match(config, /"map_northern_cliffs": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_what_the_winds_carry\.mp3"/,
+    'the actual Northern Cliffs fallback track is the one being exercised');
+
+  const zoneContext = {
+    _mapAudioIndexes: new Map(),
+    deps: {
+      _isZoneArea: area => area === 'map_northern_cliffs' || area === 'map_western_slope',
+      EXTERIOR_ZONES: { map_northern_cliffs: {}, map_western_slope: {} },
+      getWorkspaceMaps: () => [],
+    },
+  };
+  const resolveSource = music.slice(music.indexOf('  function resolveAreaAudioIndex('), music.indexOf('  function resetAmbientCueTimer('));
+  vm.runInNewContext(resolveSource, zoneContext);
+  const northernId = zoneContext.resolveAreaAudioIndex('map_northern_cliffs');
+  assert.equal(northernId, 'northern_cliffs', 'Northern Cliffs maps directly to its motifs without zone metadata');
+  assert.equal(zoneContext.resolveAreaAudioIndex('map_western_slope'), northernId, 'Western Slope shares the northern cue library');
+
+  const live = { now: 1000, plays: [] };
+  const state = { area: 'map_northern_cliffs', indexId: northernId, mode: 'bgm', nextAt: 0, blockUntil: 0, currentBgm: null, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, cuePhaseEndsAt: 0, lastCueId: '' };
+  northern.__basePath = 'assets/audio/music/cues/northern_cliffs/';
+  const context = {
+    window: { AudioSystem: { gameAudioConfig: () => ({ enabled: true, bgmVolume: 0.48, ambientCuePhaseDurationSec: 120, ambientCueMinDelaySec: 20, ambientCueMaxDelaySec: 45 }) } },
+    deps: { getCurrentArea: () => 'map_northern_cliffs', isPlayerInCombat: () => false },
+    performance: { now: () => live.now }, quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _audioCueIndexes: new Map([['northern_cliffs', northern]]),
+    _lyreDucked: false, _gameplayCueDuckOwners: new Set(), _dailyBgmPlayed: new Set(),
+    audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
+    areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false,
+    musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
+    ambientMusicOwnsSoundtrack: () => false,
+    resolveAreaBgm: () => ({ url: 'assets/audio/music/bgm/bgm_what_the_winds_carry.mp3' }),
+    retireMusicTrack(sound) { sound.ended = true; },
+    playMusicTrack(url, _volume, _fadeIn, _fadeOut, options) {
+      live.plays.push({ url, loop: !!options?.loop });
+      return { src: url, ended: false, listeners: {},
+        addEventListener(event, callback) { this.listeners[event] = callback; },
+        _watchForStall() {} };
+    },
+    requestGameAudioPlay() { return Promise.resolve(); },
+  };
+  const schedulerSource = music.slice(music.indexOf('  function scheduleNextCueDelay()'), music.indexOf('  function setLoopingBgs('));
+  vm.runInNewContext(schedulerSource, context);
+  context.updateAmbientCues();
+  const northernBgm = state.currentBgm;
+  assert.equal(northernBgm.src, 'assets/audio/music/bgm/bgm_what_the_winds_carry.mp3', 'the configured Northern Cliffs song starts stage A');
+  assert.equal(live.plays[0].loop, false, 'the Northern Cliffs song must not be placed in a native playback loop');
+  northernBgm.listeners.ended();
+  assert.equal(state.mode, 'cue_wait', 'the completed Northern Cliffs song enters the cue stage');
+  assert.equal(state.cuePhaseEndsAt, 121000, 'Northern Cliffs begins its own two-minute cue stage');
+  context.updateAmbientCues();
+  assert.match(state.currentCue.src, /assets\/audio\/music\/cues\/northern_cliffs\/mas\d+\.ogg$/,
+    'Northern Cliffs actually plays one of its fourteen regional cue files, not another BGM');
+  assert.equal(state.currentBgm, null, 'no Northern Cliffs BGM plays under a regional motif');
+}
+
 // Combat suspends the cue-stage clock as well as the time between cues.
 {
   const state = { nextAt: 90000, cuePhaseEndsAt: 180000, combatSchedulerPausedAt: 30000 }; // Simulated in-progress stage before combat.
