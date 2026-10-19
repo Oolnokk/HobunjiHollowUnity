@@ -1380,6 +1380,11 @@
     if (audioTraceEnabled() && _audioDebugDue('ambient-state-' + currentArea, 5000)) {
       audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
     }
+    // Media state can reach ended before the browser dispatches its queued
+    // event. Polling must perform the same handoff, never discard the owner
+    // and select another song while its completion callback is still pending.
+    if (_ambientCueState.currentBgm?.ended) _ambientCueState.currentBgm._finishScheduledMusic?.();
+    if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue._finishScheduledMusic?.();
     if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return;
     if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
 
@@ -1413,6 +1418,7 @@
         }
         retireMusicTrack(snd);
       };
+      snd._finishScheduledMusic = finishCue; // The frame poll and native event share ownership-checked completion and cue spacing.
       snd.addEventListener('ended', finishCue, { once: true });
       snd.addEventListener('error', () => {
         audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue');
@@ -1468,6 +1474,7 @@
       }
       retireMusicTrack(snd);
     };
+    snd._finishScheduledMusic = finishBgm; // A frame observing ended must enter stage B before selecting another song.
     snd.addEventListener('ended', finishBgm, { once: true });
     snd.addEventListener('error', () => {
       audioDebug('bgm error ' + snd.src + ' code=' + (snd.error?.code || 'none'), 'bgm-error-' + bgmUrl, 0, 'bgm');
@@ -1770,6 +1777,7 @@
       ' url=' + (activeSnd?._trackUrl || 'none') +
       ' combatOverride=' + _ambientCueState.combatOverrideActive +
       ' ambientPaused=' + !!ambientSnd?.paused +
+      ' schedulerRevision=ended-handoff-1' + // Identifies this fix in mobile-copyable diagnostics, including cached-build reports.
       ' tutorialActive=' + !!window.CombatTutorial?.active?.() +
       ' blockForMs=' + Math.max(0, Math.round(_ambientCueState.blockUntil - performance.now())) +
       ' cueStageRemainingMs=' + (_ambientCueState.cuePhaseEndsAt ? Math.max(0, Math.round(_ambientCueState.cuePhaseEndsAt - performance.now())) : 'inactive') +
