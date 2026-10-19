@@ -117,6 +117,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     isAudioEntryEligible: () => true, audioUrlFailed: () => false,
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
+    resolveAreaBgm: () => ({ url: 'replacement.ogg' }), // Exercises a new BGM starting after the previous song finishes.
     ambientMusicOwnsSoundtrack: () => false,
     retireMusicTrack(audio) { audio.retired = true; },
     playMusicTrack(url) {
@@ -157,6 +158,18 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   live.now = 5000;
   context.updateAmbientCues();
   assert.equal(live.plays, 1, 'exclusive authored scores never get overlaid by regional cues');
+  song.ended = true;
+  state.currentBgm = null;
+  state.mode = 'bgm';
+  state.nextAt = 0;
+  live.now = 6000;
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm.src, 'replacement.ogg', 'a new background song can start after the previous track finishes');
+  assert.equal(state.cueOverlayNextAt, 0, 'new background song invalidates the old overlay deadline');
+  live.now = 6100;
+  context.updateAmbientCues();
+  assert.equal(state.cueOverlayNextAt, 7100, 'new background song starts with its own full cue interval');
+  assert.equal(live.plays, 2, 'a new BGM does not immediately trigger another regional cue');
 }
 
 assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
