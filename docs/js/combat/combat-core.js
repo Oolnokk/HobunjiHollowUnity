@@ -400,7 +400,7 @@
     const hitbox = targetHitbox.box;
     const min = hitbox.min, max = hitbox.max;
     const centerX = (min.x + max.x) * 0.5;
-    const centerY = (min.y + max.y) * 0.5;
+    const sampleCenterY = (min.y + max.y) * 0.5;
     const centerZ = (min.z + max.z) * 0.5;
     // First test the closest point, then the exact same 3×3×3 grid as before.
     // Reuse one vector instead of allocating 28 vectors and four nested arrays per probe.
@@ -410,7 +410,7 @@
         const ix = Math.floor(index / 9), iy = Math.floor((index % 9) / 3), iz = index % 3;
         meleeProbePoint.set(
           ix === 0 ? min.x : ix === 1 ? centerX : max.x,
-          iy === 0 ? min.y : iy === 1 ? centerY : max.y,
+          iy === 0 ? min.y : iy === 1 ? sampleCenterY : max.y,
           iz === 0 ? min.z : iz === 1 ? centerZ : max.z
         );
       }
