@@ -1251,13 +1251,16 @@
       const keepCue = _ambientCueState.currentCue
         && !_ambientCueState.currentCue.ended
         && areaCueIncludesTrack(currentArea, _ambientCueState.currentCue);
-      if (keepBgm || keepCue) {
+      const keepCuePhase = _ambientCueState.mode === 'cue_wait'
+        && _ambientCueState.cuePhaseEndsAt > 0
+        && resolveAreaAudioIndex(currentArea) === _ambientCueState.indexId; // Farm and town share a cue pool; a quiet gap must not restart stage A.
+      if (keepBgm || keepCue || keepCuePhase) {
         // Tracks shared by both areas keep their current playhead. This
         // covers cues as well as BGM (farm and town both use `general`) and
         // still requires the active track's conditions to remain eligible.
         _ambientCueState.area = currentArea;
         _ambientCueState.indexId = resolveAreaAudioIndex(currentArea);
-        audioDebug('area changed to ' + currentArea + ' — shared ' + (keepCue ? 'cue' : 'bgm') + ' kept playing', 'ambient-area-keep-' + currentArea, 0, keepCue ? 'cue' : 'bgm');
+        audioDebug('area changed to ' + currentArea + ' — shared ' + (keepCue ? 'cue' : keepCuePhase ? 'cue stage' : 'bgm') + ' retained', 'ambient-area-keep-' + currentArea, 0, keepCue ? 'cue' : 'bgm');
       } else {
         stopAmbientCue('area changed to ' + currentArea);
         resetAmbientCueTimer(currentArea);
