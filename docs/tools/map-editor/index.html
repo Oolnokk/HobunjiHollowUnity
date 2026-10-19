@@ -375,17 +375,20 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
               <button class="ok" id="applyLayoutBtn">Apply</button>
               <button class="bad" id="delLayoutBtn">Delete layout</button>
             </div>
-            <div style="margin-top:12px;border-top:1px solid #596;padding-top:8px">
-              <b>Festival props &amp; activity areas</b>
-              <p class="muted">Pick any decor prop to edit its activity, placeholder dressing, and location. Changes belong only to this layout; normal JSON export/import and undo preserve them.</p>
+          </div>
+          <div style="margin-top:12px;border-top:1px solid #596;padding-top:8px">
+              <b>Furniture &amp; locale properties</b>
+              <p class="muted">Pick furniture to assign its table, edit locale links, or adjust optional activity and dressing settings. Changes belong to the selected base map or alternate layout; normal JSON export/import and undo preserve them.</p>
               <select id="festivalPropSelect"></select>
+              <label>Belongs to table (optional furniture id)</label><input id="propTableId" placeholder="table instance id, or blank">
+              <small>Chair/table links are map-local and work without a festival. Locale child parts use their local ids.</small>
               <label>Activity</label><select id="festivalPropType"></select>
               <label>Label</label><input id="festivalPropLabel">
               <div class="row"><div><label>Column</label><input id="festivalPropCol" type="number" step="1"></div><div><label>Row</label><input id="festivalPropRow" type="number" step="1"></div><div><label>Reach (tiles)</label><input id="festivalPropRadius" type="number" min="1" max="8" step="0.25" value="2.5"></div></div>
               <label>Placeholder dressing</label><select id="festivalPropDressing"><option value="">None</option><option>blossoms</option><option>gifts</option><option>masks</option><option>sweets</option><option>feast</option><option>ancestors</option><option>bunting</option></select>
               <label>Accent</label><input id="festivalPropColor" type="color" value="#caa45c">
               <button class="ok" id="festivalPropApply">Apply prop settings</button>
-            </div>
+              <details><summary>Locale chair/table links</summary><div id="localeTableLinks"></div></details>
           </div>
         </div>
 
@@ -455,9 +458,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/surface-stretch-uv-furniture.js?v=20261016h4fe902d"></script>
 <script src="../../js/HousePieceGen.js"></script>
 <script src="../../js/terrain-preview.js"></script>
+<script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/";</script>
+<script src="../../js/authored-furniture-runtime.js?v=20261019h0a80a02"></script>
+<script src="../../js/furniture-table-system.js?v=organic-tables-1"></script>
 <script src="../../js/procedural-furniture.js"></script>
+<script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
+<script src="../../js/furniture-vessel-runtime.js?v=20261019h8231811"></script>
 <script src="../../js/festival-calendar.js?v=20261008festivals1"></script>
-<script src="../../js/festival-props.js?v=20261008festivals1"></script>
+<script src="../../js/festival-props.js?v=20261019hed7cdf6"></script>
 <script>
 (() => {
 'use strict';
@@ -568,6 +576,7 @@ const DECOR = {
   hearth:{icon:'🔥',label:'Hearth Fireplace',fw:2,fd:1,area:'interior'}, loom:{icon:'🧶',label:'Simple Loom',fw:1,fd:2,area:'interior'},
   nightstand:{icon:'🕯️',label:'Nightstand',fw:1,fd:1,area:'interior'}, rug:{icon:'🧶',label:'Woven Rug',fw:2,fd:2,area:'interior'},
   standingLamp:{icon:'💡',label:'Standing Lamp',fw:1,fd:1,area:'interior'}, stool:{icon:'🪑',label:'Round Stool',fw:1,fd:1,area:'any'},
+  servingTable:{icon:'🍲',label:'Serving Table',fw:4,fd:1,area:'any'}, servingPot:{icon:'🍲',label:'Serving Pot',fw:1,fd:1,area:'any'}, bowlStack:{icon:'🥣',label:'Stack of Bowls',fw:1,fd:1,area:'any'},
   tableLong:{icon:'🍽️',label:'Long Table',fw:4,fd:1,area:'interior'}, tableRound:{icon:'🍽️',label:'Round Table',fw:2,fd:2,area:'interior'},
   tableSmall:{icon:'🍽️',label:'Small Table',fw:1,fd:1,area:'interior'}, wardrobe:{icon:'🚪',label:'Tall Wardrobe',fw:2,fd:1,area:'interior'},
   washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'},
@@ -1882,12 +1891,21 @@ function loadFestivalPropFields() {
   const record = selectedFestivalProp(); // Same authored object the 2D/3D gizmos move.
   if (!record) return;
   $('festivalPropType').innerHTML = '<option value="">No activity</option>' + Object.entries(window.FestivalCalendar.activityLabels).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+  $('propTableId').value = record.tableId || '';
   $('festivalPropType').value = record.activity?.type || '';
   $('festivalPropLabel').value = record.activity?.label || '';
   $('festivalPropCol').value = record.col; $('festivalPropRow').value = record.row;
   $('festivalPropRadius').value = record.activity?.radius || 2.5;
   $('festivalPropDressing').value = record.festivalDecoration || '';
   $('festivalPropColor').value = record.festivalColor || '#caa45c';
+  const links = $('localeTableLinks'), parts = (record.locale || record.festivalLocale)?.parts || []; // Edits the saved local child, so moves/rotations preserve the relationship.
+  links.replaceChildren();
+  for (const part of parts.filter(part => /chair|bench|stool/i.test(part.key))) {
+    const label = document.createElement('label'), input = document.createElement('input'); // Native fields remain usable on mobile without a canvas selection tool.
+    label.textContent = part.id || part.key; input.value = part.tableId || ''; input.placeholder = 'local table id';
+    input.addEventListener('change', () => { part.tableId = input.value.trim(); saveWorkspace(); schedule3DRebuild(); });
+    label.append(input); links.append(label);
+  }
 }
 function renderFestivalPropsPanel(force = false) {
   const select = $('festivalPropSelect'); // Panel exists in both exterior and interior map-editor workspaces.
@@ -4302,6 +4320,7 @@ function spawnPreviewPlacements(group, merged) {
     mesh.userData.placementRef = ref;
     mesh.userData.placementBase = { x: cx, y: baseY, z: cz };
     group.add(mesh);
+    window.FurnitureTableSystem?.registerPlacement('preview:'+map.id, record, mesh, info); // Instance surface arrangements use the same shared composer as gameplay.
     three3d.placementMeshes.set(`${kind}:${record.id}`, mesh);
   };
   for (const record of map.furniture || []) add('furniture', record);
@@ -5139,6 +5158,7 @@ $('festivalPropApply').addEventListener('click', () => {
   const type = $('festivalPropType').value;
   if (type) record.activity = { ...(record.activity || {}), type, label: $('festivalPropLabel').value.trim() || window.FestivalCalendar.activityLabels[type], radius: Math.max(1, Math.min(8, Number($('festivalPropRadius').value) || 2.5)) };
   else delete record.activity;
+  record.tableId = $('propTableId').value.trim(); // Exported chair/table relationship, independent of activity metadata.
   record.festivalDecoration = $('festivalPropDressing').value;
   record.festivalColor = $('festivalPropColor').value;
   renderFestivalPropsPanel(true); draw(); refreshPreview(); saveWorkspace(); schedule3DRebuild();

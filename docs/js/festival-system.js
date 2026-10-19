@@ -5,6 +5,7 @@
   let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0 } }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let heldBowl = null; // Temporary ten-portion festival bowl: never added to real inventory or character saves.
+  let socialParticipationS = 0; // Counts played wheel dance/music seconds, independent of marked festival activity regions.
   let seatedMeal = null; // Runs one existing drink animation every few seconds while seated at the feast.
   let feastCache = null; // Avoid regenerating and scanning the cooking recipe list in the 60-fps action-bar path.
   let lastTick = 0; // Low-frequency game-loop work and dance elapsed time.
@@ -105,7 +106,6 @@
     const now=performance.now()/1000;
     return (state.feastBuffs||[]).filter(entry=>entry.expiresAt>now).reduce((total,entry)=>total+(Number(entry.foodEffects?.[effectKey])||0),0);
   }
-  const POT_OFFSETS = [[-.98,-.315],[0,-.315],[.98,-.315],[-.98,.315],[0,.315],[.98,.315]]; // Local positions used by FestivalProps' six visible pots for aim detection.
   function festivalBowl() { return heldBowl ? { ...heldBowl } : null; }
   function discardFestivalBowl(reason = 'equipment-changed') {
     if(!heldBowl && !seatedMeal)return false;
@@ -115,75 +115,35 @@
     window.__farmLog?.(`[festival] Temporary bowl put away: ${reason}`, 'items');
     return true;
   }
-  function potIndexAtAim() {
-    const prop = nearestActivityOfType('potluck');
-    const aim = deps?.getAimPosition?.();
-    if (!prop || !aim || !Number.isFinite(aim.c) || !Number.isFinite(aim.r)) return -1;
-    const center=propCenter(prop);
-    let nearest=-1, minDistance=.65;
-    for(let i=0;i<feastMenu().length;i++) {
-      const [x,z]=POT_OFFSETS[i] || [0,0];
-      const distance=Math.hypot(aim.c-center.c-x,aim.r-center.r-z);
-      if(distance<minDistance){nearest=i;minDistance=distance;}
-    }
-    return nearest;
+  function aimedServingObject() {
+    const target = window.FurnitureTableSystem?.aimedService?.(deps?.getArea?.(), deps?.getAimPosition?.()); // Actual furniture surface target, shared with ordinary world input.
+    return target?.entry.record.serviceId === 'gorkunash-feast' ? target : null;
   }
-  function diningSeats() {
-    return (layout()?.decor || []).filter(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple'); // Runtime-expanded seating follows the moveable feast footprint exactly.
-  }
-  function nearestDiningTable(position) {
-    if(!position)return null;
-    const tables=(layout()?.decor || []).filter(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='tableSmall');
-    let closest=null,distance=Infinity;
-    for(const table of tables) {
-      const center=propCenter(table),d=Math.hypot(center.c-position.c,center.r-position.r);
-      if(d<distance){distance=d;closest=table;}
-    }
-    return closest;
-  }
-  function nearestDiningSeat() {
-    if(festival()?.id!=='gorkunash' || !festivalHours() || deps?.getArea?.()!=='town')return null;
-    const pos=deps?.getPlayerTile?.();if(!pos)return null;
-    let near=null,best=1.65;
-    for(const seat of diningSeats()){
-      const spot=propCenter(seat);const dist=Math.hypot(pos.c-spot.c,pos.r-spot.r);
-      if(dist<best){near=seat;best=dist;}
-    }
-    return near;
-  }
-  function isDiningSeat(col,row,furnitureKey){
-    return festival()?.id==='gorkunash' && furnitureKey==='chairSimple'
-      && diningSeats().some(seat=>Math.abs(seat.col-col)<.01 && Math.abs(seat.row-row)<.01);
-  }
+  function potIndexAtAim() { const target = aimedServingObject(); return target?.placement.service.kind === 'meal' ? Number(target.placement.service.index) : -1; }
+  function isDiningSeat(col, row) { return !!window.FurnitureTableSystem?.tableForSeat?.(deps?.getArea?.(), { col, row }); }
   function seatedMealAction() {
     if(deps?.isPlayerSeated?.()===false)return null;
-    if(!heldBowl?.meal || !heldBowl.uses || festival()?.id!=='gorkunash'||!festivalHours()||!nearestActivityOfType('potluck'))return null;
-    return {icon:'🥣',label:seatedMeal?'Stop eating':`Eat ${heldBowl.meal.label}`,action:'festival_eat_bowl',style:'secondary',allowed:true,swigFraction:`${heldBowl.uses}/${MAX_FOOD_PORTIONS}`};
+    if(!heldBowl?.meal || !heldBowl.uses || festival()?.id!=='gorkunash'||!festivalHours())return null;
+    return {icon:'🥣',label:seatedMeal?'Stop eating':`Eat ${heldBowl.meal.label}`,action:'obj_eat_meal',style:'secondary',allowed:true,swigFraction:`${heldBowl.uses}/${MAX_FOOD_PORTIONS}`};
   }
   function toggleSeatedMeal() {
     if(seatedMeal){seatedMeal=null;return commit('Finished eating for now.');}
-    if(!heldBowl?.meal||!heldBowl.uses||!festivalHours()||!nearestActivityOfType('potluck')||deps?.isPlayerSeated?.()===false)
-      return fail('Sit at the Gorkunash dining area with a filled bowl to eat.');
+    if(!heldBowl?.meal||!heldBowl.uses||!festivalHours()||deps?.isPlayerSeated?.()===false)
+      return fail('Sit on a chair with a filled bowl to eat.');
     if(currentFullness()>=MAX_FOOD_PORTIONS)return fail('You are already full.');
     seatedMeal={nextAt:0,animating:false}; // The existing drink pose animation commits each individual bite, not the action-button tap.
-    return commit('Eating from the festival bowl.');
+    return commit('Eating from the bowl.');
   }
-  function bowlPileInReach() {
-    const feast=nearestActivityOfType('potluck'),pos=deps?.getPlayerTile?.();
-    if(!feast||!pos)return false;
-    const center=propCenter(feast);
-    return Math.hypot(pos.c-(center.c-1.62),pos.r-center.r)<1.8; // Matches the visible bowl stack on the left side of the serving table.
-  }
+  function bowlPileInReach() { return aimedServingObject()?.placement.service.kind === 'bowls'; }
   function takeFestivalBowl() {
-    if (festival()?.id!=='gorkunash'||!festivalHours()||!bowlPileInReach()) return fail('Approach the bowl pile on the left side of the Gorkunash feast table.');
+    if (festival()?.id!=='gorkunash'||!festivalHours()||!bowlPileInReach()) return fail('Aim at the stack of bowls to take one.');
     discardFestivalBowl('new-bowl');
     heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:deps?.getActiveItemKey?.()||''};
     deps?.equipFestivalBowl?.();
-    return commit('Picked up a festival bowl. Fill it from one of the six pots.');
+    return commit('Picked up a bowl. Aim at a serving pot to fill it.');
   }
-  function nearestActivityOfType(type) { return activityProps().find(prop=>prop.activity?.type===type && atProp(prop))||null; }
   function fillFestivalBowl(index) {
-    if (festival()?.id!=='gorkunash'||!festivalHours()||!heldBowl||!nearestActivityOfType('potluck')) return fail('Hold a festival bowl beside the feast table.');
+    if (festival()?.id!=='gorkunash'||!festivalHours()||!heldBowl||potIndexAtAim()!==index) return fail('Hold a festival bowl beside the feast table.');
     const meal=feastMenu()[index];
     if (!meal) return fail('That pot is waiting for a contributed meal.');
     const selectedItemKey=heldBowl.selectedItemKey;
@@ -191,7 +151,7 @@
     return commit(`Filled the bowl with ${meal.label} (10/10 portions).`);
   }
   function eatFestivalBowl() {
-    if (!heldBowl?.meal||heldBowl.uses<1||!nearestActivityOfType('potluck')||!festivalHours()||deps?.isPlayerSeated?.()===false) return fail('Sit by the festival feast with a filled bowl.');
+    if (!heldBowl?.meal||heldBowl.uses<1||!festivalHours()||deps?.isPlayerSeated?.()===false) return fail('Sit on a chair with a filled bowl.');
     if (currentFullness()>=MAX_FOOD_PORTIONS) return fail('You are full. The fullness effect fades eighteen in-game hours after its first serving.');
     const meal=heldBowl.meal;
     const now=performance.now()/1000;
@@ -206,15 +166,10 @@
     state.fullness.stacks++;
     heldBowl.uses--;
     if (!heldBowl.uses){heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:heldBowl.selectedItemKey};seatedMeal=null;}
-    const dinerSeat=deps?.getPlayerSeatedSeat?.(); // Real selected outdoor chair, not a broad radius around every table.
-    const playerTable=nearestDiningTable(dinerSeat ? {c:dinerSeat.col+.5,r:dinerSeat.row+.5} : deps.getPlayerTile());
-    const diners=(deps.getWalkers?.()||[]).filter(walker=>{
-      const station=walker.currentScheduleTarget;
-      if(walker.area!=='town'||!station||station.pose!=='sit'||station.festivalLocaleKind!=='dining'||!walker.root?.position)return false;
-      if(!playerTable || nearestDiningTable({c:station.c+.5,r:station.r+.5})?.id!==playerTable.id)return false;
-      return Math.hypot(walker.root.position.x-station.c,walker.root.position.z-station.r)<=1.35; // NPC must actually have reached the same dining table.
-    });
-    for(const walker of diners) addFestivalFun(walker.rec.id,25);
+    const dinerSeat=deps?.getPlayerSeatedSeat?.(); // Normal seating feeds the shared table member array.
+    const table=window.FurnitureTableSystem?.tableForSeat?.(deps.getArea(), dinerSeat);
+    const diners=table ? (window.FurnitureTableSystem.members(deps.getArea(), table.id) || []).filter(member=>member.id!=='player') : [];
+    for(const member of diners) addFestivalFun(member.id,25);
     return commit(`${meal.label}: +5 min food duration; fullness ${currentFullness()}/10; ${diners.length} tablemates gain 25 Festival Fun.`);
   }
   function addFestivalFun(id,amount) {
@@ -240,16 +195,15 @@
   function askFestivalDance(walker) {
     const id=walker?.rec?.id;
     if (festival()?.id!=='gorkunash'||!festivalHours()||!isRomanceable(walker?.rec)
-      ||walker.area!=='town'||walker.currentScheduleTarget?.festivalLocaleKind!=='dance'
-      ||!walker.root?.position||!deps?.getPlayerTile?.()) return fail('Find a romanceable dancer on the Gorkunash dance floor.');
+      ||walker.area!=='town'
+      ||!walker.root?.position||!deps?.getPlayerTile?.()) return fail('Approach someone you would like to dance with.');
     const player=deps.getPlayerTile();
     if(Math.hypot(player.c-walker.root.position.x,player.r-walker.root.position.z)>3.5)return fail('Approach your dance partner.');
     const accepted=favorHearts(id)>=3||(favorHearts(id)>=1&&(window.NpcRapport?.get?.(id)||0)>200);
     window.AmbientDialogue?.showAlcoholOfferResponse?.(walker,{text:accepted?'I would be delighted to dance.':'Perhaps another time.',line:accepted?'I would be delighted to dance.':'Perhaps another time.',accepted,reason:'festival'});
     if(!accepted)return fail('Your invitation was politely declined.');
-    const prop=activityProps().find(p=>p.activity.type==='dance');
-    if(dance||!prop||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return fail('The two-avatar Festival Wheel Dance cannot start here.');
-    dance={propId:prop.id,event:eventKey(),elapsed:0,targetNpcId:id,awardTime:0,awardedSeconds:0};
+    if(dance||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return fail('The two-avatar Festival Wheel Dance cannot start here.');
+    dance={propId:null,event:eventKey(),elapsed:0,targetNpcId:id,awardTime:0,awardedSeconds:0};
     window.HobunjiActivityEvents?.emit?.('dance_together',{npcId:id});
     return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);
   }
@@ -280,14 +234,8 @@
     return activityProps().filter(atProp).sort((a, b) => distance(a) - distance(b))[0] || null;
   }
   function actionButton() {
-    if (dance) return { icon: '■', label: 'Leave festival dance', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
-    if(festival()?.id==='gorkunash'&&festivalHours()&&nearestActivityOfType('potluck')){
-      const seat=nearestDiningSeat();
-      const aimedPot=potIndexAtAim();
-      if(seat && heldBowl?.meal)return {icon:'🪑',label:'Sit at festival table',action:'festival_sit_dining',style:'primary',allowed:true,worldInteraction:true};
-      if(!heldBowl && bowlPileInReach())return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
-      if(heldBowl&&!heldBowl.meal&&aimedPot>=0)return {icon:'🍲',label:`Fill bowl: ${feastMenu()[aimedPot].label}`,action:'festival_fill_bowl',style:'primary',allowed:true,worldInteraction:true,potIndex:aimedPot};
-    }
+    if (dance) return { icon: '■', label: 'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
+    if (festival()?.id === 'gorkunash') return null; // Schedules and ordinary objects provide the event; there is no event/activity input.
     const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
     return prop ? { icon: festival().icon, label: prop.activity.label || window.FestivalCalendar.activityLabels[prop.activity.type], action: 'festival_activity', allowed: true, style: 'primary' } : null;
   }
@@ -295,8 +243,7 @@
     if (!walker?.rec?.id || deps?.isBlocked?.()) return null;
     // Reuse the existing secondary NPC festival action route; game.js already
     // dispatches festival_npc_gift to receiveNpcReward on every input platform.
-    if(festival()?.id==='gorkunash'&&festivalHours()&&isRomanceable(walker.rec)
-      &&walker.currentScheduleTarget?.festivalLocaleKind==='dance')
+    if(festival()?.id==='gorkunash'&&festivalHours()&&isRomanceable(walker.rec))
       return {icon:'💃',label:'Ask to dance',action:'festival_npc_gift',style:'secondary',allowed:true};
     const id = walker.rec.id; // Same annual claims as the gift table, so the two routes cannot duplicate rewards.
     if (festival()?.id === 'mountaindawn' && favorHearts(id) >= 3 && !claimed(`gift:${id}`)) return { icon: '🎁', label: 'Receive Mountaindawn gift', action: 'festival_npc_gift', style: 'secondary', allowed: true };
@@ -413,7 +360,7 @@
     settleFestivalFun();
     if (heldBowl && (festival()?.id!=='gorkunash'||deps?.getArea?.()!=='town'||(deps?.getHeldMode?.() && deps.getHeldMode()!=='item')
       ||(deps?.getActiveItemKey?.() && deps.getActiveItemKey()!==heldBowl.selectedItemKey)))discardFestivalBowl('left-festival-or-changed-equipment');
-    if(seatedMeal && (!heldBowl?.meal || !heldBowl?.uses || deps?.isPlayerSeated?.()===false || !festivalHours()||!nearestActivityOfType('potluck')))
+    if(seatedMeal && (!heldBowl?.meal || !heldBowl?.uses || deps?.isPlayerSeated?.()===false || !festivalHours()))
       seatedMeal=null;
     if(seatedMeal && !seatedMeal.animating && now>=seatedMeal.nextAt && !document.hidden){
       const playing=deps?.playFestivalBowlDrink?.(()=> {
@@ -428,6 +375,15 @@
     if (now - lastTick < 200) return;
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
+    const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
+    if (festival()?.id === 'gorkunash' && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {
+      socialParticipationS += elapsed;
+      if (socialParticipationS >= 1) {
+        const seconds = Math.floor(socialParticipationS), position = deps.getPlayerTile(); // Award only actual played whole seconds with nearby company.
+        socialParticipationS -= seconds;
+        for (const walker of deps.getWalkers()) if (walker.area === 'town' && !walker.rec?.dead && Math.hypot(walker.root.position.x-position.c, walker.root.position.z-position.r) <= 3) addFestivalFun(walker.rec.id, seconds * 15);
+      }
+    } else socialParticipationS = 0;
     if (deps && now - lastCostumeTick >= 2000) {
       lastCostumeTick = now;
       for (const walker of deps.getWalkers()) {
@@ -442,7 +398,7 @@
     }
     if (dance) {
       const prop = activityProps().find(p => p.id === dance.propId);
-      if (eventKey() !== dance.event || !atProp(prop)
+      if (eventKey() !== dance.event || (!dance.targetNpcId && !atProp(prop))
           || (dance.targetNpcId
             ? !window.FestivalWheelDanceRuntime?.activeFor?.(dance.targetNpcId)
             : !window.SocialActionWheel?.getDebug?.().dancing)) cancelDance();
@@ -474,11 +430,44 @@
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
-      latestChange:'Fixed active-feast proximity freeze when no bowl is held; Fill requires an actual empty bowl.' };
+      latestChange:'Direct chair and pot interactions; authored surface furniture; explicit reusable table members; social-wheel participation anywhere.' };
   }
   function init(injected) {
     deps = injected;
     residentCacheAt = -Infinity;
+    window.FurnitureTableSystem?.registerService?.('gorkunash-drinks', {
+      enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
+      buttons: () => claimed('liquor') ? [] : [{icon:'🍷',label:'Take a bottle',action:'obj_take_bottle',style:'primary',allowed:!deps?.isBlocked?.()}],
+      onAction: action => action === 'obj_take_bottle' && festival()?.id === 'gorkunash' && festivalHours() && !deps?.isBlocked?.() ? handlers.get('liquor')() : fail('This bottle is unavailable.'),
+    });
+    window.FurnitureTableSystem?.registerService?.('gorkunash-feast', {
+      enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
+      buttons(target) {
+        if (deps?.isBlocked?.()) return [];
+        if (target.placement.service.kind === 'bowls') return [{ icon:'🥣', label:'Take bowl', action:'obj_take_bowl', style:'primary', allowed:true }];
+        const index = Number(target.placement.service.index), meal = feastMenu()[index]; // Every serving pot carries its own authored menu slot.
+        const buttons = meal ? [{ icon:'🍲', label:heldBowl ? `Fill bowl: ${meal.label}` : 'Take a bowl first', action:'obj_fill_bowl', style:'primary', allowed:!!heldBowl }] : [];
+        const held = deps?.getHeldMealChoice?.(); // The normal item wheel determines which dish and quality are donated.
+        if (!claimed('potluck') && held && deps.getItemDefs()[held.key]?.isCookedFood) buttons.push({ icon:'🍲',label:'Contribute held meal',action:'obj_contribute_meal',style:'secondary',allowed:true });
+        return buttons;
+      },
+      onAction(action, target) {
+        if (!festivalHours() || festival()?.id !== 'gorkunash' || deps?.isBlocked?.()) return fail('This serving table is closed.');
+        if (action === 'obj_take_bowl' && target.placement.service.kind === 'bowls') return takeFestivalBowl();
+        if (action === 'obj_fill_bowl' && target.placement.service.kind === 'meal') return fillFestivalBowl(Number(target.placement.service.index));
+        if (action === 'obj_contribute_meal') {
+          const held = deps?.getHeldMealChoice?.();
+          const choice = qualityChoices('potluck').find(item=>item.key===held?.key && (held.stars == null || item.stars===held.stars));
+          return choice ? handlers.get('potluck')(choice) : fail('Hold a cooked meal to contribute it.');
+        }
+        return fail('Aim directly at a pot or the stack of bowls.');
+      },
+      decorate(holder, record) {
+        if (record.service.kind !== 'meal') return;
+        const available = Number(record.service.index) < feastMenu().length; // An empty reserved pot keeps its real vessel and only hides the liquid.
+        holder.traverse?.(node=>{ if (node.userData?.authoredPart?.kind==='liquidSurface' && node.visible!==available) node.visible=available; });
+      },
+    });
     window.NpcWardrobe?.registerAppearanceDecorator('festivals', data => {
       if (festival()?.id !== 'hachutukara' || !residents().some(rec => rec.id === data.id)) return data;
       const index = [...data.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % MASKS.length; // Stable animal mask for each named resident.
@@ -577,5 +566,5 @@
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
     festivalHours, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
-    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, nearestDiningSeat, isDiningSeat,get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
+    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();

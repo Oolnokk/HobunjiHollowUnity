@@ -1,11 +1,7 @@
 // Reusable festival dressings on ordinary editable furniture. No collision or exit changes.
 (() => {
   'use strict';
-  const feastGroups=new Set(); // Tracks only the six-pot serving props so festival donations can update the visible sixth pot instantly.
-  function refreshFeast() {
-    const full=(window.FestivalSystem?.feastMenu?.().length||0)>=6;
-    for (const group of feastGroups) if(group.userData?.festivalDonationBroth)group.userData.festivalDonationBroth.visible=full;
-  }
+  function refreshFeast() { window.FurnitureTableSystem?.refreshServices?.(); }
   function decorate(root, record) {
     const THREE = window.THREE; // Same renderer used by game and editor preview.
     const dressing = record.festivalDecoration || (record.key === 'festivalArch' ? 'road-arch' : null); // Registered festivalArch furniture renders its overhead PNG arch even without a separate event dressing override.
@@ -63,19 +59,6 @@
       for (const x of [-2.45,2.45])box(x,.045,0,.12,.08,3.8,border);
       for (const z of [-1.95,1.95])box(0,.045,z,4.8,.08,.12,border);
       for(let i=-2;i<=2;i++)for(let j=-1;j<=1;j++)box(i*.87,.018,j*.9,.035,.025,.75,material);
-    } else if (dressing === 'six-pot-feast') {
-      const potColors=['#ab6042','#9f772e','#866b48','#6c8d48','#bb7052','#aa8746'];
-      for(let i=0;i<6;i++) {
-        const x=((i%3)-1)*.98,z=(Math.floor(i/3)-.5)*.63;
-        const potMat=new THREE.MeshLambertMaterial({color:'#52433e'});group.userData.festivalMaterials.push(potMat);
-        const broth=new THREE.MeshLambertMaterial({color:potColors[i]});group.userData.festivalMaterials.push(broth);
-        const pot=new THREE.Mesh(new THREE.CylinderGeometry(.34,.27,.25,12),potMat);pot.position.set(x,.87,z);group.add(pot);
-        const soup=new THREE.Mesh(new THREE.CylinderGeometry(.295,.295,.013,12),broth);soup.position.set(x,1.01,z);group.add(soup);
-        if(i===5)group.userData.festivalDonationBroth=soup; // The sixth broth appears only after the player supplies a meal, then rerolls tomorrow.
-        const handle=new THREE.Mesh(new THREE.TorusGeometry(.27,.035,6,16),potMat);handle.rotation.x=Math.PI/2;handle.position.set(x,1.015,z);group.add(handle);
-      }
-      for(let i=0;i<7;i++){const bowl=new THREE.Mesh(new THREE.CylinderGeometry(.155,.10,.075,9),wood);bowl.position.set(-1.62,.80+i*.064,0);group.add(bowl);}
-      feastGroups.add(group);
     } else if (dressing === 'gifts') {
       for (let i = 0; i < 3; i++) { const x = (i - 1) * .28; box(x, .82, 0, .22, .23, .22); box(x, .95, 0, .25, .035, .055, wood); }
     } else if (dressing === 'ancestors') {
@@ -106,7 +89,7 @@
         flag.rotation.z = Math.PI; flag.position.set((i - 2) * .15, 1.42, 0); group.add(flag);
       }
     }
-    if (record.activity && !['road-arch', 'bandstand', 'dancefloor', 'six-pot-feast'].includes(dressing) && window.HobunjiSpritePngSurface) {
+    if (record.activity && record.showActivitySign !== false && !['road-arch', 'bandstand', 'dancefloor', 'six-pot-feast'].includes(dressing) && window.HobunjiSpritePngSurface) {
       const canvas = document.createElement('canvas'); // Text is generated locally, so no external texture/CORS request is needed.
       canvas.width = 512; canvas.height = 96;
       const context = canvas.getContext('2d');
@@ -125,11 +108,9 @@
       group.userData.festivalTexture = texture;
     }
     root.add(group);
-    if(dressing==='six-pot-feast')refreshFeast();
   }
   function dispose(root) {
     root?.traverse?.(object => {
-      if(feastGroups.has(object))feastGroups.delete(object);
       if (!object.userData?.festivalMaterials) return;
       for (const material of object.userData.festivalMaterials) material.dispose();
       object.userData.festivalMaterials = null;

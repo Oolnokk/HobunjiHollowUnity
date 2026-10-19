@@ -6,6 +6,7 @@ const vm = require('node:vm'); // Isolated calendar, inventory, and save state.
 const town = JSON.parse(fs.readFileSync('docs/config/maps/hobunji_hollow_town.map.json')); // Authored base and five complete variants.
 const load = (context, name) => vm.runInContext(fs.readFileSync(`docs/js/${name}.js`, 'utf8'), context, { filename: name }); // Shared production loader.
 let civilDay = 1, year = 1155, time = 100, area = 'town', blocked = false; // Deterministic world/civil calendar and action state.
+let hour=12; // Serving tables follow the ordinary evening schedule; other festival fixtures keep noon.
 let position = { c: 0, r: 0 }, saved = 0, dancing = false, duelQuest = null, costume = null; // Observable runtime boundaries.
 const inventory = { meal: 3, keepsake: 2, gold: 500, forbidden: 1, wine: 0 }; // Inventory totals must agree with tracked quality.
 const defs = { meal: { label: 'Feast dish', isCookedFood: true }, keepsake: { label: 'Carved stone' }, gold: { label: 'Gold' }, forbidden: { label: 'Quest item', isQuestItem: true }, wine: { label: 'Wine' } }; // Realistic narrow item metadata.
@@ -16,7 +17,7 @@ const deltas = []; // Records actual favor mutations, not UI promises.
 const window = { InventoryStacks: { MAX_TOTAL: 9999 }, DialogueContent: { getNpcDlgState: id => ({ favor: favors[id] || 0 }), adjustNpcFavor: (id, amount, reason) => deltas.push({ id, amount, reason }) }, NpcGifting: { isItemGiftable: ({ key }) => !!defs[key] }, NpcWardrobe: { registerAppearanceDecorator: (id, fn) => { costume = fn; }, slotForCosmetic: id => id.includes('hood') ? 'hood' : 'body', refreshWalkerAppearance() {} }, NpcScheduling: { registerTargetOverride() {} }, EffectBuffBar: { registerProvider() {}, refresh() {} }, FestivalUI: { close() {}, update() {} }, SocialActionWheel: { startDance: () => (dancing = true), stopDance: () => { dancing = false; }, getDebug: () => ({ dancing }) }, MusicMinigame: { beginPlayerSession() {} }, HobunjiDrunkGameplayBridge: { isAlcoholDef: def => def.label === 'Wine' }, CombatTutorial: { active: () => false, start: quest => { duelQuest = quest; return true; } } }; // Public integrations; production festival logic itself is not mocked.
 const context = vm.createContext({ window, document: { hidden: false }, performance: { now: () => time }, console }); // No browser or network needed.
 load(context, 'festival-calendar'); load(context, 'map-layout-system');
-window.CalendarSystem = { isInitialized: () => true, monthNumber: () => Math.floor((civilDay - 1) / 28) + 1, dayOfMonth: () => (civilDay - 1) % 28 + 1, aotYearNumber: () => year, getHour: () => 12, currentWeekdayName: () => 'Anan' }; // Assigned after MapLayoutSystem so its real civil bridge isn't installed around a stub.
+window.CalendarSystem = { isInitialized: () => true, monthNumber: () => Math.floor((civilDay - 1) / 28) + 1, dayOfMonth: () => (civilDay - 1) % 28 + 1, aotYearNumber: () => year, getHour: () => hour, currentWeekdayName: () => 'Anan' }; // Assigned after MapLayoutSystem so its real civil bridge isn't installed around a stub.
 window.CookingSystem = {
   registerCookedDefinition: (key, def) => { defs[key] = { ...def, isCookedFood: true }; },
   recordItemQuality: (key, stars, count) => { (buckets[key] ||= {})[stars] = (buckets[key]?.[stars] || 0) + count; },
@@ -25,17 +26,22 @@ window.CookingSystem = {
 };
 window.AlchemySystem = { RECIPE_DEFS: { healing: { id: 'healing', useMode: 'drink', traits: { drive: 'restore' } } }, ensureRecipeItemDef: (id, tier) => { const key = `${id}_${tier}`; defs[key] = { label: 'Potent healing' }; return key; } }; // Existing potion definition/grant contract.
 load(context, 'festival-system');
+let heldChoice=null; // The ordinary held-item selection drives direct meal contribution.
+const mealServices=new Map(); // Captures providers while the separate table-system regression exercises real targeting.
+window.FurnitureTableSystem={registerService:(id,provider)=>mealServices.set(id,provider)};
 const api = window.FestivalSystem, calendar = window.FestivalCalendar; // Production APIs under test.
-api.init({ inventory, getItemDefs: () => defs, getNpcs: () => npcs, getWalkers: () => npcs.map(rec => ({ rec, area: 'town' })), getTownMap: () => town, getArea: () => area, getPlayerTile: () => position, getDecorSize: key => ({ fw: key === 'tableLong' ? 4 : key === 'rug' ? 2 : 1, fd: key === 'rug' ? 2 : 1 }), isBlocked: () => blocked, refresh() {}, save: () => { saved++; }, toast() {}, grantMask: () => true, tellStory: () => ({ ok: true }) });
+api.init({ getHeldMealChoice:()=>heldChoice, inventory, getItemDefs: () => defs, getNpcs: () => npcs, getWalkers: () => npcs.map(rec => ({ rec, area: 'town' })), getTownMap: () => town, getArea: () => area, getPlayerTile: () => position, getDecorSize: key => ({ fw: key === 'tableLong' ? 4 : key === 'rug' ? 2 : 1, fd: key === 'rug' ? 2 : 1 }), isBlocked: () => blocked, refresh() {}, save: () => { saved++; }, toast() {}, grantMask: () => true, tellStory: () => ({ ok: true }) });
 function visit(id, type) {
+  hour=id==='gorkunash'?17:12;
   const def = calendar.get(id); // Move time and feet to the real authored interaction anchor.
   civilDay = calendar.ordinal(def.month, def.day);
+  if(id==='gorkunash'&&type==='potluck')return {id:'gorkunash_feast',activity:{type:'potluck'},directMeal:true};
   const prop = api.activityProps().find(p => p.activity.type === type);
   assert(prop, `${id} has working ${type} anchor`);
   position = { c: prop.col + (prop.key === 'tableLong' ? 2 : prop.key === 'rug' ? 1 : .5) + (prop.postX || 0), r: prop.row + (prop.key === 'rug' ? 1 : .5) + (prop.postZ || 0) };
   return prop;
 }
-function perform(prop, data = {}) { return api.perform(prop.activity.type, { propId: prop.id, ...data }); }
+function perform(prop, data = {}) { if(prop.directMeal){heldChoice=data;return mealServices.get('gorkunash-feast').onAction('obj_contribute_meal',{placement:{service:{kind:'meal'}}});} return api.perform(prop.activity.type, { propId: prop.id, ...data }); }
 // Every festival has exactly seven days and a complete, automatically selected editable layout.
 for (const festival of calendar.festivals) {
   const start = calendar.ordinal(festival.month, festival.day);
@@ -43,7 +49,8 @@ for (const festival of calendar.festivals) {
     assert.equal(calendar.forOrdinal(start + offset)?.id, festival.id);
     const active = window.MapLayoutSystem.getEffectiveMapData(town, { dateOrdinal: start + offset, minutes: 720, weekday: 'Anan' });
     assert.equal(active.activeLayoutId, `festival_${festival.id}`);
-    for (const type of festival.activities) assert(active.decor.some(p => p.activity?.type === type), `${festival.id}/${type} missing`);
+    if(festival.id==='gorkunash')assert(active.decor.some(p=>p.serviceId==='gorkunash-feast'),'feast is an ordinary serving table');
+    else for (const type of festival.activities) assert(active.decor.some(p => p.activity?.type === type), `${festival.id}/${type} missing`);
     assert.strictEqual(active.transitions, town.transitions, 'all exits stay unchanged');
     assert.strictEqual(active.buildings, town.buildings, 'all original buildings stay open');
     assert.strictEqual(active.routes, town.routes, 'all original roads stay unchanged');

@@ -316,11 +316,11 @@
   // layout selection, without changing the saved map or its base NPC schedule.
   function resolveFestivalLocales(mapData) {
     const roots = Array.isArray(mapData?.decor) ? mapData.decor : [];
-    if (!roots.some(root => root?.festivalLocale)) return mapData;
+    if (!roots.some(root => root?.locale || root?.festivalLocale)) return mapData;
     const decor = roots.slice(); // Used as the rendered children of movable locale footprints.
     const npcStations = (mapData.npcStations || []).slice(); // Used by ordinary pathfinding and timed NPC overrides.
     for (const root of roots) {
-      const locale = root?.festivalLocale;
+      const locale = root?.locale || root?.festivalLocale;
       if (!locale || !root.id || !Number.isFinite(root.col) || !Number.isFinite(root.row)) continue;
       const angle = (Number(root.rotY) || 0) * Math.PI / 180;
       const c = Math.cos(angle), s = Math.sin(angle);
@@ -331,13 +331,16 @@
       for (const [index, part] of (locale.parts || []).entries()) {
         if (!part?.key) continue;
         const location = transform(Number(part.dx) || 0, Number(part.dz) || 0);
-        decor.push({ ...part, ...location, id: `${root.id}:part:${index}`,
+        decor.push({ ...part, ...location, id: `${root.id}:part:${part.id || index}`,
+          tableId: part.tableId ? `${root.id}:part:${part.tableId}` : undefined,
           rotY: (Number(root.rotY) || 0) + (Number(part.rotY) || 0),
           festivalLocaleParent: root.id, festivalColor: part.festivalColor || root.festivalColor });
       }
       for (const [index, slot] of (locale.slots || []).entries()) {
         const location = transform(Number(slot.dx) || 0, Number(slot.dz) || 0);
         npcStations.push({ ...slot, ...location, id: `${root.id}:station:${slot.id || index}`,
+          furnitureId: slot.furnitureId ? `${root.id}:part:${slot.furnitureId}` : undefined,
+          tableId: slot.tableId ? `${root.id}:part:${slot.tableId}` : undefined,
           label: slot.label || `${locale.kind || 'Festival'} gathering`,
           rotY: (Number(root.rotY) || 0) + (Number(slot.rotY) || 0),
           festivalLocaleParent: root.id, festivalLocaleKind: locale.kind,

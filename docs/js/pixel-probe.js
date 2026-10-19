@@ -696,6 +696,8 @@
     for (const walker of window._npcWalkers || []) {
       if (walker._npcUpdateError) lines.push(`NPC update error (${walker.rec?.id || 'npc'}): ${walker._npcUpdateError.stack.split('\n').slice(0, 6).join(' | ')}`);
     }
+    const tables = window.FurnitureTableSystem?.snapshot?.(); // On-demand, so table diagnostics never add per-frame serialization.
+    if (tables) lines.push(`Furniture tables: ${JSON.stringify(tables)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);

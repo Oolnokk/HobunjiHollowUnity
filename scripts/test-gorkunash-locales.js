@@ -57,11 +57,25 @@ assert.equal(originalRoot.col,42,'authored map remains unmutated after expansion
 W.NpcScheduling.stations=layout.npcStations;
 const itemDefs={meal:{label:'Special stew',isCookedFood:true,foodEffects:{vigor:2}}},inventory={meal:1};
 let player={c:47,r:43}, aimed={c:47.02,r:43.185}, heldMode='item', isSeated=true, queuedBite=null, bowlAnimationCount=0; // Player reticle and held state for bowl targeting and real seated animation checks.
+let currentSeat=null; // Player's actual ordinary chair, shared with table membership and meal company.
+load('furniture-table-system');
+const furniture=W.FurnitureTableSystem; // Production area/table/targeting authority.
+furniture.init({getArea:()=> 'town',getWalkers:()=>walkers,getPlayerSeat:()=>isSeated&&currentSeat?{...currentSeat,phase:'active'}:null,
+ getPlayerPosition:()=>({x:player.c,z:player.r}),getAim:()=>aimed,
+ makeSitInteractable:()=>({getButtons:()=>[{action:'obj_sit',label:'Sit',allowed:true}],onAction:()=>({ok:true})})});
+const servingData=JSON.parse(fs.readFileSync('docs/config/furniture-authored/servingTable.json','utf8')); // Same surface placements loaded by the live furniture renderer.
+for(const record of layout.decor){
+ const size={fw:record.key==='servingTable'?4:record.key==='rug'?2:1,fd:record.key==='rug'?2:1,sit:record.key==='chairSimple'};
+ const root={parent:{},position:{x:record.col+size.fw/2,z:record.row+size.fd/2},userData:{}};
+ if(record.serviceId)root.userData.authoredItemPlacements={children:servingData.itemPlacements.map(placement=>({userData:{surfacePlacement:placement},getWorldPosition(out){out.x=root.position.x+placement.position.u;out.z=root.position.z+placement.position.v;return out;}}))};
+ furniture.registerPlacement('town',record,root,size);
+}
+function aimSurface(kind,index=0){const placement=servingData.itemPlacements.find(item=>item.service.kind===kind&&(kind!=='meal'||item.service.index===index));aimed={c:48+placement.position.u,r:43.5+placement.position.v};return furniture.aimedService('town');}
 const api=W.FestivalSystem;
 api.init({getTownMap:()=>town,getNpcs:()=>residents,getWalkers:()=>walkers,getArea:()=> 'town',
- getPlayerTile:()=>player,getDecorSize:key=>({fw:key==='tableLong'?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
+ getPlayerTile:()=>player,getDecorSize:key=>({fw:['tableLong','servingTable'].includes(key)?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
  getItemDefs:()=>itemDefs,inventory,save(){persisted++},refresh(){},toast(){},isBlocked:()=>false,
- getAimPosition:()=>aimed,getActiveItemKey:()=> 'meal',getHeldMode:()=>heldMode,isPlayerSeated:()=>isSeated,
+ getPlayerSeatedSeat:()=>currentSeat,getHeldMealChoice:()=>({key:'meal',stars:5}),getAimPosition:()=>aimed,getActiveItemKey:()=> 'meal',getHeldMode:()=>heldMode,isPlayerSeated:()=>isSeated,
  equipFestivalBowl:()=>{heldMode='item';},
  playFestivalBowlDrink:cb=>{bowlAnimationCount++;queuedBite=cb;return true;}});
 const target=id=>W.NpcScheduling.override(residents.find(rec=>rec.id===id)); // Existing schedule override, not a copied planner.
@@ -83,10 +97,11 @@ for (const festivalHour of [14.999, 15, 17, 23.999, 0.999, 1]) {
   }
 }
 player={c:47,r:43};hour=17;
-assert.equal(api.actionButton()?.action,'festival_take_bowl','the nearby bowl pile still offers Take');
+assert.equal(api.actionButton(),null,'Gorkunash never becomes an activity input');
+assert.equal(aimSurface('bowls').provider.buttons(aimSurface('bowls'))[0].action,'obj_take_bowl','the actual bowl stack offers Take');
 hour=17;assert.equal(api.feastMenu().length,5,'five free pots leave room for the first offering');
 assert.equal(api.takeFestivalBowl().ok,true);
-assert.equal(api.actionButton()?.action,'festival_fill_bowl','an actual empty bowl offers Fill when aiming at a pot');
+assert.equal(aimSurface('meal').provider.buttons(aimSurface('meal'))[0].action,'obj_fill_bowl','the actual pot offers Fill');
 assert.equal(api.fillFestivalBowl(0).ok,true);
 assert.equal(api.festivalBowl().uses,10);
 assert.equal(api.eatFestivalBowl().ok,true);
@@ -96,17 +111,18 @@ assert.equal(api.currentFullness(),1);
 const seat=layout.decor.find(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple');
 assert(seat,'dining locale contains a real authored chair mesh');
 player={c:seat.col+.5,r:seat.row+.5};
-assert.equal(api.nearestDiningSeat()?.id,seat.id,'nearby festival chair is a reachable seat interaction');
+currentSeat=seat;
+assert.equal(furniture.objectAt('town',Math.floor(seat.col),Math.floor(seat.row))?.getButtons()[0].action,'obj_sit','outdoor chair uses the ordinary Sit interaction');
 assert.equal(api.isDiningSeat(seat.col,seat.row,seat.key),true,'seated identity is bound to the festival locale furniture');
-assert.equal(api.actionButton()?.action,'festival_sit_dining','held bowl exposes Sit world action at a dining chair');
+assert.equal(api.actionButton(),null,'there is no festival-specific table-sitting input');
 assert.equal(api.seatedMealAction()?.swigFraction,'9/10','eating shows bottle-style portion count on the arch');
 assert.equal(api.toggleSeatedMeal().ok,true);
 realMs+=600;api.update();
 assert.equal(bowlAnimationCount,1,'festival meal starts exactly one authored drink animation');
 const guest=walkers.find(w=>w.rec.id==='friend');
-const sameSeat=layout.npcStations.find(st=>st.id==='gorkunash_feast:station:seat_0');
+const sameSeat=layout.npcStations.find(st=>st.id==='gorkunash_feast:station:seat_1');
 guest.currentScheduleTarget={...sameSeat,c:sameSeat.col,r:sameSeat.row};
-guest.root.position={x:sameSeat.col,z:sameSeat.row}; // Simulates another villager already sitting at the very same dining table.
+guest.root.position={x:sameSeat.col+.5,z:sameSeat.row+.5}; // Simulates another villager already sitting at the very same dining table.
 assert.equal(api.currentFullness(),1,'no bowl portion is consumed before drink-strike callback');
 queuedBite();
 assert.equal(api.currentFullness(),2,'drink strike commits exactly one serving');
@@ -119,8 +135,8 @@ assert.equal(api.seatedMealAction(),null,'standing immediately removes seated me
 heldMode='tool';realMs+=600;api.update();
 assert.equal(api.festivalBowl(),null,'drawing a different tool drops the temporary serving bowl');
 player={c:47,r:43};isSeated=true;heldMode='item';
-const potluck=api.activityProps().find(prop=>prop.activity.type==='potluck');
-assert.equal(api.perform('potluck',{propId:potluck.id,key:'meal',stars:5}).ok,true);
+const potluck=aimSurface('meal');
+assert.equal(potluck.provider.onAction('obj_contribute_meal',potluck).ok,true,'contribute the normal held meal directly to its serving pot');
 assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'disliked meal is neutral');
 assert(awarded.some(e=>e.id==='kaboku_kunji'&&e.amount===40&&e.reason==='festival_potluck'),'liked meal gives tenfold Favor');
 assert.equal(api.feastMenu().length,6,'donated dish fills reserved sixth pot immediately');
@@ -153,7 +169,7 @@ const partner=walkers.find(walker=>walker.rec.id==='sloomi');
 partner.currentScheduleTarget={festivalLocaleKind:'dance'};
 partner.root.position={x:37,z:42};player={c:37,r:42};hour=17;
 api.init({getTownMap:()=>town,getNpcs:()=>residents,getWalkers:()=>walkers,getArea:()=> 'town',
- getPlayerTile:()=>player,getPlayerMesh:()=>({name:'player-root'}),getDecorSize:key=>({fw:key==='tableLong'?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
+ getPlayerTile:()=>player,getPlayerMesh:()=>({name:'player-root'}),getDecorSize:key=>({fw:['tableLong','servingTable'].includes(key)?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
  getItemDefs:()=>itemDefs,inventory,save(){persisted++},refresh(){},toast(){},isBlocked:()=>false});
 assert.equal(api.askFestivalDance(partner).ok,true,'accepted NPC invitation starts the real two-avatar runtime');
 assert.equal(pairedStartCount,1);
@@ -164,5 +180,23 @@ api.cancelDance();
 assert.equal(pairedStopCount,1,'festival cancel cleans up paired actor driver');
 realMs+=400;api.update();
 assert.equal(api.serialize().festivalFun.sloomi,16,'interrupted paired dance cannot continue accruing Festival Fun');
+
+// Solo wheel participation is spatial, not tied to a festival rug or bandstand.
+let wheelDancing=true, musicPlaying=false;
+W.SocialActionWheel.isDancing=()=>wheelDancing;
+W.MusicMinigame={get state(){return {active:musicPlaying};}};
+player={c:10,r:10};partner.root.position={x:11,z:10};
+const beforeWheel=api.serialize().festivalFun.sloomi;
+const otherBefore=api.serialize().festivalFun.friend||0;
+function playSecond(){for(let i=0;i<4;i++){realMs+=250;api.update();}}
+playSecond();
+assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+15,'existing solo wheel dance works away from festival locales');
+assert.equal(api.serialize().festivalFun.friend||0,otherBefore,'distant villagers receive no participation points');
+wheelDancing=false;musicPlaying=true;playSecond();
+assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'existing instrument wheel session shares the same nearby participation');
+musicPlaying=false;playSecond();
+assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'stopped wheel sessions cannot accrue points');
+wheelDancing=true;hour=1;playSecond();
+assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'festival end stops participation without blocking ordinary wheel actions');
 
 console.log('Gorkunash locale placement, schedule shifts, six-pot food, potluck, save, and heart conversion passed.');

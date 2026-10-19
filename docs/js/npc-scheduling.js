@@ -169,6 +169,8 @@
         || deps.getDecorativeFurnitureKeyByItemKey?.(station.sourceFurnitureKey)
         || (deps.decorativeFurnitureDefs?.[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
       seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
+      furnitureId: station.furnitureId || '', // Optional explicit chair instance, shared by table membership and seated pose resolution.
+      tableId: station.tableId || '', // Authored relationship; never guessed from nearby tables.
       toolKey: station.toolKey || '',
       toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
       toolAnimStyle: station.toolAnimStyle || '',
