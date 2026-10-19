@@ -980,7 +980,7 @@
 
   function resolveAreaAudioIndex(area) {
     if (area === 'farm' || area === 'town') return 'general';
-    if (area === 'map_western_slope') return 'northern_cliffs'; // Western Slope intentionally shares the Highland/Northern Cliffs cue pool.
+    if (area === 'map_northern_cliffs' || area === 'map_western_slope') return 'northern_cliffs'; // Both Highland zones use the authored mas1–mas14 cues even without workspace/zone audioIndex metadata.
     if (_mapAudioIndexes.has(area)) return _mapAudioIndexes.get(area);
     if (deps._isZoneArea(area)) return deps.EXTERIOR_ZONES[area].audioIndex || '';
     const wsMap = deps.getWorkspaceMaps()?.find(m => (m.id === area) || (area === 'town' && m.id === 'map_hobunji_town'));
@@ -1371,6 +1371,9 @@
 
     const idx = _audioCueIndexes.get(_ambientCueState.indexId);
     const cues = idx?.ambient_cues || [];
+    if (!idx && _ambientCueState.indexId && _audioDebugDue('cue-index-unavailable-' + _ambientCueState.indexId, 30000)) {
+      audioDebug('regional cue library unavailable area=' + currentArea + ' cueIndex=' + _ambientCueState.indexId + ' loadedIndexes=' + [..._audioCueIndexes.keys()].join(','), 'cue-index-unavailable-' + _ambientCueState.indexId, 0, 'cue'); // Avoid silently repeating the area's only BGM if cue metadata fails to load.
+    }
     // updateAmbientCues runs every frame; skip building this trace string
     // (and the Math.round/negation work in it) on the frames it would just
     // get throttle-discarded on anyway.
