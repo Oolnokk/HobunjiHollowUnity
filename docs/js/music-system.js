@@ -1411,11 +1411,15 @@
         }
         retireMusicTrack(snd);
       };
-      snd.addEventListener('play', () => {
+      const setCueOverlayAudible = audible => {
         if (_ambientCueState.currentCue !== snd || !_ambientCueState.currentBgm || _ambientCueState.currentBgm.ended) return;
-        _ambientCueState.cueOverlayDucking = true;
-        _ambientCueState.currentBgm._setDuck?.(true, fade.cueFadeMs); // Duck rather than pause or restart the song.
-      }, { once: true });
+        if (_ambientCueState.cueOverlayDucking === audible) return;
+        _ambientCueState.cueOverlayDucking = audible;
+        _ambientCueState.currentBgm._setDuck?.(audible || _lyreDucked || _gameplayCueDuckOwners.size > 0, fade.cueFadeMs); // Only suppress BGM while cue audio can actually play.
+      };
+      snd.addEventListener('playing', () => setCueOverlayAudible(true)); // Unlike 'play', 'playing' waits for enough buffered media to begin or resume output.
+      snd.addEventListener('waiting', () => setCueOverlayAudible(false)); // Restore the song if network/decode buffering interrupts the cue.
+      snd.addEventListener('pause', () => setCueOverlayAudible(false)); // Combat/loading pauses must not leave an invisible cue duck owner.
       snd.addEventListener('ended', finishCue, { once: true });
       snd.addEventListener('error', () => {
         audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue');
