@@ -422,6 +422,13 @@
   function addBanditLayer(mapData, rng, candidates, blockedKeys, plan) {
     const count = clamp(2 + Math.floor(rng() * 3), 2, 4); // Small hideout population reused by BanditCombat at runtime.
     const picks = pickSpacedTiles(rng, sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true).slice(0, Math.max(8, Math.floor(candidates.length * 0.7))), count, blockedKeys, 2.2);
+    // Extra cave charges reserve space near entrances. Keep the hideout's
+    // established minimum bandit population by broadening its candidate pool
+    // instead of overlapping those explosives or shrinking every encounter.
+    if (picks.length < Math.min(count,2)) {
+      picks.push(...pickSpacedTiles(rng,candidates.filter(tile=>!blockedKeys.has(tileKey(tile.col,tile.row))),
+        Math.min(count,2)-picks.length,blockedKeys,1.45));
+    }
     plan.banditSpawns = picks.map((tile, index) => ({ col: tile.col, row: tile.row, rank: index === picks.length - 1 && picks.length >= 3 ? 'lieutenant' : 'grunt', tier: 1 + (rng() < 0.25 ? 1 : 0) }));
     mapData.caveBanditSpawns = clone(plan.banditSpawns);
   }
