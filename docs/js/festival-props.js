@@ -1,6 +1,11 @@
 // Reusable festival dressings on ordinary editable furniture. No collision or exit changes.
 (() => {
   'use strict';
+  const feastGroups=new Set(); // Tracks only the six-pot serving props so festival donations can update the visible sixth pot instantly.
+  function refreshFeast() {
+    const full=(window.FestivalSystem?.feastMenu?.().length||0)>=6;
+    for (const group of feastGroups) if(group.userData?.festivalDonationBroth)group.userData.festivalDonationBroth.visible=full;
+  }
   function decorate(root, record) {
     const THREE = window.THREE; // Same renderer used by game and editor preview.
     const dressing = record.festivalDecoration; // Optional per-placement ornament preset, independent of the furniture key.
@@ -66,9 +71,11 @@
         const broth=new THREE.MeshLambertMaterial({color:potColors[i]});group.userData.festivalMaterials.push(broth);
         const pot=new THREE.Mesh(new THREE.CylinderGeometry(.34,.27,.25,12),potMat);pot.position.set(x,.87,z);group.add(pot);
         const soup=new THREE.Mesh(new THREE.CylinderGeometry(.295,.295,.013,12),broth);soup.position.set(x,1.01,z);group.add(soup);
+        if(i===5)group.userData.festivalDonationBroth=soup; // The sixth broth appears only after the player supplies a meal, then rerolls tomorrow.
         const handle=new THREE.Mesh(new THREE.TorusGeometry(.27,.035,6,16),potMat);handle.rotation.x=Math.PI/2;handle.position.set(x,1.015,z);group.add(handle);
       }
       for(let i=0;i<7;i++){const bowl=new THREE.Mesh(new THREE.CylinderGeometry(.155,.10,.075,9),wood);bowl.position.set(-1.62,.80+i*.064,0);group.add(bowl);}
+      feastGroups.add(group);
     } else if (dressing === 'gifts') {
       for (let i = 0; i < 3; i++) { const x = (i - 1) * .28; box(x, .82, 0, .22, .23, .22); box(x, .95, 0, .25, .035, .055, wood); }
     } else if (dressing === 'ancestors') {
@@ -118,9 +125,11 @@
       group.userData.festivalTexture = texture;
     }
     root.add(group);
+    if(dressing==='six-pot-feast')refreshFeast();
   }
   function dispose(root) {
     root?.traverse?.(object => {
+      if(feastGroups.has(object))feastGroups.delete(object);
       if (!object.userData?.festivalMaterials) return;
       for (const material of object.userData.festivalMaterials) material.dispose();
       object.userData.festivalMaterials = null;
@@ -141,5 +150,5 @@
     }
   }
   loadAtlas();
-  window.FestivalProps = { decorate, dispose, _atlas: atlas };
+  window.FestivalProps = { decorate, dispose, refreshFeast, _atlas: atlas };
 })();
