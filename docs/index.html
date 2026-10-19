@@ -278,7 +278,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261019h3596d82"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261018hudrecover4"></script>
+  <script src="js/combat/resource-system.js?v=20261019deathcause1"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
@@ -294,7 +294,7 @@
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261019recordeddeath1"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-loadout.js?v=20261019h0ffc9ab"></script>
@@ -441,7 +441,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261014h0aa7ebc"></script>
+  <script src="js/creature-death.js?v=20261019recordeddeath1"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
