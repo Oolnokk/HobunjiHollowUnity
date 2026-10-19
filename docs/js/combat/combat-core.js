@@ -835,6 +835,7 @@
   };
   window.__melee3DDebug = {
     get lastResult() { return lastMelee3DResult; },
+    get retainedColliderCount() { return activeMeleeColliderDebug.size; }, // Passive diagnostic; does not prune the map while measuring cleanup.
     get activeTrails() { return activeMeleeTrails.map(trail => ({ actor: trail.actor, age: trail.age, pitchDeg: trail.pitchDeg })); },
     snapshot: () => ({
       latestChange: 'Melee cones and trails use portrait Box3 volumes; angled lunges use attacker-specific height budgets for distance and leap arcs.',
