@@ -966,6 +966,26 @@
     renderer.setRenderTarget(renderer.getRenderTarget(), renderer.getActiveCubeFace?.() || 0, renderer.getActiveMipmapLevel?.() || 0);
   }
 
+  const footTintScreenRect = new THREE.Vector4(); // Reused scratch: no per-frame allocation.
+  function hasOverlappingFootCover(renderer, camera, feet, tintCovers) {
+    if (!feet.length || !tintCovers.length) return false;
+    // The ordinary scene contains water far from the character even on dry
+    // tiles. Do not pay for THREE EXTRA world render traversals when none of
+    // that water/slush can overlap the feet on screen. Match the existing
+    // replay scissor's conservative projection, including near-plane fallback.
+    if (!replayScissorRect(renderer, camera, feet, footTintScreenRect)) return true;
+    if (footTintScreenRect.z <= 0 || footTintScreenRect.w <= 0) return false;
+    if (!setReplayCullFrustum(camera, footTintScreenRect, scissorTargetWidth, scissorTargetHeight)) return true;
+    for (const cover of tintCovers) {
+      // This frustum uses Three's regular bounding sphere. For instanced,
+      // skinned, morphed or custom-frustum meshes keep the safe tint fallback.
+      if (!cover.geometry || cover.isInstancedMesh || cover.isSkinnedMesh
+        || cover.frustumCulled === false || cover.geometry.morphAttributes?.position?.length) return true;
+      if (replayCullFrustum.intersectsObject(cover)) return true;
+    }
+    return false;
+  }
+
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask) {
     // Weapons/hands AND procedural feet share the same selective depth:
     // base grass and authored paths are exempt; water, snow/slush, standing
@@ -986,7 +1006,7 @@
     const overlayMeshes = [...held, ...feet];
     // On targets without stencil, keep the conservative fully-occluded
     // fallback rather than drawing untinted feet on top of the water.
-    const tintFeet = feet.length > 0 && tintCovers.length > 0 && lastBaseStencilBits >= 1; // Reuse the framebuffer query from wrappedRender; avoid a second GL state read.
+    const tintFeet = lastBaseStencilBits >= 1 && hasOverlappingFootCover(renderer, camera, feet, tintCovers); // Reuses stencil capability cached by wrappedRender.
     const scissorMeshes = overlayMeshes;
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     let replayCulled = null; // Visibility states of renderables hidden for this replay (see collectReplayCulled).
