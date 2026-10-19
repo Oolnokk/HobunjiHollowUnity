@@ -263,8 +263,9 @@
     const collider = reuse || {};
     collider.actor = attacker;
     if (reuse) {
-      collider.origin.copy(solution.origin);
-      collider.direction.copy(solution.direction);
+      // Support the tiny Vector3 shims used in headless tests as well as THREE.Vector3.
+      collider.origin.x = solution.origin.x; collider.origin.y = solution.origin.y; collider.origin.z = solution.origin.z;
+      collider.direction.x = solution.direction.x; collider.direction.y = solution.direction.y; collider.direction.z = solution.direction.z;
     } else {
       collider.origin = solution.origin.clone(); // Persistent debug wireframes must own their snapshots.
       collider.direction = solution.direction.clone();
