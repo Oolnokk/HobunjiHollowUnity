@@ -141,8 +141,8 @@ assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.
   'feet are absent from the original color pass so they cannot pop over transparent water');
 assert.match(heldRender, /const hidden = hideObjects\(tintFeet \? \[\.\.\.ground, \.\.\.overlayMeshes, \.\.\.tintCovers\]/,
   'the rebuilt solid depth excludes grass, paths and translucent covers for tinted feet');
-assert.match(heldRender, /const tintFeet = feet\.length > 0 && tintCovers\.length > 0 && lastBaseStencilBits >= 1/,
-  'stencil-less render targets use safe solid cover occlusion rather than an untinted foot pass');
+assert.match(heldRender, /const tintFeet = lastBaseStencilBits >= 1 && hasOverlappingFootCover\(renderer, camera, feet, tintCovers\)/,
+  'stencil-less targets and offscreen-only covers avoid the expensive tint passes');
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
 
@@ -160,6 +160,29 @@ assert.match(heldRender, /const drawOverlay = tintFeet \? held : overlayMeshes/,
   'feet render once even when the tint compositor is active');
 assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
   'the old patchy foot-water tint path is not used');
+const overlapStart = heldRender.indexOf('  function hasOverlappingFootCover(');
+const overlapEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', overlapStart);
+assert.ok(overlapStart > 0 && overlapEnd > overlapStart, 'the live renderer exposes the conservative overlap check');
+const screenRect = { x: 0, y: 0, z: 48, w: 48 };
+const footOverlap = new Function('replayScissorRect', 'footTintScreenRect', 'setReplayCullFrustum',
+  'scissorTargetWidth', 'scissorTargetHeight', 'replayCullFrustum',
+  heldRender.slice(overlapStart, overlapEnd) + '\nreturn hasOverlappingFootCover;')(
+  (renderer, camera, feet, out) => { Object.assign(out, screenRect); return !camera.nearPlaneCrossed; },
+  {}, () => true, 1280, 720, { intersectsObject: cover => cover.overlapsFoot === true });
+const coverNear = { geometry: {}, overlapsFoot: true };
+const coverFar = { geometry: {}, overlapsFoot: false };
+assert.equal(footOverlap({}, {}, [], [coverNear]), false, 'no feet means no tint pass');
+assert.equal(footOverlap({}, {}, [{}], []), false, 'no translucent cover means no tint pass');
+assert.equal(footOverlap({}, {}, [{}], [coverNear]), true, 'a cover overlapping foot bounds enables the tint');
+assert.equal(footOverlap({}, {}, [{}], [coverFar]), false, 'offscreen water cannot trigger extra foot renders');
+assert.equal(footOverlap({}, { nearPlaneCrossed: true }, [{}], [coverFar]), true,
+  'near-plane/uncertain bounds must conservatively preserve tint');
+assert.equal(footOverlap({}, {}, [{}], [{ geometry: {}, isInstancedMesh: true }]), true,
+  'unreliable instanced cover bounds must conservatively preserve tint');
+screenRect.z = 0;
+assert.equal(footOverlap({}, {}, [{}], [coverNear]), false, 'offscreen foot pixels cannot need a tint pass');
+screenRect.z = 48;
+
 
 // Execute the production foot registration rather than only inspecting names:
 const footRegistrarStart = heldRender.indexOf('  function markWaterOccludedMesh(');
