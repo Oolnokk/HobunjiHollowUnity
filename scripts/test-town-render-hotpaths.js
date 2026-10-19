@@ -11,6 +11,7 @@ const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
 const terrainTileMaterials = read('docs/js/terrain-tile-materials.js'); // Guards grass-only material tags against seasonal texture overrides.
+const zoneGrassBillboards = read('docs/js/zone-grass-billboards.js'); // Verifies the authored path-brick group tag used by the held x-ray classifier.
 const plateauMesa = read('docs/js/zone-plateau-mesa.js'); // Guards the semantic tag that makes elevated wilderness ground participate in the held overlay.
 const interiorBuilder = read('docs/js/interior-scene-builder.js'); // Guards cavern-floor registration for the same global held-object ground policy.
 const feetParity = read('docs/js/procedural-feet-outline-parity.js'); // Guards the explicit foot-only water-occlusion registration and transform parity.
@@ -74,8 +75,12 @@ assert.match(heldRender, /object\?\.userData\?\.environmentSurfaceMicroPlateau =
   'snow/slush caps are protected from ground x-ray');
 assert.match(heldRender, /if \(object\.userData\?\.environmentSurfaceMicroPlateau === true\) return false/,
   'snow/slush cannot be misclassified as the exempt terrain layer');
-assert.match(heldRender, /isGrassGroundCover\(object\) \|\| isRoadSurface\(object\) \|\| isWaterSurface\(object\)/,
-  'grass blades, paths and water do not qualify for the ground-exemption registry');
+assert.match(heldRender, /if \(isProtectedCover\(object\)\) return null;[\s\S]{0,140}if \(isRoadSurface\(object\)\) return 'road';/,
+  'snow/slush, water and billboard grass must block held gear, while authored path bricks x-ray like grass');
+assert.match(heldRender, /function isRoadSurface\(object\)[\s\S]{0,140}hasAncestorFlag\(object, 'hobunjiPathSurface'\)/,
+  'path-brick descendants use their existing semantic path tag rather than a generic material guess');
+assert.match(zoneGrassBillboards, /group\.userData\.hobunjiPathSurface = true/,
+  'the authored road builder stamps path-brick groups for the held overlay');
 assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
   'only surfaces carrying the base grass material can be removed from held-overlay depth');
 assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
