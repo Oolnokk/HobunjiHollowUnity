@@ -81,6 +81,23 @@ assert.match(heldRender, /function isRoadSurface\(object\)[\s\S]{0,140}hasAncest
   'path-brick descendants use their existing semantic path tag rather than a generic material guess');
 assert.match(zoneGrassBillboards, /group\.userData\.hobunjiPathSurface = true/,
   'the authored road builder stamps path-brick groups for the held overlay');
+// Classify actual mocked scene objects through the shipped helper functions
+// rather than relying solely on string-level regex assertions.
+const classifierStart = heldRender.indexOf('  function hasLayer('); // First helper used by groundKind's classification chain.
+const classifierEnd = heldRender.indexOf('  function isLegacyHeldPlane('); // End marker immediately after the relevant classifiers.
+assert.ok(classifierStart >= 0 && classifierEnd > classifierStart, 'extract the same classifier helpers used by the shipped renderer');
+const classifyGround = new Function('MATERIAL_ID_LAYER',
+  heldRender.slice(classifierStart, classifierEnd) + '\nreturn groundKind;')(3); // Checks semantics without allocating a WebGL renderer.
+const pavingGroup = { userData: { hobunjiPathSurface: true }, parent: null }; // The exact ancestor tag applied to road-brick groups.
+function coverMesh(data = {}, parent = null, material = { userData: {} }) {
+  return { isMesh: true, isSkinnedMesh: false, isInstancedMesh: false, userData: data, parent, material, receiveShadow: false, castShadow: false, layers: { mask: 0 } };
+}
+assert.equal(classifyGround(coverMesh({}, pavingGroup)), 'road', 'authored paving becomes x-ray ground');
+assert.equal(classifyGround(coverMesh({ environmentSurfaceMicroPlateau: true }, pavingGroup)), null, 'snow/slush blocks x-ray even on paving');
+assert.equal(classifyGround(coverMesh({ waterSurfaceRole: 'flood' }, pavingGroup)), null, 'water blocks x-ray even on paving');
+assert.equal(classifyGround(coverMesh({ isWildernessGrassChunk: true }, pavingGroup)), null, 'billboard grass blocks x-ray even on paving');
+assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true }, null, { userData: { hobunjiBaseGrassTerrainMaterial: true } })), 'terrain', 'underlying grass x-rays');
+assert.equal(classifyGround(coverMesh({ cavernWalkableFloor: true })), null, 'cavern floors remain solid occluders');
 assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
   'only surfaces carrying the base grass material can be removed from held-overlay depth');
 assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
@@ -103,14 +120,14 @@ assert.match(heldRender, /stencilWriteMask = 0x02[\s\S]{0,140}stencilRef = 2/,
   'held weapon/hand pixels reserve stencil bit 1 so later foot-water compositing cannot paint over them');
 assert.match(heldRender, /prepareWaterOcclusionStencilMaterials\(waterOccluded\)[\s\S]{0,500}FOOT_WATER_MASK/,
   'only explicitly water-occluded meshes stamp the foot-water mask');
-assert.match(heldRender, /stencilWriteMask = 0x01[\s\S]{0,180}stencilFuncMask = 0x02/,
-  'the foot mask writes bit 0 only where the held-object exclusion bit is clear');
-assert.match(heldRender, /material\.depthTest = false;[^\n]*Water now owns depth/,
-  'the water-depth reconstruction does not suppress procedural feet stencil fragments');
+assert.match(heldRender, /stencilWriteMask = 0x01[\s\S]{0,180}stencilFuncMask = 0xFF/,
+  'the pre-rebuild foot mask stamps bit 0 before held pixels populate bit 1');
+assert.doesNotMatch(heldRender, /function prepareWaterOcclusionStencilMaterials\([\s\S]*?function prepareWaterStencilMaterials[\s\S]*?material\.depthTest = false/,
+  'the foot mask must preserve depth testing against solid geometry');
 assert.match(heldRender, /prepareWaterStencilMaterials\(water\)[\s\S]{0,500}WATER_REPLAY_MASK/,
   'water is replayed through its private layer only after the foot mask exists');
-assert.match(heldRender, /stencilWriteMask = 0x00[\s\S]{0,180}stencilFuncMask = 0x01/,
-  'water replay reads only the foot mask bit and cannot overwrite stencil');
+assert.match(heldRender, /stencilWriteMask = 0x00[\s\S]{0,180}stencilFuncMask = 0x03/,
+  'water replay reads both stencil bits: visible foot present and no overlying weapon');
 assert.match(heldRender, /renderer\.clearStencil\?\.\(\)/,
   'held/foot-water stencil markers are cleared around the private composite pass');
 
@@ -118,10 +135,11 @@ const heldOverlayAt = heldRender.indexOf('const heldStencilStates = prepareHeldS
 const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials('); // Used to keep raised soil in the depth buffer before water is recomposited.
 const footMaskAt = heldRender.indexOf('const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);'); // Used to prove water targets feet rather than held gear.
 const waterCompositeAt = heldRender.indexOf('const waterStencilStates = prepareWaterStencilMaterials(water);'); // Used with footMaskAt to protect the foot-only water policy.
-assert.ok(heldOverlayAt >= 0 && groundDepthRestoreAt > heldOverlayAt,
-  'weapons/hands are drawn with ground absent before authored ground depth is restored');
-assert.ok(footMaskAt > groundDepthRestoreAt && waterCompositeAt > footMaskAt,
-  'ground depth is restored before foot masking and water replay, preventing raised-soil tint leakage');
+const depthClearAt = heldRender.indexOf('renderer.clearDepth();'); // The foot stencil must be recorded against base depth, before the x-ray reconstructs water depth.
+assert.ok(footMaskAt >= 0 && footMaskAt < depthClearAt && heldOverlayAt > depthClearAt,
+  'visible feet are stamped against the base depth before transparent water becomes a weapon occluder');
+assert.ok(heldOverlayAt < groundDepthRestoreAt && groundDepthRestoreAt < waterCompositeAt,
+  'weapons are drawn before restoring ground depth and compositing only visible foot-water pixels');
 
 assert.match(feetParity, /markWaterOccludedMesh\?\.\(mesh\)/,
   'procedural feet explicitly register for water occlusion');
