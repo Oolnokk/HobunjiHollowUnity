@@ -168,8 +168,14 @@
     seatedMeal={nextAt:0,animating:false}; // The existing drink pose animation commits each individual bite, not the action-button tap.
     return commit('Eating from the festival bowl.');
   }
+  function bowlPileInReach() {
+    const feast=nearestActivityOfType('potluck'),pos=deps?.getPlayerTile?.();
+    if(!feast||!pos)return false;
+    const center=propCenter(feast);
+    return Math.hypot(pos.c-(center.c-1.62),pos.r-center.r)<1.8; // Matches the visible bowl stack on the left side of the serving table.
+  }
   function takeFestivalBowl() {
-    if (festival()?.id!=='gorkunash'||!festivalHours()||!nearestActivityOfType('potluck')) return fail('Pick up a bowl at the Gorkunash feast, from 3 PM until 1 AM.');
+    if (festival()?.id!=='gorkunash'||!festivalHours()||!bowlPileInReach()) return fail('Approach the bowl pile on the left side of the Gorkunash feast table.');
     discardFestivalBowl('new-bowl');
     heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:deps?.getActiveItemKey?.()||''};
     deps?.equipFestivalBowl?.();
@@ -279,8 +285,7 @@
       const seat=nearestDiningSeat();
       const aimedPot=potIndexAtAim();
       if(seat && heldBowl?.meal)return {icon:'🪑',label:'Sit at festival table',action:'festival_sit_dining',style:'primary',allowed:true,worldInteraction:true};
-      if(!heldBowl && aimedPot<0)return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
-      if(!heldBowl)return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
+      if(!heldBowl && bowlPileInReach())return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
       if(!heldBowl.meal&&aimedPot>=0)return {icon:'🍲',label:`Fill bowl: ${feastMenu()[aimedPot].label}`,action:'festival_fill_bowl',style:'primary',allowed:true,worldInteraction:true,potIndex:aimedPot};
     }
     const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
