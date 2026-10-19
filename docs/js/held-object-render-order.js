@@ -5,8 +5,8 @@
   //
   // The normal world render is left intact. On a real full-world base render,
   // held planes are omitted from that first color pass and then drawn exactly
-  // once against a reconstructed depth buffer that contains every NON-ground
-  // occluder. Ground/terrain, paved path bricks, and grass billboards therefore
+  // once against a reconstructed depth buffer that retains solid objects,
+  // snow/slush, water and billboard grass. Base-grass terrain and paved paths
   // cannot cover a held sprite, while characters, furniture, vegetation,
   // buildings, etc. still occlude it according to position.
   //
@@ -238,9 +238,8 @@
 
   function groundKind(object) {
     if (isTopFacesGroundSurface(object)) return null; // Cavern shell walls and floors remain real occluders.
-    if (isGrassGroundCover(object) || isRoadSurface(object) || isWaterSurface(object)) return null;
-    // Only the underlying grass tile material is exempt from occlusion. Paths,
-    // indoor floors, snow/slush, water, and standing grass blades keep depth.
+    if (isProtectedCover(object)) return null; // Snow/slush, water, and billboard grass always occlude held gear, even above a path.
+    if (isRoadSurface(object)) return 'road'; // Authored path-brick groups retain the same x-ray as the underlying grass.
     if (materialMarksBaseGrass(object?.material) && isTerrainSurface(object)) return 'terrain';
     return null;
   }
@@ -1012,8 +1011,8 @@
       }
 
       // 2) Draw weapons/hands against depth rebuilt with every occluder
-      // except the base grass tile. Water, snow/slush and individual grass
-      // blades still block held pixels when they are physically in front.
+      // except the base grass tile and authored path surface. Water,
+      // snow/slush and individual grass blades still block held pixels.
       if (scissored) glState.setScissorTest(false); // Stencil clears stay full-framebuffer, as before.
       renderer.clearStencil?.();
       if (scissored) glState.setScissorTest(true);
