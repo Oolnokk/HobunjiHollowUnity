@@ -186,6 +186,11 @@ supplies the exact companion URL and session ID; the companion navigates to
 that build when switching. Disconnected companions can still use Find Games.
 Only game builds with discovery support, on the same browser origin/storage
 partition, can be found; ordinary websites cannot enumerate arbitrary tabs.
+On loading a selected session, the companion also adopts its popup window name
+so the game's launcher can reuse it when browser window-group rules allow it.
+If two game tabs share the same cloned sessionStorage ID, discovery marks the
+session as ambiguous and disables Switch to avoid sending commands to both tabs;
+open the intended game in a fresh tab and scan again.
 
 It is laid out around context: the header always shows who/where/when you are
 and what's active (conversation, Map Edit session, paused autosave) with
