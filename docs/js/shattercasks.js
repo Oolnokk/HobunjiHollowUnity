@@ -237,23 +237,32 @@
   function shatterVisual(targetScene,x,z,y) {
     // Hronal pillar's gold-angle instancing and gravity-driven shard spray,
     // remapped to the vase's own pottery textures and colors, not fire colors.
-    const count=DEBRIS_COUNT,geometry=new THREE.TetrahedronGeometry(.10);
-    const texture=new THREE.TextureLoader().load('assets/textures/carved_smooth.png');
-    const material=new THREE.MeshBasicMaterial({color:0x987651,map:texture,side:THREE.DoubleSide,transparent:true});
-    const shards=new THREE.InstancedMesh(geometry,material,count);
-    shards.frustumCulled=false;
-    const group=new THREE.Group();group.position.set(x,y,z);group.add(shards);targetScene.add(group);
+    const bodyCount=54,neckCount=DEBRIS_COUNT-bodyCount; // Separate textured shard batches preserve BOTH supplied material treatments.
+    const loader=new THREE.TextureLoader(); // The two existing source textures already assigned to the user's furniture parts.
+    const textures=[loader.load('assets/textures/boards.png'),loader.load('assets/textures/carved_smooth.png')];
+    const shardMeshes=[
+      new THREE.InstancedMesh(new THREE.TetrahedronGeometry(.11),new THREE.MeshBasicMaterial({
+        color:0x7a4924,map:textures[0],side:THREE.DoubleSide,transparent:true,
+      }),bodyCount),
+      new THREE.InstancedMesh(new THREE.TetrahedronGeometry(.08),new THREE.MeshBasicMaterial({
+        color:0x8a6a3a,map:textures[1],side:THREE.DoubleSide,transparent:true,
+      }),neckCount),
+    ];
+    const group=new THREE.Group();group.position.set(x,y,z);
+    for(const mesh of shardMeshes){mesh.frustumCulled=false;group.add(mesh);}
+    targetScene.add(group);
     const parts=[];
-    for(let i=0;i<count;i++) {
+    for(let i=0;i<DEBRIS_COUNT;i++) {
       const angle=i*2.399963, speed=RADIUS*(.45+(i%8)/13);
       parts.push({x:(i%7/6-.5)*.68,y:((i%17)/17)*.6,z:(Math.floor(i/7)%7/6-.5)*.63,
-        vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:2+(i%7)*.32});
+        vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:2+(i%7)*.32,
+        batch:i<bodyCount?0:1,index:i<bodyCount?i:i-bodyCount});
     }
     const flash=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),
       new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.82,depthWrite:false,blending:THREE.AdditiveBlending}));
     flash.position.set(x,y,z);flash.scale.setScalar(.15);targetScene.add(flash);
-    burstEffects.push({group,shards,parts,flash,age:0,duration:1.25,scene:targetScene,
-      dummy:new THREE.Object3D(),texture}); // Reused scratch transform matches Hronal's one-draw-call approach.
+    burstEffects.push({group,shardMeshes,parts,flash,age:0,duration:1.25,scene:targetScene,
+      dummy:new THREE.Object3D(),textures}); // Two instanced meshes match the source barrel and neck surface textures.
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
   }
   function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog') {
@@ -394,7 +403,8 @@
       const fx=burstEffects[i];fx.age+=dt;
       if(fx.age>=fx.duration) {
         fx.group.parent?.remove(fx.group);fx.flash.parent?.remove(fx.flash);
-        fx.shards.geometry.dispose();fx.shards.material.dispose();fx.texture.dispose();
+        for(const mesh of fx.shardMeshes){mesh.geometry.dispose();mesh.material.dispose();}
+        for(const texture of fx.textures)texture.dispose();
         fx.flash.geometry.dispose();fx.flash.material.dispose();burstEffects.splice(i,1);continue;
       }
       const f=fx.age/fx.duration;
@@ -408,9 +418,9 @@
         fx.dummy.rotation.set(f*(j%3+1)*6,f*10,0);
         fx.dummy.scale.setScalar(Math.max(.001,1-f));
         fx.dummy.updateMatrix();
-        fx.shards.setMatrixAt(j,fx.dummy.matrix);
+        fx.shardMeshes[part.batch].setMatrixAt(part.index,fx.dummy.matrix);
       }
-      fx.shards.instanceMatrix.needsUpdate=true;
+      for(const mesh of fx.shardMeshes)mesh.instanceMatrix.needsUpdate=true;
     }
   }
   function tick(dt=0) {
