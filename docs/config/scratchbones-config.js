@@ -3569,6 +3569,9 @@ window.SCRATCHBONES_CONFIG = {
         "ambientCueMinDelaySec": 20,
         "ambientCueMaxDelaySec": 45,
         "areaBgm": {
+          "map_i_dev_random_ruin": [
+            { "url": "assets/audio/music/bgm/bgm_of_bygone_Kings.ogg", "loop": true }
+          ],
           "farm": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true, "rainingOnly": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
