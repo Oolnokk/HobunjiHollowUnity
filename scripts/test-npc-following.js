@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const W={},context=vm.createContext({window:W,console,performance:{now:()=>1000}}); // Executes shared follow and furniture owners together.
+const replies=[]; // Captures actual directed ambient responses for explicit invitations.
+const W={AmbientDialogue:{showSocialResponse:(_walker,response)=>replies.push(response)}},context=vm.createContext({window:W,console,performance:{now:()=>1000}}); // Executes shared follow and furniture owners together.
 for(const name of ['furniture-table-system','npc-following'])vm.runInContext(fs.readFileSync('docs/js/'+name+'.js','utf8'),context);
 let area='town',playerSeat=null,player={x:3.5,z:3.5},override=null; // Live world inputs can change without rebuilding the movement provider.
 const friend={rec:{id:'friend'},area,root:{position:{x:8.5,z:3.5}}};
@@ -25,6 +26,12 @@ friend.currentScheduleTarget=seat;
 assert.equal(override(friend.rec).furnitureId,'friend','a reserved seat remains stable');
 W.NpcFollowing.commandOptionsFor(friend).find(o=>o.id==='dismiss').run();friend.currentScheduleTarget=null;
 assert.equal(override(friend.rec),null,'dismissal returns control to ordinary schedules');
+assert(replies.some(r=>r.accepted&&r.reason==='company'),'accepted Follow uses ambient NPC speech');
+W.NpcRapport={get:()=>-10};
+assert.equal(W.NpcFollowing.setMode(friend,'follow'),false,'unfriendly NPC can decline following');
+assert.equal(replies.at(-1).accepted,false,'declining uses the same directed ambient response owner');
+assert.equal(override(friend.rec),null,'declined invitations never alter the NPC schedule');
+assert.equal(W.NpcFollowing.setMode(friend,'invalid'),false,'invalid commands cannot create a companion');
 let dateMode='';W.RomanceSystem={isOnDateWith:()=>true,setDateMode:mode=>{dateMode=mode;return true;}};
 assert.equal(W.NpcFollowing.setMode(friend,'wait'),true);assert.equal(dateMode,'wait','existing date controls retain their own acceptance/session behavior');
 console.log('Shared companion/date follow, Wait, dismissal and exclusive same-table seating passed.');

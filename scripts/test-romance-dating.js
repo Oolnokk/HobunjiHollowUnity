@@ -90,6 +90,8 @@ run('docs/js/romance-system.js');
 run('docs/js/npc-command-wheel.js');
 
 const W = windowStub;
+const socialReplies=[]; // Acceptance and refusal must use ordinary ambient chatheads without changing date eligibility.
+W.AmbientDialogue={showSocialResponse:(walker,response)=>socialReplies.push({id:walker.rec.id,...response})};
 assert.ok(W.HobunjiActivityEvents && W.RomanceSystem && W.RomanceFamily && W.NpcCommandWheel && W.NpcRapport?.adjustRomance, 'all modules install');
 
 // ── Romance pool + midnight conversion ──────────────────────────────────
@@ -151,12 +153,15 @@ const choose = (stepIndex, choiceIndex) => W.DialogueContent.handlers.romance({ 
 // ── Asking out ──────────────────────────────────────────────────────────
 relState('tooth_hatayap').favor = 40; // 1 heart: not enough
 assert.equal(W.RomanceSystem.askEligibility('tooth_hatayap').reason, 'hearts');
+assert.equal(W.RomanceSystem.askOnDate(tooth),false);
+assert.equal(socialReplies.at(-1).accepted,false,'date refusal appears as ambient speech');
 relState('tooth_hatayap').favor = 120; // 3 hearts
 assert.equal(W.RomanceSystem.askEligibility('tooth_hatayap').ok, true);
 assert.equal(W.RomanceSystem.askEligibility('kzubug').ok, false, 'non-romanceable NPCs cannot be asked out');
 W.RomanceSystem.askOnDate(tooth);
 assert.equal(opened.at(-1).node.type, 'choice', 'asking out opens a synthetic dialogue choice');
 choose(0, 0); // "Follow me."
+assert.equal(socialReplies.at(-1).accepted,true,'confirmed date acceptance appears as ambient speech');
 assert.equal(W.RomanceSystem.activeDate()?.npcId, 'tooth_hatayap', 'accepting starts the date');
 assert.equal(W.RomanceSystem.dateHoursLeft(), 4, 'dates last the configured in-game hours');
 

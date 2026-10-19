@@ -26,6 +26,12 @@
     const id=walker?.rec?.id; // Date invitations keep their existing acceptance, timing, wait and dismissal rules.
     if(window.RomanceSystem?.isOnDateWith?.(id))return mode==='dismiss'?window.RomanceSystem.dismissDate():window.RomanceSystem.setDateMode(mode);
     if(!id||walker.rec.dead||walker.rec.deceased)return false;
+    if(!['follow','wait','dismiss'].includes(mode))return false;
+    const accepted=mode!=='follow' || (window.NpcRapport?.get?.(id) ?? 0)>=0; // Existing negative Rapport is an unfriendly response, without adding a new relationship scale.
+    const text=!accepted?'No, I would rather stay here.':mode==='follow'?"Of course. Lead the way!":mode==='wait'?"I'll wait here for you.":'All right. See you later.'; // Explicit commands replace incidental greetings through the shared chathead owner.
+    const response=window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse; // Compatibility with older tools that inject the drink-response adapter.
+    response?.(walker,{text,accepted,reason:'company'});
+    if(!accepted)return false;
     if(mode==='dismiss'){companions.delete(id);window.FurnitureTableSystem?.setSeatTarget?.(id,null);return true;}
     const p=walker.root.position;
     companions.set(id,{mode,waitSpot:mode==='wait'?{area:walker.area,c:p.x-.5,r:p.z-.5}:null});

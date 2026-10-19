@@ -171,13 +171,16 @@ partner.root.position={x:37,z:42};player={c:37,r:42};hour=17;
 api.init({getTownMap:()=>town,getNpcs:()=>residents,getWalkers:()=>walkers,getArea:()=> 'town',
  getPlayerTile:()=>player,getPlayerMesh:()=>({name:'player-root'}),getDecorSize:key=>({fw:['tableLong','servingTable'].includes(key)?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
  getItemDefs:()=>itemDefs,inventory,save(){persisted++},refresh(){},toast(){},isBlocked:()=>false});
+const danceReplies=[];W.AmbientDialogue={showSocialResponse:(_walker,response)=>danceReplies.push(response)}; // Explicit invitation result uses the same ambient dialogue owner.
 assert.equal(api.askFestivalDance(partner).ok,true,'accepted NPC invitation starts the real two-avatar runtime');
 assert.equal(pairedStartCount,1);
+assert.equal(danceReplies.at(-1).accepted,true);
 pairedSeconds=1.15;realMs+=400;api.update();
 assert.equal(api.serialize().festivalFun.sloomi,16,'exactly 15 Festival Fun gained for one played second plus saved overnight remainder');
 assert.equal(api.diagnostics().festivalWheel.active,true,'pair status is visible in mobile diagnostics');
 api.cancelDance();
 assert.equal(pairedStopCount,1,'festival cancel cleans up paired actor driver');
+favors.set('sloomi',0);assert.equal(api.askFestivalDance(partner).ok,false);assert.equal(danceReplies.at(-1).accepted,false,'refused dance is ambient speech');favors.set('sloomi',120);
 realMs+=400;api.update();
 assert.equal(api.serialize().festivalFun.sloomi,16,'interrupted paired dance cannot continue accruing Festival Fun');
 

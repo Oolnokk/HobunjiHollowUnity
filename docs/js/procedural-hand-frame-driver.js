@@ -693,6 +693,7 @@
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
+      if (record.rig.applyOwnedPose?.()) return; // A paired action retains its hand contacts through the final render-time sync too.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
@@ -740,6 +741,7 @@
       }
       record._poseSyncSkipped = false;
       updateFallbackMotion(record);
+      if (record.rig.applyOwnedPose?.()) continue; // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
@@ -781,6 +783,7 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
+        if(record.rig.applyOwnedPose?.()){results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
           results.push(syncCalibrationWorkspace(record, true));
         } else {

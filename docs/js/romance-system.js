@@ -119,7 +119,8 @@
   function toast(message, good = true) { deps?.showToast?.(message, good); }
   function say(walker, text, accepted = true) {
     if (!walker || !text) return;
-    if (window.AmbientDialogue?.showAlcoholOfferResponse) window.AmbientDialogue.showAlcoholOfferResponse(walker, { text, line: text, accepted, reason: 'romance' });
+    const response = window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse; // Shared directed chathead speech for invitations and ongoing date commands.
+    if (response) response(walker, { text, line: text, accepted, reason: 'romance' });
     else toast(`${walker.rec?.name || 'They'}: ${text}`, accepted);
   }
   function showRomancePopup(npcId, amount) {
@@ -191,7 +192,7 @@
     if (!npcId) return false;
     const check = askEligibility(npcId);
     if (!check.ok) {
-      if (check.line) converse(walker, [{ text: check.line }]);
+      if (check.line) say(walker, check.line, false);
       return false;
     }
     const hours = num(cfg().dateDurationHours, 4);
@@ -217,6 +218,7 @@
       startedRawDay: rawDay(),
     };
     state.lastDateRawDay[npcId] = rawDay();
+    say(findWalker(npcId), "I'd love to. Let's go together!");
     toast(`💕 You're on a date with ${npcName(npcId)} for ${num(cfg().dateDurationHours, 4)} hours.`, true);
     persist();
     return true;

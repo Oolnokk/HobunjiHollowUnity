@@ -4275,6 +4275,7 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
+        if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
@@ -24522,7 +24523,7 @@
           snapShoulderSurfAzimuth();
         }
         if (!paused) updateMobileAutoTargetCamera(dt); // Steer existing offsets before the normal camera pose/collision owner applies them.
-        updateCameraPosition();
+        if (!window.FestivalWheelDanceRuntime?.isActive?.()) updateCameraPosition(); // Paired choreography refreshes this same owner once after its final pose, avoiding a second camera-collision solve.
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
         // reflects the current camera — including a horizontal offset slide
@@ -29095,6 +29096,14 @@
         saveMemberWorldData,
       });
 
+      window.FestivalWheelDanceRuntime?.init({
+        getPlayerModel: () => playerAvatarGroup,
+        getPlayerLegs: () => playerLegs,
+        surfaceY: (x,z) => npcSurfaceY('town',x,z), // Existing terrain and walkable furniture supports remain the floor authority.
+        refreshCamera: updateCameraPosition,
+        captureCamera: () => ({azimuth:cameraAzimuthOffsetDeg,angle:cameraAngleOffsetDeg}),
+        restoreCamera: state => { if(state){cameraAzimuthOffsetDeg=state.azimuth;cameraAngleOffsetDeg=state.angle;} }, // Manual look input during the cinematic never leaks into the restored gameplay view.
+      });
       window.FestivalSystem?.init({
         inventory,
         getItemDefs: () => ITEM_DEFS,

@@ -200,9 +200,13 @@
     const player=deps.getPlayerTile();
     if(Math.hypot(player.c-walker.root.position.x,player.r-walker.root.position.z)>3.5)return fail('Approach your dance partner.');
     const accepted=favorHearts(id)>=3||(favorHearts(id)>=1&&(window.NpcRapport?.get?.(id)||0)>200);
-    window.AmbientDialogue?.showAlcoholOfferResponse?.(walker,{text:accepted?'I would be delighted to dance.':'Perhaps another time.',line:accepted?'I would be delighted to dance.':'Perhaps another time.',accepted,reason:'festival'});
-    if(!accepted)return fail('Your invitation was politely declined.');
-    if(dance||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return fail('The two-avatar Festival Wheel Dance cannot start here.');
+    const response=window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse; // Directed chathead responses share the ordinary social speech owner.
+    if(!accepted){response?.(walker,{text:'Perhaps another time.',accepted:false,reason:'dance'});return fail('Your invitation was politely declined.');}
+    if(dance||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.())){
+      response?.(walker,{text:"We cannot dance here just now. Let's try somewhere with room.",accepted:false,reason:'dance'});
+      return fail('The two-avatar Festival Wheel Dance cannot start here.');
+    }
+    response?.(walker,{text:'I would be delighted to dance.',accepted:true,reason:'dance'});
     dance={propId:null,event:eventKey(),elapsed:0,targetNpcId:id,awardTime:0,awardedSeconds:0};
     window.HobunjiActivityEvents?.emit?.('dance_together',{npcId:id});
     return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);

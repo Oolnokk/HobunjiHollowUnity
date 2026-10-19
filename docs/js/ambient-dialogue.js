@@ -967,7 +967,7 @@
     };
   }
 
-  function showAlcoholOfferResponse(walker, response = resolveAlcoholOffer(walker)) {
+  function showSocialResponse(walker, response = resolveAlcoholOffer(walker)) {
     if (!walker?.root || !response?.text) return null;
     // Explicit interaction speech replaces that speaker's incidental greeting
     // so the accepted/refused line is never hidden under a second chathead.
@@ -1027,7 +1027,8 @@
     cheer: (root, options) => crowd(root, 'cheer', options),
     jeer: (root, options) => crowd(root, 'jeer', options),
     resolveAlcoholOffer,
-    showAlcoholOfferResponse,
+    showSocialResponse,
+    showAlcoholOfferResponse: showSocialResponse, // Existing drink callers share the same directed ambient response owner.
     // Runtime NPCs (children from js/romance-family.js) have no authored
     // ambient-dialogue.json entry; this registers their greeting pool.
     setNpcGreetings(npcId, greetings) {
