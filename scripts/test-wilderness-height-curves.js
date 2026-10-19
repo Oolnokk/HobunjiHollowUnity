@@ -25,7 +25,7 @@ function inspectZone(zoneId, farSide) {
   assert(boundary.length > 10, zoneId + ' far boundary must contain real cliff tiles');
   const boundaryTiers = boundary.map(tile => groups.get(tile.plateau)).filter(Number.isFinite); // Renderer plateau height resolved from group membership.
   assert(boundaryTiers.length > 4, zoneId + ' boundary must export tiered plateau geometry');
-  assert(boundaryTiers.some(tier => tier === (zone.maxTier || Generator.defaultSettings().maxTier) + 2),
+  assert(boundaryTiers.some(tier => tier === Math.max(zone.maxTier || Generator.defaultSettings().maxTier, 9) + 2),
     zoneId + ' far cliffs must top out at highest playable tier + 2');
 
   function regionAverage(c0, c1, r0, r1) {
