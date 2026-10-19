@@ -624,6 +624,28 @@
     else if (contents === TYPES.TRAPPED_CACHE) addCacheLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.CATACOMB) addCatacombLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
     else if (contents === TYPES.MUSHROOM_CAVE) addMushroomLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
+    // Guaranteed entrance-side charge beside every mineable hidden-room wall.
+    if (plan.separator) {
+      const wall = plan.separator.cells;
+      const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
+      const fronts = awayFromEntrance.filter(tile => plan.separator.nearKeys.includes(tileKey(tile.col,tile.row))
+        && !blockedKeys.has(tileKey(tile.col,tile.row)) && !rockKeys.has(tileKey(tile.col,tile.row)));
+      fronts.sort((a,b) => Math.min(...wall.map(c => (a.col-c.col)**2+(a.row-c.row)**2))
+        - Math.min(...wall.map(c => (b.col-c.col)**2+(b.row-c.row)**2)));
+      if (fronts.length) {
+        plan.shattercasks.push({ id:'wall-charge', col:fronts[0].col, row:fronts[0].row, guaranteed:true });
+        blockedKeys.add(tileKey(fronts[0].col,fronts[0].row)); // Bandit and trap placement cannot overlap the accessible blast charge.
+      }
+    }
+    // A few ordinary caves also contain loose charges; never consume reserved content tiles.
+    const freeChargeTiles = awayFromEntrance.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
+      && !plan.shattercasks.some(charge => Math.hypot(charge.col-tile.col,charge.row-tile.row)<4));
+    if ((profile.inhabitant === TYPES.BANDIT_HIDEOUT || rng()<.38) && freeChargeTiles.length) {
+      const tile = freeChargeTiles[Math.floor(rng()*freeChargeTiles.length)];
+      plan.shattercasks.push({id:'loose-charge',col:tile.col,row:tile.row});
+      blockedKeys.add(tileKey(tile.col,tile.row));
+    }
+    mapData.caveShattercasks = clone(plan.shattercasks);
     if (profile.inhabitant === TYPES.BANDIT_HIDEOUT) {
       let reachable = plan.separator ? tilePoolFromKeys(awayFromEntrance, plan.separator.nearKeys) : awayFromEntrance;
       if (plan.ruinEntrance) {
@@ -635,24 +657,6 @@
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
-    // Guaranteed entrance-side charge beside every mineable hidden-room wall.
-    if (plan.separator) {
-      const wall = plan.separator.cells;
-      const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
-      const fronts = awayFromEntrance.filter(tile => plan.separator.nearKeys.includes(tileKey(tile.col,tile.row))
-        && !blockedKeys.has(tileKey(tile.col,tile.row)) && !rockKeys.has(tileKey(tile.col,tile.row)));
-      fronts.sort((a,b) => Math.min(...wall.map(c => (a.col-c.col)**2+(a.row-c.row)**2))
-        - Math.min(...wall.map(c => (b.col-c.col)**2+(b.row-c.row)**2)));
-      if (fronts.length) plan.shattercasks.push({ id:'wall-charge', col:fronts[0].col, row:fronts[0].row, guaranteed:true });
-    }
-    // A few ordinary caves also contain loose charges; never consume reserved content tiles.
-    const freeChargeTiles = awayFromEntrance.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
-      && !plan.shattercasks.some(charge => Math.hypot(charge.col-tile.col,charge.row-tile.row)<4));
-    if ((profile.inhabitant === TYPES.BANDIT_HIDEOUT || rng()<.38) && freeChargeTiles.length) {
-      const tile = freeChargeTiles[Math.floor(rng()*freeChargeTiles.length)];
-      plan.shattercasks.push({id:'loose-charge',col:tile.col,row:tile.row});
-    }
-    mapData.caveShattercasks = clone(plan.shattercasks);
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
     plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
