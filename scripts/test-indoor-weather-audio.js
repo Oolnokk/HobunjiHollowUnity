@@ -76,10 +76,15 @@ music.updateExteriorBgs();
 music.updateRainAudio();
 mix = music.getWeatherAudioDebugState();
 check(mix.indoors && mix.cutoffHz === 780, 'building receives indoor acoustic profile');
-check(Math.abs(mix.loops.rainheavy.target - 0.208) < 1e-9, 'heavy rain stays audible at 32% indoors');
+check(Math.abs(mix.loops.rainheavy.target - 0.325) < 1e-9, 'heavy rain stays audible at 50% indoors');
 check(mix.loops.wind1.target > 0 && mix.loops.wind2.target > 0, 'both weather winds audible indoors');
 check(mix.loops.rainheavy.filtered && mix.loops.wind2.filtered, 'rain and wind are low-pass filtered');
-check(filters.length === 5 && filters.every(f => f.frequency.value === 780), 'all five weather layers use muffled cutoff');
+check(filters.length === 5, 'all five weather layers have filters');
+check(['raingentle', 'rainmid', 'rainheavy'].every(id => mix.loops[id].cutoffHz === 3200),
+  'every rain recording preserves raindrop detail indoors');
+check(['wind1', 'wind2'].every(id => mix.loops[id].cutoffHz === 780), 'wind retains deeper indoor muffling');
+check(mix.loops.rainheavy.target > mix.loops.wind1.target + mix.loops.wind2.target,
+  'indoor storm rain remains above the combined wind targets');
 const weatherSounds = sounds.filter(s => captured.has(s)); // Checks browser-style CORS silencing, not just mixer targets.
 check(weatherSounds.every(s => !s.webAudioSilent), 'filtered weather must request CORS before assigning its URL');
 const birds = sounds.find(s => s.src.includes('birds')); // Confirms non-weather wildlife does not leak into a building.
@@ -160,4 +165,4 @@ brokenMusic.updateRainAudio();
 check(mediaCaptures === failedCaptures && failedFilterRequests === 5,
   'subsequent weather ticks do not retry permanently captured recordings');
 graph.createBiquadFilter = priorCreateFilter;
-console.log('Indoor weather audio tests passed:', { weatherFilters: count, indoorHeavyRain: 0.208, mediaCaptures });
+console.log('Indoor weather audio tests passed:', { weatherFilters: count, indoorHeavyRain: 0.325, mediaCaptures });
