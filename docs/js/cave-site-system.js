@@ -935,7 +935,14 @@
         const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
         const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0;
         const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
-        const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: amount }) || [];
+        // Standard reagent picks update inventory + the item scroll only.
+        // Avoid DevSpawner.grantLoot here: its generic dungeon reward path
+        // also rebuilds the entire inventory grid on every single Duskcap.
+        const granted = saveDeps?.grantReagent?.(mushroom.reagentKey, amount); // Lightweight game-owned inventory mutation, or null in isolated preview tools.
+        const parts = granted == null
+          ? (devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: amount }) || [])
+          : (granted > 0 ? [`${def?.icon || '🍄'}×${granted}`] : []);
+        if (granted === 0) return { ok: false, message: `Cannot carry more ${label}.` };
         const liveState = stateFor(profile); // Used to migrate older cave saves that have no per-mushroom harvest map.
         liveState.mushroomsPickedDay = liveState.mushroomsPickedDay || {};
         liveState.mushroomsPickedDay[mushroom.id] = currentDay();
