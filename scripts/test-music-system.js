@@ -118,13 +118,13 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false,
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
     ambientMusicOwnsSoundtrack: () => false,
-    resolveAreaBgm: () => live.bgmAvailable ? { url: 'song-' + (++live.nextSong) + '.ogg' } : null,
+    resolveAreaBgm: () => live.bgmAvailable ? { url: 'song-' + (++live.nextSong) + '.ogg', loop: true } : null, // Even a mistakenly looping ordinary BGM must advance the sequential cycle.
     retireMusicTrack(audio) { audio.retired = true; audio.ended = true; audio.paused = true; },
-    playMusicTrack(url) {
+    playMusicTrack(url, _volume, _fadeIn, _fadeOut, options = {}) {
       assert.equal(!!state.currentBgm && !state.currentBgm.ended && url.startsWith('cues/'), false, 'a cue cannot begin over a BGM');
       assert.equal(!!state.currentCue && !state.currentCue.ended && url.startsWith('song-'), false, 'a BGM cannot begin over a cue');
       live.starts.push(url);
-      return { src: url, ended: false, paused: false, listeners: {},
+      return { src: url, loop: options.loop === true, ended: false, paused: false, listeners: {},
         addEventListener(event, callback) { this.listeners[event] = callback; },
         _watchForStall(_ms, callback) { this.stall = callback; } };
     },
@@ -137,6 +137,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   context.updateAmbientCues();
   const firstSong = state.currentBgm; // Actual song transport being held until its complete-ended event.
   assert.equal(firstSong.src, 'song-1.ogg', 'stage A chooses the eligible full song');
+  assert.equal(firstSong.loop, false, 'ordinary BGM cannot loop indefinitely and starve cue stage B');
   live.now = 139000;
   context.updateAmbientCues();
   assert.equal(state.currentBgm, firstSong, 'stage A never cuts its song to start cues early');
