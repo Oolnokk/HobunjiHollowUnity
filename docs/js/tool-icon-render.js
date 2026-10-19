@@ -27,7 +27,7 @@
 (() => {
   'use strict';
   if (window.HeldObjectRenderOrder?.installed) return;
-  const src = 'js/held-object-render-order.js?v=20261017h7db5f54';
+  const src = 'js/held-object-render-order.js?v=20261019hb59cca3';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-hobunji-held-render-order="1" src="${src}"><\/script>`);
     return;
