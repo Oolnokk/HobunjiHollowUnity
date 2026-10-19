@@ -16,6 +16,7 @@
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
   let promptButton = null; // Mobile-visible direct-action fallback for carry, drop, and rubble looting.
+  let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
   let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
   const THREE = window.THREE;
   if (!THREE) return;
@@ -193,7 +194,7 @@
   }
   function collectPile(pile) {
     if(!pile||!records.get(pile.mapId)?.piles.has(pile.id))return false;
-    grantLoot(pile.kind==='tree'?{stick:3,wood:2}:{stone:3,pebble:2});
+    grantLoot(pile.kind==='tree'?{[pile.woodKey||'pineLog']:2}:{stone:3,pebble:2}); // Canonical inventory keys, not descriptive stick/wood pseudo-items.
     records.get(pile.mapId).piles.delete(pile.id);
     pile.group.parent?.remove(pile.group);
     pile.group.traverse(node=>{node.geometry?.dispose?.();node.material?.dispose?.();});
@@ -222,8 +223,12 @@
     promptButton.style.display=target?'block':'none';
     if(target)promptButton.textContent=target.type==='held'?'Set down Shattercask':target.type==='pile'?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
     const claims=window.WorldActionInputClaims;
-    if(target)claims?.setClaims?.('shattercask',[{actionId:'interact',label:promptButton.textContent,priority:410,onPress:interact}]);
-    else claims?.clearClaims?.('shattercask');
+    const nextClaim=target ? (target.type+':'+(target.obj?.id||'')) : '';
+    if(nextClaim!==promptClaim) {
+      if(target)claims?.setClaims?.('shattercask',[{actionId:'interact',label:promptButton.textContent,priority:410,onPress:interact}]);
+      else claims?.clearClaims?.('shattercask');
+      promptClaim=nextClaim;
+    }
   }
   function baseHeight(col,row) {
     const d=deps(),t=tileSize();
@@ -251,7 +256,7 @@
       dummy:new THREE.Object3D(),texture}); // Reused scratch transform matches Hronal's one-draw-call approach.
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
   }
-  function spawnPile(mapId,rec,col,row,kind,y) {
+  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog') {
     const id=kind+'_'+col+'_'+row;
     if(rec.piles.has(id))return;
     const group=new THREE.Group(),color=kind==='tree'?0x7b5936:0x817b74;
@@ -268,12 +273,13 @@
     group.position.set(col+.5,y,row+.5);
     group.userData.shattercaskPile=id;
     rec.scene.add(group);
-    rec.piles.set(id,{id,col,row,kind,group,mapId});
+    rec.piles.set(id,{id,col,row,kind,woodKey,group,mapId});
   }
   function destroyTerrain(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
     if(!g)return 0;
     let count=0;
+    const changedChunks=new Map(); // One zone visual refresh per affected 16x16 chunk rather than rebuilding 81 cells independently.
     for(let row=Math.floor(z-RADIUS);row<=Math.ceil(z+RADIUS);row++)
     for(let col=Math.floor(x-RADIUS);col<=Math.ceil(x+RADIUS);col++) {
       if(Math.hypot(col+.5-x,row+.5-z)>RADIUS)continue;
@@ -297,11 +303,16 @@
         deps()?.removeZoneVegetationVisual?.(mapId,col,row);
       }
       delete tile.rockKind;delete tile.oreKind;delete tile.oreKey;delete tile.caveSeparator;
-      spawnPile(mapId,rec,col,row,kind,floor);
+      const woodKey=String(tile.treeKind||tile.generatedObjectType||'').toLowerCase().includes('shadewood')?'shadewoodLog':'pineLog';
+      spawnPile(mapId,rec,col,row,kind,floor,woodKey);
+      changedChunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
       count++;
     }
-    if(count&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_')))
-      window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,Math.floor(x),Math.floor(z));
+    if(count&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
+      const chunked=!!window.WildernessChunks; // Chunk rebuild refreshes only one 16x16 region and its seam halo.
+      if(chunked) for(const cell of changedChunks.values())window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
+      else window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,Math.floor(x),Math.floor(z));
+    }
     return count;
   }
   function applyBlast(mapId,x,z) {
@@ -334,7 +345,8 @@
     const rec=records.get(cask.mapId);
     rec?.vases.delete(cask.id);
     saveConsumed(cask.mapId+':'+cask.id);
-    const x=cask.col+.5,z=cask.row+.5,y=baseHeight(cask.col,cask.row)+.30;
+    const x=cask.group.position.x,z=cask.group.position.z;
+    const y=cask.carried?cask.group.position.y:baseHeight(cask.col,cask.row)+.30; // A charge shot out of someone's hands explodes where it is actually held.
     shatterVisual(rec?.scene||scene(),x,z,y);
     applyBlast(cask.mapId,x,z);
     const cleared=destroyTerrain(cask.mapId,rec,x,z);
@@ -362,14 +374,14 @@
   function projectileHit(start,end,radius,limit,mapId) {
     let result=null;
     for(const vase of records.get(mapId)?.vases.values()||[]) {
-      if(vase.exploded||vase.carried)continue;
-      const vx=vase.col+.5-start.x,vz=vase.row+.5-start.z;
+      if(vase.exploded)continue;
+      const vx=vase.group.position.x-start.x,vz=vase.group.position.z-start.z;
       const dx=end.x-start.x,dz=end.z-start.z,den=dx*dx+dz*dz;
       const hitT=den>1e-9?Math.max(0,Math.min(1,(vx*dx+vz*dz)/den)):0;
       if(hitT>limit||result&&hitT>=result.t)continue;
       const x=start.x+dx*hitT,z=start.z+dz*hitT,y=start.y+(end.y-start.y)*hitT;
-      if(Math.hypot(x-(vase.col+.5),z-(vase.row+.5))>.37+radius)continue;
-      if(Math.abs(y-(baseHeight(vase.col,vase.row)+.42))>.65+radius)continue;
+      if(Math.hypot(x-vase.group.position.x,z-vase.group.position.z)>.37+radius)continue;
+      if(Math.abs(y-(vase.carried?vase.group.position.y:baseHeight(vase.col,vase.row)+.42))>.65+radius)continue;
       result={t:hitT,vase};
     }
     return result;
@@ -412,6 +424,7 @@
     if(mapId!==lastArea) {
       lastArea=mapId;
       window.WorldActionInputClaims?.clearClaims?.('shattercask');
+      promptClaim='';
     }
     if(targetScene)ensureArea(mapId,targetScene,grid());
     if(held) {
