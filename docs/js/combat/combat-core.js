@@ -258,7 +258,7 @@
     const rangeWorld = Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64);
     const pitch = THREE.MathUtils.clamp(solution.pitch, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const box = solution.attackerHitbox?.box;
-    const authoredHeight = Math.max(0.35, box ? (box.max.y - box.min.y) : 0.7);
+    const authoredHeight = Math.max(0.35, Number(box ? (box.max.y - box.min.y) : 0) || 0.7);
     const heightWorld = Math.max(0.2, Number(opts.heightWorld) || authoredHeight);
     const collider = reuse || {};
     collider.actor = attacker;
@@ -591,7 +591,7 @@
     const target = opts.target || null;
     const solution = meleeAimSolution(actor, target, opts.yaw ?? actor?.facing ?? actor?.angle ?? 0, opts.pitch ?? 0);
     const collider = meleeColliderVolume(actor, opts, solution); // Reused by Show Hitboxes so trail and damage volume share an origin.
-    rememberMeleeColliderDebug(collider);
+    if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     const samples = 16;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((samples + 1) * 2 * 3), 3));
