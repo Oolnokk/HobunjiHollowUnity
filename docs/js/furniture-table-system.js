@@ -5,11 +5,14 @@
   const EMPTY = new Map(); // Shared empty lookup; missing maps allocate nothing in world interaction probes.
   const areas = new Map(); // Area -> placed furniture, indexed once at placement/rebuild time.
   const services = new Map(); // Provider id -> content-owned meal/shop/display actions.
+  const collisionAreas = new Map(); // Per-area reusable spatial buckets for the many NPC pathfinding probes in a frame.
+  const collisionStats = { queries:0, builds:0, candidates:0, classifications:0 }; // Mobile Pixel Probe counters; read only when diagnostics are requested.
+  const COLLISION_CELL = 4; // Tile width of broad-phase buckets; exact oriented tests still decide collisions.
   let deps = null; // Existing game seating and actor adapters, injected by game.js.
   const point = { x: 0, y: 0, z: 0 }; // Non-Three fallback used by data-only editor/tests.
-  function areaId(area) { return ['map_hobunji_town', 'hobunji_main_town'].includes(area) ? 'town' : area; }
-  function init(value) { deps = value; }
-  function clearArea(area) { for(const entry of entries(area).values())window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`); areas.delete(areaId(area)); focusStamp=null; }
+  function areaId(area) { return area === 'map_hobunji_town' || area === 'hobunji_main_town' ? 'town' : area; }
+  function init(value) { deps = value; collisionAreas.clear(); }
+  function clearArea(area) { for(const entry of entries(area).values())window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`); areas.delete(areaId(area)); collisionAreas.delete(areaId(area)); focusStamp=null; }
   function registerPlacement(area, record, root, def = {}) {
     area = areaId(area);
     let entries = areas.get(area); // One registry per map, so identical table ids never cross interiors.
@@ -18,6 +21,7 @@
     for (const [key, entry] of entries) if (entry.root === root || (entry.record.col === record.col && entry.record.row === record.row && entry.record.key === record.key)) entries.delete(key);
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
     entries.set(id, entry);
+    collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
     focusStamp = null; // Placement changes invalidate any cached interaction target.
     entry.height = def.sit ? 1 : .8;
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
@@ -215,17 +219,67 @@
       w:(entry.def.fw || 1)*Math.abs(root.scale?.x || 1)/2, d:(entry.def.fd || 1)*Math.abs(root.scale?.z || 1)/2 };
   }
   function solid(entry) {
-    return !entry.def.walkable && !entry.def.wallOrnament && !entry.record.wallPlacement && !entry.record.nonColliding && !entry.record.walkableElevation
+    const stamp=deps?.frameId?.(); // Classification is shared by collision and targeting, never normalized per path probe.
+    if(stamp!=null && entry.solidStamp===stamp)return entry.isSolid;
+    entry.solidStamp=stamp;
+    collisionStats.classifications++;
+    return entry.isSolid = !entry.def.walkable && !entry.def.wallOrnament && !entry.record.wallPlacement && !entry.record.nonColliding && !entry.record.walkableElevation
       && !window.InteriorFurnitureGrid?.isDynamicMechanism?.(entry.record) && !/^(?:woodenDoor|door)$/.test(entry.record.key); // Dynamic doors/mechanisms retain their existing collision authority.
   }
+  function collisionIndex(area, stamp) {
+    let index=collisionAreas.get(area); // Reuse bucket maps/arrays after warmup instead of allocating for each query/frame.
+    if(index?.stamp===stamp)return index;
+    if(!index)collisionAreas.set(area,index={columns:new Map(),buckets:[],stamp:null});
+    for(const bucket of index.buckets)bucket.length=0;
+    index.stamp=stamp;collisionStats.builds++;
+    for(const entry of entries(area).values()) {
+      if(!entry.root?.parent || !solid(entry))continue;
+      const f=placementFrame(entry), ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d; // Conservative world AABB encloses the rotated footprint.
+      if(!Number.isFinite(f.x+f.z+ex+ez))continue;
+      for(let c=Math.floor((f.x-ex)/COLLISION_CELL);c<=Math.floor((f.x+ex)/COLLISION_CELL);c++) {
+        let column=index.columns.get(c); // Numeric keys avoid constructing a tile string for every path probe.
+        if(!column)index.columns.set(c,column=new Map());
+        for(let r=Math.floor((f.z-ez)/COLLISION_CELL);r<=Math.floor((f.z+ez)/COLLISION_CELL);r++) {
+          let bucket=column.get(r); // A spanning table belongs to every overlapped cell.
+          if(!bucket){column.set(r,bucket=[]);index.buckets.push(bucket);}
+          bucket.push(entry);
+        }
+      }
+    }
+    return index;
+  }
+  function entryBlocksBox(entry,x,z,half,worldY) {
+    if(!entry.root?.parent)return false;
+    collisionStats.candidates++;
+    const f=placementFrame(entry), dx=x-f.x, dz=z-f.z; // OBB/AABB separating axes preserve rotated narrow furniture and whole-body clearance.
+    if(Number.isFinite(worldY) && (worldY<f.y || worldY>f.y+(entry.height||1)))return false;
+    const c=Math.abs(f.cos), s=Math.abs(f.sin), margin=half*(c+s);
+    return Math.abs(dx*f.cos-dz*f.sin)<f.w+margin && Math.abs(dx*f.sin+dz*f.cos)<f.d+margin
+      && Math.abs(dx)<f.w*c+f.d*s+half && Math.abs(dz)<f.w*s+f.d*c+half;
+  }
   function blocksBox(area, x, z, half = 0, worldY = null) {
-    for (const entry of entries(area).values()) {
-      if (!entry.root?.parent || !solid(entry)) continue;
-      const f = placementFrame(entry), dx=x-f.x, dz=z-f.z; // OBB/AABB separating axes preserve rotated narrow furniture and whole-body clearance.
-      if (Number.isFinite(worldY) && (worldY < f.y || worldY > f.y+(entry.height || 1))) continue;
-      const c=Math.abs(f.cos), s=Math.abs(f.sin), margin=half*(c+s);
-      if (Math.abs(dx*f.cos-dz*f.sin) < f.w+margin && Math.abs(dx*f.sin+dz*f.cos) < f.d+margin
-        && Math.abs(dx) < f.w*c+f.d*s+half && Math.abs(dz) < f.w*s+f.d*c+half) return true;
+    if(!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(half) || half<0)return false;
+    collisionStats.queries++;
+    area=areaId(area);
+    if(!areas.has(area))return false;
+    const stamp=deps?.frameId?.(); // Editors without a frame owner retain immediate live-transform queries.
+    if(stamp==null) {
+      for(const entry of entries(area).values())if(entry.root?.parent && solid(entry) && entryBlocksBox(entry,x,z,half,worldY))return true;
+      return false;
+    }
+    const index=collisionIndex(area,stamp), visit=collisionStats.queries; // Global query id survives same-frame index replacement; no per-query Set.
+    for(let c=Math.floor((x-half)/COLLISION_CELL);c<=Math.floor((x+half)/COLLISION_CELL);c++) {
+      const column=index.columns.get(c); // Empty space returns without visiting any furniture.
+      if(!column)continue;
+      for(let r=Math.floor((z-half)/COLLISION_CELL);r<=Math.floor((z+half)/COLLISION_CELL);r++) {
+        const bucket=column.get(r); // Missing buckets allocate nothing in the pathfinding hot loop.
+        if(!bucket)continue;
+        for(const entry of bucket) {
+          if(entry.collisionVisit===visit)continue;
+          entry.collisionVisit=visit;
+          if(entryBlocksBox(entry,x,z,half,worldY))return true;
+        }
+      }
     }
     return false;
   }
@@ -285,7 +339,8 @@
   }
 
   function snapshot(area = deps?.getArea?.()) {
-    return { latestChange: 'Exclusive seat reservations, camera-ray NPC/chair targeting, shared furniture collision and locale grass clearing.',
+    return { latestChange: 'Furniture collision uses frame-cached spatial buckets and mechanism classification instead of scanning every placement per pathfinding probe.',
+      collision:{...collisionStats},
       area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
   }
   window.FurnitureTableSystem = { init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
