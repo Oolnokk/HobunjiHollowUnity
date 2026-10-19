@@ -1,20 +1,26 @@
 (() => {
   'use strict';
 
-  // Held-object selective ground x-ray policy.
+  // Held-object selective ground x-ray and translucent submersion contract.
+  // Read docs/architecture/held-object-water-depth-compositing.md before
+  // changing any pass, overlay, water cover, or renderer depth behavior.
   //
-  // The normal world render is left intact. On a real full-world base render,
-  // held planes are omitted from that first color pass and then drawn exactly
-  // once against a reconstructed depth buffer that retains solid objects,
-  // snow/slush, water and billboard grass. Base-grass terrain and paved paths
-  // cannot cover a held sprite, while characters, furniture, vegetation,
-  // buildings, etc. still occlude it according to position.
+  // Normal world color renders without held planes/registered feet. In a
+  // separate depth-reconstructed overlay, hands/weapons/feet ignore ONLY base
+  // grass and authored paths, not props, snow or other solid occluders. The
+  // subsequent water/slush tint uses the original translucent material and
+  // only affects geometrically submerged pixels marked in stencil.
   //
-  // After the held overlay is drawn, ground depth is replayed colorless so the
-  // outline/postprocess pipeline receives the same complete scene depth it
-  // expects. No ground layer is removed, no ground material is permanently
-  // changed, and the finished terrain/grass color image is never re-rendered or
-  // downsampled by this module.
+  // REGRESSION INVARIANT (confirmed with two farm-flood Pixel Probes):
+  // after overlay color is drawn, restore base grass/path DEPTH colorlessly
+  // BEFORE water/slush tint. If tint runs first, the missing elevated grass
+  // depth lets flood color leak through it in irregular teal patches, despite
+  // BOTH materials individually having depthTest enabled. The user's
+  // painterly on/off comparison ruled out the painterly postprocess.
+  //
+  // Do not re-render ground color; do not clear depth between restoring
+  // ground depth and tinting. Material, viewport/scissor and camera state
+  // are restored after each pass.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   const objectProto = THREE?.Object3D?.prototype;
@@ -727,9 +733,10 @@
     for (const object of held) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
-        // Reserve bit 1 for held gear for compatibility/diagnostics. Water
-        // and slush have already been tinted over feet before this draw, so
-        // weapons cannot be overpainted by either translucent surface.
+        // Legacy bit-1 held-only stencil helper (not used by the current
+        // unified hands/weapons/feet tint pass). Do not revive the older
+        // feet-first/tint/held-last order: it paints weapons over their
+        // underwater tint. See the rendering architecture contract.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x02;
         material.stencilFunc = THREE.AlwaysStencilFunc;
@@ -1092,8 +1099,10 @@
           if (overlayStates) restoreMaterialStates(overlayStates);
         }
       }
-      // 2b) Restore the real BASE GRASS / PATH depth before translucent
-      // cover tinting. The previous ordering restored ground only AFTER
+      // 2b) CRITICAL PASS ORDER INVARIANT — see
+      // docs/architecture/held-object-water-depth-compositing.md:
+      // Restore real BASE GRASS / PATH depth before translucent cover
+      // tinting. The previous ordering restored ground only AFTER
       // drawing water, letting flood fragments behind elevated grass pass
       // through the temporarily empty ground-depth buffer in irregular
       // areas where held/foot stencil was present. Pixel Probe measured
