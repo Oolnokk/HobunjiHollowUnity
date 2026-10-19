@@ -3568,6 +3568,7 @@ window.SCRATCHBONES_CONFIG = {
         "bgsFadeMs": 1600,
         "ambientCueMinDelaySec": 20,
         "ambientCueMaxDelaySec": 45,
+        "ambientCuePhaseDurationSec": 120, // Stage B runs random standalone cues for two minutes after each complete song.
         "areaBgm": {
           "map_i_dev_random_ruin": [
             { "url": "assets/audio/music/bgm/bgm_of_bygone_Kings.ogg", "loop": true }

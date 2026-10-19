@@ -147,7 +147,7 @@
   <script src="debug.js?v=20261016hbfaf2c3"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261018colors-starved-compendium1"></script>
-  <script src="config/scratchbones-config.js?v=20261019h07b21e2"></script>
+  <script src="config/scratchbones-config.js?v=20261019cuecycle2"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -304,7 +304,7 @@
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20260930ench1"></script>
-  <script src="js/combat/combat-input.js?v=20261017h49af261"></script>
+  <script src="js/combat/combat-input.js?v=20261018hold024"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
   <script src="js/combat/combat-combo.js?v=20261017h9dc5e7c"></script>
@@ -363,7 +363,7 @@
   <script src="js/skill-system.js?v=20261015h31a0bda"></script>
   <script src="js/perk-system.js?v=20261016h23d3bfa"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
-  <script src="js/trinket-system.js?v=20261015h587b47e"></script>
+  <script src="js/trinket-system.js?v=20261018trinketgear1"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
   <script src="js/cooking-system.js?v=20261018h2a4aedc"></script>
@@ -739,7 +739,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261016h4bb7124"></script>
+  <script src="js/equipment-panel.js?v=20261018trinketgear1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2495,7 +2495,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261019h43a69e0"></script>
+  <script src="js/music-system.js?v=20261019hb25e451"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
