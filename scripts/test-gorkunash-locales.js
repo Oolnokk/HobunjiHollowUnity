@@ -55,11 +55,14 @@ assert.equal(movedMusic.col,originalMusic.col+4,'music station follows moved roo
 assert.equal(originalRoot.col,42,'authored map remains unmutated after expansion');
 W.NpcScheduling.stations=layout.npcStations;
 const itemDefs={meal:{label:'Special stew',isCookedFood:true,foodEffects:{vigor:2}}},inventory={meal:1};
-let player={c:47,r:43}; // Current player tile, used for proximity preflights.
+let player={c:47,r:43}, aimed={c:47.02,r:43.185}, heldMode='item', isSeated=true, queuedBite=null, bowlAnimationCount=0; // Player reticle and held state for bowl targeting and real seated animation checks.
 const api=W.FestivalSystem;
 api.init({getTownMap:()=>town,getNpcs:()=>residents,getWalkers:()=>walkers,getArea:()=> 'town',
  getPlayerTile:()=>player,getDecorSize:key=>({fw:key==='tableLong'?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
- getItemDefs:()=>itemDefs,inventory,save(){persisted++},refresh(){},toast(){},isBlocked:()=>false});
+ getItemDefs:()=>itemDefs,inventory,save(){persisted++},refresh(){},toast(){},isBlocked:()=>false,
+ getAimPosition:()=>aimed,getActiveItemKey:()=> 'meal',getHeldMode:()=>heldMode,isPlayerSeated:()=>isSeated,
+ equipFestivalBowl:()=>{heldMode='item';},
+ playFestivalBowlDrink:cb=>{bowlAnimationCount++;queuedBite=cb;return true;}});
 const target=id=>W.NpcScheduling.override(residents.find(rec=>rec.id===id)); // Existing schedule override, not a copied planner.
 hour=12;assert.equal(target('foroji_funji'),null,'festival schedules do not replace ordinary daytime work');
 hour=16;assert.equal(target('foroji_funji').toolKey,'kurraya','Foroji leads early');
@@ -76,6 +79,27 @@ assert.equal(api.eatFestivalBowl().ok,true);
 assert.equal(api.festivalFoodStacks('speed'),1,'festival meal contributes to the live cooking stat');
 assert.equal(api.festivalBowl().uses,9);
 assert.equal(api.currentFullness(),1);
+const seat=layout.decor.find(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple');
+assert(seat,'dining locale contains a real authored chair mesh');
+player={c:seat.col+.5,r:seat.row+.5};
+assert.equal(api.nearestDiningSeat()?.id,seat.id,'nearby festival chair is a reachable seat interaction');
+assert.equal(api.isDiningSeat(seat.col,seat.row,seat.key),true,'seated identity is bound to the festival locale furniture');
+assert.equal(api.actionButton()?.action,'festival_sit_dining','held bowl exposes Sit world action at a dining chair');
+assert.equal(api.seatedMealAction()?.swigFraction,'9/10','eating shows bottle-style portion count on the arch');
+assert.equal(api.toggleSeatedMeal().ok,true);
+realMs+=600;api.update();
+assert.equal(bowlAnimationCount,1,'festival meal starts exactly one authored drink animation');
+assert.equal(api.currentFullness(),1,'no bowl portion is consumed before drink-strike callback');
+queuedBite();
+assert.equal(api.currentFullness(),2,'drink strike commits exactly one serving');
+assert.equal(api.festivalBowl().uses,8);
+realMs+=1000;api.update();
+assert.equal(bowlAnimationCount,1,'drinks are spaced by the authored bite interval');
+isSeated=false;api.update();
+assert.equal(api.seatedMealAction(),null,'standing immediately removes seated meal action');
+heldMode='tool';realMs+=600;api.update();
+assert.equal(api.festivalBowl(),null,'drawing a different tool drops the temporary serving bowl');
+player={c:47,r:43};isSeated=true;heldMode='item';
 const potluck=api.activityProps().find(prop=>prop.activity.type==='potluck');
 assert.equal(api.perform('potluck',{propId:potluck.id,key:'meal',stars:5}).ok,true);
 assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'disliked meal is neutral');
