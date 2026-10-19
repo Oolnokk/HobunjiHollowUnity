@@ -198,7 +198,7 @@
     },
     "mastery_cave_map_northern_cliffs": {
       "label": "Northern Cliffs Cave Caches / Catacombs",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.2,
@@ -254,7 +254,7 @@
     },
     "mastery_den_map_northern_cliffs": {
       "label": "Northern Cliffs Den Mothers",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -294,7 +294,7 @@
     },
     "mastery_cave_map_southern_cloud_forest": {
       "label": "Southern Cloud Forest Cave Caches / Catacombs",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.2,
@@ -350,7 +350,7 @@
     },
     "mastery_den_map_southern_cloud_forest": {
       "label": "Southern Cloud Forest Den Mothers",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -389,7 +389,7 @@
     },
     "mastery_cave_map_western_slope": {
       "label": "Western Slope Cave Caches / Catacombs",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.2,
@@ -444,7 +444,7 @@
     },
     "mastery_den_map_western_slope": {
       "label": "Western Slope Den Mothers",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -483,7 +483,7 @@
     },
     "mastery_cave_map_eastern_mire": {
       "label": "Eastern Mire Cave Caches / Catacombs",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.2,
@@ -540,7 +540,7 @@
     },
     "mastery_den_map_eastern_mire": {
       "label": "Eastern Mire Den Mothers",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -580,7 +580,7 @@
     },
     "mastery_ruin_hronal": {
       "label": "hronal Non-boss Ruin Chests",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -619,7 +619,7 @@
     },
     "mastery_final_hronal": {
       "label": "hronal Final Ruin Chests",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -678,7 +678,7 @@
     },
     "mastery_lich_hronal": {
       "label": "hronal Lich",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -712,7 +712,7 @@
     },
     "mastery_ruin_tothal": {
       "label": "tothal Non-boss Ruin Chests",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -752,7 +752,7 @@
     },
     "mastery_final_tothal": {
       "label": "tothal Final Ruin Chests",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -816,7 +816,7 @@
     },
     "mastery_lich_tothal": {
       "label": "tothal Lich",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -849,7 +849,7 @@
     },
     "mastery_ruin_kanthic": {
       "label": "kanthic Non-boss Ruin Chests",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -884,7 +884,7 @@
     },
     "mastery_final_kanthic": {
       "label": "kanthic Final Ruin Chests",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -939,7 +939,7 @@
     },
     "mastery_lich_kanthic": {
       "label": "kanthic Lich",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -971,7 +971,7 @@
     },
     "mastery_skeleton": {
       "label": "Skeletons",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.15,
@@ -1008,7 +1008,7 @@
     },
     "mastery_bandit": {
       "label": "Bandits",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.05,
@@ -1049,7 +1049,7 @@
     },
     "mastery_captain": {
       "label": "Bandit Captains",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 1,
@@ -1108,7 +1108,7 @@
     },
     "mastery_tent": {
       "label": "Bandit Tents",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.5,
@@ -1146,7 +1146,7 @@
     },
     "mastery_ghoul": {
       "label": "Ghouls",
-      "note": "One reusable effect + mastery rank unlock. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
+      "note": "One permanent effect + mastery rank unlock. Reading consumes the tablet or scroll. Chance is checked once; rankWeights select exactly one rank. Effects are exclusive to this source at each damage type and rank.",
       "entries": [],
       "mastery": {
         "chance": 0.15,

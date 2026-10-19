@@ -12,7 +12,7 @@
   "use strict";
   if (!window.Combat?.loadout) { console.error('combat-input.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  const HOLD_THRESHOLD_S = 0.16;
+  const HOLD_THRESHOLD_S = 0.24; // Weapon-action press duration before a hold starts; 50% longer than the previous 0.16 seconds.
   const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'; // Compatibility key; enabled state is never restored automatically.
   let autoTargetEnabled = false; // Targeting requires an explicit tap or hold in this session.
   let autoTargetControl = null; // Cached Settings checkbox synchronized with runtime state.

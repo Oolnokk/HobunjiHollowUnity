@@ -176,6 +176,55 @@
     state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
   }
 
+  // Death owns an independent, persistent sample of the same recorded prone
+  // throw used by zero-Footing hits. Unlike a living impact it isn't updated by
+  // updateCreatureMesh(), and it must never return to the standing pose.
+  function startCreatureDeath(entity, direction = 'front') {
+    stopCreature(entity);
+    const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
+    const clip = window.ImpactBlendLibrary?.getClip('breakThrow', mappedDirection);
+    const pivot = ensureCreatureImpactPivot(entity);
+    if (!clip?.frames?.length || !pivot) return 0;
+    // Bandit hands and legs are siblings of the portrait planes; take them
+    // along for a death without changing the normal live knockdown rig.
+    for (const limb of [entity.avatarRef?.handsPivot, entity.avatarRef?.legsPivot]) {
+      if (limb?.isObject3D && limb.parent === pivot.parent) pivot.add(limb);
+    }
+    const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
+    entity._deathRecordedThrow = {
+      pivot, clip,
+      baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
+      heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
+    }; // Sampled by CreatureDeath while dying and retained as the corpse's pose.
+    sampleCreatureDeath(entity, 0);
+    return Math.max(0.05, clip.durationSeconds);
+  }
+
+  function sampleCreatureDeath(entity, phase) {
+    const state = entity?._deathRecordedThrow;
+    if (!state?.clip?.frames?.length) return false;
+    const time = Math.max(0, Math.min(1, Number(phase) || 0)) * state.clip.durationSeconds;
+    const [frameA, frameB, blend] = findBracket(state.clip.frames, time);
+    applyCreatureFrame(state, frameA, frameB, blend);
+    const legs = entity.avatarRef?.legs;
+    if (typeof legs?.applyRecordedLegPose === 'function') {
+      for (const side of ['left', 'right']) {
+        if (frameA?.ragdoll?.ik?.[side] && frameB?.ragdoll?.ik?.[side])
+          legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
+      }
+    }
+    return true;
+  }
+
+  function stopCreatureDeath(entity) {
+    const state = entity?._deathRecordedThrow;
+    if (!state) return false;
+    state.pivot?.quaternion?.identity?.();
+    if (state.pivot?.position) state.pivot.position.y = 0;
+    entity._deathRecordedThrow = null;
+    return true;
+  }
+
   function stopCreature(entity) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return;
@@ -407,6 +456,7 @@
     isHolding,
     currentDirection,
     triggerCreature,
+    startCreatureDeath, sampleCreatureDeath, stopCreatureDeath,
     updateCreature,
     stopCreature,
     getDebug,

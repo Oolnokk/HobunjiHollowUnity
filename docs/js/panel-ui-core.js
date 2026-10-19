@@ -536,7 +536,7 @@
 // Load it only there so the generic PanelUI helper remains harmless elsewhere.
 if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
   const idleStanceScript = document.createElement('script');
-  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20261017h619c5dd';
+  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20261019h1b912db';
   idleStanceScript.defer = true;
   document.head.appendChild(idleStanceScript);
 }
@@ -555,7 +555,7 @@ if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.path
 // a tool-specific extension instead of duplicating/restructuring that editor.
 if (/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname)) {
   const npcWardrobeScript = document.createElement('script'); // Used to add instance-level npcWardrobeFor authoring to the selected-furniture inspector.
-  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261015hc8b559c';
+  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261019hdbe911f';
   npcWardrobeScript.defer = true;
   document.head.appendChild(npcWardrobeScript);
 }
