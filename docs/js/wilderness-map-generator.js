@@ -3272,13 +3272,13 @@
       return null;
     }
 
-    const placementFilter = (x, y, w, h) => {
+    const placementFilter = (x, y, w, h, ignoreFlat = false) => {
       if (map.entry && minDistFromEntry > 0) {
         const cx = x + w / 2, cy = y + h / 2;
         const dist = Math.hypot(cx - map.entry.x, cy - map.entry.y);
         if (dist < minDistFromEntry) return false;
       }
-      if (requiresFlat) {
+      if (requiresFlat && !ignoreFlat) {
         const centerTile = tileAt(Math.floor(x + w / 2), Math.floor(y + h / 2));
         if (!centerTile) return false;
         const targetHeight = tileHeight(centerTile);
@@ -3312,6 +3312,53 @@
         // stays as near the entrance as the terrain actually allows.
         warn(`locale ${locale.id}: no room in the entry's sector (${x0},${y0})-(${x1},${y1}), falling back to the nearest spot in the whole zone`);
         spot = bestFreeAreaInRect(0, 0, settings.width, settings.height, paddedW, paddedH, { filter: placementFilter }, map.entry);
+      }
+    }
+    // Curved highland profiles can legitimately have no naturally level site as wide as
+    // a story locale. Regrade a small vacant patch near the entry instead of silently
+    // losing the Researcher's Tent (or changing the generator's overall slope).
+    if (!spot && requiresFlat && placement.sameSectorAsEntry && settings.heightCurves?.enabled && map.entry) {
+      const sectorW = settings.width / 3, sectorH = settings.height / 3; // Entry-sector grid size for nearby site preference.
+      const sx = clamp(Math.floor(map.entry.x / sectorW), 0, 2);
+      const sy = clamp(Math.floor(map.entry.y / sectorH), 0, 2);
+      let best = null; // Lowest-grade vacant site, with distance to the actual entry as the secondary criterion.
+      let bestScore = Infinity;
+      const scanSites = (x0, y0, x1, y1, outsideSectorPenalty) => {
+        for (let y = y0; y <= y1 - paddedH; y++) for (let x = x0; x <= x1 - paddedW; x++) {
+          if (!areaFree(x, y, paddedW, paddedH) || !placementFilter(x, y, paddedW, paddedH, true)) continue;
+          let minimum = Infinity, maximum = -Infinity;
+          const counts = new Map(); // Mode of source heights, for regrading while retaining nearby plateau altitude.
+          for (let yy = y; yy < y + paddedH; yy++) for (let xx = x; xx < x + paddedW; xx++) {
+            const level = Math.round(tileHeight(tileAt(xx, yy)));
+            minimum = Math.min(minimum, level); maximum = Math.max(maximum, level);
+            counts.set(level, (counts.get(level) || 0) + 1);
+          }
+          const proximity = Math.hypot(x + paddedW / 2 - map.entry.x, y + paddedH / 2 - map.entry.y);
+          const score = (maximum - minimum) * 100 + proximity * 0.1 + outsideSectorPenalty;
+          if (score >= bestScore) continue;
+          const targetTier = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]; // Modal tier minimizes the cut-and-fill area.
+          bestScore = score;
+          best = { x, y, tier: targetTier, spread: maximum - minimum };
+        }
+      };
+      scanSites(Math.round(sx * sectorW), Math.round(sy * sectorH),
+        Math.round((sx + 1) * sectorW), Math.round((sy + 1) * sectorH), 0);
+      if (!best) scanSites(0, 0, settings.width, settings.height, 30);
+      if (best) {
+        spot = { x: best.x, y: best.y };
+        for (let y = best.y; y < best.y + paddedH; y++) for (let x = best.x; x < best.x + paddedW; x++) {
+          const tile = tileAt(x, y); // The existing plateau painter will re-evaluate the modified area after late rivers.
+          tile.elevation = best.tier;
+          tile.height = best.tier;
+          tile.terrain = best.tier > 0 ? 'plateau' : 'grass';
+          tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'locale_height_curve_clearing';
+          tile.cliffSkirt = false;
+          tile.plateauGroupId = null;
+          tile.plateauRing = false;
+          tile.plateauInterior = false;
+        }
+        logDebug('height-curve locale clearing: ' + locale.id + ' at (' + best.x + ',' + best.y
+          + '), tier ' + best.tier + ', source spread ' + best.spread);
       }
     }
     if (!spot) spot = randomFreeArea(paddedW, paddedH, { filter: placementFilter }, 2500);
