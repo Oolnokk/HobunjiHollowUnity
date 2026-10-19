@@ -1448,7 +1448,8 @@
     }
     const fade = musicFadeConfig();
     const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48)));
-    const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs, { loop: bgmTrack?.loop === true });
+    const loopSpecialScore = bgmTrack?.exclusiveSoundtrack === true && bgmTrack?.loop === true; // Only explicit exclusive soundtracks loop indefinitely; regular songs must finish so stage B can begin.
+    const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs, { loop: loopSpecialScore });
     snd._musicEntry = bgmTrack;
     const finishBgm = ({ retryMs = 0 } = {}) => {
       const ownsSlot = _ambientCueState.currentBgm === snd;
