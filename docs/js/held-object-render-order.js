@@ -732,15 +732,16 @@
         saveMaterialState(states, material);
         material.colorWrite = false;
         material.depthWrite = false;
-        material.depthTest = false; // Water now owns depth in the reconstruction; stamp the visible foot silhouette without rejecting it behind that water.
-        // Compare only held bit 1: stencilRef=1 has that bit clear, so Equal
-        // passes everywhere except weapon/hand pixels. Replace writes only bit
-        // 0 from the same ref, producing the foot-only water mask value 1.
+        // Stamp before the depth rebuild, while the base-pass depth still
+        // contains solid occluders but not translucent water. Keep depthTest
+        // enabled so feet hidden behind furniture, cliffs or walls stay hidden.
+        // Held stencil bit 1 is added afterwards, and the water replay tests
+        // both bits to avoid ever painting over weapons.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x01;
-        material.stencilFunc = THREE.EqualStencilFunc;
+        material.stencilFunc = THREE.AlwaysStencilFunc;
         material.stencilRef = 1;
-        material.stencilFuncMask = 0x02;
+        material.stencilFuncMask = 0xFF;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
         material.stencilZPass = THREE.ReplaceStencilOp;
@@ -754,13 +755,13 @@
     for (const object of water) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
-        // Test only foot bit 0; held fragments that are physically above water
-        // retain bit 1, while held fragments behind water fail the depth test.
+        // Require foot bit 0 and absence of held bit 1: even when a
+        // weapon overlaps the foot silhouette, it stays over the water.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x00;
         material.stencilFunc = THREE.EqualStencilFunc;
         material.stencilRef = 1;
-        material.stencilFuncMask = 0x01;
+        material.stencilFuncMask = 0x03;
         material.stencilFail = THREE.KeepStencilOp;
         material.stencilZFail = THREE.KeepStencilOp;
         material.stencilZPass = THREE.KeepStencilOp;
@@ -978,6 +979,26 @@
       scene.autoUpdate = false; // base pass already produced current matrices
       if (shadowMap) shadowMap.autoUpdate = false;
 
+      // Stamp visible feet against BASE scene depth before forcing translucent
+      // water to write depth in the weapon-occlusion reconstruction. The base
+      // already respects walls/furniture and keeps ordinary water depthWrite
+      // false. Moving this earlier avoids depthTest=false and the resulting
+      // water tint leaking through solid occluders.
+      if (needsFootWaterComposite) {
+        if (scissored) glState.setScissorTest(false); // Clear the entire stencil buffer.
+        renderer.clearStencil?.();
+        if (scissored) glState.setScissorTest(true);
+        const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);
+        try {
+          camera.layers.mask = FOOT_WATER_MASK;
+          const footMaskPerf = window.PerfProfiler?.begin('held-overlay: foot water mask render');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(footMaskPerf);
+        } finally {
+          restoreMaterialStates(footStencilStates);
+        }
+      }
+
       // 1) Rebuild depth from every ordinary world object, excluding exactly
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
@@ -1013,9 +1034,11 @@
       // 2) Draw weapons/hands against depth rebuilt with every occluder
       // except the base grass tile and authored path surface. Water,
       // snow/slush and individual grass blades still block held pixels.
-      if (scissored) glState.setScissorTest(false); // Stencil clears stay full-framebuffer, as before.
-      renderer.clearStencil?.();
-      if (scissored) glState.setScissorTest(true);
+      if (!needsFootWaterComposite) {
+        if (scissored) glState.setScissorTest(false); // Clear the full framebuffer, not only the replay scissor.
+        renderer.clearStencil?.();
+        if (scissored) glState.setScissorTest(true);
+      }
       if (held.length) {
         const heldStencilStates = prepareHeldStencilMaterials(held);
         try {
@@ -1043,20 +1066,10 @@
         restoreMaterialStates(groundMaterialStates);
       }
 
-      // 4) Feet intentionally do NOT x-ray water. Stamp only explicitly
-      // registered water-occluded meshes into stencil bit 0, excluding any
-      // overlapping held bit-1 pixels, then replay water through that mask.
+      // 4) Feet intentionally do NOT x-ray water. The pre-rebuild foot
+      // stencil now identifies only visible feet; held pixels set bit 1,
+      // and the water composite must match foot-only stencil value 1.
       if (needsFootWaterComposite) {
-        const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);
-        try {
-          camera.layers.mask = FOOT_WATER_MASK;
-          const footMaskPerf = window.PerfProfiler?.begin('held-overlay: foot water mask render');
-          rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(footMaskPerf);
-        } finally {
-          restoreMaterialStates(footStencilStates);
-        }
-
         const waterStencilStates = prepareWaterStencilMaterials(water);
         try {
           camera.layers.mask = WATER_REPLAY_MASK;
