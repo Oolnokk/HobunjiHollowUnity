@@ -178,7 +178,7 @@
 
     if (def.masteryUnlock) {
       const lesson = def.masteryUnlock; // Use the same unlock owner as the mastery spend boundary.
-      const learned = !!window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId); // Reading is permanent and retains the item.
+      const learned = !!window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId); // The learned bonus persists, but reading consumes one copy.
       return { key, kind: 'masteryUnlock', verb: learned ? 'Already learned' : 'Read', icon: def.icon, itemLabel: def.label || key, allowed: !learned };
     }
     if (def.combatManualAbilityId) {
