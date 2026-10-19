@@ -25105,7 +25105,7 @@
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
-          const seatedActions = [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }]; // Shared seated actions drive touch, keyboard, controller and floating prompts.
+          const seatedActions = [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active', promptRoot:playerMesh }]; // Shared seated actions drive touch, keyboard, controller and floating prompts.
           seatedActions.push({ icon: '⏳', label: 'Wait', action: 'calendar_wait', inputAction: 'action2', style: 'secondary', allowed: sitInteraction.phase === 'active' && !!window.CalendarSystem?.openTimePassage });
           const prayerAction = window.TemplePrayerRestBlessings?.getPrayerAction?.(); // The blessing owner supplies the same eligible prayer used by its menu.
           if (prayerAction) seatedActions.push(prayerAction);
