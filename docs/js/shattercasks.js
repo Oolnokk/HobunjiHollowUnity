@@ -11,6 +11,8 @@
   const burstEffects = []; // Short-lived instanced pottery shards and flashes ticked by Combat.update.
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
   const persisted = new Set(); // Already shattered/looted IDs, saved per player world.
+  const terrainHistory = new Map(); // Area -> Map(tile -> original resource kind), preserves blasted openings on reload.
+  const pileHistory = new Map(); // Area -> Map(pile id -> unlooted debris), restores one-input collectible piles.
   const lastEquipment = { weapon:null, tool:null, item:null }; // Pickup-time equipment snapshot used to drop carried vases on selection changes.
   let held = null; // The one intact vase held in front of the local player.
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
@@ -33,28 +35,42 @@
     return p ? {x:p.x/t,z:p.y/t,angle:Number(p.angle ?? p.facing)||0} : null;
   }
   function worldId() {
-    return String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session');
+    const id=String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session');
+    const cycle=String(window.CalendarSystem?.tothalCycle?.() || 1); // A Tothal Shift should regenerate both caves and their loose charges.
+    return id+'|'+cycle;
   }
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
-    storeIdentity=identity; persisted.clear();
-    if (identity==='session') return;
-    try { for(const id of JSON.parse(localStorage.getItem('hobunji.shattercasks.v1:'+identity)||'[]')) persisted.add(id); }
-    catch(_) { /* Old/incomplete store: no generated vase is consumed. */ }
+    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();records.clear();
+    if (identity.startsWith('session|')) return;
+    try {
+      for(const id of JSON.parse(localStorage.getItem('hobunji.shattercasks.v1:'+identity)||'[]')) persisted.add(id);
+      const savedTerrain=JSON.parse(localStorage.getItem('hobunji.shattercasks.terrain.v1:'+identity)||'{}');
+      for(const [area,tiles] of Object.entries(savedTerrain))terrainHistory.set(area,new Map(Object.entries(tiles)));
+      const savedPiles=JSON.parse(localStorage.getItem('hobunji.shattercasks.piles.v1:'+identity)||'{}');
+      for(const [area,piles] of Object.entries(savedPiles))pileHistory.set(area,new Map(Object.entries(piles)));
+    }catch(error){window.__farmLog?.('[shattercask] partial persistence recovery: '+error.message,'warn');}
+  }
+  function persistWorld() {
+    if(!storeIdentity || storeIdentity.startsWith('session|'))return;
+    try{
+      localStorage.setItem('hobunji.shattercasks.v1:'+storeIdentity,JSON.stringify([...persisted]));
+      localStorage.setItem('hobunji.shattercasks.terrain.v1:'+storeIdentity,
+        JSON.stringify(Object.fromEntries([...terrainHistory].map(([area,tiles])=>[area,Object.fromEntries(tiles)]))));
+      localStorage.setItem('hobunji.shattercasks.piles.v1:'+storeIdentity,
+        JSON.stringify(Object.fromEntries([...pileHistory].map(([area,piles])=>[area,Object.fromEntries(piles)]))));
+    }catch(error){window.__farmLog?.('[shattercask] failed to persist blast/loot history: '+error.message,'warn');}
   }
   function saveConsumed(id) {
-    loadPersistence();
-    persisted.add(id);
-    if (storeIdentity==='session') return;
-    try { localStorage.setItem('hobunji.shattercasks.v1:'+storeIdentity,JSON.stringify([...persisted])); }
-    catch(error) { window.__farmLog?.('[shattercask] could not save blast state: '+error.message,'warn'); }
+    loadPersistence();persisted.add(id);persistWorld();
   }
   function recordFor(mapId, targetScene) {
     const existing=records.get(mapId);
     if(existing?.scene===targetScene)return existing;
     const rec={scene:targetScene,vases:new Map(),piles:new Map()};
     records.set(mapId,rec);
+    restoreSceneHistory(mapId,rec); // Scene reconstruction must retain both opened cave barriers and unlooted rubble.
     return rec;
   }
   function validTile(g,c,r) {
@@ -196,6 +212,8 @@
     if(!pile||!records.get(pile.mapId)?.piles.has(pile.id))return false;
     grantLoot(pile.kind==='tree'?{[pile.woodKey||'pineLog']:2}:{stone:3,pebble:2}); // Canonical inventory keys, not descriptive stick/wood pseudo-items.
     records.get(pile.mapId).piles.delete(pile.id);
+    pileHistory.get(pile.mapId)?.delete(pile.id);
+    persistWorld();
     pile.group.parent?.remove(pile.group);
     pile.group.traverse(node=>{node.geometry?.dispose?.();node.material?.dispose?.();});
     lastEvent='looted '+pile.id;
@@ -283,6 +301,8 @@
     group.userData.shattercaskPile=id;
     rec.scene.add(group);
     rec.piles.set(id,{id,col,row,kind,woodKey,group,mapId});
+    if(!pileHistory.has(mapId))pileHistory.set(mapId,new Map());
+    pileHistory.get(mapId).set(id,{col,row,kind,woodKey}); // Batch-save with terrain at the end of a blast.
   }
   function destroyTerrain(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
@@ -314,6 +334,8 @@
       delete tile.rockKind;delete tile.oreKind;delete tile.oreKey;delete tile.caveSeparator;
       const woodKey=String(tile.treeKind||tile.generatedObjectType||'').toLowerCase().includes('shadewood')?'shadewoodLog':'pineLog';
       spawnPile(mapId,rec,col,row,kind,floor,woodKey);
+      if(!terrainHistory.has(mapId))terrainHistory.set(mapId,new Map());
+      terrainHistory.get(mapId).set(key(col,row),{kind,woodKey});
       changedChunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
       count++;
     }
@@ -322,7 +344,36 @@
       if(chunked) for(const cell of changedChunks.values())window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
       else window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,Math.floor(x),Math.floor(z));
     }
+    if(count)persistWorld(); // One batched write, never one localStorage write per destroyed tile.
     return count;
+  }
+  function restoreSceneHistory(mapId,rec) {
+    const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId);
+    if(!savedTerrain?.size&&!savedPiles?.size)return;
+    const g=grid(),types=deps()?.TileType||{},chunks=new Map();
+    for(const [tileKey,info] of savedTerrain||[]) {
+      const [col,row]=tileKey.split(',').map(Number),tile=g?.[row]?.[col];
+      if(!tile)continue;
+      const previousType=tile.type;
+      tile.type=types.GRASS||'grass';
+      if(info.kind==='rock'){
+        const mesh=rec.scene.getObjectByProperty?.('name','cave_ore_'+col+'_'+row);
+        mesh?.parent?.remove(mesh);
+        deps()?.removeZoneMineableRockVisual?.(mapId,col,row);
+      }else {
+        window.ZoneRegrowth?.updateClearedZoneVegetationVisual?.(mapId,col,row,previousType);
+        deps()?.removeZoneVegetationVisual?.(mapId,col,row);
+      }
+      delete tile.rockKind;delete tile.oreKind;delete tile.oreKey;delete tile.caveSeparator;
+      chunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
+    }
+    for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
+      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey);
+    if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
+      if(window.WildernessChunks)for(const cell of chunks.values())
+        window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
+      else window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId);
+    }
   }
   function applyBlast(mapId,x,z) {
     const d=deps(),t=tileSize(),players=d?.player,targets=[];
