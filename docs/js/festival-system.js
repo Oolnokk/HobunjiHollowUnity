@@ -208,6 +208,10 @@
     return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);
   }
 
+  function socialOptionsFor(walker) {
+    return festival()?.id==='gorkunash' && festivalHours() && isRomanceable(walker?.rec) && walker.area==='town'
+      ? [{id:'dance-together',icon:'💃',label:'Ask to dance',run:()=>askFestivalDance(walker)}] : [];
+  }
   function registerActivity(id, handler) { if (id && typeof handler === 'function') { handlers.set(id, handler); return true; } return false; }
   function rawMap() { return deps?.getTownMap?.() || null; }
   function layout() {
@@ -243,8 +247,7 @@
     if (!walker?.rec?.id || deps?.isBlocked?.()) return null;
     // Reuse the existing secondary NPC festival action route; game.js already
     // dispatches festival_npc_gift to receiveNpcReward on every input platform.
-    if(festival()?.id==='gorkunash'&&festivalHours()&&isRomanceable(walker.rec))
-      return {icon:'💃',label:'Ask to dance',action:'festival_npc_gift',style:'secondary',allowed:true};
+    if(festival()?.id==='gorkunash')return null;
     const id = walker.rec.id; // Same annual claims as the gift table, so the two routes cannot duplicate rewards.
     if (festival()?.id === 'mountaindawn' && favorHearts(id) >= 3 && !claimed(`gift:${id}`)) return { icon: '🎁', label: 'Receive Mountaindawn gift', action: 'festival_npc_gift', style: 'secondary', allowed: true };
     if (festival()?.id === 'hachutukara' && residents().some(rec => rec.id === id) && !claimed(`sweet:${id}`)) return { icon: '🍬', label: 'Ask for sweets', action: 'festival_npc_sweet', style: 'secondary', allowed: true };
@@ -327,28 +330,57 @@
     window.FestivalProps?.refreshFeast?.();
     window.FestivalUI?.close?.();
   }
+  const gatheringAssignments = new Map(); // Stable per-shift destinations avoid aliasing occupied stations or flickering between locales.
   function npcTarget(rec) {
-    if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return null;
-    if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return null;
-    const stations=layout()?.npcStations||[];
-    const index=residents().findIndex(npc=>npc.id===rec.id);
-    if(index<0)return null;
+    const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
+    if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return release();
+    if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return release();
+    const stations=layout()?.npcStations||[], index=residents().findIndex(npc=>npc.id===rec.id);
+    if(index<0)return release();
+    const hour=Number(window.CalendarSystem.getHour())||0, shift=hour>=15?hour-15:hour+9;
+    const scope=`${eventKey()}:${day()}:${Math.floor(shift/2)}`; // Existing two-hour preferences remain deterministic.
+    const preferred=isRomanceable(rec)?['dance','dining','dance','dining'][(Math.floor(shift/2)+index)%4]
+      :((index%5===0&&shift%3===1)?'dance':'dining');
+    const kinds=isRomanceable(rec)?[preferred,preferred==='dining'?'dance':'dining']:[preferred];
+    const taken=station=>{
+      const target=window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
+      if(target?.pose==='sit' && window.FurnitureTableSystem?.isSeatTaken?.(target.area||'town',target,rec.id))return true;
+      for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope && assignment.stationId===station.id)return true;
+      return (deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id && w.currentScheduleTarget?.stationId===station.id);
+    };
     let selected=null;
     if(festival()?.id==='gorkunash'){
-      const hour=Number(window.CalendarSystem.getHour())||0;
-      const shift=(hour>=15?hour-15:hour+9);
       const leader=shift<5?'foroji_funji':'kaboku_kunji';
       if(rec.id===leader)selected=stations.find(st=>st.festivalNpcId===rec.id&&st.festivalLocaleKind==='bandstand');
-      const type=isRomanceable(rec)?['dance','dining','dance','dining'][(Math.floor(shift/2)+index)%4]
-        :((index%5===0&&shift%3===1)?'dance':'dining');
-      const candidates=stations.filter(st=>st.festivalLocaleKind===type&&st.festivalRole!=='musician');
-      if(!selected&&candidates.length)selected=candidates[(index*7+Math.floor(shift/2))%candidates.length];
-    } else {
+      if(!selected)for(const kind of kinds){
+        const candidates=stations.filter(st=>st.festivalLocaleKind===kind&&st.festivalRole!=='musician');
+        const previous=gatheringAssignments.get(rec.id);
+        if(previous?.scope===scope)selected=candidates.find(st=>st.id===previous.stationId&&!taken(st));
+        const start=(index*7+Math.floor(shift/2))%Math.max(1,candidates.length);
+        for(let n=0;!selected&&n<candidates.length;n++){const candidate=candidates[(start+n)%candidates.length];if(!taken(candidate))selected=candidate;}
+        if(selected)break;
+      }
+    }else{
       const choices=stations.filter(st=>st.festivalRole==='guest');
-      selected=stations.find(st=>st.festivalNpcId===rec.id)||choices[index%Math.max(1,choices.length)];
+      selected=stations.find(st=>st.festivalNpcId===rec.id&&!taken(st))||choices.find((st,i)=>i>=index%Math.max(1,choices.length)&&!taken(st))||choices.find(st=>!taken(st));
     }
     const target=selected&&window.NpcScheduling?.resolveNpcStationTarget?.(selected.id);
-    return target?{...target,activity:festival().name}:null;
+    if(target){
+      gatheringAssignments.set(rec.id,{scope,stationId:selected.id});
+      window.FurnitureTableSystem?.setSeatTarget?.(rec.id,target);
+      return {...target,stationId:target.stationId||selected.id,activity:festival().name};
+    }
+    release();
+    const walker=(deps.getWalkers?.()||[]).find(w=>w.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
+    const x=walker?.area==='town'?walker.root.position.x:(anchor?.col||30)+.5, z=walker?.area==='town'?walker.root.position.z:(anchor?.row||25)+.5;
+    for(let radius=0;radius<=4;radius++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
+      const c=Math.floor(x)+dx,r=Math.floor(z)+dz;
+      if(deps.canStandAt?.('town',c,r)===false)continue;
+      if((deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id&&w.area==='town'&&Math.hypot(w.root.position.x-c-.5,w.root.position.z-r-.5)<.6))continue;
+      return {area:'town',c,r,pose:'stand',activity:festival().name}; // No preferred locale has room; wait on clear ground instead of taking an occupied chair.
+    }
+    return {area:walker?.area||'town',c:x-.5,r:z-.5,pose:'stand',activity:festival().name};
   }
   function cancelDance() {
     if(dance?.targetNpcId)window.FestivalWheelDanceRuntime?.stop?.('festival-ended');
@@ -565,6 +597,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    festivalHours, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();

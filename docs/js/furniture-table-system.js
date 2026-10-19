@@ -9,7 +9,7 @@
   const point = { x: 0, y: 0, z: 0 }; // Non-Three fallback used by data-only editor/tests.
   function areaId(area) { return ['map_hobunji_town', 'hobunji_main_town'].includes(area) ? 'town' : area; }
   function init(value) { deps = value; }
-  function clearArea(area) { areas.delete(areaId(area)); }
+  function clearArea(area) { for(const entry of entries(area).values())window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`); areas.delete(areaId(area)); focusStamp=null; }
   function registerPlacement(area, record, root, def = {}) {
     area = areaId(area);
     let entries = areas.get(area); // One registry per map, so identical table ids never cross interiors.
@@ -18,6 +18,14 @@
     for (const [key, entry] of entries) if (entry.root === root || (entry.record.col === record.col && entry.record.row === record.row && entry.record.key === record.key)) entries.delete(key);
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
     entries.set(id, entry);
+    focusStamp = null; // Placement changes invalidate any cached interaction target.
+    entry.height = def.sit ? 1 : .8;
+    window.AuthoredFurniture?.load?.(record.key)?.then(data => {
+      if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
+      const bounds = new window.THREE.Box3().setFromObject(root); // One asset-readiness measurement, never scene traversal during interaction queries.
+      if (!bounds.isEmpty()) entry.height=(bounds.max.y-bounds.min.y)/Math.max(.001,Math.abs(root.scale?.y||1));
+      if(record.walkableElevation)window.HobunjiWalkableElevation?.registerObject?.(root,{id:`placed-furniture:${area}:${id}`,kind:'placed-furniture',area,sourceId:id,sourceKey:record.key}); // Reuses the inn-stage/porch support registry for both player and NPC elevation.
+    });
     if (Array.isArray(record.surfaceItems) && root?.userData) {
       root.userData.instanceSurfacePlacements = record.surfaceItems;
       window.AuthoredFurniture?.load?.(record.key)?.then(data => {
@@ -93,6 +101,7 @@
     return (layer?.children || []).filter(holder => holder.userData?.surfacePlacement?.service);
   }
   function aimedService(area, aim = deps?.getAim?.()) {
+    if (deps?.focusCandidates) { const target=focusedTarget(area); return target?.kind==='service' ? target : null; }
     if (!aim || !Number.isFinite(aim.c) || !Number.isFinite(aim.r)) return null;
     let best = null, distance = .65; // Exact rendered attachment anchors replace hardcoded six-pot coordinate offsets.
     for (const entry of entries(area).values()) {
@@ -108,7 +117,23 @@
     }
     return best;
   }
+  function serviceObject(target) {
+    return { getButtons: () => (target.provider.buttons?.(target) || []).map(button => ({ ...button, worldInteraction:true, promptRoot:target.holder })),
+      onAction: action => target.provider.onAction?.(action,target) || {ok:false} };
+  }
+  function chairObject(area, entry) {
+    const interactable=deps?.makeSitInteractable?.(entry.record.key,entry.record.col,entry.record.row,entry.def.fw||1,entry.def.fd||1,entry.record.rotY ?? entry.record.rotYDeg ?? 0);
+    if(!interactable)return null;
+    const occupied=()=>isSeatTaken(area,{...entry.record,seatIndex:0},'player'); // Recheck reservations on press as well as prompt generation.
+    return {...interactable, getButtons:()=>occupied() ? [{icon:'🪑',label:'Occupied',action:'obj_sit',allowed:false,showWhenUnavailable:true,worldInteraction:true,promptRoot:entry.root}]
+      : interactable.getButtons().map(button=>({...button,worldInteraction:true,promptRoot:entry.root})),
+      onAction:action=>occupied()?{ok:false,message:'Someone has already taken this seat.'}:interactable.onAction(action)};
+  }
   function objectAt(area, col, row) {
+    if(deps?.focusCandidates) {
+      const target=focusedTarget(area); // Directional selection replaces the ground-tile fallback whenever the game's ray owner is available.
+      return target?.kind==='chair' ? chairObject(area,target.entry) : target?.kind==='service' ? serviceObject(target) : null;
+    }
     const target = aimedService(area); // Service objects use the same obj_* dispatch as every other world interaction.
     if (target && Math.floor(deps.getAim().c) === col && Math.floor(deps.getAim().r) === row) {
       return { getButtons: () => (target.provider.buttons?.(target) || []).map(button => ({ ...button, worldInteraction: true, promptRoot: target.holder })),
@@ -122,11 +147,7 @@
       const yaw = matrix ? Math.atan2(matrix[8], matrix[10]) : (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180, dx = col + .5 - entry.root.position.x, dz = row + .5 - entry.root.position.z;
       const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw), lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
       if (Math.abs(lx) > (entry.def.fw || 1) * (entry.root.scale?.x || 1) / 2 || Math.abs(lz) > (entry.def.fd || 1) * (entry.root.scale?.z || 1) / 2) continue;
-      const interactable = deps?.makeSitInteractable?.(entry.record.key, x, z, entry.def.fw || 1, entry.def.fd || 1, entry.record.rotY ?? entry.record.rotYDeg ?? 0); // The canonical Sit action still owns transitions and controls.
-      if (!interactable) return null;
-      const occupied = () => { const table=tableForSeat(area, entry.record); return table && members(area, table.id).some(member=>member.chairId===entry.id && member.id!=='player'); }; // Revalidated on press, not merely when the button was shown.
-      return { ...interactable, getButtons: () => occupied() ? [{icon:'🪑',label:'Occupied',action:'obj_sit',style:'primary',allowed:false}] : interactable.getButtons(),
-        onAction: action => occupied() ? {ok:false,message:'Someone is already sitting there.'} : interactable.onAction(action) };
+      return chairObject(area, entry);
     }
     return null;
   }
@@ -136,9 +157,136 @@
       if (provider) for (const holder of surfaceTargets(entry)) provider.decorate?.(holder, holder.userData.surfacePlacement);
     }
   }
-  function snapshot(area = deps?.getArea?.()) {
-    return { latestChange: 'Direct outdoor seating, explicit chair/table membership, and authored surface furniture services.',
-      area: areaId(area), placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
+  function seatKey(area, seat) {
+    const chair = findSeat(area, seat); // Canonical physical seat identity also unifies station aliases.
+    const id = chair?.id || seat?.furnitureId || `${seat?.col ?? seat?.c},${seat?.row ?? seat?.r}`;
+    return `${areaId(area)}:${id}:${seat?.seatIndex || 0}`;
   }
-  window.FurnitureTableSystem = { init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot };
+  function seatNow() { return typeof performance !== 'undefined' ? performance.now() : Date.now(); }
+  const seatClaims = new Map(); // Short leases cover same-pass planner queries before walkers publish their chosen targets.
+  function setSeatTarget(id, target) {
+    if (!id) return;
+    if (target?.pose !== 'sit') { seatClaims.delete(id); return; }
+    seatClaims.set(id, { key:seatKey(target.area, target), target, until:seatNow()+5000 });
+  }
+  function isSeatTaken(area, seat, exceptId = '') {
+    const key = seatKey(area, seat), now = seatNow(); // Reservations count while approaching, not just after the sitting pose starts.
+    const player = deps?.getPlayerSeat?.();
+    if (exceptId !== 'player' && player && areaId(deps.getArea()) === areaId(area) && seatKey(area, player) === key) return true;
+    for (const [id, claim] of seatClaims) {
+      if (claim.until < now) { seatClaims.delete(id); continue; }
+      if (id !== exceptId && claim.key === key) return true;
+    }
+    for (const walker of deps?.getWalkers?.() || []) {
+      const target = walker.currentScheduleTarget; // Live targets retain reservations throughout a long walk or pause.
+      if (walker.rec?.id === exceptId || walker.rec?.dead || walker.rec?.deceased || target?.pose !== 'sit') continue;
+      if (seatKey(target.area || walker.area, target) === key) return true;
+    }
+    return false;
+  }
+  function companionSeat(area, npcId) {
+    const player=deps?.getPlayerSeat?.(); // Follower/date dining uses the player's actual assigned table, never nearest-table guessing.
+    if(player?.phase!=='active' || areaId(deps.getArea())!==areaId(area))return null;
+    const table=tableForSeat(area,player);
+    if(!table)return null;
+    const previous=seatClaims.get(npcId)?.target; // Keep a companion in its own reserved chair when another table seat becomes free.
+    if(previous && areaId(previous.area)===areaId(area) && tableForSeat(area,previous)?.id===table.id && !isSeatTaken(area,previous,npcId))return previous;
+    for(const entry of entries(area).values()) {
+      if(!entry.def.sit || !entry.root?.parent || entry.record.tableId!==table.id)continue;
+      const count=window.AuthoredFurniture?.seatCount?.(window.AuthoredFurniture.peek(entry.record.key)) || 1;
+      for(let seatIndex=0;seatIndex<count;seatIndex++) {
+        const target={area:areaId(area),furnitureId:entry.id,furnitureKey:entry.record.key,c:entry.record.col,r:entry.record.row,seatIndex,rotY:entry.record.rotY ?? entry.record.rotYDeg ?? 0,pose:'sit'};
+        if(isSeatTaken(area,target,npcId))continue;
+        setSeatTarget(npcId,target);return target;
+      }
+    }
+    return null;
+  }
+  function placementFrame(entry) {
+    const stamp=deps?.frameId?.(); // Movement probes share one transformed footprint per furniture instance per frame.
+    if(stamp!=null && entry.frameStamp===stamp)return entry.frame;
+    entry.frameStamp=stamp;
+    const root = entry.root; // Live matrices carry editor offsets, scale and grid rotation into every footprint query.
+    root.updateWorldMatrix?.(true, false);
+    const matrix = root.matrixWorld?.elements;
+    const yaw = matrix ? Math.atan2(matrix[8], matrix[10]) : (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0)*Math.PI/180;
+    return entry.frame = { x:matrix?.[12] ?? root.position.x, z:matrix?.[14] ?? root.position.z,
+      y:matrix?.[13] ?? root.position.y ?? 0, cos:Math.cos(yaw), sin:Math.sin(yaw),
+      w:(entry.def.fw || 1)*Math.abs(root.scale?.x || 1)/2, d:(entry.def.fd || 1)*Math.abs(root.scale?.z || 1)/2 };
+  }
+  function solid(entry) {
+    return !entry.def.walkable && !entry.def.wallOrnament && !entry.record.wallPlacement && !entry.record.nonColliding && !entry.record.walkableElevation
+      && !window.InteriorFurnitureGrid?.isDynamicMechanism?.(entry.record) && !/^(?:woodenDoor|door)$/.test(entry.record.key); // Dynamic doors/mechanisms retain their existing collision authority.
+  }
+  function blocksBox(area, x, z, half = 0, worldY = null) {
+    for (const entry of entries(area).values()) {
+      if (!entry.root?.parent || !solid(entry)) continue;
+      const f = placementFrame(entry), dx=x-f.x, dz=z-f.z; // OBB/AABB separating axes preserve rotated narrow furniture and whole-body clearance.
+      if (Number.isFinite(worldY) && (worldY < f.y || worldY > f.y+(entry.height || 1))) continue;
+      const c=Math.abs(f.cos), s=Math.abs(f.sin), margin=half*(c+s);
+      if (Math.abs(dx*f.cos-dz*f.sin) < f.w+margin && Math.abs(dx*f.sin+dz*f.cos) < f.d+margin
+        && Math.abs(dx) < f.w*c+f.d*s+half && Math.abs(dz) < f.w*s+f.d*c+half) return true;
+    }
+    return false;
+  }
+  function grassFootprintKeys(area) {
+    const keys = new Set(); // Computed only on placement/rebuild; grass filtering restores from its existing immutable source matrices.
+    for (const entry of entries(area).values()) {
+      if (!entry.root?.parent || entry.record.clearGrass === false) continue;
+      const f=placementFrame(entry), locale=entry.record.locale || entry.record.festivalLocale; // Locale clear space may exceed the root furniture's visible footprint.
+      const w=Math.max(f.w, (Number(locale?.width)||0)/2), d=Math.max(f.d,(Number(locale?.depth)||0)/2);
+      const ex=Math.abs(f.cos)*w+Math.abs(f.sin)*d, ez=Math.abs(f.sin)*w+Math.abs(f.cos)*d;
+      for(let r=Math.floor(f.z-ez);r<Math.ceil(f.z+ez);r++)for(let c=Math.floor(f.x-ex);c<Math.ceil(f.x+ex);c++) {
+        const dx=c+.5-f.x, dz=r+.5-f.z;
+        if(Math.abs(dx*f.cos-dz*f.sin)<=w+.001 && Math.abs(dx*f.sin+dz*f.cos)<=d+.001)keys.add(`${c},${r}`);
+      }
+    }
+    return keys;
+  }
+  const focusCandidates = []; // Reused candidate buffer; the existing ranged targeting owner supplies the actual camera ray/slab intersection.
+  let focusStamp = null, focusArea = null, focused = null; // One consistent NPC/chair/service winner for prompt and press in the same frame.
+  function focusedTarget(area) {
+    if (!deps?.focusCandidates) return null;
+    const stamp=deps.frameId?.();
+    if (stamp != null && stamp === focusStamp && area === focusArea) return focused;
+    focusStamp=stamp;focusArea=area;focusCandidates.length=0;
+    const player=deps.getPlayerPosition(); // Interaction reach is measured from the player, never from the trailing camera.
+    for(const entry of entries(area).values()) {
+      if(!entry.root?.parent)continue;
+      const f=placementFrame(entry);
+      if(Math.hypot(f.x-player.x,f.z-player.z)>3+Math.max(f.w,f.d))continue;
+      if(entry.def.sit || solid(entry)) {
+        const ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d;
+        const box=entry.focusBox ||= {min:{},max:{}}; // Plain cached bounds avoid constructing Three.js objects during frame work.
+        Object.assign(box.min,{x:f.x-ex,y:f.y,z:f.z-ez});Object.assign(box.max,{x:f.x+ex,y:f.y+(entry.height||1)*Math.abs(entry.root.scale?.y||1),z:f.z+ez});
+        focusCandidates.push({kind:entry.def.sit?'chair':'blocker',entry,box});
+      }
+      const provider=services.get(entry.record.serviceId);
+      if(!provider || provider.enabled?.()===false)continue;
+      for(const holder of surfaceTargets(entry)) {
+        const p=holder.userData.targetScratch ||= new window.THREE.Vector3(); // Attachment transforms follow a moved/rotated/scaled table.
+        holder.getWorldPosition(p);
+        const box=holder.userData.focusBox ||= {min:{},max:{}};
+        Object.assign(box.min,{x:p.x-.23,y:p.y,z:p.z-.23});Object.assign(box.max,{x:p.x+.23,y:p.y+.35,z:p.z+.23});
+        focusCandidates.push({kind:'service',entry,holder,provider,placement:holder.userData.surfacePlacement,box});
+      }
+    }
+    const addNpc=walker=>{
+      if(!walker || walker.combatTutorialSuspended || walker.rec?.dead || walker.rec?.deceased || walker.root?.visible===false || areaId(walker.area)!==areaId(area))return;
+      const p=walker.root?.position;
+      if(!p || Math.hypot(p.x-player.x,p.z-player.z)>(deps.npcReach?.() || 2))return;
+      const hitbox=deps.actorHitbox?.(walker); // Canonical portrait dimensions include species scale and seated body placement.
+      if(hitbox)focusCandidates.push({kind:'npc',walker,hitbox});
+    };
+    for(const walker of deps.getWalkers?.() || [])addNpc(walker);
+    addNpc(deps.extraWalker?.());
+    focused=deps.focusCandidates(focusCandidates, 40)?.candidate || null;
+    return focused;
+  }
+
+  function snapshot(area = deps?.getArea?.()) {
+    return { latestChange: 'Exclusive seat reservations, camera-ray NPC/chair targeting, shared furniture collision and locale grass clearing.',
+      area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
+  }
+  window.FurnitureTableSystem = { init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();

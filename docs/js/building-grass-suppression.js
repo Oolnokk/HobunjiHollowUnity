@@ -98,6 +98,7 @@
       const row = Math.round(Number(building?.gridZ) || 0);
       for (let r = row; r < row + depth; r++) for (let c = col; c < col + width; c++) keys.add(keyOf(c, r));
     }
+    for (const key of window.FurnitureTableSystem?.grassFootprintKeys?.(mapData?.id) || []) keys.add(key); // Furniture/locale footprints use the same reversible grass compaction as buildings.
     return keys;
   }
 
@@ -320,6 +321,7 @@
     filterObject,
     filterScene,
     refreshTown: _refreshTown,
+    refreshArea: (area,scene,mapData) => filterScene(scene,authoredBuildingFootprintKeys({...mapData,id:area}),'hobunjiZoneBuildingGrass'),
   };
   window.BuildingGrassSuppression = api;
 

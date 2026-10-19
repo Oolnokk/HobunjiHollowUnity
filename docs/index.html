@@ -229,7 +229,7 @@
   <script src="js/interior-door-tiles.js?v=20261018h0336068"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=organic-tables-1"></script>
+  <script src="js/furniture-table-system.js?v=20261019h74b8be3"></script>
   <script src="js/authored-furniture-runtime.js?v=20261019h0a80a02"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261016h86b86fc"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
@@ -436,7 +436,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261017ha4ab793&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261019h2073bd9&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -612,7 +612,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261019h7514958"></script>
+  <script src="js/town-zone-buildings.js?v=20261019h9baca52"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -2506,7 +2506,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261019h00d9bdc"></script>
+  <script src="js/pixel-probe.js?v=20261019hcab80fd"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2524,15 +2524,15 @@
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
-  <script src="js/festival-props.js?v=20261019hed7cdf6"></script>
+  <script src="js/festival-props.js?v=20261019had6e4fb"></script>
   <script src="js/festival-wheel-dance-runtime.js?v=20261018wheel1"></script>
-  <script src="js/festival-system.js?v=20261019h9192d31"></script>
+  <script src="js/festival-system.js?v=20261019hbce6c51"></script>
   <script src="js/festival-ui.js?v=20261018hgorkunash3"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261015h567d2ce"></script>
+  <script src="js/world-popup-text.js?v=20261019h0be3acc"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2558,7 +2558,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20261015h0c17e84"></script>
+  <script src="js/music-minigame.js?v=20261019h667d391"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2568,7 +2568,7 @@
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
   <script src="js/npc-agenda.js?v=20261018a"></script>
-  <script src="js/npc-activities.js?v=20260902d"></script>
+  <script src="js/npc-activities.js?v=20261019h7912e56"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
   <script src="js/npc-activity-planner.js?v=20261018b"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
@@ -2666,13 +2666,14 @@
   <script src="config/romance-config.js?v=20261013h88e81c7"></script>
   <script src="js/romance-family.js?v=20261007romance1"></script>
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
-  <script src="js/romance-system.js?v=20261013h23504d0"></script>
-  <script src="js/npc-command-wheel.js?v=20261008h02bf686"></script>
+  <script src="js/npc-following.js?v=20261019follow1"></script>
+  <script src="js/romance-system.js?v=20261019h5dc953a"></script>
+  <script src="js/npc-command-wheel.js?v=20261019h35d79d7"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261019h86539c8"></script>
+  <script src="game.js?v=20261019h12ba0e6"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261018worldstory3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

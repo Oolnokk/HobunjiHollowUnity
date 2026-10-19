@@ -238,6 +238,7 @@
       const sfxSource = window.Music?.registerFurnitureSfxSource('map_hobunji_town', f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
+    window.BuildingGrassSuppression?.refreshTown?.(); // Registered furniture and locale roots now contribute their full clearing footprints.
     deps.debugLog(`spawnTownDecorFurniture: built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
 
@@ -596,6 +597,7 @@
       const sfxSource = window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
+    window.BuildingGrassSuppression?.refreshArea?.(mapId, scene, zoneData);
     deps.debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
 

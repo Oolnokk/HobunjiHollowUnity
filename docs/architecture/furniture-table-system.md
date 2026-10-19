@@ -31,3 +31,15 @@ Content can register `registerService(id, {enabled, buttons, onAction, decorate}
 `node scripts/run-tests.js furniture-table-system furniture-surface-nesting furniture-vessel-runtime gorkunash-locales festivals`
 
 These execute map isolation, explicit assignments, actual occupants, direct object services, nested geometry construction, canonical builder use, recursion rejection, canceled loads, held-food contributions and ordinary wheel participation away from marked locales. Browser validation also renders the real serving assets and checks their tabletop height and parent transforms.
+
+## Reservations, world targets and shared gathering behavior
+
+`isSeatTaken(area, seat, exceptId)` checks the player, approaching NPCs and same-pass planner leases by physical chair plus seat index. Both generic activity planning and gathering selection consult it. Gathering choices stay stable for their shift, try another preferred locale when full, and otherwise choose clear standing ground. Live targets renew the reservation before walking. Occupancy is independent of table assignment.
+
+NPCs, chairs, serving objects and solid furniture enter the existing `RangedWeapons.focusCandidates` camera-ray selector together. Only candidates in player reach are considered; an off-ray nearby NPC cannot win a chair prompt. The chosen target is shared by display and press, and disabled occupied-chair prompts remain visible. Movement probes use the same placed furniture transforms, including rotation and scale; doors and mechanisms keep their existing dynamic owners.
+
+Grass suppression merges these footprints with the existing building filter and restores original instances when a locale moves or disappears. The bandstand platform is a normal shortened/stretched `tableLong` child with `walkableElevation` enabled. It registers with the same geometry-derived support registry as the inn stage and porches.
+
+NPC commands remain on **hold Talk**, using the existing command wheel and input-claim owner. Its floating list adds **Hold [current bound input] More**. Ordinary Follow/Wait/Dismiss and festival dance invitations join the existing romance commands. `npc-following.js` contains the movement shared by ordinary companions and dates, including reservation of a separate chair at the seated player's explicitly assigned table. The general social wheel retains solo dance and instrument options.
+
+NPC-only hidden music frames disable physical input before audio initialization, preserving the generated performance when the player uses overworld controls. Player music sessions keep their existing input and backup behavior. Furniture, following and NPC performance diagnostics are included in the mobile Pixel Probe report.

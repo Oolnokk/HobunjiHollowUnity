@@ -558,21 +558,7 @@
     const date = state.date;
     if (!date || rec.id !== date.npcId) return null;
     if (date.mode === 'wait' && date.waitSpot) return { ...date.waitSpot, activity: 'waiting for you' };
-    const walker = findWalker(rec.id);
-    const player = playerTilePos();
-    const area = currentNpcArea();
-    if (!player || !area || !deps?.canHostNpc?.(area)) return walker ? { area: walker.area, c: Math.floor(walker.root.position.x), r: Math.floor(walker.root.position.z), activity: 'waiting for you' } : null;
-    const pc = Math.floor(player.x), pr = Math.floor(player.z);
-    if (!walker || walker.area !== area) return { area, c: pc, r: pr, activity: 'following you' };
-    const pos = walker.root.position;
-    const dx = pos.x - player.x, dz = pos.z - player.z;
-    const dist = Math.hypot(dx, dz);
-    const follow = num(cfg().followDistanceTiles, 1.7);
-    if (dist <= follow + 0.45) return { area, c: Math.floor(pos.x), r: Math.floor(pos.z), activity: 'following you' };
-    const tx = player.x + dx / dist * follow, tz = player.z + dz / dist * follow;
-    const tc = Math.floor(tx), tr = Math.floor(tz);
-    const walkable = window.NpcPathfinding?.isNpcTileWalkable?.(area, tc, tr) !== false;
-    return walkable ? { area, c: tc, r: tr, activity: 'following you' } : { area, c: pc, r: pr, activity: 'following you' };
+    return window.NpcFollowing.target(rec,date,num(cfg().followDistanceTiles,1.7));
   }
 
   function scheduleOverride(rec) {
@@ -649,6 +635,7 @@
   // ── Wiring ────────────────────────────────────────────────────────────
   function init(injected) {
     deps = injected || {};
+    window.NpcFollowing?.init({...deps,findWalker}); // Dates and ordinary companions share one follow/wait/seat resolver.
     window.DialogueContent?.registerActionHandler?.('romance', handleDialogueAction);
     window.NpcScheduling?.registerTargetOverride?.('romance', scheduleOverride);
     window.HobunjiActivityEvents?.on?.(onActivity);

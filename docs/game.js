@@ -3164,6 +3164,7 @@
 
       function furnitureBlocksMovementAt(area, x, z) {
         if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -4170,6 +4171,7 @@
 
       function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
+        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, {col,row,seatIndex}, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
         const seat = window.FurnitureTableSystem?.seatTransform(currentArea, { furnitureKey, col, row, seatIndex })
           || resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
@@ -11423,6 +11425,7 @@
         return {
           icon: cfg.icon || '💬',
           label: name ? `${cfg.label || 'Talk'}: ${name}` : (cfg.label || 'Talk'),
+          holdLabel: window.NpcCommandWheel?.hasOptions?.(nearbyNpcWalker) ? 'More' : '', // Floating list adds Hold <bound input> More without changing the ordinary Talk label.
           action: npcDialogueAction(),
           style: cfg.style || 'primary',
           allowed: true,
@@ -12290,6 +12293,7 @@
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
             const target = resolveNpcScheduleTarget(this.rec);
+            window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
@@ -12690,7 +12694,12 @@
         getArea: () => currentArea,
         getWalkers: () => npcWalkers,
         getPlayerSeat: () => sitInteraction,
-        getPlayerPosition: () => playerMesh.position,
+        getPlayerPosition: () => ({x:player.x/TILE,z:player.y/TILE}),
+        focusCandidates: (candidates,range) => window.RangedWeapons?.focusCandidates?.(candidates,range), // Existing camera-ray authority selects NPCs, chairs and serving objects together.
+        actorHitbox: walker => window.RangedWeapons?.actorHitbox?.(walker),
+        frameId: () => window.RuntimeFrameScheduler?.frameId?.(),
+        npcReach: () => npcMovementConfig().interactionRadiusTiles ?? 2,
+        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) : null,
         getAim: () => { const aim = getReticleTile(); return { c:aim.probeX / TILE, r:aim.probeY / TILE }; },
         assignmentChanged: area => { if (area === 'farm' || area === 'interior') window.FarmEditor?.saveFarmLayout?.(); }, // Stable inventory chair/table links survive reloads.
         surfaceY: furnitureSurfaceYAtWorld,
@@ -12739,18 +12748,7 @@
           }
           _logGarankiDiagnostic(dt);
         }
-        let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
-        const px = player.x / TILE, pz = player.y / TILE;
-        for (const w of npcWalkers) {
-          if (w.combatTutorialSuspended || w.area !== currentArea) continue;
-          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
-          if (d < closestDist) { closestDist = d; closest = w; }
-        }
-        if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
-          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
-          if (hunter) closest = hunter;
-        }
-        nearbyNpcWalker = closest;
+        nearbyNpcWalker = window.FurnitureTableSystem?.focusedTarget(currentArea)?.walker || null; // A nearer off-ray villager cannot steal an aimed NPC or chair prompt.
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
         window.InteriorDoorTiles?.update(dt);
       }
@@ -17741,6 +17739,7 @@
         // than the mover cannot slip between two corner samples. worldY is
         // only passed by projectile sweeps, so shots can clear low props.
         if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
         const tileWorldY = Number.isFinite(worldY) ? worldY - radius / TILE : worldY; // Include the projectile underside when testing finite tile cover.
         return tileSpeedAt(wx - radius, wy - radius, tileWorldY) !== null
             && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
@@ -25631,7 +25630,7 @@
         });
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
-        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -29107,6 +29106,7 @@
         getArea: () => currentArea,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }),
         getAimPosition: () => { const aim = getReticleTile(); return {c:aim.probeX/TILE, r:aim.probeY/TILE}; }, // Fractional reticle probe selects one of the six nearby pots without a second targeter.
+        canStandAt: (area,c,r) => isNpcTileWalkable(area,c,r), // Full movement collision selects a clear standing spot if preferred gathering locales are full.
         getHeldMealChoice: () => { const key = (manualHeldItem?.kind === 'bagItem' ? manualHeldItem.key : null) || (heldMode === 'item' ? getActiveInventoryItem()?.key : null); return key ? { key } : null; }, // The normal held-quality ordering in CookingSystem preserves Pack Hold's selected star tier.
         socialPaused: () => paused || dialogueOpen || menuOpen || isPlayerInCombat(), // Wheel music/dancing is permitted; UI/combat pauses are not.
         getActiveItemKey: () => getActiveInventoryItem()?.key || '', // Used only to cancel temporary festival bowls when the selection wheel changes.

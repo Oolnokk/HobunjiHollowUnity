@@ -85,6 +85,7 @@ run('docs/config/romance-config.js');
 run('docs/js/npc-scheduling.js');
 run('docs/js/npc-social-relationship-bridge-v2.js');
 run('docs/js/romance-family.js');
+run('docs/js/npc-following.js');
 run('docs/js/romance-system.js');
 run('docs/js/npc-command-wheel.js');
 
@@ -321,7 +322,10 @@ W.NpcCommandWheel.commit();
 assert.equal(W.NpcCommandWheel.isOpen(), false);
 nearby = plain;
 W.NpcCommandWheel._test.syncClaims();
-assert.equal(W.WorldActionInputClaims.claimFor('action1'), null, 'NPCs with no commands leave Action 1 unclaimed');
+assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel', 'friendly nonromance NPCs now offer ordinary Follow commands');
+assert(W.NpcCommandWheel.optionsFor(plain).some(option=>option.id==='follow'));
+nearby=null;W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1'),null,'looking away releases the Talk input claim');
 
 // ── Save round-trip ─────────────────────────────────────────────────────
 const saved = JSON.parse(JSON.stringify(W.RomanceSystem.serialize()));

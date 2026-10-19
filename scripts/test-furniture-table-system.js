@@ -35,6 +35,28 @@ assert.deepEqual(Array.from(tables.members('town','dining'),m=>m.id),['arrived']
 assert.equal(tables.assignTable('town','chair','missing'),false,'missing cross-map/stale table ids are rejected');
 assert.equal(tables.assignTable('town','chair',''),true,'unassigned chairs remain ordinary usable seats');
 assert.equal(tables.tableForSeat('town',{furnitureId:'chair'}),null);
+const savedPlayerSeat=playerSeat;playerSeat=null;walkers[1].currentScheduleTarget=null;
+// Physical reservations apply even without a table link or an arrived actor.
+tables.setSeatTarget('future',{area:'town',pose:'sit',furnitureId:'chair'});
+assert.equal(tables.isSeatTaken('town',{furnitureId:'chair'},'another'),true);
+assert.equal(tables.objectAt('town',1,0).getButtons()[0].allowed,false,'approaching NPC reserves an unassigned chair');
+assert.equal(tables.isSeatTaken('town',{furnitureId:'chair'},'future'),false,'the owner keeps its own reservation');
+tables.setSeatTarget('future',null);playerSeat=savedPlayerSeat;
+assert.equal(tables.isSeatTaken('town',{furnitureId:'chair'},'another'),true,'player still reserves the active seat');
+playerSeat=null;
+assert.equal(tables.isSeatTaken('town',{furnitureId:'chair'},'another'),false,'standing releases the player seat');
+tables.assignTable('town','chair','dining');playerSeat={phase:'active',furnitureId:'chair'};
+assert.equal(tables.companionSeat('town','future'),null,'arrived player and NPC occupy every seat at this table');
+walkers[0].currentScheduleTarget=null;
+const companion=tables.companionSeat('town','future');
+assert.equal(companion.furnitureId,'guest-chair','companion reserves a different actual chair at the player’s table');
+assert.equal(tables.companionSeat('town','third'),null,'two followers cannot claim the same last free seat');
+assert.equal(tables.blocksBox('town',.5,.5),true,'ordinary outdoor table blocks movement');
+assert.equal(tables.blocksBox('town',1,.5,.15),true,'whole-body footprint cannot squeeze between furniture centers');
+assert.equal(tables.blocksBox('farm',20,20),false,'collision is map-local and spatial');
+const free=root(12.5,.5);tables.registerPlacement('town',{id:'rug',key:'rug',col:12,row:0},free,{fw:1,fd:1,walkable:true});
+assert.equal(tables.blocksBox('town',12.5,.5),false,'walkable furniture remains walkable');
+assert(tables.grassFootprintKeys('town').has('12,0'),'walkable structures still clear grass');
 // A non-holiday provider proves surface services do not depend on FestivalSystem or a named locale.
 const counter=root(4,.5), holder={userData:{surfacePlacement:{service:{kind:'stock'}}},getWorldPosition(out){out.x=4;out.z=.5;}}; // Rendered attachment anchor, moved independently from any hardcoded world coordinates.
 counter.userData.authoredItemPlacements={children:[holder]};

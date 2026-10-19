@@ -46,7 +46,7 @@ assert(!layout.decor.some(prop=>prop.activity?.type==='welcome'),'no generic Gor
 assert.equal(layout.decor.filter(prop=>prop.festivalRoadArch).length,6,'town-wide overhead arches');
 assert(layout.decor.filter(prop=>prop.festivalRoadArch).every(prop=>prop.key==='festivalArch' && prop.festivalArchWidth>=4), 'road arches use real variable-width furniture, not rug proxies');
 assert.equal(layout.npcStations.filter(station=>station.festivalLocaleParent).length,31,'all generated locale destinations');
-assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,22,'all generated locale furnishings');
+assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,23,'all generated locale furnishings, including the elevated ordinary table platform');
 const originalRoot=town.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand');
 const originalMusic=layout.npcStations.find(station=>station.id==='gorkunash_bandstand:station:foroji');
 const moved=structuredClone(town);
@@ -198,5 +198,19 @@ musicPlaying=false;playSecond();
 assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'stopped wheel sessions cannot accrue points');
 wheelDancing=true;hour=1;playSecond();
 assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'festival end stops participation without blocking ordinary wheel actions');
+
+// A crowd larger than the dining capacity must reserve distinct chairs or stand.
+hour=17;realMs+=3000;
+for(let i=0;i<38;i++){const rec={id:'crowd-'+i,name:'Guest '+i,homeId:'inn'};residents.push(rec);walkers.push({rec,area:'town',root:{position:{x:20+i%5,z:30+Math.floor(i/5)}},currentScheduleTarget:null});}
+const seats=new Set();let standing=0;
+for(const rec of residents){
+ const next=target(rec.id),walker=walkers.find(w=>w.rec.id===rec.id);walker.currentScheduleTarget=next;
+ if(next?.pose==='sit'){
+  const key=furniture.seatKey(next.area||'town',next);
+  assert(!seats.has(key),'festival crowd never shares a physical seat: '+key);seats.add(key);
+ }else if(next?.pose==='stand')standing++;
+}
+assert(standing>0,'overflow guests without another preferred locale wait standing');
+assert(seats.size>0,'available dining chairs are still used');
 
 console.log('Gorkunash locale placement, schedule shifts, six-pot food, potluck, save, and heart conversion passed.');

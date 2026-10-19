@@ -29,13 +29,19 @@
   let overlay = null, wheelEl = null, centerEl = null;
   let lastCloseAt = 0;
   let lock = null;
-  const debug = { lastOpen: null, lastCommit: null, lastTap: null };
+  const debug = { latestChange:'Floating Talk list shows Hold <input> More; commands share follower/date movement and exclusive table seats.', lastOpen: null, lastCommit: null, lastTap: null };
 
   function nowMs() { return performance.now(); }
 
   // ── Claims ────────────────────────────────────────────────────────────
   function optionsFor(walker) {
-    try { return window.RomanceSystem?.commandOptionsFor?.(walker) || []; } catch (_) { return []; }
+    try {
+      const options=[...(window.NpcFollowing?.commandOptionsFor?.(walker)||[]),...(window.RomanceSystem?.commandOptionsFor?.(walker)||[]),...(window.FestivalSystem?.socialOptionsFor?.(walker)||[])];
+      if(!options.length)return [];
+      if(!options.some(option=>option.id==='talk'))options.unshift({id:'talk',icon:'💬',label:'Talk',run:()=>deps?.openNpcDialogue?.(walker)});
+      const seen=new Set(); // Existing romance Follow/Wait commands retain their behavior without duplicate sectors.
+      return options.filter(option=>{if(seen.has(option.id))return false;seen.add(option.id);return true;});
+    } catch (_) { return []; }
   }
   function eligibleWalker() {
     if (!deps) return null;
@@ -249,6 +255,8 @@
 
   const api = {
     init,
+    hasOptions: walker => !!walker && optionsFor(walker).length>0,
+    optionsFor,
     open: walker => openWheel(walker || claimedWalker, true),
     close: closeWheel,
     commit,

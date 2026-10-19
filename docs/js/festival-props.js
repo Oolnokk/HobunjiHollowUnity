@@ -47,8 +47,7 @@
     } else if (dressing === 'bandstand') {
       const planks = atlas.wood ? new THREE.MeshLambertMaterial({map:atlas.wood,color:'#ffffff'}) : wood;
       if (planks!==wood) group.userData.festivalMaterials.push(planks);
-      box(0,.28,0,3.8,.34,2.5,planks);
-      for(let i=-4;i<=4;i++) box(i*.42,.465,0,.025,.02,2.45,wood);
+      // The platform is ordinary shortened/stretched table furniture in the locale; only rail/post dressing lives here.
       for(const x of [-1.7,1.7])for(const z of [-1,1])box(x,.72,z,.11,.9,.11,planks);
       for(const x of [-1.2,0,1.2])box(x,.08,1.43,.9,.16,.42,planks);
       box(0,.88,-1.02,3.55,.17,.12,planks);

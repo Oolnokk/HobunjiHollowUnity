@@ -698,6 +698,10 @@
     }
     const tables = window.FurnitureTableSystem?.snapshot?.(); // On-demand, so table diagnostics never add per-frame serialization.
     if (tables) lines.push(`Furniture tables: ${JSON.stringify(tables)}`);
+    const following = window.NpcFollowing?.snapshot?.(); // On-demand diagnostics keep mobile reports useful without adding per-frame serialization.
+    if (following) lines.push(`NPC company: ${JSON.stringify(following)}`);
+    const music = window.MusicMinigame?.diagnostics?.();
+    if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);

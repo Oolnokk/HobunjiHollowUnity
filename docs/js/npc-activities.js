@@ -71,6 +71,7 @@
     const stationId = ctx.beat.destinationStationId;
     if (!stationId) return invalidContent('goToStation activity requires beat.destinationStationId');
     const station = deps.resolveNpcStationTarget(stationId);
+    if (station?.pose === 'sit' && isStationOccupied(station,ctx)) return waitingOrUnavailable(station.area, 'seat already reserved');
     if (station) return ready(stationTarget(station, ctx));
     return waitingOrUnavailable(ctx.beat.destinationArea, `station "${stationId}" not found`);
   }
@@ -81,6 +82,7 @@
   // reservation, just a bias toward not visibly stacking two NPCs on one
   // spot when other equally-valid spots are sitting empty.
   function isStationOccupied(station, ctx) {
+    if (station.pose === 'sit' && window.FurnitureTableSystem?.isSeatTaken(station.area,station,ctx.npcId)) return true;
     const stationId = station.stationId || station.id;
     const others = deps.listNpcWalkersInArea?.(station.area) || [];
     return others.some(w => w.rec?.id && w.rec.id !== ctx.npcId && w.currentScheduleTarget?.stationId === stationId);
@@ -109,6 +111,7 @@
     // work station is completely unaffected.
     const untaken = candidates.filter(c => !isStationOccupied(c, ctx));
     if (untaken.length) candidates = untaken;
+    else if (candidates.every(candidate=>candidate.pose==='sit')) return waitingOrUnavailable(area, 'all seats already reserved');
     candidates = [...candidates].sort((a, b) => String(a.stationId || a.id).localeCompare(String(b.stationId || b.id)));
     const chosen = pickDeterministic(candidates, ctx.npcId, ctx.now?.day, `${ctx.beat.id}:role`);
     return ready(stationTarget(chosen, ctx));
