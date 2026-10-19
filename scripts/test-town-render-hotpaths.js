@@ -10,6 +10,8 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const renderingContract = read('docs/architecture/held-object-water-depth-compositing.md');
+const readme = read('README.md');
 const terrainTileMaterials = read('docs/js/terrain-tile-materials.js'); // Guards grass-only material tags against seasonal texture overrides.
 const zoneGrassBillboards = read('docs/js/zone-grass-billboards.js'); // Verifies the authored path-brick group tag used by the held x-ray classifier.
 const borderTerrain = read('docs/js/border-terrain.js'); // Guards authored approach roads and fallback path ribbons outside ordinary paving chunks.
@@ -151,6 +153,28 @@ assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOve
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
+
+// This hard-won ordering contract must stay discoverable to subsequent
+// rendering refactors, not live solely in one PR conversation.
+const renderingContractPath = 'docs/architecture/held-object-water-depth-compositing.md';
+assert.ok(heldRender.includes(renderingContractPath),
+  'the actual renderer points at its flood-depth pass ordering contract');
+assert.ok(readme.includes(renderingContractPath),
+  'README links to the compositing contract for unrelated future features');
+for (const phrase of [
+  'groundDepthRestoreAt < tintAt < coverDepthAt',
+  'heldDrawAt < groundDepthRestoreAt',
+  'BEFORE',
+  'farm_flood_mesh',
+  'merged_textured_water_material',
+  'Painterly',
+  'Pixel Probe',
+  'depthWrite: false',
+  'colorWrite: false',
+]) {
+  assert.ok(renderingContract.includes(phrase),
+    'compositor documentation retains critical regression explanation: ' + phrase);
+}
 
 const depthClearAt = heldRender.indexOf('renderer.clearDepth();');
 const stencilAt = heldRender.indexOf('const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(overlayMeshes) : null;');
