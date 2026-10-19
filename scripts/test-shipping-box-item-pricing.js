@@ -24,9 +24,16 @@ const ITEM_DEFS = {
   garWolfMeatSmoked: { label: 'Smoked Gar-wolf Meat', cat: 'processed', sellPrice: 18 },
   needlegrainSeeds: { label: 'Seeds', cat: 'seed', sellPrice: 0 },
   kurrayaLike: { label: 'No price' },
+  masteryTablet: { label: 'Mastery Tablet', cat: 'material', sellPrice: 140 },
+  techniqueScroll: { label: 'Technique Scroll', cat: 'material', sellPrice: 90 },
+  brewedPotion: { label: 'Brewed Potion', cat: 'processed', sellPrice: 24 },
+  boundRelic: { label: 'Bound Relic', cat: 'material', sellPrice: 120 },
+  questReward: { label: 'Unique quest station', cat: 'furniture', sellPrice: 0 },
 };
 const panel = window.ShippingPanel;
-panel.init({ ITEM_DEFS, BASE_PRICES, inventory: {} });
+const inventory = { masteryTablet: 2, techniqueScroll: 1, brewedPotion: 3, boundRelic: 1, questReward: 1, gold: 0 }; // Tests actual merchant transfers without a browser UI.
+let savedSales = 0; // Counts merchant persistence calls after a valid sale.
+panel.init({ ITEM_DEFS, BASE_PRICES, inventory, clampInventoryStack() {}, buildInventoryGrid() {}, refreshItemScroll() {}, saveMemberWorldData() { savedSales++; } });
 
 assert.equal(panel.getShipPrice('redberries'), 5, 'crop table price still wins');
 assert.equal(panel.getShipPrice('rawFish'), 12, 'raw fish ships at its own sellPrice');
@@ -37,4 +44,15 @@ assert.equal(panel.getShipPrice('kurrayaLike'), undefined, 'items without a pric
 assert.equal(panel.getShipPrice('missing'), undefined, 'unknown keys stay unshippable');
 assert.equal(panel.canShipKey('rawFish'), true);
 assert.equal(panel.canShipKey('needlegrainSeeds'), false);
+const sellKeys = panel.getSellableInventory().map(item => item.key); // Both store and shipping use this price authority.
+for (const key of ['masteryTablet', 'techniqueScroll', 'brewedPotion', 'boundRelic']) assert.ok(sellKeys.includes(key), key + ' is offered for resale');
+assert.ok(!sellKeys.includes('questReward'), 'quest-only, zero-priced items stay protected');
+const one = panel.sellInventoryAtStore('masteryTablet', 1); // Sell only one duplicate and retain the other for reading.
+assert.equal(one.moved, 1);
+assert.equal(one.earned, 140);
+assert.equal(inventory.masteryTablet, 1);
+assert.equal(inventory.gold, 140);
+assert.equal(savedSales, 1);
+assert.equal(panel.sellInventoryAtStore('questReward', 1).moved, 0, 'protected quest items cannot be sold');
+assert.equal(inventory.questReward, 1);
 console.log('shipping box item pricing ok');

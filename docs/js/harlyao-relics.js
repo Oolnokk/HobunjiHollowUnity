@@ -150,7 +150,7 @@
       icon: shape.icon,
       label: `Bound ${shape.label}`,
       cat: 'material',
-      sellPrice: 0,
+      sellPrice: 90 + 30 * enchantmentCount(relic.enchantments), // Recovered bound relics can be sold without paying to unbind them.
       spriteIcon: '../toolsprites/' + shape.sprite.split('/').pop(), // applyItemSpriteIcon resolves under assets/objectsprites/.
       tags: ['Harlyao', 'Relic', 'Bound'],
       desc: `An ancient ${shape.label.replace('Harlyao ', '').toLowerCase()} still bound to its long-dead Harlyao owner — it cannot be wielded. Garanki Gabu can unbind it (${unbindPrice(relic.enchantments)}g). Enchantments: ${lines.join('; ') || 'none'}.`,
