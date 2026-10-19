@@ -2481,7 +2481,7 @@
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
     updateToolMesh: updateBanditToolMesh,
-    updateTrailArc: updateBanditTrailArc,
+    updateTrailArc: () => {}, // Shared Combat.update owns ribbon lifetime; legacy API remains callable.
     fireCounterRiposte: fireBanditCounterRiposte,
     naturalSwing: banditNaturalSwing,
     finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.
