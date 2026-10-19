@@ -1,0 +1,572 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "shattercaskBlasting",
+  "notes": "User-authored two-necked Shattercask; explosion mechanics belong to Shattercasks runtime.",
+  "portraitFogMaskHidden": false,
+  "bladedHazard": false,
+  "fireHazard": false,
+  "createdAt": "2026-10-19T08:28:40.766Z",
+  "surfaceRecognition": {
+    "splitAngleDeg": 68,
+    "colorCode": false,
+    "selectSurfaces": true,
+    "multiSelect": true
+  },
+  "partMultiSelect": false,
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "placementGrid": {
+    "visible": true,
+    "snap": true,
+    "opacity": 0.85
+  },
+  "seating": {
+    "visible": true,
+    "opacity": 0.9,
+    "surfaceId": null,
+    "defaultSpecies": "mao-ao",
+    "defaultGender": "male",
+    "cellSpanScale": 1,
+    "showLegs": true,
+    "showLegBones": true
+  },
+  "seatLegModel": {
+    "version": 14,
+    "sourceCommit": "48ccf77f607a6ec62fcdeef4d7f202640d6d1468",
+    "solver": "fixed-equal-half-reach-v4",
+    "runtimeReferenceSolver": "docs/js/leg-bones.js solveTwoBoneLeg",
+    "sourcePose": "equal fixed bones; thigh projected flush to the area-weighted average seat plane; calf stays exactly straight while the knee is over the seat footprint and bends exactly 90 degrees only after clearing the edge",
+    "footSource": "scratchbones-config proceduralFeet species GLBs or exact generated runtime fallback",
+    "coordinateSpace": "actor floor-relative; PNGPlaneAvatar visual model lifted portraitModelHeight/2 as required by its authored portrait-space anchors",
+    "posteriorSource": "species+gender attachment-rig heightPercentOffset applied to PNGPlaneAvatar portrait-derived handAttachY/baseY",
+    "handAttachYFallback": "local alpha-bottom scan using PNGPlaneAvatar placement formula, then the profile heightPercentOffset",
+    "legSpacingSource": "runtime torso-only widest-opaque-row pixel scan, cached by species+gender",
+    "anchorDifference": "measured posterior is directly verified against the authored chair seat anchor",
+    "hipDifference": "semantic 90-degree seated hip turn is solved directly as a thigh tangent to the averaged seat plane",
+    "seatSurfaceRule": "recognized seat faces contribute an area-weighted average normal; each thigh is projected to that plane with 0.001 clearance",
+    "calfRule": "two-state seated chain: calf is exactly collinear with the thigh while the knee projection remains inside the seat-face bounds; exact 90-degree drop opposite the average normal after the knee clears the edge",
+    "seatGeometryCalibration": {
+      "source": "adjustedchair2.json",
+      "currentBasicSeat": {
+        "x": 0.65,
+        "z": 0.65
+      },
+      "adjustedSeat": {
+        "x": 0.5158,
+        "z": 0.4164
+      },
+      "scaleX": 0.7935384615384615,
+      "scaleZ": 0.6406153846153846,
+      "benchWidthScale": 1,
+      "benchDepthScale": 0.6406153846153846,
+      "defaultSeatNormalOffset": 0.01,
+      "backrestHeightMultiplier": 1.1,
+      "standardBackrestHeight": 0.458
+    },
+    "anchorLocalYRule": "seat-anchor normal offset is authored per anchor; new and reset anchors use the adjusted-chair-derived 0.01 default",
+    "backrestRule": "seat backrests are shortened from the top while preserving their lower attachment; target height is 1.10 times seat depth, so bench width is never used",
+    "edgeBehavior": "seat-face footprint bounds determine whether the calf remains straight or drops 90 degrees; no furniture-edge raycast is needed",
+    "standingComparison": "per-avatar optional linked half-width viewport using the runtime standing leg solver, posterior marker, outer-box edges, and optional billboarded numeric labels",
+    "posteriorAdjustmentPreview": "per-avatar non-destructive portrait-relative draft with draggable 2D guide, exact numeric fields, one-tap posterior-X centering between live left/right leg X values, live seated/standing preview, persisted override, repository reset, and copyable attachment-profile patch",
+    "portraitFogMask": "global authoring toggle removes fighter.opacityMaskLayer from every generated front/rear portrait without changing the deterministic avatar profile"
+  },
+  "seatedAvatars": [],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_mvezacs8_2uryh",
+      "name": "Bubble Emitter",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_mveyqf1t_9i1bs",
+      "position": {
+        "x": 0,
+        "y": 0.2256,
+        "z": 0
+      },
+      "rotation": {
+        "x": -0.027,
+        "y": -0.02,
+        "z": -0.046
+      },
+      "rate": 8,
+      "lifetime": 2,
+      "size": 0.1,
+      "speed": 0.1,
+      "spread": 0.1,
+      "radius": 0.15,
+      "gravity": 0,
+      "colorA": "#0000ff",
+      "colorB": "#ff00ff"
+    },
+    {
+      "id": "emitter_mvezf0ge_hwj2g",
+      "name": "Bubble Emitter",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_mveyqf1t_9i1bs",
+      "position": {
+        "x": 0.2631,
+        "y": 0.0015,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.093,
+        "y": 1.008,
+        "z": -16.559
+      },
+      "rate": 8,
+      "lifetime": 2,
+      "size": 0.075,
+      "speed": 0.1,
+      "spread": 0.15,
+      "radius": 0.1,
+      "gravity": 0,
+      "colorA": "#ffff00",
+      "colorB": "#ffff00"
+    }
+  ],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "avatar": {
+    "visible": false,
+    "sourceMode": "runtimePortrait",
+    "sourcePixels": [
+      200,
+      200
+    ],
+    "baseModelWidth": 0.9,
+    "scaleMultiplier": 1,
+    "placementRatio": 0.95,
+    "widthMode": "world",
+    "visualLift": 0,
+    "transform": {
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "textureDataUrl": null,
+    "textureName": "actual GitHub Mao’ao render",
+    "calculated": {
+      "pxW": 200,
+      "pxH": 200,
+      "aspect": 1,
+      "width": 0.9,
+      "height": 0.9,
+      "placementRatio": 0.95,
+      "assemblyOffsetY": 0.40499999999999997,
+      "authoredAnchorY": 0,
+      "visualLift": 0,
+      "visualRootY": 0.45,
+      "visibleBottomY": 0,
+      "visibleTopY": 0.9,
+      "groundContactY": 0.45
+    }
+  },
+  "parts": [
+    {
+      "id": "part_mveymg6k_k3x7h",
+      "kind": "barrel",
+      "name": "Unified Barrel Body",
+      "transform": {
+        "x": 0,
+        "y": 0.29,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.678,
+        "sy": 0.58,
+        "sz": 0.6278
+      },
+      "color": "#7a4924",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 0.4,
+      "topScaleZ": 0.37,
+      "bottomScaleX": 0.7,
+      "bottomScaleZ": 0.7,
+      "topSkewX": -0.05,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "wood",
+      "materialTexture": "boards.png",
+      "materialRotationDeg": 180,
+      "materialCapTexture": "carved_smooth.png",
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a4924",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs",
+      "kind": "cup",
+      "name": "Cup / Basin",
+      "transform": {
+        "x": -0.0254,
+        "y": 0.6333,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.2946,
+        "sy": 0.4576,
+        "sz": 0.2471
+      },
+      "color": "#8a6a3a",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1.2,
+      "topScaleZ": 1.2,
+      "bottomScaleX": 0.78,
+      "bottomScaleZ": 0.78,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.78,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mveyvcjl_p5vm5",
+      "kind": "cup",
+      "name": "Cup / Basin Copy",
+      "transform": {
+        "x": 0.2026,
+        "y": 0.4632,
+        "z": 0.0029,
+        "rx": 0,
+        "ry": 0,
+        "rz": -11.382,
+        "sx": 0.2226,
+        "sy": 0.4083,
+        "sz": 0.2698
+      },
+      "color": "#8a6a3a",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1.2,
+      "topScaleZ": 1.2,
+      "bottomScaleX": 0.78,
+      "bottomScaleZ": 0.78,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.78,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "surfaceSettings": {
+    "part_mveymg6k_k3x7h:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 180,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveymg6k_k3x7h:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/boards.png",
+        "name": "boards.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 180,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveymg6k_k3x7h:surface:4": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveymg6k_k3x7h:surface:5": {
+      "label": "Barrel Top",
+      "role": "decorTop",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:4": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:6": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:7": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:4": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:6": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:7": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:80": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": null,
+        "name": "",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:82": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": null,
+        "name": "",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  },
+  "itemPlacements": [],
+  "globalCharacterDeadzoneDeg": 40,
+  "decals": [],
+  "decalAuthoring": {
+    "version": 4,
+    "coordinateSpace": "recognized-surface-local",
+    "sizeUnits": "surface-fraction",
+    "offsetUnits": "half-surface-span",
+    "sourceTypes": [
+      "image",
+      "tankanText"
+    ],
+    "tankanLayout": "vertical-word-columns",
+    "tankanSizing": "container-fit-down-v1"
+  },
+  "daylightWindowAuthoring": {
+    "version": 1,
+    "role": "daylightWindow",
+    "lightingModel": "interior-overlay-aperture",
+    "surfaceTint": "live-outdoor-rgb-over-neutralized-texture"
+  },
+  "pieceAnimations": [],
+  "pieceAnimationAuthoring": {
+    "version": 2,
+    "model": "rigid-piece-relative",
+    "separateFromProcessingWarps": true,
+    "windDirection": "furniture-local horizontal degrees",
+    "windAxisBias": true
+  },
+  "key": "shattercaskBlasting"
+}
