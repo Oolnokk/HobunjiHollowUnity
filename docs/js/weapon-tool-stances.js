@@ -49,12 +49,12 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-    topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.16, pitch: 7, yaw: -49, bodyYaw: -8, roll: -96 }),
+    topHeavyTool: Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }),
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
-    dualWieldOffhand: Object.freeze({ x: 0.09, y: 0, z: -0.04, pitch: 37, yaw: 68, bodyYaw: -40, roll: 114 }),
+    dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
   });
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
 

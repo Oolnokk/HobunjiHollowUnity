@@ -321,6 +321,12 @@
 
   function renderEquipmentSection(sec) {
     if (!sec || typeof document === 'undefined') return;
+    const previousGroup = sec.querySelector?.('.gear-owned-trinkets'); // Replaced when the section is directly refreshed without rebuilding all equipment.
+    previousGroup?.remove?.();
+    const ownedSection = sec.querySelector?.(':scope > .gear-owned-section'); // Uses the decorated Gear inventory when it already exists.
+    const group = document.createElement('div'); // Keeps every trinket row, empty state and diagnostic together for Gear layout placement.
+    group.className = 'gear-owned-group gear-owned-trinkets';
+    (ownedSection || sec).appendChild(group);
     const used = usedAttunement();
     const cap = capacity();
     const over = used > cap;
@@ -328,12 +334,12 @@
     const hdr = document.createElement('div');
     hdr.className = 'inv-equip-label trinket-attunement-label';
     hdr.innerHTML = `Trinkets — <strong style="color:${over ? '#ff8080' : 'var(--accent, #f9e28a)'}">Attunement: ${used} / ${cap}</strong>`;
-    sec.appendChild(hdr);
+    group.appendChild(hdr);
     if (over) {
       const warn = document.createElement('div');
       warn.className = 'inv-equip-empty';
       warn.textContent = 'Over the Attunement budget (older save). Nothing was removed, but you cannot equip more until you are back under the limit.';
-      sec.appendChild(warn);
+      group.appendChild(warn);
     }
 
     const owned = ownedEntries();
@@ -341,11 +347,12 @@
       const empty = document.createElement('div');
       empty.className = 'inv-equip-empty';
       empty.textContent = 'No trinkets yet. Icons are sold in town; Harlyao ruins and Porakaneki traders hold others.';
-      sec.appendChild(empty);
+      group.appendChild(empty);
       return;
     }
 
     const list = document.createElement('div');
+    list.className = 'trinket-inventory-list';
     list.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
     const sorted = owned.slice().sort((a, b) => Number(isEquipped(b.uid)) - Number(isEquipped(a.uid)));
     for (const entry of sorted) {
@@ -354,8 +361,8 @@
       const cost = costOf(entry.id);
       const check = equipped ? null : canEquip(entry.uid);
       const row = document.createElement('div');
-      row.className = 'inv-equip-slot' + (equipped ? ' active-slot occupied' : '');
-      row.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:8px;padding:5px 8px;min-height:0;text-align:left;justify-content:flex-start;';
+      row.className = 'inv-equip-slot trinket-inventory-row' + (equipped ? ' active-slot occupied' : '');
+      row.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:8px;padding:5px 8px;flex:0 0 auto;height:auto;box-sizing:border-box;text-align:left;justify-content:flex-start;';
       row.innerHTML = `<span style="font-size:1.4em">${def?.icon || '❔'}</span>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;">
           <span style="font-weight:600">${esc(def?.displayName || entry.id)} <span title="Attunement cost" style="opacity:.8">${pips(cost)} ${cost}</span></span>
@@ -375,7 +382,7 @@
       row.appendChild(button);
       list.appendChild(row);
     }
-    sec.appendChild(list);
+    group.appendChild(list);
 
     const details = document.createElement('details');
     details.className = 'trinket-debug';
@@ -384,7 +391,7 @@
     pre.style.cssText = 'white-space:pre-wrap;font-size:10px;max-height:200px;overflow:auto;';
     pre.textContent = debugLines().join('\n');
     details.appendChild(pre);
-    sec.appendChild(details);
+    group.appendChild(details);
   }
 
   function debugLines() {

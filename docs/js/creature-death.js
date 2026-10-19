@@ -1,38 +1,144 @@
 (() => {
   'use strict';
 
-  // Death ragdoll → lootable corpse. A lethally-hit creature no longer
-  // just vanishes: it tumbles from where it died to a nearby tile
-  // roughly away from the killing blow, settles lying flat on that
-  // tile, and stays there as a lootable corpse (see game.js's
-  // getCorpseObjectAt) until the player butchers it — that's the only
-  // thing that actually despawns the sprite.
-  //
+  // Grounded recorded knockdown -> persistent lootable corpse. The authored
+  // breakThrow bank is shared with zero-Footing prone hits; its last frame
+  // remains posed on a corpse instead of launching it into the sky.
+
   // Extracted out of game.js following the same window.<Namespace> +
   // init(deps) pattern already used by js/farm-buildings.js and
   // js/farm-animals.js. currentArea/grid are reassigned wholesale on
   // zone transitions, so they're threaded through as getters rather than
   // captured references.
-  const DEATH_LERP_DURATION_S = 2.2;
-  const DEATH_TUMBLE_TILES_MIN = 1.1;
-  const DEATH_TUMBLE_TILES_MAX = 2.6;
-  const DEATH_AIM_CONE_RAD = 50 * Math.PI / 180;
-  const DEATH_FLIP_SEGMENTS = 5;
-  const DEATH_FLIP_AXES = ['x', 'y', 'z'];
+  const DEATH_TUMBLE_TILES_MIN = 0.35; // Short grounded slide: the fatal hit must not send corpses several tiles away.
+  const DEATH_TUMBLE_TILES_MAX = 1.15; // Upper bound for a walkable, wall-checked resting tile.
+  const DEATH_AIM_CONE_RAD = 35 * Math.PI / 180; // Varies the horizontal knockback angle without steering through obstacles.
+  const DEATH_FALLBACK_DURATION_S = 0.7; // Simple local tip-over when the recorded clip or rig is unavailable.
+  const DEATH_BLOOD_PARTICLES = 24; // Reused in a single lightweight Points emitter only when a colored spray is called for.
+  const activeSprays = new Set(); // Updated and disposed by updateCorpses; never left attached to a looted or unloaded body.
+  let deps = null;
 
-  // DEATH_HOP_HEIGHT_PX depends on deps.TILE, so it's computed once in
-  // init() below rather than at module-load time.
-  let deps = null, deathHopHeightPx;
-  const deathDebug = { lastBegin: null, lastRecovery: null }; // Used by mobile diagnostics to expose interrupted lethal transitions without a console.
-  function init(injectedDeps) {
-    deps = injectedDeps;
-    deathHopHeightPx = deps.TILE * 1.1 / 3;
+  const deathDebug = { lastBegin: null, lastRecovery: null }; // Used by mobile diagnostics to expose chosen cause/clip and interrupted transitions.
+  function init(injectedDeps) { deps = injectedDeps; }
+
+  function _deathCause(c) {
+    const raw = String(c._lethalDamageCause || c._lastDamageCause || c.lastDamageTag || '').toLowerCase();
+    if (/poison|venom|toxin|infected/.test(raw)) return 'poison';
+    if (/burn|fire|flame|kindling|heat|lava/.test(raw)) return 'fire';
+    if (/bleed|sharp|slash|pierc|cut|blade|shrapnel/.test(raw)) return 'sharp';
+    if (/blunt|impact|collision|crush|hammer|punch|club|fall/.test(raw)) return 'blunt';
+    if (/frost|cold|ice/.test(raw)) return 'frost';
+    if (/shock|lightning|electric/.test(raw)) return 'shock';
+    if (/acid|corros|corrod/.test(raw)) return 'acid';
+    return 'other';
   }
 
-  // Ease-in-out (slow at each end, fast through the middle) applied
-  // within a single flip segment — gives every flip a "slo-mo" hang at
-  // its start/end instead of spinning at a constant rate.
-  function _segEase(x) { return x * x * (3 - 2 * x); }
+  function _impactDirection(c, fromX, fromY) {
+    if (!Number.isFinite(fromX) || !Number.isFinite(fromY)) return 'front';
+    const angle = Math.atan2(fromY - c.y, fromX - c.x) - (Number(c.facing) || 0);
+    const x = Math.cos(angle), y = Math.sin(angle);
+    return Math.abs(x) > Math.abs(y) ? (x > 0 ? 'front' : 'back') : (y > 0 ? 'right' : 'left');
+  }
+
+  function _colorForCause(cause) {
+    const colors = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
+    if (cause === 'sharp') return colors.bleedingHealth || '#d11832';
+    if (cause === 'poison') return colors.poisonedHealth || '#17a44b';
+    if (cause === 'frost') return colors.frostbittenStamina || '#89ecfa';
+    if (cause === 'shock') return '#b989f5';
+    if (cause === 'acid') return '#bfde36';
+    if (cause === 'other') return '#b6a49b'; // An untyped fall/impact gives a little earth-toned dust, not invented blood.
+    return null;
+  }
+
+  function _spawnSpray(c) {
+    const color = _colorForCause(c.deathCause);
+    const THREE = window.THREE;
+    const grp = c.avatarRef?.group;
+    if (!color || !THREE?.Points || !grp?.parent?.add || !THREE.BufferGeometry) return;
+    const positions = new Float32Array(DEATH_BLOOD_PARTICLES * 3); // Local emitter positions animated in _updateSprays each frame.
+    const velocities = new Float32Array(DEATH_BLOOD_PARTICLES * 3); // Single-use initial radial velocities for the same emitter.
+    const away = Number(c.deathAwayAngle) || 0;
+    for (let i = 0; i < DEATH_BLOOD_PARTICLES; i++) {
+      const j = i * 3;
+      const a = away + (Math.random() - 0.5) * 2.1;
+      const speed = 0.6 + Math.random() * 1.45;
+      positions[j] = (Math.random() - 0.5) * 0.12;
+      positions[j + 1] = (Math.random() - 0.5) * 0.3;
+      positions[j + 2] = (Math.random() - 0.5) * 0.12;
+      velocities[j] = Math.cos(a) * speed;
+      velocities[j + 1] = 0.6 + Math.random() * 1.6;
+      velocities[j + 2] = Math.sin(a) * speed;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color, size: 0.065, sizeAttenuation: true, transparent: true,
+      depthWrite: false, opacity: 0.98,
+    });
+    const points = new THREE.Points(geometry, material);
+    points.position.copy(grp.position);
+    points.position.y += (Number(c.halfHeight) || 0.3) * 0.25;
+    grp.parent.add(points);
+    activeSprays.add({ points, positions, velocities, age: 0, duration: 0.65 });
+  }
+
+  function _updateSprays(dt) {
+    for (const effect of activeSprays) {
+      const step = Math.max(0, Math.min(0.1, dt));
+      effect.age += step;
+      for (let i = 0; i < effect.positions.length; i += 3) {
+        effect.positions[i] += effect.velocities[i] * step;
+        effect.positions[i + 1] += effect.velocities[i + 1] * step;
+        effect.positions[i + 2] += effect.velocities[i + 2] * step;
+        effect.velocities[i + 1] -= 5 * step;
+      }
+      effect.points.geometry.attributes.position.needsUpdate = true;
+      effect.points.material.opacity = Math.max(0, 1 - effect.age / effect.duration);
+      if (effect.age >= effect.duration) {
+        effect.points.parent?.remove(effect.points);
+        effect.points.geometry.dispose();
+        effect.points.material.dispose();
+        activeSprays.delete(effect);
+      }
+    }
+  }
+
+  function _prepareScorch(c) {
+    if (c.deathCause !== 'fire') return;
+    const clonedMaterials = []; // Disposed alongside the owning avatar instead of leaking when the corpse is looted.
+    c._deathScorch = clonedMaterials; // Per-corpse tint records preserve the unmodified material color across animation frames.
+    c.avatarRef?.group?.traverse?.(object => {
+      if (!object.isMesh || !object.material) return;
+      const clone = material => {
+        if (!material?.color?.clone || !material.clone) return material;
+        const individual = material.clone();
+        clonedMaterials.push({
+          material: individual, color: individual.color.clone(),
+          emissive: individual.emissive?.clone?.() || null,
+        });
+        return individual;
+      };
+      object.material = Array.isArray(object.material) ? object.material.map(clone) : clone(object.material);
+    });
+    const priorDispose = c.avatarRef?.dispose; // Original avatar teardown still owns textures, meshes and original materials.
+    if (typeof priorDispose === 'function') {
+      c.avatarRef.dispose = function disposeScorchedAvatar(...args) {
+        for (const entry of clonedMaterials) entry.material.dispose?.();
+        clonedMaterials.length = 0;
+        return priorDispose.apply(this, args);
+      };
+    }
+  }
+
+  function _updateScorch(c) {
+    if (!c._deathScorch) return;
+    const brightness = 1 - 0.94 * Math.min(1, (Number(c.deathT) || 0) / 0.32); // Lerp across the first 320 ms, then hold the char on the corpse.
+    for (const entry of c._deathScorch) {
+      entry.material.color.copy(entry.color).multiplyScalar(brightness);
+      if (entry.emissive) entry.material.emissive.copy(entry.emissive).multiplyScalar(brightness);
+    }
+  }
 
   // Walks outward from the creature's own tile within a cone around
   // awayAngle (the direction the killing blow traveled), looking for a
@@ -78,44 +184,33 @@
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
-    const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
-    const rest = _findRestTile(c, awayAngle);
+    c.deathCause = _deathCause(c); // The genuinely lethal Health transaction wins over earlier afflictions or weapon hits.
+    const sourceIsDistant = Number.isFinite(fromX) && Number.isFinite(fromY)
+      && Math.hypot(c.x - fromX, c.y - fromY) > 1e-4; // A lethal DoT normally passes the victim's own coordinates; it has no impulse.
+    const isDamageOverTime = /^(bleedingHealth|poisonedHealth|burningHealth|kindlingHealth)$/.test(String(c._lethalDamageCause || ''));
+    const hasImpactImpulse = sourceIsDistant && !isDamageOverTime; // Used to prevent ambient/DoT deaths from skidding across a tile arbitrarily.
+    const awayAngle = hasImpactImpulse ? Math.atan2(c.y - fromY, c.x - fromX) : (Number(c.facing) || 0);
+    const rest = hasImpactImpulse ? _findRestTile(c, awayAngle) : {
+      x: c.x, y: c.y,
+      col: deps.clamp(Math.floor(c.x / deps.TILE), 0, (c.areaCols || deps.COLS) - 1),
+      row: deps.clamp(Math.floor(c.y / deps.TILE), 0, (c.areaRows || deps.ROWS) - 1),
+    }; // Bleeding, poison, burning and unforced deaths collapse where they stood.
+    c.deathDirection = _impactDirection(c, fromX, fromY);
+    c.deathAwayAngle = awayAngle;
+    c.deathHadImpulse = hasImpactImpulse; // Mobile-readable proof of whether the corpse actually received a horizontal hit.
     c.state = 'dying';
     c.deathT = 0;
-    c.deathDurationS = DEATH_LERP_DURATION_S;
+    const clipSeconds = window.ImpactRagdollPlayback?.startCreatureDeath?.(c, c.deathDirection) || 0;
+    c.deathRecorded = clipSeconds > 0;
+    c.deathDurationS = c.deathRecorded ? clipSeconds * (c.deathCause === 'blunt' ? 0.78 : 1) : DEATH_FALLBACK_DURATION_S;
     c.deathStartX = c.x; c.deathStartY = c.y;
     c.deathTargetX = rest.x; c.deathTargetY = rest.y;
     c.corpseCol = rest.col; c.corpseRow = rest.row;
-    c.deathHopHeightPx = deathHopHeightPx * (0.7 + Math.random() * 0.6);
-    // The avatar's flat cutout plane has its face-normal along the
-    // group's own local X axis at rest (see buildAnimalPlaneAvatarModel:
-    // frontPlane.rotation.y = +PI/2, backPlane.rotation.y = -PI/2 — a
-    // standing side-view cutout, not a volumetric cross). Rotating the
-    // GROUP about its local Z axis by exactly +PI/2 is what tips that
-    // face-normal from horizontal up to vertical (+Y) — i.e. actually
-    // lying flat, face-up, not just spinning in place. Y (yaw/compass
-    // heading) and X (a small final roll) can be anything — neither
-    // affects flatness.
-    c.deathRestRotZ = Math.PI / 2;
-    c.deathRestRotX = (Math.random() * 2 - 1) * 0.22;
-    c.deathRestRotY = Math.random() * Math.PI * 2;
-    // A dramatic mid-air ragdoll: DEATH_FLIP_SEGMENTS separate flips,
-    // each one full turn (so it can never leave a residual tilt behind)
-    // about a randomly picked axis in a randomly picked direction — a
-    // forward somersault, then maybe a cartwheel, then a twist, etc.
-    // Because every segment is exactly ±1 full turn, the axis that
-    // governs flatness (z) always ends up an integer number of full
-    // turns past its target regardless of how the 5 picks landed, so it
-    // still always settles into the same clean flat pose.
-    c.deathFlipSegAxis = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => DEATH_FLIP_AXES[Math.floor(Math.random() * DEATH_FLIP_AXES.length)]);
-    c.deathFlipSegDir  = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => (Math.random() < 0.5 ? -1 : 1));
-    c.deathFlipPrefix = { x: [0], y: [0], z: [0] };
-    for (let i = 0; i < DEATH_FLIP_SEGMENTS; i++) {
-      for (const axis of DEATH_FLIP_AXES) {
-        const add = c.deathFlipSegAxis[i] === axis ? c.deathFlipSegDir[i] : 0;
-        c.deathFlipPrefix[axis].push(c.deathFlipPrefix[axis][i] + add);
-      }
-    }
+    // Recorded root Y stays near the ground. No airborne hop, full flips, or
+    // long-distance throw; the last authored frame is the corpse's pose.
+    c.deathRestRotZ = Math.PI / 2; // Used only by the missing-clip fallback and pre-placed bodies.
+    c.deathRestRotX = 0;
+    c.deathRestRotY = Number(c.groupRot) || 0;
     c.scaleY = 1;
     c.avatarRef.group.scale.y = 1;
     // Snap the cutout's two planes back to the exact pose they were
@@ -132,6 +227,8 @@
     // baked mesh orientation.
     if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
     deps.corpseObjects.add(c);
+    _prepareScorch(c);
+    _spawnSpray(c);
   }
 
   // A lethal hit must never strand an entity after game.js removes it from
@@ -148,6 +245,8 @@
     if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
+    window.ImpactRagdollPlayback?.stopCreatureDeath?.(c); // A failed particle/path setup cannot leave the fallback corpse with a half-played recorded pivot.
+    c.deathRecorded = false;
     c.health = 0;
     c.state = 'corpse';
     c.corpseCol = col; c.corpseRow = row;
@@ -179,82 +278,64 @@
   }
 
   function begin(c, fromX, fromY) {
-    deathDebug.lastBegin = { at: Date.now(), creature: c?.id || c?.def?.label || 'creature', areaId: c?.areaId || '' };
+    deathDebug.lastBegin = { at: Date.now(), creature: c?.id || c?.def?.label || 'creature', areaId: c?.areaId || '', cause: _deathCause(c), recording: false };
     try {
       beginInternal(c, fromX, fromY);
+      deathDebug.lastBegin.recording = !!c.deathRecorded;
+      deathDebug.lastBegin.hadImpulse = !!c.deathHadImpulse;
       return true;
     } catch (error) {
       return recover(c, fromX, fromY, error);
     }
   }
 
-  // Turns accumulated for one axis by time-progress t: whole turns from
-  // every completed segment assigned to that axis, plus the current
-  // segment's own partial turn (eased) if it happens to be the one
-  // actively spinning that axis right now.
-  function _spinTurnsForAxis(c, seg, segEase, axis) {
-    let turns = c.deathFlipPrefix[axis][seg];
-    if (c.deathFlipSegAxis[seg] === axis) turns += c.deathFlipSegDir[seg] * segEase;
-    return turns;
+  // Uses the authored throw all the way to its prone tail. Blunt kills play
+  // faster and briefly rewind only the last 18% of the recorded fall before
+  // returning to that same tail (a small impact recoil). No recoil on blades,
+  // DoTs, fire, or other elemental causes.
+  function _recordedPhase(c, t) {
+    if (c.deathCause !== 'blunt') return t;
+    if (t < 0.78) return t / 0.78;
+    if (t < 0.89) return 1 - 0.18 * ((t - 0.78) / 0.11);
+    return 0.82 + 0.18 * ((t - 0.89) / 0.11);
   }
 
-  // Drives every 'dying' corpse's flight from where it died to its
-  // resting tile: position eases (fast launch, soft landing) along a
-  // shallow hop arc, while rotation.x/y/z ease toward their final pose
-  // (Z fixed at lying-flat, X/Y free) with DEATH_FLIP_SEGMENTS full
-  // mid-air flips — each on its own randomly-picked axis — layered on
-  // top so the tumble shifts axes as it goes but still always lands
-  // exactly on the flat pose.
   function updateCorpses(dt) {
+    _updateSprays(dt);
     const TILE = deps.TILE;
     const currentArea = deps.getCurrentArea();
     for (const c of deps.corpseObjects) {
       if (c.state !== 'dying' || c.areaId !== currentArea) continue;
-      c.deathT = Math.min(c.deathDurationS, c.deathT + dt);
-      const t = c.deathT / c.deathDurationS;
-      const ease = 1 - Math.pow(1 - t, 3);
-      c.x = c.deathStartX + (c.deathTargetX - c.deathStartX) * ease;
-      c.y = c.deathStartY + (c.deathTargetY - c.deathStartY) * ease;
-      const hop = Math.sin(Math.PI * t) * c.deathHopHeightPx;
+      c.deathT = Math.min(c.deathDurationS, c.deathT + Math.max(0, Number(dt) || 0));
+      const t = Math.min(1, c.deathT / c.deathDurationS);
+      const eased = 1 - Math.pow(1 - t, 2); // Short grounded slide; no ballistic arc.
+      c.x = c.deathStartX + (c.deathTargetX - c.deathStartX) * eased;
+      c.y = c.deathStartY + (c.deathTargetY - c.deathStartY) * eased;
 
       const grp = c.avatarRef.group;
       const g = c.areaGrid || deps.getGrid();
       const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
       const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
       const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
-      const restHeight = c.halfHeight * 0.12;
-
-      grp.position.x = c.x / TILE;
-      grp.position.z = c.y / TILE;
-      grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
-      // Stays flat on the ground under the tumble instead of following
-      // the body's hop arc — same as a real jump shadow.
+      const halfHeight = Number(c.halfHeight) || 0.3;
+      const bodyHeightFraction = c.deathRecorded ? 1 - 0.18 * eased : 1 - 0.88 * eased; // Keeps recorded root offsets aligned, but lets fallback corpses descend continuously instead of snapping downward at the last frame.
+      grp.position.set(c.x / TILE, surfY + halfHeight * bodyHeightFraction, c.y / TILE);
       if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
 
-      let seg = Math.floor(t * DEATH_FLIP_SEGMENTS);
-      let segT = t * DEATH_FLIP_SEGMENTS - seg;
-      if (seg >= DEATH_FLIP_SEGMENTS) { seg = DEATH_FLIP_SEGMENTS - 1; segT = 1; }
-      const segEase = _segEase(segT);
-      const turnsX = _spinTurnsForAxis(c, seg, segEase, 'x');
-      const turnsY = _spinTurnsForAxis(c, seg, segEase, 'y');
-      const turnsZ = _spinTurnsForAxis(c, seg, segEase, 'z');
-
-      // Z is the axis that actually tips the cutout's flat face from
-      // vertical to lying-flat-face-up (see begin()) — X/Y are free
-      // cosmetic spin that never affects whether it lands flat.
-      grp.rotation.z = c.deathRestRotZ * ease + turnsZ * Math.PI * 2;
-      grp.rotation.x = c.deathRestRotX * ease + turnsX * Math.PI * 2;
-      grp.rotation.y = c.groupRot + (c.deathRestRotY - c.groupRot) * ease + turnsY * Math.PI * 2;
-      // updateCreatureMesh stops running the instant death begins (see
-      // its own comment above), so a bandit's legs would otherwise freeze
-      // mid-stride through the whole ragdoll tumble -- ease them to a
-      // neutral planted pose instead, same suppressed path mounting uses.
-      if (c.avatarRef.legs) c.avatarRef.legs.update(dt, 0, true);
-
+      if (c.deathRecorded) {
+        window.ImpactRagdollPlayback.sampleCreatureDeath(c, _recordedPhase(c, t));
+      } else {
+        // Missing/unloaded recording: simply fall in place and lie flat,
+        // rather than restoring the obsolete multi-flip sky-launch.
+        grp.rotation.set(0, c.deathRestRotY, c.deathRestRotZ * eased);
+        c.avatarRef.legs?.update?.(dt, 0, true);
+      }
+      _updateScorch(c);
       if (t >= 1) {
         c.state = 'corpse';
-        grp.position.set(c.deathTargetX / TILE, surfY + restHeight, c.deathTargetY / TILE);
-        grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
+        c.x = c.deathTargetX; c.y = c.deathTargetY;
+        grp.position.set(c.x / TILE, surfY + halfHeight * (c.deathRecorded ? 0.82 : 0.12), c.y / TILE);
+        if (!c.deathRecorded) grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
       }
     }
   }
@@ -302,9 +383,9 @@
     settleAsCorpse,
     recover,
     updateCorpses,
-    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery } }),
+    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery }, activeSprays: activeSprays.size }),
     formatDebug: () => deathDebug.lastRecovery
       ? `Creature death recovery: ${deathDebug.lastRecovery.creature} at ${deathDebug.lastRecovery.areaId}:${deathDebug.lastRecovery.col},${deathDebug.lastRecovery.row} | ${deathDebug.lastRecovery.reason}`
-      : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'}; no recovery needed`,
+      : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'} (${deathDebug.lastBegin?.cause || 'unknown'}, recorded=${!!deathDebug.lastBegin?.recording}); no recovery needed`,
   };
 })();

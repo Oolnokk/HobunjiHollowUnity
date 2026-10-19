@@ -532,7 +532,7 @@
     const requested = Math.max(0, Number(amount) || 0); // Requested Bleeding Health conversion shown in Quick Attack diagnostics.
     const available = getAffliction(entity, "bleedingHealth"); // Existing buildup is the only legal source; Bleedout never invents Bleeding.
     const consumed = removeAffliction(entity, "bleedingHealth", Math.min(requested, available)); // Exact buildup removed before its normal gradual tick can resolve it.
-    const damage = consumed > 0 ? applyHealthAfflictionDamage(entity, consumed) : 0; // Realizes consumed Bleeding immediately through the same enhanced-Health-aware damage path as normal Bleeding ticks.
+    const damage = consumed > 0 ? applyHealthAfflictionDamage(entity, consumed, 'bleedingHealth') : 0; // Realizes consumed Bleeding immediately through the same enhanced-Health-aware damage path as normal Bleeding ticks.
     return { requested: round1(requested), available: round1(available), consumed: round1(consumed), damage: round1(damage), source: options.source || null };
   }
 
@@ -669,7 +669,7 @@
     return round1(entity.health - before);
   }
 
-  function applyHealthAfflictionDamage(entity, amount) {
+  function applyHealthAfflictionDamage(entity, amount, cause = 'affliction') {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount, { kind: "damage", source: "afflictionTick" }); // Enhanced Health absorbs DoT through the same transaction path as direct damage.
     const remaining = enhanced.ordinaryRemaining;
@@ -677,6 +677,9 @@
     const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used only as the current upper cap; DoT damage itself remains fully lethal down to zero.
     entity.health = round1(clamp(before - remaining, 0, effectiveMax));
+    // Only the transaction that actually exhausted ordinary Health owns the death visual.
+    // A second DoT later in the same tick must not overwrite the first lethal cause.
+    if (before > 0 && entity.health <= 0) entity._lethalDamageCause = cause;
     return round1(before - entity.health);
   }
 
@@ -968,6 +971,9 @@
     const before = entity.health;
     entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
+    // Shared player/NPC damage path: retain the real lethal weapon type, not a
+    // currently-active bleed/poison buildup that may have come from an older hit.
+    if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
 
     if (opts.afflictionBonuses) {
       const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
@@ -1052,7 +1058,7 @@
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
     if (rest.rested && !healthRecoveryBlocked) applyHealthRecovery(entity, amount);
-    else applyHealthAfflictionDamage(entity, amount);
+    else applyHealthAfflictionDamage(entity, amount, 'bleedingHealth');
   }
 
   function resolveBurningTick(entity, dt, cfg) {
@@ -1060,7 +1066,7 @@
     if (burning <= 0) return;
     const amount = Math.min(burning, cfg.burnTickPerSec * dt);
     removeAffliction(entity, "burningHealth", amount);
-    applyHealthAfflictionDamage(entity, amount);
+    applyHealthAfflictionDamage(entity, amount, 'burningHealth');
   }
 
   function resolveKindlingTick(entity, dt) {
@@ -1069,7 +1075,7 @@
     const rate = Math.max(0, Number(window.EnchantmentSystem?.TUNING?.LIVING_FLAME_KINDLING_TICK_PER_SEC) || 0.75); // Living Flame owns the balance constant; ResourceSystem owns the actual Health-loss transaction.
     const amount = Math.min(kindling, rate * Math.max(0, Number(dt) || 0));
     removeAffliction(entity, "kindlingHealth", amount);
-    applyHealthAfflictionDamage(entity, amount);
+    applyHealthAfflictionDamage(entity, amount, 'kindlingHealth');
   }
 
   function resolvePoisonTick(entity, dt, cfg) {
@@ -1077,7 +1083,7 @@
     if (poison <= 0) return;
     const amount = Math.min(poison, cfg.poisonTickPerSec * dt);
     removeAffliction(entity, "poisonedHealth", amount);
-    applyHealthAfflictionDamage(entity, amount);
+    applyHealthAfflictionDamage(entity, amount, 'poisonedHealth');
   }
 
   function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {

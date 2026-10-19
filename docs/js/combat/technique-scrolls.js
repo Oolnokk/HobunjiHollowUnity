@@ -183,12 +183,12 @@
     Object.entries(SCROLLS).forEach(([tierText, scroll]) => {
       const tier = Number(tierText); // Used to identify held scrolls directly from canonical item metadata.
       const old = deps.ITEM_DEFS[scroll.key] || {}; // Used to preserve future authored art/economy overrides.
-      deps.ITEM_DEFS[scroll.key] = { ...old, icon: old.icon || scroll.icon, label: old.label || scroll.label, cat: old.cat || 'material', sellPrice: old.sellPrice ?? 0, tags: [...new Set([...(old.tags || []), 'Technique Scroll', 'Combat', 'Consumable'])], desc: old.desc || scroll.desc, techniqueScrollTier: tier };
+      deps.ITEM_DEFS[scroll.key] = { ...old, icon: old.icon || scroll.icon, label: old.label || scroll.label, cat: old.cat || 'material', sellPrice: Math.max(Number(old.sellPrice) || 0, [0, 90, 180, 300][tier]), tags: [...new Set([...(old.tags || []), 'Technique Scroll', 'Combat', 'Consumable'])], desc: old.desc || scroll.desc, techniqueScrollTier: tier };
       if (!deps.inventoryItems.some(entry => entry.key === scroll.key)) deps.inventoryItems.push({ key: scroll.key, icon: scroll.icon, label: scroll.label.toUpperCase(), max: 99 });
     });
     allManuals().forEach(manual => {
       const old = deps.ITEM_DEFS[manual.key] || {}; // Used to preserve authored art/economy overrides for this specific manual.
-      deps.ITEM_DEFS[manual.key] = { ...old, icon: old.icon || manual.icon, label: old.label || manual.label, cat: old.cat || 'material', sellPrice: old.sellPrice ?? 35, tags: [...new Set([...(old.tags || []), 'Combat Manual', 'Combat', 'Consumable'])], desc: old.desc || manual.desc, combatManualAbilityId: manual.abilityId };
+      deps.ITEM_DEFS[manual.key] = { ...old, icon: old.icon || manual.icon, label: old.label || manual.label, cat: old.cat || 'material', sellPrice: Math.max(Number(old.sellPrice) || 0, 160), tags: [...new Set([...(old.tags || []), 'Combat Manual', 'Combat', 'Consumable'])], desc: old.desc || manual.desc, combatManualAbilityId: manual.abilityId };
       if (!deps.inventoryItems.some(entry => entry.key === manual.key)) deps.inventoryItems.push({ key: manual.key, icon: manual.icon, label: manual.label.toUpperCase(), max: 99 });
     });
     window.HobunjiInventoryActionMetadataBridge?.refresh?.();
@@ -307,7 +307,7 @@
     const begin = api.beginHeldItemAction.bind(api); // Used by legacy/programmatic callers that still enter through the press-start route.
     const consumeImmediate = api.consumeHeldItemImmediate.bind(api); // Used by the current action-arch dispatcher for non-hold Read actions.
     api.getHeldItemAction = () => {
-      const mastery = heldMasteryItem(); // Reusable mastery literature shares the existing Read input path.
+      const mastery = heldMasteryItem(); // Single-use mastery literature shares the existing Read input path.
       if (mastery) return { icon: mastery.icon, label: `Read ${mastery.label}`, action: 'consume_held_item', style: 'primary', allowed: !window.CombatProgression.hasEffectUnlock(mastery.masteryUnlock.type, mastery.masteryUnlock.rank, mastery.masteryUnlock.effectId) };
       const manual = heldManual(); // Used to expose exact manual reading through the configurable Item Action 1 path.
       if (manual) return { icon: manual.def.icon || '📕', label: isUnlocked(manual.abilityId) ? `${ability(manual.abilityId)?.label || manual.abilityId} already learned` : `Read ${manual.label}`, action: 'consume_held_item', style: 'primary', allowed: !isUnlocked(manual.abilityId) };

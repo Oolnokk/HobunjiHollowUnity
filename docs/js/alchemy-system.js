@@ -269,7 +269,7 @@
     if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) {
       const modeTag = isThrowingFlask ? 'Flask' : definition.useMode === 'livestock' ? 'Livestock' : 'Potion'; // Inventory filter tag.
       const color = mixColor(reagentKeys); // Procedural bottle tint for ordinary potions and the initial fallback before flask-specific splitting.
-      deps.ITEM_DEFS[key] = { icon: definition.icon, label: `${definition.label}${safeTier ? ` · Potency ${safeTier + 1}` : ''}`, cat: 'processed', sellPrice: 0, tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed' };
+      deps.ITEM_DEFS[key] = { icon: definition.icon, label: `${definition.label}${safeTier ? ` · Potency ${safeTier + 1}` : ''}`, cat: 'processed', sellPrice: 24 + safeTier * 12 + (isThrowingFlask ? 8 : 0), tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed' };
     }
     const itemDef = deps?.ITEM_DEFS?.[key]; // Used to upgrade throwables from the generic bottle/fallback once ingredient provenance is available.
     if (isThrowingFlask && itemDef && itemDef.alchemyFlaskColorSource !== 'ingredients') applyThrowingFlaskSprite(itemDef, flaskColors, hasIngredientColors ? 'ingredients' : 'fallback');
@@ -280,7 +280,7 @@
     const definition = RECIPE_DEFS[recipeId]; // Authored recipe taught by the physical item.
     const key = recipeScrollKey(recipeId); // Stable recipe-item identity.
     if (!definition || !key) return null;
-    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '📜', label: `Recipe: ${definition.label}`, cat: 'processed', sellPrice: 8, tags: ['Alchemy', 'Recipe'], desc: `Read to learn the ${definition.traits.humour} + ${definition.traits.drive} + ${definition.traits.magnetism} reaction.`, alchemyRecipeScrollId: recipeId };
+    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '📜', label: `Recipe: ${definition.label}`, cat: 'processed', sellPrice: 35, tags: ['Alchemy', 'Recipe'], desc: `Read to learn the ${definition.traits.humour} + ${definition.traits.drive} + ${definition.traits.magnetism} reaction.`, alchemyRecipeScrollId: recipeId };
     return key;
   }
   function readRecipeItem(itemKey) {
@@ -298,7 +298,7 @@
     if (!effects?.length) return null;
     const key = `potion_${effects.slice().sort().join('_')}`; // Preserve old stacks without creating new ones.
     POTION_ITEMS[key] = Object.freeze({ legacyEffects: effects.slice() });
-    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '🧪', label: `Legacy Potion of ${effects.join(' & ')}`, cat: 'processed', sellPrice: 0, tags: ['Potion', 'Alchemy', 'Legacy'], desc: 'A preserved pre-refactor potion.', spriteIcon: 'bottle_potion.png', spriteColor: mixColor(reagentKeys), spriteMode: 'keyed' };
+    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '🧪', label: `Legacy Potion of ${effects.join(' & ')}`, cat: 'processed', sellPrice: 12, tags: ['Potion', 'Alchemy', 'Legacy'], desc: 'A preserved pre-refactor potion.', spriteIcon: 'bottle_potion.png', spriteColor: mixColor(reagentKeys), spriteMode: 'keyed' };
     return key;
   }
   function getPotionEffectsFromKey(key) { const modern = parseBrewedItemKey(key); if (modern) return modern; if (!String(key || '').startsWith('potion_')) return null; const legacyEffects = String(key).slice(7).split('_').filter(Boolean); return legacyEffects.length ? { legacyEffects } : null; } // Old loader compatibility.
