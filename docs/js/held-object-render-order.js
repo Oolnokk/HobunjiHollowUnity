@@ -748,10 +748,13 @@
     for (const object of overlayMeshes) {
       forEachMaterial(object.material, material => {
         saveMaterialState(states, material);
-        // Stamp only visible held/hand/foot fragments that pass the
-        // reconstructed SOLID depth test. Preserve the object's authored
-        // depth write and alpha cutout; the actual surface then decides
-        // whether to tint using its normal foreground depth test.
+        // Stamp only visible held/hand/foot fragments that pass solid
+        // depth. Enforce depthWrite during the temporary draw so water
+        // BEHIND a weapon/hand/foot fails the tint pass, even if that PNG's
+        // normal alpha compositing material opts out of depth writes.
+        // Keep the authored alphaTest to avoid opaque rectangle stamps.
+        material.depthTest = true;
+        material.depthWrite = true;
         material.stencilWrite = true;
         material.stencilWriteMask = 0x01;
         material.stencilFunc = THREE.AlwaysStencilFunc;
