@@ -549,6 +549,7 @@
       lastSeason:        'Stormtide',
       createdAt:         Date.now(),
       lastPlayed:        Date.now(),
+      openingStory:      { opening: '', farmTourComplete: false, farmTourCompletedAtHours: null, jubmirFeyComplete: false },
     };
     window.FarmWorldSettings.initializeWorld(world, _newFarmSettings);
     world.members[characterId] = makeDefaultMemberState();

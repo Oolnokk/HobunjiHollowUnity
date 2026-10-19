@@ -1713,6 +1713,9 @@
     if(!inRuin()||!state?.checkpoints?.active||!deps?.player)return false; // Canonical game respawn calls this for every death source; never hijack deaths after leaving the test ruin.
     const checkpoint=state.checkpoints.active;
     const context=state.context;
+    for(const composer of composers){
+      try{composer.onPlayerDeath?.(state.kit,reason);}catch(error){console.warn('[Random Test Ruin] composer death reset failed',error);}
+    }
     deps.setCurrentArea?.(MAP_ID);
     deps.setCurrentBuildingMapId?.(MAP_ID);
     restorePlayerScene(context);

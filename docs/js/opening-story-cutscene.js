@@ -26,29 +26,102 @@
     return STATE_PREFIX + ':' + worldId;
   }
 
-  function readProgress(profile) {
+  // World-scoped story progress travels in hobunjiSaveMeta through all normal
+  // folder/cloud/quick-save snapshots. Legacy browser flags are import-only.
+  const SAVE_META_KEY = 'hobunjiSaveMeta';
+  let cachedWorldId = null;
+  let cachedStory = null;
+
+  function legacyValue(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function worldMeta(profile) {
+    const id = String(profile?.worldId || '');
     try {
-      const progress = localStorage.getItem(stateKey(profile)); // Reads the world's shared completion flag before considering the previous character-scoped format.
-      if (progress) return progress;
-      const legacyKey = STATE_PREFIX + ':' + profile.characterId + ':' + profile.worldId; // Preserves completed openings recorded by the previous version for this world's owner.
-      if (localStorage.getItem(legacyKey) === 'complete') {
-        writeProgress(profile, 'complete');
-        return 'complete';
-      }
-      return '';
-    } catch (_) {
-      return '';
+      const meta = JSON.parse(localStorage.getItem(SAVE_META_KEY) || 'null');
+      return { meta, world: (meta?.worlds || []).find(w => String(w.id) === id) || null };
+    } catch (_) { return { meta: null, world: null }; }
+  }
+
+  function storedStory(profile) {
+    const id = String(profile?.worldId || '');
+    if (!id) return null;
+    if (cachedWorldId === id) return cachedStory; // No massive save JSON parse on repeated story checks.
+    const { meta, world } = worldMeta(profile);
+    if (!world) return null;
+    if (world.openingStory && typeof world.openingStory === 'object') {
+      cachedWorldId = id;
+      cachedStory = { ...world.openingStory };
+      return cachedStory;
     }
+    const oldOpening = legacyValue(stateKey(profile));
+    const oldCharacter = legacyValue(STATE_PREFIX + ':' + profile.characterId + ':' + id);
+    const oldTour = legacyValue(stateKey(profile) + ':farm-tour') === 'complete';
+    const oldFey = legacyValue(stateKey(profile) + ':jubmir-fey') === 'complete';
+    const rawHours = legacyValue(stateKey(profile) + ':farm-tour:completed-hours');
+    // Day-two+ worlds must already have finished the mandatory introduction,
+    // including a world downloaded via DriveSync without its browser-only keys.
+    const advanced = Math.max(Number(world.lastDay) || 1, Number(world.calendar?.day) || 1) > 1;
+    const complete = oldOpening === 'complete' || oldCharacter === 'complete' || oldTour || advanced;
+    const story = {
+      opening: complete ? 'complete' : oldOpening === 'pending' ? 'pending' : '',
+      farmTourComplete: oldTour || advanced,
+      farmTourCompletedAtHours: rawHours != null && rawHours.trim() !== '' && Number.isFinite(Number(rawHours)) ? Number(rawHours) : null,
+      jubmirFeyComplete: oldFey,
+    };
+    cachedWorldId = id;
+    cachedStory = story;
+    if (complete || oldOpening || oldFey) {
+      world.openingStory = story;
+      try { localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta)); }
+      catch (error) { status.lastError = error?.message || String(error); }
+    }
+    return story;
+  }
+
+  function changeStory(profile, fields) {
+    const id = String(profile?.worldId || '');
+    const prior = storedStory(profile) || {};
+    const { meta, world } = worldMeta(profile); // Always mutate the freshest full world record.
+    if (world) {
+      world.openingStory = { ...(world.openingStory || prior), ...fields };
+      try {
+        localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta));
+        cachedWorldId = id;
+        cachedStory = { ...world.openingStory };
+        return true;
+      } catch (error) { status.lastError = error?.message || String(error); }
+    }
+    // Compatibility with preview/test environments where no world save exists.
+    cachedWorldId = id;
+    cachedStory = { ...prior, ...fields };
+    try {
+      if (Object.prototype.hasOwnProperty.call(fields, 'opening')) localStorage.setItem(stateKey(profile), fields.opening || '');
+      if (fields.farmTourComplete === true) localStorage.setItem(stateKey(profile) + ':farm-tour', 'complete');
+      if (Number.isFinite(fields.farmTourCompletedAtHours)) localStorage.setItem(stateKey(profile) + ':farm-tour:completed-hours', String(fields.farmTourCompletedAtHours));
+      if (fields.jubmirFeyComplete === true) localStorage.setItem(stateKey(profile) + ':jubmir-fey', 'complete');
+    } catch (_) { /* The portable world save remains the authority. */ }
+    return false;
+  }
+
+  function readProgress(profile) {
+    const saved = storedStory(profile);
+    if (saved) return saved.opening || '';
+    const progress = legacyValue(stateKey(profile));
+    if (progress) return progress;
+    const legacyComplete = legacyValue(STATE_PREFIX + ':' + profile?.characterId + ':' + profile?.worldId) === 'complete';
+    if (legacyComplete) {
+      // Carry old per-character completion into the current world-scoped key
+      // when a legacy session does not yet expose its portable world record.
+      changeStory(profile, { opening: 'complete' });
+      return 'complete';
+    }
+    return '';
   }
 
   function writeProgress(profile, value) {
-    try {
-      localStorage.setItem(stateKey(profile), String(value || ''));
-      return true;
-    } catch (error) {
-      status.lastError = error?.message || String(error);
-      return false;
-    }
+    return changeStory(profile, { opening: String(value || '') });
   }
 
   function log(message, level = 'info') {
@@ -292,7 +365,11 @@
   }
 
   function tourComplete(profile) {
-    try { return localStorage.getItem(tourKey(profile)) === 'complete'; } catch (_) { return false; }
+    const saved = storedStory(profile);
+    // Portable data wins when it explicitly records a decision. A partial
+    // in-memory fallback in older worlds must not hide a completed legacy tour.
+    if (saved?.farmTourComplete != null) return saved.farmTourComplete === true;
+    return legacyValue(tourKey(profile)) === 'complete';
   }
 
   function gameHours() {
@@ -306,17 +383,22 @@
   function rememberFarmTourTime(profile) {
     const hours = gameHours(); // Recorded at the final farm-tour Continue, rather than when the tour starts.
     if (hours === null) return;
-    const key = tourKey(profile) + ':completed-hours'; // World-scoped timestamp accompanies the existing farm-tour flag.
-    const stored = localStorage.getItem(key); // Repairs malformed timestamps as well as missing legacy data.
-    if (stored === null || stored.trim() === '' || !Number.isFinite(Number(stored))) localStorage.setItem(key, String(hours));
+    if (Number.isFinite(storedStory(profile)?.farmTourCompletedAtHours)) return;
+    // In a legacy/no-portable-world session, preserve the stored completion
+    // time rather than restarting Jubmir's 12-hour countdown after a reload.
+    const legacyRaw = legacyValue(tourKey(profile) + ':completed-hours');
+    if (legacyRaw != null && legacyRaw.trim() !== '' && Number.isFinite(Number(legacyRaw))) return;
+    changeStory(profile, { farmTourCompletedAtHours: hours }); // Portable world-scoped farm-tour timestamp.
   }
 
   function feyVisitState(profile = window.__hobunjiPlayerProfile) {
     const now = gameHours(); // Used for eligibility and mobile diagnostics, never wall-clock time.
-    const raw = localStorage.getItem(tourKey(profile) + ':completed-hours'); // Missing legacy timestamps must not coerce to zero.
-    const completedAt = raw === null || raw.trim() === '' ? NaN : Number(raw); // Rejects malformed persisted timestamps.
+    const saved = storedStory(profile);
+    const raw = saved?.farmTourCompletedAtHours !== undefined
+      ? saved.farmTourCompletedAtHours : legacyValue(tourKey(profile) + ':completed-hours');
+    const completedAt = raw === null || raw === '' || raw === undefined ? NaN : Number(raw);
     return {
-      completed: localStorage.getItem(stateKey(profile) + ':jubmir-fey') === 'complete',
+      completed: saved ? saved.jubmirFeyComplete === true : legacyValue(stateKey(profile) + ':jubmir-fey') === 'complete',
       farmTourCompletedAtHours: Number.isFinite(completedAt) ? completedAt : null,
       hoursUntilVisit: now !== null && Number.isFinite(completedAt) ? Math.max(0, completedAt + FEY_VISIT_DELAY_HOURS - now) : null,
       latestChange: 'Six inn rooms; Jubmir visits 12 game hours after the farm tour and discusses trade and the Great Fey in his room.',
@@ -378,12 +460,20 @@
       "My point in saying this is that there is more than one way to skin a turg-rat. Finding ways to make the journey to Hobunji Hollow more worthwhile would be just as helpful as removing the obstacles that make it difficult.",
       "Father Hunundi has been asking around the village for ideas on how to do that. I would seek him out when you have time.",
     ];
-    const talk = (id, text) => ({ id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__' }); // Every line uses the canonical NPC speaker and faces the player.
+    const talk = (id, text) => ({ // Every spoken paragraph resets the shared two-person orbit, including whichever optional answer the player hears.
+      id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__',
+      cameraMode: 'orbit', orbitActorIds: ['player', 'jubmir'], orbitAlternateFocus: true,
+      orbitInitialZoomPercent: 131.25, orbitZoomStepPercent: 5, // First paragraph is exactly 20% closer in boom distance than the former 105% zoom shot.
+      orbitHeightMode: 'oppositeFaceArc', // Tilt endpoints to the player's/Jubmir's real face heights, and look toward the antipodal point.
+      orbitDistanceTiles: 1.85, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1, // Keep the former smooth reset available in the Director.
+      orbitInstantCut: true, // Jubmir's paragraphs hard-cut between camera positions rather than blending.
+      orbitDirection: 'clockwise', orbitDirectionSwitchEvery: 2, orbitDirectionalStartOffsetDeg: 30, // Jubmir CW, player CW, Jubmir CCW, player CCW; repeat.
+    });
     return {
-      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir',
+      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir', // Dialogue partners occupy adjacent, furniture-free floor tiles.
       actors: [
         { id: 'player', name: profile?.nickname || 'Farmer', isPlayer: true, worldC: 9, worldR: 8, rotation: 90, pose: 'standing' },
-        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 11, worldR: 8, rotation: 270, pose: 'standing' }),
+        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 10, worldR: 8, rotation: 270, pose: 'standing' }),
       ],
       stages: [
         { id: 'fey_fade_in', type: 'fade', direction: 'in', duration: 0.6, next: '__next__' },
@@ -412,7 +502,7 @@
         onDialogueContinue(stage) { if (stage.id === 'fey_final') finalContinued = true; },
       });
       if (!finalContinued) { status.phase = 'jubmir-fey-interrupted'; return false; }
-      localStorage.setItem(stateKey(profile) + ':jubmir-fey', 'complete');
+      changeStory(profile, { jubmirFeyComplete: true });
       window.DoorstepVisits?.markDone(FEY_VISIT_KEY);
       window.DoorstepVisits?.dismissVisit(FEY_VISIT_KEY);
       status.phase = 'jubmir-fey-complete';
@@ -499,7 +589,7 @@
         onDialogueContinue(stage) {
           if (stage.id === 'farm_tour_final') {
             rememberFarmTourTime(profile);
-            localStorage.setItem(tourKey(profile), 'complete');
+            changeStory(profile, { farmTourComplete: true });
           }
         },
       });
@@ -649,7 +739,7 @@
     buildJubmirFeyScene, nextFeyVisit, playJubmirFeyVisit,
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
     debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState() }),
-    stateKey,
+    stateKey, readProgress,
     tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
   });
   function storyVisitPanel() {

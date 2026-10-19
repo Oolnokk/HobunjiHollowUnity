@@ -139,7 +139,7 @@ for (const editor of [true, false]) {
   const context = { visual: {}, plane, holder };
   const current = { ...context, mainRoot: root(), offRoot: root() };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
-    state: current, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
+    states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {},
     idleOffhandLocalTransform() {
       assert.equal(operations[0], editor ? 'editor-bake' : 'game-bake', 'source matrices must be baked before calculating the offhand idle pose');
@@ -163,7 +163,7 @@ for (const editor of [true, false]) {
   const current = { ...context, mainRoot: root(), offRoot: root() };
   const poses = { main: { id: 'main' }, offhand: { id: 'offhand' } };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
-    state: current, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
+    states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {},
     idleOffhandLocalTransform() { operations.push('offhand-derived-from-holder'); return { position: new Vector(), quaternion: new Quaternion() }; },
     idleStancePoses: () => poses,

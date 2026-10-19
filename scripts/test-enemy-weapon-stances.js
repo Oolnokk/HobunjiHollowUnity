@@ -35,6 +35,10 @@ const BanditCombat = { // Minimal public BanditCombat API wrapped by the runtime
       dirSign: entity._banditSwingDirSign,
       power: entity._banditSwingPower,
     });
+    if (entity._mockRendererFinishesTail) { // The real renderer restores the rest stance at the end of the draw that finishes the tail.
+      entity._banditSwingAnim = 'thrust'; entity._banditSwingPose = null; entity._banditSwingDirSign = 1; entity._banditSwingPower = 1;
+      entity._banditSwingResetDone = true;
+    }
     const toolMesh = entity._banditToolHolder?.children?.[0];
     const toolPlane = toolMesh?.userData?.toolPlane;
     if (toolPlane) {
@@ -60,6 +64,7 @@ global.window = { // Browser globals required by the runtime adapter.
   __farmLog() {},
 };
 
+vm.runInThisContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { filename: 'shared-attack-pose.js' }); // Shared pose math the stance runtime delegates to.
 vm.runInThisContext(spacingSource, { filename: spacingPath });
 vm.runInThisContext(source, { filename: modulePath });
 
@@ -146,10 +151,16 @@ function approx(actual, expected, epsilon = 1e-9) {
   const prepared = renderCalls[0];
   assert.strictEqual(prepared.dirSign, -1);
   assert.strictEqual(prepared.power, 1);
-  assert.strictEqual(prepared.pose.neutral.x, -heavyPose.x);
-  assert.strictEqual(prepared.pose.neutral.yaw, -heavyPose.yaw);
-  assert.strictEqual(prepared.pose.neutral.bodyYaw, -heavyPose.bodyYaw);
-  assert.strictEqual(prepared.pose.neutral.roll, -heavyPose.roll);
+  // Heavy weapons alternate sides like the player's: a Backhand starts mirrored (BanditCombat's own mirror step
+  // flips this pre-unmirrored input back to the mirrored stance) and returns to the regular Heavy idle.
+  assert.strictEqual(prepared.pose.neutral.x, heavyPose.x);
+  assert.strictEqual(prepared.pose.neutral.yaw, heavyPose.yaw);
+  assert.strictEqual(prepared.pose.neutral.bodyYaw, heavyPose.bodyYaw);
+  assert.strictEqual(prepared.pose.neutral.roll, heavyPose.roll);
+  assert.strictEqual(prepared.pose.neutralMirrorSign, -1);
+  assert.strictEqual(prepared.pose.returnNeutralMirrorSign, 1);
+  assert.strictEqual(prepared.pose.returnNeutral.x, -heavyPose.x);
+  assert.strictEqual(prepared.pose.returnNeutral.yaw, -heavyPose.yaw);
   assert.strictEqual(prepared.pose.neutral.y, heavyPose.y);
   assert.strictEqual(prepared.pose.neutral.pitch, heavyPose.pitch);
   const bakedWindup = {
@@ -245,6 +256,102 @@ function approx(actual, expected, epsilon = 1e-9) {
   assert.strictEqual(snapshot.length, 2);
   assert.deepStrictEqual(snapshot.map(row => row.stanceClass), ['heavy', 'light']);
   assert.deepStrictEqual(snapshot.map(row => row.speciesId), ['mao-ao', 'ghoul']);
+}
+
+// The baked pose only depends on values that are constant for a whole attack, so
+// it is built once per attack and reused every frame (no per-enemy per-frame
+// garbage), but still rebuilt whenever anything it derives from changes.
+{
+  renderCalls.length = 0;
+  const authored = {
+    neutral: { ...sweepNeutral },
+    windup: { x: 0.20, y: 0.10, z: 0.30, pitch: 10, yaw: 20, bodyYaw: -30, roll: 40 },
+    strike: { x: -0.10, y: 0.20, z: 0.50, pitch: -15, yaw: -25, bodyYaw: 35, roll: -45 },
+  };
+  const entity = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: authored, sign: 1, power: 1, action: { windupS: 0.4, strikeS: 0.2, t: 0 } });
+  const first = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  for (let frame = 1; frame <= 5; frame += 1) {
+    entity._banditAction.t = frame * 0.05; // The action advances every frame; the bake must not.
+    assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), first, 'same attack reuses its baked pose');
+  }
+  window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(entity._enemyPreparedPose.prepared, first, 'the renderer path shares that cache');
+
+  const savedX = heavyPose.x;
+  heavyPose.x = savedX + 0.05; // WeaponToolStances edits its shared stance objects in place.
+  const afterStanceEdit = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  assert.notStrictEqual(afterStanceEdit, first, 'an in-place stance edit rebakes');
+  approx(afterStanceEdit.pose.neutral.x, savedX + 0.05);
+  heavyPose.x = savedX;
+
+  const afterRestore = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  entity._banditSwingPower = 1.2;
+  assert.notStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), afterRestore, 'a different attack power rebakes');
+  entity._banditSwingPower = 1;
+  const settledPower = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  entity._banditAction = { windupS: 0.4, strikeS: 0.2, t: 0 };
+  assert.notStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), settledPower, 'a new staged action is a new attack and rebakes');
+  entity._banditSwingDirSign = -1;
+  assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity).effectiveSign, -1, 'a different direction rebakes');
+
+  // Authored hand-grip flags on the attack's endpoints reach the enemy's hand driver like the player's.
+  const withFlags = { ...authored, windup: { ...authored.windup, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 } } };
+  const flagged = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: withFlags, action: { windupS: 0.4, strikeS: 0.2, t: 0 } });
+  assert.deepStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(flagged).pose.windup.secondaryGrip, { enabled: false, percent: 50, primaryPercent: 50 });
+}
+
+// The strike/hold/return tail is still the swing: the adapter keeps the stance neutral through it, and when the
+// renderer finishes the tail (restoring the rest stance) the adapter must not restore the finished swing over it.
+{
+  renderCalls.length = 0;
+  const entity = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } }, power: 1.5 });
+  entity._banditToolTail = { startMs: 0, baseElapsedS: 0.6, durationS: 0.6, windupFrac: 0.7, strikeFrac: 1, holdS: 0.4 };
+  window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(renderCalls[0].anim, 'sweep', 'stance pose is applied through the tail');
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, heavyPose);
+  assert.strictEqual(entity._enemyWeaponStanceDebug.applied, true);
+
+  // The draw that finishes the tail restores the rest stance; the adapter keeps it instead of restoring the old swing.
+  entity._mockRendererFinishesTail = true;
+  window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(entity._banditSwingAnim, 'thrust', 'rest stance survives the adapter');
+  assert.strictEqual(entity._banditSwingPower, 1);
+  assert.strictEqual(entity._banditSwingPose, null);
+  assert.strictEqual(entity._banditSwingResetDone, false, 'the handoff flag is consumed');
+  // Without a reset, the swing's own fields are restored exactly as before.
+  const normal = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', power: 1.5 });
+  normal._banditToolTail = { startMs: 0, baseElapsedS: 0.6, durationS: 0.6, windupFrac: 0.7, strikeFrac: 1, holdS: 0.4 };
+  window.BanditCombat.updateToolMesh(normal);
+  assert.strictEqual(normal._banditSwingAnim, 'sweep'); assert.strictEqual(normal._banditSwingPower, 1.5);
+}
+// Heavy forehand starts regular and returns mirrored (ready for the backhand); Light weapons never alternate.
+{
+  const fore = makeEntity({ weaponKey: 'heavy_weapon', anim: 'sweep', pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } }, sign: 1 });
+  const foreSeq = window.EnemyWeaponStances.preparedEnemyPose(fore).pose;
+  assert.strictEqual(foreSeq.neutralMirrorSign, 1); assert.strictEqual(foreSeq.returnNeutralMirrorSign, -1);
+  assert.strictEqual(foreSeq.neutral.x, -(-heavyPose.x)); assert.strictEqual(foreSeq.returnNeutral.x, -heavyPose.x);
+  const lightBack = makeEntity({ weaponKey: 'light_weapon', anim: 'sweep', pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } }, sign: -1 });
+  const lightSeq = window.EnemyWeaponStances.preparedEnemyPose(lightBack).pose;
+  assert.strictEqual(lightSeq.neutralMirrorSign, 1); assert.strictEqual(lightSeq.returnNeutralMirrorSign, 1);
+  assert.strictEqual(lightSeq.returnNeutral.x, -lightPose.x, 'light return Neutral equals its (pre-unmirrored) start Neutral');
+  assert.strictEqual(lightSeq.neutral.x, -lightPose.x);
+}
+
+// A dual-wield weapon rests in the authored dual-wield main stance (the player's WeaponToolStances.targetPoseFor).
+{
+  const dualMainPose = { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 };
+  const dualMain = { ...dualMainPose, x: -0.05, pitch: 30 }; // Distinct from Light so the selection is observable.
+  window.WeaponToolStances.poses.dualWieldMain = dualMain;
+  window.HobunjiHandToolGrips = { isDualWieldWeapon: key => key === 'dagger_weapon' };
+  toolDefs.dagger_weapon = { shapeKey: 'dagger', animStyle: 'thrust', weaponIdleClass: 'light' };
+  const dual = makeEntity({ weaponKey: 'dagger_weapon', anim: 'thrust' });
+  const prepared = window.EnemyWeaponStances.preparedEnemyPose(dual);
+  assert.strictEqual(prepared.pose.neutral.x, dualMain.x); assert.strictEqual(prepared.pose.neutral.pitch, dualMain.pitch);
+  assert.strictEqual(dual._enemyDualWeapon.value, true);
+  // Same class, not a dual weapon: ordinary Light stance.
+  const plain = makeEntity({ weaponKey: 'light_weapon', anim: 'thrust' });
+  assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(plain).pose.neutral.x, lightPose.x);
+  delete window.WeaponToolStances.poses.dualWieldMain; delete window.HobunjiHandToolGrips; delete toolDefs.dagger_weapon;
 }
 
 console.log('test-enemy-weapon-stances: ok');

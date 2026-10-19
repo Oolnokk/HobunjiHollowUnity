@@ -13611,6 +13611,7 @@
           // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
           // dev-placed/moved/removed pieces; returns the authored list untouched otherwise.
           const buildingFurniture = window.DevMapFurniture?.mergeBuildingFurniture?.(mapId, mapData.furniture) || mapData.furniture || [];
+          const buildingCameraFurniture = []; // Capture true rendered furniture geometry once, not an entire interior-scene traverse every camera frame.
           for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
@@ -13664,6 +13665,7 @@
               bScene.add(ph);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
+            if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
@@ -13947,6 +13949,7 @@
           // whole scene graph every frame in occlusionSafeCameraPosition.
           const occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          for (const furniture of buildingCameraFurniture) if (!occlusionMeshes.includes(furniture)) occlusionMeshes.push(furniture); // Track even furniture that has no collision-grid marker.
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
@@ -20406,7 +20409,123 @@
         return 1;
       }
 
+      // The navigation grid is the second authority for collision in addition
+      // to visible wall/furniture meshes. Most solid room tiles have no
+      // cameraObstacle mesh, and furniture footprints can be collision-solid
+      // without any render triangle at the ray's center. Sample the boom
+      // through every crossed tile, caching tile-level walkability until the
+      // beam enters a new cell. Height bounds prevent a short object acting
+      // like an infinitely tall wall.
+      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ) {
+        const grid = typeof npcGridForArea === 'function' ? npcGridForArea(currentArea) : null;
+        if (!grid) return null;
+        const dx = toX - fromX, dy = toY - fromY, dz = toZ - fromZ;
+        const len = Math.hypot(dx, dy, dz), flat = Math.hypot(dx, dz);
+        if (flat < 0.025 || len < 0.025) return null;
+        const samples = Math.max(1, Math.min(160, Math.ceil(flat / 0.12))); // Sub-tile heights and near corners cannot slip between adjacent cells.
+        let lastC = null, lastR = null, isBlocked = false, floor = 0, roof = 0;
+        for (let i = 1; i <= samples; i++) {
+          const fraction = i / samples;
+          const x = fromX + dx * fraction, z = fromZ + dz * fraction;
+          const c = Math.floor(x), r = Math.floor(z);
+          if (c !== lastC || r !== lastR) {
+            lastC = c; lastR = r;
+            const tile = grid[r]?.[c];
+            // The same collision-grid authority used by NPC pathing covers
+            // manual colliders, structural walls, occupied furniture tiles,
+            // closed doors, and area footprint blockers.
+            isBlocked = !isNpcTileWalkable(currentArea, c, r);
+            if (!isBlocked) continue;
+            floor = tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+            const furnitureFootprint = !!tile?.npcFurnitureCollider;
+            roof = floor + (furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
+          }
+          if (!isBlocked) continue;
+          const y = fromY + dy * fraction;
+          if (y >= floor - 0.04 && y <= roof) {
+            // Refine the entry distance so dense tile clipping does not make
+            // the camera jump in discrete .12-tile increments.
+            let before = (i - 1) / samples, after = fraction;
+            for (let j = 0; j < 6; j++) {
+              const mid = (before + after) * 0.5;
+              const mc = Math.floor(fromX + dx * mid), mr = Math.floor(fromZ + dz * mid);
+              const my = fromY + dy * mid;
+              if (mc === c && mr === r && my >= floor - 0.04 && my <= roof) after = mid;
+              else before = mid;
+            }
+            return len * after;
+          }
+        }
+        return null;
+      }
+
+      let _cameraHorizontalDebug = null; // Last horizontal clearance calculation, included in cutscene Pixel Probe reports.
+      let _cameraHorizontalSafeDistance = null; // Smoothed X/Z boom extension; obstructions retract immediately, clear space extends gradually.
+      let _cameraHorizontalUpdatedAt = 0; // Real-time reference for frame-rate-independent horizontal collision recovery.
+      let _cameraHorizontalArea = null; // Prevents a previous building's wall from shortening another area's camera.
+      let _cameraHorizontalShotSignature = null; // A hard cut must not inherit the preceding paragraph's eased wall clearance.
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
+        const originalIdealX = idealX, originalIdealZ = idealZ; // Authored X/Z intent, preserved for diagnostics.
+        const horizontalObstacles = currentAreaOcclusionMeshes(); // Same tagged walls/furniture used by the existing full 3D boom collision.
+        const horizontalSqueezeEnabled = _isBuildingArea(currentArea) || cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.(); // Do not add lateral rays to ordinary outdoor gameplay.
+        const shotSignature = window.CinematicCameraRuntime?.activeRecord?.()?.signature || null;
+        if (_cameraHorizontalArea !== currentArea || _occlusionCameraMode !== activeCameraMode || _cameraHorizontalShotSignature !== shotSignature) {
+          _cameraHorizontalSafeDistance = null;
+          _cameraHorizontalUpdatedAt = 0;
+          _cameraHorizontalArea = currentArea;
+          _cameraHorizontalShotSignature = shotSignature;
+          // Instant cuts must discard the older direct-ray distance too;
+          // otherwise an unobstructed new paragraph inherits a slow push-out.
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
+        }
+        const hx = idealX - lookAtX, hy = idealY - lookAtY, hz = idealZ - lookAtZ; // True tilted camera trajectory; a fixed-Y probe would miss lower walls.
+        const reach = Math.hypot(hx, hz);
+        const boomLength = Math.hypot(hx, hy, hz);
+        let permittedReach = reach; // Maximum unobstructed horizontal camera offset along the requested trajectory.
+        let horizontalRays = 0; // Exposed on the mobile diagnostic to identify when expensive lateral checks run.
+        if (horizontalSqueezeEnabled && reach > 0.08 && boomLength > 0.08) { // Also check grid colliders when no tagged meshes exist.
+          const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Three boom rays approximate camera's horizontal width.
+          const dirX = hx / boomLength, dirY = hy / boomLength, dirZ = hz / boomLength; // Probe through actual wall heights, not just the final camera Y.
+          for (const side of [-1, 0, 1]) {
+            let meshDistance = Infinity;
+            if (horizontalObstacles?.length) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side),
+                _cameraOcclusionDirVec.set(dirX, dirY, dirZ),
+              );
+              _cameraOcclusionRaycaster.near = 0.02;
+              _cameraOcclusionRaycaster.far = boomLength;
+              meshDistance = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true)[0]?.distance ?? Infinity;
+            }
+            const tileDistance = cameraTileCollisionDistance(
+              lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side,
+              idealX + rightX * side, idealY, idealZ + rightZ * side,
+            );
+            horizontalRays++;
+            const hitDistance = Math.min(meshDistance, tileDistance ?? Infinity);
+            if (Number.isFinite(hitDistance)) permittedReach = Math.min(permittedReach, reach * Math.max(0.025, hitDistance - 0.12) / boomLength);
+          }
+        }
+        if (horizontalSqueezeEnabled && reach > 0.08) {
+          const now = performance.now(); // The same clock as seated-wall recovery.
+          const dt = _cameraHorizontalUpdatedAt ? Math.max(0, Math.min(0.1, (now - _cameraHorizontalUpdatedAt) / 1000)) : 0;
+          _cameraHorizontalUpdatedAt = now;
+          if (_cameraHorizontalSafeDistance == null || permittedReach < _cameraHorizontalSafeDistance) _cameraHorizontalSafeDistance = permittedReach;
+          else _cameraHorizontalSafeDistance += (permittedReach - _cameraHorizontalSafeDistance) * (1 - Math.exp(-8 * dt));
+          const safeReach = window.FormatUtils.clamp(_cameraHorizontalSafeDistance, 0.025, reach);
+          const factor = safeReach / reach; // Only the X/Z offset is squeezed; keep the authored vertical offset.
+          idealX = lookAtX + hx * factor;
+          idealZ = lookAtZ + hz * factor;
+        } else {
+          _cameraHorizontalSafeDistance = null;
+          _cameraHorizontalUpdatedAt = 0;
+        }
+        _cameraHorizontalDebug = horizontalSqueezeEnabled ? {
+          area: currentArea, factor: reach > 0.08 ? Math.hypot(idealX - lookAtX, idealZ - lookAtZ) / reach : 1,
+          rays: horizontalRays, intended: { x: originalIdealX, z: originalIdealZ },
+          solved: { x: idealX, z: idealZ },
+        } : null; // Existing 3D boom, local terrain and floor guard still follow this X/Z solve.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
         let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
@@ -20415,7 +20534,8 @@
           _seatedOcclusionUpdatedAt = 0;
           _occlusionCameraMode = activeCameraMode;
         }
-        const obstacles = currentAreaOcclusionMeshes();
+        const obstacles = horizontalObstacles;
+        const cameraCollisionMinDistance = horizontalSqueezeEnabled ? 0.025 : SEATED_CAMERA_MIN_DISTANCE; // Never leave a tight room camera embedded solely to satisfy the seated boom's minimum.
         const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
         const dist = Math.hypot(dx, dy, dz);
         if (dist >= (shoulderBoom ? SEATED_CAMERA_MIN_DISTANCE : 0.5)) {
@@ -20423,22 +20543,23 @@
           let desiredSafeDist = dist;
           let directHitDistance = null;
           let chosenSideOffsetDeg = 0;
-          if (obstacles && obstacles.length) {
-            _cameraOcclusionRaycaster.set(
-              _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
-              _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
-            );
-            // A chair can put the seated target much closer than 0.3 tiles to
-            // a wall. Use a short near plane there so the wall is not skipped;
-            // ordinary standing cameras retain the player-avoidance distance.
-            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom ? 0.02 : 0.3;
-            _cameraOcclusionRaycaster.far = dist;
-            // recursive:true — zone occlusion meshes are already individual
-            // tagged leaf meshes (harmless either way there), but the
-            // house/barn/furniture entries above are whole Groups.
-            const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
-            if (hits.length) {
-              directHitDistance = hits[0].distance;
+          if (horizontalSqueezeEnabled || (obstacles && obstacles.length)) {
+            let meshDistance = Infinity;
+            if (obstacles?.length) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
+                _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
+              );
+              // A short ray start keeps nearby chairs and walls detectable.
+              _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom || horizontalSqueezeEnabled ? 0.02 : 0.3;
+              _cameraOcclusionRaycaster.far = dist;
+              meshDistance = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0]?.distance ?? Infinity;
+            }
+            const tileDistance = horizontalSqueezeEnabled
+              ? cameraTileCollisionDistance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) : null;
+            const obstacleDistance = Math.min(meshDistance, tileDistance ?? Infinity);
+            if (Number.isFinite(obstacleDistance)) {
+              directHitDistance = obstacleDistance;
               wallHitDistance = directHitDistance;
               const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
               if (activeCameraMode === 'seated' || interiorStanding || shoulderBoom) {
@@ -20454,8 +20575,8 @@
                 // leaving the camera embedded despite a correct ray hit.
                 const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
-                  SEATED_CAMERA_MIN_DISTANCE,
-                  hits[0].distance - wallClearance,
+                  cameraCollisionMinDistance,
+                  obstacleDistance - wallClearance,
                 ));
 
                 // If the wall leaves too little room to frame the seated
@@ -20479,8 +20600,13 @@
                     _cameraOcclusionRaycaster.near = 0.02;
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
-                    const candidateSafeDist = candidateHits.length
-                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - wallClearance)
+                    const candidateTileDistance = horizontalSqueezeEnabled ? cameraTileCollisionDistance(
+                      lookAtX, lookAtY, lookAtZ,
+                      lookAtX + candidateDir.x * dist, lookAtY + candidateDir.y * dist, lookAtZ + candidateDir.z * dist,
+                    ) : null;
+                    const candidateDistance = Math.min(candidateHits[0]?.distance ?? Infinity, candidateTileDistance ?? Infinity);
+                    const candidateSafeDist = Number.isFinite(candidateDistance)
+                      ? Math.max(cameraCollisionMinDistance, candidateDistance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20490,7 +20616,7 @@
                   chosenSideOffsetDeg = best.offsetDeg;
                 }
               } else {
-                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, hits[0].distance - 0.6));
+                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, obstacleDistance - 0.6));
               }
             }
           }
@@ -20515,7 +20641,7 @@
               const alpha = 1 - Math.exp(-8 * dt);
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
-            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, cameraCollisionMinDistance, dist);
             _seatedCameraDebug = interiorBoom || shoulderBoom ? null : {
               idealDistance: dist,
               directHitDistance,
@@ -21609,7 +21735,15 @@
       let combatSwingAimTargetOverride = null; // Optional finite world point used by fishing so a camera move cannot redirect the held throw away from the selected water tile.
       let combatSwingToolEndFlip = false; // Requests the same visible tip↔handle in-plane reversal previewed by the Attack Animation Editor.
       let fishingThrowSpinVisual = null; // Carries the shared thrown-weapon spin basis/revolutions while the harpoon slot owns a fishing throw pose.
-      const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
+      // Swing interpolation, per-style rest poses and pose / legacy-arc sampling
+      // are shared with every BanditCombat humanoid (bandits, ghouls, skeletons,
+      // ...): editing js/combat/shared-attack-pose.js changes the player and
+      // enemies together. Only WHERE the sampled channels are placed stays here.
+      const SharedAttackPose = window.SharedAttackPose;
+      const fourPhaseLerp = SharedAttackPose.fourPhaseLerp; // Also used by heldActionPoseAt for held-item actions.
+      const STYLE_NEUTRAL_POSE = SharedAttackPose.STYLE_NEUTRAL_POSE; // Each tool style's rest pose; also handed to BanditCombat.init.
+      const _toolPoseSample = SharedAttackPose.createSample(); // Reused every frame by updateToolMesh's SharedAttackPose sampling.
+      const _swingTimelineScratch = { totalS: 0, wf: 0, sf: 0, hf: 0 }; // Reused by triggerWeaponSwingVisual's SharedAttackPose.swingTimeline.
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
@@ -21750,23 +21884,17 @@
         // auto-derived from SF in updateToolMesh, without needing any
         // per-ability changes in the combat-*.js files. Callers that already
         // reserved their own returnS (strikeFrac < 1) are left untouched.
-        const hasOwnReturn = strikeFrac < 0.999;
-        const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
-        // Reserve an explicit post-strike hold (if this ability's config asked
-        // for one) on top of whatever windup/strike/return it already
-        // budgeted — additive, rather than carving it out of durationS, so
-        // the windup/strike/return real-world timings stay exactly as
-        // authored; the pause is just inserted between strike and return.
+        // The tail / hold / fraction math is SharedAttackPose.swingTimeline, shared with enemies so their swings last as long.
         const holdS = Math.max(0, opts.holdS || 0);
-        const totalS = durationS + returnTailS + holdS;
-        toolSwingDur = Math.max(0.05, totalS);
+        const timeline = SharedAttackPose.swingTimeline(_swingTimelineScratch, durationS, windupFrac, strikeFrac, holdS);
+        toolSwingDur = timeline.totalS;
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
         combatSwingAnim = opts.anim || null;
         combatSwingSign = opts.dirSign || 1;
-        combatSwingWindupFrac = windupFrac * durationS / totalS;
-        combatSwingStrikeFrac = strikeFrac * durationS / totalS;
+        combatSwingWindupFrac = timeline.wf;
+        combatSwingStrikeFrac = timeline.sf;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
@@ -22639,44 +22767,10 @@
         return style || 'thrust';
       }
 
-      // Four-phase neutral→windup→strike→hold→neutral interpolation, shared by
-      // every pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
-      // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
-      // the editor's authored pose JSON describe the exact same motion. The
-      // hold phase (sf→hf) dwells exactly at the strike value before easing
-      // back to neutral, so an impact reads as a clean hit instead of
-      // snapping straight into its recovery.
-      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
-        if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
-        if (progress <= hf) return strikeV;
-        return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / (1.0 - hf));
-      }
-
-      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (combatSwingSequence === 'load') {
-          if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-          return windupV + (returnNeutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
-        }
-        if (combatSwingSequence === 'fire') {
-          if (progress <= sf) return neutralV + (strikeV - neutralV) * (progress / Math.max(0.0001, sf));
-          if (progress <= hf) return strikeV;
-          return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
-        }
-        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV);
-      }
-
-      // Each tool style's natural at-rest pose (degrees for angle channels) —
-      // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
-      // (docs/tools/attack-animation-editor/index.html). Used as the fallback
-      // neutral for the pose-driven combat branch below when a step's own
-      // pose.neutral doesn't specify a channel.
-      const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
-        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
-        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2,   scale: 1 },
-        ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
-      };
+      // fourPhaseLerp, STYLE_NEUTRAL_POSE and the pose / legacy-arc sampling now
+      // live in js/combat/shared-attack-pose.js (window.SharedAttackPose), shared
+      // with every BanditCombat humanoid -- see the declarations near
+      // combatSwingPose above.
 
       const _speciesPoseScaling = window.HobunjiSpeciesPoseScale; // X/Z weapon orbit + rigger-derived Y body-height mapping shared with the Attack Editor.
       const _toolPoseCentroidDebug = {
@@ -22909,9 +23003,7 @@
         // timing is; otherwise fall back to the old proportional-to-
         // what's-left formula (dig/fill/refill, and any combat swing that
         // didn't set holdS).
-        const HF = (combatSwingAnim && combatSwingHoldS > 0)
-          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
-          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        const HF = SharedAttackPose.holdFrac(SF, combatSwingAnim ? combatSwingHoldS : 0, toolSwingDur); // Shared with enemies.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {
@@ -22926,60 +23018,34 @@
           // un-mirrored or mirrored. power scales every channel's deviation
           // from its own neutral, for a heavier-telegraphed finisher,
           // without needing a dedicated bespoke formula per style.
-          const pose = combatSwingPose;
-          const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
-          // pose/styleNeutral are stable references for the whole windup/strike/
-          // return of a single swing (only reassigned at swing start/end), so
-          // the merge below is memoized on those two references instead of
-          // rebuilding both objects every frame of every attack.
-          let neutral, returnNeutral;
-          if (_toolMeshPoseMergeCache.pose === pose && _toolMeshPoseMergeCache.styleNeutral === styleNeutral) {
-            ({ neutral, returnNeutral } = _toolMeshPoseMergeCache);
-          } else {
-            neutral = { ...styleNeutral, ...(pose.neutral || {}) };
-            returnNeutral = { ...neutral, ...(pose.returnNeutral || {}) };
-            _toolMeshPoseMergeCache.pose = pose;
-            _toolMeshPoseMergeCache.styleNeutral = styleNeutral;
-            _toolMeshPoseMergeCache.neutral = neutral;
-            _toolMeshPoseMergeCache.returnNeutral = returnNeutral;
-          }
-          toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
-          const sign = combatSwingSign;
-          const power = combatSwingPower;
+          // All channel math (merge over the style neutral, power, mirroring,
+          // load/fire sequencing, the midline-flip blend) is SharedAttackPose's,
+          // so enemies play the identical pose with the identical formula.
           const poseHoldFrac = combatSwingSequenceHoldFrac ?? HF; // Used to preserve authored ranged holds while melee keeps its derived hold.
-          const hasNeutralMirrorSequence = pose.neutralMirrorSign != null || pose.returnNeutralMirrorSign != null;
-          const startMirrorSign = pose.neutralMirrorSign === -1 ? -1 : 1;
-          const returnMirrorSign = pose.returnNeutralMirrorSign === -1 ? -1 : 1;
-          const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
-          const chan = (ch, mirror = false) => {
-            const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
-            const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
-            const n = neutral[ch] * (mirror ? sign : 1);
-            const rn = returnNeutral[ch] * (mirror ? sign : 1);
-            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n, rn);
-          };
+          const sampled = SharedAttackPose.samplePose(
+            _toolPoseSample, combatSwingPose, STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust,
+            progress, WF, SF, poseHoldFrac, combatSwingSign, combatSwingPower, combatSwingSequence,
+          );
+          toolHolder.scale.setScalar(sampled.scale);
 
           // The hand attachment itself is part of a true midline flip. Keep it
           // on the attack side through impact, then carry it smoothly across
           // during recovery. The flat sprite changes handedness at the midpoint
           // rather than scaling through zero and briefly disappearing.
-          const mirrorBlend = hasNeutralMirrorSequence
-            ? sequencedPoseLerp(progress, WF, SF, poseHoldFrac, sign, sign, startMirrorSign, returnMirrorSign)
-            : 1;
-          const handBaseX = playerToolBaseX * mirrorBlend;
-          posePlaneMirrorSign = hasNeutralMirrorSequence ? (mirrorBlend < 0 ? -1 : 1) : null;
+          const handBaseX = playerToolBaseX * sampled.mirrorBlend;
+          posePlaneMirrorSign = sampled.hasMirrorSequence ? (sampled.mirrorBlend < 0 ? -1 : 1) : null;
 
-          const x = chan('x', true);
-          const y = chan('y');
-          const z = chan('z');
-          const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
-          const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
-          const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
+          const x = sampled.x;
+          const y = sampled.y;
+          const z = sampled.z;
+          const pitchRad   = sampled.pitchRad;
+          const yawRad     = sampled.yawRad;
+          const rollRad    = sampled.rollRad;
           // Fishing holds this throw's windup indefinitely. The authored -152°
           // body twist stays (the spear's frame is authored against it); only
           // the legs counter-rotate below so the feet face the cast tile.
           const fishingThrowHold = activeTool === 'harpoon' && !!fishingThrowSpinVisual;
-          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+          const bodyYawRad = sampled.bodyYawRad;
 
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
@@ -23064,17 +23130,19 @@
           // still arrives at the same +0.32 extension either way.
           // power scales reach/turn for an extra-telegraphed finisher (e.g. a
           // combo's final lunge) without needing its own bespoke anim branch.
+          // The jab arc itself (and its pitch resting at 10.31° rather than 0)
+          // is SharedAttackPose.sampleLegacyThrust, shared with enemy thrusts.
           const power       = combatSwingAnim ? combatSwingPower : 1;
-          const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
-          const jabOff      = fourPhaseLerp(progress, WF, SF, HF, windupBack, 0.32 * power);
-          const lateral     = fourPhaseLerp(progress, WF, SF, HF, 0, -0.23 * power);
-          // Pitch's neutral matches its own windup value (10.31°) rather than
-          // the other channels' implicit 0 — a thrust weapon rests at this
-          // held-up tilt, drops to a near-flat 1° at the strike, then eases
-          // back to the resting tilt instead of snapping flat.
-          const pitchRad    = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
-          const yawRad      = fourPhaseLerp(progress, WF, SF, HF, 0, THREE.MathUtils.degToRad(-45) * power);
-          const bodyYawRad  = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
+          const legacyThrust = SharedAttackPose.LEGACY_THRUST;
+          const thrustSample = SharedAttackPose.sampleLegacyThrust(
+            _toolPoseSample, progress, WF, SF, HF, power,
+            (combatSwingAnim ? legacyThrust.windupBackCombat : legacyThrust.windupBackTool) * power,
+          );
+          const jabOff      = thrustSample.z;
+          const lateral     = thrustSample.x;
+          const pitchRad    = thrustSample.pitchRad;
+          const yawRad      = thrustSample.yawRad;
+          const bodyYawRad  = thrustSample.bodyYawRad;
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -23104,19 +23172,20 @@
           // plays this branch — see combat-charged-breaker.js) doesn't need
           // its own bespoke formula.
           const power   = combatSwingAnim ? combatSwingPower : 1;
-          const neutral = { x: 0.03,  y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2,   roll: -82 };
-          const windup  = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13,  bodyYaw: -29, roll: -112 };
-          const strike  = { x: 0,     y: 0,    z: 0.12,  pitch: 13,   yaw: -28, bodyYaw: 29,  roll: -91 };
-          const scale = (ch, v) => neutral[ch] + (v - neutral[ch]) * power;
-          const chanLerp = ch => fourPhaseLerp(progress, WF, SF, HF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
+          // The raise/slam/return table is SharedAttackPose.LEGACY_CHOP_POSE
+          // (the same endpoints the Light/Heavy stance baker converts).
+          const chopSample = SharedAttackPose.samplePose(
+            _toolPoseSample, SharedAttackPose.LEGACY_CHOP_POSE, STYLE_NEUTRAL_POSE.chop,
+            progress, WF, SF, HF, 1, power, 'attack',
+          );
 
-          const x = chanLerp('x');
-          const y = chanLerp('y');
-          const z = chanLerp('z');
-          const pitchRad   = THREE.MathUtils.degToRad(chanLerp('pitch'));
-          const yawRad     = THREE.MathUtils.degToRad(chanLerp('yaw'));
-          const rollRad    = THREE.MathUtils.degToRad(chanLerp('roll'));
-          const bodyYawRad = THREE.MathUtils.degToRad(chanLerp('bodyYaw'));
+          const x = chopSample.x;
+          const y = chopSample.y;
+          const z = chopSample.z;
+          const pitchRad   = chopSample.pitchRad;
+          const yawRad     = chopSample.yawRad;
+          const rollRad    = chopSample.rollRad;
+          const bodyYawRad = chopSample.bodyYawRad;
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -23241,7 +23310,7 @@
           // combatSwingSign; power (Cleave) scales the whole arc for a heavier finisher.
           const sweepSign = combatSwingAnim ? combatSwingSign : 1;
           const sweepPower = combatSwingAnim ? combatSwingPower : 1;
-          const WINDUP_ANGLE = -2.20 * sweepPower * sweepSign, STRIKE_ANGLE = 2.12 * sweepPower * sweepSign;
+          const WINDUP_ANGLE = SharedAttackPose.LEGACY_SWEEP.windupRad * sweepPower * sweepSign, STRIKE_ANGLE = SharedAttackPose.LEGACY_SWEEP.strikeRad * sweepPower * sweepSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);
@@ -31203,6 +31272,7 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
+        let orbitResetCount = 0; // Counts only visited orbit paragraphs, so optional branches cannot make zoom/focus skip an increment.
         // Authored logical rotation remains separate from the rendered camera
         // deadzone. This is the single source of truth for every actor's
         // rotation from here on, kept in sync with the mesh only through
@@ -31460,6 +31530,18 @@
               const positionProvider = () => position.copy(targetProvider()).add(offset);
               window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
             }
+          } else if (stage.cameraMode === 'orbit') {
+            const subjectIds = stage.orbitActorIds || [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId]; // Actor IDs are authored independently of the speaker.
+            const subjects = subjectIds.map(id => { const entity = entities.get(id); return entity && { id, ...entity, faceWorldPosition: entity.walker ? () => _npcFaceWorldPosition(entity.walker) : null }; }).filter(Boolean); // Orbit height modes follow real skinned face positions (including the stand-in player), not generic body-height estimates.
+            if (subjects.length === 2 && subjectIds[0] !== subjectIds[1]) { // Never orbit one actor twice if a Director pair is incomplete.
+              const paragraphNumber = orbitResetCount + 1; // Advance only when the required pair really exists.
+              const orbit = window.CinematicCameraRuntime?.createStageOrbitShot?.(stage, subjects, paragraphNumber); // Shared camera owner keeps game and Director focus/zoom/reset behavior identical.
+              if (orbit) {
+                orbitResetCount = paragraphNumber;
+                cinematicCameraReady = false;
+                window.CinematicCameraRuntime.activate(area, orbit, { reason: 'authored-cutscene-orbit' });
+              }
+            } else console.warn('[cutscene orbit] requires two spawned actors:', stage.id, subjectIds);
           } else if (stage.cameraMode === 'pov') {
             clearPovShot();
             const source = entities.get(stage.actorId || stage.speakerId); // View origin is the same face anchor used by dialogue and shoulder-style aiming.
@@ -31961,7 +32043,7 @@
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

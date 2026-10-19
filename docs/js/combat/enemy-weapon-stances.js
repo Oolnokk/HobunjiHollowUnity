@@ -6,24 +6,20 @@
   // their equipped melee weapon uses the exact same authored Light/Heavy stance
   // as the player. Attack endpoints, timing, damage, AI, ranged mode, and the
   // post-strike settle window remain owned by BanditCombat.
+  //
+  // The stance-baking policy itself (legacy arc endpoints, power baking, melee
+  // spacing, handedness of the replacement Neutral) is window.SharedAttackPose's
+  // -- the same functions the player's WeaponToolStances.prepareCombatOptions
+  // calls -- so the two cannot drift. The baked pose only depends on values that
+  // are constant for a whole attack, so it is computed once per attack and
+  // reused every frame instead of rebuilding a dozen objects per enemy per frame.
 
   const banditApi = window.BanditCombat; // Public BanditCombat surface wrapped below before game.js injects its runtime dependencies.
   if (!banditApi || banditApi.__enemyWeaponStancesInstalled) return;
 
-  let deps = null; // BanditCombat's injected dependencies; used for shared tool definitions and legacy neutral pose data.
+  let deps = null; // BanditCombat's injected dependencies; used for shared tool definitions.
   let lastMissingRuntimeLogAt = 0; // Throttles missing WeaponToolStances warnings in the in-game/mobile debug log.
-  const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']); // Pose channels mirrored by BanditCombat for authored backhand/sweep attacks.
-  const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']); // Complete pose schema shared with weapon-tool-stances.js.
-  const RAD_TO_DEG = 180 / Math.PI; // Converts the legacy procedural sweep body-yaw radians into authored pose degrees.
-
-  function normalizePose(raw, fallback = {}) {
-    const pose = {}; // Numeric complete pose consumed by the synthetic authored-pose bridge below.
-    for (const key of POSE_KEYS) {
-      const value = Number(raw?.[key]);
-      pose[key] = Number.isFinite(value) ? value : (Number(fallback?.[key]) || 0);
-    }
-    return pose;
-  }
+  const POSE_KEYS = window.SharedAttackPose.POSE_KEYS; // Complete pose schema shared with weapon-tool-stances.js.
 
   function weaponDefinitionFor(entity) {
     const weaponKey = entity?.def?.weaponKey; // Equipped melee weapon id used to resolve the same TOOL_ITEM_DEFS entry the player uses.
@@ -45,102 +41,41 @@
     return stanceClass === 'light' || stanceClass === 'heavy' ? stanceClass : null;
   }
 
-  function stancePoseFor(entity) {
+  function holdsDualWieldWeapon(entity) {
+    const weaponKey = entity?.def?.weaponKey;
+    if (!weaponKey) return false;
+    const cached = entity._enemyDualWeapon; // The key test normalizes strings, so it runs once per weapon rather than every frame.
+    if (cached && cached.key === weaponKey) return cached.value;
+    const test = window.HobunjiHandToolGrips?.isDualWieldWeapon; // Same weapon test the player's stance selection and hand grips use.
+    if (typeof test !== 'function') return false; // Grip data not loaded yet: ask again next frame.
+    const value = test(weaponKey) === true;
+    entity._enemyDualWeapon = { key: weaponKey, value };
+    return value;
+  }
+
+  // The live stance pose object (updated in place when stance config or a Local Override loads), NOT a copy --
+  // callers compare its values against their cache instead of re-normalizing it every frame. A dual-wield weapon
+  // rests in its authored main-hand stance, exactly like the player's WeaponToolStances.targetPoseFor.
+  function stanceSourceFor(entity) {
     const stanceClass = stanceClassFor(entity); // Selects which stable authored player stance object the enemy should use.
     const poses = window.WeaponToolStances?.poses; // Shared Light/Heavy pose objects updated in place when stance config/local overrides load.
     if (!stanceClass || !poses) return null;
-    return normalizePose(stanceClass === 'heavy' ? poses.heavyWeapon : poses.lightWeapon);
+    if (poses.dualWieldMain && holdsDualWieldWeapon(entity)) return poses.dualWieldMain;
+    return (stanceClass === 'heavy' ? poses.heavyWeapon : poses.lightWeapon) || null;
   }
 
-  function sourceNeutralFor(anim, authoredPose) {
-    const stylePoses = deps?.STYLE_NEUTRAL_POSE || {}; // Same legacy player neutral table BanditCombat already uses internally.
-    const styleNeutral = normalizePose(stylePoses[anim] || stylePoses.thrust || {}); // Base source neutral for the attack's original animation style.
-    return normalizePose(authoredPose?.neutral, styleNeutral);
-  }
-
-  function bakeAuthoredEndpoint(raw, sourceNeutral, power) {
-    const endpoint = {}; // Power-scaled attack endpoint preserved independently from the replacement Light/Heavy neutral.
-    for (const key of POSE_KEYS) {
-      const rawValue = Number(raw?.[key]);
-      const authoredValue = Number.isFinite(rawValue) ? rawValue : sourceNeutral[key];
-      endpoint[key] = sourceNeutral[key] + (authoredValue - sourceNeutral[key]) * power;
-    }
-    return endpoint;
-  }
-
-  function legacyProceduralEndpoints(anim, power) {
-    const p = Number.isFinite(Number(power)) ? Number(power) : 1; // Existing BanditCombat attack-power multiplier baked into the endpoint once.
-    if (anim === 'sweep') {
-      return {
-        windup: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: -2.20 * RAD_TO_DEG * p, roll: 0 },
-        strike: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 2.12 * RAD_TO_DEG * p, roll: 0 },
-      };
-    }
-    if (anim === 'chop') {
-      const neutral = normalizePose(deps?.STYLE_NEUTRAL_POSE?.chop || { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }); // Existing chop source neutral used only if a future enemy weapon selects that legacy animation.
-      const rawWindup = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13, bodyYaw: -29, roll: -112 }; // Legacy chop windup already used by the player stance bridge.
-      const rawStrike = { x: 0, y: 0, z: 0.12, pitch: 13, yaw: -28, bodyYaw: 29, roll: -91 }; // Legacy chop strike already used by the player stance bridge.
-      return {
-        windup: bakeAuthoredEndpoint(rawWindup, neutral, p),
-        strike: bakeAuthoredEndpoint(rawStrike, neutral, p),
-      };
-    }
-    return {
-      windup: { x: 0, y: 0, z: -0.40 * p, pitch: 10.31, yaw: 0, bodyYaw: -45 * p, roll: 0 },
-      strike: { x: -0.23 * p, y: 0, z: 0.32 * p, pitch: 1, yaw: -45 * p, bodyYaw: 46 * p, roll: 0 },
-    };
-  }
-
-  function neutralInputForSign(targetNeutral, sign) {
-    const neutral = {}; // Pre-unmirrored neutral so BanditCombat's own mirror step still lands on the same stance for forehand/backhand attacks.
-    for (const key of POSE_KEYS) {
-      neutral[key] = MIRRORED_POSE_KEYS.has(key) ? targetNeutral[key] * sign : targetNeutral[key];
-    }
-    return neutral;
-  }
-
-  function preparedEnemyPose(entity) {
-    const targetNeutral = stancePoseFor(entity); // Authored Light/Heavy neutral shared with the player; null leaves legacy BanditCombat behavior untouched.
-    if (!targetNeutral) return null;
-
-    const originalAnim = entity?._banditSwingAnim || 'thrust'; // Attack/rest animation selected by BanditCombat before this adapter intervenes.
-    const originalPose = entity?._banditSwingPose && typeof entity._banditSwingPose === 'object' ? entity._banditSwingPose : null; // Optional authored attack pose used by combos/charged attacks.
-    const requestedSign = entity?._banditSwingDirSign === -1 ? -1 : 1; // Existing forehand/backhand direction requested by the current bandit ability.
-    const effectiveSign = originalPose || originalAnim === 'sweep' ? requestedSign : 1; // Matches WeaponToolStances: legacy thrust/chop do not mirror, authored/sweep attacks do.
-    const powerValue = Number(entity?._banditSwingPower); // Current bandit ability power baked into windup/strike endpoints below.
-    const power = Number.isFinite(powerValue) ? powerValue : 1;
-    let windup; // Replacement synthetic pose windup endpoint; used by BanditCombat's generic authored-pose branch.
-    let strike; // Replacement synthetic pose strike endpoint; used by BanditCombat's generic authored-pose branch.
-
-    if (originalPose) {
-      const sourceNeutral = sourceNeutralFor(originalAnim, originalPose); // Original attack neutral used only as the basis for power-scaling its endpoints.
-      windup = bakeAuthoredEndpoint(originalPose.windup, sourceNeutral, power);
-      strike = bakeAuthoredEndpoint(originalPose.strike, sourceNeutral, power);
-    } else {
-      ({ windup, strike } = legacyProceduralEndpoints(originalAnim, power));
-    }
-
-    // Enemy melee weapons use the exact same character-local spacing transform
-    // as the player.  Apply it after the enemy's original attack/power endpoint
-    // is baked, before BanditCombat's own dirSign mirror step.
-    if (window.MeleePoseSpacing?.adjustEndpoint) {
-      windup = window.MeleePoseSpacing.adjustEndpoint(windup, 'windup');
-      strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
-    }
-
-    return {
-      originalAnim,
-      requestedSign,
-      effectiveSign,
-      pose: {
-        neutral: neutralInputForSign(targetNeutral, effectiveSign),
-        windup,
-        strike,
-      },
-    };
-  }
-
+  // How much of the sweep style's -90 degree plane twist is cancelled by the weapon's resting stance:
+  // 1 at rest, fading out over the windup, 0 through strike and hold, fading back in over the return --
+  // the same rule the attack editor applies at Neutral. BanditCombat publishes the live swing timeline it
+  // just drew; the action-only formula below is the fallback for a renderer that does not.
   function attackNeutralWeight(entity) {
+    const timeline = entity?._banditToolTimeline; // Fresh: the renderer ran immediately before this read.
+    if (timeline) {
+      if (!timeline.live) return 1;
+      if (timeline.progress <= timeline.wf) return timeline.wf > 0.000001 ? 1 - timeline.progress / timeline.wf : 0;
+      if (timeline.progress > timeline.hf) return Math.max(0, Math.min(1, (timeline.progress - timeline.hf) / Math.max(0.000001, 1 - timeline.hf)));
+      return 0;
+    }
     const action = entity?._banditAction; // Current staged action whose windup defines how quickly the neutral-plane compensation fades.
     if (!action) return 1;
     const totalS = Math.max(0.0001, (Number(action.windupS) || 0) + (Number(action.strikeS) || 0)); // Safe duration matching BanditCombat's own progress calculation.
@@ -150,10 +85,69 @@
     return 1 - progress / windupFrac;
   }
 
+  function stanceValuesMatch(cache, source) {
+    for (let i = 0; i < POSE_KEYS.length; i += 1) {
+      if (cache.stanceValues[i] !== source[POSE_KEYS[i]]) return false;
+    }
+    return true;
+  }
+
+  // Synthetic authored pose that swaps only Neutral while preserving the original
+  // attack endpoints; null leaves legacy BanditCombat behavior untouched. Cached
+  // on the entity per attack (keyed on everything it is derived from), so the
+  // steady state allocates nothing.
+  function preparedEnemyPose(entity) {
+    const source = stanceSourceFor(entity); // Authored Light/Heavy neutral shared with the player.
+    if (!source) return null;
+
+    const originalAnim = entity?._banditSwingAnim || 'thrust'; // Attack/rest animation selected by BanditCombat before this adapter intervenes.
+    const originalPose = entity?._banditSwingPose && typeof entity._banditSwingPose === 'object' ? entity._banditSwingPose : null; // Optional authored attack pose used by combos/charged attacks.
+    const requestedSign = entity?._banditSwingDirSign === -1 ? -1 : 1; // Existing forehand/backhand direction requested by the current bandit ability.
+    const powerValue = Number(entity?._banditSwingPower); // Current bandit ability power baked into windup/strike endpoints below.
+    const power = Number.isFinite(powerValue) ? powerValue : 1;
+    const action = entity?._banditAction || null; // A new staged action is a new attack: rebake once so edited pose data is picked up.
+    const spacing = !!window.MeleePoseSpacing?.adjustEndpoint; // Spacing can finish loading after the first idle frame; rebake when it appears.
+
+    const alternatesHeavyNeutral = stanceClassFor(entity) === 'heavy'; // Heavy swings finish ready on the opposite side (the player's rule).
+    const cached = entity._enemyPreparedPose;
+    if (cached && cached.source === source && cached.alternatesHeavyNeutral === alternatesHeavyNeutral && cached.action === action && cached.originalAnim === originalAnim
+      && cached.originalPose === originalPose && cached.requestedSign === requestedSign && cached.power === power
+      && cached.spacing === spacing && stanceValuesMatch(cached, source)) {
+      return cached.prepared;
+    }
+
+    const SAP = window.SharedAttackPose;
+    // The same stance sequence the player bakes (SharedAttackPose.bakeStanceSequence): endpoints with power and the
+    // melee spacing baked in, the replacement Neutral pre-unmirrored so BanditCombat's own mirror step lands on the
+    // visible stance for forehand/backhand, and the Neutral the swing returns to (Heavy weapons alternate sides).
+    const targetNeutral = SAP.normalizePose(source, {}); // Snapshot of the live stance; revalidated against `source` by stanceValuesMatch.
+    const sequence = SAP.bakeStanceSequence(originalAnim, originalPose, requestedSign, power, targetNeutral, { alternatesHeavyNeutral });
+    const prepared = {
+      originalAnim,
+      requestedSign,
+      effectiveSign: sequence.effectiveSign,
+      stanceClass: stanceClassFor(entity),
+      pose: {
+        neutral: sequence.neutral,
+        returnNeutral: sequence.returnNeutral,
+        neutralMirrorSign: sequence.startNeutralSign,
+        returnNeutralMirrorSign: sequence.returnNeutralSign,
+        windup: sequence.windup,
+        strike: sequence.strike,
+      },
+    };
+    entity._enemyPreparedPose = {
+      source, alternatesHeavyNeutral, action, originalAnim, originalPose, requestedSign, power, spacing,
+      stanceValues: POSE_KEYS.map(key => source[key]),
+      prepared,
+    };
+    return prepared;
+  }
+
   function shouldApply(entity, nowMs) {
     if (!entity?.isBandit || (Number(entity.health) || 0) <= 0 || entity._rangedMode) return false;
-    if (entity._banditAction) return true;
-    const settleUntil = Number(entity._banditToolSettleUntil) || 0; // Existing frozen strike-pose tail that must finish before idle stance resumes.
+    if (entity._banditAction || entity._banditToolTail) return true; // The strike/hold/return tail is still the swing: it keeps the stance neutral and endpoints.
+    const settleUntil = Number(entity._banditToolSettleUntil) || 0; // Externally set settle window that must finish before idle stance resumes.
     return nowMs >= settleUntil;
   }
 
@@ -204,17 +198,21 @@
       try {
         result = originalUpdateToolMesh(entity);
       } finally {
-        entity._banditSwingAnim = originalAnim;
-        entity._banditSwingPose = originalPose;
-        entity._banditSwingDirSign = originalDirSign;
-        entity._banditSwingPower = originalPower;
+        if (entity._banditSwingResetDone) entity._banditSwingResetDone = false; // The swing's tail just ended and the renderer restored the rest stance: keep it.
+        else {
+          entity._banditSwingAnim = originalAnim;
+          entity._banditSwingPose = originalPose;
+          entity._banditSwingDirSign = originalDirSign;
+          entity._banditSwingPower = originalPower;
+        }
       }
 
       const toolPlane = entity?._banditToolHolder?.children?.[0]?.userData?.toolPlane || null; // Weapon sprite plane whose spin/mirror must reflect the ORIGINAL attack style, not the temporary generic branch.
       const neutralWeight = attackNeutralWeight(entity); // Shared neutral contribution used to cancel sweep's legacy -90° plane twist at idle/start and fade it back by windup.
       if (toolPlane) {
         const toolMesh = entity?._banditToolHolder?.children?.[0] || null; // Parent of the plane: Backhand mirrors it across the body midline exactly like the player (see game.js updateToolMesh).
-        const mirrored = prepared.originalAnim === 'sweep' && prepared.effectiveSign < 0;
+        const planeMirrorSign = entity._banditToolTimeline?.planeMirrorSign; // Set when the pose flips across the midline mid-swing (Heavy weapons): the sprite follows the blend like the player's.
+        const mirrored = prepared.originalAnim === 'sweep' && (planeMirrorSign != null ? planeMirrorSign < 0 : prepared.effectiveSign < 0);
         if (prepared.originalAnim === 'sweep') toolPlane.rotation.z = -Math.PI / 2 + Math.PI / 2 * neutralWeight;
         else toolPlane.rotation.z = 0;
         toolPlane.scale.x = 1;
@@ -225,16 +223,14 @@
         toolPlane.updateMatrix?.();
       }
 
-      const stanceClass = stanceClassFor(entity); // Debug value stored directly on the entity for mobile/headless inspection without devtools.
-      entity._enemyWeaponStanceDebug = {
-        applied: true,
-        stanceClass,
-        weaponKey: entity.def?.weaponKey || null,
-        speciesId: entity.avatarRef?.profile?.speciesId || entity.avatarRef?.profile?.species || null,
-        neutralWeight,
-        sourceAnim: prepared.originalAnim,
-        effectiveSign: prepared.effectiveSign,
-      };
+      const debug = entity._enemyWeaponStanceDebug || (entity._enemyWeaponStanceDebug = {}); // Mobile/headless-readable state; one object per entity, updated in place.
+      debug.applied = true;
+      debug.stanceClass = prepared.stanceClass;
+      debug.weaponKey = entity.def?.weaponKey || null;
+      debug.speciesId = entity.avatarRef?.profile?.speciesId || entity.avatarRef?.profile?.species || null;
+      debug.neutralWeight = neutralWeight;
+      debug.sourceAnim = prepared.originalAnim;
+      debug.effectiveSign = prepared.effectiveSign;
       return result;
     };
   }

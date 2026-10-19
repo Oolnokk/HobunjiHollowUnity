@@ -312,7 +312,8 @@
         const cfg = RS.config();
         const rest = RS.getRestInfo(entity, cfg);
         const rate = cfg.afflictionRecoveryPerSec * SCENT_RECOVERY_MULTIPLIER * (rest.rested ? 2 : 1); // Used to fade scent slowly, with the existing rested recovery bonus intact.
-        RS.removeAffliction(entity, 'scentMarkedHealth', rate * dt);
+        RS.recoverAfflictionNaturally(entity, 'scentMarkedHealth',
+          rate * dt * RS.getAfflictionNaturalRecoveryScale('scentMarkedHealth'));
       }
       enforceWoundedHealthCap(entity, RS);
       return result;

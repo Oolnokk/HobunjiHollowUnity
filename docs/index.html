@@ -133,7 +133,7 @@
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
        window.*.init(...) calls. -->
-  <script src="js/player-vitals.js?v=20261009h29e5795"></script>
+  <script src="js/player-vitals.js?v=20261018colors-starved-compendium1"></script>
   <!-- Processing-station recipe resolution, berry/dew/alcohol key & color
        derivation, and item-wheel eligibility, extracted out of game.js.
        Must load before game.js, which calls window.ItemProcessing.init(...)
@@ -146,7 +146,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261016hbfaf2c3"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20260930h1b2e2e2"></script>
+  <script src="config/config.js?v=20261018colors-starved-compendium1"></script>
   <script src="config/scratchbones-config.js?v=20261017h35a414b"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
@@ -156,7 +156,7 @@
   <script src="js/metal-armor-system.js?v=20261008h99621ca"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261017hdd91890"></script>
-  <link rel="stylesheet" href="style.css?v=20261016hperc002">
+  <link rel="stylesheet" href="style.css?v=20261018colors-starved-compendium1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -181,7 +181,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261018kyliebluntdw015"></script>
+  <script src="js/held-action-animations.js?v=20261018h032d79e"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261017hf727ba3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -276,14 +276,18 @@
   <script src="config/farm-specializations.js?v=20261016h2f34a58"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261017h0133a62"></script>
+  <script src="onboarding.js?v=20261018resolve1099a"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261001quickdebuff2"></script>
+  <script src="js/combat/resource-system.js?v=20261018hudrecover4"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
-  <script src="js/combat/combat-core.js?v=20261016h917d5d5"></script>
+  <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
+       Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
+       weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
+  <script src="js/combat/shared-attack-pose.js?v=20261018a"></script>
+  <script src="js/combat/combat-core.js?v=20261018hudrecover4"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -293,7 +297,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
-  <script src="js/combat/combat-loadout.js?v=20261017h57a8b88"></script>
+  <script src="js/combat/combat-loadout.js?v=20261018hc14a25d"></script>
   <script src="js/combat/combat-progression.js?v=20261016h8734814"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -307,9 +311,9 @@
   <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261017h4fe16a4"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20261017h77ab128"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261016h98cdb43"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261018colors-starved-compendium1"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261017hbd67539"></script>
@@ -332,7 +336,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261017hdcd3097"></script>
+  <script src="js/combat/combat-bandit.js?v=20261018h7461c9c"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -351,7 +355,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261018h298f8c3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261018resolve1099a"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -512,7 +516,7 @@
        then), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.BanditCombatLog.init(...) during its own setup. -->
-  <script src="js/bandit-combat-log.js?v=20260915enemydodge1"></script>
+  <script src="js/bandit-combat-log.js?v=20261018h99fb547"></script>
   <!-- Wilderness AI snapshot capture, AI/Claude review tool for the whole
        Porakaneki camp network + den wildlife (window.WildernessAiSnapshot) —
        reads window.PorakanekiCamps/window.CalendarSystem at capture time
@@ -884,19 +888,16 @@
     <div id="navigationCompassLayer"></div>
   </div>
 
-  <!-- Player vitals: health + stamina bars (top-left) -->
-  <div id="vitalsBar">
-    <div class="vb-row">
-      <span class="vb-icon">❤️</span>
-      <div class="vb-track"><div class="vb-fill vb-health" id="vbHealthFill"></div></div>
+  <!-- Bare black-outlined bottom-center resource bars. Labels remain screen-reader-only. -->
+  <div id="vitalsBar" role="group" aria-label="Player resources">
+    <div class="vb-row" id="vbHealthRow" role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+      <div class="vb-track"><div class="vb-fill vb-health" id="vbHealthFill"></div><div class="vb-normal-segments" id="vbHealthNormal" aria-hidden="true"></div><div class="vb-segments" id="vbHealthSegments" aria-hidden="true"></div><div class="vb-cap" id="vbHealthCap" hidden></div></div>
     </div>
-    <div class="vb-row">
-      <span class="vb-icon">⚡</span>
-      <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div></div>
+    <div class="vb-row" id="vbStaminaRow" role="progressbar" aria-label="Stamina" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+      <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div><div class="vb-normal-segments" id="vbStaminaNormal" aria-hidden="true"></div><div class="vb-segments" id="vbStaminaSegments" aria-hidden="true"></div><div class="vb-cap" id="vbStaminaCap" hidden></div></div>
     </div>
-    <div class="vb-row">
-      <span class="vb-icon">🦶</span>
-      <div class="vb-track"><div class="vb-fill vb-footing" id="vbFootingFill"></div></div>
+    <div class="vb-row" id="vbFootingRow" role="progressbar" aria-label="Footing" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+      <div class="vb-track"><div class="vb-fill vb-footing" id="vbFootingFill"></div><div class="vb-normal-segments" id="vbFootingNormal" aria-hidden="true"></div><div class="vb-segments" id="vbFootingSegments" aria-hidden="true"></div><div class="vb-cap" id="vbFootingCap" hidden></div></div>
     </div>
   </div>
 
@@ -2479,7 +2480,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20261017h15f80ae"></script>
-  <script src="js/sprite-recolor.js?v=20261018heb4dd84"></script>
+  <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
@@ -2512,7 +2513,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20261004camera1"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20261018orbit4"></script>
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
@@ -2538,7 +2539,7 @@
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20261013h3448225"></script>
+  <script src="js/loading-screen-runtime.js?v=20261018resourcecolors2"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20261007h291caf2"></script>
@@ -2639,7 +2640,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261018plasmuv3"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261019h1fc4b2b"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2669,9 +2670,9 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261018icefriction2"></script>
+  <script src="game.js?v=20261019h6dc91db"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261017h3decaa3"></script>
+  <script src="js/opening-story-cutscene.js?v=20261018jubmirorbit-worldstory1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

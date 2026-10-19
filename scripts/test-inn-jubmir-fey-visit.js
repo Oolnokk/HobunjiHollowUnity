@@ -126,6 +126,25 @@ storage.set(api.stateKey(profile), 'complete');
   assert(await api.playJubmirFeyVisit());
   assert.equal(lastScene.mapId, 'map_i_inn_F2_jubmir');
   assert(lastScene.actors.find(actor => actor.npcId === 'jubmir').npcRecord.id === 'jubmir');
+  const playerSpot = lastScene.actors.find(actor => actor.isPlayer); // Confirms the cinematic does not begin beyond ordinary dialogue range.
+  const jubmirSpot = lastScene.actors.find(actor => actor.npcId === 'jubmir'); // Partner stands on the adjacent walkable tile.
+  assert.equal(Math.hypot(playerSpot.worldC - jubmirSpot.worldC, playerSpot.worldR - jubmirSpot.worldR), 1);
+  const roomFloor = readMap('map_i_inn_F2_jubmir'); // Room geometry and furniture are the shipping authoring source.
+  for (const actor of [playerSpot, jubmirSpot]) {
+    assert(onFloor(roomFloor, actor.worldC, actor.worldR), 'dialogue actor stands on room floor');
+    assert(!roomFloor.furniture.some(item => item.col === actor.worldC && item.row === actor.worldR), 'dialogue actor starts clear of furniture');
+  }
+  const orbitParagraphs = lastScene.stages.filter(stage => stage.cameraMode === 'orbit'); // Both opening and guidance paragraphs receive independent orbit resets.
+  assert(orbitParagraphs.length > 30);
+  assert(orbitParagraphs.every(stage => stage.orbitActorIds.join(',') === 'player,jubmir'
+    && stage.orbitAlternateFocus === true && stage.orbitZoomStepPercent === 5
+    && stage.orbitInitialZoomPercent === 131.25 && stage.orbitHeightMode === 'oppositeFaceArc' && stage.orbitDistanceTiles === 1.85
+    && stage.orbitInstantCut === true && stage.orbitBlendSeconds === 1
+    && stage.orbitDirection === 'clockwise' && stage.orbitDirectionSwitchEvery === 2
+    && stage.orbitDirectionalStartOffsetDeg === 30),
+    'all Jubmir paragraphs use instant cuts, CW/CW/CCW/CCW with matching 30 degree lead-ins, and preserve the optional smooth blend');
+  assert(orbitParagraphs.some(stage => stage.id === 'fey_why'), 'optional answer also follows the orbit progression');
+  assert(orbitParagraphs.some(stage => stage.id === 'fey_final'), 'final spoken paragraph keeps the orbit');
   assert.equal(provider.next(), null, 'completed scene never queues another visit');
   assert.equal(dismissed, 1);
   assert.equal(storyTarget(visitor, { hasExistingWalker: true }), null, 'completion restores trading schedule');

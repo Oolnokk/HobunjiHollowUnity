@@ -616,10 +616,13 @@
     for(const room of world.rooms){
       room.plasm=initialPlasmCluster(kit,room);
       room.plasmInitial=room.plasm ? new Set(room.plasm) : null; // Immutable per-room seed for death reset; room transitions preserve live growth.
+      room.plasmFloorY=new Map(); // Keep the puddle on its original surface when a later composer adds a bridge/platform above it.
       let walkable=0;
       for(const key of world.context.floorSet){
         const [x,z]=tileFromKey(key),cx=x+.5,cz=z+.5,b=room.bounds;
-        if(cx>=b.minX&&cx<b.maxX&&cz>=b.minZ&&cz<b.maxZ&&clearAt(cx,cz,floorY(kit,cx,cz)))walkable++;
+        if(cx<b.minX||cx>=b.maxX||cz<b.minZ||cz>=b.maxZ)continue;
+        room.plasmFloorY.set(key,floorY(kit,cx,cz));
+        if(clearAt(cx,cz,room.plasmFloorY.get(key)))walkable++;
       }
       room.plasmCap=room.plasm ? Math.max(room.plasm.size,Math.floor(walkable*.5)) : 0;
       room.plasmCulls=0;
@@ -677,12 +680,26 @@
     source.dispose();
     return {corners,mapping};
   }
+  function plasmHeightFactor(x,z,patch) {
+    let nearest=.22; // Distance to the whole patch perimeter, shared by both sides of every tile seam.
+    for(let tz=Math.floor(z-.22);tz<=Math.floor(z+.22);tz++){
+      for(let tx=Math.floor(x-.22);tx<=Math.floor(x+.22);tx++){
+        if(!patch.has(tx+','+tz))continue;
+        const dx=Math.max(tx-x,0,x-tx-1),dz=Math.max(tz-z,0,z-tz-1); // Distance along an exposed unit edge, including its endpoints.
+        if(!patch.has(tx+','+(tz-1)))nearest=Math.min(nearest,Math.hypot(dx,z-tz));
+        if(!patch.has(tx+','+(tz+1)))nearest=Math.min(nearest,Math.hypot(dx,z-tz-1));
+        if(!patch.has((tx-1)+','+tz))nearest=Math.min(nearest,Math.hypot(x-tx,dz));
+        if(!patch.has((tx+1)+','+tz))nearest=Math.min(nearest,Math.hypot(x-tx-1,dz));
+      }
+    }
+    const t=nearest/.22; // Smooth curved shoulder without independently tapering the adjoining tiles.
+    return t*t*(3-2*t);
+  }
   function makePlasmSurface(kit,room) {
     const patch=room.plasm;
     if(!patch?.size)return null;
     const axis=[0,.11,.22,.78,.89,1],width=axis.length;
     const pos=[],idx=[],uv=[];
-    const smooth=value=>{const t=between(value,0,1);return t*t*(3-2*t);};
     const {corners,mapping}=plasmTextureCorners(patch,room);
     const coordBounds=[Infinity,Infinity,-Infinity,-Infinity];
     if(mapping!=='edge-preserving-nine-slice'){
@@ -694,19 +711,14 @@
     }
     for(const key of patch){
       const [x,z]=tileFromKey(key);
-      const mask=surfaceMask(x,z,patch); // Only the exposed outer perimeter curves down.
       const a=corners.get(x+','+z),b=corners.get((x+1)+','+z);
       const c=corners.get(x+','+(z+1)),d=corners.get((x+1)+','+(z+1));
       const mapped=!!(a&&b&&c&&d&&mapping==='edge-preserving-nine-slice');
       const base=pos.length/3;
       for(let j=0;j<width;j++)for(let i=0;i<width;i++){
         const u=axis[i],v=axis[j];
-        let factor=1;
-        if(!(mask&1))factor=Math.min(factor,smooth(v/.22));
-        if(!(mask&2))factor=Math.min(factor,smooth((1-u)/.22));
-        if(!(mask&4))factor=Math.min(factor,smooth((1-v)/.22));
-        if(!(mask&8))factor=Math.min(factor,smooth(u/.22));
-        pos.push(x+u,floorY(kit,x+.5,z+.5)+.006+PLASM_DEPTH*factor,z+v);
+        const factor=plasmHeightFactor(x+u,z+v,patch); // Concave corners use the same perimeter distance from either neighboring tile.
+        pos.push(x+u,(room.plasmFloorY.get(key)??floorY(kit,x+.5,z+.5))+.006+PLASM_DEPTH*factor,z+v);
         if(mapped){
           uv.push(a[0]*(1-u)*(1-v)+b[0]*u*(1-v)+c[0]*(1-u)*v+d[0]*u*v,
             a[1]*(1-u)*(1-v)+b[1]*u*(1-v)+c[1]*(1-u)*v+d[1]*u*v);
@@ -888,6 +900,12 @@
       world.sink=0;
       return; // Local growth can still occur while standing off-plasm.
     }
+    const baseY=room.plasmFloorY.get(tileKey(point.x,point.z))??floorY(kit,point.x,point.z); // Compare contact against the rendered puddle, not a bridge added above it.
+    const playerY=Number(window.DevRandomRuin?.getPlayerSupportY?.()??kit.deps.playerMesh?.position?.y??baseY); // Read the accepted traversal height before touching its presentation.
+    if(kit.ownsPlayerMotion?.()||player.climbing||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){
+      world.sink=0;
+      return; // Ropes, flights and elevated supports keep complete ownership of movement and height.
+    }
     const patch=[...room.plasm].map(tileFromKey).map(([x,z])=>({x:x+.5,z:z+.5}))
       .sort((a,b)=>distance(a,point)-distance(b,point))[0];
     world.sink=Math.min(1,world.sink+dt/PLASM_SINK_SECONDS);
@@ -897,17 +915,22 @@
       const nx=point.x+dx/d*pull,nz=point.z+dz/d*pull;
       if(clearAt(nx,nz,floorY(kit,point.x,point.z))){player.x=nx*tile;player.y=nz*tile;}
     }
-    const baseY=floorY(kit,player.x/tile,player.y/tile);
     const bodyHeight=Math.max(.9,Number(kit.deps.playerMesh?.userData?.portraitModelHeight)||1.8);
     window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
     if(world.sink>=1){
       world.sink=0;
       player.health=0;
+      if(SP.respawnAtCheckpoint?.('kanthic-plasm'))return; // The canonical recovery also notifies every composer's death lifecycle.
       resetPlasmOnDeath(kit); // All rooms reset immediately, even if the death hook teleports/respawns synchronously.
       world.playerWasAlive=false;
       kit.deps.handlePlayerDeath?.('kanthic-plasm');
       lastEvent='kanthic:plasm-death-reset';
     }
+  }
+  function onPlayerDeath(kit) {
+    if(world?.theme!=='kanthic')return;
+    resetPlasmOnDeath(kit); // Runs synchronously before checkpoint recovery restores health, so no death can be missed between frames.
+    world.playerWasAlive=false;
   }
   function buildRooms(kit,context) {
     clear();
@@ -993,7 +1016,7 @@
       sinking:world.sink,lastEvent,
     } : {active:false,lastEvent};
   }
-  SP.registerComposer({id:'lichThemes',buildRooms,update,clear,snapshot});
+  SP.registerComposer({id:'lichThemes',buildRooms,update,clear,snapshot,onPlayerDeath});
   window.DevRandomRuinLichThemes = Object.freeze({
     lightSources:()=>world?.lights||[],
     activeTheme:()=>world?.theme||null,

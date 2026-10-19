@@ -210,44 +210,237 @@
     .sb-water  { font-size: 11px; color: #6ec6f0; flex-shrink: 0; }
     .sb-gold   { font-size: 11px; color: #f0d040; flex-shrink: 0; }
 
-    /* ── Vitals bar: health + stamina, anchored top-left ─────── */
-    /* Superseded by the ground-projected resource rings rendered under the
-       player in the 3D scene (see docs/js/combat/resource-rings.js); kept
-       in the DOM/JS but hidden so a fallback exists if that ever fails to
-       render (canvas context lost, three.js missing, etc). */
+    /* ── Player-only resource bars: viewport-relative dimensions.
+       At 1440x720: 320px -> 400px wide; 11px -> 16.5px tall;
+       2px -> 4px black border. On 400px-wide touch: 260px -> 325px. ── */
     #vitalsBar {
-      display: none;
       position: fixed;
-      left: var(--play-left); top: var(--oy);
-      width: calc(8 * var(--col)); height: calc(2 * var(--row));
+      left: var(--play-center);
+      bottom: max(2.2dvh, env(safe-area-inset-bottom));
+      transform: translate(-50%, .6dvh);
+      width: 27.78vw;
+      max-width: 92vw;
       z-index: 20;
-      flex-direction: column; justify-content: center;
-      gap: 4px; padding: 6px 10px;
-      background: var(--glass);
-      border: 1px solid var(--border-bright);
-      border-top: none;
-      border-radius: 0 0 18px 18px;
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      display: flex;
+      flex-direction: column;
+      gap: .5dvh;
+      padding: 0;
+      border: 0;
+      background: transparent;
       pointer-events: none;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.32);
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity .2s ease, transform .2s ease, visibility .2s;
     }
-    .vb-row  { display: flex; align-items: center; gap: 6px; }
-    .vb-icon { font-size: 11px; flex-shrink: 0; width: 14px; text-align: center; }
-    .vb-track {
-      flex: 1; height: 8px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      overflow: hidden;
+    #vitalsBar.is-active { visibility: visible; opacity: 1; transform: translate(-50%, 0); }
+    #vitalsBar .vb-row { display: none; width: 100%; position: relative; }
+    #vitalsBar .vb-row.is-active { display: block; }
+    /* Higher rows paint LAST so drops visibly pass in front of lower bars. */
+    #vitalsBar #vbHealthRow { z-index: 30; }
+    #vitalsBar #vbStaminaRow { z-index: 20; }
+    #vitalsBar #vbFootingRow { z-index: 10; }
+    #vitalsBar .vb-track {
+      position: relative;
+      width: 100%;
+      height: 2.29dvh;
+      min-height: 12px;
+      overflow: visible; /* Required for droplets to fall past the edge. */
+      border-top: 0;
+      border-bottom: 0;
+      border-left: .556dvh solid #000;
+      border-right: .556dvh solid #000;
+      border-radius: 0;
+      background: rgba(0, 0, 0, .45);
+      box-sizing: border-box;
     }
-    .vb-fill {
-      height: 100%; width: 100%;
-      border-radius: 5px;
-      transition: width 0.15s ease-out;
+    #vitalsBar .vb-fill {
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      width: 100%;
+      transition: width .15s ease-out;
+      opacity: 0; /* Numeric width remains authoritative; split spans paint the fill. */
     }
-    .vb-health  { background: linear-gradient(90deg, #d44848, #ff8060); }
-    .vb-stamina { background: linear-gradient(90deg, #d4a838, #f9e28a); }
-    .vb-footing { background: linear-gradient(90deg, #a8781f, #e0b04a); }
+    #vitalsBar .vb-health { background-color: #55d76f; }
+    #vitalsBar .vb-stamina { background-color: #d9a441; }
+    #vitalsBar .vb-footing { background-color: #67b7ff; }
+    #vitalsBar .vb-normal-segments,
+    #vitalsBar .vb-segments { position: absolute; inset: 0; pointer-events: none; }
+    #vitalsBar .vb-normal-segment,
+    #vitalsBar .vb-affliction-segment {
+      position: absolute;
+      top: 0; bottom: 0;
+      box-sizing: border-box;
+      border-top: .556dvh solid #000;
+      border-bottom: .556dvh solid #000;
+      border-left: .12dvh solid #000;
+      border-right: .12dvh solid #000;
+      transition: left .15s ease-out, width .15s ease-out;
+      pointer-events: none;
+    }
+    #vitalsBar .vb-effect-drip,
+    #vitalsBar .vb-effect-brittle,
+    #vitalsBar .vb-effect-starved,
+    #vitalsBar .vb-effect-balloon,
+    #vitalsBar .vb-effect-crenellated {
+      border: 0;
+      background: transparent;
+    }
+
+    /* Fast, continuously staggered droplets, synchronized with the 1.45s
+       SVG bottom-edge morph; they fall across all lower resource bars. */
+    #vitalsBar .vb-effect-drip::before,
+    #vitalsBar .vb-effect-drip::after {
+      content: '';
+      position: absolute;
+      z-index: 40;
+      top: 66%;
+      width: clamp(3px, .45dvw, 6px);
+      height: 1dvh;
+      border: max(1px, .14dvh) solid #000;
+      box-sizing: border-box;
+      border-radius: 44% 44% 65% 65%;
+      background: currentColor;
+      opacity: 0;
+      animation: vb-fluid-drop 1.45s linear infinite;
+      pointer-events: none;
+    }
+    #vitalsBar .vb-effect-drip::before { left: 28%; }
+    #vitalsBar .vb-effect-drip::after { left: 72%; animation-delay: -.725s; }
+    #vitalsBar .vb-effect-poison::before,
+    #vitalsBar .vb-effect-poison::after { border-radius: 60% 42% 70% 50%; }
+    #vitalsBar .vb-effect-wound::before,
+    #vitalsBar .vb-effect-wound::after { height: .7dvh; }
+    @keyframes vb-fluid-drop {
+      0% { transform: translate3d(0, 0, 0) scaleY(.35); opacity: .2; }
+      6% { transform: translate3d(0, .18dvh, 0) scaleY(1.8); opacity: 1; }
+      16% { transform: translate3d(0, .65dvh, 0) scaleY(1.05); opacity: 1; }
+      70% { transform: translate3d(0, 9.5dvh, 0) scaleY(.88); opacity: .97; }
+      100% { transform: translate3d(0, 10.5dvh, 0) scaleY(.72); opacity: 0; }
+    }
+
+    /* Behavioral HUD language shared by future effects with the same tags
+       or conversion mechanics. Static fills remain readable with reduced motion. */
+    #vitalsBar .vb-effect-mirror { overflow: hidden; }
+    #vitalsBar .vb-effect-mirror::after {
+      content: '';
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.55) 45%, transparent 70%);
+      animation: vb-mirror-sweep 2.9s ease-in-out infinite;
+    }
+    @keyframes vb-mirror-sweep {
+      from { transform: translate3d(-110%, 0, 0); opacity: 0; }
+      30%, 70% { opacity: .85; }
+      to { transform: translate3d(110%, 0, 0); opacity: 0; }
+    }
+    /* Flickering tongues for active Burning: hotter and less regular than
+       Kindling's largely stationary embers. Both use one pseudo-element. */
+    #vitalsBar .vb-effect-fire::after {
+      content: '';
+      position: absolute;
+      inset: -.38dvh 0 -.12dvh;
+      pointer-events: none;
+      background: repeating-linear-gradient(115deg,
+        transparent 0 7%, rgba(255,223,115,.9) 8% 10%,
+        transparent 12% 19%, rgba(255,91,31,.75) 21% 24%, transparent 26% 30%);
+      opacity: .55;
+      transform-origin: 50% 100%;
+      animation: vb-flame-flutter .65s ease-in-out infinite alternate;
+    }
+    @keyframes vb-flame-flutter {
+      from { transform: scaleY(.62); opacity: .36; }
+      to { transform: scaleY(1.08); opacity: .85; }
+    }
+    #vitalsBar .vb-effect-ember::after {
+      content: '';
+      position: absolute; inset: 0; pointer-events: none;
+      background-image: radial-gradient(circle, #ffea8c 0 17%, transparent 22%),
+        radial-gradient(circle, #fd9e3f 0 15%, transparent 20%);
+      background-size: 21px 13px, 29px 18px;
+      background-position: 2px 0, 12px 4px;
+      animation: vb-ember-breathe 2.7s ease-in-out infinite alternate;
+    }
+    @keyframes vb-ember-breathe {
+      from { opacity: .22; }
+      to { opacity: .9; }
+    }
+    #vitalsBar .vb-effect-entranced { overflow: hidden; }
+    #vitalsBar .vb-effect-entranced::after {
+      content: '';
+      position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(120deg,
+        transparent 0 10%, rgba(255,255,255,.45) 11% 13%, transparent 14% 22%);
+      animation: vb-entranced-waves 3.2s linear infinite;
+    }
+    @keyframes vb-entranced-waves {
+      from { transform: translate3d(-24%, 0, 0); }
+      to { transform: translate3d(24%, 0, 0); }
+    }
+
+    /* The actual brittle/starved bars are single reusable inline-SVG meshes.
+       SVG draws over the straight underlying rim, and its opaque black ground
+       reveals genuine notches instead of green fill peeking through. */
+    #vitalsBar .vb-effect-brittle { box-shadow: none; background: transparent; }
+    #vitalsBar .vb-shape-svg {
+      display: block;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
+    /* Match the viewport-scaled 4px-equivalent outer rim, even in SVG. */
+    #vitalsBar .vb-shape-svg path { stroke-width: .556dvh; }
+    #vitalsBar .vb-cap {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-top: .556dvh solid #000;
+      border-bottom: .556dvh solid #000;
+      background: repeating-linear-gradient(135deg, rgba(0,0,0,.83) 0 .5dvh, rgba(255,255,255,.16) .5dvh .8dvh);
+      border-left: .17dvh solid #000;
+      pointer-events: none;
+    }
+    #vitalsBar .vb-cap[hidden] { display: none; }
+    #vitalsBar .vb-cap.is-withered {
+      background: transparent;
+      border: 0;
+    }
+    /* Static bell-shaped spline; shape itself, not just a mask, owns outline. */
+    #vitalsBar .vb-starved-svg { overflow: visible; }
+    #vitalsBar .vb-row.is-exhausted .vb-fill { border-right: .22dvh solid #000; }
+
+    /* Keep the bars at the bottom; move the desktop key guide out of the way. */
+    @media (pointer: fine) {
+      @supports selector(body:has(#vitalsBar.is-active)) {
+        body:has(#vitalsBar.is-active) #keyHud { top: calc(var(--oy) + 13.4 * var(--row)); }
+      }
+    }
+    @media (max-width: 600px) {
+      #vitalsBar { width: 81.25vw; }
+    }
+    /* Only lift bars when a centered interactive prompt actually opens. */
+    @supports selector(body:has(#actionPrompt.open)) {
+      body:has(#actionPrompt.open) #vitalsBar {
+        bottom: max(2.2dvh, calc(100dvh - var(--oy) - 15.2 * var(--row) + 1.2dvh));
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #vitalsBar, #vitalsBar .vb-fill, #vitalsBar .vb-affliction-segment { transition: none; }
+      #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after,
+      #vitalsBar .vb-effect-mirror::after, #vitalsBar .vb-effect-fire::after,
+      #vitalsBar .vb-effect-ember::after, #vitalsBar .vb-effect-entranced::after { animation: none; }
+      /* Keep a still teardrop as an affliction identifier without motion. */
+      #vitalsBar .vb-effect-drip::before, #vitalsBar .vb-effect-drip::after {
+        opacity: .85;
+        transform: translate3d(0, .2dvh, 0) scaleY(.65);
+      }
+    }
+    body.authored-cutscene #vitalsBar, body.introduction-loading #vitalsBar {
+      opacity: 0 !important; visibility: hidden !important;
+    }
 
     /* ── Buff bar: active timed effects, anchored top-right ─────── */
     #buffBar {

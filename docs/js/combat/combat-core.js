@@ -1050,8 +1050,10 @@
     const result = original.tick(entity, dt, opts);
     const recovery = Math.max(0, Number(dt) || 0) * DRUNK_RECOVERY_PER_SEC;
     if (recovery > 0) {
-      removeDrunk(entity, DRUNK_FOOTING_ID, recovery);
-      removeDrunk(entity, DRUNK_HEALTH_ID, recovery);
+      RS.recoverAfflictionNaturally(entity, DRUNK_FOOTING_ID,
+        recovery * RS.getAfflictionNaturalRecoveryScale(DRUNK_FOOTING_ID));
+      RS.recoverAfflictionNaturally(entity, DRUNK_HEALTH_ID,
+        recovery * RS.getAfflictionNaturalRecoveryScale(DRUNK_HEALTH_ID));
     }
     enforceDrunkenCaps(entity);
     return result;

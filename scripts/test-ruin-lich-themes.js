@@ -54,6 +54,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   let footprint = null; // Captures a Hronal column's live collision enabled gate.
   const audioEvents=[]; // Verifies release plays the existing rock sample at double speed/pitch.
   const mappedPatches=[]; // Verify connected nine-slice remapping occurs whenever a puddle's grid changes.
+  const presentationHeights=[]; // Detect hazards stealing rope/bridge presentation height.
   const player = {x:playerX * 64, y:playerZ * 64, health:100, facing:3};
   const window = {
     THREE, DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; }},
@@ -63,7 +64,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     },
     KnockbackCollisionImpact:{resolveStrength() { impactCount++; }},
     ResourceSystem:{addAffliction() { afflictionCount++; }, spendFooting() { afflictionCount++; }},
-    DevRandomRuin:{syncPlayerPresentationHeight() {}},
+    DevRandomRuin:{syncPlayerPresentationHeight(y) {presentationHeights.push(y);}},
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
     CloudForestFog:{getKanthicLanternRadiusTiles:()=>options.lanternRadius??.9}, // Default: 2.4 × .375. Cap stress tests may suppress visibility without changing production logic.
     HobunjiSurfaceStretchUV:{
@@ -98,14 +99,79 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     meta:{floorSurfaceY:0,wallHeight:3,rooms:options.rooms||[{id:'test',col:0,row:0,w:10,h:10}]},
   };
   const kit = {
-    deps:{TILE:64,player,hostileObjects:new Set(),playerMesh:{userData:{portraitModelHeight:1.8}},handlePlayerDeath() {}},
+    deps:{TILE:64,player,hostileObjects:new Set(),playerMesh:{position:{y:0},userData:{portraitModelHeight:1.8}},handlePlayerDeath() {}},
     root:new Node(),state:{context},group(){return this.root;},sampleSupport(){return {y:0};},
     roomBounds(_meta,room){return room.bounds||{minX:2,maxX:12,minZ:2,maxZ:12};},makeBasic(){return new Material({color:0x777777});},
   }; // The 10×10 fixture plus shared floorSet verifies the entire room is iced.
   composer.buildRooms(kit, context);
   const api = window.DevRandomRuinLichThemes;
   const tick = (frames, seconds = .25) => {for (let index = 0; index < frames; index++) composer.update(kit, index * seconds * 1000, seconds);};
-  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches};
+  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches,presentationHeights};
+}
+
+function assertPlasmSeams(t) {
+  t.kit.root.traverse(mesh=>{
+    if(!mesh.name?.startsWith('kanthic_plasm_connected_room_'))return;
+    const vertices=new Map(),p=mesh.geometry.getAttribute('position'),uv=mesh.geometry.getAttribute('uv'); // Compare both copies of every joined vertex, including concave corners.
+    for(let i=0;i<p.count;i++){
+      const key=p.getX(i).toFixed(5)+','+p.getZ(i).toFixed(5); // Float-safe world-coordinate key across adjoining tile lattices.
+      const value=[p.getY(i),uv.getX(i),uv.getY(i)],previous=vertices.get(key); // Matching positions must share height and continuous UVs.
+      if(previous)assert.ok(value.every((n,index)=>Math.abs(n-previous[index])<.00001),
+        'No cracks or UV seams at '+key+': '+previous+' vs '+value);
+      vertices.set(key,value);
+    }
+  });
+}
+
+{
+  const t=setup('kanthic',3,3,{lanternRadius:.02}); // Grow a nonrectangular puddle, which exposes concave-corner cracks absent from square seed tests.
+  t.tick(8,.25);
+  assertPlasmSeams(t);
+  const initialKeys=[]; // Recover exact seeded positions after the synchronous checkpoint lifecycle.
+  t.composer.onPlayerDeath(t.kit);
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initialKeys.push(x+','+z);
+  t.tick(8,.25);
+  assert.ok(t.api.snapshot().plasmTiles>initialKeys.length,'Fixture grows before ordinary combat death');
+  const start=puzzlesSource.indexOf('  function respawnAtCheckpoint('),end=puzzlesSource.indexOf('\n  function buildCheckpoints(',start); // Execute the actual recovery owner rather than imitating its callback ordering.
+  const recovery={checkpoints:{active:{point:{x:3,y:0,z:3}},respawnCount:0},context:t.context,kit:t.kit}; // Minimal native checkpoint state.
+  const respawn=vm.runInNewContext('('+puzzlesSource.slice(start,end)+')',{
+    inRuin:()=>true,state:recovery,deps:t.kit.deps,composers:[t.composer],MAP_ID:'map_i_dev_random_ruin',
+    restorePlayerScene(){},clearPlayerAfflictions(){},setPlayerWorld(){},restoreRopeEquipment(){},
+    clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,
+  }); // Production callback must run before health is restored in the same synchronous call.
+  t.player.maxHealth=100;t.player.health=0;
+  assert.equal(respawn('combat'),true);
+  assert.equal(t.player.health,50,'Checkpoint has already restored health before the next render');
+  assert.equal(t.api.snapshot().plasmTiles,initialKeys.length,'Ordinary death immediately resets growth');
+  for(const key of initialKeys){
+    const [x,z]=key.split(',').map(Number); // Check the exact original cluster, not just its size.
+    assert.ok(t.api.isPlasmAt(x+.5,z+.5));
+  }
+  assert.equal(recovery.checkpoints.respawnCount,1);
+  assertPlasmSeams(t);
+  const [x,z]=initialKeys[0].split(',').map(Number); // Stand directly over the puddle for traversal/contact regressions.
+  t.player.x=(x+.5)*64;t.player.y=(z+.5)*64;
+  t.kit.ownsPlayerMotion=()=>true;
+  t.tick(16,.25);
+  assert.equal(t.player.health,50,'A rope or flight over plasm cannot cause fatal immersion');
+  assert.equal(t.presentationHeights.length,0,'Rope and flight height stay owned by traversal');
+  t.kit.ownsPlayerMotion=()=>false;
+  t.kit.deps.playerMesh.position.y=3;
+  t.kit.sampleSupport=()=>({y:3}); // A bridge added later must not lift the original puddle onto its deck when remapped.
+  t.tick(16,.25);
+  assert.equal(t.player.health,50,'A raised bridge above plasm is safe');
+  assert.equal(t.presentationHeights.length,0,'Plasm never overwrites bridge height');
+  t.composer.onPlayerDeath(t.kit);
+  t.kit.root.traverse(mesh=>{
+    if(!mesh.name?.startsWith('kanthic_plasm_connected_room_'))return;
+    const p=mesh.geometry.getAttribute('position'); // Original puddle elevation survives a reset/remap under the new bridge.
+    for(let i=0;i<p.count;i++)assert.ok(p.getY(i)<=.227);
+  });
+  t.kit.deps.playerMesh.position.y=0;
+  t.tick(13,.25);
+  assert.equal(t.player.health,0,'Contact at the actual puddle elevation remains lethal');
+  assert.ok(t.presentationHeights.length>0,'Real immersion still lowers player presentation');
+  t.composer.clear();
 }
 
 {
@@ -433,6 +499,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const actual=new Set();
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))actual.add(x+','+z);
   assert.equal(actual.size,50,'The cap must match the exact visible/gameplay footprint');
+  assertPlasmSeams(t);
   const seed=actual.values().next().value,visited=new Set([seed]),queue=[seed];
   for(let i=0;i<queue.length;i++){
     const [x,z]=queue[i].split(',').map(Number);
