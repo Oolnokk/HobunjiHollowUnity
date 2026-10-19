@@ -110,6 +110,7 @@
   function discardFestivalBowl(reason = 'equipment-changed') {
     if(!heldBowl && !seatedMeal)return false;
     heldBowl=null; seatedMeal=null;
+    deps?.cancelFestivalDrink?.(); // Removes the short-lived serving sprite immediately when drawing equipment.
     deps?.refresh?.();
     window.__farmLog?.(`[festival] Temporary bowl put away: ${reason}`, 'items');
     return true;
@@ -129,6 +130,16 @@
   }
   function diningSeats() {
     return (layout()?.decor || []).filter(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple'); // Runtime-expanded seating follows the moveable feast footprint exactly.
+  }
+  function nearestDiningTable(position) {
+    if(!position)return null;
+    const tables=(layout()?.decor || []).filter(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='tableSmall');
+    let closest=null,distance=Infinity;
+    for(const table of tables) {
+      const center=propCenter(table),d=Math.hypot(center.c-position.c,center.r-position.r);
+      if(d<distance){distance=d;closest=table;}
+    }
+    return closest;
   }
   function nearestDiningSeat() {
     if(festival()?.id!=='gorkunash' || !festivalHours() || deps?.getArea?.()!=='town')return null;
@@ -189,9 +200,14 @@
     state.fullness.stacks++;
     heldBowl.uses--;
     if (!heldBowl.uses){heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:heldBowl.selectedItemKey};seatedMeal=null;}
-    const diners=(deps.getWalkers?.()||[]).filter(walker=>walker.area==='town'&&['idle','sit','sitting','seated'].includes(walker.state)
-      &&walker.currentScheduleTarget?.festivalLocaleKind==='dining'
-      &&walker.root?.position && Math.hypot(walker.root.position.x-deps.getPlayerTile().c,walker.root.position.z-deps.getPlayerTile().r)<5);
+    const dinerSeat=deps?.getPlayerSeatedSeat?.(); // Real selected outdoor chair, not a broad radius around every table.
+    const playerTable=nearestDiningTable(dinerSeat ? {c:dinerSeat.col+.5,r:dinerSeat.row+.5} : deps.getPlayerTile());
+    const diners=(deps.getWalkers?.()||[]).filter(walker=>{
+      const station=walker.currentScheduleTarget;
+      if(walker.area!=='town'||!station||station.pose!=='sit'||station.festivalLocaleKind!=='dining'||!walker.root?.position)return false;
+      if(!playerTable || nearestDiningTable({c:station.c+.5,r:station.r+.5})?.id!==playerTable.id)return false;
+      return Math.hypot(walker.root.position.x-station.c,walker.root.position.z-station.r)<=1.35; // NPC must actually have reached the same dining table.
+    });
     for(const walker of diners) addFestivalFun(walker.rec.id,25);
     return commit(`${meal.label}: +5 min food duration; fullness ${currentFullness()}/10; ${diners.length} tablemates gain 25 Festival Fun.`);
   }
