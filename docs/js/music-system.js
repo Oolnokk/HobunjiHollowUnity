@@ -37,7 +37,7 @@
   // interrupted track's fade-out (see stopAmbientCue) actually finishes
   // fading to silence before anything new starts on top of it, instead of
   // the two overlapping audibly for the fade's duration.
-  let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, combatOverrideActive: false, combatSchedulerPausedAt: 0, currentCombatBgm: null, blockUntil: 0 };
+  let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, combatOverrideActive: false, combatSchedulerPausedAt: 0, currentCombatBgm: null, blockUntil: 0, cuePhaseEndsAt: 0, lastCueId: '' }; // Alternates full songs with a two-minute stage of standalone regional cues.
   const _furnitureSfxSources = [];
   const _loopingBgs = new Map();
   const WEATHER_BGS_IDS = new Set(['wind1', 'wind2', 'raingentle', 'rainmid', 'rainheavy']); // Restricts indoor filtering to weather, never birds, nighttime wildlife, furniture, or music.
@@ -992,6 +992,8 @@
     _ambientCueState.indexId = resolveAreaAudioIndex(area);
     _ambientCueState.mode = 'bgm';
     _ambientCueState.nextAt = 0;
+    _ambientCueState.cuePhaseEndsAt = 0; // Clears the previous area's cue-stage deadline.
+    _ambientCueState.lastCueId = ''; // Avoids immediate repeats in the cue pool.
     audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0, 'bgm');
     describeAudioConfigForArea(area);
   }
@@ -1047,6 +1049,7 @@
     const resumedAt = performance.now(); // End timestamp used to shift only waits that were still pending when combat started.
     const pausedMs = pausedAt > 0 ? Math.max(0, resumedAt - pausedAt) : 0; // Preserved duration added to an outstanding normal-music wait.
     if (pausedMs > 0 && _ambientCueState.nextAt > pausedAt) _ambientCueState.nextAt += pausedMs;
+    if (pausedMs > 0 && _ambientCueState.cuePhaseEndsAt > pausedAt) _ambientCueState.cuePhaseEndsAt += pausedMs; // Combat does not consume the two-minute cue window.
     _ambientCueState.combatSchedulerPausedAt = 0;
   }
 
@@ -1182,6 +1185,7 @@
     if (!trackUrl) return false;
     const resolved = resolveAudioUrl(trackUrl);
     const list = areaBgmTracks(area);
+    if (area === _ambientCueState.area && snd === _ambientCueState.currentBgm) return true; // Weather/time changes never truncate a song already chosen.
     return list.some(t => t?.url && resolveAudioUrl(t.url) === resolved && isBgmTrackEligible(t, area, { alreadyPlaying: true }));
   }
 
@@ -1190,6 +1194,7 @@
     const idx = _audioCueIndexes.get(indexId);
     const resolved = resolveAudioUrl(snd?._trackUrl);
     if (!idx || !resolved) return false;
+    if (area === _ambientCueState.area && snd === _ambientCueState.currentCue) return true; // Finish the chosen motif if conditions change mid-cue.
     return (idx.ambient_cues || []).some(cue => {
       const cueUrl = (idx.__basePath || '') + (cue?.file || '');
       return cue.file && resolveAudioUrl(cueUrl) === resolved && isAudioEntryEligible(cue, area) && !audioUrlFailed(cueUrl);
@@ -1201,6 +1206,22 @@
     const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
     const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 45);
     _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
+  }
+
+  function beginAmbientCuePhase() {
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.() || {}; // Authored cue-stage duration.
+    const durationSec = Math.max(1, Number(audioCfg.ambientCuePhaseDurationSec) || 120); // Two minutes of cue opportunities, excluding combat.
+    _ambientCueState.mode = 'cue_wait';
+    _ambientCueState.cuePhaseEndsAt = performance.now() + durationSec * 1000;
+    _ambientCueState.nextAt = Math.max(performance.now(), _ambientCueState.blockUntil); // No unnecessary delay before the first cue.
+    audioDebug('ambient cue stage started area=' + _ambientCueState.area + ' durationSec=' + durationSec, 'cue-stage-start-' + _ambientCueState.area, 0, 'cue');
+  }
+
+  function finishAmbientCuePhase() {
+    _ambientCueState.mode = 'bgm';
+    _ambientCueState.cuePhaseEndsAt = 0;
+    _ambientCueState.nextAt = Math.max(performance.now(), _ambientCueState.blockUntil); // Do not start the next song until the last cue has finished.
+    audioDebug('ambient cue stage complete area=' + _ambientCueState.area, 'cue-stage-end-' + _ambientCueState.area, 0, 'cue');
   }
 
   function isCombatMusicRequested() {
@@ -1243,9 +1264,8 @@
       }
     }
 
-    // Conditions can expire without a map transition (weather/time changes).
-    // Fade only the invalid owner; stale callbacks cannot advance the shared
-    // scheduler because every finish path below checks its slot identity.
+    // Area transitions can still retire a soundtrack, but mere weather/time
+    // changes do not cut the currently chosen full song or individual motif.
     if (_ambientCueState.currentCue && !areaCueIncludesTrack(currentArea, _ambientCueState.currentCue)) {
       stopMusicSlot('currentCue', 'cue conditions expired');
       _ambientCueState.mode = 'bgm';
@@ -1357,26 +1377,33 @@
     if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return;
     if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
 
+    if (_ambientCueState.mode === 'cue_wait' && !_ambientCueState.cuePhaseEndsAt) beginAmbientCuePhase(); // Recover missing phase metadata safely.
+    if (_ambientCueState.mode === 'cue_wait' && performance.now() >= _ambientCueState.cuePhaseEndsAt) finishAmbientCuePhase();
+
     if (_ambientCueState.mode === 'cue_wait') {
       if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
       const eligibleCues = cues.filter(cue => {
         const cueUrl = (idx?.__basePath || '') + (cue?.file || '');
         return cue?.file && isAudioEntryEligible(cue, currentArea) && !audioUrlFailed(cueUrl);
       });
-      if (!eligibleCues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
-      const cue = eligibleCues[Math.floor(Math.random() * eligibleCues.length)];
+      if (!eligibleCues.length) { finishAmbientCuePhase(); _ambientCueState.nextAt = performance.now() + 5000; return; } // Missing/failed cue libraries never strand the soundtrack.
+      const alternates = eligibleCues.filter(cue => cue.id !== _ambientCueState.lastCueId); // Avoid a repeated motif when more than one is eligible.
+      const pool = alternates.length ? alternates : eligibleCues;
+      const cue = pool[Math.floor(Math.random() * pool.length)];
+      _ambientCueState.lastCueId = cue.id; // The next random selection excludes this cue when possible.
       if (!cue?.file) { scheduleNextCueDelay(); return; }
       const fade = musicFadeConfig();
       const cueUrl = (idx.__basePath || '') + cue.file;
       const cueBaseVolume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume ?? 0.7)));
       const snd = playMusicTrack(cueUrl, cueBaseVolume, fade.cueFadeMs, fade.cueFadeMs);
       snd._musicEntry = cue;
-      const finishCue = ({ nextMode = 'bgm', retryMs = 0 } = {}) => {
+      const finishCue = ({ retryMs = 0 } = {}) => {
         const ownsSlot = _ambientCueState.currentCue === snd;
         if (ownsSlot) {
           _ambientCueState.currentCue = null;
-          _ambientCueState.mode = nextMode;
-          if (retryMs > 0) _ambientCueState.nextAt = performance.now() + retryMs;
+          if (!_ambientCueState.cuePhaseEndsAt || performance.now() >= _ambientCueState.cuePhaseEndsAt) finishAmbientCuePhase();
+          else if (retryMs > 0) _ambientCueState.nextAt = performance.now() + retryMs;
+          else scheduleNextCueDelay(); // Keep the stage B series going until its two-minute window ends.
         }
         retireMusicTrack(snd);
       };
@@ -1384,12 +1411,12 @@
       snd.addEventListener('error', () => {
         audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue');
         if (isRealMediaError(snd)) markAudioUrlFailed(cueUrl, 'media error');
-        finishCue({ nextMode: 'cue_wait', retryMs: 3000 });
+        finishCue({ retryMs: 3000 });
       }, { once: true });
       snd._watchForStall(6000, () => {
         if (_ambientCueState.currentCue !== snd) return;
         audioDebug('cue stalled (no playback progress) ' + snd.src, 'cue-stall-' + cue.id, 0, 'cue');
-        finishCue({ nextMode: 'cue_wait', retryMs: 3000 });
+        finishCue({ retryMs: 3000 });
       });
       _ambientCueState.currentCue = snd;
       audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0, 'cue');
@@ -1398,11 +1425,12 @@
         const errName = err?.name || '';
         if (errName === 'NotAllowedError') return; // Remains the sole owner; unlockGameAudio retries it.
         if (errName !== 'AbortError') markAudioUrlFailed(cueUrl, errName || 'play failed');
-        finishCue({ nextMode: 'cue_wait', retryMs: 3000 });
+        finishCue({ retryMs: 3000 });
       });
       return;
     }
 
+    if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return; // Explicit exclusivity: no new BGM may start over the last cue.
     if (_ambientCueState.currentBgm && !_ambientCueState.currentBgm.ended) return;
     _ambientCueState.currentBgm = null;
     if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
@@ -1415,21 +1443,22 @@
       // used to retry bgm resolution every 5s indefinitely and never
       // give the cue system a turn even when it had cues available.
       audioDebug('no eligible bgm for area=' + currentArea + '; falling back to ambient cues', 'bgm-missing-' + currentArea, 3000, 'bgm');
-      _ambientCueState.mode = 'cue_wait';
-      _ambientCueState.nextAt = performance.now();
+      beginAmbientCuePhase();
       return;
     }
     const fade = musicFadeConfig();
     const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume ?? 0.48)));
-    const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs, { loop: bgmTrack?.loop === true });
+    const loopSpecialScore = bgmTrack?.exclusiveSoundtrack === true && bgmTrack?.loop === true; // Only explicit exclusive soundtracks loop indefinitely; regular songs must finish so stage B can begin.
+    const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs, { loop: loopSpecialScore });
     snd._musicEntry = bgmTrack;
-    const finishBgm = ({ nextMode = 'cue_wait', retryMs = 0 } = {}) => {
+    const finishBgm = ({ retryMs = 0 } = {}) => {
       const ownsSlot = _ambientCueState.currentBgm === snd;
       if (ownsSlot) {
         _ambientCueState.currentBgm = null;
-        _ambientCueState.mode = nextMode;
-        if (retryMs > 0) _ambientCueState.nextAt = performance.now() + retryMs;
-        else if (nextMode === 'cue_wait') scheduleNextCueDelay();
+        if (retryMs > 0) {
+          _ambientCueState.mode = 'bgm';
+          _ambientCueState.nextAt = performance.now() + retryMs; // Failed songs are retried without falsely entering stage B.
+        } else beginAmbientCuePhase(); // A complete song hands off to the two-minute cue stage.
       }
       retireMusicTrack(snd);
     };
@@ -1437,7 +1466,7 @@
     snd.addEventListener('error', () => {
       audioDebug('bgm error ' + snd.src + ' code=' + (snd.error?.code || 'none'), 'bgm-error-' + bgmUrl, 0, 'bgm');
       if (isRealMediaError(snd)) markAudioUrlFailed(bgmUrl, 'media error');
-      finishBgm({ nextMode: 'bgm', retryMs: 1000 });
+      finishBgm({ retryMs: 1000 });
     }, { once: true });
     snd._watchForStall(10000, () => {
       if (_ambientCueState.currentBgm !== snd) return;
@@ -1450,7 +1479,7 @@
       // real failure via the AbortError that pausing an in-flight
       // play() triggers — see the play().catch() below.)
       audioDebug('bgm stalled (no playback progress) ' + snd.src, 'bgm-stall-' + currentArea + '-' + bgmUrl, 0, 'bgm');
-      finishBgm({ nextMode: 'bgm', retryMs: 1000 });
+      finishBgm({ retryMs: 1000 });
     });
     _ambientCueState.currentBgm = snd;
     audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0, 'bgm');
@@ -1470,7 +1499,7 @@
       const errName = err?.name || '';
       if (errName === 'NotAllowedError') return; // Keep ownership so a later gesture cannot resurrect an orphan over newer music.
       if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
-      finishBgm({ nextMode: 'bgm', retryMs: 1000 });
+      finishBgm({ retryMs: 1000 });
     });
   }
 
@@ -1722,7 +1751,7 @@
     if (now - _lastDiagTickRun < 5000) return;
     _lastDiagTickRun = now;
     audioDebug('audio tick active area=' + deps.getCurrentArea() + ' paused=' + deps.getPaused() + ' gameStarted=' + deps.getGameStarted(), 'audio-tick-' + deps.getCurrentArea(), 5000);
-    const ambientSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue; // Preserved exploration owner is reported even while combat has it paused.
+    const ambientSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue; // Mutually exclusive stages A and B never own two ambient music sources.
     const activeSnd = _ambientCueState.currentCombatBgm || ambientSnd; // Audible soundtrack owner takes precedence in the mobile-copyable diagnostics.
     const gainNode = activeSnd ? _musicGainNodes.get(activeSnd) : null;
     const activeKind = _ambientCueState.currentCombatBgm ? 'combat-bgm' : _ambientCueState.currentBgm ? 'bgm' : _ambientCueState.currentCue ? 'cue' : 'none'; // Labels the actual soundtrack owner in the mobile-copyable debug log.
@@ -1737,6 +1766,9 @@
       ' ambientPaused=' + !!ambientSnd?.paused +
       ' tutorialActive=' + !!window.CombatTutorial?.active?.() +
       ' blockForMs=' + Math.max(0, Math.round(_ambientCueState.blockUntil - performance.now())) +
+      ' cueStageRemainingMs=' + (_ambientCueState.cuePhaseEndsAt ? Math.max(0, Math.round(_ambientCueState.cuePhaseEndsAt - performance.now())) : 'inactive') +
+      ' cueIndex=' + (_ambientCueState.indexId || 'none') +
+      ' cuePool=' + (_audioCueIndexes.get(_ambientCueState.indexId)?.ambient_cues?.length || 0) +
       ' conditions=' + [world.maps, world.weather, world.timesOfDay, world.seasons, world.weekdays].join('/') +
       ' rainActive=' + deps.calendar.isRaining +
       ' ctxState=' + (_musicAudioCtx?.state || 'none') +
