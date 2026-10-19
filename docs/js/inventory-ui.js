@@ -140,6 +140,10 @@
       #mpInventory .gear-owned-section .inv-equip-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--inv-gap); min-height:0; }
       #mpInventory .gear-owned-section .inv-equip-slot { min-height:calc(3.1 * var(--inv-row)); }
       #mpInventory .gear-owned-section .inv-equip-empty { padding:6px; border:1px dashed #ffffff18; border-radius:var(--inv-radius); color:var(--muted); font-size:var(--inv-font-xs); }
+      /* Attunement cards belong to the owned-gear scroller, not extra rows of the outer two-column workspace. */
+      #mpInventory .gear-owned-trinkets .trinket-inventory-list { display:flex; flex-direction:column; min-width:0; gap:var(--inv-gap); }
+      #mpInventory .gear-owned-trinkets .trinket-inventory-row { flex:0 0 auto; width:100%; height:auto; box-sizing:border-box; flex-wrap:wrap; }
+      #mpInventory .gear-owned-trinkets .trinket-inventory-row > .ii-btn { flex:0 0 auto; margin-left:auto; max-width:100%; white-space:normal; }
 
       #mpInventory .inv-equip-slot { border-color:#ffffff24; background:linear-gradient(#ffffff10,#ffffff07); box-shadow:inset 0 1px #ffffff09,0 1px 3px #0003; transition:transform 80ms ease,background 100ms ease,border-color 100ms ease,box-shadow 100ms ease,opacity 100ms ease; }
       #mpInventory .inv-equip-slot[role='button']:hover { transform:translateY(-1px); border-color:#ffffff4f; background:linear-gradient(#ffffff1b,#ffffff0c); }
@@ -422,9 +426,11 @@
     const ownedToolRow = ownedToolHeader.nextElementSibling;
     const clothingRow = clothingHeader.nextElementSibling;
     const ownedClothingRow = ownedClothingHeader.nextElementSibling;
+    const trinketGroup = directChild(section, 'gear-owned-trinkets'); // Moves the existing trinket renderer into the same scrollable owned-gear inventory.
     if (!toolRow || !ownedToolRow || !clothingRow || !ownedClothingRow) return;
 
     const used = new Set([toolHeader, toolRow, ownedToolHeader, ownedToolRow, clothingHeader, clothingRow, ownedClothingHeader, ownedClothingRow]);
+    if (trinketGroup) used.add(trinketGroup);
     const leftovers = children.filter((node) => !used.has(node)); // Preserves any future/third-party gear rows instead of dropping them.
 
     const loadout = document.createElement('div'); // Four-column current-loadout block requested by the UI design.
@@ -461,6 +467,7 @@
     ownedClothingHeader.textContent = 'Owned Clothing';
     ownedClothingGroup.append(ownedClothingHeader, ownedClothingRow);
     ownedSection.append(ownedToolsGroup, ownedClothingGroup);
+    if (trinketGroup) ownedSection.appendChild(trinketGroup);
 
     section.replaceChildren(loadout, ownedSection, ...leftovers);
     renderToolStats(toolStats);
@@ -875,6 +882,9 @@
       gearLoadoutColumns: document.querySelectorAll('#invEquipSection .gear-loadout-grid > .gear-loadout-column').length,
       equippedToolSlots: document.querySelectorAll('#invEquipSection .gear-tool-slots .inv-equip-slot.occupied').length,
       ownedGearTiles: document.querySelectorAll('#invEquipSection .gear-owned-section .inv-equip-slot').length,
+      trinketTiles: document.querySelectorAll('#invEquipSection .gear-owned-trinkets .trinket-inventory-row').length,
+      trinketsWithinOwnedGear: !!document.querySelector('#invEquipSection > .gear-owned-section .gear-owned-trinkets'),
+      orphanTrinketGroups: document.querySelectorAll('#invEquipSection > .gear-owned-trinkets').length,
       infoHasDescription: !!document.getElementById('iiDesc')?.textContent?.trim(),
       selectedToolMasteryBar: masteryPanel && !masteryPanel.hidden ? masteryPanel.dataset.toolKey || true : false,
       masteryDataAccess: {
