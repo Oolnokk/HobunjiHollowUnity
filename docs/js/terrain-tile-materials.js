@@ -70,6 +70,10 @@
   function resolveTileMat(mapId, matKey) {
     const tileMats = deps.tileMats;
     const base = tileMats[matKey] || tileMats.grass;
+    if (matKey === deps.TileType.GRASS) {
+      base.userData = base.userData || {};
+      base.userData.hobunjiBaseGrassTerrainMaterial = true; // Held-object depth replay may ignore this floor, never billboard grass or other surfaces.
+    }
     // '*' is a wildcard entry — applies to any map with no entry of its own
     // (every wilderness zone, without having to list each zone's mapId),
     // overridden by a map-specific entry (town/farm) when one exists.
@@ -80,6 +84,10 @@
     let mat = _mapTileMatCache.get(cacheKey);
     if (!mat) {
       mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, matKey === deps.TileType.GRASS);
+      if (matKey === deps.TileType.GRASS) {
+        mat.userData = mat.userData || {};
+        mat.userData.hobunjiBaseGrassTerrainMaterial = true; // Preserves the base-grass x-ray policy when map materials are texture-overridden.
+      }
       _mapTileMatCache.set(cacheKey, mat);
     }
     return mat;
