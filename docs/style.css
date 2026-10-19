@@ -3306,7 +3306,7 @@
     }
     .edgeControllerBtn .glyph { font-size: 12px; line-height: 1; }
     .edgeControllerBtn .action-label { font-size: 7px; color: #9eb2cb; letter-spacing: .05em; text-transform: uppercase; text-align: center; }
-    .edgeControllerBtn.held, .edgeControllerBtn:active {
+    .edgeControllerBtn.held, .edgeControllerBtn.input-held, .edgeControllerBtn:active {
       transform: translateY(2px) scale(.985); filter: brightness(1.22);
       box-shadow: inset 0 0 0 2px rgba(255,255,255,.16), 0 0 22px currentColor;
     }
@@ -3393,6 +3393,11 @@
     .fiveGroupColumn.active .fiveGroupNoteBtn.mapped, .fiveGroupNoteBtn.played {
       box-shadow: 0 0 12px color-mix(in srgb, var(--group-color) 60%, transparent), inset 0 0 0 1px rgba(255,255,255,.06);
     }
+    .fiveGroupNoteBtn.held, .fiveGroupNoteBtn.input-held, .fiveGroupNoteBtn.played {
+      background: var(--group-color); color: #12202c; border-color: #f4ffff;
+      box-shadow: 0 0 16px var(--group-color), inset 0 0 0 1px rgba(255,255,255,.65);
+    }
+    .fiveGroupNoteBtn.input-held .noteOrdinal { opacity: 1; }
     .fiveGroupBottomBar { display: grid; grid-template-columns: minmax(0,1fr) 42px; gap: 3px; align-items: center; }
     .fiveGroupScaleRow { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 2px; }
     .fiveGroupScaleRow .edgeControllerBtn { min-width: 0; min-height: 21px; height: 21px; padding: 1px 2px; }

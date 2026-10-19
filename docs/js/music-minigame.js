@@ -651,6 +651,22 @@
       try { if (frame.contentWindow) frame.contentWindow.__hobunjiHostedInputLayout = activeInputLayout; } catch {}
     };
     const glyphsForLayout = layout => noteGlyphsByLayout[layout] || noteGlyphsByLayout.mobile;
+    const heldNoteButtons = new Map(); // Physical input sources own their lit button until release, independently of touch holds.
+    const setHostedNoteHeld = (noteIndex, sourceId, isDown) => {
+      const button = isDown
+        ? rightMount.querySelector(`.fiveGroupNoteBtn[data-direct-bank="${activeBankSlot}"][data-direct-note="${noteIndex}"]`)
+        : heldNoteButtons.get(sourceId); // Release the bank captured at note-down even if the modifier changed meanwhile.
+      if (!button) return;
+      if (isDown) heldNoteButtons.set(sourceId, button);
+      else heldNoteButtons.delete(sourceId);
+      const held = isDown || [...heldNoteButtons.values()].includes(button); // Another physical source can still own this same note.
+      if (button.classList.contains('input-held') !== held) button.classList.toggle('input-held', held);
+    };
+    const setHostedActionHeld = (action, held) => {
+      const selector = `[data-bridge-action="${action}"]`; // Reuses the visible scale/exit buttons for controller action feedback.
+      const button = leftMount.querySelector(selector) || rightMount.querySelector(selector); // Actions occur on either side of the instrument overlay.
+      if (button && button.classList.contains('input-held') !== held) button.classList.toggle('input-held', held);
+    };
     const pulseNoteButton = (bankSlot, noteIndex) => {
       const button = rightMount.querySelector(`.fiveGroupNoteBtn[data-direct-bank="${bankSlot}"][data-direct-note="${noteIndex}"]`);
       if (!button) return;
@@ -713,7 +729,10 @@
 
     const releaseHostedKeyboardInputs = () => {
       for (const [code, binding] of hostedKeyboardSources.entries()) {
-        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'note') {
+          bridge.noteUp(binding.value, binding.sourceId);
+          setHostedNoteHeld(binding.value, binding.sourceId, false);
+        }
         if (binding.kind === 'bank') {
           bridge.bankUp(binding.value, binding.sourceId);
           heldBankControls.delete(binding.value);
@@ -895,6 +914,7 @@
           hostedKeyboardSources.set(event.code, { kind:'note', value:noteIndex, sourceId });
           bridge.wakeAudio().catch(() => {});
           bridge.noteDown(noteIndex, sourceId);
+          setHostedNoteHeld(noteIndex, sourceId, true);
           pulseNoteButton(activeBankSlot, noteIndex);
           return;
         }
@@ -916,7 +936,10 @@
         if (!binding) return;
         event.preventDefault();
         event.stopImmediatePropagation?.();
-        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'note') {
+          bridge.noteUp(binding.value, binding.sourceId);
+          setHostedNoteHeld(binding.value, binding.sourceId, false);
+        }
         if (binding.kind === 'bank') {
           bridge.bankUp(binding.value, binding.sourceId);
           heldBankControls.delete(binding.value);
@@ -957,11 +980,15 @@
     // stacking two. ──────────────────────────────────────────────────────
     const releaseHostedControllerInputs = () => {
       for (const [key, binding] of hostedControllerSources.entries()) {
-        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'note') {
+          bridge.noteUp(binding.value, binding.sourceId);
+          setHostedNoteHeld(binding.value, binding.sourceId, false);
+        }
         if (binding.kind === 'bank') {
           bridge.bankUp(binding.value, binding.sourceId);
           heldBankControls.delete(binding.value);
         }
+        if (binding.kind === 'tap') setHostedActionHeld(binding.value, false);
         hostedControllerSources.delete(key);
       }
       bridge.releaseRightStick?.();
@@ -994,9 +1021,11 @@
           hostedControllerSources.set(key, { kind, value, sourceId });
           bridge.wakeAudio().catch(() => {});
           bridge.noteDown(value, sourceId);
+          setHostedNoteHeld(value, sourceId, true);
           pulseNoteButton(activeBankSlot, value);
         } else {
           bridge.noteUp(value, sourceId);
+          setHostedNoteHeld(value, sourceId, false);
           hostedControllerSources.delete(key);
         }
         return;
@@ -1018,9 +1047,13 @@
         }
         return;
       }
-      if (kind === 'tap' && pressed) {
-        bridge.wakeAudio().catch(() => {});
-        bridge.tap(value);
+      if (kind === 'tap') {
+        setHostedActionHeld(value, pressed);
+        if (pressed) {
+          hostedControllerSources.set(key, { kind, value, sourceId });
+          bridge.wakeAudio().catch(() => {});
+          bridge.tap(value);
+        } else hostedControllerSources.delete(key);
       }
     };
 
@@ -1041,14 +1074,15 @@
         return;
       }
 
-      controllerButton(frame, 'musicNote1', 'note-1', 'note', 0);
-      controllerButton(frame, 'musicNote2', 'note-2', 'note', 1);
-      controllerButton(frame, 'musicNote3', 'note-3', 'note', 2);
-      controllerButton(frame, 'musicNote4', 'note-4', 'note', 3);
       controllerButton(frame, 'musicBank1', 'bank-1', 'bank', 'lt');
       controllerButton(frame, 'musicBank2', 'bank-2', 'bank', 'rt');
       controllerButton(frame, 'musicBank3', 'bank-3', 'bank', 'lb');
       controllerButton(frame, 'musicBank4', 'bank-4', 'bank', 'rb');
+      // Resolve modifiers first so simultaneous bank + note presses sound and light the same bank.
+      controllerButton(frame, 'musicNote1', 'note-1', 'note', 0);
+      controllerButton(frame, 'musicNote2', 'note-2', 'note', 1);
+      controllerButton(frame, 'musicNote3', 'note-3', 'note', 2);
+      controllerButton(frame, 'musicNote4', 'note-4', 'note', 3);
       controllerButton(frame, 'musicPause', 'pause', 'tap', 'pause');
       controllerButton(frame, 'musicScalePrev', 'scale-prev', 'tap', 'scale-prev');
       controllerButton(frame, 'musicScaleNext', 'scale-next', 'tap', 'scale-next');
