@@ -102,18 +102,19 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
 
 // Verify the authored music cycle: complete song -> 120 seconds of separate cues -> next song.
 {
-  const live = { now: 1000, starts: [], cuesAvailable: true, bgmAvailable: true, nextSong: 0 }; // Deterministic stage clock, transport log, and simulated authoring availability.
+  const live = { now: 1000, area: 'town', starts: [], cuesAvailable: true, bgmAvailable: true, nextSong: 0 }; // Deterministic stage clock, transport log, and simulated authoring availability.
   const state = { area: 'town', indexId: 'general', mode: 'bgm', nextAt: 0, blockUntil: 0, currentBgm: null, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, cuePhaseEndsAt: 0, lastCueId: '' }; // The scheduler's production stage ownership fields.
   const config = { enabled: true, bgmVolume: 0.48, ambientCueMinDelaySec: 5, ambientCueMaxDelaySec: 5, ambientCuePhaseDurationSec: 120 }; // Fixed cue gaps make the clock checks reproducible.
   const context = {
     window: { AudioSystem: { gameAudioConfig: () => config } },
-    deps: { getCurrentArea: () => 'town', isPlayerInCombat: () => false },
+    deps: { getCurrentArea: () => live.area, isPlayerInCombat: () => false },
     performance: { now: () => live.now },
     quietLoading: false, _startupBgm: null, _ambientCueState: state,
     _audioCueIndexes: new Map([['general', { __basePath: 'cues/general/', ambient_cues: [{ id: 'to1', file: 'to1.ogg', volume: 0.7 }, { id: 'to2', file: 'to2.ogg', volume: 0.7 }] }]]),
     _dailyBgmPlayed: new Set(),
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
+    resolveAreaAudioIndex: () => 'general', // Shared cue library across farm and town.
     isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false,
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
     ambientMusicOwnsSoundtrack: () => false,
@@ -153,6 +154,11 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   firstCue.listeners.ended();
   assert.equal(state.mode, 'cue_wait', 'one cue ending does not end the entire cue stage');
   assert.equal(state.nextAt, 147000, 'the existing random cue interval separates cues');
+  live.area = 'farm'; // Crossing between areas sharing general cues must not restart the soundtrack cycle.
+  context.updateAmbientCues();
+  assert.equal(state.area, 'farm', 'the cue stage follows a move to an area with the same library');
+  assert.equal(state.mode, 'cue_wait', 'the quiet gap remains inside stage B after travel');
+  assert.equal(state.cuePhaseEndsAt, 259000, 'the shared-area transition preserves the original cue deadline');
   live.now = 146000;
   context.updateAmbientCues();
   assert.equal(state.currentCue, null, 'stage B honors the quiet gap between motifs');
