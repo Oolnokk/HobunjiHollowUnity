@@ -62,8 +62,8 @@ assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
 assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
-assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && feet.length\)\)/,
-  'feet with water OR slush trigger the overlay even on maps without grass/path ground');
+assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && \(held.length \|\| feet.length\)\)\)/,
+  'feet or held weapons with water/slush trigger the overlay even without grass/path ground');
 assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
   'held x-ray recognizes the shared grass ShaderMaterial even when a runtime consumer uses a plain Mesh');
 assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.uniforms\?\.uDensity[\s\S]{0,180}entry\.uniforms\?\.uStrength/,
@@ -141,7 +141,7 @@ assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.
   'feet are absent from the original color pass so they cannot pop over transparent water');
 assert.match(heldRender, /const hidden = hideObjects\(tintFeet \? \[\.\.\.ground, \.\.\.overlayMeshes, \.\.\.tintCovers\]/,
   'the rebuilt solid depth excludes grass, paths and translucent covers for tinted feet');
-assert.match(heldRender, /const tintFeet = feet\.length > 0 && tintCovers\.length > 0 && currentFramebufferStencilBits\(renderer\) >= 1/,
+assert.match(heldRender, /const tintFeet = feet\.length > 0 && tintCovers\.length > 0 && lastBaseStencilBits >= 1/,
   'stencil-less render targets use safe solid cover occlusion rather than an untinted foot pass');
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
