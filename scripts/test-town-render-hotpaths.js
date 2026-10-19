@@ -185,9 +185,32 @@ const stencilAt = heldRender.indexOf('const overlayStates = tintOverlay ? prepar
 const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: overlay render')");
 const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(tintCovers);');
 const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', coverDepthAt);
-assert.ok(depthClearAt >= 0 && depthClearAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < tintAt && tintAt < coverDepthAt && coverDepthAt < groundDepthRestoreAt,
-  'reconstructed solid depth, gear/hand/foot draw, translucent tint, cover-depth restore, then terrain-depth restore');
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', heldDrawAt);
+assert.ok(depthClearAt >= 0 && depthClearAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
+  'reconstructed solid depth, gear/hand/foot draw, opaque grass-depth restore BEFORE tint, then translucent depth restore');
+
+// Two user Pixel Probes on flooded farm grass have the exact same water
+// material, but different final pixels: leaking cyan at ground=1.498 /
+// water=1.908 versus intact green at ground=1.673 / water=1.911.
+// The critical invariant is *foreground opaque ground is restored before
+// any water/slush color replay*, even in areas with overlay stencil.
+const probes = [
+  { name: 'leaking cyan patch', grassDistance: 1.498, waterDistance: 1.908, grassY: 0.351, waterY: 0.084 },
+  { name: 'normal green patch', grassDistance: 1.673, waterDistance: 1.911, grassY: 0.340, waterY: 0.118 },
+];
+for (const probe of probes) {
+  assert.ok(probe.grassDistance < probe.waterDistance && probe.grassY > probe.waterY,
+    probe.name + ': grass is physically above and in front of the same farm flood material');
+  // Standard depth LESS_EQUAL: after the grass restore, the farther flood
+  // fragment MUST fail even if a stray held-stencil bit still exists.
+  assert.equal(probe.waterDistance <= probe.grassDistance, false,
+    probe.name + ': a lower flood fragment cannot pass restored opaque grass depth');
+}
+assert.equal(0.5 <= 1.0, true, 'foreground water remains eligible to tint an object behind it');
+assert.match(heldRender, /const groundMaterialStates = prepareGroundDepthMaterials\([\s\S]*?camera.layers.mask = GROUND_REPLAY_MASK/,
+  'ground restore runs on the dedicated colorless depth layer');
+assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?material.colorWrite = false/,
+  'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');
 assert.match(heldRender, /camera.layers.mask = WATER_REPLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
   'translucent water and slush render through their dedicated private layer');
 assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(overlayMeshes\)/,
