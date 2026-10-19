@@ -62,8 +62,8 @@ assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
 assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
-assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(water.length && feet.length\)\)/,
-  'feet in water trigger the overlay even on maps without any grass/path ground');
+assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && feet.length\)\)/,
+  'feet with water OR slush trigger the overlay even on maps without grass/path ground');
 assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
   'held x-ray recognizes the shared grass ShaderMaterial even when a runtime consumer uses a plain Mesh');
 assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.uniforms\?\.uDensity[\s\S]{0,180}entry\.uniforms\?\.uStrength/,
@@ -113,6 +113,14 @@ assert.equal(classifyGround(coverMesh({ waterSurfaceRole: 'flood' }, pavingGroup
 assert.equal(classifyGround(coverMesh({ isWildernessGrassChunk: true }, pavingGroup)), null, 'billboard grass blocks x-ray even on paving');
 assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true }, null, { userData: { hobunjiBaseGrassTerrainMaterial: true } })), 'terrain', 'underlying grass x-rays');
 assert.equal(classifyGround(coverMesh({ cavernWalkableFloor: true })), null, 'cavern floors remain solid occluders');
+const classifyTintCover = new Function('MATERIAL_ID_LAYER',
+  heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3);
+const slushMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } };
+const snowMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } };
+assert.equal(classifyTintCover(coverMesh({ waterSurfaceRole: 'local' })), true, 'tagged water tints feet');
+assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true }, null, slushMaterial)), true, 'translucent slush tints feet');
+assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true }, null, snowMaterial)), false, 'opaque snow hides feet instead of tinting');
+assert.equal(classifyTintCover(coverMesh({ isWildernessGrassChunk: true })), false, 'billboard grass occludes rather than tints feet');
 assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
   'only surfaces carrying the base grass material can be removed from held-overlay depth');
 assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
@@ -131,20 +139,27 @@ assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
   'held gear and feet both participate in the selective overlay and screen scissor');
 assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.\.feet\]\)/,
   'feet are absent from the original color pass so they cannot pop over transparent water');
-assert.match(heldRender, /const hidden = hideObjects\(\[\.\.\.ground, \.\.\.overlayMeshes\]\)/,
-  'depth reconstruction ignores grass and paths as well as the foot/held meshes');
-assert.match(heldRender, /camera.layers.mask = HELD_OVERLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
-  'feet and weapons are redrawn against the reconstructed protective cover depth');
-assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, originalCameraMask\)/,
-  'the shared overlay receives the actual visible feet, not a discarded registry');
-assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
-  'obsolete secondary water-tint compositing cannot double-blend water over the selective foot overlay');
+assert.match(heldRender, /const hidden = hideObjects\(tintFeet \? \[\.\.\.ground, \.\.\.overlayMeshes, \.\.\.tintCovers\]/,
+  'the rebuilt solid depth excludes grass, paths and translucent covers for tinted feet');
+assert.match(heldRender, /const tintFeet = feet\.length > 0 && tintCovers\.length > 0 && currentFramebufferStencilBits\(renderer\) >= 1/,
+  'stencil-less render targets use safe solid cover occlusion rather than an untinted foot pass');
+assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
+  'the shared overlay receives registered water and slush covers as well as the actual feet');
 
-const heldOverlayAt = heldRender.indexOf('camera.layers.mask = HELD_OVERLAY_MASK');
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(');
 const depthClearAt = heldRender.indexOf('renderer.clearDepth();');
-assert.ok(depthClearAt >= 0 && depthClearAt < heldOverlayAt && heldOverlayAt < groundDepthRestoreAt,
-  'cover depth is rebuilt first, held sprites and feet are then drawn once, and terrain depth is restored last');
+const feetAt = heldRender.indexOf('const footStates = prepareFootStencilMaterials(feet);');
+const tintAt = heldRender.indexOf('const tintStates = prepareFootCoverTintMaterials(tintCovers);');
+const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
+const heldAt = heldRender.indexOf('const heldStencilStates = prepareHeldStencilMaterials(held);', coverDepthAt);
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', heldAt);
+assert.ok(depthClearAt >= 0 && depthClearAt < feetAt && feetAt < tintAt && tintAt < coverDepthAt && coverDepthAt < heldAt && heldAt < groundDepthRestoreAt,
+  'depth rebuild precedes feet, translucent tint, protective cover depth, held gear and final ground restoration');
+assert.match(heldRender, /camera.layers.mask = WATER_REPLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
+  'translucent water and slush render through their dedicated private layer');
+assert.match(heldRender, /const drawOverlay = tintFeet \? held : overlayMeshes/,
+  'feet render once even when the tint compositor is active');
+assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
+  'the old patchy foot-water tint path is not used');
 
 // Execute the production foot registration rather than only inspecting names:
 const footRegistrarStart = heldRender.indexOf('  function markWaterOccludedMesh(');
@@ -160,6 +175,46 @@ assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
 assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
 assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
 assert.equal(markFoot(mockFoot), false, 'repeat registration does not duplicate the mesh');
+
+
+// Execute production cover-material mutations against mocked materials to
+// ensure color alpha/depth/stencil are treated independently and restored.
+const tintFnStart = heldRender.indexOf('  function prepareFootStencilMaterials(');
+const tintFnEnd = heldRender.indexOf('  function prepareGroundDepthMaterials(', tintFnStart);
+assert.ok(tintFnStart > 0 && tintFnEnd > tintFnStart);
+const materialHelpers = heldRender.slice(tintFnStart, tintFnEnd);
+function makeCoverMaterial() {
+  return { colorWrite: true, depthWrite: false, depthTest: true,
+    transparent: true, opacity: 0.22, stencilWrite: false, stencilWriteMask: 0xff,
+    stencilFunc: -1, stencilRef: 0, stencilFuncMask: 0xff,
+    stencilFail: -1, stencilZFail: -1, stencilZPass: -1 };
+}
+const makeHelpers = new Function('saveMaterialState', 'forEachMaterial', 'THREE',
+  materialHelpers + '\nreturn { prepareFootStencilMaterials, prepareFootCoverTintMaterials, prepareTintCoverDepthMaterials };');
+const saveState = (states, material) => {
+  if (!states.has(material)) states.set(material, { ...material });
+};
+const forEachMat = (material, fn) => (Array.isArray(material) ? material : [material]).forEach(fn);
+const coverFns = makeHelpers(saveState, forEachMat, {
+  AlwaysStencilFunc: 519, EqualStencilFunc: 514, KeepStencilOp: 7680, ReplaceStencilOp: 7681
+});
+const footMaterial = makeCoverMaterial();
+const footState = coverFns.prepareFootStencilMaterials([{material: footMaterial}]);
+assert.equal(footMaterial.colorWrite, true, 'foot color is actually drawn');
+assert.equal(footMaterial.stencilWriteMask, 1, 'only visible foot pixels populate stencil bit zero');
+const coverMaterial = makeCoverMaterial();
+const tintStates = coverFns.prepareFootCoverTintMaterials([{material: coverMaterial}]);
+assert.equal(coverMaterial.colorWrite, true, 'slush retains its authored color');
+assert.equal(coverMaterial.opacity, 0.22, 'slush retains its authored opacity');
+assert.equal(coverMaterial.depthWrite, false, 'tint pass does not overwrite foot depth');
+assert.equal(coverMaterial.stencilFuncMask, 1, 'only visible foot pixels may be tinted');
+const depthStates = coverFns.prepareTintCoverDepthMaterials([{material: coverMaterial}]);
+assert.equal(coverMaterial.colorWrite, false, 'cover depth is restored without double-applying the color');
+assert.equal(coverMaterial.depthWrite, true, 'cover depth protects held weapons');
+assert.equal(coverMaterial.stencilWrite, false, 'cover depth writes are not restricted to foot pixels');
+assert.equal(footState.size, 1, 'foot material state can be restored');
+assert.equal(tintStates.size, 1, 'tint material state can be restored');
+assert.equal(depthStates.size, 1, 'depth replay material state can be restored');
 
 assert.match(feetParity, /markWaterOccludedMesh\?\.\(mesh\)/,
   'both procedural foot meshes register through the real selective renderer');
