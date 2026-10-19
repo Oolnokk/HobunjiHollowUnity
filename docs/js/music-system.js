@@ -1763,10 +1763,10 @@
     if (now - _lastDiagTickRun < 5000) return;
     _lastDiagTickRun = now;
     audioDebug('audio tick active area=' + deps.getCurrentArea() + ' paused=' + deps.getPaused() + ' gameStarted=' + deps.getGameStarted(), 'audio-tick-' + deps.getCurrentArea(), 5000);
-    const ambientSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue; // Preserved exploration owner is reported even while combat has it paused.
-    const activeSnd = _ambientCueState.currentCombatBgm || ambientSnd; // Audible soundtrack owner takes precedence in the mobile-copyable diagnostics.
+    const ambientSnd = (_ambientCueState.cueOverlayDucking ? _ambientCueState.currentCue : null) || _ambientCueState.currentBgm || _ambientCueState.currentCue; // Report the audible cue instead of an underlying ducked song.
+    const activeSnd = _ambientCueState.currentCombatBgm || ambientSnd; // Combat remains the highest-priority music owner in mobile logs.
     const gainNode = activeSnd ? _musicGainNodes.get(activeSnd) : null;
-    const activeKind = _ambientCueState.currentCombatBgm ? 'combat-bgm' : _ambientCueState.currentBgm ? 'bgm' : _ambientCueState.currentCue ? 'cue' : 'none'; // Labels the actual soundtrack owner in the mobile-copyable debug log.
+    const activeKind = _ambientCueState.currentCombatBgm ? 'combat-bgm' : _ambientCueState.cueOverlayDucking ? 'cue-over-bgm' : _ambientCueState.currentBgm ? 'bgm' : _ambientCueState.currentCue ? 'cue' : 'none'; // Distinguishes simultaneous cue and BGM ownership when diagnosing mobile audio.
     const world = audioConditionWorld(); // Captures the exact condition values used by live eligibility checks.
     const nightbugs = _loopingBgs.get('nightbugs'); // Reports the formerly inaudible layer's actual and requested mix levels.
     const weatherMix = getWeatherAudioDebugState(); // Exposes indoor attenuation and low-pass availability in the existing mobile-copyable audio log.
