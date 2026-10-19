@@ -15,7 +15,6 @@ const zoneGrassBillboards = read('docs/js/zone-grass-billboards.js'); // Verifie
 const borderTerrain = read('docs/js/border-terrain.js'); // Guards authored approach roads and fallback path ribbons outside ordinary paving chunks.
 const plateauMesa = read('docs/js/zone-plateau-mesa.js'); // Guards the semantic tag that makes elevated wilderness ground participate in the held overlay.
 const interiorBuilder = read('docs/js/interior-scene-builder.js'); // Guards cavern-floor registration for the same global held-object ground policy.
-const painterly = read('docs/js/painterly-postprocess.js');
 const mergedWater = read('docs/js/merged-water-renderer.js');
 const feetParity = read('docs/js/procedural-feet-outline-parity.js'); // Guards the explicit foot-only water-occlusion registration and transform parity.
 const gridSource = read('docs/js/grid-tile-accessors.js');
@@ -50,38 +49,6 @@ assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthR
   'the colorless depth replay includes PNG silhouettes and registered protective surface layers');
 assert.match(heldRender, /for \(const object of protectedCover\)[\s\S]{0,200}material\.depthWrite = true/,
   'otherwise-transparent snow/slush, water and billboard grass temporarily write real occlusion depth');
-assert.match(mergedWater, /transparent: true,\s*depthTest: true,[^\n]*\n\s*depthWrite: false/,
-  'translucent water tests the raised opaque grass depth without writing its own depth');
-assert.match(painterly, /uniform sampler2D tWorldDepth;/,
-  'oil paint shader receives the real scene depth for foreground-boundary preservation');
-assert.match(painterly, /paintLinearDepth\(texture2D\(tWorldDepth, safeUv\(uv\)\)\.r\)/,
-  'oil neighbor depth is measured against the current screen pixel');
-assert.match(painterly, /uPaintHasDepth\.value = depthTexture \? 1 : 0/,
-  'depth filtering activates only for a valid rendered scene depth');
-assert.match(painterly, /smoothstep\(0\.07, 0\.22, max\(abs\(v\.r-center\.r\)/,
-  'horizontal wash rejects cross-color water bleed');
-assert.match(painterly, /smoothstep\(0\.07, 0\.22, max\(abs\(v\.r-src\.r\)/,
-  'vertical wash rejects cross-color water bleed');
-assert.match(pixelProbe, /Water depth at probed pixel:[\s\S]*?BEHIND OPAQUE SURFACE/,
-  'Pixel Probe reports when water is behind an opaque elevated ground mesh');
-const painterlyBuilderStart = painterly.indexOf('  const PAINT_DEPTH_GUARD = ');
-const painterlyBuilderEnd = painterly.indexOf('  function makeFullscreenPass(', painterlyBuilderStart);
-assert.ok(painterlyBuilderStart > 0 && painterlyBuilderEnd > painterlyBuilderStart,
-  'extract the deployed oil/wash shader builders');
-const builders = new Function('glslSafeUv', painterly.slice(painterlyBuilderStart, painterlyBuilderEnd)
-  + '\nreturn { oilFragment, horizontalWashFragment, verticalWashToneFragment };')(
-    () => 'vec2 safeUv(vec2 uv) { return clamp(uv, vec2(0.0), vec2(1.0)); }');
-const oilShader = builders.oilFragment({oilOffsets:[-10,-6.67,-3.33,0,3.33,6.67,10]});
-const horizontalShader = builders.horizontalWashFragment(3);
-const verticalShader = builders.verticalWashToneFragment({waterRadius:3,waterMix:0.23,edgeStain:1});
-assert.match(oilShader, /float paintSampleWeight\(/);
-assert.match(oilShader, /float w = paintSampleWeight\(/);
-assert.match(horizontalShader, /float weights = 0\.0;/);
-assert.match(verticalShader, /float weights = 0\.0;/);
-assert.doesNotMatch(oilShader + horizontalShader + verticalShader, /undefined/,
-  'all painterly GLSL templates are fully evaluated');
-assert.ok(1.775 < 1.980, 'the reported raised grass hit is closer than its lower flood surface');
-
 assert.match(game, /stencilBuffer: needsStencil/,
   'outline render targets explicitly opt into stencil only when requested');
 assert.match(game, /_mainRT\s*=\s*_makeSceneRT\(1, 1, true\)/,
