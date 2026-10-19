@@ -1493,6 +1493,7 @@
       finishBgm({ nextMode: 'bgm', retryMs: 1000 });
     });
     _ambientCueState.currentBgm = snd;
+    _ambientCueState.cueOverlayNextAt = 0; // Start a fresh 45–90s cue interval for each newly scheduled song, not an expired prior song.
     audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0, 'bgm');
     requestGameAudioPlay(snd).then(() => {
       if (bgmTrack?.oncePerDay) {
