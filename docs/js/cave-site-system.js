@@ -340,7 +340,7 @@
     return candidates[0] || null;
   }
 
-  function thickenSeparator(separator, existingRocks) {
+  function thickenSeparator(separator, existingRocks, reservedKeys = new Set()) {
     const occupied = new Set(existingRocks.map(rock => tileKey(rock.col, rock.row))); // Keep the original ore set untouched outside the chosen barrier.
     const front = new Set(separator.nearKeys); // Entrance-side component determines which way the wall should grow.
     const back = new Set(separator.farKeys); // Hidden-side component receives additional rock layers.
@@ -358,7 +358,8 @@
       for (const base of separator.cells) {
         const col = base.col + direction[0] * (layer-1), row = base.row + direction[1] * (layer-1);
         const key = tileKey(col,row);
-        if (!back.has(key) || occupied.has(key)) continue; // Never create rock outside carved walkable cave or over natural ores.
+        if (!back.has(key) || occupied.has(key) || !hasFeatureClearance({col,row},reservedKeys,1.4)
+          || existingRocks.some(ore=>Math.hypot(ore.col-col,ore.row-row)<1.4)) continue; // Do not crowd pre-existing ore/features or seal unintended rock outside the cavern.
         cells.push({ col, row, layer });
         occupied.add(key);
       }
@@ -432,7 +433,7 @@
     if (separator) {
       const wallKind = mineOreKind(rng); // Ordinary ore look, so all existing mining/drop/regrowth code applies.
       const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
-      const thickWall = thickenSeparator(separator, mapData.oreRocks || []); // Five mineable layers, only where the original cave floor has room.
+      const thickWall = thickenSeparator(separator, mapData.oreRocks || [],blockedKeys); // Five mineable layers, only where the original cave floor has room.
       mapData.oreRocks = [...(mapData.oreRocks || []), ...thickWall.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({ col: cell.col, row: cell.row, oreKind: wallKind, caveSeparator: true, caveSeparatorLayer: cell.layer }))];
       for (const cell of thickWall) blockedKeys.add(tileKey(cell.col, cell.row));
       plan.separator = { col: separator.col, row: separator.row, cells: thickWall, oreKind: wallKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys };
