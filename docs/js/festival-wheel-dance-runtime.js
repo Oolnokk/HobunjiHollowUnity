@@ -43,7 +43,8 @@
     return true;
   }
 
-  function start(walker, player, options = {}) {
+  function start(walker, player) {
+    if(window.SocialActionWheel?.isDancing?.()) return false; // Never superimpose independent player dance channels on the paired Animation Author track.
     if (session || !walker?.root?.parent || !player?.parent
         || walker.root === player || !walker.rec?.id
         || typeof player.position?.clone !== 'function'
@@ -52,7 +53,8 @@
     if (!THREE?.Quaternion || !THREE?.Vector3) return false;
     const p = player.position, n = walker.root.position;
     const dx = n.x - p.x, dz = n.z - p.z;
-    if (!Number.isFinite(dx) || !Number.isFinite(dz) || Math.hypot(dx,dz) > 3.6) return false;
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || !Number.isFinite(p.y) || !Number.isFinite(n.y)
+        || Math.hypot(dx,dz) > 3.6 || Math.abs(p.y-n.y) > 1) return false; // Reject unsafe mismatched platforms and already distant partners.
     const angle = Math.atan2(dx,dz);
     const origin = new THREE.Vector3((p.x+n.x)/2,(p.y+n.y)/2,(p.z+n.z)/2);
     const lock = window.CharacterActionLocks?.acquire?.({
