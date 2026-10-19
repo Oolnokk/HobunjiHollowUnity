@@ -12689,6 +12689,7 @@
         // NPC detection below running so a frozen villager is still talkable.
         if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
           updateNpcVisitorArrivals(dt);
+          const npcUpdateNowMs = performance.now(); // Bounds retries for one broken NPC without stalling the rest of the simulation.
           // Backwards indexed loop (not `for...of [...npcWalkers]`) so a walker
           // that despawns itself mid-update (npcWalkers.splice in
           // despawnNpcVisitor above) is tolerated without cloning the whole
@@ -12697,8 +12698,21 @@
             const w = npcWalkers[i];
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
             if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
-            w.update(dt);
-            if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+            if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
+            try {
+              w.update(dt);
+              if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+              if (w._npcUpdateError) w._npcUpdateError = null;
+            } catch (error) {
+              const message = String(error?.message || error); // Identifies repeated failures while retaining the full location in the mobile Debug report.
+              const previous = w._npcUpdateError; // Reuses the reporting deadline when the same NPC fails again after its cooldown.
+              w._npcUpdateError = { message, stack: String(error?.stack || message), retryAt: npcUpdateNowMs + 1000,
+                reportAt: previous?.message === message ? previous.reportAt : -Infinity };
+              if (npcUpdateNowMs >= w._npcUpdateError.reportAt) {
+                w._npcUpdateError.reportAt = npcUpdateNowMs + 5000;
+                window.__farmLog?.(`[schedule] ${w.rec?.id || 'npc'} update failed; retrying in 1s: ${w._npcUpdateError.stack}`, 'error');
+              }
+            }
           }
           _logGarankiDiagnostic(dt);
         }

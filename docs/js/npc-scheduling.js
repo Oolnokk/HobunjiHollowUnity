@@ -688,6 +688,7 @@
         area: walker.area, state: walker.state,
         x: walker.root?.position?.x, z: walker.root?.position?.z,
         stationToolKey: walker.stationToolKey || null,
+        updateError: walker._npcUpdateError?.stack || null, // Read-only mobile diagnostic for an NPC isolated from the world loop until its next retry.
         currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
         floodShelter: floodShelterAssignmentsByNpcId.get(npcId) ? { ...floodShelterAssignmentsByNpcId.get(npcId) } : null,
       };
