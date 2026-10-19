@@ -8,7 +8,7 @@
   const LIVE_ZONE_RECIPES = Object.freeze({
     liveNorthernCliffs: {
       label: 'LIVE — Northern Cliffs exact',
-      settings: { entrySide:'south', preset:'cliffs', boundaryMode:'followMapHeight', boundaryCliffBoost:5 },
+      settings: window.WildernessMapGenerator?.zoneSettings?.('map_northern_cliffs') || {},
     },
     liveSouthernCloudForest: {
       label: 'LIVE — Southern Cloud Forest exact',
@@ -21,7 +21,7 @@
     },
     liveWesternSlope: {
       label: 'LIVE — Western Slope exact',
-      settings: { entrySide:'east', preset:'cliffs', boundaryMode:'entrySideDistantLandscape', boundaryCliffBoost:0 },
+      settings: window.WildernessMapGenerator?.zoneSettings?.('map_western_slope') || {},
     },
     liveEasternMire: {
       label: 'LIVE — Eastern Mire exact',
@@ -189,6 +189,7 @@
   function applyResolvedRecipe(settings, hybrid = { enabled:false }) {
     const generatorDefaults = window.WildernessMapGenerator?.defaultSettings?.() || {}; // Live recipes intentionally start from real generator defaults, never the user's previous slider state.
     const resolved = { ...generatorDefaults, ...(settings || {}) };
+    window.WildernessLabHeightCurveEditor?.setProfile?.(resolved.heightCurves); // Exact live recipe and editor must reflect the same profile.
     setControlRangeMax('trees', 5000); // Southern Cloud Forest currently needs 4000 trees, beyond the original lab cap of 500.
     setControlRangeMax('pathWindiness', 10); // Southern Cloud Forest currently needs windiness 8, beyond the original lab cap of 4.
     for (const [key, value] of Object.entries(resolved)) setControlValue(key, value);
