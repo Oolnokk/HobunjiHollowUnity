@@ -108,7 +108,7 @@ assert.equal(api.feastMenu().length,5,'reserved pot stays empty on offering day'
 const state=api.serialize();
 assert(state.feastBuffs[0].remainingS>0,'meal remaining duration is portable');
 api.restore(state);
-assert.equal(api.currentFullness(),1,'fullness survives save/load');
+assert.equal(api.currentFullness(),2,'fullness survives save/load after real drink-strike servings');
 assert.equal(api.festivalFoodStacks('speed'),1,'festival food buff survives save/load');
 civilDay++;
 assert.equal(api.feastMenu().length,6,'the sixth pot is filled with a new meal next day');
