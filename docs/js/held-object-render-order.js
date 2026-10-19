@@ -1092,6 +1092,28 @@
           if (overlayStates) restoreMaterialStates(overlayStates);
         }
       }
+      // 2b) Restore the real BASE GRASS / PATH depth before translucent
+      // cover tinting. The previous ordering restored ground only AFTER
+      // drawing water, letting flood fragments behind elevated grass pass
+      // through the temporarily empty ground-depth buffer in irregular
+      // areas where held/foot stencil was present. Pixel Probe measured
+      // the opaque grass at ray distance 1.498 and flood at 1.908.
+      // This colorless restore cannot hide the already-rendered overlay
+      // sprites (their color remains on screen), but it ensures a flood
+      // fragment fails depth when an opaque grass surface is closer.
+      // In genuine flooding water is ABOVE the grass, so it still passes
+      // depth and tints the visible portions of hands, gear and feet.
+      const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? [...ground, ...topFaceGround] : ground);
+      try {
+        camera.layers.mask = GROUND_REPLAY_MASK;
+        const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
+        rawRender.call(renderer, scene, camera);
+        window.PerfProfiler?.end(groundRestorePerf);
+        groundDepthRestoreCount++;
+      } finally {
+        restoreMaterialStates(groundMaterialStates);
+      }
+
       if (tintOverlay) {
         // Tint is intentionally a SEPARATE transparent draw with the
         // ORIGINAL shader (animated texture) or slush opacity. Stencil
@@ -1110,8 +1132,9 @@
         }
 
         // Color has already been composited. Restore the water/slush
-        // surface to the final framebuffer depth for later postprocess
-        // and other occlusion consumers, WITHOUT blending it twice.
+        // surface to final framebuffer depth for later consumers, WITHOUT
+        // blending it twice. Elevated grass depth already rejects any
+        // water physically below it.
         const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);
         try {
           camera.layers.mask = WATER_REPLAY_MASK;
@@ -1121,19 +1144,6 @@
         } finally {
           restoreMaterialStates(coverDepthStates);
         }
-      }
-
-      // 3) Restore authored base-grass/path depth for postprocessing after
-      // feet, hands and weapons are tinted. It cannot repaint color.
-      const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? [...ground, ...topFaceGround] : ground);
-      try {
-        camera.layers.mask = GROUND_REPLAY_MASK;
-        const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
-        rawRender.call(renderer, scene, camera);
-        window.PerfProfiler?.end(groundRestorePerf);
-        groundDepthRestoreCount++;
-      } finally {
-        restoreMaterialStates(groundMaterialStates);
       }
 
       if (scissored) { restoreRendererScissor(renderer); scissored = false; }
