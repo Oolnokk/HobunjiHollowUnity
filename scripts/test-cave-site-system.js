@@ -273,22 +273,35 @@ const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
 
-// Mushroom harvest: walking onto a cluster grants Duskcap via the loot grant, with Foraging XP, once per regrow window.
+// Cave Duskcaps now use ordinary aimed getButtons/onAction picking, never proximity harvest.
 {
-  const granted = [];
-  let xp = 0;
+  const granted = []; // Captures the isolated legacy loot adapter when no game-owned lightweight grant is injected.
+  let xp = 0; // Counts Foraging XP earned only by a successful explicit pick.
   context.DevSpawner.init({ grantLoot(gained) { granted.push(gained); return Object.keys(gained); } });
-  const cluster = mushroomMap.caveMushrooms[0];
+  const cluster = mushroomMap.caveMushrooms[0]; // Stable authored cave tile used to check aimed interaction and regrowth.
   Object.assign(deps, { getCurrentArea: () => 'map_i_test_mushroom', calendar: { day: 10 }, awardForagingXp: () => { xp++; }, bonusYieldChance: () => 0, showToast() {} });
   deps.player.x = (cluster.col + 0.5) * deps.TILE; deps.player.y = (cluster.row + 0.5) * deps.TILE;
   Cave.updateCurrentCaveRuntime(1);
-  assert.deepEqual(granted, [{ duskcapMushroom: 1 }], 'walking onto a mushroom cluster picks Duskcap Mushroom');
-  assert.equal(xp, 1, 'picking awards Foraging XP');
+  assert.equal(granted.length, 0, 'walking across a mushroom never picks it automatically');
+  const mushroom = Cave.objectAt('map_i_test_mushroom', cluster.col, cluster.row); // Aimed cave world object used by the same action path as wild reagents.
+  assert.equal(mushroom?.getButtons()?.[0]?.action, 'obj_pick_cave_mushroom', 'aiming at a cluster offers the explicit pick action');
+  assert.equal(Cave.objectAt('map_test_wilds', cluster.col, cluster.row), null, 'another area cannot target a cave cluster');
+  assert.equal(mushroom.onAction('wrong_action').ok, false, 'a wrong action cannot harvest a cave cluster');
+  const picked = mushroom.onAction('obj_pick_cave_mushroom'); // Result controls the generic game obj_* save dispatcher.
+  assert.equal(picked.ok, true, 'manual pick succeeds');
+  assert.equal(picked.deferMemberSave, true, 'pickup defers generic synchronous world save');
+  assert.deepEqual(granted, [{ duskcapMushroom: 1 }], 'manual pick grants one Duskcap using the existing loot fallback');
+  assert.equal(xp, 1, 'manual pick awards Foraging XP');
+  assert.equal(mushroom.onAction('obj_pick_cave_mushroom').ok, false, 'the stale button cannot harvest the same cluster twice');
+  assert.equal(Cave.objectAt('map_i_test_mushroom', cluster.col, cluster.row), null, 'picked clusters no longer show their action prompt');
   Cave.updateCurrentCaveRuntime(1);
-  assert.equal(granted.length, 1, 'a picked cluster is not picked again the same day');
+  assert.equal(granted.length, 1, 'the proximity tick cannot re-pick a harvested cluster');
   deps.calendar.day = 13;
   Cave.updateCurrentCaveRuntime(1);
-  assert.equal(granted.length, 2, 'the cluster regrows after three days');
+  const regrown = Cave.objectAt('map_i_test_mushroom', cluster.col, cluster.row); // Restores the usual three-day cave mushroom cycle.
+  assert(regrown, 'mushroom can be aimed at again after its three-day regrowth window');
+  assert.equal(regrown.onAction('obj_pick_cave_mushroom').ok, true, 'regrown mushroom can be picked again manually');
+  assert.equal(granted.length, 2, 'regrowth still grants a second harvest only after another action');
   deps.getCurrentArea = () => 'map_test_wilds';
 }
 
