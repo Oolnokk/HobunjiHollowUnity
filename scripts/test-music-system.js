@@ -121,7 +121,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     ambientMusicOwnsSoundtrack: () => false,
     retireMusicTrack(audio) { audio.retired = true; },
     playMusicTrack(url) {
-      return { src: url, listeners: {}, addEventListener(event, cb) { this.listeners[event] = cb; }, _watchForStall() {} };
+      return { src: url, listeners: {}, addEventListener(event, cb) { this.listeners[event] = cb; }, _watchForStall(_ms, cb) { this.stall = cb; } };
     },
     requestGameAudioPlay(audio) { live.plays++; audio.listeners.play?.(); return Promise.resolve(); },
   };
@@ -158,6 +158,18 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   live.now = 5000;
   context.updateAmbientCues();
   assert.equal(live.plays, 1, 'exclusive authored scores never get overlaid by regional cues');
+  song._musicEntry.exclusiveSoundtrack = false;
+  live.now = 5100;
+  context.updateAmbientCues();
+  assert.equal(live.plays, 2, 'a regional cue can be attempted again after its interval');
+  state.currentCue.stall();
+  assert.equal(state.currentCue, null, 'a stalled cue releases the scheduler slot');
+  assert.equal(state.mode, 'bgm', 'failed overlays restore the background-song scheduler instead of retrying immediately');
+  const retryAt = state.cueOverlayNextAt; // Tracks the next normal interval after a simulated media stall.
+  assert.equal(retryAt, 6100, 'stalled overlay is rescheduled at the configured interval');
+  live.now = 5150;
+  context.updateAmbientCues();
+  assert.equal(live.plays, 2, 'failed overlays do not spin on the standalone three-second retry path');
   song.ended = true;
   state.currentBgm = null;
   state.mode = 'bgm';
@@ -169,7 +181,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   live.now = 6100;
   context.updateAmbientCues();
   assert.equal(state.cueOverlayNextAt, 7100, 'new background song starts with its own full cue interval');
-  assert.equal(live.plays, 2, 'a new BGM does not immediately trigger another regional cue');
+  assert.equal(live.plays, 3, 'a new BGM does not immediately trigger another regional cue');
 }
 
 assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
