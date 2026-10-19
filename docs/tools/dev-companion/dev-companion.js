@@ -12,6 +12,11 @@
 
   const params = new URLSearchParams(location.search);
   const sessionId = params.get('session') || '';
+  // A switched companion must adopt the destination game's popup name too,
+  // otherwise Settings → Dev Companion Window creates a second popup.
+  if (/^s[a-z0-9]{5,100}$/i.test(sessionId)) {
+    try { window.name = `hobunji-dev-companion-${sessionId}`; } catch (_) {}
+  }
   const CHANNEL_PREFIX = 'hobunji-dev-companion-v1:';
   const DISCOVERY_CHANNEL = 'hobunji-dev-companion-discovery-v1'; // Read-only announcements from open game tabs.
   const DISCOVERY_WAIT_MS = 1800;
