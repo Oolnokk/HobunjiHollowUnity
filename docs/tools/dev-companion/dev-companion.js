@@ -50,6 +50,7 @@
   let lastConversationKey = '';
   let lastMapSessionOpen = false;
   const discoveredGames = new Map(); // Discovered session ID -> validated game URL and build for the Switch UI.
+  const conflictingSessions = new Set(); // Duplicate-tab sessions that would cross-wire commands; Switch stays disabled.
   let discoveryChannel = null; // Shared same-origin channel; separate from the command channel.
   let activeScanId = '';
   let scanTimer = null;
@@ -298,6 +299,10 @@
   function acceptDiscovery(message) {
     const game = validGameAnnouncement(message);
     if (!game) return;
+    const existing = discoveredGames.get(game.session);
+    if (existing && existing.pageLoadId !== game.pageLoadId) {
+      conflictingSessions.add(game.session); // Both live pages answered with the same copied session ID.
+    }
     discoveredGames.set(game.session, game);
     renderDiscovery();
   }
@@ -313,6 +318,7 @@
     }
     clearTimeout(scanTimer);
     discoveredGames.clear();
+    conflictingSessions.clear();
     activeScanId = `d${Date.now().toString(36)}-${++scanSequence}`; // Correlates responses with the latest scan.
     scanning = true;
     scanFinished = false;
@@ -334,6 +340,10 @@
 
   function switchToGame(game) {
     if (!game || !discoveredGames.has(game.session)) return;
+    if (conflictingSessions.has(game.session)) {
+      toast('Multiple game tabs share this session ID. Open the intended game in a fresh tab and search again.', true);
+      return;
+    }
     // Recheck just before navigation; announcements are untrusted inputs.
     const checked = validGameAnnouncement({
       ...game, protocol: 1, type: 'game-available', requestId: activeScanId,
@@ -361,15 +371,16 @@
       scanFinished ? 'No responding games found. Older builds may not support discovery.' :
       'Search for open game tabs.';
     $('discoveryList').replaceChildren(...games.map(game => {
-      const current = game.session === sessionId && game.sameBuild && state.connected;
+      const conflict = conflictingSessions.has(game.session);
+      const current = !conflict && game.session === sessionId && game.sameBuild && state.connected;
       const row = el('div', { class: 'discovery-game' });
       const info = el('div', { class: 'discovery-info' },
         el('div', { class: 'row-title', text: game.title }),
         el('div', { class: 'row-sub mono', text: `${game.buildRef} · ${game.session.slice(0, 14)}` }),
-        el('div', { class: 'row-sub', text: current ? 'Connected here' : game.sameBuild ? (game.session === sessionId ? 'Same build · reconnect' : 'Same build · another session') : 'Different build · will load its companion URL' }));
+        el('div', { class: 'row-sub', text: conflict ? 'Duplicate session ID: cannot safely select either tab. Open a fresh game tab.' : current ? 'Connected here' : game.sameBuild ? (game.session === sessionId ? 'Same build · reconnect' : 'Same build · another session') : 'Different build · will load its companion URL' }));
       const action = el('button', {
-        type: 'button', class: 'small', text: current ? 'Current' : 'Switch',
-        disabled: current, onclick: () => switchToGame(game),
+        type: 'button', class: 'small', text: conflict ? 'Conflict' : current ? 'Current' : 'Switch',
+        disabled: conflict || current, onclick: () => switchToGame(game),
       });
       row.append(info, action);
       return row;
@@ -1024,7 +1035,7 @@
   if (channel) post({ type: 'companion-hello' });
   window.__devCompanionDebug = {
     state, command, sessionId, prefs,
-    discovery: () => ({ scanning, scanFinished, scanId: activeScanId, games: [...discoveredGames.values()] }),
+    discovery: () => ({ scanning, scanFinished, scanId: activeScanId, games: [...discoveredGames.values()], conflicts: [...conflictingSessions] }),
     scanGames,
   }; // On-screen discovery status remains usable without mobile DevTools.
 })();
