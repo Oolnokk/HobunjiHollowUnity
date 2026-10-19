@@ -450,6 +450,21 @@
       const wrapped=function shattercaskUpdate(dt){const result=original(dt);tick(dt);return result;};
       wrapped.__shattercaskTick=true;combat.update=wrapped;
     }
+    if(combat?.beginStagedAction&&!combat.beginStagedAction.__shattercaskStrike) {
+      const original=combat.beginStagedAction.bind(combat);
+      const wrapped=function shattercaskStagedStrike(options) {
+        const threat=options?.data?.meleeThreat; // Real authored combo/quick/charged attacks publish the same active hit cone.
+        if(!threat||options.data?.isBandit)return original(options);
+        const onStrike=options.onStrike;
+        return original({...options,onStrike:function shattercaskCommittedStrike(...args){
+          const actor=deps()?.player;
+          if(actor)sweepMelee({actor,rangePx:threat.rangePx,halfConeRad:threat.halfConeRad,
+            yaw:threat.yaw??actor.angle,pitch:deps()?.getPlayerMeleeAimPitch?.()||0});
+          return onStrike?.(...args);
+        }});
+      };
+      wrapped.__shattercaskStrike=true;combat.beginStagedAction=wrapped;
+    }
     if(combat?.spawnMeleeTrail&&!combat.spawnMeleeTrail.__shattercaskStrike) {
       const original=combat.spawnMeleeTrail.bind(combat);
       const wrapped=function shattercaskStrike(opts){const result=original(opts);sweepMelee(opts);return result;};
