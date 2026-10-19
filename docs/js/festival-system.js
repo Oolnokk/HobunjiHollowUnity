@@ -248,8 +248,8 @@
     window.AmbientDialogue?.showAlcoholOfferResponse?.(walker,{text:accepted?'I would be delighted to dance.':'Perhaps another time.',line:accepted?'I would be delighted to dance.':'Perhaps another time.',accepted,reason:'festival'});
     if(!accepted)return fail('Your invitation was politely declined.');
     const prop=activityProps().find(p=>p.activity.type==='dance');
-    if(dance||!prop||!window.SocialActionWheel?.startDance?.('gentle-twirl','tpose-jiggle'))return fail('The dance cannot start right now.');
-    dance={propId:prop.id,event:eventKey(),elapsed:0,targetNpcId:id,awardTime:0};
+    if(dance||!prop||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return fail('The two-avatar Festival Wheel Dance cannot start here.');
+    dance={propId:prop.id,event:eventKey(),elapsed:0,targetNpcId:id,awardTime:0,awardedSeconds:0};
     window.HobunjiActivityEvents?.emit?.('dance_together',{npcId:id});
     return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);
   }
@@ -403,7 +403,11 @@
     const target=selected&&window.NpcScheduling?.resolveNpcStationTarget?.(selected.id);
     return target?{...target,activity:festival().name}:null;
   }
-  function cancelDance() { if (dance) window.SocialActionWheel?.stopDance?.('festival-ended'); dance = null; }
+  function cancelDance() {
+    if(dance?.targetNpcId)window.FestivalWheelDanceRuntime?.stop?.('festival-ended');
+    else if(dance)window.SocialActionWheel?.stopDance?.('festival-ended');
+    dance=null;
+  }
   function update() {
     const now = performance.now(); // Called by gameLoop; no independent animation loop.
     settleFestivalFun();
@@ -434,17 +438,21 @@
     }
     if (dance) {
       const prop = activityProps().find(p => p.id === dance.propId);
-      if (eventKey() !== dance.event || !atProp(prop) || !window.SocialActionWheel?.getDebug?.().dancing) cancelDance();
+      if (eventKey() !== dance.event || !atProp(prop)
+          || (dance.targetNpcId
+            ? !window.FestivalWheelDanceRuntime?.activeFor?.(dance.targetNpcId)
+            : !window.SocialActionWheel?.getDebug?.().dancing)) cancelDance();
       else if (!deps.isBlocked?.() && !document.hidden) {
         dance.elapsed += elapsed;
         if (dance.targetNpcId) {
-          const partner=(deps.getWalkers?.()||[]).find(w=>w.rec?.id===dance.targetNpcId&&w.area==='town'&&w.root?.position);
-          const position=deps.getPlayerTile?.();
-          if(!partner||!position||Math.hypot(partner.root.position.x-position.c,partner.root.position.z-position.r)>4)cancelDance();
-          else {
-            dance.awardTime=(dance.awardTime||0)+elapsed;
-            const wholeSeconds=Math.floor(dance.awardTime);
-            if(wholeSeconds>0){addFestivalFun(dance.targetNpcId,wholeSeconds*15);dance.awardTime-=wholeSeconds;deps.save?.();}
+          // Count only rendered paired-animation seconds. The player's logical tile
+          // remains anchored for collision while both avatar visuals orbit together.
+          const elapsedPair=window.FestivalWheelDanceRuntime?.elapsedSeconds?.(dance.targetNpcId) || 0;
+          const wholeSeconds=Math.max(0,Math.floor(elapsedPair)-(dance.awardedSeconds||0));
+          if(wholeSeconds>0){
+            dance.awardedSeconds+=wholeSeconds;
+            addFestivalFun(dance.targetNpcId,wholeSeconds*15);
+            deps.save?.(); // Entire granted-second intervals survive an immediate reload.
           }
         }
         if (dance && !dance.targetNpcId && dance.elapsed >= 20) {
@@ -460,7 +468,7 @@
   function diagnostics() {
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
-      claims:claims(),blessing:state.blessing,dance,heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
+      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       latestChange:'Gorkunash movable festival locales, 15:00–01:00 rotations, NPC dances, six-pot feasts and Festival Fun.' };
   }
