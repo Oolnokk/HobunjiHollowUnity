@@ -1406,8 +1406,9 @@
             _ambientCueState.cueOverlayDucking = false;
             _ambientCueState.currentBgm?._setDuck?.(_lyreDucked || _gameplayCueDuckOwners.size > 0, fade.cueFadeMs); // Restore the still-playing song without changing its playhead.
           }
-          _ambientCueState.mode = nextMode;
+          _ambientCueState.mode = songAllowsOverlay && nextMode === 'cue_wait' ? 'bgm' : nextMode; // A failed overlay must not enter the standalone cue retry loop while a song is active.
           if (retryMs > 0) _ambientCueState.nextAt = performance.now() + retryMs;
+          if (songAllowsOverlay && retryMs > 0) scheduleNextOverlayCueDelay(); // Retry the next overlay on its normal interval rather than every three seconds.
         }
         retireMusicTrack(snd);
       };
