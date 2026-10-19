@@ -308,8 +308,13 @@
     effectUnlocks.add(unlockKey(lesson.type, lesson.rank, lesson.effectId));
     itemDeps.inventory[key] = Math.max(0, Number(itemDeps.inventory[key]) - 1); // Consume exactly one successful mastery read, never a known or invalid lesson.
     itemDeps.clampInventoryStack?.(key);
-    const manualHeld = itemDeps.getManualHeldItem?.(); // Clear an exhausted Inventory Hold selection so it cannot obscure the item arch.
-    if (manualHeld?.kind === 'bagItem' && manualHeld.key === key && !(itemDeps.inventory[key] > 0)) itemDeps.setManualHeldItem?.(null);
+    if (!(itemDeps.inventory[key] > 0)) {
+      const cleared = window.InventoryHeldOverride?.clearExhaustedBagHold?.(key); // The Hold owner also restores the previous wheel selection on last-copy reads.
+      if (!cleared) {
+        const manualHeld = itemDeps.getManualHeldItem?.(); // Compatibility fallback before the Hold owner is installed.
+        if (manualHeld?.kind === 'bagItem' && manualHeld.key === key) itemDeps.setManualHeldItem?.(null);
+      }
+    }
     lastUnlockEvent = { kind: 'learned', ...lesson, key, consumed: 1, remaining: Number(itemDeps.inventory[key]) || 0 };
     persist();
     itemDeps.showToast?.(`Learned ${itemDeps.ITEM_DEFS[key].label}. Available on all ${lesson.type} melee weapons.`, true);
