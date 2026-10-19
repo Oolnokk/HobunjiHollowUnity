@@ -126,7 +126,7 @@
       icon: definition.icon || '🪺',
       label: definition.label || CONFIG.addition.label,
       cat: 'processed',
-      sellPrice: 0,
+      sellPrice: Math.round(definition.price * 0.4),
       tags: ['Building Plan', 'Barn Addition'],
       desc: definition.desc || 'A modular addition installed against a barn wall.',
     };
