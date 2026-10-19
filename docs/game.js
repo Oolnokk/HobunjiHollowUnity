@@ -29070,6 +29070,13 @@
         getHeldMode: () => heldMode,
         isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active'
           && window.FestivalSystem?.isDiningSeat?.(sitInteraction.col,sitInteraction.row,sitInteraction.furnitureKey) === true, // Only the outdoor feast's authored chairs can trigger the repeated meal action.
+        getPlayerSeatedSeat: () => sitInteraction?.phase === 'active' ? { col:sitInteraction.col, row:sitInteraction.row } : null, // Matches the player chair against nearby dining stations instead of every NPC in the feast locale.
+        cancelFestivalDrink: () => {
+          if(_heldItemKey!=='festival_bowl')return;
+          _heldDrinkPhase=null;_heldDrinkApply=null;_heldDrinkApplied=false; // Prevent a delayed bite after switching to a weapon or leaving the feast.
+          disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
+          _heldItemPlane=null;_heldItemKey=null;heldItemHolder.visible=false;
+        },
         equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
           if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
