@@ -12696,6 +12696,7 @@
           for (let i = npcWalkers.length - 1; i >= 0; i--) {
             const w = npcWalkers[i];
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
+            if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
             w.update(dt);
             if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
           }
@@ -24627,6 +24628,10 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
+        // Festival paired animation is a post-locomotion visual layer: both
+        // actual avatar roots are positioned together after NPC and player
+        // simulation, with no second requestAnimationFrame.
+        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
@@ -25162,6 +25167,7 @@
         }
 
         const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
+        if (window.FestivalSystem?.dance?.targetNpcId && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
@@ -29062,6 +29068,7 @@
         getItemDefs: () => ITEM_DEFS,
         getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
         getWalkers: () => npcWalkers,
+        getPlayerMesh: () => playerMesh, // Passes the real player avatar root into authored pair animation without registering a clone.
         getTownMap: () => _rawExteriorMaps.get('map_hobunji_town'),
         getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],
         getArea: () => currentArea,
