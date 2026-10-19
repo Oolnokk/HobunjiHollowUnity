@@ -281,6 +281,19 @@ function makeContext(extra = {}) {
   {
     const source = read('tools/dev-companion/dev-companion.js');
     const html = read('tools/dev-companion/index.html');
+    // The newly selected game should reuse this popup, not spawn another.
+    const bootHeader = source.slice(source.indexOf('  const params ='), source.indexOf('  const CHANNEL_PREFIX ='));
+    const popup = { name: 'hobunji-dev-companion-soldgame123' };
+    const newBuild = vm.createContext({
+      URLSearchParams, location: { search: '?session=snextgame123' }, window: popup,
+    });
+    vm.runInContext(bootHeader, newBuild);
+    assert.equal(popup.name, 'hobunji-dev-companion-snextgame123', 'switched companion adopts the new session popup name');
+    const invalidPopup = { name: 'existing-popup' };
+    vm.runInContext(bootHeader, vm.createContext({
+      URLSearchParams, location: { search: '?session=invalid-session' }, window: invalidPopup,
+    }));
+    assert.equal(invalidPopup.name, 'existing-popup', 'invalid session IDs cannot change the popup name');
     assert.match(html, /id="findGamesBtn"/);
     assert.match(html, /id="gameDiscovery"/);
     assert.match(source, /onclick: \(\) => switchToGame\(game\)/);
