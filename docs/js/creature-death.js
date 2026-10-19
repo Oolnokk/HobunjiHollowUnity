@@ -318,7 +318,8 @@
       const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
       const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
       const halfHeight = Number(c.halfHeight) || 0.3;
-      grp.position.set(c.x / TILE, surfY + halfHeight * (1 - 0.18 * eased), c.y / TILE);
+      const bodyHeightFraction = c.deathRecorded ? 1 - 0.18 * eased : 1 - 0.88 * eased; // Keeps recorded root offsets aligned, but lets fallback corpses descend continuously instead of snapping downward at the last frame.
+      grp.position.set(c.x / TILE, surfY + halfHeight * bodyHeightFraction, c.y / TILE);
       if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
 
       if (c.deathRecorded) {
