@@ -89,9 +89,14 @@ assert.equal(api.seatedMealAction()?.swigFraction,'9/10','eating shows bottle-st
 assert.equal(api.toggleSeatedMeal().ok,true);
 realMs+=600;api.update();
 assert.equal(bowlAnimationCount,1,'festival meal starts exactly one authored drink animation');
+const guest=walkers.find(w=>w.rec.id==='friend');
+const sameSeat=layout.npcStations.find(st=>st.id==='gorkunash_feast:station:seat_0');
+guest.currentScheduleTarget={...sameSeat,c:sameSeat.col,r:sameSeat.row};
+guest.root.position={x:sameSeat.col,z:sameSeat.row}; // Simulates another villager already sitting at the very same dining table.
 assert.equal(api.currentFullness(),1,'no bowl portion is consumed before drink-strike callback');
 queuedBite();
 assert.equal(api.currentFullness(),2,'drink strike commits exactly one serving');
+assert.equal(api.serialize().festivalFun.friend,25,'only the arrived guest sharing the table gains 25 Festival Fun');
 assert.equal(api.festivalBowl().uses,8);
 realMs+=1000;api.update();
 assert.equal(bowlAnimationCount,1,'drinks are spaced by the authored bite interval');
@@ -104,7 +109,8 @@ const potluck=api.activityProps().find(prop=>prop.activity.type==='potluck');
 assert.equal(api.perform('potluck',{propId:potluck.id,key:'meal',stars:5}).ok,true);
 assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'disliked meal is neutral');
 assert(awarded.some(e=>e.id==='kaboku_kunji'&&e.amount===40&&e.reason==='festival_potluck'),'liked meal gives tenfold Favor');
-assert.equal(api.feastMenu().length,5,'reserved pot stays empty on offering day');
+assert.equal(api.feastMenu().length,6,'donated dish fills reserved sixth pot immediately');
+assert.equal(api.feastMenu()[5].label,'Special stew','sixth serving pot contains the supplied meal, not a random one');
 const state=api.serialize();
 assert(state.feastBuffs[0].remainingS>0,'meal remaining duration is portable');
 api.restore(state);
