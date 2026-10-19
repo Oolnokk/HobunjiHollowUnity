@@ -31,7 +31,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261017hd678b44"></script>
+  <script src="js/format-utils.js?v=20261019he1212ba"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261017a"></script>
@@ -298,7 +298,7 @@
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-loadout.js?v=20261019h0ffc9ab"></script>
-  <script src="js/combat/combat-progression.js?v=20261016h8734814"></script>
+  <script src="js/combat/combat-progression.js?v=20261019h6f1a28f"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
   <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
@@ -313,7 +313,7 @@
   <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261018colors-starved-compendium1"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261019h420f48e"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261017hbd67539"></script>
@@ -355,7 +355,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261018resolve1099a"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261019h1f260fa"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -373,10 +373,10 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261014h6cd65e1"></script>
+  <script src="js/alchemy-system.js?v=20261019h7dc91ef"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
-  <script src="js/tea-grinder.js?v=20261008he9050ff"></script>
+  <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
   <script src="js/alchemy-flasks.js?v=20261018hca63062"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -409,7 +409,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261016h3134d1a"></script>
+  <script src="js/farm-production.js?v=20261019hb8d96fb"></script>
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261013h27ea706"></script>
   <script src="js/farm-animals.js?v=20261016h4180cd9"></script>
@@ -427,7 +427,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261017hc68a7f3"></script>
+  <script src="js/farm-troughs.js?v=20261019hc879a65"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -469,7 +469,7 @@
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261013h17d9d3b"></script>
-  <script src="js/harlyao-relics.js?v=20261017hf237215"></script>
+  <script src="js/harlyao-relics.js?v=20261019h29df16a"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261015hf042488"></script>
@@ -699,7 +699,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261016h48ca4b3"></script>
+  <script src="js/farm-panel.js?v=20261019h7f0bf6e"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
