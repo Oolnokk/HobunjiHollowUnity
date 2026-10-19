@@ -213,7 +213,7 @@ assert(interior.includes("DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:fa
 assert(interior.includes('devRandomRuinDarknessEnabled') && interior.includes('devRandomRuinDarknessSeverity'), 'Random Test Ruin Settings must expose a darkness toggle and severity slider');
 assert(interior.includes('getDarknessSettings'), 'Random Test Ruin must expose its live darkness settings to the shared lighting authority');
 assert(cloudFog.includes("window.DevRandomRuin?.getDarknessSettings?.()"), 'shared enclosed lighting must consult the Random Test Ruin override');
-assert(cloudFog.includes("testSettings?.enabled === true ? DEN_DARKNESS_OVERLAY_ALPHA * severity : 0"), 'test darkness must be zero by default and scale the authored den alpha when enabled');
+assert(cloudFog.includes("return testSettings?.enabled === true ? base * severity : base;") && cloudFog.includes("tradition === 'kanthic' ? 1") && cloudFog.includes("tradition === 'hronal' ? .91"), 'the ruin uses its active lich darkness by default, with an optional severity override instead of the deprecated bright-mode default');
 assert(cloudFog.includes('refreshLightingOverlay'), 'test lighting controls must be able to redraw the existing lighting overlay immediately');
 assert(interior.includes('puzzles:puzzleOptions'), 'Random Test Ruin generation must pass the captured puzzle options into every solvability retry');
 assert(!interior.includes('devruin-wall-${object.id}'), 'wall meshes must not register object-wide blockers');

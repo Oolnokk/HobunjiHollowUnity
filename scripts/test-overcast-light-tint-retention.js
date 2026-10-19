@@ -16,8 +16,8 @@ assert.match(source, /state\?\.overcast/,
   'weather tint retention must scale from the skydome overcast state rather than the lantern darkness threshold');
 assert.match(source, /function drawLanternMasksCompat\(activation = 1, preserveOutdoorWeatherTint = false\)/,
   'lantern masking must distinguish outdoor weather tint preservation from enclosed-area darkness clearing');
-assert.match(source, /drawLanternMasksCompat\(1\);\s*drawFurnitureLightMasksCompat\(\);/s,
-  'dens and mines must keep the original full darkness-clearing behavior (ordinary rooms use the blended window atmosphere)');
+assert.match(source, /drawLanternMasksCompat\(1\);\s*if \(ruinTradition !== 'kanthic' && ruinTradition !== 'tothal'\) drawFurnitureLightMasksCompat\(\);/s,
+  'dens, mines and ordinary buildings retain furniture lights, while cold/pure-black lich ruins suppress warm sources');
 assert.match(source, /drawLanternMasksCompat\(currentOutdoorLanternActivation\(\), true\);\s*drawFurnitureLightMasksCompat\(true\);/s,
   'outdoor carried/watch and furniture lights must preserve the active weather tint');
 assert.match(source, /globalCompositeOperation = 'destination-out'/,

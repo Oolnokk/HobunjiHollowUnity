@@ -63,7 +63,7 @@
   let lastFrameMs = performance.now();
   const composers = []; // External puzzle composers (e.g. js/dev-random-ruin-rope-rewards.js) built from this runtime's kit of primitives.
   let lastBadgeAt = -Infinity; // Throttles the mobile diagnostic DOM write; the simple runtime otherwise touched layout every rendered frame.
-  let lastBadgeText = '';
+  // Badge segments are deduplicated by DevRandomRuin.setDebugBadgePart rather than stale full-text caches.
   const sharedPrimitiveGeometry = new Map(); // Reuses immutable simple-puzzle primitives across plates, posts, coffins, emitters, and doors instead of allocating identical BufferGeometry repeatedly.
   const plateInstanceDummy = new THREE.Object3D(); // Reused to write pressure-plate instance transforms without allocating one Object3D per cell/frame.
   const plateInstanceColor = new THREE.Color(); // Reused to write per-instance pressure-plate state colors.
@@ -877,6 +877,7 @@
   }
 
   function createVisibleRopeLavaHazard(cx,cz,y,length,width,axis) {
+    if (state?.context?.theme !== 'hronal') return null; // Rope crossings in Tothal/Kanthic ruins are dry: all lava is Hronal-only.
     if(!state.lavaMaterial)state.lavaMaterial=createLavaMaterial();
     const geometry=lavaSurfaceGeometry(axis==='x'?length:width,axis==='x'?width:length,cx,cz,axis==='x'?.18:0,axis==='z'?.18:0);
     const mesh=new THREE.Mesh(geometry,state.lavaMaterial);
@@ -1712,6 +1713,9 @@
     if(!inRuin()||!state?.checkpoints?.active||!deps?.player)return false; // Canonical game respawn calls this for every death source; never hijack deaths after leaving the test ruin.
     const checkpoint=state.checkpoints.active;
     const context=state.context;
+    for(const composer of composers){
+      try{composer.onPlayerDeath?.(state.kit,reason);}catch(error){console.warn('[Random Test Ruin] composer death reset failed',error);}
+    }
     deps.setCurrentArea?.(MAP_ID);
     deps.setCurrentBuildingMapId?.(MAP_ID);
     restorePlayerScene(context);
@@ -2195,12 +2199,9 @@
     const now=performance.now();
     if(!force&&now-lastBadgeAt<250)return; // Diagnostics are human-readable, not simulation state; 4 Hz is plenty and avoids a layout-affecting DOM mutation every frame.
     lastBadgeAt=now;
-    const badge=document.getElementById('devRandomRuinBadge');
-    if(!badge)return;
-    const base=badge.textContent.replace(/ · simple G\d+ R\d+ T\d+ CP \d+\/\d+/g,''); // Other ruin diagnostics rewrite the same badge; strip any prior simple suffix wherever it landed before appending one canonical copy.
     const cp=state.checkpoints;
-    const next=base+' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
-    if(next!==lastBadgeText){badge.textContent=next;lastBadgeText=next;}
+    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
+    window.DevRandomRuin?.setDebugBadgePart?.('simple',segment); // Never compose from a previous badge string.
   }
 
   function update() {

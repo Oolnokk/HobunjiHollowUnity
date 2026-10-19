@@ -17567,23 +17567,42 @@
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
         const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
+        // Tothal ice changes the *native* acceleration and ground friction,
+        // exactly where keyboard/controller/mobile intent drives velocity.
+        // This runs before ordinary player collision, footsteps and facing:
+        // no extra post-movement teleport or input-duration imitation.
+        const icePhysics = currentArea === 'map_i_dev_random_ruin'
+          ? window.DevRandomRuinLichThemes?.movementPhysicsAt?.(player.x / TILE, player.y / TILE)
+          : null;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
           const currentSpeed = Math.hypot(player.vx, player.vy);
           const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
-          const accel = (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
+          const accel = icePhysics
+            ? (targetDot < 0.35 ? TURN_ACCEL * icePhysics.turningFactor : ACCEL * icePhysics.accelerationFactor) * footingSpeedMul
+            : (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
           player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
           player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
         } else {
           const speed = Math.hypot(player.vx, player.vy);
           if (speed > 0) {
-            const decelStep = DECEL * dt;
-            const newSpeed = Math.max(0, speed - decelStep);
-            const ratio = newSpeed / speed;
-            player.vx *= ratio;
-            player.vy *= ratio;
+            if (icePhysics) {
+              // Minecraft-like low traction preserves inertia with a stable,
+              // frame-rate-independent retention factor (20 Hz reference).
+              // No hard stop on input release: drift fades with surface drag.
+              const ratio = Math.pow(icePhysics.retention20Hz, Math.max(0, dt) / 0.05);
+              player.vx *= ratio;
+              player.vy *= ratio;
+              if (Math.hypot(player.vx, player.vy) < 1) { player.vx = 0; player.vy = 0; }
+            } else {
+              const decelStep = DECEL * dt;
+              const newSpeed = Math.max(0, speed - decelStep);
+              const ratio = newSpeed / speed;
+              player.vx *= ratio;
+              player.vy *= ratio;
+            }
           }
         }
 

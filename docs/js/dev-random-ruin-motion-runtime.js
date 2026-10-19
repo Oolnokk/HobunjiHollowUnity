@@ -362,11 +362,8 @@
   }, true);
 
   function updateBadge() {
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (!badge || !root) return;
-    const base = badge.dataset.motionBase || badge.textContent;
-    badge.dataset.motionBase = base;
-    badge.textContent = `${base} · motion ${daises.length}/${elevatorBlocks.length} · ladders ${authoredLadderCount}`;
+    if (!root) return;
+    window.DevRandomRuin?.setDebugBadgePart?.('motion',` · motion ${daises.length}/${elevatorBlocks.length} · ladders ${authoredLadderCount}`);
   }
 
   function clear() {
@@ -374,8 +371,7 @@
     nearestElevatorBlock = null; controllerInteractDown = false;
     if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
     promptOwned = false;
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (badge) delete badge.dataset.motionBase;
+    window.DevRandomRuin?.setDebugBadgePart?.('motion',''); // Cleared by the central badge lifecycle on ruin exit.
   }
 
   function frameUpdate() {
@@ -390,7 +386,7 @@
     snapLoosePushBlocksToSupport();
     updatePrompt();
     const badge = document.getElementById('devRandomRuinBadge');
-    if (badge && !badge.dataset.motionBase) updateBadge();
+    if (badge && !badge._ruinDebugBadgeParts?.motion) updateBadge();
   }
 
   async function auditSeeds(count = 12) {
