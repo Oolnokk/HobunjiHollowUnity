@@ -1514,19 +1514,63 @@
     return { x: targetPlayer.x + Math.cos(angle) * radiusPx, y: targetPlayer.y + Math.sin(angle) * radiusPx };
   }
 
-  // Nudges a movement target away from any other live bandit closer
-  // than BANDIT_PERSONAL_SPACE_PX -- keeps queued gang-mates from
-  // stacking on each other while they wait for an attack slot.
+  // Bandits frequently request two personal-space nudges each frame. Index the whole
+  // hostile collection once per short simulation window, then inspect local buckets
+  // instead of scanning every hostile for each bandit (quadratic in crowded towns).
+  // Bucket size is twice the avoidance radius; a 3×3 neighborhood also tolerates
+  // normal within-frame movement before the next refresh. Always use live positions
+  // for the actual push so neither the distance nor the order-dependent nudge is stale.
+  const banditSpacingBuckets = new Map();
+  let banditSpacingBuiltAt = -Infinity;
+  let banditSpacingCollection = null;
+  let banditSpacingCount = -1;
+  let banditSpacingCellSize = 0;
+  const BANDIT_SPACING_REFRESH_MS = 12;
+
+  function refreshBanditSpacingBuckets(personalSpacePx) {
+    const hostiles = deps.hostileObjects;
+    const count = hostiles?.size ?? hostiles?.length ?? 0;
+    const cellSize = Math.max(1, personalSpacePx * 2);
+    const tick = performance.now();
+    if (banditSpacingCollection === hostiles && banditSpacingCount === count
+      && banditSpacingCellSize === cellSize && tick - banditSpacingBuiltAt < BANDIT_SPACING_REFRESH_MS) return;
+    banditSpacingBuckets.clear();
+    for (const hostile of hostiles || []) {
+      if (!hostile?.isBandit || hostile.health <= 0) continue;
+      const key = Math.floor(hostile.x / cellSize) + ',' + Math.floor(hostile.y / cellSize);
+      let bucket = banditSpacingBuckets.get(key);
+      if (!bucket) { bucket = []; banditSpacingBuckets.set(key, bucket); }
+      bucket.push(hostile);
+    }
+    banditSpacingCollection = hostiles;
+    banditSpacingCount = count;
+    banditSpacingCellSize = cellSize;
+    banditSpacingBuiltAt = tick;
+  }
+
+  // Nudges a movement target away from nearby living bandits. A bandit is only
+  // moved through the existing pathing API, never teleported by avoidance.
   function banditPersonalSpaceAdjust(c, point) {
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
-    for (const o of deps.hostileObjects) {
-      if (o === c || !o.isBandit || o.health <= 0) continue;
-      const dx = px - o.x, dy = py - o.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 0.001 && dist < personalSpacePx) {
-        const push = personalSpacePx - dist;
-        px += (dx / dist) * push; py += (dy / dist) * push;
+    refreshBanditSpacingBuckets(personalSpacePx);
+    // A push may move the target into the next cell; inspect that cell too.
+    // Preserve iteration order for colliding neighbors to avoid changing crowd feel.
+    const cx = Math.floor(px / banditSpacingCellSize);
+    const cy = Math.floor(py / banditSpacingCellSize);
+    for (let y = cy - 1; y <= cy + 1; y++) {
+      for (let x = cx - 1; x <= cx + 1; x++) {
+        const neighbors = banditSpacingBuckets.get(x + ',' + y);
+        if (!neighbors) continue;
+        for (const o of neighbors) {
+          if (o === c || o.health <= 0) continue;
+          const dx = px - o.x, dy = py - o.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 0.001 && dist < personalSpacePx) {
+            const push = personalSpacePx - dist;
+            px += (dx / dist) * push; py += (dy / dist) * push;
+          }
+        }
       }
     }
     return { x: px, y: py };
