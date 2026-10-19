@@ -94,12 +94,12 @@
     ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
     ['js/mastery-policy.js?v=20261016hdf14702', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20261008hc872401', () => !!window.HobunjiInventoryActionMetadataBridge],
-    ['js/inventory-held-override.js?v=20261016hc979001', () => !!window.InventoryHeldOverride],
+    ['js/inventory-held-override.js?v=20261019h97982b1', () => !!window.InventoryHeldOverride],
     ['js/clothing-weaving-system.js?v=20261015h5975e5b', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20261001hb2dc3b8', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
-    ['js/combat/technique-scrolls.js?v=20261016hf8611bd', () => !!window.TechniqueScrolls],
+    ['js/combat/technique-scrolls.js?v=20261019h19f690e', () => !!window.TechniqueScrolls],
     ['js/combat/combat-vocalizations.js?v=20261017h65cb520', () => Number(window.CombatVocalizations?.version) >= 4],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
@@ -146,7 +146,7 @@
     // from inside Puktuk registration. Keeping one parser-owned loader prevents
     // den setup from perturbing held-item/stance bootstrap ordering.
     ['js/den-locale-runtime.js?v=20260914c', () => Number(window.DenLocaleRuntime?.version) >= 4],
-    ['js/puktuk-den-nest-registration.js?v=20260923review1', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
+    ['js/puktuk-den-nest-registration.js?v=20261019h4aab194', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
