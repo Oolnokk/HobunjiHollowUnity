@@ -3568,6 +3568,9 @@ window.SCRATCHBONES_CONFIG = {
         "bgsFadeMs": 1600,
         "ambientCueMinDelaySec": 20,
         "ambientCueMaxDelaySec": 45,
+        "ambientCuesOverBgm": true, // Interleave short regional motifs with longer background songs without restarting them.
+        "ambientCueOverlayMinDelaySec": 45, // Minimum real-time wait between eligible overlays.
+        "ambientCueOverlayMaxDelaySec": 90, // Maximum randomized real-time wait between eligible overlays.
         "areaBgm": {
           "farm": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true, "rainingOnly": true },
