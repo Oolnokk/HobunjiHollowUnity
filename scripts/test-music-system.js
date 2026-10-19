@@ -101,87 +101,109 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
 }
 
 
-// Long BGM cannot starve a regional cue; its playhead survives the overlay.
+// Verify the authored music cycle: complete song -> 120 seconds of separate cues -> next song.
 {
-  const live = { now: 1000, plays: 0, ducks: [] }; // Controllable wall clock and audio decisions for the production scheduler.
-  const song = { ended: false, currentTime: 77, _musicEntry: { url: 'bgm.ogg' }, _setDuck(value) { live.ducks.push(value); } }; // Existing song must remain in its scheduler slot.
-  const state = { area: 'town', indexId: 'general', mode: 'bgm', currentBgm: song, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, blockUntil: 0, nextAt: 0, cueOverlayNextAt: 0, cueOverlayDucking: false }; // Same scheduler fields as the runtime.
+  const live = { now: 1000, starts: [], cuesAvailable: true, bgmAvailable: true, nextSong: 0 }; // Deterministic stage clock, transport log, and simulated authoring availability.
+  const state = { area: 'town', indexId: 'general', mode: 'bgm', nextAt: 0, blockUntil: 0, currentBgm: null, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, cuePhaseEndsAt: 0, lastCueId: '' }; // The scheduler's production stage ownership fields.
+  const config = { enabled: true, bgmVolume: 0.48, ambientCueMinDelaySec: 5, ambientCueMaxDelaySec: 5, ambientCuePhaseDurationSec: 120 }; // Fixed cue gaps make the clock checks reproducible.
   const context = {
-    window: { AudioSystem: { gameAudioConfig: () => ({ enabled: true, bgmVolume: 0.48, ambientCuesOverBgm: true, ambientCueOverlayMinDelaySec: 1, ambientCueOverlayMaxDelaySec: 1 }) } },
+    window: { AudioSystem: { gameAudioConfig: () => config } },
     deps: { getCurrentArea: () => 'town', isPlayerInCombat: () => false },
     performance: { now: () => live.now },
     quietLoading: false, _startupBgm: null, _ambientCueState: state,
-    _audioCueIndexes: new Map([['general', { __basePath: 'cues/general/', ambient_cues: [{ id: 'to1', file: 'to1.ogg', volume: 0.7 }] }]]),
-    _lyreDucked: false, _gameplayCueDuckOwners: new Set(),
+    _audioCueIndexes: new Map([['general', { __basePath: 'cues/general/', ambient_cues: [{ id: 'to1', file: 'to1.ogg', volume: 0.7 }, { id: 'to2', file: 'to2.ogg', volume: 0.7 }] }]]),
+    _dailyBgmPlayed: new Set(),
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
-    isAudioEntryEligible: () => true, audioUrlFailed: () => false,
+    isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false,
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
-    resolveAreaBgm: () => ({ url: 'replacement.ogg' }), // Exercises a new BGM starting after the previous song finishes.
     ambientMusicOwnsSoundtrack: () => false,
-    retireMusicTrack(audio) { audio.retired = true; },
+    resolveAreaBgm: () => live.bgmAvailable ? { url: 'song-' + (++live.nextSong) + '.ogg' } : null,
+    retireMusicTrack(audio) { audio.retired = true; audio.ended = true; audio.paused = true; },
     playMusicTrack(url) {
-      return { src: url, listeners: {}, addEventListener(event, cb) { this.listeners[event] = cb; }, _watchForStall(_ms, cb) { this.stall = cb; } };
+      assert.equal(!!state.currentBgm && !state.currentBgm.ended && url.startsWith('cues/'), false, 'a cue cannot begin over a BGM');
+      assert.equal(!!state.currentCue && !state.currentCue.ended && url.startsWith('song-'), false, 'a BGM cannot begin over a cue');
+      live.starts.push(url);
+      return { src: url, ended: false, paused: false, listeners: {},
+        addEventListener(event, callback) { this.listeners[event] = callback; },
+        _watchForStall(_ms, callback) { this.stall = callback; } };
     },
-    requestGameAudioPlay(audio) { live.plays++; audio.listeners.play?.(); return Promise.resolve(); },
+    requestGameAudioPlay() { return Promise.resolve(); },
+    markAudioUrlFailed() {}, isRealMediaError: () => true,
   };
-  const cueSchedulerSource = music.slice(music.indexOf('  function scheduleNextOverlayCueDelay()'), music.indexOf('  function setLoopingBgs(')); // Tests actual cue timing and selection functions.
-  vm.runInNewContext(cueSchedulerSource, context);
+  const sourceStart = music.indexOf('  function scheduleNextCueDelay()'); // Includes the production cue-window helpers and scheduler.
+  const sourceEnd = music.indexOf('  function setLoopingBgs('); // Excludes unrelated weather/background layer code.
+  vm.runInNewContext(music.slice(sourceStart, sourceEnd), context);
   context.updateAmbientCues();
-  assert.equal(state.cueOverlayNextAt, 2000, 'regional cue scheduled while a full BGM track is still active');
-  assert.equal(live.plays, 0, 'cue is not launched before its interval');
-  live.now = 2100;
+  const firstSong = state.currentBgm; // Actual song transport being held until its complete-ended event.
+  assert.equal(firstSong.src, 'song-1.ogg', 'stage A chooses the eligible full song');
+  live.now = 139000;
   context.updateAmbientCues();
-  assert.equal(live.plays, 1, 'cue begins without waiting for the full song to end');
-  assert.equal(state.currentCue.src, 'cues/general/to1.ogg', 'correct regional asset selected');
-  assert.equal(state.currentBgm, song, 'the active background song is preserved');
-  assert.equal(song.currentTime, 77, 'the active song does not rewind');
-  assert.equal(state.cueOverlayDucking, false, 'starting a media element does not duck music while the cue is buffering');
-  assert.deepEqual(live.ducks, [], 'no silent interval before the cue becomes audible');
-  state.currentCue.listeners.playing();
-  assert.equal(state.cueOverlayDucking, true, 'cue ducks BGM on actual playback readiness');
-  assert.deepEqual(live.ducks, [true], 'background duck begins with audible playback');
-  state.currentCue.listeners.waiting();
-  assert.equal(state.cueOverlayDucking, false, 'buffering releases the overlay duck');
-  assert.deepEqual(live.ducks, [true, false], 'BGM returns while regional cue is buffering');
-  state.currentCue.listeners.playing();
-  assert.equal(state.cueOverlayDucking, true, 'buffering recovery re-engages the cue duck');
-  state.currentCue.listeners.ended();
-  assert.equal(state.currentCue, null, 'cue slot is released on completion');
-  assert.equal(state.currentBgm, song, 'full song survives cue completion');
-  assert.equal(state.cueOverlayDucking, false, 'cue duck releases at completion');
-  assert.deepEqual(live.ducks, [true, false, true, false], 'background volume is restored after buffering and cue completion');
-  live.now = 3000;
+  assert.equal(state.currentBgm, firstSong, 'stage A never cuts its song to start cues early');
+  assert.equal(state.currentCue, null, 'no ambient cues overlap a full song');
+  firstSong.listeners.ended();
+  assert.equal(state.currentBgm, null, 'completed BGM vacates its transport slot');
+  assert.equal(state.mode, 'cue_wait', 'stage B begins after the song finishes');
+  assert.equal(state.cuePhaseEndsAt, 259000, 'cue stage spans precisely two minutes');
   context.updateAmbientCues();
-  assert.equal(live.plays, 1, 'another cue cannot immediately replay');
-  song._musicEntry.exclusiveSoundtrack = true;
-  live.now = 5000;
+  const firstCue = state.currentCue; // First standalone regional motif within the two-minute stage.
+  assert.ok(firstCue && firstCue.src.startsWith('cues/general/'), 'stage B launches its first cue without playing a song');
+  assert.equal(state.currentBgm, null, 'regional cues have exclusive use of ambient music');
+  live.now = 142000;
+  firstCue.listeners.ended();
+  assert.equal(state.mode, 'cue_wait', 'one cue ending does not end the entire cue stage');
+  assert.equal(state.nextAt, 147000, 'the existing random cue interval separates cues');
+  live.now = 146000;
   context.updateAmbientCues();
-  assert.equal(live.plays, 1, 'exclusive authored scores never get overlaid by regional cues');
-  song._musicEntry.exclusiveSoundtrack = false;
-  live.now = 5100;
+  assert.equal(state.currentCue, null, 'stage B honors the quiet gap between motifs');
+  live.now = 147000;
   context.updateAmbientCues();
-  assert.equal(live.plays, 2, 'a regional cue can be attempted again after its interval');
-  state.currentCue.stall();
-  assert.equal(state.currentCue, null, 'a stalled cue releases the scheduler slot');
-  assert.equal(state.mode, 'bgm', 'failed overlays restore the background-song scheduler instead of retrying immediately');
-  const retryAt = state.cueOverlayNextAt; // Tracks the next normal interval after a simulated media stall.
-  assert.equal(retryAt, 6100, 'stalled overlay is rescheduled at the configured interval');
-  live.now = 5150;
+  const secondCue = state.currentCue; // Second motif proves the stage plays a series, not one cue.
+  assert.ok(secondCue, 'another cue starts during the same two-minute stage');
+  assert.notEqual(secondCue.src, firstCue.src, 'alternatives prevent identical consecutive motifs');
+  secondCue.listeners.ended();
+  live.now = 258900;
   context.updateAmbientCues();
-  assert.equal(live.plays, 2, 'failed overlays do not spin on the standalone three-second retry path');
-  song.ended = true;
-  state.currentBgm = null;
-  state.mode = 'bgm';
-  state.nextAt = 0;
-  live.now = 6000;
+  const lastCue = state.currentCue; // The stage deadline must never cut an already-playing cue short.
+  assert.ok(lastCue, 'a cue may begin just before the two-minute deadline');
+  live.now = 259500;
   context.updateAmbientCues();
-  assert.equal(state.currentBgm.src, 'replacement.ogg', 'a new background song can start after the previous track finishes');
-  assert.equal(state.cueOverlayNextAt, 0, 'new background song invalidates the old overlay deadline');
-  live.now = 6100;
+  assert.equal(state.currentCue, lastCue, 'cue playback continues past the stage deadline');
+  assert.equal(state.currentBgm, null, 'the next song cannot start while the final cue plays');
+  live.now = 261000;
+  lastCue.listeners.ended();
+  assert.equal(state.mode, 'bgm', 'stage B finishes after the last complete cue');
   context.updateAmbientCues();
-  assert.equal(state.cueOverlayNextAt, 7100, 'new background song starts with its own full cue interval');
-  assert.equal(live.plays, 3, 'a new BGM does not immediately trigger another regional cue');
+  assert.equal(state.currentBgm.src, 'song-2.ogg', 'stage C repeats with a newly chosen full song');
+  assert.equal(state.currentCue, null, 'the new song never plays over a cue');
+  assert.equal(state.cuePhaseEndsAt, 0, 'the next cycle clears the previous cue deadline');
+
+  // A missing BGM pool still leaves the regional cue fallback available.
+  state.currentBgm.listeners.ended();
+  live.cuesAvailable = false;
+  context.updateAmbientCues();
+  assert.equal(state.mode, 'bgm', 'an empty cue pool cannot strand the soundtrack in silence');
+  assert.equal(state.currentCue, null, 'ineligible cues are never played');
+  live.now += 5000;
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm.src, 'song-3.ogg', 'song selection resumes after the empty-pool retry gap');
+  live.bgmAvailable = false;
+  state.currentBgm.listeners.ended();
+  context.updateAmbientCues();
+  assert.equal(state.mode, 'bgm', 'the empty cue library safely returns to the song-selection stage');
+}
+
+// Combat suspends the cue-stage clock as well as the time between cues.
+{
+  const state = { nextAt: 90000, cuePhaseEndsAt: 180000, combatSchedulerPausedAt: 30000 }; // Simulated in-progress stage before combat.
+  const context = { _ambientCueState: state, performance: { now: () => 60000 } };
+  const start = music.indexOf('  function restoreAmbientSchedulerAfterCombat()');
+  const end = music.indexOf('  function resumeMusicSlotAfterCombat(', start);
+  vm.runInNewContext(music.slice(start, end), context);
+  context.restoreAmbientSchedulerAfterCombat();
+  assert.equal(state.nextAt, 120000, 'combat extends the pending interval instead of consuming it');
+  assert.equal(state.cuePhaseEndsAt, 210000, 'combat extends the two-minute cue deadline');
+  assert.equal(state.combatSchedulerPausedAt, 0, 'the combat clock is cleared on restoration');
 }
 
 assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
