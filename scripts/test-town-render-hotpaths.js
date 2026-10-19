@@ -90,6 +90,12 @@ assert.match(borderTerrain, /if\(pathSurface\)m\.userData\.hobunjiPathSurface=tr
   'border-road ribbon generator tags only explicit path ribbons');
 assert.match(borderTerrain, /addRibbon\(c,pathMat,0\.025,null,0,true\)/,
   'both border-road fallback paths opt into the tagged path policy');
+assert.match(borderTerrain, /highWaterRibbon\.mesh\.userData\.waterSurfaceRole='scenery'/,
+  'border waterfall upper channels register as protective water surfaces');
+assert.match(borderTerrain, /built\.mesh\.userData\.waterSurfaceRole='scenery'/,
+  'border scenery river ribbons register as protective water surfaces');
+assert.match(borderTerrain, /fall\.userData\.waterSurfaceRole='scenery'/,
+  'border waterfall faces register as protective water surfaces');
 // Classify actual mocked scene objects through the shipped helper functions
 // rather than relying solely on string-level regex assertions.
 const classifierStart = heldRender.indexOf('  function hasLayer('); // First helper used by groundKind's classification chain.
