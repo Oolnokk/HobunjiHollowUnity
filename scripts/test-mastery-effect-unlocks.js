@@ -11,9 +11,10 @@ async function main() {
   const context = { window, document: { addEventListener(name, callback) { listeners[name] = callback; } }, localStorage: { getItem: () => saved, setItem(key, value) { saved = value; } }, CustomEvent: class { constructor(name, data) { this.type = name; this.detail = data?.detail; } } }; // Minimal browser dependencies leave all progression behavior intact.
   vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-progression.js', 'utf8'), context);
   const api = window.CombatProgression; // Canonical unlock, choice and effect authority.
-  const items = { ITEM_DEFS: {}, inventoryItems: [], inventory: {} }; // Real registration supplies reusable tablets and scrolls.
+  const items = { ITEM_DEFS: {}, inventoryItems: [], inventory: {} }; // Real registration supplies consumable tablets and scrolls.
   api.registerItems(items);
   const itemCount = items.inventoryItems.length; // Repeated initialization must not duplicate item rows.
+  assert.equal(items.ITEM_DEFS[api.itemKey('sharp', 1, 'stat_rangeMul_0p12')].sellPrice, 140, 'entry-level mastery literature has meaningful resale value');
   api.registerItems(items);
   assert.equal(items.inventoryItems.length, itemCount);
 
@@ -33,7 +34,7 @@ async function main() {
     items.inventory[key] = 1;
     assert.equal(api.readMasteryItem(key), true);
     assert.equal(api.readMasteryItem(key), false, 'duplicate reads are harmless');
-    assert.equal(items.inventory[key], 1, 'reading keeps the reusable item');
+    assert.equal(items.inventory[key], 0, 'successful reading consumes exactly one copy');
     assert.equal(api.hasEffectUnlock('sharp', rank, effect.id), true);
     assert.equal(api.hasEffectUnlock('blunt', rank, effect.id), false);
     assert.equal(api.choose('axe', 'swingCombo', rank, index), true);
@@ -139,13 +140,14 @@ async function main() {
   vm.runInNewContext(fs.readFileSync('docs/js/combat/technique-scrolls.js', 'utf8'), context);
   window.CookingSystem.init({ ...items, getManualHeldItem: () => held, getHeldMode: () => 'tool' });
   const heldKey = api.itemKey('sharp', 5, 'stat_lungeMul_0p2', 'scroll'); // This rank-specific lesson was not learned by the earlier migration test.
-  items.inventory[heldKey] = 1;
+  items.inventory[heldKey] = 2;
   held = { kind: 'bagItem', key: heldKey };
   assert.equal(window.HobunjiDrunkGameplayBridge.getHeldItemAction().allowed, true);
   assert.equal(window.HobunjiDrunkGameplayBridge.consumeHeldItemImmediate(), true, 'normal item action reads a manually held mastery scroll');
-  assert.equal(items.inventory[heldKey], 1);
+  assert.equal(items.inventory[heldKey], 1, 'one held copy is consumed from a two-item stack');
   assert.equal(window.HobunjiDrunkGameplayBridge.getHeldItemAction().allowed, false, 'already learned lessons remain held, with Read disabled');
   assert.equal(window.HobunjiDrunkGameplayBridge.beginHeldItemAction(), false);
+  assert.equal(items.inventory[heldKey], 1, 'repeat reads cannot consume the remaining duplicate');
 
   const fresh = { abilityProgression: {} }; // Five repeated cooldown reductions must never produce a negative cooldown.
   window.__hobunjiPlayerProfile = fresh;
@@ -161,6 +163,6 @@ async function main() {
     assert.equal(stacked.choose('axe', 'counterShield', rank, index), true);
   }
   assert.equal(stacked.getEffects('axe', 'counterShield').stats.cooldownMul, -1);
-  console.log('Mastery discoveries: permanent reusable lessons, five-rank stacking, legacy saves, all source allocations, exact rank boundaries and live loot routing passed.');
+  console.log('Mastery discoveries: permanent single-use lessons, five-rank stacking, legacy saves, all source allocations, exact rank boundaries and live loot routing passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
