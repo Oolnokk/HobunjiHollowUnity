@@ -40,19 +40,21 @@
       icon: '🐾',
       label: 'Puktuk Baby',
       cat: 'livestock',
-      sellPrice: 0,
+      sellPrice: 50,
       tags: ['Livestock', 'Baby'],
       desc: 'A Puktuk baby taken from a western-slope den. Add it to a farm or stable to raise it.',
       ...(itemDefs[PUKTUK_BABY_ITEM_KEY] || {}),
+      sellPrice: Math.max(50, Number(itemDefs[PUKTUK_BABY_ITEM_KEY]?.sellPrice) || 0), // Keep repeat registration from reverting baby resale to zero.
     };
     itemDefs[VOORG_ASS_BABY_ITEM_KEY] = {
       icon: '🐾',
       label: 'Voorg-Ass Baby',
       cat: 'livestock',
-      sellPrice: 0,
+      sellPrice: 80,
       tags: ['Livestock', 'Baby'],
       desc: 'A Voorg-Ass baby recovered from a fallen Herd-Mother. Add it to a farm or stable to raise it.',
       ...(itemDefs[VOORG_ASS_BABY_ITEM_KEY] || {}),
+      sellPrice: Math.max(80, Number(itemDefs[VOORG_ASS_BABY_ITEM_KEY]?.sellPrice) || 0), // Preserve any higher authored resale while allowing duplicate den babies to be sold.
     };
     return true;
   }
