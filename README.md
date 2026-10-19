@@ -43,6 +43,10 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.
 
+## Rendering: ground x-ray and translucent water (regression contract)
+
+Read [Held-object/water depth compositing](docs/architecture/held-object-water-depth-compositing.md) before changing the game renderer, water/slush materials, terrain depth, PNG-plane hands/weapons/feet or outline passes. **The ordering is essential:** draw held objects against reconstructed solid depth, restore base grass/path depth **without color**, then tint submerged held pixels with foreground water/slush, then restore water/slush depth without color. Restoring grass depth *after* tint previously caused ragged teal floodwater to appear through elevated opaque grass despite otherwise-correct water and terrain materials. The architecture note includes the two confirmed Pixel Probe examples, diagnostics and a regression checklist; `scripts/test-town-render-hotpaths.js` enforces the stage order.
+
 ## Camera: Shoulder Cam is the default
 
 The over-the-shoulder camera (`Settings → Camera → Shoulder Cam`, `docs/game.js`'s
