@@ -36,7 +36,8 @@
   }
   function worldId() {
     const id=String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session');
-    const cycle=String(window.CalendarSystem?.tothalCycle?.() || 1); // A Tothal Shift should regenerate both caves and their loose charges.
+    let cycle='1'; // A Tothal Shift regenerates cave partitions and loose charges.
+    try{cycle=String(window.CalendarSystem?.tothalCycle?.()||1);}catch(_){/* Calendar may not be initialized during boot. */}
     return id+'|'+cycle;
   }
   function loadPersistence() {
