@@ -92,7 +92,7 @@
   const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
   const occluderGeometries = new WeakMap(); // Source geometry -> geometry of only its non-upward faces, built once per geometry.
   const waterRegistry = new SceneRegistry(); // All tagged water surfaces; also exposed in diagnostics.
-  const tintCoverRegistry = new SceneRegistry(); // Translucent water and slush to blend over submerged feet (never opaque snow).
+  const tintCoverRegistry = new SceneRegistry(); // Translucent water/slush to blend over submerged feet, hands and held gear (never opaque snow).
   const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
   const waterOccludedRegistry = new SceneRegistry(); // Procedural foot meshes, drawn in the selective x-ray overlay with real water/snow/grass depth.
   const pngDepthRegistry = new SceneRegistry(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
@@ -743,13 +743,15 @@
     return states;
   }
 
-  function prepareFootStencilMaterials(feet) {
+  function prepareSubmergedOverlayStencilMaterials(overlayMeshes) {
     const states = new Map();
-    for (const object of feet) {
+    for (const object of overlayMeshes) {
       forEachMaterial(object.material, material => {
         saveMaterialState(states, material);
-        // The normal foot color draw stamps only fragments that pass the
-        // rebuilt SOLID depth test. Foot meshes write depth as authored.
+        // Stamp only visible held/hand/foot fragments that pass the
+        // reconstructed SOLID depth test. Preserve the object's authored
+        // depth write and alpha cutout; the actual surface then decides
+        // whether to tint using its normal foreground depth test.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x01;
         material.stencilFunc = THREE.AlwaysStencilFunc;
@@ -763,15 +765,17 @@
     return states;
   }
 
-  function prepareFootCoverTintMaterials(covers) {
+  function prepareOverlayCoverTintMaterials(covers) {
     const states = new Map();
     for (const object of covers) {
       forEachMaterial(object.material, material => {
         saveMaterialState(states, material);
-        // Blend the ORIGINAL water/slush color and opacity over only the
-        // feet, and only where the cover is geometrically closer than foot.
-        // Transparent depthWrite stays false so a second pass can restore
-        // protective depth for held weapons without changing this tint.
+        // Blend authored water/slush color and alpha over visible foot,
+        // hand and weapon pixels only when the surface is closer. Do NOT
+        // force depthTest off: the user's flood probe measured raised opaque
+        // grass in front of the flood (grass 0.341 > water 0.160) and an
+        // unoccluded water overlay would create exactly those color splotches.
+        // Preserve overlay depth until after the tint pass.
         material.depthTest = true;
         material.depthWrite = false;
         material.stencilWrite = true;
@@ -967,13 +971,13 @@
   }
 
   const footTintScreenRect = new THREE.Vector4(); // Reused scratch: no per-frame allocation.
-  function hasOverlappingFootCover(renderer, camera, feet, tintCovers) {
-    if (!feet.length || !tintCovers.length) return false;
+  function hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers) {
+    if (!overlayMeshes.length || !tintCovers.length) return false;
     // The ordinary scene contains water far from the character even on dry
-    // tiles. Do not pay for THREE EXTRA world render traversals when none of
-    // that water/slush can overlap the feet on screen. Match the existing
+    // tiles. Do not pay for extra rendering passes when none of that
+    // water/slush can overlap hands, held gear or feet. Match the existing
     // replay scissor's conservative projection, including near-plane fallback.
-    if (!replayScissorRect(renderer, camera, feet, footTintScreenRect)) return true;
+    if (!replayScissorRect(renderer, camera, overlayMeshes, footTintScreenRect)) return true;
     if (footTintScreenRect.z <= 0 || footTintScreenRect.w <= 0) return false;
     if (!setReplayCullFrustum(camera, footTintScreenRect, scissorTargetWidth, scissorTargetHeight)) return true;
     for (const cover of tintCovers) {
@@ -987,9 +991,10 @@
   }
 
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask) {
-    // Weapons/hands AND procedural feet share the same selective depth:
-    // base grass and authored paths are exempt; water, snow/slush, standing
-    // billboard grass and actual geometry still hide the parts behind them.
+    // Weapons/hands and procedural feet share selective ground x-ray.
+    // Translucent water and slush tint only the submerged pixels of ANY
+    // held/foot surface; opaque snow, standing grass and solid geometry still
+    // hide them, while base grass/paths remain x-ray exceptions.
     if (!held.length && !feet.length) return;
 
     const oldAutoClear = renderer.autoClear;
@@ -1004,9 +1009,9 @@
     internalReplay = true;
     const glState = renderer.state;
     const overlayMeshes = [...held, ...feet];
-    // On targets without stencil, keep the conservative fully-occluded
-    // fallback rather than drawing untinted feet on top of the water.
-    const tintFeet = lastBaseStencilBits >= 1 && hasOverlappingFootCover(renderer, camera, feet, tintCovers); // Reuses stencil capability cached by wrappedRender.
+    // On targets without stencil, keep conservative full occlusion instead
+    // of drawing untinted hands, tools or feet above submerged surfaces.
+    const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
     const scissorMeshes = overlayMeshes;
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     let replayCulled = null; // Visibility states of renderables hidden for this replay (see collectReplayCulled).
@@ -1035,7 +1040,7 @@
       // 1) Rebuild depth from every ordinary world object, excluding exactly
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
-      const hidden = hideObjects(tintFeet ? [...ground, ...overlayMeshes, ...tintCovers] : [...ground, ...overlayMeshes]);
+      const hidden = hideObjects(tintOverlay ? [...ground, ...overlayMeshes, ...tintCovers] : [...ground, ...overlayMeshes]);
       const swappedGeometry = swapToOccluderGeometry(topFaceGround);
       const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
       const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
@@ -1064,85 +1069,59 @@
         restoreVisibility(hidden);
       }
 
-      // 2) Draw feet against real objects, snow and billboard grass, but
-      // without translucent water/slush depth. Stamp the visible foot
-      // silhouette so the original translucent surfaces can tint it exactly
-      // once, and only where their geometry is in front of the foot.
-      if (scissored) glState.setScissorTest(false); // Stencil clear spans the framebuffer, not just the foot scissor.
+      // 2) Draw feet, hands and held gear once, against solid scene depth.
+      // When water/slush can overlap them, defer ONLY translucent cover
+      // depth while preserving ordinary solid occlusion. Stencil records
+      // the actual visible fragments of every held/foot mesh, and the
+      // restored alpha shader tints only where that cover is in FRONT.
+      if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.();
       if (scissored) glState.setScissorTest(true);
-      if (tintFeet) {
-        const footStates = prepareFootStencilMaterials(feet);
+      if (overlayMeshes.length) {
+        const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(overlayMeshes) : null;
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
-          // Hide held gear during the foot-only color draw. Foot depth
-          // remains available to test foreground water/slush fragments.
-          const heldHidden = hideObjects(held);
-          try {
-            const footPerf = window.PerfProfiler?.begin('held-overlay: tinted feet draw');
-            rawRender.call(renderer, scene, camera);
-            window.PerfProfiler?.end(footPerf);
-          } finally {
-            restoreVisibility(heldHidden);
-          }
+          const overlayPerf = window.PerfProfiler?.begin('held-overlay: overlay render');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(overlayPerf);
+          selectiveOverlayCount++;
         } finally {
-          restoreMaterialStates(footStates);
+          if (overlayStates) restoreMaterialStates(overlayStates);
         }
-
-        // Replay each cover with its authored alpha (e.g. 65% water,
-        // 22% slush) over the visible foot pixels ONLY. The foot's real
-        // depth rejects covers behind it and solid objects already reject
-        // the foot, eliminating the old irregular/unrelated patches.
-        const tintStates = prepareFootCoverTintMaterials(tintCovers);
+      }
+      if (tintOverlay) {
+        // Tint is intentionally a SEPARATE transparent draw with the
+        // ORIGINAL shader (animated texture) or slush opacity. Stencil
+        // restricts blending to overlay fragments; world-space depth
+        // rejects lower floodwater behind grass/feet and preserves dry
+        // portions of tools/arms and footwear.
+        const tintStates = prepareOverlayCoverTintMaterials(tintCovers);
         try {
           camera.layers.mask = WATER_REPLAY_MASK;
-          const coverPerf = window.PerfProfiler?.begin('held-overlay: foot cover tint');
+          const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
           rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(coverPerf);
+          window.PerfProfiler?.end(tintPerf);
           waterReplayCount++;
         } finally {
           restoreMaterialStates(tintStates);
         }
 
-        // The tinted cover pass does NOT write depth. Put real water/slush
-        // depth back before drawing weapons, so held gear remains blocked
-        // by precisely the surfaces through which the feet are visible.
+        // Color has already been composited. Restore the water/slush
+        // surface to the final framebuffer depth for later postprocess
+        // and other occlusion consumers, WITHOUT blending it twice.
         const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);
         try {
           camera.layers.mask = WATER_REPLAY_MASK;
-          const coverDepthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
+          const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
           rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(coverDepthPerf);
+          window.PerfProfiler?.end(depthPerf);
         } finally {
           restoreMaterialStates(coverDepthStates);
         }
       }
 
-      // 2b) Held objects still render against reconstructed water/slush
-      // depth. With no translucent foot cover, draw feet and held gear
-      // together as before (also the fallback if stencil is unavailable).
-      const drawOverlay = tintFeet ? held : overlayMeshes;
-      if (drawOverlay.length) {
-        const heldStencilStates = prepareHeldStencilMaterials(held);
-        try {
-          camera.layers.mask = HELD_OVERLAY_MASK;
-          const footHidden = tintFeet ? hideObjects(feet) : null;
-          try {
-            const overlayDrawPerf = window.PerfProfiler?.begin('held-overlay: overlay render');
-            rawRender.call(renderer, scene, camera);
-            window.PerfProfiler?.end(overlayDrawPerf);
-            selectiveOverlayCount++;
-          } finally {
-            if (footHidden) restoreVisibility(footHidden);
-          }
-        } finally {
-          restoreMaterialStates(heldStencilStates);
-        }
-      }
-
       // 3) Restore authored base-grass/path depth for postprocessing after
-      // the feet have been tinted and held weapons have drawn. This restores
-      // their real ground boundary without repainting any color.
+      // feet, hands and weapons are tinted. It cannot repaint color.
       const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? [...ground, ...topFaceGround] : ground);
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
@@ -1185,7 +1164,7 @@
     const ground = collectVisible(groundRegistry, scene);
     const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
     const water = collectVisible(waterRegistry, scene); // Existing water diagnostics and all tagged water surfaces.
-    const tintCovers = collectVisible(tintCoverRegistry, scene); // Water + translucent slush; not opaque snow.
+    const tintCovers = collectVisible(tintCoverRegistry, scene); // Water/slush foreground alpha applies to gear, hands and feet; not opaque snow.
     const feet = collectVisible(waterOccludedRegistry, scene); // Procedural foot meshes share selective ground x-ray.
     if (!held.length && !feet.length) return originalRender.call(this, scene, camera);
     if (!ground.length && !topFaceGround.length && !(tintCovers.length && (held.length || feet.length))) return originalRender.call(this, scene, camera);
