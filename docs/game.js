@@ -15105,6 +15105,7 @@
           // the corridor reading as empty grass forever.
           _townPathFallbackMesh = new THREE.Mesh(pathNet.pathGeo, resolveTileMat('map_hobunji_town', TileType.PATH));
           _townPathFallbackMesh.name = 'TownPathFallback';
+          _townPathFallbackMesh.userData.hobunjiPathSurface = true; // Fallback remains x-rayable when paved path chunks cannot load.
           _townPathFallbackMesh.visible = false;
           _townPathFallbackMesh.receiveShadow = true;
           townScene.add(_townPathFallbackMesh);
