@@ -49,6 +49,11 @@ assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthR
   'the colorless depth replay includes PNG silhouettes and registered protective surface layers');
 assert.match(heldRender, /for \(const object of protectedCover\)[\s\S]{0,200}material\.depthWrite = true/,
   'otherwise-transparent snow/slush, water and billboard grass temporarily write real occlusion depth');
+assert.match(mergedWater, /transparent: true,\s*depthTest: true,[^\n]*\n\s*depthWrite: false/,
+  'translucent floodwater retains normal opaque-grass depth testing in its material');
+assert.match(pixelProbe, /Water depth at probed pixel:[\s\S]*?BEHIND OPAQUE SURFACE/,
+  'Pixel Probe continues diagnosing opaque foreground grass before the flood');
+
 assert.match(game, /stencilBuffer: needsStencil/,
   'outline render targets explicitly opt into stencil only when requested');
 assert.match(game, /_mainRT\s*=\s*_makeSceneRT\(1, 1, true\)/,
