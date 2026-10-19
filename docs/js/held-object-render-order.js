@@ -384,7 +384,8 @@
     }
     const kind = groundKind(object);
     if (kind) markGroundMesh(object, kind);
-    if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object);
+    // The carved cavern floor is no longer exempt: only base grass gets x-ray.
+    // Keep the top-face helper for other scene consumers, but do not register it.
   }
 
   function markTopFaceGroundMesh(mesh) {
@@ -754,8 +755,8 @@
     for (const object of water) {
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
-        // Test only foot bit 0. Held pixels carry bit 1 and are deliberately
-        // excluded when the foot mask is stamped, so weapons/hands x-ray water.
+        // Test only foot bit 0; held fragments that are physically above water
+        // retain bit 1, while held fragments behind water fail the depth test.
         material.stencilWrite = true;
         material.stencilWriteMask = 0x00;
         material.stencilFunc = THREE.EqualStencilFunc;
