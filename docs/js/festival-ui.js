@@ -70,7 +70,7 @@
         html+=`<p>🥣 Bowl: ${bowl?.meal ? esc(bowl.meal.label)+' · '+bowl.uses+'/10':bowl?'empty · 0/10':'not held'} · Fullness ${api.currentFullness()}/10</p>`;
         html+=button('Take fresh bowl','take-bowl',!api.festivalHours());
         html+=`<div class="festival-options">${dishes.map((meal,index)=>button(`${meal.icon} Pot ${index+1}: ${meal.label}`,'fill-bowl',!bowl||!api.festivalHours(),`data-pot-index="${index}"`)).join('')}${dishes.length===5?'<span class="festival-note">Pot 6: reserved for your offering</span>':''}</div>`;
-        html+=button('Eat one portion','eat-bowl',!bowl?.meal||!bowl.uses||api.currentFullness()>=10||!api.festivalHours());
+        html+=`<p class="festival-note">To eat: sit in a festival dining chair and use the Eat bowl prompt. Your character will take another bite every few seconds, with the normal Drink animation and a ${bowl?.uses ?? 0}/10 portion counter. Stand or switch equipment to stop.</p>`;
       }
       if (done) html += '<p>You have already contributed your one festival meal or offering.</p>';
       else {
