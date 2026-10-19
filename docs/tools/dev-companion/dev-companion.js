@@ -51,6 +51,7 @@
   let scanSequence = 0;
   let scanning = false;
   let scanFinished = false;
+  let discoveryPinned = false; // Find Games keeps results visible while already connected.
 
   const prefs = (() => {
     const defaults = { pauseOnLoad: true, skipRestoreConfirm: false, followContext: true, tab: 'now' };
@@ -170,6 +171,7 @@
       control.disabled = !connected;
     }
     if (connected) render(true);
+    if (connected && !discoveryPinned) $('gameDiscovery').hidden = true;
     renderDiscovery();
     if (!connected) scanGames(); // Scan on disconnect; selecting another game always requires Switch.
   }
@@ -359,7 +361,7 @@
       const info = el('div', { class: 'discovery-info' },
         el('div', { class: 'row-title', text: game.title }),
         el('div', { class: 'row-sub mono', text: `${game.buildRef} · ${game.session.slice(0, 14)}` }),
-        el('div', { class: 'row-sub', text: current ? 'Connected here' : game.sameBuild ? 'Same build · another session' : 'Different build · will load its companion URL' }));
+        el('div', { class: 'row-sub', text: current ? 'Connected here' : game.sameBuild ? (game.session === sessionId ? 'Same build · reconnect' : 'Same build · another session') : 'Different build · will load its companion URL' }));
       const action = el('button', {
         type: 'button', class: 'small', text: current ? 'Current' : 'Switch',
         disabled: current, onclick: () => switchToGame(game),
@@ -950,7 +952,7 @@
   }, 5000);
 
   // ── Wiring ──────────────────────────────────────────────────────────
-  $('findGamesBtn').addEventListener('click', scanGames);
+  $('findGamesBtn').addEventListener('click', () => { discoveryPinned = true; scanGames(); });
   for (const tabButton of document.querySelectorAll('#tabs [data-tab]')) tabButton.addEventListener('click', () => selectTab(tabButton.dataset.tab));
   $('quickSaveBtn').addEventListener('click', async () => {
     if (await run('quick-save', {}, { okText: 'Quick saved.' })) refreshQuickList();
