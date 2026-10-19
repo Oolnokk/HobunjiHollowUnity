@@ -18,6 +18,8 @@ async function main() {
   api.registerItems(items);
   assert.equal(items.inventoryItems.length, itemCount);
 
+  const clearedFinalCopyKeys = []; // Ensures successful last-copy reads ask the existing Hold owner to release its empty stack.
+  window.InventoryHeldOverride = { clearExhaustedBagHold(key) { clearedFinalCopyKeys.push(key); return true; }, refreshInventoryUseButton() {} };
   const effect = api.getEffectCatalog().find(entry => entry.id === 'stat_rangeMul_0p12'); // Extended Reach is supported by the sharp combo at every rank after expansion.
   assert.ok(effect);
   for (let rank = 1; rank <= 5; rank++) {
@@ -40,6 +42,7 @@ async function main() {
     assert.equal(api.choose('axe', 'swingCombo', rank, index), true);
     assert.equal(api.isOptionUnlocked('sword', 'pokeCombo', rank, index), true, 'same-type weapons share the permanent lesson');
   }
+  assert.equal(clearedFinalCopyKeys.length, 5, 'every exhausted mastery stack triggers Hold cleanup exactly once');
   assert.equal(api.getEffects('axe', 'swingCombo').stats.rangeMul, 0.6, 'all five repeated bonuses add');
   assert.equal(spent, 5);
   assert.equal(api.choose('axe', 'swingCombo', 1, 0.5), false);
