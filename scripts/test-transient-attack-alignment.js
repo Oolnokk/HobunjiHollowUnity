@@ -159,6 +159,7 @@ const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input
   console,
 };
 vm.runInNewContext(input, inputRuntime);
+const holdCrossingMs = inputRuntime.window.Combat.input.HOLD_THRESHOLD_S * 1000 + 10; // Advances synthetic hold presses just past the real threshold.
 assert.equal(inputRuntime.window.Combat.input.isAutoTargetEnabled(), false, 'mobile defaults off');
 inputRuntime.window.Combat.input.setAutoTargetEnabled(false, { persist: false });
 inputRuntime.window.Combat.input.fireTap(1);
@@ -171,8 +172,8 @@ inputRuntime.window.Combat.input.fireTap(1);
 assert.equal(alignmentRequests, 1, 'enabling auto-target restores the existing transient target/alignment request');
 assert.equal(legacyActions, 2, 'enabled auto-target hands off into the same attack path after alignment');
 inputRuntime.window.Combat.input.pressStart(1);
-inputNowMs += 200;
-inputRuntime.window.Combat.update(0.2);
+inputNowMs += holdCrossingMs;
+inputRuntime.window.Combat.update(holdCrossingMs / 1000);
 assert.equal(holdStarts, 1, 'crossing the real hold threshold starts a held combat action while swimming');
 assert.equal(inputRuntime.window.Combat.input.getState(1).holding, true, 'swimming hold remains owned by the combat input state machine');
 inputRuntime.window.Combat.update(0.016);
@@ -181,8 +182,8 @@ inputRuntime.window.Combat.input.pressEnd(1);
 assert.equal(holdEnds, 1, 'releasing a swimming held combat action reaches its normal hold-end hook');
 
 inputRuntime.window.Combat.input.pressStart(1);
-inputNowMs += 200;
-inputRuntime.window.Combat.update(0.2);
+inputNowMs += holdCrossingMs;
+inputRuntime.window.Combat.update(holdCrossingMs / 1000);
 assert.equal(holdStarts, 2, 'a second hold starts normally before the prone interruption');
 inputRuntime.window.Combat.deps.player.prone = true;
 inputRuntime.window.Combat.update(0.016);
@@ -194,8 +195,8 @@ inputRuntime.window.Combat.deps.player.prone = false;
 
 deferInputAlignment = true;
 inputRuntime.window.Combat.input.pressStart(2);
-inputNowMs += 200;
-inputRuntime.window.Combat.update(0.2);
+inputNowMs += holdCrossingMs;
+inputRuntime.window.Combat.update(holdCrossingMs / 1000);
 assert.equal(pendingHoldStarts, 0, 'offensive hold remains pending while transient alignment has not released it');
 assert.equal(inputRuntime.window.Combat.input.getState(2).holding, true, 'pending offensive hold still owns its physical press before knockdown');
 inputRuntime.window.Combat.deps.player.prone = true;
