@@ -149,7 +149,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   assert.equal(state.currentCue, null, 'cue slot is released on completion');
   assert.equal(state.currentBgm, song, 'full song survives cue completion');
   assert.equal(state.cueOverlayDucking, false, 'cue duck releases at completion');
-  assert.deepEqual(live.ducks, [true, false], 'background volume is restored');
+  assert.deepEqual(live.ducks, [true, false, true, false], 'background volume is restored after buffering and cue completion');
   live.now = 3000;
   context.updateAmbientCues();
   assert.equal(live.plays, 1, 'another cue cannot immediately replay');
