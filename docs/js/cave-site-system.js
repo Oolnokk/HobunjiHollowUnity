@@ -284,6 +284,7 @@
   }
 
   const MAX_SEPARATOR_WIDTH = 6; // Widest opening a mineable wall may span. Mining any one rock opens it, so width costs the player nothing; generated cavern chambers join through 3-6 tile openings.
+  const SEPARATOR_DEPTH = 5; // Five successive mineable-rock strata obstruct a sealed chamber.
   const MIN_HIDDEN_TILES = 12; // Smallest chamber worth walling off.
   const MIN_HIDDEN_RATIO = 0.05; // ...as a share of the cave floor; real caverns are mostly one big chamber with side pockets.
   const MAX_HIDDEN_RATIO = 0.58; // Never wall off most of the cave.
@@ -337,6 +338,32 @@
     }
     candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
     return candidates[0] || null;
+  }
+
+  function thickenSeparator(separator, existingRocks) {
+    const occupied = new Set(existingRocks.map(rock => tileKey(rock.col, rock.row))); // Keep the original ore set untouched outside the chosen barrier.
+    const front = new Set(separator.nearKeys); // Entrance-side component determines which way the wall should grow.
+    const back = new Set(separator.farKeys); // Hidden-side component receives additional rock layers.
+    const axis = separator.cells.length > 1
+      ? (separator.cells[0].col !== separator.cells[1].col ? 'col' : 'row')
+      : null; // Width orientation is orthogonal to the direction into the hidden room.
+    const directions = axis === 'col' ? [[0,1],[0,-1]]
+      : axis === 'row' ? [[1,0],[-1,0]] : [[0,1],[0,-1],[1,0],[-1,0]];
+    const first = separator.cells[0]; // One direction must face the sealed component rather than the player.
+    const direction = directions.find(([dx,dy]) => back.has(tileKey(first.col+dx,first.row+dy)))
+      || directions.find(([dx,dy]) => !front.has(tileKey(first.col+dx,first.row+dy)))
+      || directions[0];
+    const cells = [...separator.cells.map(c => ({ ...c, layer:1 }))]; // Preserve the pre-existing first wall exactly.
+    for (let layer = 2; layer <= SEPARATOR_DEPTH; layer++) {
+      for (const base of separator.cells) {
+        const col = base.col + direction[0] * (layer-1), row = base.row + direction[1] * (layer-1);
+        const key = tileKey(col,row);
+        if (!back.has(key) || occupied.has(key)) continue; // Never create rock outside carved walkable cave or over natural ores.
+        cells.push({ col, row, layer });
+        occupied.add(key);
+      }
+    }
+    return cells;
   }
 
   function sortTilesByDistance(tiles, col, row, descending = true) {
@@ -405,9 +432,10 @@
     if (separator) {
       const wallKind = mineOreKind(rng); // Ordinary ore look, so all existing mining/drop/regrowth code applies.
       const existing = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
-      mapData.oreRocks = [...(mapData.oreRocks || []), ...separator.cells.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({ col: cell.col, row: cell.row, oreKind: wallKind, caveSeparator: true }))];
-      for (const cell of separator.cells) blockedKeys.add(tileKey(cell.col, cell.row));
-      plan.separator = { col: separator.col, row: separator.row, cells: separator.cells, oreKind: wallKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys };
+      const thickWall = thickenSeparator(separator, mapData.oreRocks || []); // Five mineable layers, only where the original cave floor has room.
+      mapData.oreRocks = [...(mapData.oreRocks || []), ...thickWall.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({ col: cell.col, row: cell.row, oreKind: wallKind, caveSeparator: true, caveSeparatorLayer: cell.layer }))];
+      for (const cell of thickWall) blockedKeys.add(tileKey(cell.col, cell.row));
+      plan.separator = { col: separator.col, row: separator.row, cells: thickWall, oreKind: wallKind, nearKeys: separator.nearKeys, farKeys: separator.farKeys };
       candidates = tilePoolFromKeys(candidates, separator.farKeys);
     }
     const distant = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true); // Deepest chamber candidates make the cache feel intentionally hidden.
@@ -574,6 +602,7 @@
       profile: clone(profile),
       clearanceFootprints,
       separator: null,
+      shattercasks: [], // Deterministic explosives spawned outside separator walls and occasionally elsewhere in caves.
       banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
@@ -605,13 +634,31 @@
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
+    // Guaranteed entrance-side charge beside every mineable hidden-room wall.
+    if (plan.separator) {
+      const wall = plan.separator.cells;
+      const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row)));
+      const fronts = awayFromEntrance.filter(tile => plan.separator.nearKeys.includes(tileKey(tile.col,tile.row))
+        && !blockedKeys.has(tileKey(tile.col,tile.row)) && !rockKeys.has(tileKey(tile.col,tile.row)));
+      fronts.sort((a,b) => Math.min(...wall.map(c => (a.col-c.col)**2+(a.row-c.row)**2))
+        - Math.min(...wall.map(c => (b.col-c.col)**2+(b.row-c.row)**2)));
+      if (fronts.length) plan.shattercasks.push({ id:'wall-charge', col:fronts[0].col, row:fronts[0].row, guaranteed:true });
+    }
+    // A few ordinary caves also contain loose charges; never consume reserved content tiles.
+    const freeChargeTiles = awayFromEntrance.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
+      && !plan.shattercasks.some(charge => Math.hypot(charge.col-tile.col,charge.row-tile.row)<4));
+    if ((profile.inhabitant === TYPES.BANDIT_HIDEOUT || rng()<.38) && freeChargeTiles.length) {
+      const tile = freeChargeTiles[Math.floor(rng()*freeChargeTiles.length)];
+      plan.shattercasks.push({id:'loose-charge',col:tile.col,row:tile.row});
+    }
+    mapData.caveShattercasks = clone(plan.shattercasks);
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
     plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
-      separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
+      shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
     };
@@ -1115,6 +1162,7 @@
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
         bodies: plansByMapId.get(currentArea).bodies,
         bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
+        shattercasks: plansByMapId.get(currentArea).shattercasks,
         traps: plansByMapId.get(currentArea).traps,
         cache: plansByMapId.get(currentArea).cache,
         coffins: plansByMapId.get(currentArea).coffins,
@@ -1148,6 +1196,7 @@
       rollProfile,
       forceAnimalProfile,
       findMineableSeparator,
+      thickenSeparator,
       floorTiles,
       caveTitle,
       plansByMapId,
