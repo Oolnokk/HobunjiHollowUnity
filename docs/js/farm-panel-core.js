@@ -41,7 +41,7 @@
         icon: entry.icon,
         label: entry.label,
         cat: 'furniture',
-        sellPrice: 0,
+        sellPrice: key === 'wideWindowFurniture' ? 24 : 16, // Spare window fixtures can be sold without affecting installed windows.
         desc: entry.desc,
       };
     }
