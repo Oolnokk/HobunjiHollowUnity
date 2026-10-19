@@ -29968,7 +29968,20 @@
       });
 
       // Cave discovery/cache/trap state is saved with the world (js/cave-site-system.js).
-      window.CaveSiteSystem?.init?.({ save: saveMemberWorldData });
+      window.CaveSiteSystem?.init?.({
+        save: saveMemberWorldData,
+        // Reuse the wild-reagent lightweight inventory path instead of DevSpawner.grantLoot,
+        // which synchronously rebuilds the entire inventory grid on each cave mushroom pick.
+        grantReagent: (key, amount) => {
+          const oldCount = inventory[key] || 0; // Current stack count used to enforce the existing global stack cap.
+          const added = Math.max(0, Math.min(amount, window.InventoryStacks.MAX_TOTAL - oldCount)); // Actual accepted mushrooms reported to the cave action.
+          if (added > 0) {
+            inventory[key] = oldCount + added;
+            window.HudUpdate.refreshItemScroll();
+          }
+          return added;
+        },
+      });
 
       // Slagothim trade caravans (road travel, trading, notices, compass)
       // live in js/slagothim-traders.js.
