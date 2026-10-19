@@ -100,6 +100,57 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   assert.equal(state.combatOverrideActive, false, 'music works before the tutorial module loads');
 }
 
+
+// Long BGM cannot starve a regional cue; its playhead survives the overlay.
+{
+  const live = { now: 1000, plays: 0, ducks: [] }; // Controllable wall clock and audio decisions for the production scheduler.
+  const song = { ended: false, currentTime: 77, _musicEntry: { url: 'bgm.ogg' }, _setDuck(value) { live.ducks.push(value); } }; // Existing song must remain in its scheduler slot.
+  const state = { area: 'town', indexId: 'general', mode: 'bgm', currentBgm: song, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, blockUntil: 0, nextAt: 0, cueOverlayNextAt: 0, cueOverlayDucking: false }; // Same scheduler fields as the runtime.
+  const context = {
+    window: { AudioSystem: { gameAudioConfig: () => ({ enabled: true, bgmVolume: 0.48, ambientCuesOverBgm: true, ambientCueOverlayMinDelaySec: 1, ambientCueOverlayMaxDelaySec: 1 }) } },
+    deps: { getCurrentArea: () => 'town', isPlayerInCombat: () => false },
+    performance: { now: () => live.now },
+    quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _audioCueIndexes: new Map([['general', { __basePath: 'cues/general/', ambient_cues: [{ id: 'to1', file: 'to1.ogg', volume: 0.7 }] }]]),
+    _lyreDucked: false, _gameplayCueDuckOwners: new Set(),
+    audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
+    areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false,
+    musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
+    ambientMusicOwnsSoundtrack: () => false,
+    retireMusicTrack(audio) { audio.retired = true; },
+    playMusicTrack(url) {
+      return { src: url, listeners: {}, addEventListener(event, cb) { this.listeners[event] = cb; }, _watchForStall() {} };
+    },
+    requestGameAudioPlay(audio) { live.plays++; audio.listeners.play?.(); return Promise.resolve(); },
+  };
+  const cueSchedulerSource = music.slice(music.indexOf('  function scheduleNextOverlayCueDelay()'), music.indexOf('  function setLoopingBgs(')); // Tests actual cue timing and selection functions.
+  vm.runInNewContext(cueSchedulerSource, context);
+  context.updateAmbientCues();
+  assert.equal(state.cueOverlayNextAt, 2000, 'regional cue scheduled while a full BGM track is still active');
+  assert.equal(live.plays, 0, 'cue is not launched before its interval');
+  live.now = 2100;
+  context.updateAmbientCues();
+  assert.equal(live.plays, 1, 'cue begins without waiting for the full song to end');
+  assert.equal(state.currentCue.src, 'cues/general/to1.ogg', 'correct regional asset selected');
+  assert.equal(state.currentBgm, song, 'the active background song is preserved');
+  assert.equal(song.currentTime, 77, 'the active song does not rewind');
+  assert.equal(state.cueOverlayDucking, true, 'cue briefly ducks its background song');
+  assert.deepEqual(live.ducks, [true], 'background duck engages on actual cue playback');
+  state.currentCue.listeners.ended();
+  assert.equal(state.currentCue, null, 'cue slot is released on completion');
+  assert.equal(state.currentBgm, song, 'full song survives cue completion');
+  assert.equal(state.cueOverlayDucking, false, 'cue duck releases at completion');
+  assert.deepEqual(live.ducks, [true, false], 'background volume is restored');
+  live.now = 3000;
+  context.updateAmbientCues();
+  assert.equal(live.plays, 1, 'another cue cannot immediately replay');
+  song._musicEntry.exclusiveSoundtrack = true;
+  live.now = 5000;
+  context.updateAmbientCues();
+  assert.equal(live.plays, 1, 'exclusive authored scores never get overlaid by regional cues');
+}
+
 assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
 assert.equal((music.match(/snd\.play\(\)/g) || []).length, 1,
   'all managed audio playback must pass through the single pending-play gate');
