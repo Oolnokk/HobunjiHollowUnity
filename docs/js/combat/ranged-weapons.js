@@ -1262,6 +1262,7 @@
     const segmentLimit = Math.max(0, Math.min(1, Number(maxSegmentT) || 0));
     const rawCoverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     const coverHit = rawCoverHit && rawCoverHit.t <= segmentLimit + AIM_EPSILON ? rawCoverHit : null;
+    const shatterHit = window.Shattercasks?.projectileHit?.(start,end,projectileRadius,segmentLimit,p.areaId) || null; // Same swept-segment interval as actor/terrain impact: no tunneling or hitting a vase behind cover.
     const falloff = projectileFalloffMultiplier(p);
     const scaledDamage = p.def.damage * falloff * (Number.isFinite(p.damageScale) ? p.damageScale : 1);
     const damage = p.team === 'player' && p.def.rangedType === 'thrown'
@@ -1271,9 +1272,14 @@
     if (p.team === 'player') {
       let nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
       if (nearest && nearest.interval.enter > segmentLimit + AIM_EPSILON) nearest = null;
-      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
         playProjectileImpactSfx(p, coverHit.t);
         return { kind: 'cover', t: coverHit.t, coverHit };
+      }
+      if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
+        window.Shattercasks.hitProjectile(shatterHit);
+        playProjectileImpactSfx(p,shatterHit.t);
+        return {kind:'actor',t:shatterHit.t,shattercask:true};
       }
       if (!nearest) return null;
       const c = nearest.creature;
@@ -1296,9 +1302,14 @@
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
     }
-    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
       playProjectileImpactSfx(p, coverHit.t);
       return { kind: 'cover', t: coverHit.t, coverHit };
+    }
+    if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
+      window.Shattercasks.hitProjectile(shatterHit);
+      playProjectileImpactSfx(p,shatterHit.t);
+      return {kind:'actor',t:shatterHit.t,shattercask:true};
     }
     if (!nearest) return null;
     playProjectileImpactSfx(p, nearest.interval.enter);
