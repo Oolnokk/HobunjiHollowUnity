@@ -44,6 +44,7 @@ const layout=effective();
 assert.equal(layout.activeLayoutId,'festival_gorkunash');
 assert(!layout.decor.some(prop=>prop.activity?.type==='welcome'),'no generic Gorkunash guide board');
 assert.equal(layout.decor.filter(prop=>prop.festivalRoadArch).length,6,'town-wide overhead arches');
+assert(layout.decor.filter(prop=>prop.festivalRoadArch).every(prop=>prop.key==='festivalArch' && prop.festivalArchWidth>=4), 'road arches use real variable-width furniture, not rug proxies');
 assert.equal(layout.npcStations.filter(station=>station.festivalLocaleParent).length,31,'all generated locale destinations');
 assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,22,'all generated locale furnishings');
 const originalRoot=town.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand');
