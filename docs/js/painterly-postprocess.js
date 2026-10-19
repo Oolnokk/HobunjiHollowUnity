@@ -153,11 +153,15 @@
     `;
   }
 
+  // Painterly sampling must respect raised opaque terrain boundaries.
+  // Only high-contrast neighbors require extra depth reads on the GPU.
+  const PAINT_DEPTH_GUARD = "uniform sampler2D tWorldDepth;\n      uniform float uPaintCameraNear, uPaintCameraFar, uPaintHasDepth;\n      float paintLinearDepth(float raw) {\n        float ndc = raw * 2.0 - 1.0;\n        return (2.0 * uPaintCameraNear * uPaintCameraFar) / max(0.00001, uPaintCameraFar + uPaintCameraNear - ndc * (uPaintCameraFar - uPaintCameraNear));\n      }\n      float paintSampleWeight(vec2 uv, vec3 neighbor, vec3 center, float centerDepth) {\n        if (uPaintHasDepth < 0.5) return 1.0;\n        vec3 delta = abs(neighbor - center);\n        if (max(delta.r, max(delta.g, delta.b)) < 0.07) return 1.0;\n        float neighborDepth = paintLinearDepth(texture2D(tWorldDepth, safeUv(uv)).r);\n        float tolerance = max(0.045, centerDepth * 0.017);\n        return 1.0 - smoothstep(tolerance, tolerance * 2.2, abs(neighborDepth - centerDepth));\n      }";
+
   function oilFragment(profile) {
     const calls = [];
     for (const y of profile.oilOffsets) {
       for (const x of profile.oilOffsets) {
-        calls.push(`addOilSample(vec2(${x.toFixed(1)}, ${y.toFixed(1)}), sum0, sum1, sum2, count0, count1, count2);`);
+        calls.push(`addOilSample(vec2(${x.toFixed(1)}, ${y.toFixed(1)}), sum0, sum1, sum2, count0, count1, count2, centerColor, centerDepth);`);
       }
     }
     return `
@@ -165,19 +169,26 @@
       uniform vec2 uWorkTexel;
       varying vec2 vUv;
       ${glslSafeUv()}
+      ${PAINT_DEPTH_GUARD}
       float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
       void addOilSample(
         vec2 pixelOffset,
         inout vec3 sum0, inout vec3 sum1, inout vec3 sum2,
-        inout float count0, inout float count1, inout float count2
+        inout float count0, inout float count1, inout float count2,
+        vec3 centerColor, float centerDepth
       ) {
-        vec3 c = texture2D(tSource, safeUv(vUv + pixelOffset * uWorkTexel)).rgb;
+        vec2 uv = safeUv(vUv + pixelOffset * uWorkTexel);
+        vec3 c = texture2D(tSource, uv).rgb;
+        float w = paintSampleWeight(uv, c, centerColor, centerDepth);
+        if (w <= 0.001) return;
         float bin = min(2.0, floor(clamp(luma(c), 0.0, 0.999999) * 3.0));
-        if (bin < 0.5) { sum0 += c; count0 += 1.0; }
-        else if (bin < 1.5) { sum1 += c; count1 += 1.0; }
-        else { sum2 += c; count2 += 1.0; }
+        if (bin < 0.5) { sum0 += c * w; count0 += w; }
+        else if (bin < 1.5) { sum1 += c * w; count1 += w; }
+        else { sum2 += c * w; count2 += w; }
       }
       void main() {
+        vec3 centerColor = texture2D(tSource, safeUv(vUv)).rgb;
+        float centerDepth = uPaintHasDepth > 0.5 ? paintLinearDepth(texture2D(tWorldDepth, safeUv(vUv)).r) : 0.0;
         vec3 sum0 = vec3(0.0), sum1 = vec3(0.0), sum2 = vec3(0.0);
         float count0 = 0.0, count1 = 0.0, count2 = 0.0;
         ${calls.join('\n        ')}
@@ -185,25 +196,25 @@
         float best = count0;
         if (count1 > best) { best = count1; oil = sum1 / max(count1, 1.0); }
         if (count2 > best) { oil = sum2 / max(count2, 1.0); }
-        vec3 source = texture2D(tSource, safeUv(vUv)).rgb;
-        gl_FragColor = vec4(mix(source, oil, 0.27), 1.0);
+        gl_FragColor = vec4(mix(centerColor, oil, 0.27), 1.0);
       }
     `;
   }
 
   function horizontalWashFragment(radius) {
     const taps = [];
-    for (let x = -radius; x <= radius; x++) taps.push(`sum += texture2D(tOil, safeUv(vUv + vec2(${x.toFixed(1)} * uWorkTexel.x, 0.0))).rgb;`);
-    const count = radius * 2 + 1;
+    for (let x = -radius; x <= radius; x++) taps.push(`{ vec3 v = texture2D(tOil, safeUv(vUv + vec2(${x.toFixed(1)} * uWorkTexel.x, 0.0))).rgb; float w = 1.0 - smoothstep(0.07, 0.22, max(abs(v.r-center.r), max(abs(v.g-center.g), abs(v.b-center.b)))); sum += v*w; weights += w; }`);
     return `
       uniform sampler2D tOil;
       uniform vec2 uWorkTexel;
       varying vec2 vUv;
       ${glslSafeUv()}
       void main() {
+        vec3 center = texture2D(tOil, safeUv(vUv)).rgb;
         vec3 sum = vec3(0.0);
+        float weights = 0.0;
         ${taps.join('\n        ')}
-        gl_FragColor = vec4(sum / ${count.toFixed(1)}, 1.0);
+        gl_FragColor = vec4(sum / max(weights, 1.0), 1.0);
       }
     `;
   }
@@ -211,8 +222,7 @@
   function verticalWashToneFragment(profile) {
     const radius = profile.waterRadius;
     const taps = [];
-    for (let y = -radius; y <= radius; y++) taps.push(`sum += texture2D(tWashH, safeUv(vUv + vec2(0.0, ${y.toFixed(1)} * uWorkTexel.y))).rgb;`);
-    const count = radius * 2 + 1;
+    for (let y = -radius; y <= radius; y++) taps.push(`{ vec3 v = texture2D(tWashH, safeUv(vUv + vec2(0.0, ${y.toFixed(1)} * uWorkTexel.y))).rgb; float w = 1.0 - smoothstep(0.07, 0.22, max(abs(v.r-src.r), max(abs(v.g-src.g), abs(v.b-src.b)))); sum += v*w; weights += w; }`);
     return `
       uniform sampler2D tOil;
       uniform sampler2D tWashH;
@@ -220,10 +230,11 @@
       varying vec2 vUv;
       ${glslSafeUv()}
       void main() {
-        vec3 sum = vec3(0.0);
-        ${taps.join('\n        ')}
-        vec3 wash = sum / ${count.toFixed(1)};
         vec3 src = texture2D(tOil, safeUv(vUv)).rgb;
+        vec3 sum = vec3(0.0);
+        float weights = 0.0;
+        ${taps.join('\n        ')}
+        vec3 wash = sum / max(weights, 1.0);
         vec3 color = mix(src, wash, ${profile.waterMix.toFixed(2)});
         float diff = abs(src.r - wash.r) + abs(src.g - wash.g) + abs(src.b - wash.b);
         float edge = clamp(diff / 0.705882353, 0.0, 1.0);
@@ -322,6 +333,10 @@
 
     const oil = makeFullscreenPass(THREE, oilFragment(profile), {
       tSource: { value: null },
+      tWorldDepth: { value: null },
+      uPaintCameraNear: { value: 0.1 },
+      uPaintCameraFar: { value: 200 },
+      uPaintHasDepth: { value: 0 },
       uWorkTexel: { value: new THREE.Vector2(1, 1) },
     });
     const washH = makeFullscreenPass(THREE, horizontalWashFragment(profile.waterRadius), {
@@ -378,6 +393,11 @@
     const texelX = 1 / size.width;
     const texelY = 1 / size.height;
     passes.oil.material.uniforms.tSource.value = sourceTexture;
+    const depthTexture = compositeMaterial?.uniforms?.tSceneDepth?.value || null;
+    passes.oil.material.uniforms.tWorldDepth.value = depthTexture || sourceTexture;
+    passes.oil.material.uniforms.uPaintCameraNear.value = Number(compositeMaterial?.uniforms?.uCameraNear?.value) || 0.1;
+    passes.oil.material.uniforms.uPaintCameraFar.value = Number(compositeMaterial?.uniforms?.uCameraFar?.value) || 200;
+    passes.oil.material.uniforms.uPaintHasDepth.value = depthTexture ? 1 : 0;
     passes.oil.material.uniforms.uWorkTexel.value.set(texelX, texelY);
     passes.washH.material.uniforms.uWorkTexel.value.set(texelX, texelY);
     passes.tone.material.uniforms.uWorkTexel.value.set(texelX, texelY);
@@ -553,7 +573,7 @@
     setMode,
     getMode: () => mode,
     snapshot: () => ({
-      latestChange: 'Latest full-res HTML-reference stack plus tan protection: yellow lift/blue suppression now target vivid yellow-green only, preserving muted tan/ochre while keeping weaving accents saturated.',
+      latestChange: 'Depth-gated oil neighborhoods and color-edge-aware wash stop flood colors spreading over raised opaque terrain; original paint colors and settings retained.',
       mode,
       sampleCount: MODE_SAMPLE_COUNT[mode],
       internalSize: lastPipelineSize || null,
