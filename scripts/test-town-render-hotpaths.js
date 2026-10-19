@@ -152,10 +152,10 @@ const footRegistrarEnd = heldRender.indexOf('  function enforceGroundMesh(', foo
 assert.ok(footRegistrarStart >= 0 && footRegistrarEnd > footRegistrarStart);
 const footLayerSet = new Set([0]);
 const mockFoot = { isMesh: true, userData: {}, layers: { enable(layer) { footLayerSet.add(layer); } } };
-const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer',
+const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount',
   heldRender.slice(footRegistrarStart, footRegistrarEnd) + '\nreturn markWaterOccludedMesh;')(
     new WeakSet(), { add() {} }, 26, 29,
-    (mesh, layer) => footLayerSet.has(layer));
+    (mesh, layer) => footLayerSet.has(layer), 0);
 assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
 assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
 assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
