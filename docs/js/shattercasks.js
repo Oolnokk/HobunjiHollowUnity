@@ -423,6 +423,28 @@
   }
   function attachRuntime() {
     const combat=window.Combat;
+    if(combat?.init&&!combat.init.__shattercaskMeleeSetup) {
+      const original=combat.init.bind(combat);
+      const wrapped=function shattercaskCombatInit(injected) {
+        const result=original(injected);
+        if(typeof injected?.clearVegetationInAttackCone==='function'
+          &&!injected.clearVegetationInAttackCone.__shattercaskStrike) {
+          const clear= injected.clearVegetationInAttackCone;
+          const strike=function shattercaskVegetationStrike(x,y,yaw,rangePx,halfConeRad,...rest) {
+            // Every real player melee strike, including ordinary swings, combos,
+            // quick attacks, and charged breakers, calls this shared vegetation
+            // hit pass even when there are no enemies in the cone.
+            sweepMelee({actor:injected.player,yaw,rangePx,halfConeRad,
+              pitch:injected.getPlayerMeleeAimPitch?.()||0});
+            return clear(x,y,yaw,rangePx,halfConeRad,...rest);
+          };
+          strike.__shattercaskStrike=true;
+          injected.clearVegetationInAttackCone=strike;
+        }
+        return result;
+      };
+      wrapped.__shattercaskMeleeSetup=true;combat.init=wrapped;
+    }
     if(combat?.update&&!combat.update.__shattercaskTick) {
       const original=combat.update.bind(combat);
       const wrapped=function shattercaskUpdate(dt){const result=original(dt);tick(dt);return result;};
