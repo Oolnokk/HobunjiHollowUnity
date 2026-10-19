@@ -286,7 +286,7 @@
       const aimedPot=potIndexAtAim();
       if(seat && heldBowl?.meal)return {icon:'🪑',label:'Sit at festival table',action:'festival_sit_dining',style:'primary',allowed:true,worldInteraction:true};
       if(!heldBowl && bowlPileInReach())return {icon:'🥣',label:'Take festival bowl',action:'festival_take_bowl',style:'primary',allowed:true,worldInteraction:true};
-      if(!heldBowl.meal&&aimedPot>=0)return {icon:'🍲',label:`Fill bowl: ${feastMenu()[aimedPot].label}`,action:'festival_fill_bowl',style:'primary',allowed:true,worldInteraction:true,potIndex:aimedPot};
+      if(heldBowl&&!heldBowl.meal&&aimedPot>=0)return {icon:'🍲',label:`Fill bowl: ${feastMenu()[aimedPot].label}`,action:'festival_fill_bowl',style:'primary',allowed:true,worldInteraction:true,potIndex:aimedPot};
     }
     const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
     return prop ? { icon: festival().icon, label: prop.activity.label || window.FestivalCalendar.activityLabels[prop.activity.type], action: 'festival_activity', allowed: true, style: 'primary' } : null;
@@ -474,7 +474,7 @@
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
-      latestChange:'Gorkunash movable festival locales, 15:00–01:00 rotations, NPC dances, six-pot feasts and Festival Fun.' };
+      latestChange:'Fixed active-feast proximity freeze when no bowl is held; Fill requires an actual empty bowl.' };
   }
   function init(injected) {
     deps = injected;

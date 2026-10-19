@@ -72,8 +72,21 @@ assert.equal(target('friend').festivalLocaleKind,'dining','nonromance guests fav
 hour=21;assert.equal(target('kaboku_kunji').toolKey,'kurraya','Kaboku leads late');
 hour=0;assert.equal(target('kaboku_kunji').toolKey,'kurraya','music continues after midnight');
 hour=1;assert.equal(target('foroji_funji'),null,'festival gathering ends at 1 AM');
+// Approaching the active feast without a bowl must never abort gameplay's action-button pass.
+// Its eight-tile activity radius also overlaps the nearby bandstand.
+for (const festivalHour of [14.999, 15, 17, 23.999, 0.999, 1]) {
+  hour=festivalHour;
+  for (const position of [{c:56.01,r:43.5},{c:55.99,r:43.5},{c:43,r:43}]) {
+    player=position;
+    assert.doesNotThrow(()=>api.actionButton(),`empty-handed approach at ${hour}h (${player.c},${player.r})`);
+    assert.notEqual(api.actionButton()?.action,'festival_fill_bowl','taking a bowl is required before offering Fill');
+  }
+}
+player={c:47,r:43};hour=17;
+assert.equal(api.actionButton()?.action,'festival_take_bowl','the nearby bowl pile still offers Take');
 hour=17;assert.equal(api.feastMenu().length,5,'five free pots leave room for the first offering');
 assert.equal(api.takeFestivalBowl().ok,true);
+assert.equal(api.actionButton()?.action,'festival_fill_bowl','an actual empty bowl offers Fill when aiming at a pot');
 assert.equal(api.fillFestivalBowl(0).ok,true);
 assert.equal(api.festivalBowl().uses,10);
 assert.equal(api.eatFestivalBowl().ok,true);
