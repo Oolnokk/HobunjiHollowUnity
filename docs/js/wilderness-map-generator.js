@@ -7099,8 +7099,8 @@
     const northSouth = sampleHeightSpline(curves.northSouth, y / Math.max(1, settings.height - 1));
     // Each axis is additive: a straight 0.5 axis leaves the other axis unchanged.
     const level = clamp(eastWest + northSouth - 0.5, 0, 1);
-    const coarse = noise2(Math.floor(x / 9), Math.floor(y / 9), 91371);
-    const fine = noise2(Math.floor(x / 3), Math.floor(y / 3), 91393);
+    const coarse = noise2(Math.floor(x / 9), Math.floor(y / 9), 91371 + settings.heightCurveNoiseSalt);
+    const fine = noise2(Math.floor(x / 3), Math.floor(y / 3), 91393 + settings.heightCurveNoiseSalt);
     const variation01 = clamp(coarse * 0.7 + fine * 0.3, 0, 1); // Seed-stable spatial noise, not per-render jitter.
     const variation = variation01 * (curves.upwardVariation + curves.downwardVariation) - curves.downwardVariation;
     return clamp(Math.round(1 + (settings.maxTier - 1) * level + variation), 1, settings.maxTier);
@@ -8544,6 +8544,7 @@
     settings = {
       ...merged,
       heightCurves: normalizedHeightCurveSettings(merged.heightCurves),
+      heightCurveNoiseSalt: hashSeed(String(merged.seed)) % 65521, // Seeded spatial offset shared by both spline axes without changing the main RNG sequence.
       preset: preset.id,
       presetLabel: preset.label,
       boundaryMode: boundaryModeConfig.id,
