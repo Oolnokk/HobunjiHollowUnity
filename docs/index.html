@@ -792,7 +792,7 @@
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
-  <script src="js/merged-water-renderer.js?v=20260921floodvisual1"></script>
+  <script src="js/merged-water-renderer.js?v=20261019h27513c3"></script>
   <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
        (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -2479,7 +2479,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261019h32cdc8e"></script>
+  <script src="js/tool-icon-render.js?v=20261019hbfbd449"></script>
   <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2505,7 +2505,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261017h5f76d40"></script>
+  <script src="js/pixel-probe.js?v=20261019hf09c40c"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2651,7 +2651,7 @@
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its
        quality mode, and owns no requestAnimationFrame loop. -->
-  <script src="js/painterly-postprocess.js?v=20261009h2588a9d"></script>
+  <script src="js/painterly-postprocess.js?v=20261019h1071c70"></script>
   <script src="js/banubu-cave-clouds.js?v=20261015hf69d7ce"></script>
   <script src="js/cavern-entrance-light.js?v=20261017hb7479e9"></script> <!-- Den cavern entrance light + floor glow (built from game.js). -->
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
