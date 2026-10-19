@@ -140,13 +140,13 @@ async function run() {
   await registryFailure.window.Music.loadAudioCueIndexes();
   assert.equal(registryFailure.window.Music.getMusicDebugState().pool.total, 14, 'registry failure recovers without reloading the game');
 
-  const slope = await createRuntime('map_western_slope'); // Uses actual Western Slope config in daytime and at night.
+  const slope = await createRuntime('map_western_slope'); // Unauthored daytime music must fall straight through from A to regional cues in B.
   await slope.window.Music.loadAudioCueIndexes();
   slope.window.Music.updateAmbientCues();
-  assert.match(slope.live.media.at(-1).src, /bgm_what_the_winds_carry\.mp3$/, 'Western Slope has a daytime song');
-  slope.live.media.at(-1).complete();
+  assert.equal(slope.live.media.length, 0, 'stage A does not invent a daytime song for Western Slope');
+  assert.equal(slope.window.Music.getMusicDebugState().stage, 'cue_wait', 'no eligible song proceeds directly to stage B');
   slope.window.Music.updateAmbientCues();
-  const slopeCue = slope.live.media.at(-1); // Shared Highland cue pool must be audible after the daytime song.
+  const slopeCue = slope.live.media.at(-1); // The first audio is a regional cue without a song or song-length wait.
   assert.match(slopeCue.src, /northern_cliffs\/mas\d+\.ogg$/);
   slopeCue.error = { code: 2, message: 'transient network error' };
   slopeCue.dispatchEvent(new Event('error'));
@@ -154,8 +154,12 @@ async function run() {
   assert.match(slope.window.Music.getMusicDebugState().cuePlayback.lastError, /media code=2.*transient network error/);
   slope.live.now += 30000;
   assert.equal(slope.window.Music.audioUrlFailed(slopeCue.src), false, 'temporary network errors do not blacklist cues for the entire session');
+  slope.live.now += 120000;
+  slope.window.Music.updateAmbientCues();
+  slope.window.Music.updateAmbientCues();
+  assert.ok(slope.live.media.every(media => /northern_cliffs\/mas\d+\.ogg$/.test(media.src)), 'later daytime cycles also skip A and play only authored regional cues');
 
-  const slopeNight = await createRuntime('map_western_slope'); // Night song retains priority over the new fallback.
+  const slopeNight = await createRuntime('map_western_slope'); // The authored night song still plays in its existing time window.
   slopeNight.live.hour = 22;
   await slopeNight.window.Music.loadAudioCueIndexes();
   slopeNight.window.Music.updateAmbientCues();
