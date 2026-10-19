@@ -436,6 +436,10 @@
         costumeState.set(walker, costume);
       }
     }
+    if (dance?.targetNpcId && (deps?.isBlocked?.()
+        || !(deps?.getWalkers?.()||[]).some(w=>w.rec?.id===dance.targetNpcId && !w.rec.dead && !w.rec.deceased && w.area==='town'))) {
+      cancelDance(); // Combat, modal interaction, death, or NPC despawn releases both avatar transforms and their action lock.
+    }
     if (dance) {
       const prop = activityProps().find(p => p.id === dance.propId);
       if (eventKey() !== dance.event || !atProp(prop)
