@@ -299,6 +299,14 @@
     }
   }
 
+  function setPreviewFrame(root,frame) {
+    const c=root?.userData?.omgurkuComposite;
+    if(!c || !FRAMES.includes(frame))return false;
+    c.previewFrameOwner=true;
+    for(const record of live)if(record.root===root){setFrame(record,frame);return true;}
+    return false;
+  }
+
   function setPreviewDeadzones(root, radii) {
     const c=root?.userData?.omgurkuComposite;
     if (!c) return false;
@@ -421,6 +429,10 @@
       if (!root.parent || !root.visible) continue;
       const c = root.userData.omgurkuComposite;
       if (!c) { live.delete(record); continue; }
+      // The original V10 workbench drives its own 12-frame/s preview cadence
+      // through the same three authored models. Never compete with that frame
+      // owner, and never change NPC simulation cadence in gameplay.
+      if (c.previewFrameOwner === true) continue;
       // Position comes exclusively from the existing NPC walker path/schedule/AI.
       // Do not independently translate the animal, and do not run another AI tick.
       const position = root.getWorldPosition(c.positionScratch);
@@ -619,7 +631,7 @@
 
   window.HobunjiOmgurkuSpecies = Object.freeze({
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
-    install, setPlacement, setPreviewFacing, setPreviewDeadzones, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setPreviewFacing, setPreviewFrame, setPreviewDeadzones, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();
