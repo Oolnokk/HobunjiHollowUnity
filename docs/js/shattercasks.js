@@ -26,6 +26,14 @@
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
   let promptRoot = null; // Same WorldPopupText prompts as other world interactions.
+  const emitterFrustum = THREE.Frustum && new THREE.Frustum();
+  const emitterMatrix = THREE.Matrix4 && new THREE.Matrix4();
+  const emitterSphere = THREE.Sphere && THREE.Vector3 && new THREE.Sphere(new THREE.Vector3(),1);
+  const carriedWorldPosition = THREE.Vector3 && new THREE.Vector3();
+  const heldAnchorOffset = THREE.Vector3 && new THREE.Vector3();
+  const heldAnchorQuat = THREE.Quaternion && new THREE.Quaternion();
+  const heldAnchorEuler = THREE.Euler && new THREE.Euler();
+  let emitterVisibilityElapsed = 0; // Cull only on the 140ms poll cadence, not every frame.
   let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
   let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
   const THREE = window.THREE;
@@ -173,42 +181,54 @@
     for(const fx of vase.emitters||[])fx.dispose?.();
     vase.emitters=null;
   }
+  function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
   function heldItemHolder(){
-    const d=deps();
+    const d=carryDeps();
     return d?.getHeldItemHandTarget?.()?.holder
       ||d?.playerMesh?.children?.find(o=>o?.type==='Group'&&o.userData?.isPngPlane&&!String(o.name||'').trim())||null;
   }
   function alignHeldVase(vase) {
-    const body=deps()?.playerMesh,holder=heldItemHolder();
-    if(!body||!holder||!THREE.Quaternion||!vase?.group?.quaternion)return false;
+    const body=carryDeps()?.playerMesh,holder=heldItemHolder();
+    if(!body||!holder||!heldAnchorQuat||!heldAnchorOffset||!vase?.group?.quaternion)return false;
     if(vase.group.parent!==body)body.add(vase.group);
     const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{};
-    const anchorQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      (Number(r.x)||0)*Math.PI/180,(Number(r.y)||0)*Math.PI/180,(Number(r.z)||0)*Math.PI/180));
-    vase.group.quaternion.copy(holder.quaternion).multiply(anchorQ.invert());
-    const v=new THREE.Vector3(Number(a.x)||0,Number(a.y)||0,Number(a.z)||0)
+    heldAnchorEuler.set((Number(r.x)||0)*Math.PI/180,(Number(r.y)||0)*Math.PI/180,(Number(r.z)||0)*Math.PI/180);
+    heldAnchorQuat.setFromEuler(heldAnchorEuler).invert();
+    vase.group.quaternion.copy(holder.quaternion).multiply(heldAnchorQuat);
+    heldAnchorOffset.set(Number(a.x)||0,Number(a.y)||0,Number(a.z)||0)
       .applyQuaternion(vase.group.quaternion);
-    vase.group.position.copy(holder.position).sub(v);
+    vase.group.position.copy(holder.position).sub(heldAnchorOffset);
     vase.group.scale.setScalar((holder.scale?.x||1)/Math.max(.1,Number(cfg.size)||1));
     return true;
   }
   function heldHandTarget(){
-    return held?.group?.parent&&held.group.parent===deps()?.playerMesh
+    return held?.group?.parent&&held.group.parent===carryDeps()?.playerMesh
       ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{}}:null;
   }
   function updateEmitters(dt,mapId,targetScene){
     const rec=records.get(mapId);
-    if(rec?.scene!==targetScene)return;
-    const player=playerPosition(),cam=deps()?.camera||deps()?.getActiveCamera?.()||deps()?.getCamera?.();
-    const frustum=cam?.projectionMatrix&&cam.matrixWorldInverse&&THREE.Frustum&&THREE.Matrix4
-      ?new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse)):null;
+    if(rec?.scene!==targetScene||!targetScene)return;
+    const player=playerPosition(),cd=carryDeps();
+    const cam=cd?.camera||cd?.getActiveCamera?.()||cd?.getCamera?.();
+    // Visibility is sampled at 7 Hz, never doing a camera-matrix update,
+    // distance calculation and culling for every Shattercask each frame.
+    emitterVisibilityElapsed+=dt;
+    const recull=emitterVisibilityElapsed>=POLL_S;
+    if(recull) {
+      emitterVisibilityElapsed=0;
+      const frustum=cam?.projectionMatrix&&cam.matrixWorldInverse&&emitterFrustum&&emitterMatrix&&emitterSphere
+        ?emitterFrustum.setFromProjectionMatrix(emitterMatrix.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse)):null;
+      for(const vase of rec.vases.values()){
+        const pos=vase.carried?player:vase.group.position;
+        const near=player&&pos&&Math.hypot(pos.x-player.x,pos.z-player.z)<18;
+        vase._emitterVisible=!!near&&(!frustum||frustum.intersectsSphere(
+          emitterSphere.set(emitterSphere.center.set(pos.x,
+            vase.carried ? 0.9 : vase.group.position.y+.55,pos.z),1)));
+        if(!vase._emitterVisible)for(const fx of vase.emitters||[])fx.points.visible=false;
+      }
+    }
     for(const vase of rec.vases.values()){
-      if(vase.exploded)continue;
-      const pos=vase.carried?player:vase.group.position;
-      const near=player&&pos&&Math.hypot(pos.x-player.x,pos.z-player.z)<18;
-      const visible=near&&(!frustum||frustum.intersectsSphere(new THREE.Sphere(
-        new THREE.Vector3(pos.x,vase.carried?0.9:vase.group.position.y+.55,pos.z),1)));
-      if(!visible){for(const fx of vase.emitters||[])fx.points.visible=false;continue;}
+      if(vase.exploded||!vase._emitterVisible)continue;
       if(!vase.emitters&&window.AuthoredFurniture?.createEmitterVisual)
         vase.emitters=(vase.data?.particleEmitters||[]).filter(e=>e.enabled!==false)
           .map(e=>window.AuthoredFurniture.createEmitterVisual(vase.group,e,24));
@@ -585,8 +605,8 @@
     if(held===cask)held=null;
     const rec=records.get(cask.mapId);
     const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
-    if(cask.carried&&cask.group.getWorldPosition&&THREE.Vector3){
-      const world=cask.group.getWorldPosition(new THREE.Vector3());
+    if(cask.carried&&cask.group.getWorldPosition&&carriedWorldPosition){
+      const world=cask.group.getWorldPosition(carriedWorldPosition);
       impact.x=world.x;impact.y=world.y;impact.z=world.z;
     }
     cask.group.parent?.remove(cask.group);
@@ -626,8 +646,8 @@
       if(vase.exploded)continue;
       const b=vase.hitBounds||{minX:-.4,maxX:.4,minY:0,maxY:1,minZ:-.4,maxZ:.4};
       let center=vase.group.position;
-      if(vase.carried&&vase.group.getWorldPosition&&THREE.Vector3)
-        center=vase.group.getWorldPosition(new THREE.Vector3());
+      if(vase.carried&&vase.group.getWorldPosition&&carriedWorldPosition)
+        center=vase.group.getWorldPosition(carriedWorldPosition);
       // World objects use their authored bounds; carried billboard-rotated
       // models use an enclosing volume in world coordinates.
       const min=vase.carried?{x:center.x-.8,y:center.y-.8,z:center.z-.8}
@@ -684,7 +704,7 @@
       if(p)held.group.position.set(p.x+Math.cos(p.angle)*.60,
         baseHeight(Math.floor(p.x),Math.floor(p.z))+.75,p.z+Math.sin(p.angle)*.60);
     }
-    updateEmitters(Math.min(.1,Math.max(0,Number(dt)||0)),mapId,scene());
+    updateEmitters(Math.min(.1,Math.max(0,Number(dt)||0)),mapId,records.get(mapId)?.scene);
     elapsed+=Math.min(.2,Math.max(0,Number(dt)||0));
     if(elapsed<POLL_S)return;
     elapsed=0;
