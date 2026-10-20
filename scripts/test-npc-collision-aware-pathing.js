@@ -49,6 +49,16 @@ const deps = {
 };
 window.NpcPathfinding.init(deps);
 
+// Regression: the farm grid is intentionally different from the wilderness grid.
+const zoneGrid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({ type: 0, crop: false }))); // Active zone terrain for collision and arrival tests.
+zoneGrid[2][2].type = 1; // A zone wall where the farm is clear: the historical mismatch stranded followers.
+deps.isZoneArea = area => area === 'wilderness_test';
+deps.npcGridForArea = area => area === 'wilderness_test' ? zoneGrid : openGrid;
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 2), false, 'wilderness pathfinding must read the zone wall, not the farm floor');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), true, 'a walkable wilderness neighbor remains traversable');
+const zoneArrival = window.NpcPathfinding.nearestWalkableTile('wilderness_test', 2, 2);
+assert.notDeepEqual([zoneArrival.c, zoneArrival.r], [2, 2], 'wilderness entry relocates a blocked arrival');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', zoneArrival.c, zoneArrival.r), true);
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('interior', 1, 1), true);
 assert.equal(window.NpcPathfinding.canNpcBeeline('interior', 1.5, 1.5, 3, 1), false, 'thin wall must break a beeline');
 
