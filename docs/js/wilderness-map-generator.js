@@ -7139,8 +7139,9 @@
   // changing settings.maxTier or the plateau profile before the wall calculation
   // would move the walls too, defeating the intended old-wall comparison.
   function liftNorthernPlateausTowardExistingWall() {
+    if (settings.plateauLiftToNorthWallGap == null || !settings.heightCurves?.enabled) return { raised:0 };
     const gap = Number(settings.plateauLiftToNorthWallGap);
-    if (!settings.heightCurves?.enabled || !Number.isFinite(gap) || gap < 0) return { raised:0 };
+    if (!Number.isFinite(gap) || gap < 0) return { raised:0 };
     let northCrest = 0;
     for (const tile of allTiles()) {
       if (tile?.borderEscarpment && tile.borderEscarpmentSide === 'north') {
