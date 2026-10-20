@@ -1520,8 +1520,9 @@
   // Bucket size is twice the avoidance radius; a 3×3 neighborhood also tolerates
   // normal within-frame movement before the next refresh. Always use live positions
   // for the actual push so neither the distance nor the order-dependent nudge is stale.
-  const banditSpacingBuckets = new Map();
-  const banditSpacingOrder = new Map(); // Rebuild with the index: avoidance pushes are order-dependent.
+  const banditSpacingBuckets = new Map(); // Buckets contain WeakRefs, never owning unloaded actor/avatar graphs.
+  const banditSpacingRefs = new WeakMap(); // Reuse the same WeakRef per actor instead of allocating one every rebuild.
+  const banditSpacingOrder = new WeakMap(); // The spatial cache must not retain retired combatants.
   const banditSpacingCandidates = []; // Reused scratch avoids a fresh neighbors array per bandit/frame.
   const banditSpacingSeen = new Set(); // Avoid duplicate candidates when a push crosses cells.
   function compareBanditSpacingOrder(a, b) { return banditSpacingOrder.get(a) - banditSpacingOrder.get(b); }
@@ -1539,7 +1540,6 @@
     if (banditSpacingCollection === hostiles && banditSpacingCount === count
       && banditSpacingCellSize === cellSize && tick - banditSpacingBuiltAt < BANDIT_SPACING_REFRESH_MS) return;
     banditSpacingBuckets.clear();
-    banditSpacingOrder.clear();
     let order = 0;
     for (const hostile of hostiles || []) {
       if (!hostile?.isBandit || hostile.health <= 0) continue;
@@ -1547,7 +1547,12 @@
       const key = Math.floor(hostile.x / cellSize) + ',' + Math.floor(hostile.y / cellSize);
       let bucket = banditSpacingBuckets.get(key);
       if (!bucket) { bucket = []; banditSpacingBuckets.set(key, bucket); }
-      bucket.push(hostile);
+      let reference = banditSpacingRefs.get(hostile);
+      if (!reference) {
+        reference = new WeakRef(hostile);
+        banditSpacingRefs.set(hostile, reference);
+      }
+      bucket.push(reference);
     }
     banditSpacingCollection = hostiles;
     banditSpacingCount = count;
@@ -1560,8 +1565,9 @@
       for (let x = cellX - 1; x <= cellX + 1; x++) {
         const bucket = banditSpacingBuckets.get(x + ',' + y);
         if (!bucket) continue;
-        for (const actor of bucket) {
-          if (banditSpacingSeen.has(actor)) continue;
+        for (const reference of bucket) {
+          const actor = reference.deref();
+          if (!actor || banditSpacingSeen.has(actor)) continue;
           // Once passed in source order, a bandit cannot push the point again
           // even if a subsequent nudge brings it back within avoidance range.
           if (banditSpacingOrder.get(actor) <= minOrder) continue;
@@ -1604,6 +1610,10 @@
         candidates.sort(compareBanditSpacingOrder);
       }
     }
+    // Scratch collections otherwise keep the last crowd alive when a zone
+    // unloads without another combat update.
+    candidates.length = 0;
+    banditSpacingSeen.clear();
     return { x: px, y: py };
   }
 
