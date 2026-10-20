@@ -121,8 +121,10 @@
   function loadAtlas() {
     if (!window.THREE?.TextureLoader) return;
     const loader = new window.THREE.TextureLoader();
+    const scriptUrl = typeof document !== 'undefined' ? document.currentScript?.src : null; // Keeps textures relative to docs when loaded by nested editors.
     for (const name of ['wood','flags']) {
-      atlas[name] = loader.load('assets/furniture/festival-' + name + '.png', texture => {
+      const asset = 'assets/furniture/festival-' + name + '.png'; // Shared atlas path for game and editor loads.
+      atlas[name] = loader.load(scriptUrl ? new URL('../' + asset, scriptUrl).href : asset, texture => {
         texture.wrapS = texture.wrapT = window.THREE.RepeatWrapping;
         texture.anisotropy = 4;
         texture.needsUpdate = true;

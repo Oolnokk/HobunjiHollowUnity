@@ -109,3 +109,16 @@ walkers.push({rec:kaboku,area:'town',root:{position:{x:incomingTarget.c+.5,z:inc
 assert.notEqual(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'kurraya','outgoing host is released after relief arrives');
 assert.equal(scheduling.resolveNpcScheduleTarget(kaboku).toolKey,'kurraya');
 console.log('Shared meals: real buffet collision/grass, queues, physical arrivals, family tables, distinct reservations, visibility, repeats, locale changes, music and interruption cleanup passed.');
+
+// A permanently blocked serving pot must not leave its guest holding the bowl station forever.
+let blockedTime=0; // Advances only the isolated production meal routine.
+const blockedRec={id:'blocked-guest'},blockedWalker={rec:blockedRec,area:'town',root:{position:{x:.5,z:.5}}};
+const blockedStations=[{id:'bowl',mealRole:'bowls',area:'town',c:0,r:0},{id:'pot',mealRole:'fill',area:'town',c:1,r:0}];
+const isolated={NpcScheduling:{resolveNpcStationTarget:id=>blockedStations.find(s=>s.id===id)}};
+vm.runInNewContext(fs.readFileSync('docs/js/npc-shared-meals.js','utf8'),{window:isolated});
+const blockedLayout={npcStations:blockedStations};
+isolated.NpcSharedMeals.init({enabled:()=>true,getLayout:()=>blockedLayout,getWalkers:()=>[blockedWalker],minutes:()=>blockedTime,random:()=>0,canStandAt:(area,c)=>c!==1});
+isolated.NpcSharedMeals.targetFor(blockedRec);isolated.NpcSharedMeals.update();blockedTime=2;isolated.NpcSharedMeals.update();
+assert.equal(isolated.NpcSharedMeals.diagnostics().actors[0].phase,'seek-pot');
+blockedTime=40;isolated.NpcSharedMeals.update();
+assert.equal(isolated.NpcSharedMeals.diagnostics().actors[0].phase,'other');

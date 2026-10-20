@@ -123,6 +123,7 @@
       if (state.phase === 'take-bowl' && now >= state.until) { state.hasBowl = true; setPhase(state,'seek-pot',state.target,now); }
       if (state.phase === 'seek-pot') {
         const target = choose(pots,state); if (target) setPhase(state,'walk-pot',target,now);
+        else if (now-state.since>35) goOther(state,now);
       }
       if (state.phase === 'walk-pot' && arrived(walker,state.target)) setPhase(state,'fill-bowl',state.target,now,2);
       if (state.phase === 'fill-bowl' && now >= state.until) { state.hasMeal = true; setPhase(state,'seek-seat',waitTarget(state),now); }

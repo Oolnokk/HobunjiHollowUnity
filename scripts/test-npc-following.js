@@ -35,3 +35,8 @@ assert.equal(W.NpcFollowing.setMode(friend,'invalid'),false,'invalid commands ca
 let dateMode='';W.RomanceSystem={isOnDateWith:()=>true,setDateMode:mode=>{dateMode=mode;return true;}};
 assert.equal(W.NpcFollowing.setMode(friend,'wait'),true);assert.equal(dateMode,'wait','existing date controls retain their own acceptance/session behavior');
 console.log('Shared companion/date follow, Wait, dismissal and exclusive same-table seating passed.');
+
+W.RomanceSystem=null;W.NpcRapport={get:()=>0};
+assert(W.NpcFollowing.setMode(friend,'follow'));
+assert(override(friend.rec));W.NpcFollowing.clear();
+assert.equal(override(friend.rec),null,'save restore can clear session-only company');

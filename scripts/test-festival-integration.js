@@ -121,3 +121,7 @@ assert(scheduling.resolveNpcStationTarget('other'));
   assert.equal(builds, 2); assert.equal(transitions, 3); assert.equal(context._workspaceDefinition.maps[0].decor.length, 2);
   console.log('Festival spacing, open exits, editor round-trip, station cleanup, and live layout lifecycle passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+const atlasUrls=[]; // Nested editor documents must still resolve textures from docs/assets.
+vm.runInNewContext(source('festival-props'),{URL,document:{currentScript:{src:'https://example.test/commit/docs/js/festival-props.js'}},window:{THREE:{TextureLoader:class {load(url){atlasUrls.push(url);return {};}}}}});
+assert.deepEqual(atlasUrls,['https://example.test/commit/docs/assets/furniture/festival-wood.png','https://example.test/commit/docs/assets/furniture/festival-flags.png']);

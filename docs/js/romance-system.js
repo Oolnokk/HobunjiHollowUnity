@@ -624,6 +624,7 @@
     return JSON.parse(JSON.stringify({ ...state, family: window.RomanceFamily?.serialize?.() ?? state.family ?? null }));
   }
   function restore(saved) {
+    window.NpcFollowing?.clear?.();
     const base = defaultState();
     state = saved && typeof saved === 'object' ? { ...base, ...saved, dateCounts: { ...(saved.dateCounts || {}) }, lastDateRawDay: { ...(saved.lastDateRawDay || {}) } } : base;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;

@@ -62,5 +62,13 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
   missingPosition.root.position.x = NaN;
   life.tickNpc(missingPosition, 1);
   assert.equal(renders.at(-1), 'npc-crowd-1');
+  finishNpc(); await flush();
+  const render=window.NpcAvatarPreview.renderProfileToCanvas; // Force setup failure before a Promise exists.
+  window.NpcAvatarPreview.renderProfileToCanvas=()=>{throw new Error('setup failed');};
+  life.tickNpc(walker('npc-sync-failure',0),1);
+  assert.equal(life.snapshot().npcLifePending,false,'synchronous setup failure releases the crowd slot');
+  window.NpcAvatarPreview.renderProfileToCanvas=render;
+  life.tickNpc(walker('npc-after-failure',0),1);
+  assert.equal(renders.at(-1),'npc-after-failure');finishNpc();await flush();
   console.log('One-tile NPC breathing, crowd serialization, and independent player updates passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -27,6 +27,7 @@ window.CookingSystem = {
 window.AlchemySystem = { RECIPE_DEFS: { healing: { id: 'healing', useMode: 'drink', traits: { drive: 'restore' } } }, ensureRecipeItemDef: (id, tier) => { const key = `${id}_${tier}`; defs[key] = { label: 'Potent healing' }; return key; } }; // Existing potion definition/grant contract.
 load(context, 'festival-system');
 let heldChoice=null; // The ordinary held-item selection drives direct meal contribution.
+window.CookingSystem.peekLowestQuality=key=>key==='meal'?3:undefined;
 const mealServices=new Map(); // Captures providers while the separate table-system regression exercises real targeting.
 window.FurnitureTableSystem={registerService:(id,provider)=>mealServices.set(id,provider)};
 const api = window.FestivalSystem, calendar = window.FestivalCalendar; // Production APIs under test.
@@ -93,6 +94,11 @@ assert.equal(inventory.meal, 2); assert.equal(buckets.meal[1], 1); assert.equal(
 assert.equal(deltas.filter(d => d.reason === 'festival_potluck').length, api.residents().length);
 assert(deltas.filter(d => d.reason === 'festival_potluck').every(d => d.amount === 10), 'potluck uses ten times normal neutral gift Favor');
 assert.equal(perform(prop, { key: 'meal', stars: 1 }).ok, false);
+// The game supplies only the held key; CookingSystem supplies its selected tier.
+year++;
+assert.equal(perform(prop, { key: 'meal' }).ok, true);
+assert.equal(buckets.meal[3], 0, 'donation consumes the selected tier');
+assert.equal(buckets.meal[1], 1, 'unselected tier survives');
 // Offerings validate choice before consumption, persist exact quality, and expire after one full year.
 prop = visit('tzizkhanash', 'offering');
 assert(!api.qualityChoices('offering').some(entry => ['gold', 'forbidden'].includes(entry.key)));

@@ -45,6 +45,10 @@
     return [{id:session.mode==='wait'?'follow':'wait',icon:'👣',label:session.mode==='wait'?'Follow me':'Wait here',run:()=>setMode(walker,session.mode==='wait'?'follow':'wait')},
       {id:'dismiss',icon:'👋',label:'Go on without me',run:()=>setMode(walker,'dismiss')}];
   }
+  function clear() {
+    for (const id of companions.keys()) window.FurnitureTableSystem?.setSeatTarget?.(id,null);
+    companions.clear();
+  }
   function init(value) {
     deps=value;
     window.NpcScheduling?.registerTargetOverride?.('companions',rec=>{
@@ -53,5 +57,5 @@
       return target(rec,session);
     });
   }
-  window.NpcFollowing={init,target,setMode,commandOptionsFor,snapshot:()=>({latestChange:'Shared follow/wait and exclusive seats at the player’s table for companions and dates.',companions:[...companions].map(([id,s])=>({id,mode:s.mode}))})};
+  window.NpcFollowing={init,clear,target,setMode,commandOptionsFor,snapshot:()=>({latestChange:'Shared follow/wait and exclusive seats at the player’s table for companions and dates.',companions:[...companions].map(([id,s])=>({id,mode:s.mode}))})};
 })();

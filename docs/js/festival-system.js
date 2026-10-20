@@ -355,6 +355,7 @@
     residentCacheAt = -Infinity; effectiveCache = null;
     state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0} };
     heldBowl=null; seatedMeal=null; feastCache=null;
+    window.NpcSharedMeals?.clear?.();
     if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.max(0,points);
     if(Number.isFinite(saved?.funDay))state.funDay=saved.funDay;
     if(Number.isFinite(saved?.fullness?.expiresHour)&&Number.isFinite(saved?.fullness?.stacks))state.fullness={stacks:Math.max(0,Math.min(10,saved.fullness.stacks)),expiresHour:saved.fullness.expiresHour};
@@ -491,7 +492,7 @@
         costumeState.set(walker, costume);
       }
     }
-    if (dance?.targetNpcId && (deps?.isBlocked?.()
+    if (dance?.targetNpcId && (!festivalHours() || deps?.isFestivalSuspended?.() || deps?.isBlocked?.()
         || !(deps?.getWalkers?.()||[]).some(w=>w.rec?.id===dance.targetNpcId && !w.rec.dead && !w.rec.deceased && w.area==='town'))) {
       cancelDance(); // Combat, modal interaction, death, or NPC despawn releases both avatar transforms and their action lock.
     }
@@ -531,7 +532,7 @@
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
-      latestChange:'Festival furniture on grass around the square: temple-side stage/dance floor, inn-side buffet, scattered linked tables; grass compaction shares immutable matrices with terrain-height refresh.' };
+      latestChange:'Whole-PR review: paired dance stops at closing, blocked buffet recovery, transient save-state cleanup, selected donation quality, scaled collision heights and editor texture paths.' };
   }
   function init(injected) {
     deps = injected;
@@ -574,7 +575,8 @@
         if (action === 'obj_fill_bowl' && target.placement.service.kind === 'meal') return fillFestivalBowl(Number(target.placement.service.index));
         if (action === 'obj_contribute_meal') {
           const held = deps?.getHeldMealChoice?.();
-          const choice = qualityChoices('potluck').find(item=>item.key===held?.key && (held.stars == null || item.stars===held.stars));
+          const stars = held?.stars ?? window.CookingSystem?.peekLowestQuality?.(held?.key); // Uses PackHold's selected tier through the existing quality owner.
+          const choice = qualityChoices('potluck').find(item=>item.key===held?.key && item.stars===stars);
           return choice ? handlers.get('potluck')(choice) : fail('Hold a cooked meal to contribute it.');
         }
         return fail('Aim directly at a pot or the stack of bowls.');

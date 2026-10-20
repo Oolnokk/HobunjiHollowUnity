@@ -39,3 +39,7 @@ assert.equal(api.pendingDance,null,'readiness retries are bounded');
 assert(messages.some(message=>message.includes('camera scene')),'timeout reports the actual camera gate');
 assert(!messages.some(message=>/more room/.test(message)),'unrelated failures are never described as lack of room');
 console.log('Dance invitations: solo/seated handoff, social-range approach, readiness retry, no early rewards, cancellation, timeout and real failure messages passed.');
+
+rigReady=true;failure=null;assert(api.askFestivalDance(walker).ok);tick();assert.equal(active,true);
+window.CalendarSystem.getHour=()=>1;tick();assert.equal(active,false,'paired dance ends at closing');assert.equal(api.dance,null);
+let mealClears=0;window.NpcSharedMeals={clear:()=>mealClears++};api.restore({});assert.equal(mealClears,1,'restore releases transient meal state');

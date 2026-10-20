@@ -86,11 +86,13 @@
     walker._portraitLifePending = true;
     npcLifePending = true;
     stats.npcRefreshes++;
-    window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
-      breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
-    }).then(() => {
-      window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
-    }).catch(() => {}).finally(() => { walker._portraitLifePending = false; npcLifePending = false; });
+    try {
+      window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+        breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+      }).then(() => {
+        window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+      }).catch(() => {}).finally(() => { walker._portraitLifePending = false; npcLifePending = false; });
+    } catch (_) { walker._portraitLifePending = false; npcLifePending = false; }
   }
 
   function copyPortraitCanvas(target, source) {

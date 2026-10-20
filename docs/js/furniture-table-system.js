@@ -252,7 +252,7 @@
     if(!entry.root?.parent)return false;
     collisionStats.candidates++;
     const f=placementFrame(entry), dx=x-f.x, dz=z-f.z; // OBB/AABB separating axes preserve rotated narrow furniture and whole-body clearance.
-    if(Number.isFinite(worldY) && (worldY<f.y || worldY>f.y+(entry.height||1)))return false;
+    if(Number.isFinite(worldY) && (worldY<f.y || worldY>f.y+(entry.height||1)*Math.abs(entry.root.scale?.y||1)))return false;
     const c=Math.abs(f.cos), s=Math.abs(f.sin), margin=half*(c+s);
     return Math.abs(dx*f.cos-dz*f.sin)<f.w+margin && Math.abs(dx*f.sin+dz*f.cos)<f.d+margin
       && Math.abs(dx)<f.w*c+f.d*s+half && Math.abs(dz)<f.w*s+f.d*c+half;

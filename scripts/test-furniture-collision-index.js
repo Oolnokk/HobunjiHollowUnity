@@ -54,3 +54,11 @@ for(const target of [indexed,reference]) {
   assert.equal(target.api.blocksBox('town',0,0,-1),false);
 }
 console.log(`Collision equivalence: 12,000 probes; ${stats.candidates} candidates instead of up to ${12000*184}.`);
+
+for (const target of [runtime(true),runtime(false)]) {
+  const tall=piece(target.api,'scaled',0,0); // Projectile height follows the same scale as visible furniture.
+  tall.root.scale.y=3;target.next();
+  assert.equal(target.api.blocksBox('town',0,0,0,2),true);
+  tall.root.scale.y=.25;target.next();
+  assert.equal(target.api.blocksBox('town',0,0,0,.5),false);
+}
