@@ -26,6 +26,10 @@
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
   let promptRoot = null; // Same WorldPopupText prompts as other world interactions.
+  let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
+  let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
+  const THREE = window.THREE;
+  if (!THREE) return;
   const emitterFrustum = THREE.Frustum && new THREE.Frustum();
   const emitterMatrix = THREE.Matrix4 && new THREE.Matrix4();
   const emitterSphere = THREE.Sphere && THREE.Vector3 && new THREE.Sphere(new THREE.Vector3(),1);
@@ -34,10 +38,6 @@
   const heldAnchorQuat = THREE.Quaternion && new THREE.Quaternion();
   const heldAnchorEuler = THREE.Euler && new THREE.Euler();
   let emitterVisibilityElapsed = 0; // Cull only on the 140ms poll cadence, not every frame.
-  let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
-  let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
-  const THREE = window.THREE;
-  if (!THREE) return;
 
   function deps() { return window.Combat?.deps; }
   function area() { return String(deps()?.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || ''); }
