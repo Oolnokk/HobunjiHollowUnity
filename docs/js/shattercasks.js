@@ -14,6 +14,8 @@
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
   const placementCache = new Map(); // Area -> per-scene static placements; never regenerate the ruin's sorted occupancy on each frame.
   let resolvedWorldId = null; // World ID memoized after authoritative save metadata first becomes available.
+  let ruinSnapshotReads = 0; // Diagnostic count confirms that expensive ruin occupancy is sampled once per scene.
+  let textureBatchesCreated = 0; // Diagnostic count of GPU-backed instanced debris effects allocated since boot.
   const persisted = new Set(); // Already shattered/looted IDs, saved per player world.
   const terrainHistory = new Map(); // Area -> Map(tile -> original resource kind), preserves blasted openings on reload.
   const pileHistory = new Map(); // Area -> Map(pile id -> unlooted debris), restores one-input collectible piles.
@@ -54,7 +56,9 @@
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
-    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();records.clear();
+    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();records.clear();placementCache.clear();
+    held=null; // A different world must never inherit another world's held charge.
+    promptClaim='';
     if (identity.startsWith('session|')) return;
     try {
       for(const id of JSON.parse(localStorage.getItem('hobunji.shattercasks.v1:'+identity)||'[]')) persisted.add(id);
@@ -122,6 +126,7 @@
       // Generated ruin occupancy sorts every floor cell when snapshotted:
       // sample it once per generated scene, never once every 140ms.
       if(mapId==='map_i_dev_random_ruin') {
+        ruinSnapshotReads++; // Visible on mobile without devtools; should remain constant while one ruin scene is active.
         const snapshot=window.DevRandomRuinTileOccupancy?.getSnapshot?.();
         const floor=Array.isArray(snapshot?.floor)?snapshot.floor:[];
         if(floor.length) {
@@ -280,6 +285,7 @@
       const loader=new THREE.TextureLoader(); // One texture upload per source material per page, never per explosion.
       const bodyTexture=loader.load('assets/textures/boards.png'); // The user's original brown pottery surface.
       const neckTexture=loader.load('assets/textures/carved_smooth.png'); // Separate lighter neck material.
+      textureBatchesCreated++; // Asset creation, not explosion count; stays at one during repeated blasts.
       sharedBurstArt={
         geometries:[new THREE.TetrahedronGeometry(.11),new THREE.TetrahedronGeometry(.08)],
         materials:[
@@ -528,7 +534,7 @@
     }
   }
   function tick(dt=0) {
-    const mapId=area(),targetScene=scene();
+    const mapId=area();
     if(held && held.mapId!==mapId)drop();
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
@@ -541,6 +547,7 @@
     if(elapsed<POLL_S)return;
     elapsed=0;
     loadPersistence();
+    const targetScene=scene(); // Resolve lazy zone scenes at most 7 times/second, not every rendered frame.
     if(mapId!==lastArea) {
       lastArea=mapId;
       window.WorldActionInputClaims?.clearClaims?.('shattercask');
@@ -628,6 +635,10 @@
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,
+      performance:{ruinSnapshotReads,textureBatchesCreated,
+        activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
+        activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
+        cachedPlacementAreas:placementCache.size},
       interactionClaim:window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId||null}),
   });
   attachRuntime();
