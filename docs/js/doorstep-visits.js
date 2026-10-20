@@ -370,6 +370,7 @@
       alcoholPoseGroup.position.set(0, 0, 0);
       alcoholPoseGroup.rotation.set(0, 0, 0);
     }
+    runLeanPivot?.quaternion?.identity?.();
     if (neckJoint) neckJoint.rotation.set(0, 0, 0);
     stationToolMesh?.parent?.remove?.(stationToolMesh);
 
