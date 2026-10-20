@@ -543,12 +543,16 @@
       if (target.mode === 'authored-world') {
         // Local XYZ grip rotation comes AFTER the shared canonical left/right
         // hand orientation, matching the Furniture Editor's actual GLB preview.
+        // This runs per hand per frame: reuse scratch instead of allocating
+        // extra Euler/Quaternion objects during ordinary movement.
         const r = target.handTargets?.[side]?.rotation || {};
-        const extra = new record.THREE.Quaternion().setFromEuler(new record.THREE.Euler(
+        scratch.authoredEuler ||= new record.THREE.Euler(0,0,0,'XYZ');
+        scratch.authoredQuaternion ||= new record.THREE.Quaternion();
+        scratch.authoredEuler.set(
           (Number(r.x)||0)*Math.PI/180,
           (Number(r.y)||0)*Math.PI/180,
-          (Number(r.z)||0)*Math.PI/180, 'XYZ'));
-        quaternion.multiply(extra);
+          (Number(r.z)||0)*Math.PI/180, 'XYZ');
+        quaternion.multiply(scratch.authoredQuaternion.setFromEuler(scratch.authoredEuler));
       }
       const socket = handSocketAfterGripMode(record, { position, quaternion, visualBasis: null });
       record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
