@@ -14,7 +14,16 @@ const index = JSON.parse(read('docs/config/species/index.json')); // Discoverabi
 assert.equal(species.speciesId, 'omgurku');
 assert.equal(species.npcOnly, true);
 assert.equal(species.playerSelectable, false);
-assert.deepEqual(species.genders, ['male']); // No female Omgurku assets were included in main.
+assert.deepEqual(species.genders, ['male']);
+assert.deepEqual(species.male.behindHeadUrLayers.map(layer => layer.url.split('/').pop()), [
+  'ur-horns-front_omgurku_m.png','ur-head-behind_omgurku_m.png','ur-horns-back_omgurku_m.png'
+], 'back horns reverse depth order and reserve the rear head between them');
+assert.equal(species.male.behindHeadUrLayers[1].optional, true);
+for (const layer of species.male.behindHeadUrLayers.filter(layer => !layer.optional))
+  assert(fs.existsSync(path.join(root,'docs/assets',layer.url)), 'required back overlay '+layer.url);
+const portraitSource = read('docs/js/portrait-utils.js');
+assert(portraitSource.includes('behindUrLayers') && portraitSource.includes('optionalBehindUrls'), 'rear overlays are optional in shared renderer');
+assert(portraitSource.includes('behindHeadUrLayers'), 'species rear overlays reach the fighter renderer'); // No female Omgurku assets were included in main.
 assert(index.entries.some(entry => entry.speciesId === 'omgurku' && entry.path === './omgurku.json'));
 assert.equal(species.parentSpecies, 'engh-sho');
 assert(species.hybridPlacement && typeof species.hybridPlacement === 'object');
@@ -125,19 +134,25 @@ async function main() {
   assert.equal(humanoidBuilds, 1);
   assert.equal(root.userData.omgurkuNpc, true);
   assert.equal(root.children.length, 4);
+  assert.equal(root.userData.proceduralHandParent.parent, root, 'hand parent must remain in same NPC hierarchy');
   assert.equal(lowerBuilds.length, 3);
   for (const [i, frame] of ['idle', 'run1', 'run2'].entries()) {
     assert(lowerBuilds[i].url.endsWith(`/docs/assets/creaturesprites/omgurku-lower_${frame}.png`));
     assert.equal(lowerBuilds[i].options.creatureId, 'voorg-ass');
     assert.equal(lowerBuilds[i].group.visible, i === 0);
   }
-  assert(root.userData.handAttachY > 0.6);
+  assert.equal(root.userData.handAttachY, root.userData.omgurkuComposite.upper.userData.handAttachY,
+    'hand coordinates stay local to the portrait instead of being displaced by the animal join');
+  assert.equal(root.userData.proceduralHandParent, root.userData.omgurkuComposite.upper,
+    'direct hand driver must parent the free/tool hands under the same upper portrait half');
   new Group().add(root);
   gaitTick(); // Initial stationary state stays on the idle frame.
   root.position.x += 1; // NPC-owned path movement drives lower-frame selection.
   gaitTick();
   assert.match(root.userData.omgurkuComposite.frame, /^run[12]$/);
   const oldJoin = root.userData.omgurkuJoin.z;
+  assert.equal(window.HobunjiOmgurkuSpecies.setPreviewFacing(root, .6), true);
+  assert.equal(root.userData.omgurkuPreviewRawYaw, .6);
   const initialWidth = lowerBuilds[0].options.modelWidth;
   window.HobunjiOmgurkuSpecies.setPlacement({ lowerWidth: initialWidth * 1.2, lowerHeight: .95,
     lowerOffsetX: .2, lowerOffsetY: .3, lowerOffsetZ: .1, upperOffsetY: .05 });
