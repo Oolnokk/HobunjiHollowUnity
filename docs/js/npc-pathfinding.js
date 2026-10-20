@@ -41,7 +41,8 @@
     if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
     if (area === 'town' && deps.isTownBuildingCollisionTile(c, r)) return false;
-    if (deps.isZoneArea(area) && (tile.mapBoundary || tile.skipFloor || deps.isTownBuildingCollisionTile(c, r, area))) return false; // Wilderness boundary rock faces and tiles with no floor must not be selected for follower spawning or cover.
+    // skipFloor means the mesa's continuous lid owns the floor, NOT an absent walkable surface.
+    if (deps.isZoneArea(area) && (tile.mapBoundary || deps.isTownBuildingCollisionTile(c, r, area))) return false; // Keep true escarpment walls blocked without stranding NPCs on plateau lids.
     return true;
   }
 
@@ -572,7 +573,7 @@
     return {
       ...debugStats,
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'Wilderness followers use the actual zone grid, reject missing-floor/boundary cells, and revalidate spawn tiles when pending NPCs attach to loaded scenes.',
+      latestChange: 'Wilderness NPC paths read zone terrain, preserve walkable skipFloor mesa lids, reject map-boundary cliffs and revalidate deferred zone entry spawns.',
     };
   }
 
