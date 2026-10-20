@@ -9,6 +9,7 @@
   const POLL_S = .14; // Limits interaction/area scans on mobile.
   const records = new Map(); // Area -> {scene, vases:Map, piles:Map}, reused until its rendered scene is destroyed.
   const burstEffects = []; // Short-lived instanced pottery shards and flashes ticked by Combat.update.
+  let sharedBurstArt = null; // Source textures/materials/geometries cached across all explosions to avoid GPU uploads during combat.
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
   const placementCache = new Map(); // Area -> per-scene static placements; never regenerate the ruin's sorted occupancy on each frame.
   let resolvedWorldId = null; // World ID memoized after authoritative save metadata first becomes available.
@@ -275,15 +276,22 @@
     // Hronal pillar's gold-angle instancing and gravity-driven shard spray,
     // remapped to the vase's own pottery textures and colors, not fire colors.
     const bodyCount=54,neckCount=DEBRIS_COUNT-bodyCount; // Separate textured shard batches preserve BOTH supplied material treatments.
-    const loader=new THREE.TextureLoader(); // The two existing source textures already assigned to the user's furniture parts.
-    const textures=[loader.load('assets/textures/boards.png'),loader.load('assets/textures/carved_smooth.png')];
+    if(!sharedBurstArt) {
+      const loader=new THREE.TextureLoader(); // One texture upload per source material per page, never per explosion.
+      const bodyTexture=loader.load('assets/textures/boards.png'); // The user's original brown pottery surface.
+      const neckTexture=loader.load('assets/textures/carved_smooth.png'); // Separate lighter neck material.
+      sharedBurstArt={
+        geometries:[new THREE.TetrahedronGeometry(.11),new THREE.TetrahedronGeometry(.08)],
+        materials:[
+          new THREE.MeshBasicMaterial({color:0x7a4924,map:bodyTexture,side:THREE.DoubleSide,transparent:true}),
+          new THREE.MeshBasicMaterial({color:0x8a6a3a,map:neckTexture,side:THREE.DoubleSide,transparent:true}),
+        ],
+        flashGeometry:new THREE.SphereGeometry(1,16,12),
+      }; // Shared draw assets are intentionally retained for subsequent charge blasts.
+    }
     const shardMeshes=[
-      new THREE.InstancedMesh(new THREE.TetrahedronGeometry(.11),new THREE.MeshBasicMaterial({
-        color:0x7a4924,map:textures[0],side:THREE.DoubleSide,transparent:true,
-      }),bodyCount),
-      new THREE.InstancedMesh(new THREE.TetrahedronGeometry(.08),new THREE.MeshBasicMaterial({
-        color:0x8a6a3a,map:textures[1],side:THREE.DoubleSide,transparent:true,
-      }),neckCount),
+      new THREE.InstancedMesh(sharedBurstArt.geometries[0],sharedBurstArt.materials[0],bodyCount),
+      new THREE.InstancedMesh(sharedBurstArt.geometries[1],sharedBurstArt.materials[1],neckCount),
     ];
     const group=new THREE.Group();group.position.set(x,y,z);
     for(const mesh of shardMeshes){mesh.frustumCulled=false;group.add(mesh);}
@@ -295,11 +303,11 @@
         vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:2+(i%7)*.32,
         batch:i<bodyCount?0:1,index:i<bodyCount?i:i-bodyCount});
     }
-    const flash=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),
+    const flash=new THREE.Mesh(sharedBurstArt.flashGeometry,
       new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.82,depthWrite:false,blending:THREE.AdditiveBlending}));
     flash.position.set(x,y,z);flash.scale.setScalar(.15);targetScene.add(flash);
     burstEffects.push({group,shardMeshes,parts,flash,age:0,duration:1.25,scene:targetScene,
-      dummy:new THREE.Object3D(),textures}); // Two instanced meshes match the source barrel and neck surface textures.
+      dummy:new THREE.Object3D()}); // Two instanced meshes share the cached original body and neck surface textures.
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
   }
   function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog') {
@@ -471,9 +479,9 @@
       const fx=burstEffects[i];fx.age+=dt;
       if(fx.age>=fx.duration) {
         fx.group.parent?.remove(fx.group);fx.flash.parent?.remove(fx.flash);
-        for(const mesh of fx.shardMeshes){mesh.geometry.dispose();mesh.material.dispose();}
-        for(const texture of fx.textures)texture.dispose();
-        fx.flash.geometry.dispose();fx.flash.material.dispose();burstEffects.splice(i,1);continue;
+        // Geometry, materials and texture maps belong to sharedBurstArt, not to one burst.
+        // Disposing them here would force a GPU texture rebuild on every blast.
+        fx.flash.material.dispose();burstEffects.splice(i,1);continue;
       }
       const f=fx.age/fx.duration;
       fx.flash.scale.setScalar(.15+RADIUS*Math.min(1,fx.age/.16));
