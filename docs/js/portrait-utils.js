@@ -1320,6 +1320,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   let headUrl = renderHeadSprite ? (resolvedFighter?.headUrl || fighter?.headUrl) : null;
   const bodyLayerSource = resolvedFighter?.bodyLayers || fighter?.bodyLayers || [];
   const urLayerSource = renderHeadSprite ? (resolvedFighter?.urLayers || fighter?.urLayers || []) : [];
+  // Back-view anatomical overlays are species-authored, independent of front.
+  // Omgurku reverses the horn depth order and reserves an optional rear skull
+  // layer that is simply skipped until its PNG has been authored.
+  const behindUrLayers = renderBehindView && renderHeadSprite
+    ? (resolvedFighter?.behindUrLayers || fighter?.behindUrLayers || [])
+    : [];
   const blinkOverlayUrlsByBase = new Map();
   for (const layer of urLayerSource) {
     const blinkUrl = blinkUrlFor(layer?.url);
@@ -1540,7 +1546,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   const neededUrls = new Set([
     ...(headUrl ? [headUrl] : []),
-    ...(renderBehindView ? [] : urLayerSource.map(m => m.url)),
+    ...(renderBehindView ? behindUrLayers.map(m => m.url) : urLayerSource.map(m => m.url)),
     ...preBackLayers.map(({ layer }) => layer.url),
     ...baseLeftArmLayers.map(({ layer }) => layer.url),
     ...baseTorsoLayers.map(({ layer }) => layer.url),
@@ -1562,6 +1568,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...(renderBehindView ? [] : blinkOverlayUrlsByBase.values()),
   ].filter(Boolean));
 
+  const optionalBehindUrls = new Set(behindUrLayers.filter(layer => layer.optional).map(layer => layer.url));
   let imgMap;
   // Fast synchronous path: all images already resolved in cache — avoid async overhead.
   const _allUrls = [...neededUrls];
@@ -1596,6 +1603,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         imgMap.set(result.value[0], result.value[1]);
       } else {
         const err = result.reason;
+        if (optionalBehindUrls.has(err?.relPath) ||
+          (Array.isArray(err?.attemptedUrls) && err.attemptedUrls.some(url =>
+            [...optionalBehindUrls].some(optional => String(url).includes(optional))))) continue;
         console.warn('[portrait] image load error — omitting layer', {
           message: err?.message || String(err),
           name: err?.name || 'Error',
@@ -1723,7 +1733,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // Same pre-flip as every other behind-view layer (see _behindFlippedLayer)
       // -- otherwise the head is the one thing still mirrored relative to the
       // front while hair/hood/cosmetics and the arms/torso are not.
-      head:          () => { if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl); } },
+      head:          () => {
+        if (headUrl) {
+          const img = imgMap.get(headUrl);
+          if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl);
+        }
+        // Back-view layers use the same head preset and pre-flip as the rear
+        // skull so the final back-plane texture unflips each asymmetric horn.
+        // Each URL is independently optional when its artwork is missing.
+        for (const layer of behindUrLayers) {
+          const img = imgMap.get(layer.url);
+          if (img) drawLayerWithEmote(img,
+            { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx },
+            'none', 1, layer.url);
+        }
+      },
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
@@ -2328,6 +2352,7 @@ async function loadPortraitCosmetics(configBase) {
               headFallbackUrls: genderData.headFallbackUrls || [],
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
               urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
+              behindUrLayers: (genderData.behindHeadUrLayers || []).map(l => ({ url: l.url, optional: l.optional === true })),
               headXform: genderData.headXform ? normalizePortraitLayerXform(genderData.headXform) : null,
               opacityMaskLayer: genderData.portraitOpacityMaskLayer ? normalizePortraitMaskLayer(genderData.portraitOpacityMaskLayer) : null,
               baseBodyTint: genderData.baseBodyTint,
@@ -2347,6 +2372,9 @@ async function loadPortraitCosmetics(configBase) {
               headFallbackUrls: genderData.headFallbackUrls || [],
               ...(Number.isFinite(Number(genderData.armLength)) ? { armLength: Number(genderData.armLength) } : {}), // Preserve the legacy fallback on pre-existing fighters; runtime avatar anatomy still prefers the attachment-rig-derived reach.
               ...(genderData.headXform ? { headXform: genderData.headXform } : {}),
+              ...(Array.isArray(genderData.behindHeadUrLayers) ? {
+                behindUrLayers: genderData.behindHeadUrLayers.map(l => ({ url: l.url, optional: l.optional === true }))
+              } : {}),
               ...(Array.isArray(genderData.portraitBodyLayers) ? {
                 bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' }))
               } : {}),
@@ -2415,6 +2443,7 @@ async function loadPortraitCosmetics(configBase) {
         ...(override.speciesId != null ? { speciesId: override.speciesId } : {}),
         ...(override.armLength != null ? { armLength: override.armLength } : {}),
         ...(override.headXform ? { headXform: override.headXform } : {}),
+        ...(override.behindUrLayers ? { behindUrLayers: override.behindUrLayers } : {}),
         ...(override.bodyLayers ? { bodyLayers: override.bodyLayers } : {}),
         ...(override.opacityMaskLayer ? { opacityMaskLayer: override.opacityMaskLayer } : {}),
         ...(override.baseBodyTint != null ? { baseBodyTint: override.baseBodyTint } : {}),
