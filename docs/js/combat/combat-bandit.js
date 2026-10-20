@@ -1523,6 +1523,7 @@
   const banditSpacingBuckets = new Map();
   const banditSpacingOrder = new Map(); // Rebuild with the index: avoidance pushes are order-dependent.
   const banditSpacingCandidates = []; // Reused scratch avoids a fresh neighbors array per bandit/frame.
+  const banditSpacingSeen = new Set(); // Avoid duplicate candidates when a push crosses cells.
   function compareBanditSpacingOrder(a, b) { return banditSpacingOrder.get(a) - banditSpacingOrder.get(b); }
   let banditSpacingBuiltAt = -Infinity;
   let banditSpacingCollection = null;
@@ -1554,32 +1555,53 @@
     banditSpacingBuiltAt = tick;
   }
 
-  // Nudges a movement target away from nearby living bandits. A bandit is only
-  // moved through the existing pathing API, never teleported by avoidance.
+  function appendSpacingNeighbors(cellX, cellY, minOrder) {
+    for (let y = cellY - 1; y <= cellY + 1; y++) {
+      for (let x = cellX - 1; x <= cellX + 1; x++) {
+        const bucket = banditSpacingBuckets.get(x + ',' + y);
+        if (!bucket) continue;
+        for (const actor of bucket) {
+          if (banditSpacingSeen.has(actor)) continue;
+          // Once passed in source order, a bandit cannot push the point again
+          // even if a subsequent nudge brings it back within avoidance range.
+          if (banditSpacingOrder.get(actor) <= minOrder) continue;
+          banditSpacingSeen.add(actor);
+          banditSpacingCandidates.push(actor);
+        }
+      }
+    }
+  }
+
+  // Nudges a movement target away from nearby living bandits. An actor can
+  // push the target into the NEXT grid cell; expand the candidate set then,
+  // so downstream actors still influence it in original hostile list order.
   function banditPersonalSpaceAdjust(c, point) {
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
     refreshBanditSpacingBuckets(personalSpacePx);
-    // Avoidance is sequential: keep the original hostile iteration order
-    // even when neighbors are stored in different spatial buckets.
     const candidates = banditSpacingCandidates;
     candidates.length = 0;
-    const cx = Math.floor(px / banditSpacingCellSize);
-    const cy = Math.floor(py / banditSpacingCellSize);
-    for (let y = cy - 1; y <= cy + 1; y++) {
-      for (let x = cx - 1; x <= cx + 1; x++) {
-        const neighbors = banditSpacingBuckets.get(x + ',' + y);
-        if (neighbors) for (const o of neighbors) candidates.push(o);
-      }
-    }
+    banditSpacingSeen.clear();
+    let cellX = Math.floor(px / banditSpacingCellSize);
+    let cellY = Math.floor(py / banditSpacingCellSize);
+    appendSpacingNeighbors(cellX, cellY, -1);
     candidates.sort(compareBanditSpacingOrder);
-    for (const o of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const o = candidates[i];
       if (o === c || o.health <= 0) continue;
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > 0.001 && dist < personalSpacePx) {
-        const push = personalSpacePx - dist;
-        px += (dx / dist) * push; py += (dy / dist) * push;
+      if (dist <= 0.001 || dist >= personalSpacePx) continue;
+      const push = personalSpacePx - dist;
+      px += (dx / dist) * push; py += (dy / dist) * push;
+      const nextX = Math.floor(px / banditSpacingCellSize);
+      const nextY = Math.floor(py / banditSpacingCellSize);
+      if (nextX !== cellX || nextY !== cellY) {
+        cellX = nextX; cellY = nextY;
+        appendSpacingNeighbors(cellX, cellY, banditSpacingOrder.get(o));
+        // Newly entered buckets may contain as-yet-unvisited bandits
+        // interleaved with existing candidates. Keep their original order.
+        candidates.sort(compareBanditSpacingOrder);
       }
     }
     return { x: px, y: py };
