@@ -83,6 +83,38 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>/^run[12]$/.test(window.HobunjiOmgurkuCalibration.snapshot().frame),
       null,{timeout:4000});
     await page.locator('#moveBtn').click();
+    // V10 feature parity — actual shared portrait/weapon assembly, authored
+    // attack data, separate user-authored deadzones, and painted lower mask.
+    await page.waitForFunction(()=>window.HobunjiOmgurkuAdvanced?.snapshot()?.previewModel,
+      null,{timeout:7000});
+    await page.waitForFunction(()=>document.querySelectorAll('#v10Attack option').length>=1,
+      null,{timeout:7000});
+    const handAndWeapon=await page.evaluate(()=>{
+      const c=window.HobunjiOmgurkuCalibration.context();
+      const comp=c.model.userData.omgurkuComposite;
+      return {holderInUpper:c.model.userData.proceduralHandToolHolder?.parent?.parent===comp.upper,
+        heldWeaponKey:c.model.userData.proceduralHandToolKey};
+    });
+    assert(handAndWeapon.heldWeaponKey,'V10 selected weapon drives NPC-owned hand grips');
+    assert(handAndWeapon.holderInUpper,'V10 weapon holder is in upper portrait transform');
+    await page.locator('#v10AnimalDead').evaluate(el=>{el.value='18';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    await page.locator('#v10RiderDead').evaluate(el=>{el.value='53';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    const radii=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.context()
+      .model.userData.omgurkuComposite.previewDeadzoneRadii);
+    assert.equal(radii.animal,18);assert.equal(radii.rider,53);
+    await page.locator('#v10AttackBtn').click();
+    await page.waitForFunction(()=>window.HobunjiOmgurkuAdvanced.snapshot().attack!=='idle',
+      null,{timeout:3000});
+    await page.locator('#v10Stop').click();
+    await page.locator('#v10EraseMode').click();
+    const area=await page.locator('#v10MaskEdit').boundingBox();
+    await page.mouse.move(area.x+area.width*.5,area.y+area.height*.5);
+    await page.mouse.down();await page.mouse.move(area.x+area.width*.53,area.y+area.height*.5,{steps:3});
+    await page.mouse.up();
+    await page.waitForFunction(()=>window.HobunjiOmgurkuAdvanced.snapshot().maskFrameCount===3,
+      null,{timeout:8000});
+    await page.locator('#v10ResetMask').click();
+    assert.equal((await page.evaluate(()=>window.HobunjiOmgurkuAdvanced.snapshot())).maskFrameCount,0);
     assert.deepEqual(errors,[],'uncaught browser exceptions');
     console.log('Omgurku editor browser smoke passed');
   }finally{await browser.close();}
