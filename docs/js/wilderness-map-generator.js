@@ -149,7 +149,8 @@
       boundaryMode: 'legacyFullRing',
       boundaryModeLabel: 'Legacy full boundary cliff ring',
       boundaryCliffBoost: 0,
-      boundaryFarRise: null, // Far-boundary rise in tiers, keyed by compass side.
+      boundaryFarRise: null, // Far-boundary height above the highest possible playable tier, keyed by compass side.
+      boundaryLocalRise: null, // Per-side cliff height above nearby playable ground, for borders that should follow the local topography.
       heightCurves: null, // Shared two-axis profile supplied by the wilderness height editor.
       stepCurve: 'northernCliffs',
       stepCurveLabel: 'Northern Cliffs',
@@ -343,6 +344,7 @@
       boundaryModeLabel: settings.boundaryModeLabel,
       boundaryCliffBoost: settings.boundaryCliffBoost,
       boundaryFarRise: settings.boundaryFarRise,
+      boundaryLocalRise: settings.boundaryLocalRise,
       heightCurves: settings.heightCurves,
       stepCurve: settings.stepCurve,
       stepCurveLabel: settings.stepCurveLabel,
@@ -1815,23 +1817,28 @@
           continue;
         }
         const oldHeight = tileHeight(tile);
-        const farRise = Number(settings.boundaryFarRise?.[inward.side]); // Per-side authored cliff lift above the maximum playable tier.
+        const farRise = Number(settings.boundaryFarRise?.[inward.side]); // Absolute high-backdrop side: crest is maximum playable tier + rise.
         const customFarRise = settings.boundaryFarRise && Number.isFinite(farRise) ? clamp(farRise, 0, MAX_VERTICAL_TIER) : null;
-        const targetHeight = customFarRise === null ? targetBoundaryHeight(tile, inward, edgeDist, localWidth, scan, modeConfig) : Math.max(settings.maxTier, 1) + customFarRise;
+        const localRise = Number(settings.boundaryLocalRise?.[inward.side]); // Local side/front cliff: crest tracks terrain next to this part of the boundary.
+        const customLocalRise = settings.boundaryLocalRise && Number.isFinite(localRise) ? clamp(localRise, 0, MAX_VERTICAL_TIER) : null;
+        const targetHeight = customFarRise !== null ? Math.max(settings.maxTier, 1) + customFarRise
+          : customLocalRise !== null
+            ? clamp(Math.round(localBoundaryPlayableAverage(x, y, inward, scan)) + customLocalRise, 1, Math.max(settings.maxTier, 1) + customLocalRise)
+            : targetBoundaryHeight(tile, inward, edgeDist, localWidth, scan, modeConfig);
         const sideStat = scan && scan.sides ? scan.sides[inward.side] : null;
         const localBaseHeight = modeConfig.followsMapHeight
           ? Math.max(scan ? scan.averagePlayableHeight : 0, sideStat ? sideStat.average : 0, localBoundaryPlayableAverage(x, y, inward, scan))
           : Math.max(oldHeight || 0, northwardMaxTierAtY(y));
         // new variable: boundaryHeightCap is tied to the scanned local target instead of global maxTier+boost, preventing a uniform max-height wall around the whole map.
         const boundaryHeightCap = Math.max(1, localBaseHeight + settings.boundaryCliffBoost + (usesDramaticPlateauPreset() ? 5 : 3));
-        const cappedHeight = customFarRise === null ? clamp(targetHeight, 1, boundaryHeightCap) : targetHeight;
+        const cappedHeight = customFarRise !== null || customLocalRise !== null ? targetHeight : clamp(targetHeight, 1, boundaryHeightCap);
         tile.borderEscarpment = true;
         tile.borderEscarpmentDepth = edgeDist;
         tile.borderEscarpmentSide = inward.side;
         tile.borderEscarpmentBaseHeight = Number(localBaseHeight.toFixed(2));
         tile.borderEscarpmentHeightBonus = Number((cappedHeight - tile.borderEscarpmentBaseHeight).toFixed(2));
         tile.height = cappedHeight;
-        tile.elevation = customFarRise !== null || settings.boundaryCliffBoost < 0 ? Math.round(cappedHeight) : Math.max(tile.elevation || 0, Math.round(cappedHeight));
+        tile.elevation = customFarRise !== null || customLocalRise !== null || settings.boundaryCliffBoost < 0 ? Math.round(cappedHeight) : Math.max(tile.elevation || 0, Math.round(cappedHeight));
         tile.terrain = 'plateau';
         tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'border_escarpment';
         tile.plateauGroupId = null;
@@ -6692,8 +6699,9 @@
   // default (see defaultSettings).
   const ZONE_CONFIG = {
     map_northern_cliffs: {
-      entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
-      boundaryFarRise: { north: 2 }, // Two tiers above the highest playable plateau at the far northern boundary.
+      entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 0,
+      boundaryFarRise: { north: 2 }, // True back wall: two tiers above the maximum playable plateau height.
+      boundaryLocalRise: { east: 1, west: 1, south: 1 }, // Side/front walls rise only one tier over THEIR nearby playable ground, rather than towering over the lower south.
       heightCurves: {
         enabled: true,
         eastWest: [0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5],
