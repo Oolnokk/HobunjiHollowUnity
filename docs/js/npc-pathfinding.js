@@ -90,7 +90,8 @@
   function nearestWalkableTile(area, c, r, maxRadius = 6) {
     // Wilderness entries need the same safe-arrival search as building doors; unloaded areas cannot be probed yet.
     if (!deps || (!deps.isBuildingArea(area) && !deps.isZoneArea(area)) || !deps.npcGridForArea(area)) return { c, r };
-    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5)) return { c, r };
+    // Building seats intentionally preserve their furniture-overlapped station tile; wilderness spawns must not emerge inside a blocking prop.
+    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5) && (!deps.isZoneArea(area) || isNpcTileWalkable(area, c, r))) return { c, r };
     let fallback = null; // Structurally clear but furniture-blocked tile, used only when no free tile is in range.
     for (let radius = 1; radius <= maxRadius; radius++) {
       let best = null, bestDist = Infinity;
