@@ -413,8 +413,17 @@
       if(!root.parent)records.get(obj.mapId)?.scene.add(root);
     }
     promptRoot=root;
+    // Match the game's action-arch binding glyph and semantic input color,
+    // including remapped keyboard controls and controller/touch prompts.
+    const action='interact';
+    const device=window.ActionPromptUI?.getLastInputDevice?.()||'desktop';
+    const binding=device==='touch'?'':window.InputBindings?.getCurrentBindings?.()?.[device]?.[action];
+    const inputHint=device==='touch'?'✋'
+      :(window.InputBindings?.buttonLabel?.(binding,device)||binding||'E');
+    const inputColor=window.ActionArchSlotColors?.inputColors?.[action]||'#B8C5C0';
     window.WorldPopupText?.setInteractionPrompts?.(root,
-      [{label,worldInteraction:true,inputActionId:'interact',inputHint:'E'}],{scene:scene()});
+      [{label,worldInteraction:true,inputActionId:action,inputHint,inputColor}],
+      {scene:records.get(area())?.scene});
   }
   function baseHeight(col,row) {
     const d=deps(),t=tileSize();
