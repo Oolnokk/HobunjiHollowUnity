@@ -122,6 +122,21 @@ const server=http.createServer((req,res)=>{
       return Number.isFinite(frame?.upperYaw) && Number.isFinite(frame?.lowerYaw)
         && Math.abs(frame.upperYaw-frame.lowerYaw)>0.15;
     },null,{timeout:6000});
+    // The previous suite only checked that objects existed. Preserve three
+    // actual rendered views so a human can inspect portrait/animal alignment.
+    const artifacts=path.join(root,'test-artifacts','omgurku');
+    fs.mkdirSync(artifacts,{recursive:true});
+    for (const [name,button] of [['front','frontBtn'],['side','sideBtn'],['back','backBtn'],['three-quarter','angleBtn']]) {
+      await page.locator('#'+button).click();
+      await page.waitForTimeout(350);
+      await page.locator('#stage').screenshot({path:path.join(artifacts,name+'.png')});
+    }
+    fs.writeFileSync(path.join(artifacts,'geometry.json'),JSON.stringify(
+      await page.evaluate(()=>({
+        placement:window.HobunjiOmgurkuCalibration.context().placement,
+        scene:window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0],
+        renderer:window.HobunjiOmgurkuAdvanced?.snapshot?.(),
+      })),null,2));
     assert.deepEqual(errors,[],'all shared engine modules should load without uncaught errors');
     await page.locator('#number_saddleU').fill('0.421');
     await page.locator('#number_saddleU').dispatchEvent('change');
