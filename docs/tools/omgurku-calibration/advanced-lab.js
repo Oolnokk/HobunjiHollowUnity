@@ -25,7 +25,7 @@ const SWEEP={neutral:{x:0,y:0,z:0,pitch:0,yaw:0,roll:0,bodyYaw:0},
 const state={
   model:null,upper:null,base:null,holder:null,plane:null,texture:null,visual:null,
   attackValues:null,stances:null,attack:null,queue:[],queueDelay:0,
-  moving:false,position:{x:0,z:0},target:{x:0,z:0},rawYaw:0,
+  moving:false,position:{x:0,z:0},target:{x:0,z:0},rawYaw:0,gaitClock:0,
   mask:null,maskImage:null,maskMode:false,painting:false,maskRefs:[],spriteWidth:0,spriteHeight:0,
   lastMaskAt:0,log:[],setupImport:null,
 };
@@ -202,7 +202,7 @@ function chooseTarget(){
  state.target.x=Math.cos(a)*r;state.target.z=Math.sin(a)*r;
 }
 function movementChanged(moving){
- state.moving=!!moving;
+ state.moving=!!moving;state.gaitClock=0;
  if(state.moving){chooseTarget();note('V10 random waypoint movement started.');}
  else{
    state.position={x:0,z:0};state.rawYaw=0;
@@ -211,6 +211,11 @@ function movementChanged(moving){
 }
 function tick(dt){
  const v=live();if(!v)return;
+ // Original V10 CREATURE_GAIT_HZ=6 with two run frames: 12 sprite
+ // transitions per second, preview-only and never another animal AI.
+ state.gaitClock+=dt;
+ const frame=state.moving?'run'+(1+(Math.floor(state.gaitClock*12)%2)):'idle';
+ window.HobunjiOmgurkuSpecies?.setPreviewFrame?.(v.model,frame);
  if(state.moving){
    const dx=state.target.x-state.position.x,dz=state.target.z-state.position.z;
    const distance=Math.hypot(dx,dz);
