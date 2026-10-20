@@ -19,7 +19,7 @@
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
        module so its fetch() wrapper can log each config/JSON access. -->
-  <script src="js/dev-companion-bridge.js?v=20261015h423643f"></script>
+  <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
@@ -147,7 +147,7 @@
   <script src="debug.js?v=20261016hbfaf2c3"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261018colors-starved-compendium1"></script>
-  <script src="config/scratchbones-config.js?v=20261019cuecycle2"></script>
+  <script src="config/scratchbones-config.js?v=20261019h0208b5f"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -181,7 +181,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261019h0a53cb9"></script>
+  <script src="js/held-action-animations.js?v=20261019hdb29d59"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261017hf727ba3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -278,7 +278,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261019h3596d82"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261018hudrecover4"></script>
+  <script src="js/combat/resource-system.js?v=20261019deathcause1"></script>
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
@@ -287,14 +287,14 @@
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="js/combat/shared-attack-pose.js?v=20261018a"></script>
-  <script src="js/combat/combat-core.js?v=20261018hudrecover4"></script>
+  <script src="js/combat/combat-core.js?v=20261019h401b88a"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261002hd4bb4ac"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261019recordeddeath2"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261001quickdebuff2"></script>
   <script src="js/combat/combat-loadout.js?v=20261019h0ffc9ab"></script>
@@ -309,7 +309,7 @@
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
   <script src="js/combat/combat-combo.js?v=20261017h9dc5e7c"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20261017h4fe16a4"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20261019hc4df62e"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
@@ -336,7 +336,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261018h7461c9c"></script>
+  <script src="js/combat/combat-bandit.js?v=20261019h77311dd"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -441,7 +441,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261014h0aa7ebc"></script>
+  <script src="js/creature-death.js?v=20261019recordeddeath2"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -746,7 +746,7 @@
        the top of its farm-setup sequence (well before window.BorderTerrain's
        own init() below, which captures game.js's resulting local
        resolveTileMat/resolveCliffMat aliases into its own deps). -->
-  <script src="js/terrain-tile-materials.js?v=20260913a"></script>
+  <script src="js/terrain-tile-materials.js?v=20261019h582d56c"></script>
   <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
        scene-graph generation, no other window.* system reads; must load
        before game.js, which calls window.BorderTerrain.init(...) and then
@@ -755,7 +755,7 @@
        window.*?.init(...) calls near the bottom of game.js run), and later
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
-  <script src="js/border-terrain.js?v=20261017hcfbbb5f"></script>
+  <script src="js/border-terrain.js?v=20261019hc1bbd80"></script>
   <!-- Farm-only road paving and border reshaping. These must be explicit
        parser-time dependencies after BorderTerrain: loading them indirectly
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,
@@ -792,7 +792,7 @@
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
-  <script src="js/merged-water-renderer.js?v=20260921floodvisual1"></script>
+  <script src="js/merged-water-renderer.js?v=20261019h27513c3"></script>
   <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
        (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -2129,6 +2129,7 @@
               <button id="debugProbeArmBtn" style="font-size:11px;padding:3px 10px;background:rgba(163,230,53,.15);border:1px solid rgba(163,230,53,.4);border-radius:6px;color:#a3e635;cursor:pointer">🎯 Probe a pixel</button>
               <button id="debugRigTransformDumpBtn" style="font-size:11px;padding:3px 10px;background:rgba(69,214,160,.15);border:1px solid rgba(69,214,160,.4);border-radius:6px;color:#45d6a0;cursor:pointer">Dump rig transforms</button>
               <button id="debugCopyBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy</button>
+              <button id="debugMusicStatusBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy music status</button>
               <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
             </div>
           </div>
@@ -2156,6 +2157,7 @@
             <button class="debug-filter-tab"        data-filter="info"    style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Info</button>
             <button class="debug-filter-tab"        data-filter="other"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Other</button>
           </div>
+          <pre id="musicDiagnosticsStatus" hidden style="max-height:28vh;overflow:auto;flex-shrink:0;margin:0;padding:8px 12px;color:#d1d5db;white-space:pre-wrap;user-select:text"></pre>
           <pre id="debugLog" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent"></pre>
           <div id="debugProbeView" style="display:none;flex:1;overflow-y:auto;padding:8px 12px 12px">
             <img id="debugProbeScreenshot" style="display:none;max-width:100%;border-radius:6px;border:1px solid rgba(255,255,255,.15);margin-bottom:8px" alt="Screenshot taken at the moment of the probe click/tap">
@@ -2482,7 +2484,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261017h15f80ae"></script>
+  <script src="js/tool-icon-render.js?v=20261019hde6fce1"></script>
   <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2498,7 +2500,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261019hb25e451"></script>
+  <script src="js/music-system.js?v=20261019h4969a4d"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2508,7 +2510,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261017h5f76d40"></script>
+  <script src="js/pixel-probe.js?v=20261019hf09c40c"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2673,7 +2675,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261019h6dc91db"></script>
+  <script src="game.js?v=20261019h387290f"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261018jubmirorbit-worldstory1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

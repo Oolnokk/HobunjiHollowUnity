@@ -48,7 +48,9 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   const context = { // Narrow audio boundary: scheduler decisions and callbacks remain production code.
     window: { AudioSystem: { gameAudioConfig: () => ({ combatBgm: [{ url: 'combat.m4a' }] }) }, CombatTutorial: { active: () => live.tutorial } },
     deps: { getCurrentArea: () => 'arena', isPlayerInCombat: () => live.combat },
-    quietLoading: false, _startupBgm: null, _ambientCueState: state, _audioCueIndexes: new Map(),
+    quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
+    _audioCueIndexes: new Map(),
     performance: { now: () => 1000 },
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     ambientMusicOwnsSoundtrack: () => live.exclusive,
@@ -110,6 +112,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     deps: { getCurrentArea: () => live.area, isPlayerInCombat: () => false },
     performance: { now: () => live.now },
     quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
     _audioCueIndexes: new Map([['general', { __basePath: 'cues/general/', ambient_cues: [{ id: 'to1', file: 'to1.ogg', volume: 0.7 }, { id: 'to2', file: 'to2.ogg', volume: 0.7 }] }]]),
     _dailyBgmPlayed: new Set(),
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
@@ -232,6 +235,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     window: { AudioSystem: { gameAudioConfig: () => ({ enabled: true, bgmVolume: 0.48, ambientCuePhaseDurationSec: 120, ambientCueMinDelaySec: 20, ambientCueMaxDelaySec: 45 }) } },
     deps: { getCurrentArea: () => 'map_northern_cliffs', isPlayerInCombat: () => false },
     performance: { now: () => live.now }, quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
     _audioCueIndexes: new Map([['northern_cliffs', northern]]),
     _lyreDucked: false, _gameplayCueDuckOwners: new Set(), _dailyBgmPlayed: new Set(),
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
@@ -489,3 +493,4 @@ assert.ok(fs.statSync(progressDeeperCuePath).size > 1000,
   'progress-deeper gameplay cue must be present and nonempty');
 
 console.log('music system tests passed');
+

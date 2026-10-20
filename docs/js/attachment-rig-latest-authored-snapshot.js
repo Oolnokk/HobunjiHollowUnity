@@ -25,7 +25,7 @@
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
-    new URL('character-scale-comparison.js?v=20260904k', base).href,
+    new URL('character-scale-comparison.js?v=20261019he4a5599', base).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20260905b', base).href,
     new URL('character-scale-comparison-presentation.js?v=20260905b', base).href,
     new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,

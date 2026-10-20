@@ -1,0 +1,271 @@
+#!/usr/bin/env node
+'use strict';
+// Executable regressions for the combat allocation and player/enemy visual-parity patch.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
+const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
+
+let allocations = 0;
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; allocations++; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(p) { return this.set(p.x, p.y, p.z); }
+  clone() { return new Vector3(this.x, this.y, this.z); }
+  sub(p) { return this.set(this.x - p.x, this.y - p.y, this.z - p.z); }
+  lengthSq() { return this.x ** 2 + this.y ** 2 + this.z ** 2; }
+  normalize() { const length = Math.sqrt(this.lengthSq()) || 1; return this.set(this.x / length, this.y / length, this.z / length); }
+  distanceTo(p) { return Math.hypot(this.x - p.x, this.y - p.y, this.z - p.z); }
+}
+class Ray {
+  constructor() { this.origin = new Vector3(); this.direction = new Vector3(1, 0, 0); }
+  // The real Box3 center-ray optimization is intentionally bypassed to cover the full volume-grid fallback.
+  intersectBox() { return null; }
+}
+const MathUtils = {
+  clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
+  radToDeg: rad => rad * 180 / Math.PI,
+  degToRad: deg => deg * Math.PI / 180,
+  lerp: (a, b, t) => a + (b - a) * t,
+};
+let millis = 1000;
+const DateMock = class extends Date { static now() { return millis; } };
+const attacker = { id: 'player', x: 0, y: 0, angle: 0 };
+const target = { id: 'target', x: 64, y: 0 };
+const makeBox = (minX, maxX, minY = 0, maxY = 1, minZ = -0.2, maxZ = 0.2) => ({
+  min: new Vector3(minX, minY, minZ), max: new Vector3(maxX, maxY, maxZ),
+  clampPoint(p, out) {
+    return out.set(
+      MathUtils.clamp(p.x, this.min.x, this.max.x),
+      MathUtils.clamp(p.y, this.min.y, this.max.y),
+      MathUtils.clamp(p.z, this.min.z, this.max.z),
+    );
+  },
+});
+const near = { center: new Vector3(1, 0.5, 0), box: makeBox(0.9, 1.1) };
+const far = { center: new Vector3(3, 0.5, 0), box: makeBox(2.9, 3.1) };
+const runtime = {
+  THREE: { Vector3, Ray, MathUtils },
+  Date: DateMock, performance: { now: () => millis },
+  window: { RangedWeapons: { actorHitbox: actor => actor === attacker
+    ? { center: new Vector3(0, 0.5, 0), box: makeBox(-0.2, 0.2) }
+    : actor === target ? near : null } },
+};
+vm.runInNewContext(coreSource, runtime, { filename: 'combat-core.js' });
+const combat = runtime.window.Combat;
+combat.init({ player: attacker, TILE: 64 });
+const attack = { yaw: 0, pitch: 0, rangePx: 100, halfConeRad: 0.25 };
+assert.equal(combat.meleeHit(attacker, target, { ...attack, debug: false }), true, 'near volume-grid target is hittable');
+runtime.window.RangedWeapons.actorHitbox = actor => actor === attacker
+  ? { center: new Vector3(0, 0.5, 0), box: makeBox(-0.2, 0.2) }
+  : actor === target ? far : null;
+assert.equal(combat.meleeHit(attacker, target, { ...attack, debug: false }), false, 'far volume-grid target misses');
+runtime.window.RangedWeapons.actorHitbox = actor => actor === attacker
+  ? { center: new Vector3(0, 0.5, 0), box: makeBox(-0.2, 0.2) }
+  : actor === target ? near : null;
+for (let n = 0; n < 3; n++) combat.meleeHit(attacker, target, { ...attack, debug: false });
+const before = allocations;
+for (let n = 0; n < 5; n++) combat.meleeHit(attacker, target, { ...attack, debug: false });
+const perHit = (allocations - before) / 5;
+// The old 3×3×3 grid alone made 27 Vector3 instances per probe.
+assert(perHit < 8, 'melee grid and center ray must reuse THREE scratch vectors');
+combat.meleeHit(attacker, target, attack);
+assert.equal(runtime.window.__melee3DDebug.retainedColliderCount, 1, 'real swings keep a bounded debug snapshot');
+assert.equal(combat.spawnMeleeTrail({ actor: attacker, ...attack, debugOnly: true }), null, 'full-cone debug capture does not add a visible ribbon');
+assert.equal(combat.debugMeleeColliders()[0].halfConeRad, attack.halfConeRad, 'debug-only volume retains the unsplit gameplay cone');
+millis += 900;
+combat.update(0);
+assert.equal(runtime.window.__melee3DDebug.retainedColliderCount, 0, 'normal update prunes stale actor references without reading the overlay');
+
+// Exercise the actual spatial helper with a wide scene: the second lookup within
+// the same frame should touch the handful of local actors, not every hostile.
+const spaceStart = banditSource.indexOf('  const banditSpacingBuckets = new Map();');
+const spaceEnd = banditSource.indexOf('  // A bandit\'s own rough body radius', spaceStart);
+assert(spaceStart > 0 && spaceEnd > spaceStart, 'spatial avoidance implementation is found');
+let farPositionReads = 0;
+const farHostiles = Array.from({ length: 200 }, (_, i) => ({
+  isBandit: true, health: 100,
+  get x() { farPositionReads++; return 10000 + i * 100; },
+  get y() { farPositionReads++; return 10000; },
+}));
+const self = { isBandit: true, health: 100, x: 0, y: 0 };
+const neighbor = { isBandit: true, health: 100, x: 20, y: 0 };
+const spaceContext = {
+  deps: { TILE: 64, hostileObjects: [self, neighbor, ...farHostiles] },
+  performance: { now: () => millis },
+  banditPersonalSpacePx: () => 64 * .85,
+};
+vm.createContext(spaceContext);
+vm.runInContext(banditSource.slice(spaceStart, spaceEnd) + '\nthis.adjust = banditPersonalSpaceAdjust; this.spacingCacheStats = () => ({ weakBucketReferences: [...banditSpacingBuckets.values()].every(bucket => bucket.every(ref => typeof ref.deref === "function")), candidateCount: banditSpacingCandidates.length, seenCount: banditSpacingSeen.size });', spaceContext);
+let pushed = spaceContext.adjust(self, { x: 0, y: 0 });
+assert(pushed.x < 0, 'nearby bandit pushes the movement target away');
+farPositionReads = 0;
+pushed = spaceContext.adjust(self, { x: 0, y: 0 });
+assert(pushed.x < 0);
+assert.equal(farPositionReads, 0, 'within-frame avoidance does not rescan distant hostiles');
+millis += 20;
+spaceContext.adjust(self, { x: 0, y: 0 });
+assert(farPositionReads > 0, 'index refreshes for the next simulation window');
+
+// The old full-list implementation processes hostiles in list order, not
+// spatial-cell order. Opposite-side pushes are noncommutative.
+const right = { isBandit: true, health: 100, x: 10, y: 0 };
+const left = { isBandit: true, health: 100, x: -10, y: 0 };
+spaceContext.deps.hostileObjects = [self, right, left];
+pushed = spaceContext.adjust(self, { x: 0, y: 0 });
+assert(pushed.x < -50, 'nearby pushes still follow the original right-then-left actor order');
+spaceContext.deps.hostileObjects = [self, left, right];
+pushed = spaceContext.adjust(self, { x: 0, y: 0 });
+assert(pushed.x > 50, 'reversing actor order reverses the collision outcome, as before');
+
+// An avoidance push may move the target across a grid boundary, making
+// an actor in a previously unvisited bucket newly relevant.
+const chainA = { isBandit: true, health: 100, x: 99, y: 0 };
+const chainB = { isBandit: true, health: 100, x: 152, y: 0 };
+const chainC = { isBandit: true, health: 100, x: 218, y: 0 };
+spaceContext.deps.hostileObjects = [self, chainA, chainB, chainC];
+pushed = spaceContext.adjust(self, { x: 100, y: 0 });
+assert(pushed.x < 180 && pushed.x > 150, 'cross-cell avoidance includes the later bandit instead of missing its push');
+const cacheStats = spaceContext.spacingCacheStats();
+assert.equal(cacheStats.weakBucketReferences, true, 'spatial buckets never hold actor objects strongly after unloading');
+assert.equal(cacheStats.candidateCount, 0, 'avoidance releases the last per-query strong-reference array');
+assert.equal(cacheStats.seenCount, 0, 'avoidance releases the last per-query strong-reference set');
+
+// Exercise the enemy's real trail owner. Color derives from ResourceRings,
+// while the shared Combat renderer keeps ownership of transient meshes.
+const trailStart = banditSource.indexOf('  const BANDIT_TRAIL_HALF_THICKNESS_TILES =');
+const trailEnd = banditSource.indexOf('  // A dual-wield weapon rests', trailStart);
+assert(trailStart > 0 && trailEnd > trailStart, 'enemy trail implementation is found');
+const calls = [];
+const trailContext = { window: {
+  ResourceSystem: { afflictionBonusesForTag: () => ({ bleedingHealth: .4, poisonedHealth: .2 }) },
+  ResourceRings: { AFFLICTION_COLORS: { bleedingHealth: 0xdd3333, poisonedHealth: 0x44dd33 }, neonizeColor: n => n },
+  Combat: { spawnMeleeTrail: opts => { calls.push(opts); } },
+}};
+vm.createContext(trailContext);
+vm.runInContext(banditSource.slice(trailStart, trailEnd) + '\nthis.draw = spawnBanditTrailArc;', trailContext);
+trailContext.draw({ def: { attackTag: 'sharp' }, scene: {} }, 64, .6, 1.1);
+assert.equal(calls.length, 3, 'a multi-affliction attack has one debug cone plus two visible color lanes');
+assert(calls[0].debugOnly && Math.abs(calls[0].halfConeRad - .6) < 1e-9, 'show-hitboxes volume uses the complete original cone');
+const coloredLanes = calls.slice(1);
+assert.deepEqual(coloredLanes.map(c => c.color), [0xdd3333, 0x44dd33]);
+assert(Math.abs(coloredLanes[0].yaw - .8) < 1e-9 && Math.abs(coloredLanes[1].yaw - 1.4) < 1e-9, 'lanes span the original cone');
+assert(coloredLanes.every(c => c.debug === false && !c.debugOnly), 'visual lanes never replace or duplicate the complete hitbox');
+// The authored Flasker PNG uses the canonical texture/material API, not
+// a second independently tuned nearest-neighbor rendering pipeline.
+const flaskStart = banditSource.indexOf('  const BANDIT_FLASK_TOOL_KEY =');
+const flaskEnd = banditSource.indexOf('  // An enemy\'s swing plays', flaskStart);
+assert(flaskStart > 0 && flaskEnd > flaskStart);
+let textureConfigured = 0, canonicalMaterial = 0;
+class Group {
+  constructor() { this.children = []; this.userData = {}; this.visible = true; }
+  add(child) { this.children.push(child); child.parent = this; }
+}
+class Loader {
+  load(_src, ready) { ready({ image: { naturalWidth: 64, naturalHeight: 32 } }); }
+}
+class Mesh {
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.rotation = {}; }
+}
+const flaskContext = {
+  THREE: { Group, TextureLoader: Loader, PlaneGeometry: class {}, Mesh, DoubleSide: 'double' },
+  window: { HobunjiSpritePngSurface: {
+    configureTexture(_three, texture) { textureConfigured++; return texture; },
+    makeMaterial(_three, texture, _name, options) {
+      assert.equal(options.side, 'double');
+      assert(texture.image);
+      canonicalMaterial++;
+      return { map: texture };
+    },
+  } },
+};
+vm.createContext(flaskContext);
+vm.runInContext(banditSource.slice(flaskStart, flaskEnd) + '\nthis.flaskHolder = makeBanditFlaskToolHolder;', flaskContext);
+const flaskScene = new Group();
+const flask = flaskContext.flaskHolder(flaskScene);
+assert(flask.userData.toolPlane, 'flask sprite was attached');
+assert.equal(textureConfigured, 1);
+assert.equal(canonicalMaterial, 1);
+
+// Run the actual Counter Shield visuals with a small fake Three scene. Verify
+// that a moving weapon recycles afterimages instead of allocating new materials
+// indefinitely, including when the effect stops and starts again.
+const chargedSource = fs.readFileSync('docs/js/combat/combat-counter-shield.js', 'utf8');
+class TrailVec {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(v) { return this.set(v.x, v.y, v.z); }
+  clone() { return new TrailVec(this.x, this.y, this.z); }
+  distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
+  setScalar(s) { return this.set(s, s, s); }
+  multiplyScalar(s) { return this.set(this.x * s, this.y * s, this.z * s); }
+}
+class TrailQuat {
+  copy() { return this; }
+  clone() { return new TrailQuat(); }
+  identity() { return this; }
+  angleTo() { return 0; }
+}
+class TrailGroup {
+  constructor() { this.children = []; this.userData = {}; this.visible = true; }
+  add(child) { child.parent?.remove?.(child); child.parent = this; this.children.push(child); }
+  remove(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parent = null; }
+  traverse(fn) { fn(this); for (const child of this.children) child.traverse?.(fn); }
+}
+class TrailMesh extends TrailGroup {
+  constructor(geometry, material) {
+    super(); this.isMesh = true; this.geometry = geometry; this.material = material;
+    this.position = new TrailVec(); this.scale = new TrailVec(1, 1, 1); this.quaternion = new TrailQuat();
+  }
+}
+let shaderCount = 0;
+class ShaderMaterial {
+  constructor(options) { this.uniforms = options.uniforms; shaderCount++; }
+  dispose() {}
+}
+class Color {
+  constructor(value) { this.value = value; }
+  setHex(hex) { this.value = hex; return this; }
+}
+const motionScene = new TrailGroup(); motionScene.isScene = true;
+const motionHolder = new TrailGroup();
+const motionSource = new TrailMesh({ shape: 'weapon' }, { map: { image: 'sprite' } });
+motionSource.userData.toolPlane = motionSource;
+let weaponX = 0;
+motionSource.matrixWorld = {
+  decompose(position, _quaternion, scale) { position.set(weaponX, 1, 0); scale.set(1, 1, 1); },
+};
+motionHolder.add(motionSource);
+motionScene.add(motionHolder);
+let motionMs = 1000;
+const chargedCombat = {
+  abilities: { register() {} }, init() {}, update() {},
+  deps: { getActiveScene: () => motionScene, toolHolder: () => motionHolder, player: {}, hostileObjects: [] },
+};
+const chargedContext = {
+  window: { Combat: chargedCombat },
+  THREE: { Vector3: TrailVec, Quaternion: TrailQuat, Mesh: TrailMesh, Color, ShaderMaterial,
+    DoubleSide: 'double', AdditiveBlending: 'additive' },
+  performance: { now: () => motionMs },
+};
+vm.runInNewContext(chargedSource, chargedContext, { filename: 'combat-counter-shield.js' });
+chargedCombat.weaponChargeGlow.set('player', 1, { color: 0xffaa33, motionTrail: true });
+for (let n = 0; n < 50; n++) {
+  motionMs += 20; weaponX += .2;
+  chargedCombat.counterShieldAuthoredVisuals.update();
+}
+const warm = chargedCombat.counterShieldAuthoredVisuals.snapshot();
+assert(warm.activeMotionTrailGhosts > 0 && warm.activeMotionTrailGhosts <= 32, 'charge afterimages have a hard live cap');
+const warmShaderCount = shaderCount;
+for (let n = 0; n < 50; n++) {
+  motionMs += 20; weaponX += .2;
+  chargedCombat.counterShieldAuthoredVisuals.update();
+}
+assert.equal(shaderCount, warmShaderCount, 'steady-state afterimages reuse materials');
+chargedCombat.weaponChargeGlow.clear('player');
+chargedCombat.counterShieldAuthoredVisuals.update();
+assert.equal(chargedCombat.counterShieldAuthoredVisuals.snapshot().activeMotionTrailGhosts, 0);
+assert(chargedCombat.counterShieldAuthoredVisuals.snapshot().pooledMotionTrailGhosts > 0, 'ended glow releases ghosts into the pool');
+
+console.log('combat performance/parity: scratch reuse, expiration, spatial neighbors and affliction trails passed');
