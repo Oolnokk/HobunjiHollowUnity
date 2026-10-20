@@ -43,6 +43,29 @@ const server=http.createServer((req,res)=>{
     if(process.env.OMGURKU_CAPTURE_PREVIEW==='1'){
       fs.mkdirSync(path.join(root,'omgurku-visual-qa'),{recursive:true});
       await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','01-angle.png')});
+      const visualAudit=await page.evaluate(()=>{
+        const c=window.HobunjiOmgurkuCalibration.context(),model=c.model,composite=model.userData.omgurkuComposite;
+        const pos=node=>{if(!node)return null;node.updateWorldMatrix?.(true,false);
+          const p=node.getWorldPosition(new c.THREE.Vector3());
+          return {x:Number(p.x.toFixed(3)),y:Number(p.y.toFixed(3)),z:Number(p.z.toFixed(3))};};
+        const hands=[];
+        model.traverse(node=>{
+          if(/hand_socket|procedural_hands|RiderPortraitVisualOffset|Omgurku_V10_HandAttachToolBase/.test(node.name||''))
+            hands.push({name:node.name,world:pos(node),local:{x:node.position.x,y:node.position.y,z:node.position.z},
+              parent:node.parent?.name||null});
+        });
+        return {upper:pos(composite.upper),visual:pos(composite.portraitVisual),
+          lower:pos(composite.lowerRefs[0]?.group),portraitHeight:composite.portraitHeight,
+          posterior:composite.posterior,join:model.userData.omgurkuJoin,
+          handAttachY:model.userData.handAttachY,handAttachX:model.userData.handAttachX,
+          hands,handsDebug:model.userData.proceduralHandRig?.getDebug?.(),
+          inspector:window.ProceduralHandFrameDriver?.debugSnapshot?.()};
+      });
+      fs.writeFileSync(path.join(root,'omgurku-visual-qa','assembly.json'),JSON.stringify(visualAudit,null,2));
+      console.log('OMGURKU_VISUAL_GEOMETRY',JSON.stringify({
+        upper:visualAudit.upper,lower:visualAudit.lower,portraitHeight:visualAudit.portraitHeight,
+        posterior:visualAudit.posterior,join:visualAudit.join,hands:visualAudit.hands,
+      }));
       await page.locator('#sideBtn').click();
       await page.waitForTimeout(150);
       await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','02-side.png')});
