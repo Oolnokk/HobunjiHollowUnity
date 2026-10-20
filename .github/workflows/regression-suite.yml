@@ -57,6 +57,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: omgurku-visual-qa
-          path: omgurku-visual-qa/*.png
+          path: omgurku-visual-qa/
           if-no-files-found: ignore
           retention-days: 7
