@@ -6699,9 +6699,10 @@
   // default (see defaultSettings).
   const ZONE_CONFIG = {
     map_northern_cliffs: {
-      entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 0,
-      boundaryFarRise: { north: 2 }, // True back wall: two tiers above the maximum playable plateau height.
-      boundaryLocalRise: { east: 1, west: 1, south: 1 }, // Side/front walls rise only one tier over THEIR nearby playable ground, rather than towering over the lower south.
+      entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+      // Preserve the original towering boundary cliffs; lift the INTERIOR plateaus toward
+      // their existing north-wall crest only after the cliff heights are calculated.
+      plateauLiftToNorthWallGap: 2,
       heightCurves: {
         enabled: true,
         eastWest: [0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5],
@@ -7131,6 +7132,50 @@
     logDebug('height-curve plateau profile: retiered ' + retiered + ' tiles; random offsets +'
       + settings.heightCurves.upwardVariation + '/-' + settings.heightCurves.downwardVariation);
     return { retiered };
+  }
+
+  // Northern Cliffs: preserve the original border-cliff heights and raise the
+  // playable shelves instead. This intentionally runs AFTER generateBorderEscarpments:
+  // changing settings.maxTier or the plateau profile before the wall calculation
+  // would move the walls too, defeating the intended old-wall comparison.
+  function liftNorthernPlateausTowardExistingWall() {
+    const gap = Number(settings.plateauLiftToNorthWallGap);
+    if (!settings.heightCurves?.enabled || !Number.isFinite(gap) || gap < 0) return { raised:0 };
+    let northCrest = 0;
+    for (const tile of allTiles()) {
+      if (tile?.borderEscarpment && tile.borderEscarpmentSide === 'north') {
+        northCrest = Math.max(northCrest, tile.elevation || 0); // Real old wall, not backdrop or distant landscape.
+      }
+    }
+    const originalMaxTier = settings.maxTier; // The original plateau maximum used when building these very same cliffs.
+    const targetMaxTier = Math.min(MAX_VERTICAL_TIER, Math.round(northCrest - gap));
+    if (!(targetMaxTier > originalMaxTier)) return { raised:0, northCrest, originalMaxTier, targetMaxTier };
+    let raised = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation <= 0 || tile.water || tile.plateauPond || tile.plateauStream || tile.waterfall) continue;
+      if (tile.borderEscarpment || tile.distantBoundaryLandscape || tile.designReserve
+        || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge || tile.occupiedBy) continue;
+      if (tile.path || tile.invisiblePath || tile.denRoute) continue;
+      const oldProfileTier = heightCurveTierAt(tile.x, tile.y); // 1..old max tier, retaining both authored spline shapes.
+      const normalizedTier = (oldProfileTier - 1) / Math.max(1, originalMaxTier - 1);
+      const target = Math.round(1 + (targetMaxTier - 1) * normalizedTier);
+      if (target <= tile.elevation) continue; // Never flatten an already higher shelf.
+      tile.elevation = target;
+      tile.height = target;
+      tile.terrain = 'plateau';
+      if (tile.dramaticBleacherTier != null) tile.dramaticBleacherTier = target;
+      if (tile.dramaticShelfParentTier != null) tile.dramaticShelfParentTier = target;
+      raised++;
+    }
+    // All later ramp/locale/tier consumers need the NEW playable maximum, but
+    // the bordering cliff tiles are already built and must remain untouched.
+    settings.maxTier = targetMaxTier;
+    map.northernPlateauLift = { originalMaxTier, targetMaxTier, northCrest, targetGap: gap, raisedTiles: raised };
+    applyManualPlateauPaintingRules(); // Replace the old-height painted footprint groups before ramp placement.
+    logDebug('Northern Cliffs: lifted ' + raised + ' playable plateau tiles from tier ' + originalMaxTier
+      + ' to ' + targetMaxTier + ', leaving the existing north wall at tier ' + northCrest
+      + ' (' + gap + '-tier crest gap)');
+    return { raised, originalMaxTier, targetMaxTier, northCrest };
   }
 
   function applyGreatBasinBoundarySideExtensions() {
@@ -8583,6 +8628,8 @@
     syncTileHeights();
     map.preselectedEntrySide = resolveGenerationEntrySide();
     generateBorderEscarpments();
+    liftNorthernPlateausTowardExistingWall(); // Preserve the old cliffs; make the playable plateaus dramatically taller instead.
+    syncTileHeights();
     generateRamps();
     applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
     syncTileHeights();
