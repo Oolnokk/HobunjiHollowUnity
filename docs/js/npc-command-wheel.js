@@ -39,12 +39,17 @@
   }
   function eligibleWalker() {
     if (!deps) return null;
-    if (deps.isDialogueOpen?.() || deps.isMenuOpen?.() || deps.isFarmEditMode?.()) return null;
+    if (deps.isDialogueOpen?.() || deps.isMenuOpen?.() || deps.isFarmEditMode?.() || deps.isCombatActive?.()) return null;
     const walker = deps.getNearbyNpcWalker?.();
     if (!walker || walker.isPorakanekiHunter || walker._doorstepVisitor || walker._slagothimTrader) return null;
     return optionsFor(walker).length ? walker : null;
   }
   function syncClaims() {
+    if (deps?.isCombatActive?.()) { // A combat transition can happen while a hold or wheel is open.
+      if (press) { clearTimeout(press.timer); press = null; }
+      if (wheelState) closeWheel();
+      claimSignature = null;
+    }
     if (wheelState || press) return; // Keep the claim stable for the life of a press / open wheel.
     const walker = eligibleWalker();
     const signature = walker ? String(walker.rec?.id || '') : '';
@@ -59,6 +64,7 @@
   }
 
   function onPress() {
+    if (deps?.isCombatActive?.()) return;
     if (wheelState) { commit(); return; }
     if (nowMs() - lastCloseAt < PRESS_GUARD_MS) return;
     const walker = claimedWalker;
@@ -67,6 +73,7 @@
     press = { walker, at: nowMs(), timer: setTimeout(() => { if (press?.walker === walker) openWheel(walker, false); }, HOLD_MS) };
   }
   function onRelease(detail) {
+    if (deps?.isCombatActive?.()) { if (press) clearTimeout(press.timer); press = null; closeWheel(); return; }
     const active = press;
     press = null;
     if (active) clearTimeout(active.timer);
@@ -200,6 +207,7 @@
   }
 
   function openWheel(walker, latched) {
+    if (deps?.isCombatActive?.()) return false;
     const options = optionsFor(walker);
     if (!options.length) return false;
     buildOverlay();
@@ -227,6 +235,7 @@
     return true;
   }
   function commit() {
+    if (deps?.isCombatActive?.()) { closeWheel(); return false; }
     const current = wheelState;
     if (!current) return false;
     const option = current.selected >= 0 ? current.options[current.selected] : null;
