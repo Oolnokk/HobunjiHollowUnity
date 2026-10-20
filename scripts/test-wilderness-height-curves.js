@@ -46,6 +46,27 @@ function inspectZone(zoneId, farSide) {
 
 const northern = inspectZone('map_northern_cliffs', 'north');
 const western = inspectZone('map_western_slope', 'west');
+
+const northernCliffs = Object.values(northern.root.tiles).filter(tile => tile.borderEscarpment && tile.borderEscarpmentSide);
+const northernWallTiers = new Map();
+for (const tile of northernCliffs) {
+  const tier = northern.groups.get(tile.plateau);
+  if (!Number.isFinite(tier)) continue; // The actual exported plateau group determines runtime wall geometry.
+  const side = tile.borderEscarpmentSide;
+  if (!northernWallTiers.has(side)) northernWallTiers.set(side, []);
+  northernWallTiers.get(side).push(tier);
+}
+const farNorthTop = Math.max(...(northernWallTiers.get('north') || []));
+assert.equal(farNorthTop, 11, 'north wall should finish two tiers above the Northern Cliffs maximum of 9');
+for (const side of ['east', 'west', 'south']) {
+  const tiers = northernWallTiers.get(side) || [];
+  assert(tiers.length > 10, 'Northern Cliffs must preserve a real ' + side + ' boundary wall');
+  assert(Math.max(...tiers) < farNorthTop,
+    side + ' wall must not tower over the far-north wall: side crest ' + Math.max(...tiers) + ', north crest ' + farNorthTop);
+}
+assert.deepEqual(Generator.zoneSettings('map_northern_cliffs').boundaryLocalRise,
+  { east: 1, west: 1, south: 1 }, 'side/front walls should track local ground, not inherit the older +5 boost');
+
 const ncNorth = northern.regionAverage(25, 112, 20, 45); // Walkable northern quarter, excluding the boundary wall.
 const ncSouth = northern.regionAverage(25, 112, 95, 120); // Corresponding southern quarter.
 assert(ncNorth > ncSouth + 2, 'Northern Cliffs terrain must climb markedly northward: ' + ncNorth + ' vs ' + ncSouth);
