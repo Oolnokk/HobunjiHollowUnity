@@ -331,7 +331,8 @@
     if (typeof document !== 'undefined' && document.hidden) return;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     for (const record of live) {
-      bindNpcFacing(record); // Reuses the walker raw target for creature and NPC deadzones, never starts a second AI.
+      bindNpcFacing(record); // Reads the walker's raw facing only; no second AI.
+      if (!record.coatInitialized) record.coatInitialized = prepareLowerCoat(record.THREE, record);
       const root = record.root;
       if (!root.parent || !root.visible) continue;
       const c = root.userData.omgurkuComposite;
@@ -383,11 +384,11 @@
           lastAnimalFacingAt: 0, tintColor: resolveBodyColorA(options),
         };
         root.userData.omgurkuComposite = c;
-        const record = { root, npcId: options.npcRecord?.id || null }; // Same record owns facing and genotype visuals.
+        const record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
         live.add(record);
         applyPlacement(record);
         installFacingCallbacks(record);
-        prepareLowerCoat(THREE, record);
+        record.coatInitialized = prepareLowerCoat(THREE, record);
         setFrame(record, 'idle');
         status.builds += 1;
         return root;
@@ -521,7 +522,7 @@
 
   window.HobunjiOmgurkuSpecies = Object.freeze({
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
-    install, setPlacement, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();
