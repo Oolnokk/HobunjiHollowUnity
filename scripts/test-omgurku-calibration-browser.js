@@ -95,6 +95,18 @@ const server=http.createServer((req,res)=>{
       const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
       return frame?.handRigAttached === true;
     },null,{timeout:6000});
+    // Real GLB hands are mandatory; the old smoke passed with two fallback
+    // ellipsoids while the Omgurku editor silently failed a bare Three.js
+    // addons import.
+    await page.waitForFunction(()=>{
+      const model=window.HobunjiOmgurkuCalibration.context().model,rig=model?.userData?.proceduralHandRig;
+      if(!rig)return false;
+      const error=rig.getDebug?.().loadError;
+      if(error)throw Error('Omgurku hand GLB loading failed: '+error);
+      let actual=0;
+      rig.group?.traverse?.(node=>{if(node.userData?.handModelKey==='feline')actual++;});
+      return actual>=2;
+    },null,{timeout:20000});
     await page.waitForFunction(()=>{
       const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
       return Number.isFinite(frame?.upperYaw) && Number.isFinite(frame?.lowerYaw)
