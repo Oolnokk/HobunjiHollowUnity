@@ -204,6 +204,7 @@
   }
 
   function startDate(npcId) {
+    retreatPlan = null; // A new date must never adopt a former follower's hiding place.
     const start = hourStamp();
     state.date = {
       npcId,
@@ -227,6 +228,7 @@
     if (!date || (mode !== 'follow' && mode !== 'wait')) return false;
     const walker = findWalker(date.npcId);
     date.mode = mode;
+    retreatPlan = null; // Waiting or resuming following ends the previous retreat commitment.
     if (mode === 'wait') {
       const pos = walker?.root?.position;
       date.waitSpot = walker && pos ? { area: walker.area, c: Math.floor(pos.x), r: Math.floor(pos.z) } : null;
@@ -255,6 +257,7 @@
     if (!date) return;
     const walker = findWalker(date.npcId);
     if (walker) walker.catchup = 1;
+    retreatPlan = null; // Ending a date invalidates its NPC-specific cached cover destination.
     if (reason === 'expired') {
       const nearby = walker && walker.area === currentNpcArea() && distanceToPlayerTiles(walker) <= num(cfg().likeAwareRadiusTiles, 14) * 1.5;
       if (date.mode === 'wait' && !nearby) applyLoss(date.npcId, 'date_abandoned');
@@ -586,12 +589,23 @@
     if (!threats.length) { retreatPlan = null; return null; }
     const now = typeof performance === 'object' ? performance.now() : Date.now();
     const wx = walker.root.position.x, wz = walker.root.position.z;
-    if (retreatPlan?.npcId === walker.rec?.id && retreatPlan.area === area && now < retreatPlan.recheckAt
-      && Math.min(...threats.map(t => Math.hypot(retreatPlan.x - t.x, retreatPlan.z - t.z))) > 2.5) {
-      return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: true };
-    }
     const pathfinding = window.NpcPathfinding;
     if (!pathfinding) return null;
+    if (retreatPlan?.npcId === walker.rec?.id && retreatPlan.area === area) {
+      const minimumThreatDistance = Math.min(...threats.map(t => Math.hypot(retreatPlan.x - t.x, retreatPlan.z - t.z))); // Re-evaluated cheaply to detect advancing attackers.
+      // Once the NPC has reached cover, do not run from hiding place to hiding place every second.
+      // A lost line-of-sight barrier or a nearby attacker invalidates the commitment.
+      const isStillCovered = !retreatPlan.hidden || threats.some(t => occludedFromThreat(area, retreatPlan.x, retreatPlan.z, t));
+      if (minimumThreatDistance > 3.2 && pathfinding.isNpcTileWalkable(area, retreatPlan.c, retreatPlan.r)
+        && (now < retreatPlan.recheckAt || isStillCovered)) {
+        if (now >= retreatPlan.recheckAt) retreatPlan.recheckAt = now + RETREAT_REPLAN_MS;
+        return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: !retreatPlan.noCover };
+      }
+      // No viable cover found previously: skip expensive A* searches for one retry period.
+      if (retreatPlan.noCover && now < retreatPlan.recheckAt && minimumThreatDistance > 2.5) {
+        return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: false };
+      }
+    }
     const scored = [];
     const seen = new Set(); // Avoid testing duplicate rounded candidate tiles on adjacent compass bearings.
     for (const [dc, dr] of RETREAT_OFFSETS) {
@@ -622,11 +636,11 @@
     if (!selected && retreatPlan?.area === area && pathfinding.isNpcTileWalkable(area, retreatPlan.c, retreatPlan.r)) {
       selected = retreatPlan; // Keep the previous viable refuge instead of oscillating in a blocked corner.
     }
-    retreatPlan = selected ? { ...selected, npcId: walker.rec?.id, area, recheckAt: now + RETREAT_REPLAN_MS } : null;
+    retreatPlan = selected
+      ? { ...selected, npcId: walker.rec?.id, area, recheckAt: now + RETREAT_REPLAN_MS }
+      : { c: Math.floor(wx), r: Math.floor(wz), x: wx, z: wz, hidden: 0, noCover: true, npcId: walker.rec?.id, area, recheckAt: now + RETREAT_REPLAN_MS }; // Rate-limit a failed cover search as well.
     lastRetreatDecision = { npcId: walker.rec?.id, area, threats: threats.length, selected: selected ? { c: selected.c, r: selected.r, hiddenFrom: selected.hidden } : null, at: Date.now() };
-    return selected
-      ? { area, c: selected.c, r: selected.r, activity: 'taking cover', run: true }
-      : { area, c: Math.floor(wx), r: Math.floor(wz), activity: 'taking cover', run: false };
+    return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: !retreatPlan.noCover };
   }
 
   // ── Date movement (follow / wait) ─────────────────────────────────────
