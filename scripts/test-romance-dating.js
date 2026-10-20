@@ -198,12 +198,20 @@ target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.ok(Math.abs(target.c + 0.5 - 30.5) <= 2.5 && target.c < 30, 'a following date stops a little behind the player');
 assert.equal(target.run, true, 'a following date can run after the player');
 combatOn = true;
+context.performance.now = () => 10000; // Deterministic combat time lets this test cross the retreat replan boundary.
 target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.equal(target.activity, 'taking cover', 'combat interrupts ordinary date following');
 assert.equal(target.run, true, 'a threatened follower flees at running speed');
 assert.ok(W.RomanceSystem.snapshot().followerSafety.lastDecision?.selected, 'retreat diagnostics identify the chosen spot');
 assert.ok(W.RomanceSystem.snapshot().followerSafety.lastDecision.selected.hiddenFrom > 0, 'a chosen cover tile breaks sight with the pursuer');
+const heldCover = { c: target.c, r: target.r }; // Stable cover commitment tested after its normal replan interval expires.
+tooth.root.position.x = target.c + 0.5;
+tooth.root.position.z = target.r + 0.5;
+context.performance.now = () => 14000;
+target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
+assert.deepEqual({ c: target.c, r: target.r }, heldCover, 'a safely hidden follower does not oscillate to another hiding spot every second');
 combatOn = false;
+context.performance.now = () => Date.now();
 target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.equal(target.activity, 'following you', 'after combat the NPC resumes normal following');
 assert.equal(W.RomanceSystem.snapshot().followerSafety.retreatPlan, null, 'the cover cache is released after combat');
