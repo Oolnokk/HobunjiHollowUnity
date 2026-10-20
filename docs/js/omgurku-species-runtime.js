@@ -112,6 +112,187 @@
     status.paletteInherited = true;
   }
 
+  // Same body-color A descriptor normalization used by the procedural hands.
+  function resolveBodyColorA(options = {}) {
+    const colors = options.profile?.bodyColors || options.appearance?.bodyColors
+      || options.npcRecord?.appearance?.bodyColors || options.bodyColors || {};
+    const reference = window._dyeReferenceHexForSlot?.('A', ID) || '#7dc89a';
+    if (/^#[\da-f]{6}$/i.test(String(colors.A?.hex || ''))) return colors.A.hex.toLowerCase();
+    const rgb = window._resolveTargetRgbColor?.(colors.A, reference);
+    if (Array.isArray(rgb) && rgb.length >= 3)
+      return '#' + rgb.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+    return reference;
+  }
+
+  function ensureCoatRenderer() {
+    const renderer = window.CreatureGeneticsRender;
+    if (!renderer?.SPECIES || typeof renderer.composeFrame !== 'function') return null;
+    // Clone Voorg-Ass's #99BF99 keyed shade-fill contract, but not its belly
+    // or eye overlay; the authored Omgurku lower frames are headless.
+    window.VoorgAssRegistration?.ensureRendererSpecies?.(renderer.SPECIES);
+    const donor = renderer.SPECIES[LOWER_RIG];
+    if (!donor) return null;
+    if (!renderer.SPECIES[LOWER_TINT_KIND]) renderer.SPECIES[LOWER_TINT_KIND] = {
+      prefix: LOWER_TINT_KIND,
+      baseShadeReferenceHex: donor.baseShadeReferenceHex,
+      baseRecolorKeyHex: donor.baseRecolorKeyHex,
+      baseRecolorHueTolerance: donor.baseRecolorHueTolerance,
+      baseRecolorMinSaturationRatio: donor.baseRecolorMinSaturationRatio,
+      fullBaseRecolor: false,
+      base: { ...SPRITES },
+      patterns: [],
+    };
+    if (!coatTextureCache && window.CreatureTextureCache?.create) {
+      coatTextureCache = window.CreatureTextureCache.create('omgurku-hybrid-coat',
+        null, new Map(), { frameSetOf: key => {
+          const parts = String(key).split('|');
+          return parts[0] + '|' + (parts[2] || '');
+        } });
+    }
+    return renderer;
+  }
+
+  const coatJobs = new Map(); // One compositing job per native sprite and resolved swatch.
+  function prepareLowerCoat(THREE, record) {
+    const c = record?.root?.userData?.omgurkuComposite;
+    const renderer = ensureCoatRenderer();
+    if (!c || !renderer || !coatTextureCache) return false;
+    status.coatColor = c.tintColor;
+    for (let i = 0; i < FRAMES.length; i++) {
+      const ref = c.lowerRefs[i], frame = FRAMES[i];
+      const key = LOWER_TINT_KIND + '|' + frame + '|' + c.tintColor + '|0';
+      coatTextureCache.retain(ref, key); // Canonical animal disposer releases its generated-texture owner.
+      const attach = pair => {
+        if (!record.root.userData?.omgurkuComposite || window.CreatureTextureCache?.isDisposed?.(ref)
+          || coatTextureCache.keyFor(ref) !== key) return;
+        const frontMat = ref.frontPlane?.material, backMat = ref.backPlane?.material;
+        if (!frontMat || !backMat) return;
+        if (frontMat.map !== pair.front) { frontMat.map = pair.front; frontMat.needsUpdate = true; }
+        const back = window.PNGPlaneAvatar?.backMapFor?.(backMat, pair) || pair.back;
+        if (backMat.map !== back) { backMat.map = back; backMat.needsUpdate = true; }
+        status.tintedFrames++;
+      };
+      const cached = coatTextureCache.get(key);
+      if (cached) { attach(cached); continue; }
+      if (!coatJobs.has(key)) {
+        const job = renderer.composeFrame(LOWER_TINT_KIND, frame, { base: { color: c.tintColor } })
+          .then(canvas => {
+            if (!canvas) return null;
+            const display = window.CreatureTextureCache.fitGeneratedCanvas(canvas);
+            const texture = new THREE.CanvasTexture(display);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+            return coatTextureCache.put(key, { front: texture, back: texture });
+          })
+          .catch(error => {
+            status.lastError = 'lower tint: ' + String(error?.message || error);
+            console.warn('[omgurku] lower coat tint unavailable; keeping raw frames', error);
+            return null;
+          })
+          .finally(() => coatJobs.delete(key));
+        coatJobs.set(key, job);
+      }
+      coatJobs.get(key).then(pair => { if (pair) attach(pair); });
+    }
+    return true;
+  }
+
+  function bindNpcFacing(record) {
+    if (record.walker || !record.npcId) return;
+    const collection = window._npcWalkers;
+    const walkers = typeof collection?.values === 'function' ? collection.values()
+      : (Array.isArray(collection) ? collection : []);
+    for (const walker of walkers) {
+      if (!walker || walker.rec?.id !== record.npcId || typeof walker.applyFacingDeadzone !== 'function') continue;
+      record.walker = walker;
+      const previous = walker.applyFacingDeadzone;
+      walker.applyFacingDeadzone = function omgurkuReadNpcFacing(rawYaw, ...args) {
+        if (Number.isFinite(rawYaw) && record.root.userData?.omgurkuComposite)
+          record.root.userData.omgurkuComposite.rawNpcYaw = rawYaw;
+        return previous.call(this, rawYaw, ...args);
+      };
+      break;
+    }
+  }
+
+  const diffAngle = (a,b) => Math.atan2(Math.sin(a-b), Math.cos(a-b));
+  function updateIndependentFacing(record, camera) {
+    const c = record.root.userData.omgurkuComposite;
+    if (!c || !camera?.getWorldPosition) return;
+    const now = performance.now();
+    if (now - c.lastFaceSample < 4) return;
+    const dt = c.lastFaceSample ? Math.min(.1,(now - c.lastFaceSample) / 1000) : 1/60;
+    c.lastFaceSample = now;
+    const perp = window.PerpRotation;
+    if (!perp) return;
+    const origin = record.root.getWorldPosition(c.positionScratch);
+    const cameraPos = camera.getWorldPosition(c.cameraScratch);
+    const cameraWorld = { x: cameraPos.x, z: cameraPos.z };
+    const npcPerps = perp.cameraRelativePerpsAtWorldPosition?.(origin,cameraWorld);
+    const animalPerps = perp.cameraRelativeCreaturePerpsAtWorldPosition?.(origin,cameraWorld);
+    if (!npcPerps || !animalPerps) return;
+    let rootYaw = Number(record.root.rotation?.y) || 0;
+    if (record.root.getWorldDirection) {
+      const dir = record.root.getWorldDirection(c.directionScratch);
+      rootYaw = Math.atan2(dir.x,dir.z);
+    }
+    const previewRaw = record.root.userData.omgurkuPreviewRawYaw;
+    const preview = Number.isFinite(previewRaw);
+    const rawYaw = preview ? previewRaw : (Number.isFinite(c.rawNpcYaw) ? c.rawNpcYaw : rootYaw);
+    if (preview && perp.perpClamp) {
+      const desired = perp.perpClamp(c.npcFacing ||= {},rawYaw,npcPerps,perp.PERP_DEAD_RAD).effectiveTarget;
+      const rendered = Number.isFinite(c.previewNpcYaw)
+        ? c.previewNpcYaw + diffAngle(desired,c.previewNpcYaw) * Math.min(1,dt*10)
+        : desired;
+      c.previewNpcYaw = rendered;
+      c.upper.rotation.y = diffAngle(rendered,rootYaw);
+    }
+    // Real NPC walkers already clamp the portrait root; never re-clamp game NPCs.
+    let target = rawYaw, snap = false;
+    const dead = perp.CREATURE_PERP_DEAD_RAD;
+    if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
+      const result = perp.creatureSnapSwayTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
+      target = result.target; snap = result.snap;
+    } else if (perp.CREATURE_PLANE_ROT_MODE === 'sway' && perp.creatureDeadzoneTarget) {
+      target = perp.creatureDeadzoneTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
+    } else if (perp.perpClamp) {
+      target = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead).effectiveTarget;
+    }
+    c.animalYaw = snap || !Number.isFinite(c.animalYaw) ? target
+      : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*10);
+    for (const ref of c.lowerRefs) {
+      ref.group.rotation.y = diffAngle(c.animalYaw,rootYaw);
+      // The scene traversal already completed before onBeforeRender, so
+      // propagate new yaw into both cards immediately rather than lag a frame.
+      ref.group.updateMatrixWorld?.(true);
+      ref.frontPlane?.updateMatrixWorld?.(true);
+      ref.backPlane?.updateMatrixWorld?.(true);
+    }
+    if (preview) c.upper.updateMatrixWorld?.(true);
+    status.facingUpdates++;
+  }
+
+  function installFacingCallbacks(record) {
+    for (const ref of record.root.userData.omgurkuComposite.lowerRefs) {
+      for (const plane of [ref.frontPlane,ref.backPlane]) {
+        if (!plane) continue;
+        const previous = plane.onBeforeRender;
+        plane.onBeforeRender = function omgurkuIndependentFacing(renderer,scene,camera,geometry,material,group) {
+          updateIndependentFacing(record,camera);
+          previous?.call(this,renderer,scene,camera,geometry,material,group);
+        };
+      }
+    }
+  }
+
+  function setPreviewFacing(root, radians) {
+    if (!root?.userData?.omgurkuComposite) return false;
+    root.userData.omgurkuPreviewRawYaw = Number(radians) || 0;
+    root.userData.omgurkuComposite.npcFacing = {};
+    root.userData.omgurkuComposite.animalFacing = {};
+    return true;
+  }
+
   function applyPlacement(record) {
     const c = record?.root?.userData?.omgurkuComposite; // Keeps the named NPC's root fixed while both visual halves reposition together.
     if (!c) return;
