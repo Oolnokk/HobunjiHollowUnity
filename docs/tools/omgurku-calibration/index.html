@@ -44,6 +44,9 @@ input[type=file]{display:none}
 <script src="../../js/portrait-utils.js?v=20261019omgurkuheadblink1"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/creature-texture-cache.js?v=20261011h0a4170f"></script>
+<script src="../../js/voorg-ass-registration.js?v=20261015h47a3826"></script>
+<script src="../../js/creature-genetics-render.js?v=20261019omgurkuTint1"></script>
 <script src="../../js/runtime-frame-scheduler.js"></script>
 <script src="../../js/held-action-animations.js?v=20261020omgurkuCalibration1"></script>
 </head>
@@ -66,6 +69,9 @@ input[type=file]{display:none}
 <label for="npcSelect">Upper-body appearance source</label>
 <select id="npcSelect"><option value="">Generated Omgurku (NPC-only)</option></select>
 <div class="row" style="margin-top:7px"><button id="refreshPreviewBtn">Rebuild preview</button><span id="frameBadge">idle</span></div>
+<label for="headingRange">NPC facing / animal heading <output id="headingValue">0°</output></label>
+<input id="headingRange" type="range" min="-180" max="180" value="0" step="1" style="width:100%;accent-color:#65adff">
+<p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses the side-view creature deadzone (including its moving snap). Orbit the camera to examine both.</p>
 </section>
 <section>
 <h2>Place saddle on lower sprite</h2>
