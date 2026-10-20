@@ -414,6 +414,42 @@
     if(target?.type==='pile')return collectPile(target.obj);
     return false;
   }
+  // The usual Tool Select button also doubles as a native pickup/set-down control,
+  // but only when the character's hands are free and an intact Shattercask is close.
+  // Holding/dragging the button continues to open the normal tool wheel.
+  function toolArchAction() {
+    if(held)return 'drop';
+    if(window.ActionArcUI?.heldMode?.()!=='none')return null;
+    return nearInteraction()?.type==='vase'?'pickup':null;
+  }
+  function toolArchTap() {
+    const action=toolArchAction();
+    if(action==='drop')return drop();
+    if(action==='pickup'){
+      const target=nearInteraction();
+      return target?.type==='vase'?pickUp(target.obj):false;
+    }
+    return false;
+  }
+  let lastToolArchAction=null;
+  function syncToolArchPickup() {
+    if(typeof document==='undefined')return;
+    const btn=document.getElementById?.('toolBtn');
+    if(!btn)return;
+    const action=toolArchAction();
+    if(action===lastToolArchAction)return;
+    lastToolArchAction=action;
+    btn.classList?.toggle?.('shattercask-context',!!action);
+    if(action){
+      btn.dataset.shattercaskIcon=action==='pickup'?'✋':'⬇️';
+      btn.setAttribute?.('aria-label',action==='pickup'?'Pick up Shattercask (hold for tools)':'Set down Shattercask (hold for tools)');
+      btn.title=action==='pickup'?'Pick up Shattercask — hold for tools':'Set down Shattercask — hold for tools';
+    }else{
+      btn.removeAttribute?.('data-shattercask-icon');
+      btn.setAttribute?.('aria-label','Select tool, or dequip if a tool is already out');
+      btn.title='';
+    }
+  }
   function prompt() {
     // Native action-claim input + world-space interaction prompt. No extra
     // button or direct keyboard event that bypasses rebinds and controllers.
@@ -781,6 +817,7 @@
       // The held visual already follows the player at full frame rate above.
     }
     prompt();
+    syncToolArchPickup();
   }
   function attachRuntime() {
     const combat=window.Combat;
@@ -842,11 +879,14 @@
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
       const id=event.target?.closest?.('button')?.id||'';
+      // Tool Select is the context-sensitive Set Down button. Do not drop on
+      // pointerdown and accidentally also recall a tool on pointerup.
+      if(id==='toolBtn')return;
       if(/(?:weapon|tool|item|dequip|swap)/i.test(id))drop();
     },true);
   }
   window.Shattercasks=Object.freeze({
-    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,detonate,heldHandTarget,
+    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
     debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
