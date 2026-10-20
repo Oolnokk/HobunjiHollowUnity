@@ -104,4 +104,43 @@ assert(layoutA.every(e => e.scale >= 0.92 && e.scale <= 1.08), 'all scenery tree
 assert(layoutA.every(e => Math.abs(e.x - 20) >= 3 - 0.2), 'tree jitter must not materially invade the road clearance');
 assert(layoutA.every(e => Math.abs(e.y - 5.02) < 1e-6), 'tree bases should follow the supplied hillside height');
 
+
+// Regression: converting the full north escarpment to grass must not leave a
+// broad tree-free lawn where the entrance meets the dense Cloud Forest.
+const filled = makeWorkspace(); // Fixture shares the generator's exported plateau/group schema.
+const filledRoot = filled.maps[0]; // Real exported tile records consumed by the same renderer as ordinary copse trees.
+filledRoot.cols = 40;
+filledRoot.rows = 30;
+for (let r = 0; r <= 8; r++) for (let c = 0; c < filledRoot.cols; c++) {
+  const tile = filledRoot.tiles[c + ',' + r] = {
+    type:'rock', plateau:'north_wall', borderEscarpment:true, generatedBorderEscarpment:true,
+    borderEscarpmentSide:'north'
+  };
+  if (c >= 17 && c <= 19) tile.type = 'path'; // Actual border entrance, never eligible for a tree.
+}
+for (let r = 9; r < filledRoot.rows; r++) for (let c = 0; c < filledRoot.cols; c++) {
+  filledRoot.tiles[c + ',' + r] = { type:'grass', plateau:'inland_high' };
+}
+filledRoot.tiles['4,4'].type = 'water'; // Hydrology survives conversion untouched.
+filledRoot.tiles['6,4'].generatedObjectId = 'important_ore'; // Existing object survives without tree replacement.
+filledRoot.tiles['6,4'].generatedObjectType = 'diggableRockOre';
+const filledResult = V2.removeCloudForestNorthCliffs(filled);
+assert.equal(filledResult.removed, 40 * 9, 'all north-edge cliff tiles should be normalized');
+const replanted = Object.entries(filledRoot.tiles).filter(([, tile]) => tile.cloudForestNorthReplanted);
+assert(replanted.length > 30, 'north escarpment should become a substantial forest, not empty grass');
+assert.equal(filledRoot.generatedFrom.northBoundaryForestTrees, replanted.length, 'source diagnostics should count restored trees');
+for (const [key,tile] of replanted) {
+  const [c,r] = key.split(',').map(Number); // Each restored tree's final renderer and grid position.
+  assert.equal(tile.type,'shrub');
+  assert.equal(tile.generatedObjectType,'copse');
+  assert.equal(tile.plateau,'north_wall','reforestation may not modify plateau ownership');
+  assert(r >= 2 && r <= 8 && c >= 2 && c < filledRoot.cols-2, 'tree placement must honor outer edge margins');
+  assert(Math.abs(c - 18) > 2, 'keep the entrance road and its shoulder clear');
+}
+assert.equal(filledRoot.tiles['4,4'].type,'water');
+assert.equal(filledRoot.tiles['6,4'].generatedObjectId,'important_ore');
+assert.equal(filledRoot.tiles['17,4'].type,'path');
+assert.equal(V2.removeCloudForestNorthCliffs(filled).removed,0,'second pass must be idempotent');
+assert.equal(V2.reforestClearedNorthEdge(filled,replanted.map(([key])=>key)),0,'replanting may not duplicate existing trees');
+
 console.log(`PASS cloud forest runtime: trimmed ${repair.trimmed} path tiles, aligned entry to ${repair.centerAxis}, normalized ${cliffFix.groups} north cliff group, generated ${layoutA.length} scenery Shadewoods.`);
