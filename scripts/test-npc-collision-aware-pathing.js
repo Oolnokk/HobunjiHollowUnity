@@ -62,6 +62,11 @@ assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), t
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 3, 3), false, 'wilderness mapBoundary blocks movement');
 assert.match(gameSource, /w\.root\._pendingZoneAdd === mapId[\s\S]{0,600}nearestWalkableTile\?\.\(mapId, fromC, fromR\)/, 'pending wilderness followers revalidate their entry tile after their zone is built');
 assert.match(gameSource, /npcRunLeanPivot\.add\(avatarGroup\)/, 'the running portrait pivots independently of its feet and tool root');
+const initialFurnitureBlocks = deps.furnitureBlocksMovementAt; // Preserves the existing interior furniture fixture during wilderness spawn tests.
+deps.furnitureBlocksMovementAt = (area, x, z) => area === 'wilderness_test' && Math.floor(x) === 0 && Math.floor(z) === 0 || initialFurnitureBlocks(area, x, z);
+const furnishedArrival = window.NpcPathfinding.nearestWalkableTile('wilderness_test', 0, 0);
+assert.notDeepEqual([furnishedArrival.c, furnishedArrival.r], [0, 0], 'wilderness spawns do not remain inside blocking outdoor furniture');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', furnishedArrival.c, furnishedArrival.r), true);
 const zoneArrival = window.NpcPathfinding.nearestWalkableTile('wilderness_test', 2, 2);
 assert.notDeepEqual([zoneArrival.c, zoneArrival.r], [2, 2], 'wilderness entry relocates a blocked arrival');
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', zoneArrival.c, zoneArrival.r), true);
