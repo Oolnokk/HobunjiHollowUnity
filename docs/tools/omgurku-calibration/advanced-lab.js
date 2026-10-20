@@ -57,7 +57,8 @@ function mirrorPose(p,sign){const out={};for(const key of poseKeys)out[key]=mirr
 function lerpPose(a,b,k){const out={};for(const key of poseKeys)out[key]=(a[key]||0)+((b[key]||0)-(a[key]||0))*clamp(k,0,1);return out;}
 function endpoints(style,step){
  const power=Number.isFinite(Number(step.power))?Number(step.power):1;
- const heavy=stanceKey()==='heavyWeapon', sign=Number(step.dirSign)===-1?-1:1;
+ const heavy=stanceKey()==='heavyWeapon',
+   sign=style==='sweep'&&Number(step.dirSign)===-1?-1:1;
  let windup,strike;
  if(style==='sweep'){
    windup=lerpPose(SWEEP.neutral,pose(SWEEP.windup),power);
@@ -321,6 +322,8 @@ function setup(){
     pixelY:placement.saddleV*state.mask.height,coordinateConvention:'normalized from top-left'},
   join:{joinDepth:placement.joinDepth,riderScale:placement.riderScale},
   creaturePlacement:{modelWidth:placement.lowerWidth,modelHeight:placement.lowerHeight,
+    largeScale:{x:placement.lowerScaleX,y:placement.lowerScaleY},
+    authoredGroundLift:placement.authoredGroundLift,
     previewVisibleFloorCorrection:placement.visibleFloorCorrection},
   deadzones:{animal:Number($('v10AnimalDead').value),rider:Number($('v10RiderDead').value)},
   notes:{riderPortraitCropping:'none',proceduralLegAnimation:'omitted',
@@ -359,6 +362,12 @@ async function importSetup(file){
   if(data.creaturePlacement){
    p.lowerWidth=Number(data.creaturePlacement.modelWidth);p.lowerHeight=Number(data.creaturePlacement.modelHeight);
    p.visibleFloorCorrection=Number(data.creaturePlacement.previewVisibleFloorCorrection);
+   if(data.creaturePlacement.largeScale){
+     p.lowerScaleX=Number(data.creaturePlacement.largeScale.x);
+     p.lowerScaleY=Number(data.creaturePlacement.largeScale.y);
+   }
+   if(data.creaturePlacement.authoredGroundLift!==undefined)
+     p.authoredGroundLift=Number(data.creaturePlacement.authoredGroundLift);
   }
   const clean=Object.fromEntries(Object.entries(p).filter(([,v])=>Number.isFinite(v)));
   if(Object.keys(clean).length)api().setPlacement(clean);
