@@ -540,6 +540,16 @@
     const place = (side, x, y, z, rotationName) => {
       const position = holder.localToWorld(scratch.position.set(x, y, z));
       const quaternion = scratch.quaternion.copy(holderQuat).multiply(scratch.rotations[rotationName]);
+      if (target.mode === 'authored-world') {
+        // Local XYZ grip rotation comes AFTER the shared canonical left/right
+        // hand orientation, matching the Furniture Editor's actual GLB preview.
+        const r = target.handTargets?.[side]?.rotation || {};
+        const extra = new record.THREE.Quaternion().setFromEuler(new record.THREE.Euler(
+          (Number(r.x)||0)*Math.PI/180,
+          (Number(r.y)||0)*Math.PI/180,
+          (Number(r.z)||0)*Math.PI/180, 'XYZ'));
+        quaternion.multiply(extra);
+      }
       const socket = handSocketAfterGripMode(record, { position, quaternion, visualBasis: null });
       record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
     };
