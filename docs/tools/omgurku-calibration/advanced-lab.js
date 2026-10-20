@@ -125,6 +125,7 @@ async function weapon(){
  const base=new THREE.Group(),holder=new THREE.Group(),visual=new THREE.Group();
  base.name='Omgurku_V10_HandAttachToolBase';holder.name='Omgurku_V10_ToolHolder';
  base.add(holder);holder.add(visual);v.composite.upper.add(base);
+ holder.userData.omgurkuV10Sweep = def.style === 'sweep';
  base.position.set(Number(v.composite.upper.userData?.handAttachX)||-.45,
    Number(v.composite.upper.userData?.handAttachY)||.4,0);
  const image=new Image();image.crossOrigin='anonymous';
@@ -138,7 +139,7 @@ async function weapon(){
    new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.001,side:THREE.DoubleSide,depthTest:false,depthWrite:false})
  );
  plane.renderOrder=110;plane.frustumCulled=false;plane.name='Omgurku_V10_WeaponPlane';
- visual.add(plane);
+ visual.add(plane);visual.userData.toolPlane=plane;
  const grips=window.HobunjiHandToolGrips;
  const gripKey=grips?.toolKeyFor?.($('v10Weapon').value)||$('v10Weapon').value;
  const scale=Number(grips?.toolScaleForTool?.(gripKey))||1;
