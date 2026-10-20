@@ -12300,7 +12300,8 @@
             this.currentScheduleTarget = target || null;
             // Running is opt-in, never an ordinary schedule movement state. Flood evacuation inherits the same gait and pace as fleeing followers.
             this._npcRunMode = target?.floodShelter ? 'flood' : target?.activity === 'taking cover' ? 'cover' : target?.activity === 'following you' ? 'follow' : null;
-            this._npcRunning = !this.animalDef && !!this._npcRunMode && (target?.run !== false || this._npcRunMode === 'flood')
+            this._npcRunning = !this.animalDef && !!this._npcRunMode && (this._npcRunMode !== 'flood' || this.area === 'town') // Flood evacuees sprint to the building, then resume walking indoors toward their seat.
+              && (target?.run !== false || this._npcRunMode === 'flood')
               && (target?.floodShelter || target?.area !== this.area || Math.hypot(root.position.x - (target.c + 0.5), root.position.z - (target.r + 0.5)) > (npcMovementConfig().arrivalRadiusTiles ?? 0.18));
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
