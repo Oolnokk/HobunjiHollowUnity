@@ -463,6 +463,37 @@
             alphaTest: options.alphaTest,
           }));
         }
+        // V10 places the rider portrait's visual center half a body-height
+        // above its floor-origin actor and hand/socket basis. Earlier we
+        // aligned the posterior at the floor correctly but left the portrait
+        // artwork at y=0, burying much of the upper body in the quadruped.
+        const portraitHeight = Number(upper.userData?.portraitModelHeight)
+          || Number(options.modelHeight) || .9;
+        const portraitVisual = new THREE.Group();
+        portraitVisual.name = 'Omgurku_RiderPortraitVisualOffset';
+        for (const child of [...upper.children]) portraitVisual.add(child);
+        portraitVisual.position.y = portraitHeight / 2;
+        upper.add(portraitVisual);
+        // V10 intentionally draws NPC portrait cards above the animal
+        // silhouette. Use its front-side selection, not double-sided
+        // quads or world-depth clipping through the lower sprite.
+        portraitVisual.traverse(object => {
+          if (!object.isMesh && !object.isSkinnedMesh) return;
+          object.frustumCulled = false;
+          object.renderOrder = 100;
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const mat of materials) {
+            if (!mat) continue;
+            mat.visible = true;
+            mat.transparent = true;
+            mat.opacity = 1;
+            mat.alphaTest = .001;
+            mat.depthTest = false;
+            mat.depthWrite = false;
+            mat.side = THREE.FrontSide;
+            mat.needsUpdate = true;
+          }
+        });
         const root = new THREE.Group(); // Sole NPC avatar group: collisions, dialogue, held items and movement remain under this parent.
         root.name = options.name || 'Omgurku_NPC_Hybrid';
         root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true,
@@ -479,6 +510,7 @@
           rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
           lastAnimalFacingAt: 0, tintColor: resolveBodyColorA(options),
           posterior: posteriorFor(options, upper),
+          portraitVisual, portraitHeight,
         };
         root.userData.omgurkuComposite = c;
         const record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
@@ -582,6 +614,8 @@
           parented: !!root.parent,
           handParentIsUpper: root.userData.proceduralHandParent === c?.upper,
           handRigAttached: !!root.userData.proceduralHandRig,
+          portraitLift: c?.portraitVisual?.position?.y ?? null,
+          portraitHeight: c?.portraitHeight ?? null,
           upperYaw: c?.upper?.rotation?.y ?? null,
           lowerYaw: c?.lowerRefs?.[0]?.group?.rotation?.y ?? null,
           rawNpcYaw: c?.rawNpcYaw ?? null,
