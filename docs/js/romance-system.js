@@ -602,7 +602,7 @@
         return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: !retreatPlan.noCover };
       }
       // No viable cover found previously: skip expensive A* searches for one retry period.
-      if (retreatPlan.noCover && now < retreatPlan.recheckAt && minimumThreatDistance > 2.5) {
+      if (retreatPlan.noCover && now < retreatPlan.recheckAt) {
         return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: false };
       }
     }
