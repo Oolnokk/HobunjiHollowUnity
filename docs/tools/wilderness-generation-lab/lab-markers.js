@@ -16,9 +16,11 @@
 
   async function boot() {
     try {
-      // Load the shared causeway repair first. The Lab's final preview assertion
-      // must never race a later dynamically inserted generator adapter.
-      await loadScript('../../js/wilderness-entry-corridor.js', 'wilderness-entry-corridor');
+      // Game parity: load the Cloud Forest cliff-removal/tree restoration and
+      // causeway repair before the first Lab preview. Otherwise only the causeway
+      // gets trees and the old north-wall clearing remains inexplicably blank.
+      await loadScript('../../js/cloud-forest-runtime.js?v=20261020forestparity1', 'cloud-forest-runtime');
+      await loadScript('../../js/wilderness-entry-corridor.js?v=20261020forestparity1', 'wilderness-entry-corridor');
       await loadScript('lab-terrain-experiments.js', 'wilderness-lab-terrain-experiments'); // Calculates Great Basin spoon heights, river canyon overrides, and karst placement.
       await loadScript('lab-basin-rampify.js', 'wilderness-lab-basin-rampify'); // Converts the spoon floor into one continuous walkable rampElevation field instead of tiny terraces.
       await loadScript('lab-terrain-finalize.js', 'wilderness-lab-terrain-finalize'); // Reconciles transformed cells with old plateau mesa masks.
@@ -36,7 +38,7 @@
       await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
       await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain'); // Locale Editor autosave/import source plus selected/rejected terrain-probe and embedded-carve overlays.
       await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave'); // Repo-backed Banubu Cave injection plus exact game cave renderer and actual Grehlr live visual.
-      console.log('[WildernessLab] shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + real environment surface + scale reference + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
+      console.log('[WildernessLab] Cloud Forest north reforestation + shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + real environment surface + scale reference + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
