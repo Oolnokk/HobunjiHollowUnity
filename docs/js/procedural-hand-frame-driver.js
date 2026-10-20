@@ -178,6 +178,10 @@
   }
 
   function modelCalibrationForRecord(record) {
+    if (!inAttackEditor() && hands.modelCalibrationForSpecies) {
+      return hands.modelCalibrationForSpecies(record.speciesId, record.gender,
+        Number(record.avatarRoot?.userData?.portraitModelHeight) || .9);
+    }
     const modelKey = modelKeyForRecord(record); // Single authoritative editor/runtime model identity used for both rendered GLB and calibration.
     const raw = profiles.normalizeHandTransform?.(profiles.data?.models?.[modelKey]?.handFromTool)
       || profiles.data?.models?.[modelKey]?.handFromTool
