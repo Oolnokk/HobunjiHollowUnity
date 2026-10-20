@@ -10,7 +10,8 @@
 
   const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Stone plus game.js ORE_DEFS.
 
-  const separatorCracks = new Map(); // Map id -> meshes exposed to Perception Mode only for mineable chamber separators.
+  const separatorCracks = new Map(); // Map id -> scene and live crack set, allowing O(1) removals when one mineable wall rock breaks.
+  const rockMaps = new Map(); // Map id -> live ore mesh index; explosions never traverse the entire cave scene.
   function crackRibbons(THREE, col, row) {
     const group = new THREE.Group(); // Individual fracture faces, separate from the parent rock's solid hitbox.
     const vertices = []; // Batched ragged ribbons are the non-glowing analogue of Hronal exploding-pillar fissures.
@@ -43,13 +44,31 @@
     return group;
   }
   function senseTargets(scene) {
-    const result = [];
-    for (const meshes of separatorCracks.values()) for (const root of meshes) {
-      let parent = root;
-      while (parent?.parent) parent = parent.parent;
-      if (parent === scene) result.push(root);
+    // Perception refreshes several times per second; avoid walking every fracture's
+    // entire parent chain or scanning other caves' old meshes.
+    const roots = [];
+    for (const record of separatorCracks.values()) {
+      if (record.scene !== scene) continue;
+      for (const root of record.meshes) if (root.parent?.parent === scene) roots.push(root);
     }
-    return result;
+    return roots;
+  }
+
+  function removeVisual(mapId,col,row) {
+    const rocks = rockMaps.get(mapId) || deps?.zoneMineableRockMeshes?.get?.(mapId);
+    const tileId = col+','+row;
+    const group = rocks?.get(tileId);
+    if (!group) return false;
+    rocks.delete(tileId);
+    const record = separatorCracks.get(mapId);
+    for (const child of group.children) if (child.userData?.caveSeparatorCracks) record?.meshes.delete(child);
+    group.parent?.remove(group);
+    group.traverse(node => {
+      node.geometry?.dispose?.();
+      if (Array.isArray(node.material)) for (const material of node.material) material?.dispose?.();
+      else node.material?.dispose?.();
+    });
+    return true;
   }
 
   let deps = null; // { TileType, markOutline, zoneMineableRockMeshes, oreDefs } from game.js.
@@ -63,8 +82,9 @@
     // forgetZoneDenState) so removeZoneMineableRockVisual never targets an
     // orphaned rock group from a layout that no longer exists.
     const oreRockMeshes = new Map();
-    separatorCracks.delete(mapId); // Rebuilt cave scenes must not leave orphaned Sense Mode geometry.
-    const cracks = []; // Local registered fracture roots for this map's Perception Mode pass.
+    separatorCracks.delete(mapId); // The new scene replaces the old registry without retaining old render roots.
+    rockMaps.set(mapId, oreRockMeshes); // Direct tile lookup for blasting, independent of scene graph size.
+    const cracks = new Set(); // O(1) removal from active Sense Mode fracture registration.
     if (mapData.oreRocks?.length) deps.zoneMineableRockMeshes.set(mapId, oreRockMeshes);
     for (const rock of (mapData.oreRocks || [])) {
       if (grid[rock.row]?.[rock.col]) {
@@ -87,16 +107,16 @@
       if (rock.caveSeparator) {
         const fracture = crackRibbons(THREE, rock.col, rock.row);
         rockGroup.add(fracture);
-        cracks.push(fracture);
+        cracks.add(fracture);
       }
       rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
       scene.add(rockGroup);
       deps.markOutline(rockGroup);
       oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
     }
-    if (cracks.length) separatorCracks.set(mapId, cracks);
+    if (cracks.size) separatorCracks.set(mapId, {scene,meshes:cracks});
     return oreRockMeshes;
   }
 
-  window.CavernOreRocks = { init, build, senseTargets, CAVERN_ORE_TINTS };
+  window.CavernOreRocks = { init, build, senseTargets, removeVisual, CAVERN_ORE_TINTS };
 })();
