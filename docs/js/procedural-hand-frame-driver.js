@@ -277,7 +277,13 @@
     const neutralEuler = plane.rotation.clone();
     let source = 'none';
 
-    if (inAttackEditor()) {
+    if (toolHolder?.userData?.omgurkuV10Sweep === true) {
+      // Same neutral-plane correction as the authored Attack Animation Editor,
+      // but scoped to an explicit Omgurku calibration holder. Never touch
+      // gameplay/player swing basis or any unrelated character's hand target.
+      neutralEuler.z = 0;
+      source = 'omgurku-v10-sweep-plane';
+    } else if (inAttackEditor()) {
       const style = String(document.getElementById('animStyle')?.value || '').toLowerCase();
       if (style !== 'sweep') return { quaternion: identity, source, angleDeg: 0 };
       // In the editor Neutral is z=0; applyPoseToRig writes the animated sweep
