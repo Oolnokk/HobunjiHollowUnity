@@ -10,6 +10,7 @@
   const records = new Map(); // Area -> {scene, vases:Map, piles:Map}, reused until its rendered scene is destroyed.
   const burstEffects = []; // Short-lived instanced pottery shards and flashes ticked by Combat.update.
   let sharedBurstArt = null; // Source textures/materials/geometries cached across all explosions to avoid GPU uploads during combat.
+  let sharedPileArt = null; // Rock/wood pile geometry and material shared by per-area instanced render batches.
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
   const placementCache = new Map(); // Area -> per-scene static placements; never regenerate the ruin's sorted occupancy on each frame.
   let resolvedWorldId = null; // World ID memoized after authoritative save metadata first becomes available.
@@ -80,7 +81,7 @@
     const existing=records.get(mapId);
     if(existing?.scene===targetScene)return existing;
     placementCache.delete(mapId); // Generated geometry changed; only then may the expensive placements be sampled again.
-    const rec={scene:targetScene,vases:new Map(),piles:new Map()};
+    const rec={scene:targetScene,vases:new Map(),piles:new Map(),pileVisuals:new Map()}; // At most two debris draw calls per area, no matter how many tiles blast.
     records.set(mapId,rec);
     restoreSceneHistory(mapId,rec); // Scene reconstruction must retain both opened cave barriers and unlooted rubble.
     return rec;
@@ -234,8 +235,7 @@
     records.get(pile.mapId).piles.delete(pile.id);
     pileHistory.get(pile.mapId)?.delete(pile.id);
     persistWorld();
-    pile.group.parent?.remove(pile.group);
-    pile.group.traverse(node=>{node.geometry?.dispose?.();node.material?.dispose?.();});
+    syncPileVisuals(records.get(pile.mapId)); // Rebuild one instanced matrix batch on looting, never remove four separate meshes.
     lastEvent='looted '+pile.id;
     deps()?.showToast?.('Collected '+(pile.kind==='tree'?'wood and sticks':'stone and pebbles')+'.',true);
     return true;
@@ -310,26 +310,53 @@
       dummy:new THREE.Object3D()}); // Two instanced meshes share the cached original body and neck surface textures.
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
   }
+  function syncPileVisuals(rec) {
+    if(!rec)return;
+    if(!sharedPileArt)sharedPileArt={
+      rock:{geometry:new THREE.DodecahedronGeometry(.18,0),
+        material:new THREE.MeshLambertMaterial({color:0x817b74})},
+      tree:{geometry:new THREE.CylinderGeometry(.045,.065,.55,5),
+        material:new THREE.MeshLambertMaterial({color:0x7b5936})},
+    }; // Shared geometries/materials are never disposed with an individual pile.
+    const transform=new THREE.Object3D(); // Reused scratch for the complete rebuild, two GPU instance buffers maximum per area.
+    for(const kind of ['rock','tree']){
+      const piles=[];
+      for(const pile of rec.piles.values())if(pile.kind===kind)piles.push(pile);
+      const needed=piles.length*4;
+      let state=rec.pileVisuals.get(kind);
+      if(!state&&needed===0)continue;
+      if(!state||needed>state.capacity){
+        const capacity=Math.max(16,needed,state?.capacity*2||0); // Doubles only on rare high-count blasts.
+        const mesh=new THREE.InstancedMesh(sharedPileArt[kind].geometry,sharedPileArt[kind].material,capacity);
+        mesh.count=0;
+        mesh.name='shattercask_'+kind+'_piles_instanced';
+        if(state)state.mesh.parent?.remove(state.mesh);
+        rec.scene.add(mesh);
+        state={mesh,capacity}; // One persistent mesh per debris type instead of four meshes per destroyed tile.
+        rec.pileVisuals.set(kind,state);
+      }
+      for(let p=0;p<piles.length;p++){
+        const pile=piles[p];
+        for(let i=0;i<4;i++){
+          transform.position.set(pile.col+.5+Math.cos(i*1.8)*.15,
+            pile.y+.09,pile.row+.5+Math.sin(i*1.8)*.15);
+          transform.rotation.set(0,0,kind==='tree'?1.2+i*.08:0);
+          transform.scale.set(1,1,1);
+          transform.updateMatrix();
+          state.mesh.setMatrixAt(p*4+i,transform.matrix);
+        }
+      }
+      state.mesh.count=needed;
+      state.mesh.instanceMatrix.needsUpdate=true;
+      state.mesh.computeBoundingSphere?.(); // Keep normal camera frustum culling after matrix changes.
+    }
+  }
   function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog') {
     const id=kind+'_'+col+'_'+row;
     if(rec.piles.has(id))return;
-    const group=new THREE.Group(),color=kind==='tree'?0x7b5936:0x817b74;
-    const material=new THREE.MeshLambertMaterial({color});
-    for(let i=0;i<4;i++) {
-      const geometry=kind==='tree'
-        ?new THREE.CylinderGeometry(.045,.065,.55,5)
-        :new THREE.DodecahedronGeometry(.18,0);
-      const piece=new THREE.Mesh(geometry,material);
-      piece.position.set(Math.cos(i*1.8)*.15,.09,Math.sin(i*1.8)*.15);
-      if(kind==='tree')piece.rotation.z=1.2+i*.08;
-      group.add(piece);
-    }
-    group.position.set(col+.5,y,row+.5);
-    group.userData.shattercaskPile=id;
-    rec.scene.add(group);
-    rec.piles.set(id,{id,col,row,kind,woodKey,group,mapId});
+    rec.piles.set(id,{id,col,row,kind,woodKey,y,mapId}); // Logical loot records are distinct from the pooled GPU instance geometry.
     if(!pileHistory.has(mapId))pileHistory.set(mapId,new Map());
-    pileHistory.get(mapId).set(id,{col,row,kind,woodKey}); // Batch-save with terrain at the end of a blast.
+    pileHistory.get(mapId).set(id,{col,row,kind,woodKey}); // Persist once after the full blast, not once per pile.
   }
   function destroyTerrain(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
@@ -370,7 +397,7 @@
       if(chunked) for(const cell of changedChunks.values())window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
       else window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,Math.floor(x),Math.floor(z));
     }
-    if(count)persistWorld(); // One batched write, never one localStorage write per destroyed tile.
+    if(count){syncPileVisuals(rec);persistWorld();} // Two debris draw calls, one batched persistence write per explosion.
     return count;
   }
   function restoreSceneHistory(mapId,rec) {
@@ -394,6 +421,7 @@
     }
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
       spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey);
+    if(rec.piles.size)syncPileVisuals(rec);
     if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
       if(window.WildernessChunks)for(const cell of chunks.values())
         window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
