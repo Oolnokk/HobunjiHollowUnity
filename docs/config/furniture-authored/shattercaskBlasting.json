@@ -148,18 +148,34 @@
         "y": 0,
         "z": 0
       },
-      "size": 0.6
+      "size": 0.6,
+      "coordinateSpace": "posterior-relative",
+      "posteriorOffset": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
     },
     "handTargets": {
       "left": {
         "x": -0.1241,
         "y": 0.1231,
-        "z": 0
+        "z": 0,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
       },
       "right": {
         "x": 0.1567,
         "y": 0.12,
-        "z": 0
+        "z": 0,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
       }
     }
   },
