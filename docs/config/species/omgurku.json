@@ -132,5 +132,20 @@
       }
     },
     "armLength": 0.558
+  },
+  "hybridPlacement": {
+    "lowerWidth": 2.1,
+    "lowerHeight": 0.916356,
+    "visibleFloorCorrection": 0.151758205,
+    "saddleU": 0.3087855747767857,
+    "saddleV": 0.3691508252181978,
+    "joinDepth": 0.03,
+    "riderScale": 1,
+    "upperOffsetX": 0,
+    "upperOffsetY": 0,
+    "upperOffsetZ": 0,
+    "lowerOffsetX": 0,
+    "lowerOffsetY": 0,
+    "lowerOffsetZ": 0
   }
 }
