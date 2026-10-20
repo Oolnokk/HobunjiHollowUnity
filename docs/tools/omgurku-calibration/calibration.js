@@ -149,8 +149,12 @@
   function setCam(view='angle') {
     if(!state.camera)return;
     const p={
-      front:[3.6,1.7,0],side:[0,1.7,4.3],back:[-3.6,1.7,0],angle:[3.6,2.1,4.4],
-    }[view] || [3.6,2.1,4.4];
+      // Both portrait and lower species sprites are 2D cards. Looking
+      // precisely along +Z made the animal vanish edge-on; the previous
+      // +X "Front" was actually showing the NPC's back. Use the known
+      // authored image normals instead of arbitrary axis labels.
+      front:[-3.6,1.7,0],side:[-3.6,1.7,2.0],back:[3.6,1.7,0],angle:[-3.6,2.1,3.0],
+    }[view] || [-3.6,2.1,3.0];
     state.camera.position.set(...p);
     state.controls?.target.set(0,.75,0);state.controls?.update();
     state.camera.lookAt(0,.75,0);
