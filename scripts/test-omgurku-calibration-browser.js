@@ -58,8 +58,8 @@ const server=http.createServer((req,res)=>{
           lower:pos(composite.lowerRefs[0]?.group),portraitHeight:composite.portraitHeight,
           posterior:composite.posterior,join:model.userData.omgurkuJoin,
           handAttachY:model.userData.handAttachY,handAttachX:model.userData.handAttachX,
-          hands,handsDebug:model.userData.proceduralHandRig?.getDebug?.(),
-          inspector:window.ProceduralHandFrameDriver?.debugSnapshot?.()};
+          hands,handModel:model.userData.proceduralHandRig?.getDebug?.()?.modelKey,
+          handLoadError:model.userData.proceduralHandRig?.getDebug?.()?.loadError||null};
       });
       fs.writeFileSync(path.join(root,'omgurku-visual-qa','assembly.json'),JSON.stringify(visualAudit,null,2));
       console.log('OMGURKU_VISUAL_GEOMETRY',JSON.stringify({
