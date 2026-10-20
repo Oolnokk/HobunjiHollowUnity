@@ -88,6 +88,40 @@ assert(author.includes('syncHoldingPreview();') &&
   author.includes("activeEditorMode==='carry'&&previewEnabled") &&
   !author.includes('state.avatar.visible=true'),
   'avatar preview updates live only in Carryable mode without modifying exported avatar settings');
+assert(asset.carryable.billboardAnchor.coordinateSpace==='posterior-relative' &&
+  Object.values(asset.carryable.billboardAnchor.posteriorOffset).every(Number.isFinite),
+  'Shattercask declares posterior-relative XYZ offset independently of mesh-space mounting point');
+assert(['left','right'].every(side=>['x','y','z'].every(axis=>
+  Number.isFinite(asset.carryable.handTargets[side].rotation[axis]))),
+  'both grip frames export their own authored XYZ Euler rotations');
+assert(code.includes('PlayerBodyTransformComposer?.getPosteriorY?.()') &&
+  code.includes('posteriorLocal.set(') &&
+  code.includes('vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset)') &&
+  code.includes('multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion)') &&
+  !code.includes('vase.group.position.copy(holder.position)'),
+  'runtime mounts relative to actual avatar posterior and applies XYZ plus item scale, never world drop position');
+const composer=fs.readFileSync(path.join(root,'docs/js/player-body-transform-composer.js'),'utf8');
+assert(composer.includes('getPosteriorY: () => playerPosteriorY'),
+  'posterior mount uses the exact composer-owned anatomical pivot');
+assert(author.includes('posteriorAnchorForModel(model') &&
+  author.includes('characterPosteriorY?.(') &&
+  author.includes('carry_reference_posterior') &&
+  author.includes('carry_reference_attachment') &&
+  author.includes('carryPosteriorZ') &&
+  author.includes('tempOffset.copy(previewPosterior)'),
+  'editor previews the same posterior-based mount with visible hip/offset guide and adjustable Z');
+assert(author.includes('state.carryable.handTargets[id].rotation') &&
+  author.includes("handLocalEuler.setFromQuaternion(handAbsolute,'XYZ')") &&
+  author.includes("new THREE.AxesHelper(.095)") &&
+  !author.includes("new THREE.SphereGeometry(.045"),
+  'each grip has a local rotation gizmo rather than an unrotatable proxy sphere');
+const handAttachments=fs.readFileSync(path.join(root,'docs/js/procedural-hand-attachments.js'),'utf8');
+assert(handAttachments.includes('modelCalibrationForSpecies,') &&
+  author.includes("modelCalibrationForSpecies?.('mao-ao','male',modelH)") &&
+  handDriver.includes("if (target.mode === 'authored-world') {") &&
+  handDriver.includes('scratch.authoredQuaternion.setFromEuler(scratch.authoredEuler)'),
+  'editor and gameplay use shared GLB hand calibration and zero-allocation authored rotations');
+
 assert(authorHtml.includes('config/hand-model-profiles.js') &&
   authorHtml.includes('js/procedural-hand-attachments.js') &&
   /carryable-objects\.js\?v=[A-Za-z0-9_-]+/.test(authorHtml),
