@@ -131,7 +131,19 @@
         "rotDeg": 0
       }
     },
-    "armLength": 0.558
+    "armLength": 0.558,
+    "behindHeadUrLayers": [
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-horns-front_omgurku_m.png"
+      },
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-head-behind_omgurku_m.png",
+        "optional": true
+      },
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-horns-back_omgurku_m.png"
+      }
+    ]
   },
   "hybridPlacement": {
     "lowerWidth": 2.1,
