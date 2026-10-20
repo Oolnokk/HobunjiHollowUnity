@@ -14,7 +14,7 @@
     saddleU: 0.3087855747767857, saddleV: 0.3691508252181978,
     joinDepth: 0.03, riderScale: 1,
   }); // Seed join point from Assembly Lab V10; adjustable only through the explicit debug panel.
-  const placement = { ...DEFAULT_PLACEMENT }; // Applied to all live composites by applyPlacement().
+  const DOCS_ROOT = (() => { // Absolute docs-root URL captured while this script still has currentScript.\n    try { return new URL('../', document.currentScript?.src || new URL('js/', location.href)).href; }\n    catch (_) { return new URL('./', location.href).href; }\n  })();\n  const placement = { ...DEFAULT_PLACEMENT }; // Applied to all live composites by applyPlacement().
   const live = new Set(); // Tracks currently attached Omgurku roots for one low-frequency shared gait update.
   const tmpPosition = { x: 0, y: 0, z: 0 }; // Diagnostic fallback for incomplete Three.js stubs.
   const status = { // Surfaced by the in-page mobile debugger and debugSnapshot().
@@ -156,7 +156,7 @@
       const lowerRefs = [];
       try {
         for (const frame of FRAMES) {
-          lowerRefs.push(api.buildAnimalPlaneAvatarModel(THREE, new URL(SPRITES[frame], new URL('../', document.currentScript?.src || location.href)).href, {
+          lowerRefs.push(api.buildAnimalPlaneAvatarModel(THREE, new URL(SPRITES[frame], DOCS_ROOT).href, {
             modelWidth: placement.lowerWidth,
             modelHeight: placement.lowerHeight,
             name: `omgurku_${frame}`,
