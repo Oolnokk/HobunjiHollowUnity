@@ -10806,6 +10806,10 @@
               w.resetRouteState?.(); // Any pending target must be replanned from the actual landing tile.
               window.__farmLog?.(`[npc zone entry] ${w.rec?.id || 'npc'} repositioned ${fromC},${fromR} → ${arrival.c},${arrival.r} in ${mapId}`, 'npc');
             }
+            // Paths tried while the zone's terrain grid was unavailable are invalid
+            // even when this arrival tile itself happened to be safe.
+            w.resetRouteState?.();
+            w._npcPathFailKey = null; w._npcPathFailUntil = 0;
             w.root._pendingZoneAdd = null;
             zScene.add(w.root); w.root._npcScene = zScene;
           }
