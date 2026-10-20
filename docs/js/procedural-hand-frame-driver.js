@@ -162,6 +162,8 @@
   function playerHeldItemTarget(record) {
     if (inAttackEditor() || record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
     if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
+    const carried = window.Shattercasks?.heldHandTarget?.();
+    if (carried?.holder?.parent) return carried;
     if (gameDeps.toolHolder?.visible) return null;
     const target = gameDeps.getHeldItemHandTarget?.();
     return target?.holder?.visible ? target : null;
@@ -538,7 +540,14 @@
       record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
     };
     const owners = ensureFallbackState(record).owners;
-    if (target.mode === 'large') {
+    if (target.mode === 'authored-world') {
+      for (const side of ['right', 'left']) {
+        const p = target.handTargets?.[side] || {};
+        place(side, Number(p.x)||0, Number(p.y)||0, Number(p.z)||0, side);
+        owners[side]='authored-world-'+side;
+      }
+      record.secondaryActive=true;
+    } else if (target.mode === 'large') {
       const edge = target.width / 2 + HELD_LARGE_EDGE_MARGIN;
       place('right', edge, 0, 0, 'right');
       place('left', -edge, 0, 0, 'left');
