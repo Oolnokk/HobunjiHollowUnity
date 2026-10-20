@@ -36,7 +36,7 @@ These execute map isolation, explicit assignments, actual occupants, direct obje
 
 `isSeatTaken(area, seat, exceptId)` checks the player, approaching NPCs and same-pass planner leases by physical chair plus seat index. Both generic activity planning and gathering selection consult it. Gathering choices stay stable for their shift, try another preferred locale when full, and otherwise choose clear standing ground. Live targets renew the reservation before walking. Occupancy is independent of table assignment.
 
-NPCs, chairs, serving objects and solid furniture enter the existing `RangedWeapons.focusCandidates` camera-ray selector together. Only candidates in player reach are considered; an off-ray nearby NPC cannot win a chair prompt. The chosen target is shared by display and press, and disabled occupied-chair prompts remain visible. Movement probes use the same placed furniture transforms, including rotation and scale; doors and mechanisms keep their existing dynamic owners.
+NPCs use a separate pass through the existing `RangedWeapons.focusCandidates` camera-ray selector. Social reach is six tiles (`movement.npc.socialInteractionRadiusTiles`), measured from the player; scenery/furniture blockers cannot defeat an aimed NPC. An off-ray nearby NPC cannot win. Chairs, serving objects and solid furniture retain the physical furniture pass when no NPC is aimed at. The chosen target is shared by display and press, and disabled occupied-chair prompts remain visible. Movement probes use the same placed furniture transforms, including rotation and scale; doors and mechanisms keep their existing dynamic owners.
 
 Grass suppression merges these footprints with the existing building filter and restores original instances when a locale moves or disappears. The bandstand platform is a normal shortened/stretched `tableLong` child with `walkableElevation` enabled. It registers with the same geometry-derived support registry as the inn stage and porches.
 
@@ -45,3 +45,12 @@ NPC commands remain on **hold Talk**, using the existing command wheel and input
 NPC-only hidden music frames disable physical input before audio initialization, preserving the generated performance when the player uses overworld controls. Player music sessions keep their existing input and backup behavior. Furniture, following and NPC performance diagnostics are included in the mobile Pixel Probe report.
 
 Movement collision builds reusable four-tile spatial buckets once per queried area per scheduler frame. Mechanism classification and transformed footprints are shared across path probes; exact oriented collision remains authoritative. Registration and clearing invalidate the index immediately, while live transforms and collision flags refresh on the next frame. Editor contexts without a frame owner use immediate queries. Pixel Probe includes cumulative collision query, index-build, candidate-test and classification counts.
+
+
+## Town loader and grass readiness
+
+`TownZoneBuildings.init` must receive `DECORATIVE_FURNITURE_DEFS`, just as the furniture mesh builder does. Its final `registerPlacement` replaces the builder's initial record: an empty definition here loses chair eligibility, width/depth, and walkability. Passing the definitions to GridTileAccessors alone does not wire the town loader.
+
+`BuildingGrassSuppression` can arrive through the late house-pieces dependency loader after the town has initialized. It recovers the existing adapters from `TownZoneBuildings.grassContext()`, immediately filters the current scene, and installs the existing scene-add hook for later grass rebuilds. The init wrapper handles the other load order. Furniture footprint keys include partially intersecting grass tiles; immutable source matrices restore grass after removal. Check both load orders, not just a synthetic registry populated after the filter loads.
+
+`test-town-furniture-wiring.js` executes the actual game dependency bag and late-load sequence. `test-social-interaction-reach.js` executes the production camera-ray selector through scenery and across range/map boundaries.

@@ -3,6 +3,7 @@
   'use strict';
   let deps = null; // Runtime-owned inventory, scene, NPC, and persistence closures.
   let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0 } }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
+  let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let heldBowl = null; // Temporary ten-portion festival bowl: never added to real inventory or character saves.
   let socialParticipationS = 0; // Counts played wheel dance/music seconds, independent of marked festival activity regions.
@@ -192,24 +193,58 @@
     state.funDay=today;
     if(awarded.length)commit(`Festival Fun converted overnight: ${awarded.join(', ')}.`);
   }
+  function danceStartMessage() {
+    const code=window.FestivalWheelDanceRuntime?.diagnostics?.()?.lastStartFailure?.code; // Report the real start gate instead of attributing every failure to room.
+    if(code==='too-far')return 'Come a little closer to your dance partner.';
+    if(code==='different-floor-height')return 'Stand on the same level as your dance partner.';
+    if(code==='camera-busy')return 'Finish the current camera scene before dancing.';
+    if(code==='already-dancing')return 'Finish your current dance first.';
+    if(code==='anatomical-reach'||code==='nonuniform-rig-scale')return 'The paired pose could not fit these dancers. The dance diagnostics have the details.';
+    return 'The dance animation is not ready yet. Please try again in a moment.';
+  }
+  function beginPairedDance(walker) {
+    if(dance||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return false;
+    dance={propId:null,event:eventKey(),elapsed:0,targetNpcId:walker.rec.id,awardTime:0,awardedSeconds:0};
+    window.HobunjiActivityEvents?.emit?.('dance_together',{npcId:walker.rec.id});
+    return true;
+  }
+  function clearPendingDance() { if(!pendingDance)return; pendingDance=null;window.WorldActionInputClaims?.clearClaims?.('dance-invitation');deps?.refreshActions?.(); }
   function askFestivalDance(walker) {
     const id=walker?.rec?.id;
-    if (festival()?.id!=='gorkunash'||!festivalHours()||!isRomanceable(walker?.rec)
-      ||walker.area!=='town'
-      ||!walker.root?.position||!deps?.getPlayerTile?.()) return fail('Approach someone you would like to dance with.');
-    const player=deps.getPlayerTile();
-    if(Math.hypot(player.c-walker.root.position.x,player.r-walker.root.position.z)>3.5)return fail('Approach your dance partner.');
+    if (festival()?.id!=='gorkunash'||!festivalHours()||deps?.isFestivalSuspended?.()||!isRomanceable(walker?.rec)
+      ||walker.area!=='town'||!walker.root?.position||!deps?.getPlayerTile?.())return fail('Approach someone you would like to dance with.');
+    if(dance||pendingDance)return fail('Finish your current dance invitation first.');
+    const player=deps.getPlayerTile(), reach=Number(window.SCRATCHBONES_CONFIG?.game?.movement?.npc?.socialInteractionRadiusTiles)||6;
+    if(Math.hypot(player.c-walker.root.position.x,player.r-walker.root.position.z)>reach)return fail('Approach your dance partner.');
     const accepted=favorHearts(id)>=3||(favorHearts(id)>=1&&(window.NpcRapport?.get?.(id)||0)>200);
-    const response=window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse; // Directed chathead responses share the ordinary social speech owner.
+    const response=window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse;
     if(!accepted){response?.(walker,{text:'Perhaps another time.',accepted:false,reason:'dance'});return fail('Your invitation was politely declined.');}
-    if(dance||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.())){
-      response?.(walker,{text:"We cannot dance here just now. Let's try somewhere with room.",accepted:false,reason:'dance'});
-      return fail('The two-avatar Festival Wheel Dance cannot start here.');
+    window.SocialActionWheel?.stopDance?.('paired-invitation'); // Transition an existing solo dance into the requested pair.
+    if(deps.prepareDance) {
+      deps.prepareDance(walker);
+      pendingDance={walker,targetNpcId:id,event:eventKey(),remaining:20,settleS:0,followSession:{mode:'follow'},
+        waitTarget:{area:walker.area,c:walker.root.position.x-.5,r:walker.root.position.z-.5,pose:'stand'}};
+      window.WorldActionInputClaims?.setClaims?.('dance-invitation',['dodge','action2'].map(actionId=>({actionId,label:'Cancel dance invitation',priority:600,onPress:cancelDance})));
+      response?.(walker,{text:'I would be delighted. Let me get ready.',accepted:true,reason:'dance'});
+      return commit(`Getting ready to dance with ${walker.rec.name||id}. Dodge or Action 2 cancels.`);
     }
+    if(!beginPairedDance(walker))return fail(danceStartMessage());
     response?.(walker,{text:'I would be delighted to dance.',accepted:true,reason:'dance'});
-    dance={propId:null,event:eventKey(),elapsed:0,targetNpcId:id,awardTime:0,awardedSeconds:0};
-    window.HobunjiActivityEvents?.emit?.('dance_together',{npcId:id});
     return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);
+  }
+  function updateDanceInvitation(elapsed) {
+    if(!pendingDance)return;
+    const invitation=pendingDance,walker=invitation.walker; // This invitation alone owns the temporary approach target.
+    if(eventKey()!==invitation.event||!festivalHours()||deps.isFestivalSuspended?.()||deps.getArea?.()!=='town'||walker.area!=='town'||walker.rec.dead||!walker.root?.parent||deps.isBlocked?.()) {clearPendingDance();return;}
+    if(deps.socialPaused?.()||document.hidden)return;
+    invitation.remaining-=elapsed;invitation.settleS+=elapsed;
+    if(invitation.remaining<=0){clearPendingDance();fail(danceStartMessage());return;}
+    if(invitation.settleS<.4||deps.canStartDance?.()===false||walker.currentScheduleTarget?.pose==='sit')return;
+    const player=deps.getPlayerTile();
+    if(Math.hypot(player.c-walker.root.position.x,player.r-walker.root.position.z)>3.5)return;
+    if(beginPairedDance(walker)){clearPendingDance();commit(`Dancing with ${walker.rec.name||walker.rec.id}.`);return;}
+    const code=window.FestivalWheelDanceRuntime?.diagnostics?.()?.lastStartFailure?.code;
+    if(['anatomical-reach','nonuniform-rig-scale','different-floor-height','partner-unavailable'].includes(code)){clearPendingDance();fail(danceStartMessage());}
   }
 
   function socialOptionsFor(walker) {
@@ -242,7 +277,7 @@
     return activityProps().filter(atProp).sort((a, b) => distance(a) - distance(b))[0] || null;
   }
   function actionButton() {
-    if (dance) return { icon: '■', label: 'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
+    if (dance||pendingDance) return { icon: '■', label: pendingDance?'Cancel invitation':'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
     if (festival()?.id === 'gorkunash') return null; // Schedules and ordinary objects provide the event; there is no event/activity input.
     const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
     return prop ? { icon: festival().icon, label: prop.activity.label || window.FestivalCalendar.activityLabels[prop.activity.type], action: 'festival_activity', allowed: true, style: 'primary' } : null;
@@ -335,9 +370,26 @@
     window.FestivalUI?.close?.();
   }
   const gatheringAssignments = new Map(); // Stable per-shift destinations avoid aliasing occupied stations or flickering between locales.
+  function stageDuty(rec) {
+    if (!['foroji_funji','kaboku_kunji'].includes(rec?.id)) return false;
+    const hour = Number(window.CalendarSystem?.getHour?.())||0; // Incoming performers overlap their shift so the outgoing musician can wait for actual arrival.
+    if (rec.id === 'kaboku_kunji') return hour>=19.5 || hour<1;
+    if (hour>=14 && hour<20) return true;
+    if (!festivalHours()) return false;
+    const incoming = (deps.getWalkers?.()||[]).find(w=>w.rec?.id==='kaboku_kunji');
+    const station = layout()?.npcStations?.find(s=>s.festivalNpcId==='kaboku_kunji' && s.festivalLocaleKind==='bandstand');
+    return !incoming || incoming.rec.dead || incoming.area!=='town' || !station
+      || Math.hypot(incoming.root.position.x-station.col-.5,incoming.root.position.z-station.row-.5)>.5;
+  }
   function npcTarget(rec) {
     const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
     if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return release();
+    if (pendingDance?.targetNpcId === rec.id) return window.NpcFollowing?.target?.(rec,pendingDance.followSession,1.5) || pendingDance.waitTarget;
+    if (festival()?.id === 'gorkunash' && stageDuty(rec)) {
+      const station = layout()?.npcStations?.find(s=>s.festivalNpcId===rec.id && s.festivalLocaleKind==='bandstand');
+      const target = station && window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
+      if (target) { release(); return target; } // Ordinary pathfinding takes the host to a real walkable stage before the gathering opens.
+    }
     if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return release();
     if (festival()?.id === 'gorkunash') {
       if (rec.id === 'father_hunundi_hodu') return release(); // The presence schedule owns his walk out of town.
@@ -346,6 +398,7 @@
         return window.FestivalDialogue?.homeTarget?.(rec) || null;
       }
     }
+    if (festival()?.id === 'gorkunash' && window.NpcSharedMeals) return window.NpcSharedMeals.targetFor(rec); // Cached multi-step meals still use ordinary scheduler/pathfinding targets.
     const stations=layout()?.npcStations||[], index=residents().findIndex(npc=>npc.id===rec.id);
     if(index<0)return release();
     const hour=Number(window.CalendarSystem.getHour())||0, shift=hour>=15?hour-15:hour+9;
@@ -394,6 +447,7 @@
     return {area:walker?.area||'town',c:x-.5,r:z-.5,pose:'stand',activity:festival().name};
   }
   function cancelDance() {
+    clearPendingDance();
     if(dance?.targetNpcId)window.FestivalWheelDanceRuntime?.stop?.('festival-ended');
     else if(dance)window.SocialActionWheel?.stopDance?.('festival-ended');
     dance=null;
@@ -418,6 +472,8 @@
     if (now - lastTick < 200) return;
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
+    updateDanceInvitation(elapsed);
+    window.NpcSharedMeals?.update?.(); // Existing low-frequency gathering tick owns meal decisions; no extra frame loop.
     const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
     if (festival()?.id === 'gorkunash' && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {
       socialParticipationS += elapsed;
@@ -473,13 +529,29 @@
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
-      festivalDialogue:window.FestivalDialogue?.diagnostics?.(),
-      latestChange:'Authored evening Gorkunash dialogue and greetings; Oliphanti includes Mashtzarr and Mammakh; Kinami stays home and Hunundi departs through an existing exit.' };
+      pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
+      festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
+      latestChange:'Grass/chairs/buffet fixed; family-table meal routines; six-tile social aim through scenery; musician handoffs; dance invitations stand/approach/retry rigs with specific failure diagnostics.' };
   }
   function init(injected) {
     deps = injected;
     residentCacheAt = -Infinity;
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
+    window.NpcSharedMeals?.init?.({
+      enabled: () => festival()?.id === 'gorkunash' && festivalHours() && !deps.isFestivalSuspended?.(),
+      getLayout: layout, getWalkers: deps.getWalkers, minutes: () => worldHour()*60, paused: deps.socialPaused,
+      owner:'festivals', canStandAt:deps.canStandAt,
+      isMusician: stageDuty,
+      companions: rec => {
+        const bonds = new Map((window.DialogueContent?.relatedNpcBonds?.(rec.id)||[]).map(([id,weight])=>[id,weight*16])); // Existing household/workplace relation strengths.
+        for (const id of window.AmbientDialogue?.friendIdsFor?.(rec.id)||[]) bonds.set(id,Math.max(3,bonds.get(id)||0));
+        return bonds;
+      },
+      visible: deps.canSeeNpc,
+      carryBowl: (walker,id) => window.NpcDrinkInteraction?.setAmbientCarry?.({ownerId:`meal:${id}`,root:walker.root,avatarGroup:walker.avatarGroup,itemKey:'festival_bowl'}),
+      clearCarry: (id,walker) => { window.NpcDrinkInteraction?.clearAmbientCarry?.(`meal:${id}`); if(walker)window.NpcDrinkInteraction?.stopAutonomous?.(walker); },
+      playEat: walker => window.NpcDrinkInteraction?.playAutonomous?.(walker,'festival_bowl'),
+    });
     window.FurnitureTableSystem?.registerService?.('gorkunash-drinks', {
       enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
       buttons: () => claimed('liquor') ? [] : [{icon:'🍷',label:'Take a bottle',action:'obj_take_bottle',style:'primary',allowed:!deps?.isBlocked?.()}],
@@ -611,5 +683,5 @@
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
     socialOptionsFor, festivalHours, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
-    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
+    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();

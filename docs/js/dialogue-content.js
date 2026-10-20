@@ -1235,6 +1235,7 @@
     npcBaseDispositions: _npcBaseDispositions,
     hasQueuedConversationTree: npcId => queuedConversationTrees.has(npcId),
     queueConversationTree,
+    relatedNpcBonds, // Household/workplace bonds shared with social gathering table preferences.
     registerTreeProvider,
     registerContextProvider,
     contextGreeting,

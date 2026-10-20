@@ -4180,7 +4180,7 @@
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
-          furnitureKey, col, row,
+          furnitureKey, col, row, seatIndex,
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
@@ -12699,7 +12699,7 @@
         focusCandidates: (candidates,range) => window.RangedWeapons?.focusCandidates?.(candidates,range), // Existing camera-ray authority selects NPCs, chairs and serving objects together.
         actorHitbox: walker => window.RangedWeapons?.actorHitbox?.(walker),
         frameId: () => window.RuntimeFrameScheduler?.frameId?.(),
-        npcReach: () => npcMovementConfig().interactionRadiusTiles ?? 2,
+        npcReach: () => npcMovementConfig().socialInteractionRadiusTiles ?? 6,
         extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) : null,
         getAim: () => { const aim = getReticleTile(); return { c:aim.probeX / TILE, r:aim.probeY / TILE }; },
         assignmentChanged: area => { if (area === 'farm' || area === 'interior') window.FarmEditor?.saveFarmLayout?.(); }, // Stable inventory chair/table links survive reloads.
@@ -22502,7 +22502,7 @@
         getActiveTool: () => activeTool,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
-        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        getItemDef: itemKey => itemKey === 'festival_bowl' ? { key:itemKey, icon:'🥣', label:'Meal Bowl', spriteIcon:'festival-bowl.png' } : ITEM_DEFS[itemKey],
         poseAt: heldActionPoseAt,
         makeBottlePlane: makeHeldItemPlaneMesh,
         disposeBottlePlane: disposeHeldItemPlaneMesh,
@@ -25200,7 +25200,7 @@
         const directFurnitureButtons = directFurniture?.getButtons?.() || [];
         if (directFurnitureButtons.length) return directFurnitureButtons;
         const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
-        if (window.FestivalSystem?.dance?.targetNpcId && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
+        if ((window.FestivalSystem?.dance?.targetNpcId || window.FestivalSystem?.pendingDance?.targetNpcId) && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
@@ -29104,7 +29104,21 @@
         captureCamera: () => ({azimuth:cameraAzimuthOffsetDeg,angle:cameraAngleOffsetDeg}),
         restoreCamera: state => { if(state){cameraAzimuthOffsetDeg=state.azimuth;cameraAngleOffsetDeg=state.angle;} }, // Manual look input during the cinematic never leaks into the restored gameplay view.
       });
+      const npcMealScreenPoint = new THREE.Vector3(); // Reused only on the gathering tick to skip off-camera meal presentation.
       window.FestivalSystem?.init({
+        refreshActions: refreshActionBar, // Invitation start/cancel refreshes only the action arch.
+        prepareDance: walker => {
+          if(sitInteraction)endSitInteraction();
+          window.NpcSharedMeals?.interrupt?.(walker.rec.id);
+          window.NpcDrinkInteraction?.stopAutonomous?.(walker);
+          window.FurnitureTableSystem?.setSeatTarget?.(walker.rec.id,null);
+        },
+        canStartDance: () => !sitInteraction,
+        canSeeNpc: walker => {
+          if (!walker?.root?.parent || walker.area !== currentArea || walker.root.visible === false || walker._npcLodFar) return false;
+          npcMealScreenPoint.copy(walker.root.position); npcMealScreenPoint.y += .5; npcMealScreenPoint.project(camera);
+          return Math.abs(npcMealScreenPoint.x)<=1.1 && Math.abs(npcMealScreenPoint.y)<=1.1 && npcMealScreenPoint.z>=-1 && npcMealScreenPoint.z<=1;
+        },
         inventory,
         getItemDefs: () => ITEM_DEFS,
         getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
@@ -29504,6 +29518,7 @@
       });
 
       window.TownZoneBuildings?.init({
+        DECORATIVE_FURNITURE_DEFS, // Outdoor chairs, collision and grass use the same definitions as their rendered furniture.
         getTownZone: () => _townZone,
         debugLog,
         getTownScene: () => townScene,

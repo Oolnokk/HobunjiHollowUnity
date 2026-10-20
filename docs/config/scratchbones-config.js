@@ -158,6 +158,7 @@ window.SCRATCHBONES_CONFIG = {
         "endpointPauseSeconds": 1.6,
         "arrivalRadiusTiles": 0.18,
         "interactionRadiusTiles": 2.0,
+        "socialInteractionRadiusTiles": 6.0,
         "routeSnapRadiusTiles": 8,
         "beelineSampleStepTiles": 0.25
       }

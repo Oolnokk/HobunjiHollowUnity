@@ -3,6 +3,8 @@
   'use strict';
   const DURATION_S=4, RADIUS=(.34*1.18)/2, TILT_RAD=22*Math.PI/180; // Preserves the preview's transport and alternating rock rhythm.
   const SIDES=['left','right']; // Fixed two-hand/two-leg work, independent of the festival crowd.
+  let lastStartFailure=null; // Mobile diagnostics distinguish preparation failures from an actual pose/reach failure.
+  function failStart(code,actor=null){lastStartFailure={code,actor};return false;}
   let deps=null, session=null, lastStopReason=''; // One scoped pair; no independent frame loop or world scan.
   function init(value){deps=value;}
   function sample(seconds,out={}) {
@@ -13,12 +15,14 @@
   function isPartner(walker){return !!session&&session.walker===walker;}
   function activeFor(id){return !!session&&session.walker.rec.id===id&&!!session.player.parent&&!!session.partner.parent;}
   function elapsedSeconds(id){return activeFor(id)?session.elapsed:0;}
-  function captureActor(root,model,legs) {
+  function captureActor(root,model,legs,who) {
     const T=window.THREE, hands=model?.userData?.proceduralHandRig, neck=model?.userData?.neckRig; // Resolve existing owners once at invitation acceptance.
-    if(!legs?.motionAnatomy || !hands?.shoulderPositionLocal || !neck?.neckJoint)return null;
+    if(!legs?.motionAnatomy){failStart('legs-not-ready',who);return null;}
+    if(!hands?.shoulderPositionLocal){failStart('hands-not-ready',who);return null;}
+    if(!neck?.neckJoint){failStart('neck-not-ready',who);return null;}
     root.updateWorldMatrix(true,true);
     const scale=root.getWorldScale(new T.Vector3()); // Actual body scaling, including any scene/instance scale.
-    if(Math.max(scale.x,scale.y,scale.z)-Math.min(scale.x,scale.y,scale.z)>.001)return null; // A distorted skeletal root cannot keep fixed anatomical segment lengths.
+    if(Math.max(scale.x,scale.y,scale.z)-Math.min(scale.x,scale.y,scale.z)>.001){failStart('nonuniform-rig-scale',who);return null;} // A distorted skeletal root cannot keep fixed anatomical segment lengths.
     const actor={root,model,legs,hands,neck:neck.neckJoint,anatomy:null,scale:scale.y,
       initial:{position:root.position.clone(),quaternion:root.quaternion.clone(),legRotation:legs.group.quaternion.clone(),neck:neck.neckJoint.quaternion.clone()},
       shoulders:{},reach:{},worldShoulders:{left:new T.Vector3(),right:new T.Vector3()},
@@ -28,28 +32,30 @@
       sourceLocal:new T.Vector3(),targetLocal:new T.Vector3(),hip:new T.Vector3(),
       handLocal:new T.Vector3(),handInverse:new T.Quaternion(),footYaw:new T.Quaternion(),
       grounded:true,wasSupport:false,crouch:0,lift:0,airBlend:0,supportSlides:0}; // All transform scratch belongs to the action, never allocated by its frame path.
-    if(!actor.handSockets.left||!actor.handSockets.right)return null;
+    if(!actor.handSockets.left||!actor.handSockets.right){failStart('hand-sockets-not-ready',who);return null;}
     const parentScale=hands.parent.getWorldScale(new T.Vector3()); // Hand reach is already expressed in the floor-relative hand parent's units.
     for(const side of SIDES) {
       const shoulder=hands.shoulderPositionLocal(side,new T.Vector3()); // Canonical species/gender attachment-rig shoulders, including posterior placement.
-      if(!shoulder)return null;
+      if(!shoulder){failStart('shoulders-not-ready',who);return null;}
       hands.parent.localToWorld(shoulder);root.worldToLocal(shoulder);actor.shoulders[side]=shoulder;
       actor.reach[side]=hands.armLengthForSide(side)*Math.min(parentScale.x,parentScale.y,parentScale.z)*.98;
-      if(!Number.isFinite(actor.reach[side])||actor.reach[side]<=0)return null;
+      if(!Number.isFinite(actor.reach[side])||actor.reach[side]<=0){failStart('arm-reach-not-ready',who);return null;}
     }
     actor.shoulderCenter=actor.shoulders.left.clone().add(actor.shoulders.right).multiplyScalar(.5);
-    refreshLegAnatomy(actor);
+    if(!refreshLegAnatomy(actor)){failStart('leg-anatomy-not-ready',who);return null;}
     actor.eyeOffset.copy(neck.headCentroidLocal||{x:0,y:0,z:0}).sub(neck.neckLocal||{x:0,y:0,z:0}); // Same head-centroid landmark used by the preview's eye marker.
     actor.eyeOffset.z+=.006;
     return actor;
   }
   function refreshLegAnatomy(actor) {
     actor.anatomy=actor.legs.motionAnatomy(); // Recomputed only at action start or an asset-readiness revision.
+    if(!Array.isArray(actor.anatomy)||actor.anatomy.length<2||actor.anatomy.some(a=>!a?.hip?.clone||!Number.isFinite(a.length)||a.length<=0||!Number.isFinite(a.ankle?.y)))return false;
     actor.anatomyRevision=actor.legs.anatomyRevision?.();
     actor.legLength=Math.min(...actor.anatomy.map(a=>a.length))*actor.scale;
     actor.soleHeight=Math.max(...actor.anatomy.map(a=>a.ankle.y))*actor.scale;
     actor.hipLocal=actor.anatomy[0].hip.clone().add(actor.anatomy[1].hip).multiplyScalar(.5);
     actor.wasSupport=false;
+    return true;
   }
   function stop(reason='canceled') {
     if(!session)return false;
@@ -68,12 +74,19 @@
     return true;
   }
   function start(walker,player) {
-    if(session||window.SocialActionWheel?.isDancing?.()||window.CinematicCameraRuntime?.isActive?.()
-      ||!walker?.root?.parent||!player?.parent||!walker.rec?.id||walker.root===player)return false;
+    lastStartFailure=null;
+    if(session)return failStart('already-dancing');
+    if(window.SocialActionWheel?.isDancing?.())return failStart('solo-dance-active');
+    if(window.CinematicCameraRuntime?.isActive?.())return failStart('camera-busy');
+    if(!walker?.root?.parent||!player?.parent||!walker.rec?.id||walker.root===player)return failStart('partner-unavailable');
     const T=window.THREE,p=player.position,n=walker.root.position; // World roots remain the real participants, never preview clones.
-    if(!T?.Vector3||Math.hypot(n.x-p.x,n.z-p.z)>3.6||Math.abs(p.y-n.y)>1)return false;
-    const a=captureActor(player,deps?.getPlayerModel?.(),deps?.getPlayerLegs?.()), b=captureActor(walker.root,walker.avatarGroup,walker.legs); // Rig discovery is bounded to these two actors at start.
-    if(!a||!b){lastStopReason='waiting-for-procedural-rigs';return false;}
+    if(!T?.Vector3)return failStart('renderer-not-ready');
+    if(Math.hypot(n.x-p.x,n.z-p.z)>3.6)return failStart('too-far');
+    if(Math.abs(p.y-n.y)>1)return failStart('different-floor-height');
+    const a=captureActor(player,deps?.getPlayerModel?.(),deps?.getPlayerLegs?.(),'player');
+    if(!a){lastStopReason='waiting-for-procedural-rigs';return false;}
+    const b=captureActor(walker.root,walker.avatarGroup,walker.legs,'partner');
+    if(!b){lastStopReason='waiting-for-procedural-rigs';return false;}
     const separation=Math.min(RADIUS*2*(a.scale+b.scale)/2,(Math.min(a.reach.left,a.reach.right)+Math.min(b.reach.left,b.reach.right))*.6); // Keep an elbow reserve instead of assuming all species have equal arms.
     const heightDifference=b.shoulderCenter.y*b.scale-a.shoulderCenter.y*a.scale; // Compensates for tall/short partners before adding rhythmic rocking.
     session={player,partner:walker.root,walker,actors:[a,b],elapsed:0,heading:Math.atan2(n.x-p.x,n.z-p.z),
@@ -84,11 +97,11 @@
       up:new T.Vector3(0,1,0),xAxis:new T.Vector3(1,0,0),radial:new T.Vector3(),delta:new T.Vector3(),
       contacts:[new T.Vector3(),new T.Vector3()],cameraPosition:new T.Vector3(),cameraTarget:new T.Vector3(),cameraState:deps?.captureCamera?.(),
       supportPoint:new T.Vector3(),lastSupport:null,cameraRecord:null,lock:null}; // Reused vectors and a fixed count of analytic constraints replace per-frame anatomy checks/searches.
-    if(!applyFrame()){stop('anatomical-reach');return false;}
+    if(!applyFrame()){stop('anatomical-reach');return failStart('anatomical-reach');}
     const s=session; // Callbacks retain only this action's preallocated pose buffers.
     for(const actor of s.actors)actor.hands.setPoseProvider('paired-dance',()=>applyHands(actor));
     s.lock=window.CharacterActionLocks?.acquire?.({owner:'festival-wheel-dance',reason:'Procedural paired dance',participants:[
-      {id:'player',channels:['movement','tools','pose','facing','head','camera']},{id:walker.rec.id,channels:['movement','tools','actions','facing','head']}]});
+      {id:'player',channels:['movement','tools','pose','facing','head','camera']},{id:window.NpcCharacterState?.participantId?.(walker.rec.id)||`npc:${walker.rec.id}`,channels:['movement','tools','actions','pose','facing','head']}]});
     s.cameraRecord=window.CinematicCameraRuntime?.activate?.('town',{id:'paired-dance',fovDeg:48,blendSeconds:.25,
       positionProvider:()=>s.cameraPosition,targetProvider:()=>s.cameraTarget,dialogueFraming:false},{reason:'paired-dance'});
     window.WorldActionInputClaims?.setClaims?.('paired-dance',['dodge','action2'].map(actionId=>({actionId,label:'Stop dancing',priority:600,onPress:()=>stop('player-canceled')}))); // Uses the existing bound inputs on keyboard, touch and controller.
@@ -232,7 +245,7 @@
       ||session.actors.some(a=>a.model.userData.proceduralHandRig!==a.hands||!a.legs.group.parent)
       ||deps?.getPlayerModel?.()!==session.actors[0].model||session.walker.avatarGroup!==session.actors[1].model){stop('partner-or-scene-gone');return;}
     for(const actor of session.actors)if(actor.anatomyRevision!==actor.legs.anatomyRevision?.()) {
-      refreshLegAnatomy(actor);
+      if(!refreshLegAnatomy(actor)){stop('waiting-for-leg-anatomy');return;}
       session.hopHeight=Math.min(...session.actors.map(a=>Math.min(a.legLength*.42,a.reach.left*.35,a.reach.right*.35))); // A late GLB keeps its actual sole height and fixed leg reach.
     }
     if(!paused)session.elapsed+=Math.max(0,Math.min(.05,Number(dt)||0));
@@ -240,8 +253,8 @@
     deps?.refreshCamera?.(); // Reuses game.js's cinematic collision/framing owner after this frame's paired pose settles.
   }
   function diagnostics() {
-    return {latestChange:'Larger wheels, ambient invitation replies, fixed-length grounded/dangling paired limbs and preview eye-contact camera.',
-      active:!!session,lastStopReason,...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
+    return {latestChange:'Specific dance start reasons and per-actor rig readiness; NPC pose lock uses the shared npc: participant ID; invitations prepare seated/solo dancers before capture.',
+      active:!!session,lastStopReason,lastStartFailure,...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
         baseTiltDeg:session.baseTilt*180/Math.PI,authorDurationS:DURATION_S,authorRevolutions:2,
         actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
         cameraTarget:{x:session.cameraTarget.x,y:session.cameraTarget.y,z:session.cameraTarget.z}}:{})};

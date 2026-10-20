@@ -147,7 +147,7 @@
   <script src="debug.js?v=20261016hbfaf2c3"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261018colors-starved-compendium1"></script>
-  <script src="config/scratchbones-config.js?v=20261017h35a414b"></script>
+  <script src="config/scratchbones-config.js?v=20261020h63d3099"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -181,13 +181,13 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261019hb635961"></script>
+  <script src="js/held-action-animations.js?v=20261020h076e1a0"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261019h583d9be"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
-  <script src="js/npc-drink-interaction.js?v=20260811b"></script>
+  <script src="js/npc-drink-interaction.js?v=20261020h2974281"></script>
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
@@ -229,7 +229,7 @@
   <script src="js/interior-door-tiles.js?v=20261018h0336068"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=20261019h439e055"></script>
+  <script src="js/furniture-table-system.js?v=20261020hb9dac3e"></script>
   <script src="js/authored-furniture-runtime.js?v=20261019h0a80a02"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261016h86b86fc"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
@@ -436,7 +436,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261019h2073bd9&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261020hdf62bde&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -612,7 +612,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261019h9baca52"></script>
+  <script src="js/town-zone-buildings.js?v=20261020h693fae5"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
@@ -2519,14 +2519,15 @@
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
   <script src="js/character-voice-owner.js?v=20261013voiceowner1"></script>
-  <script src="js/dialogue-content.js?v=20261020hfbdf2f6"></script>
+  <script src="js/dialogue-content.js?v=20261020h414a255"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
   <script src="js/festival-props.js?v=20261019had6e4fb"></script>
-  <script src="js/festival-wheel-dance-runtime.js?v=20261019h2505513"></script>
-  <script src="js/festival-system.js?v=20261020ha47a77c"></script>
+  <script src="js/festival-wheel-dance-runtime.js?v=20261020h9a1c4a9"></script>
+  <script src="js/npc-shared-meals.js?v=20261020meals1"></script>
+  <script src="js/festival-system.js?v=20261020hfa0913b"></script>
   <script src="js/festival-dialogue.js?v=20261020gorkunash1"></script>
   <script src="js/festival-ui.js?v=20261018hgorkunash3"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
@@ -2545,7 +2546,7 @@
   <script src="js/loading-screen-runtime.js?v=20261018resourcecolors2"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
-  <script src="js/ambient-dialogue.js?v=20261020h4ed483f"></script>
+  <script src="js/ambient-dialogue.js?v=20261020h551fddd"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -2674,7 +2675,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261020hd20f5cd"></script>
+  <script src="game.js?v=20261020h08402a8"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261018worldstory3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

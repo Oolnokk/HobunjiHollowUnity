@@ -208,6 +208,7 @@
 
   function _patchTownZoneBuildings(api) {
     if (!api || api.__hobunjiBuildingGrassPatched) return;
+    townDeps = api.grassContext?.() || townDeps; // house-pieces may load this after town furniture has already initialized.
     const originalInit = api.init; // Captured to preserve TownZoneBuildings' existing initialization behavior.
     const originalSpawnTown = api.spawnTownBuildings; // Captured so town grass filtering is an additive post-step.
     const originalSpawnZone = api.spawnZoneBuildings; // Captured so zone grass is filtered once an authored building map is known.
@@ -247,6 +248,7 @@
     }
     api.refreshBuildingGrassSuppression = _refreshTown;
     api.__hobunjiBuildingGrassPatched = true;
+    if (townDeps) _refreshTown(); // Bind and filter already-built grass when this module arrives late.
   }
 
   function _zoneMapForScene(scene) {

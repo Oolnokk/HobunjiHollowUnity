@@ -159,8 +159,10 @@
 
   // Bag items (potions, flasks, large carried objects) live on game.js's heldItemHolder, not
   // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
-  function playerHeldItemTarget(record) {
+  function heldItemTarget(record) {
     if (inAttackEditor() || record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
+    const npcTarget = global.NpcDrinkInteraction?.heldItemTarget?.(record.rig?.parent); // Meals and ambient bottles share the existing world-space held-item grip solve.
+    if (npcTarget) return npcTarget;
     if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
     if (gameDeps.toolHolder?.visible) return null;
     const target = gameDeps.getHeldItemHandTarget?.();
@@ -697,7 +699,7 @@
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
-        const heldItem = playerHeldItemTarget(record);
+        const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
@@ -745,7 +747,7 @@
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
-        const heldItem = playerHeldItemTarget(record);
+        const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);

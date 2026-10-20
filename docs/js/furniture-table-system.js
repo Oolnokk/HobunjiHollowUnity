@@ -292,18 +292,19 @@
       const ex=Math.abs(f.cos)*w+Math.abs(f.sin)*d, ez=Math.abs(f.sin)*w+Math.abs(f.cos)*d;
       for(let r=Math.floor(f.z-ez);r<Math.ceil(f.z+ez);r++)for(let c=Math.floor(f.x-ex);c<Math.ceil(f.x+ex);c++) {
         const dx=c+.5-f.x, dz=r+.5-f.z;
-        if(Math.abs(dx*f.cos-dz*f.sin)<=w+.001 && Math.abs(dx*f.sin+dz*f.cos)<=d+.001)keys.add(`${c},${r}`);
+        if(Math.abs(dx*f.cos-dz*f.sin)<w+.5*(Math.abs(f.cos)+Math.abs(f.sin)) && Math.abs(dx*f.sin+dz*f.cos)<d+.5*(Math.abs(f.cos)+Math.abs(f.sin)))keys.add(`${c},${r}`);
       }
     }
     return keys;
   }
+  const socialCandidates = []; // NPC-only ray pass ignores scenery, while furniture keeps its physical blockers.
   const focusCandidates = []; // Reused candidate buffer; the existing ranged targeting owner supplies the actual camera ray/slab intersection.
   let focusStamp = null, focusArea = null, focused = null; // One consistent NPC/chair/service winner for prompt and press in the same frame.
   function focusedTarget(area) {
     if (!deps?.focusCandidates) return null;
     const stamp=deps.frameId?.();
     if (stamp != null && stamp === focusStamp && area === focusArea) return focused;
-    focusStamp=stamp;focusArea=area;focusCandidates.length=0;
+    focusStamp=stamp;focusArea=area;focusCandidates.length=0;socialCandidates.length=0;
     const player=deps.getPlayerPosition(); // Interaction reach is measured from the player, never from the trailing camera.
     for(const entry of entries(area).values()) {
       if(!entry.root?.parent)continue;
@@ -328,20 +329,20 @@
     const addNpc=walker=>{
       if(!walker || walker.combatTutorialSuspended || walker.rec?.dead || walker.rec?.deceased || walker.root?.visible===false || areaId(walker.area)!==areaId(area))return;
       const p=walker.root?.position;
-      if(!p || Math.hypot(p.x-player.x,p.z-player.z)>(deps.npcReach?.() || 2))return;
+      if(!p || Math.hypot(p.x-player.x,p.z-player.z)>(deps.npcReach?.() || 6))return;
       const hitbox=deps.actorHitbox?.(walker); // Canonical portrait dimensions include species scale and seated body placement.
-      if(hitbox)focusCandidates.push({kind:'npc',walker,hitbox});
+      if(hitbox)socialCandidates.push({kind:'npc',walker,hitbox});
     };
     for(const walker of deps.getWalkers?.() || [])addNpc(walker);
     addNpc(deps.extraWalker?.());
-    focused=deps.focusCandidates(focusCandidates, 40)?.candidate || null;
+    focused=deps.focusCandidates(socialCandidates, 40)?.candidate || deps.focusCandidates(focusCandidates, 40)?.candidate || null;
     return focused;
   }
 
   function snapshot(area = deps?.getArea?.()) {
-    return { latestChange: 'Furniture collision uses frame-cached spatial buckets and mechanism classification instead of scanning every placement per pathfinding probe.',
+    return { latestChange: 'Outdoor chairs/collision and late grass clearing repaired; six-tile NPC social aim ignores furniture/scenery blockers.',
       collision:{...collisionStats},
-      area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
+      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
   }
   window.FurnitureTableSystem = { init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();

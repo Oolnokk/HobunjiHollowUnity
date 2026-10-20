@@ -1041,6 +1041,7 @@
       else delete state.settings.npcGreetings[id];
       return true;
     },
+    friendIdsFor: npcId => [...friendSetFor(npcId)], // Shared meal/group planning reuses authored friendship circles.
     playerGreetingWaitMsForWalker,
     clear,
     loadSettings,

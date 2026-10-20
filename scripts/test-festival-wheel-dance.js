@@ -54,7 +54,7 @@ class Node {
 const THREE={Vector3,Quaternion}; // Minimal transforms validate the production choreography independently of WebGL/assets.
 const inputClaims=new Map(); // Cancellation stays on the existing physical input-claim route.
 let releaseCount=0,activeShot=null,cameraRefreshes=0; // Existing game owners, injected without a second camera or update loop.
-const window={THREE,WorldActionInputClaims:{setClaims:(id,claims)=>inputClaims.set(id,claims),clearClaims:id=>inputClaims.delete(id)},CharacterActionLocks:{acquire(opts){assert.deepEqual(Array.from(opts.participants,p=>p.id),['player','sloomi']);return {release(){releaseCount++;}};}},
+const window={THREE,WorldActionInputClaims:{setClaims:(id,claims)=>inputClaims.set(id,claims),clearClaims:id=>inputClaims.delete(id)},CharacterActionLocks:{acquire(opts){assert.deepEqual(Array.from(opts.participants,p=>p.id),['player','npc:sloomi']);assert(opts.participants[1].channels.includes('pose'),'NPC pose lock uses the shared character participant');return {release(){releaseCount++;}};}},
  CinematicCameraRuntime:{isActive:()=>!!activeShot,activeRecord:()=>activeShot,activate(_area,shot){activeShot={camera:shot};return activeShot;},deactivate(){activeShot=null;}}};
 vm.runInNewContext(fs.readFileSync('docs/js/festival-wheel-dance-runtime.js','utf8'),{window,console});
 const api=window.FestivalWheelDanceRuntime,scene=new Node(); // Real public lifecycle under test.
@@ -117,3 +117,10 @@ inputClaims.get('paired-dance').find(c=>c.actionId==='dodge').onPress();assert(!
 assert(api.start(cancelWalker,cancelA.root));const replacementShot={camera:{id:'new-cutscene'}};activeShot=replacementShot;api.update(.01,false,'town');
 assert.equal(api.isActive(),false);assert.strictEqual(activeShot,replacementShot,'a new cinematic owner is preserved');activeShot=null;
 assert(api.start(cancelWalker,cancelA.root));cancelB.root.parent=null;api.update(.01,false,'town');assert(!api.isActive(),'unloaded partner releases all owners');
+
+window.SocialActionWheel={isDancing:()=>true};
+assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'solo-dance-active');
+window.SocialActionWheel={isDancing:()=>false};activeShot={camera:{id:'busy'}};
+assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'camera-busy');activeShot=null;
+scene.add(cancelB.root);api.init({getPlayerModel:()=>null,getPlayerLegs:()=>cancelA.legs});
+assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.actor,'player');assert.equal(api.diagnostics().lastStartFailure.code,'hands-not-ready');

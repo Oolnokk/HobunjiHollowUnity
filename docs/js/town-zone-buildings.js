@@ -602,6 +602,7 @@
   }
 
   window.TownZoneBuildings = {
+    grassContext: () => deps, // Late-loaded grass suppression can recover the already-initialized scene/map adapters.
     init,
     detectTownBuildings,
     loadHousePieceFaceTexture,
