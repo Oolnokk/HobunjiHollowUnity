@@ -72,6 +72,8 @@ const perHit = (allocations - before) / 5;
 assert(perHit < 8, 'melee grid and center ray must reuse THREE scratch vectors');
 combat.meleeHit(attacker, target, attack);
 assert.equal(runtime.window.__melee3DDebug.retainedColliderCount, 1, 'real swings keep a bounded debug snapshot');
+assert.equal(combat.spawnMeleeTrail({ actor: attacker, ...attack, debugOnly: true }), null, 'full-cone debug capture does not add a visible ribbon');
+assert.equal(combat.debugMeleeColliders()[0].halfConeRad, attack.halfConeRad, 'debug-only volume retains the unsplit gameplay cone');
 millis += 900;
 combat.update(0);
 assert.equal(runtime.window.__melee3DDebug.retainedColliderCount, 0, 'normal update prunes stale actor references without reading the overlay');
@@ -106,6 +108,17 @@ millis += 20;
 spaceContext.adjust(self, { x: 0, y: 0 });
 assert(farPositionReads > 0, 'index refreshes for the next simulation window');
 
+// The old full-list implementation processes hostiles in list order, not
+// spatial-cell order. Opposite-side pushes are noncommutative.
+const right = { isBandit: true, health: 100, x: 10, y: 0 };
+const left = { isBandit: true, health: 100, x: -10, y: 0 };
+spaceContext.deps.hostileObjects = [self, right, left];
+pushed = spaceContext.adjust(self, { x: 0, y: 0 });
+assert(pushed.x < -50, 'nearby pushes still follow the original right-then-left actor order');
+spaceContext.deps.hostileObjects = [self, left, right];
+pushed = spaceContext.adjust(self, { x: 0, y: 0 });
+assert(pushed.x > 50, 'reversing actor order reverses the collision outcome, as before');
+
 // Exercise the enemy's real trail owner. Color derives from ResourceRings,
 // while the shared Combat renderer keeps ownership of transient meshes.
 const trailStart = banditSource.indexOf('  const BANDIT_TRAIL_HALF_THICKNESS_TILES =');
@@ -120,10 +133,12 @@ const trailContext = { window: {
 vm.createContext(trailContext);
 vm.runInContext(banditSource.slice(trailStart, trailEnd) + '\nthis.draw = spawnBanditTrailArc;', trailContext);
 trailContext.draw({ def: { attackTag: 'sharp' }, scene: {} }, 64, .6, 1.1);
-assert.equal(calls.length, 2, 'a multi-affliction attack draws two visual color lanes');
-assert.deepEqual(calls.map(c => c.color), [0xdd3333, 0x44dd33]);
-assert(Math.abs(calls[0].yaw - .8) < 1e-9 && Math.abs(calls[1].yaw - 1.4) < 1e-9, 'lanes span the original cone');
-assert(calls[0].debug && !calls[1].debug, 'visual-only additional lanes do not duplicate debug colliders');
+assert.equal(calls.length, 3, 'a multi-affliction attack has one debug cone plus two visible color lanes');
+assert(calls[0].debugOnly && Math.abs(calls[0].halfConeRad - .6) < 1e-9, 'show-hitboxes volume uses the complete original cone');
+const coloredLanes = calls.slice(1);
+assert.deepEqual(coloredLanes.map(c => c.color), [0xdd3333, 0x44dd33]);
+assert(Math.abs(coloredLanes[0].yaw - .8) < 1e-9 && Math.abs(coloredLanes[1].yaw - 1.4) < 1e-9, 'lanes span the original cone');
+assert(coloredLanes.every(c => c.debug === false && !c.debugOnly), 'visual lanes never replace or duplicate the complete hitbox');
 // The authored Flasker PNG uses the canonical texture/material API, not
 // a second independently tuned nearest-neighbor rendering pipeline.
 const flaskStart = banditSource.indexOf('  const BANDIT_FLASK_TOOL_KEY =');
