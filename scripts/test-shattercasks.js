@@ -90,11 +90,23 @@ async function scenario(reloading=false) {
   assert.equal(tiles[3][5].type,'grass','blast opens the mineable wall');
   assert.equal(tiles[3][6].type,'grass','blast cuts down the tree');
   assert.equal(game.Shattercasks.debugSnapshot().rubble.length,2,'rock and tree each create one loot pile');
+  const drawBudget=game.Shattercasks.debugSnapshot().performance;
+  assert.equal(drawBudget.activePileDrawCalls,2,'all debris uses only two instanced draw calls');
+  assert.equal(drawBudget.activeDebrisInstances,8,'two piles each contain four GPU instances');
+  assert.equal(drawBudget.textureBatchesCreated,1,'texture uploads and material allocation occur only once');
   player.x=5.5*64;
   assert(game.Shattercasks.interact(),'rubble is looted with one interaction');
   assert.equal(inventory.stone,3,'stone becomes actual inventory stock');
   assert.equal(inventory.pebble,2,'stone pile also gives pebbles');
   assert.equal(game.Shattercasks.debugSnapshot().rubble.length,1,'looting does not remove the other pile');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.activeDebrisInstances,4,
+    'looting changes only instance count, not per-tile mesh ownership');
+  // A second blast must reuse the first blast's geometry/textures.
+  const phantom=new Node();phantom.position.set(4.5,0,3.5);
+  assert(game.Shattercasks.detonate({id:'performance-repeat',mapId:area,col:4,row:3,
+    group:phantom,exploded:false,carried:false},'regression'));
+  assert.equal(game.Shattercasks.debugSnapshot().performance.textureBatchesCreated,1,
+    'repeated explosions reuse pooled GPU source assets');
 }
 (async()=>{
   await scenario(false);
