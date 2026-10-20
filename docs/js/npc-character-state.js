@@ -58,6 +58,7 @@
     // reaches zero sobriety at its strike frame, the authored drink pose can
     // finish before the NPC falls prone.
     if (movementLocked) {
+      walker._npcRunLeanPivot?.quaternion?.identity?.(); // Character action locks must not leave a previously running NPC frozen in a sprint lean.
       holdAtCurrentSurface(walker, dt, options);
       return true;
     }
@@ -65,6 +66,7 @@
     const blackedOut = window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(npcId) || false;
     setBlackoutPose(walker, blackedOut);
     if (blackedOut) {
+      walker._npcRunLeanPivot?.quaternion?.identity?.(); // Blackout rotation owns the entire portrait, never compose a running tilt onto it.
       holdAtCurrentSurface(walker, dt, options);
       walker.state = 'alcohol-blackout';
       return true;
