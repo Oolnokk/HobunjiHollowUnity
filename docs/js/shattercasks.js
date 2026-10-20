@@ -348,6 +348,11 @@
   }
   function pickUp(cask) {
     if(!cask||cask.exploded||held||cask.mapId!==area())return false;
+    const equipmentMode=window.ActionArcUI?.heldMode?.();
+    if(equipmentMode==='tool'||equipmentMode==='item'){
+      deps()?.showToast?.('Put away your tool or item before picking up a Shattercask.',false);
+      return false;
+    }
     held=cask;cask.carried=true;
     alignHeldVase(cask);
     Object.assign(lastEquipment,switchEquipment());
@@ -454,9 +459,11 @@
     // Native action-claim input + world-space interaction prompt. No extra
     // button or direct keyboard event that bypasses rebinds and controllers.
     const target=held?{type:'held',obj:held}:nearInteraction();
+    const handsBusy=target?.type==='vase'&&['tool','item'].includes(window.ActionArcUI?.heldMode?.());
     const label=target?.type==='held'?'Set down Shattercask':target?.type==='pile'
-      ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
-    const claim=target?target.type+':'+(target.obj?.id||''):'';
+      ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble')
+      :handsBusy?'Put away tools to pick up':'Pick up Shattercask';
+    const claim=target?target.type+':'+(target.obj?.id||'')+':'+(handsBusy?'busy':'ready'):'';
     if(claim!==promptClaim){
       if(target)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label,priority:410,onPress:interact}]);
