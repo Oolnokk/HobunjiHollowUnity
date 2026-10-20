@@ -89,9 +89,10 @@ window.SCRATCHBONES_CONFIG = {
         "voorgAssBaby": "voorg-ass",
         "uumkaoiiCrate": "uumkaoii", "uumkaoiiEgg": "uumkaoii",
         "garWolfBaby": "gar-wolf", "dabinggiHoundEgg": "dabinggi-hound",
-        "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
+        "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra",
+        "nelkCrate": "nelk", "nazgrakuCrate": "nazgraku"
       },
-      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
+      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82, "nelk": 1.9, "nazgraku": 2.2 },
       // Daytime roaming cycle: choose a genuinely distant station, travel
       // there without changing targets, then remain there before repeating.
       "wander": {
@@ -111,14 +112,18 @@ window.SCRATCHBONES_CONFIG = {
         "gar-wolf": "predator",
         "dabinggi-hound": "predator",
         "grehlr": "omnivore",
-        "drenkirra": "prey"
+        "drenkirra": "prey",
+        "nelk": "prey",
+        "nazgraku": "prey"
       },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
         "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true },
         "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk", "interactive": true },
         "grehlr": { "itemKey": "grehlrStinkOil", "cooldownDays": 1, "verb": "Extract", "interactive": true },
-        "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 }
+        "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 },
+        "nelk": { "itemKey": "nelkEggs", "cooldownDays": 1 },
+        "nazgraku": { "itemKey": "nazgrakuEggs", "cooldownDays": 2 }
       }
     },
     "debug": {

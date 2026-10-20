@@ -1276,10 +1276,32 @@
           defaultSizeClass: 'large',
           mountSpeed: 340,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii',
+        },
+        // New creature art registered alongside Gar-wolf; biome ecology and rewards remain to be authored.
+        nelk: {
+          label: 'Nelk', hostile: false, diet: 'herbivore', liveBirth: false,
+          maxHealth: 42, maxStamina: 36, moveSpeed: 135, chaseSpeed: 195,
+          attackDamage: 8, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
+          canClimb: true, canSwim: false, modelWidth: 1.9, spriteAspect: 600 / 1375, tint: 0xffffff,
+          defaultSizeClass: 'medium', mountSpeed: 340,
+          sprites: { idle: 'assets/creaturesprites/nelk_idle.png', run: ['assets/creaturesprites/nelk_run1.png', 'assets/creaturesprites/nelk_run2.png'] },
+        },
+        nazgraku: {
+          label: 'Nazgraku', hostile: false, diet: 'herbivore', liveBirth: false,
+          maxHealth: 52, maxStamina: 40, moveSpeed: 130, chaseSpeed: 185,
+          attackDamage: 10, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
+          canClimb: false, canSwim: true, modelWidth: 2.2, spriteAspect: 600 / 1375, tint: 0xffffff,
+          defaultSizeClass: 'large', mountSpeed: 340,
+          // Mounted animals deliberately use the regular whiskered sprites until rein deformation is designed.
+          sprites: { idle: 'assets/creaturesprites/nazgraku_idle.png', run: ['assets/creaturesprites/nazgraku_run1.png', 'assets/creaturesprites/nazgraku_run2.png'] },
         },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true, liveBirth: true,
@@ -1374,8 +1396,8 @@
           canClimb: false, canSwim: false,
           modelWidth: 1.6, tint: 0xffffff,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii-wild',
         },
@@ -1417,8 +1439,8 @@
           canClimb: false, canSwim: false,
           modelWidth: 2.8, tint: 0x8a6a3a,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii-wild-den-mother',
         },
@@ -2612,9 +2634,9 @@
 
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
-        { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
+        { key: 'nelkCrate', icon: '🦎', name: 'Nelk Crate', desc: 'A Nelk for your farm. Add the crate from the Farm tab and assign the animal to a barn.', price: 90, gives: { nelkCrate: 1 }, category: 'livestock' },
         { key: 'uumkaoiiCrate', icon: '🦆', name: 'Uumkao’ii Crate', desc: 'A travel crate with one uumkao’ii inside. Add it to the farm’s livestock from the Farm tab.', price: 150, gives: { uumkaoiiCrate: 1 }, category: 'livestock' },
-        { key: 'nazgraku', icon: '🦃', name: 'Nazgraku', desc: 'Coming soon: meat, eggs, and combat-leaning produce.', price: 160, comingSoon: true },
+        { key: 'nazgrakuCrate', icon: '🐟', name: 'Nazgraku Crate', desc: 'A Nazgraku for your farm. Add the crate from the Farm tab and assign it to a barn.', price: 160, gives: { nazgrakuCrate: 1 }, category: 'livestock' },
         { key: 'drenkirra', icon: '🪿', name: 'Drenkirra', desc: 'Coming soon: meat, eggs, and agile produce.', price: 140, comingSoon: true },
         { key: 'grehlr',   icon: '🦨', name: 'Grehlr',   desc: 'Coming soon: meat and denatured stink oil.', price: 130, comingSoon: true },
         { key: 'voorgAss', icon: '🫏', name: 'Voorg-Ass', desc: 'Coming soon: meat and white milk.', price: 135, comingSoon: true },
@@ -4436,7 +4458,7 @@
           return null;
         }
         const sig = renderer.genotypeSignature(kind, genotype);
-        const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
+        const key = `${kind}|${frame}|${sig}|${renderer.eyeStateKey?.(blinkShut) || (blinkShut ? 'b' : 'o')}`;
         if (_genotypeTexCache.front.has(key)) {
           return _genotypeTextureResidency.get(key);
         }
@@ -5958,7 +5980,7 @@
         // short-circuit it here instead of teaching a shared, per-instance
         // timer about one species' mode field.
         const asleep = c._cfDrenkirra?.mode === 'sleeping';
-        const blinkShut = genotypeKind ? (asleep || (window.CreatureBlink?.isShut(c, performance.now()) || false)) : false;
+        const blinkShut = genotypeKind ? (asleep ? true : (window.CreatureBlink?.getVisualState?.(c, genotypeKind, performance.now()) ?? false)) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -5967,7 +5989,7 @@
         if (!c.def.sprites) return;
         if (!moving) {
           const frameKey = 'idle';
-          const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+          const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
           const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
           if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
             (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
@@ -6005,7 +6027,7 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
-        const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+        const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
         const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
         if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
           (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
@@ -15596,6 +15618,8 @@
         { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'nelkCrate',          icon: '🦎', label: 'NELK CRATE',        max: 9  },
+        { key: 'nazgrakuCrate',      icon: '🐟', label: 'NAZGRAKU CRATE',    max: 9  },
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
@@ -15655,6 +15679,8 @@
         drenkirraMeat: { icon: '🥩', label: 'Drenkirra Meat', cat: 'material', sellPrice: 10, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a cloud-forest drenkirra.' },
         drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        nelkCrate: { icon: '🦎', label: 'Nelk Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nelk to your livestock through the Farm tab.' },
+        nazgrakuCrate: { icon: '🐟', label: 'Nazgraku Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nazgraku to your livestock through the Farm tab.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
@@ -30911,8 +30937,8 @@
           for (const entity of entities.values()) {
             const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
             if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
-            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
-              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of window.CreatureGeneticsRender.eyeStatesForKind(kind)) {
+              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${window.CreatureGeneticsRender.eyeStateKey(blink)}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
               const pin = {}; // A distinct temporary owner lets every preloaded frame stay resident.
               preloadPins.push(pin);
               _genotypeTextureResidency.retain(pin, key);

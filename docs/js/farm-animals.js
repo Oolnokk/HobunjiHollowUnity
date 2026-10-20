@@ -172,7 +172,7 @@
   function _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut) {
     if (!genotype || !window.CreatureGeneticsRender) return Promise.resolve(false);
     const sig = window.CreatureGeneticsRender.genotypeSignature(kind, genotype);
-    const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
+    const key = `${kind}|${frame}|${sig}|${window.CreatureGeneticsRender.eyeStateKey?.(blinkShut) || (blinkShut ? 'b' : 'o')}`;
     const applyCached = (tex) => {
       if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // A late compose must not attach textures to a despawned animal.
       tex = _farmTextureResidency.get(key) || _farmTextureResidency.put(key, tex); // A completed request may have waited through an idle-cache eviction.
@@ -208,7 +208,7 @@
   // with another one kicked off before it resolves.
   function _tickFarmAnimalBlink(animal) {
     if (!animal.genotype || !window.CreatureGeneticsRender || animal._blinkComposePending) return;
-    const blinkShut = window.CreatureBlink?.isShut(animal, performance.now()) || false;
+    const blinkShut = window.CreatureBlink?.getVisualState?.(animal, animal.animalKey, performance.now()) ?? false;
     if (animal._blinkAppliedShut === blinkShut) return;
     animal._blinkComposePending = true;
     _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, 'idle', animal.genotype, blinkShut).then(applied => {
@@ -620,13 +620,13 @@
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
     const ANIMAL_W = 1.275;
-    const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
+    const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB.uumkaoii?.spriteAspect || (600 / 1375)); // Match the new authored locomotion sheets instead of the retired single sprite.
     const sizeScale = window.CreatureGenetics.creatureSizeScale('uumkaoii', genotype); // Uses the Animation Author's class-specific proportions.
     const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset('uumkaoii', genotype); // Optional absolute floor-to-origin lift measured in Rigging.
     const halfH = ANIMAL_H * sizeScale.y / 2; // Existing automatic baseline and physical half-height.
     const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Manual values replace automatic half-height placement instead of stacking with it.
 
-    const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
+    const spriteUrl = "assets/creaturesprites/uumkao'ii_idle.png";
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
       modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
       name: 'uumkaoii_' + col + '_' + row,
@@ -854,11 +854,17 @@
   function makeVoorgAssAnimal(col, row, livestockId, genotype) {
     return makePatternLivestockAnimal('voorg-ass', 'Voorg-Ass', '🫏', col, row, livestockId, genotype);
   }
+  function makeNelkAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('nelk', 'Nelk', '🦎', col, row, livestockId, genotype);
+  }
+  function makeNazgrakuAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('nazgraku', 'Nazgraku', '🐟', col, row, livestockId, genotype);
+  }
 
   // Livestock kind → factory, so restoring saved livestock on world load
   // can dispatch by kind without hardcoding uumkao'ii — the array this
   // reads is meant to grow into other livestock types later.
-  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal };
+  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal, nelk: makeNelkAnimal, nazgraku: makeNazgrakuAnimal };
 
   // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
   // that item — populated when a Den-Mother's nest grants an egg/baby
