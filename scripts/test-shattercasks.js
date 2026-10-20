@@ -8,12 +8,15 @@ const root = path.resolve(__dirname,'..');
 const code = fs.readFileSync(path.join(root,'docs/js/shattercasks.js'),'utf8');
 const html = fs.readFileSync(path.join(root,'docs/index.html'),'utf8');
 const ranged = fs.readFileSync(path.join(root,'docs/js/combat/ranged-weapons.js'),'utf8');
+const devSpawner = fs.readFileSync(path.join(root,'docs/js/dev-spawner.js'),'utf8');
 const asset = JSON.parse(fs.readFileSync(path.join(root,'docs/config/furniture-authored/shattercaskBlasting.json'),'utf8'));
 assert.equal(asset.parts.length,3,'two-necked furniture retains all three authored pieces');
 assert(asset.recognizedSurfaces.length>0,'all original surface definitions survive import');
 assert(html.includes('src="js/shattercasks.js?v='),'shattercask runtime is loaded');
 assert(ranged.includes('Shattercasks?.projectileHit'),'ranged projectile segment detects shattercasks');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
+assert(html.includes('id="devSpawnShattercaskBtn"'),'dev arena has a Shattercask spawn button');
+assert(devSpawner.includes("window.Shattercasks.spawnRandomInDevArena()"),'arena button dispatches to the runtime');
 
 function vector() {
   return {x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;},
@@ -108,7 +111,49 @@ async function scenario(reloading=false) {
   assert.equal(game.Shattercasks.debugSnapshot().performance.textureBatchesCreated,1,
     'repeated explosions reuse pooled GPU source assets');
 }
+async function arenaScenario() {
+  let currentArea='map_dev_arena',modelBuilds=0;
+  const tiles=Array.from({length:9},()=>Array.from({length:9},()=>({type:'grass',water:0})));
+  tiles[2][3]={type:'rock',rockKind:'diggableRockOre'};
+  tiles[3][2]={type:'water',water:1};
+  tiles[4][2]={type:'wall'};
+  tiles[5][2]={type:'grass',solid:true};
+  const activeScene=new Node();
+  const player={x:4.5*64,y:4.5*64,angle:0,health:100};
+  const deps={TILE:64,player,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
+    worldSurfaceY:()=>0,hostileObjects:new Set(),showToast(){}};
+  const game={console,THREE,localStorage,__hobunjiPlayerProfile:{worldId:'arena-regression'},
+    Combat:{deps,init(){},update(){},beginStagedAction(){},spawnMeleeTrail(){}},
+    GridTileAccessors:{getActiveScene:()=>activeScene,getActiveGrid:()=>tiles,
+      isTownBuildingCollisionTile:(c,r)=>c===6&&r===6},
+    AuthoredFurniture:{load:async()=>asset,buildGroup:()=>{modelBuilds++;return new Node();}},
+    DevSpawner:{init(){}},__farmLog(){}};
+  game.window=game;
+  vm.createContext(game);
+  vm.runInContext(code,game,{filename:'shattercasks.js'});
+  for(let i=0;i<4;i++){
+    const p=await game.Shattercasks.spawnRandomInDevArena();
+    assert(p.col>0&&p.col<8&&p.row>0&&p.row<8,'spawn keeps clear of arena border');
+    assert(![ 'rock','water','wall' ].includes(tiles[p.row][p.col].type),'spawn is on walkable ground');
+    assert(!(p.col===2&&p.row===5),'solid tiles are excluded');
+    assert(!(p.col===6&&p.row===6),'building-collision tiles are excluded');
+    assert(!(p.col===4&&p.row===4),'spawn avoids standing on player');
+    assert.equal(game.Shattercasks.debugSnapshot().vases.length,i+1,'one live Shattercask per click');
+    assert.equal(activeScene.children.length,i+1,'real authored meshes appear in scene');
+  }
+  assert.equal(modelBuilds,4,'each explicit spawn creates one authored Shattercask');
+  const before=game.Shattercasks.debugSnapshot().vases.length;
+  currentArea='town';
+  await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/Testing Arena/);
+  assert.equal(game.Shattercasks.debugSnapshot().vases.length,0,'out-of-area spawn does not create a charge');
+  currentArea='map_dev_arena';
+  assert.equal(before,4);
+  for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
+  await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
+  assert.equal(modelBuilds,4,'no art created for rejected requests');
+}
 (async()=>{
+  await arenaScenario();
   await scenario(false);
   await scenario(true);
   console.log('PASS shattercasks: model + 5-tile area effect + swept hit + loot + reload');

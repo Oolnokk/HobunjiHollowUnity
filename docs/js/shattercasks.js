@@ -12,6 +12,8 @@
   let sharedBurstArt = null; // Source textures/materials/geometries cached across all explosions to avoid GPU uploads during combat.
   let sharedPileArt = null; // Rock/wood pile geometry and material shared by per-area instanced render batches.
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
+  let devArenaSpawnSerial = 0; // Explicit arena-only spawns; never part of static procedural placements.
+  let devArenaSpawnPending = false; // Avoid overlapping model loads and accidental repeated taps.
   const placementCache = new Map(); // Area -> per-scene static placements; never regenerate the ruin's sorted occupancy on each frame.
   let resolvedWorldId = null; // World ID memoized after authoritative save metadata first becomes available.
   let ruinSnapshotReads = 0; // Diagnostic count confirms that expensive ruin occupancy is sampled once per scene.
@@ -150,6 +152,59 @@
     result.push(...cached.static);
     return result;
   }
+  function createVase(rec,p,data) {
+    // Shared construction for procedural and dev-spawned charges: identical model,
+    // hit detection, pickup/drop, blast, and cleanup behavior.
+    const group=window.AuthoredFurniture.buildGroup(data);
+    group.name='shattercask_'+p.id;
+    group.position.set(p.col+.5,baseHeight(p.col,p.row),p.row+.5);
+    group.userData.shattercaskId=p.id;
+    group.userData.shattercaskMap=p.mapId;
+    rec.scene.add(group);
+    const vase={...p,group,exploded:false,carried:false};
+    rec.vases.set(p.id,vase);
+    return vase;
+  }
+  async function spawnRandomInDevArena() {
+    const mapId='map_dev_arena';
+    if(area()!==mapId)throw new Error('Enter the Testing Arena to spawn a Shattercask.');
+    if(devArenaSpawnPending)throw new Error('A Shattercask is already being spawned.');
+    loadPersistence();
+    const targetScene=scene(),g=grid();
+    if(!targetScene||!Array.isArray(g)||!g.length)throw new Error('Testing Arena grid is not ready.');
+    const rec=recordFor(mapId,targetScene);
+    const player=playerPosition();
+    const occupied=new Set([...rec.vases.values()].filter(v=>!v.exploded&&!v.carried)
+      .map(v=>key(v.col,v.row)));
+    let spot=null,eligible=0;
+    // One bounded arena-grid scan per button press; reservoir sampling yields
+    // a uniform random tile without allocating/shuffling a tile list.
+    for(let row=1;row<g.length-1;row++)for(let col=1;col<(g[row]?.length||0)-1;col++) {
+      const tile=g[row][col],type=String(tile?.type||'').toLowerCase();
+      if(!validTile(g,col,row)||tile.blocked||tile.solid||tile.walkable===false||Number(tile.water)>0
+          ||['wall','cliff','lava','void','boundary','solid'].includes(type)
+          ||window.GridTileAccessors?.isTownBuildingCollisionTile?.(col,row,mapId)
+          ||occupied.has(key(col,row)))continue;
+      // Don't spawn inside the player's standing/interaction footprint.
+      if(player&&Math.abs(col+.5-player.x)<1.5&&Math.abs(row+.5-player.z)<1.5)continue;
+      if(Math.random()<1/++eligible)spot={col,row};
+    }
+    if(!spot)throw new Error('No unoccupied walkable tile in the Testing Arena.');
+    devArenaSpawnPending=true;
+    try {
+      const data=await window.AuthoredFurniture?.load?.('shattercaskBlasting');
+      if(!data||typeof window.AuthoredFurniture?.buildGroup!=='function')
+        throw new Error('Shattercask furniture art failed to load.');
+      // Never add a late async spawn to an arena scene the player has left.
+      if(area()!==mapId||scene()!==targetScene||records.get(mapId)!==rec)
+        throw new Error('Shattercask spawn canceled after leaving the arena.');
+      const id='dev_'+(++devArenaSpawnSerial);
+      createVase(rec,{id,mapId,...spot},data);
+      lastEvent='arena spawned '+id+' at '+spot.col+','+spot.row+' (from '+eligible+' open tiles)';
+      window.__farmLog?.('[shattercask] '+lastEvent,'world');
+      return {id,...spot,eligible};
+    } finally {devArenaSpawnPending=false;}
+  }
   async function ensureArea(mapId,targetScene,g) {
     if(!mapId||!targetScene||!g)return;
     const rec=recordFor(mapId,targetScene);
@@ -162,13 +217,7 @@
       if(!data || records.get(mapId)!==rec || scene()!==targetScene)return; // No scene creation or history replay in a stale async load callback.
       for(const p of placements) {
         if(persisted.has(mapId+':'+p.id)||rec.vases.has(p.id))continue;
-        const group=window.AuthoredFurniture.buildGroup(data);
-        group.name='shattercask_'+p.id;
-        group.position.set(p.col+.5, baseHeight(p.col,p.row), p.row+.5);
-        group.userData.shattercaskId=p.id;
-        group.userData.shattercaskMap=mapId;
-        targetScene.add(group);
-        rec.vases.set(p.id,{...p,mapId,group,exploded:false,carried:false});
+        createVase(rec,{...p,mapId},data);
       }
       lastEvent='placed '+placements.length+' in '+mapId;
     } catch(error) {lastEvent='model load failed: '+error.message;console.warn('[shattercask]',error);}
@@ -629,12 +678,12 @@
     },true);
   }
   window.Shattercasks=Object.freeze({
-    RADIUS,spawn:ensureArea,pickUp,drop,interact,detonate,
+    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,detonate,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
     debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
-      effects:burstEffects.length,loadedWorld:storeIdentity,
+      effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
       performance:{ruinSnapshotReads,textureBatchesCreated,
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),

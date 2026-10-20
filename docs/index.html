@@ -635,7 +635,7 @@
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
-  <script src="js/dev-spawner.js?v=20261014h1eb17d9"></script>
+  <script src="js/dev-spawner.js?v=20261019arenacask1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -812,7 +812,7 @@
   <script src="js/cave-site-system.js?v=20261019thickbarrier1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
-  <script src="js/shattercasks.js?v=20261019casks1"></script>
+  <script src="js/shattercasks.js?v=20261019arenacask1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -1079,6 +1079,13 @@
       <div class="fed-section">
         <div class="fed-label" id="devSpawnStatus" role="status">Ready to spawn.</div>
         <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Shattercask testing — spawn one explosive vase on a random walkable arena tile</div>
+        <div class="fed-actions">
+          <button type="button" class="fed-action-btn" id="devSpawnShattercaskBtn">💥 Spawn Random Shattercask</button>
+        </div>
+        <div class="fed-label" id="devShattercaskSpawnStatus" role="status">Ready to spawn a Shattercask.</div>
       </div>
       <div class="fed-section">
         <div class="fed-label">Foliage / objects — trees/stumps participate in the same view-corridor culling and camera-occlusion fade as a real wilderness zone's, for testing that behavior without leaving the arena</div>
