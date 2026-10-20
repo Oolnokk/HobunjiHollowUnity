@@ -1174,6 +1174,24 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     }
     #toolBtn:active { transform: translate(50%,50%) scale(0.92); }
+    /* Empty-handed Shattercask proximity temporarily replaces the Tool button
+       glyph without mutating the original tool icon or selector contents. */
+    #toolBtn.shattercask-context {
+      border-color: rgba(131, 239, 198, 0.95);
+      background: rgba(16, 92, 70, 0.75);
+      box-shadow: 0 0 0 2px rgba(131, 239, 198, 0.18), 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #toolBtn.shattercask-context .ts-icon { visibility: hidden; }
+    #toolBtn.shattercask-context::after {
+      content: attr(data-shattercask-icon);
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.25em;
+      line-height: 1;
+      pointer-events: none;
+    }
     .ts-icon { font-size: 0.85em; line-height: 1; pointer-events: none; }
     .ts-lbl  { display: none; }
     #itemBtn {
