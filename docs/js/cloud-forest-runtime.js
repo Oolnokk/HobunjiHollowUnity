@@ -192,6 +192,23 @@
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
   }
 
+  // Keep cliff-removal planting identical to the entrance-causeway repair and
+  // the original Cloud Forest's 2x source lattice × 80% thinning survivors ×
+  // 5/6 species/prop survivors. The shared corridor API is normally present
+  // by the time a zone generates; use equivalent math for standalone tests.
+  function cloudForestTreePosition(c, r) {
+    if (typeof root.WildernessEntryCorridor?.cloudForestTreePosition === 'function') {
+      return root.WildernessEntryCorridor.cloudForestTreePosition(c, r);
+    }
+    if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0
+      || (c & 1) !== 0 || (r & 1) !== 0) return false;
+    let hash = (Math.imul(c + 37, 73856093) ^ Math.imul(r + 73, 19349663)) >>> 0;
+    hash = Math.imul(hash ^ (hash >>> 16), 0x7feb352d) >>> 0;
+    hash = Math.imul(hash ^ (hash >>> 15), 0x846ca68b) >>> 0;
+    hash = (hash ^ (hash >>> 16)) >>> 0;
+    return hash / 4294967296 < (1 - 0.2) * (1 - 1 / 6);
+  }
+
   // Replant the empty strip created when the north escarpment turns into grass.
   // SHRUB/copse is the existing world tree rendering and culling contract.
   function reforestClearedNorthEdge(workspace, formerCliffKeys = []) {
@@ -203,7 +220,7 @@
       if (!coords) continue;
       const c = Number(coords[1]), r = Number(coords[2]); // Source coordinates for spacing, safety and stable tree identity.
       // World-edge margin, then every-other-tile spacing like the normal 2x-scaled copse lattice.
-      if (r < 2 || c < 2 || c >= map.cols - 2 || (c & 1) || (r & 1)) continue;
+      if (r < 2 || c < 2 || c >= map.cols - 2 || !cloudForestTreePosition(c, r)) continue;
       const tile = map.tiles[key]; // A formerly inaccessible cliff tile now available to become a Shadewood.
       if (!tile || String(tile.type).toLowerCase() !== 'grass'
         || tile.distantBoundaryLandscape || tile.borderEscarpment
@@ -221,8 +238,6 @@
         }
       }
       if (nearRoad) continue;
-      const hash = Math.imul(c + 37, 73856093) ^ Math.imul(r + 73, 19349663); // Seed-stable sparse omissions avoid a uniform tree grid.
-      if ((hash >>> 0) % 10 >= 8) continue; // Forest-like density without spawning a tree on every grass tile.
       tile.type = 'shrub';
       tile.generatedObjectId = 'cloud_north_copse_' + c + '_' + r;
       tile.generatedObjectType = 'copse';
@@ -683,7 +698,7 @@
     CLOUD_ID, NORTH_DEPTH, SHOULDER_DEPTH, SHOULDER_RISE, STEEP_RISE,
     TREE_LATTICE_WORLD, TREE_KEEP_PROBABILITY,
     edgePathRuns, findEntryRun, repairGeneratedEntryWorkspace,
-    removeCloudForestNorthCliffs, reforestClearedNorthEdge, makeSteepNorthProfile, buildForestLayout,
+    removeCloudForestNorthCliffs, reforestClearedNorthEdge, cloudForestTreePosition, makeSteepNorthProfile, buildForestLayout,
     patchGenerator, patchBorderTerrain,
     // Settings tab's Cloud Forest Background Forest toggle (game.js) writes
     // this directly — read at the next zone build (see patchBorderTerrain).
