@@ -53,8 +53,19 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().tintedFrames>=3,
       null,{timeout:25000});
     await page.locator('#frontBtn').click();
-    await page.waitForFunction(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().facingUpdates>3,
-      null,{timeout:6000});
+    await page.waitForFunction(()=>{
+      const snap=window.HobunjiOmgurkuSpecies.debugSnapshot();
+      return snap.facingUpdates>3 && snap.liveFrames[0]?.handParentIsUpper === true;
+    },null,{timeout:6000});
+    await page.waitForFunction(()=>{
+      const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
+      return frame?.handRigAttached === true;
+    },null,{timeout:6000});
+    await page.waitForFunction(()=>{
+      const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
+      return Number.isFinite(frame?.upperYaw) && Number.isFinite(frame?.lowerYaw)
+        && Math.abs(frame.upperYaw-frame.lowerYaw)>0.15;
+    },null,{timeout:6000});
     assert.deepEqual(errors,[],'all shared engine modules should load without uncaught errors');
     await page.locator('#number_saddleU').fill('0.421');
     await page.locator('#number_saddleU').dispatchEvent('change');
