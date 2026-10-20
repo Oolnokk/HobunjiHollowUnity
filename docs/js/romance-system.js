@@ -595,7 +595,7 @@
       const minimumThreatDistance = Math.min(...threats.map(t => Math.hypot(retreatPlan.x - t.x, retreatPlan.z - t.z))); // Re-evaluated cheaply to detect advancing attackers.
       // Once the NPC has reached cover, do not run from hiding place to hiding place every second.
       // A lost line-of-sight barrier or a nearby attacker invalidates the commitment.
-      const isStillCovered = !retreatPlan.hidden || threats.some(t => occludedFromThreat(area, retreatPlan.x, retreatPlan.z, t));
+      const isStillCovered = !retreatPlan.noCover && (!retreatPlan.hidden || threats.some(t => occludedFromThreat(area, retreatPlan.x, retreatPlan.z, t)));
       if (minimumThreatDistance > 3.2 && pathfinding.isNpcTileWalkable(area, retreatPlan.c, retreatPlan.r)
         && (now < retreatPlan.recheckAt || isStillCovered)) {
         if (now >= retreatPlan.recheckAt) retreatPlan.recheckAt = now + RETREAT_REPLAN_MS;
