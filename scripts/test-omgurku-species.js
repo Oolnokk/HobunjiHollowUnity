@@ -82,6 +82,7 @@ class Group {
   }
   add(child) { child.parent = this; this.children.push(child); }
   remove(child) { child.parent = null; this.children = this.children.filter(item => item !== child); }
+  traverse(visitor) { visitor(this); for (const child of this.children) child.traverse?.(visitor); }
   getWorldPosition(out) {
     let node = this;
     out.set(0, 0, 0);
