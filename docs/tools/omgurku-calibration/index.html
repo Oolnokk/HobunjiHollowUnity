@@ -21,11 +21,11 @@ aside{overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border
 section{border:1px solid var(--edge);border-radius:12px;padding:12px;margin-bottom:12px;background:#121f30}
 section h2{margin:0 0 8px;font-size:14px;color:#b9d9ff}
 p,small{color:var(--muted);line-height:1.4}p{font-size:12px;margin:5px 0 10px}
-label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}input[type=checkbox]{min-height:0}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
 button,select,input[type=text],input[type=number]{font:inherit;border-radius:8px;border:1px solid #45607e;background:#20344a;color:var(--ink);padding:8px}
 button{cursor:pointer;font-weight:650}button:hover{border-color:var(--accent)}button.good{background:#153e36;color:#adffdc;border-color:#348771}
 button:disabled{opacity:.4}select,input[type=text]{width:100%}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.row>*{flex:0 0 auto}
+.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.row>*{flex:0 0 auto}
 .slid{display:grid;grid-template-columns:1fr 70px;align-items:center;gap:6px;padding:5px 0;border-top:1px solid #ffffff12}
 .slid label{grid-column:1/-1;margin:0;color:#d3e5ff;display:flex;justify-content:space-between}
 .slid input[type=range]{width:100%;accent-color:var(--accent);touch-action:pan-y}
@@ -48,7 +48,7 @@ input[type=file]{display:none}
 <script src="../../js/voorg-ass-registration.js?v=20261015h47a3826"></script>
 <script src="../../js/creature-genetics-render.js?v=20261019omgurkuTint1"></script>
 <script src="../../js/runtime-frame-scheduler.js"></script>
-<script src="../../js/held-action-animations.js?v=20261020omgurkuWaistHand2"></script>
+<script src="../../js/held-action-animations.js?v=20261020omgurkuBack3"></script>
 </head>
 <body>
 <div id="app">
@@ -73,46 +73,10 @@ input[type=file]{display:none}
 <input id="headingRange" type="range" min="-180" max="180" value="0" step="1" style="width:100%;accent-color:#65adff">
 <p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses the side-view creature deadzone (including its moving snap). Orbit the camera to examine both.</p>
 </section>
-<section id="v10AttackSection">
-<h2>V10 weapon &amp; attack preview</h2>
-<div class="grid2">
-<div><label for="v10Weapon">Weapon</label><select id="v10Weapon">
-<option value="hatchet">Hatchet — sweep</option><option value="pickshovel">Pick-Shovel — thrust</option>
-<option value="fishingspear">Fishing Spear — sweep</option><option value="fishingmace">Fishing Mace — sweep</option>
-<option value="plainsSword">Plains-Sword — sweep</option><option value="dagger">Dagger — thrust</option>
-<option value="kylie">Kylie — sweep</option></select></div>
-<div><label for="v10Attack">Attack</label><select id="v10Attack"><option>Loading authored attacks…</option></select></div>
-</div>
-<label for="v10Stance">Weapon stance</label><select id="v10Stance">
-<option value="auto">Auto — weapon default</option><option value="heavyWeapon">Heavy Weapon Idle</option>
-<option value="lightWeapon">Light Weapon Idle</option></select>
-<div class="row" style="margin-top:8px">
-<button id="v10AttackBtn">Preview attack</button><button id="v10Combo">Play 3-hit combo</button>
-<button id="v10Stop">Stop / reset</button></div>
-<label for="v10Speed">Preview speed <output id="v10SpeedValue">1.00×</output></label>
-<input id="v10Speed" type="range" min=".35" max="1.75" step=".05" value="1" style="width:100%">
-<label><input type="checkbox" id="v10Loop"> Loop selected attack</label>
-<p id="v10AttackInfo">Uses the authored attack-values and weapon idle stance data. Weapon/tool holder and hands follow the actual upper portrait; attack lunge translates the whole composite.</p>
-</section>
-<section id="v10FacingSection">
-<h2>V10 independent rotation deadzones</h2>
-<label for="v10AnimalDead">Animal deadzone <output id="v10AnimalDeadValue">27.5°</output></label>
-<input id="v10AnimalDead" type="range" min="0" max="70" step=".5" value="27.5" style="width:100%">
-<label for="v10RiderDead">NPC / rider deadzone <output id="v10RiderDeadValue">40°</output></label>
-<input id="v10RiderDead" type="range" min="0" max="70" step=".5" value="40" style="width:100%">
-<p>The original V10 algorithm: shared camera-relative perpendicular bearings, separate persistent perpClamp states, and 11/s visual smoothing. These values affect the preview only; gameplay retains its authored defaults.</p>
-</section>
 <section>
-<h2>Place saddle / mask lower sprite</h2>
-<div id="spriteWrap"><canvas id="spriteCanvas" width="520" height="240" aria-label="Drag crosshair to select the upper body attachment point"></canvas><canvas id="v10MaskEdit" width="520" height="240" style="display:none;position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair" aria-label="Paint hidden pixels on the lower body"></canvas></div>
-<div class="row" style="margin-top:8px"><button id="v10SaddleMode">Place saddle point</button>
-<button id="v10EraseMode">Paint hidden pixels</button><button id="v10ResetMask">Reset mask</button></div>
-<label for="v10Brush">Mask brush size <output id="v10BrushValue">28 px</output></label>
-<input type="range" id="v10Brush" min="2" max="120" value="28" style="width:100%">
-<div class="row" style="margin-top:7px"><button id="v10DownloadSetup">Download V10 setup JSON</button>
-<button id="v10CopySetup">Copy setup JSON</button><button id="v10ExportFrames">Export masked lower PNGs</button>
-<button id="v10ImportSetup">Import V10 mask / setup</button><input id="v10ImportFile" type="file" accept=".json,application/json"></div>
-<p>V10's original hidden-pixel painter has been restored for further silhouette cleanup. One mask applies consistently to idle, run1, and run2, without altering the repository's original sprite files. Export the edited PNGs to make those art changes permanent in gameplay.</p>
+<h2>Place saddle on lower sprite</h2>
+<div id="spriteWrap"><canvas id="spriteCanvas" width="520" height="240" aria-label="Drag crosshair to select the upper body attachment point"></canvas></div>
+<p>Touch or drag the cyan crosshair to align the upper-body origin to the saddle. The three gameplay lower frames are already headless, so V10’s eraser mask is not required.</p>
 <div id="saddleFields"></div>
 </section>
 <section><h2>Joint &amp; upper body</h2><div id="upperFields"></div></section>
@@ -129,18 +93,10 @@ input[type=file]{display:none}
 <p>Downloaded <code>omgurku.json</code> is the complete species configuration, with <code>hybridPlacement</code> ready to commit to <code>docs/config/species/omgurku.json</code>.</p>
 <div id="feedback" role="status" aria-live="polite">—</div>
 </section>
-<section><details><summary>Repository / V10 diagnostics</summary>
-<div class="detailsBody"><label for="v10NpcDbPath">NPC DB source (relative to docs/)</label>
-<input type="text" id="v10NpcDbPath" value="config/npcs/hobunji-starter-npc-database.json">
-<button id="v10ReloadDatabase">Reload NPC database</button>
-<p>Engine and assets remain pinned to this open PR build, preventing mismatched scripts from different commits.</p>
-<pre id="diagnostics">Not initialized</pre><pre id="v10Log">V10 preview log</pre>
-<button id="refreshDiagnostics">Refresh diagnostics</button><button id="v10CopyDebug">Copy debug log</button>
-</div></details></section>
+<section><details><summary>Diagnostics</summary><pre id="diagnostics">Not initialized</pre><button id="refreshDiagnostics">Refresh diagnostics</button></details></section>
 </aside>
 </div>
 </div>
-<script src="./calibration.js?v=20261020omgurkuVisualFix2"></script>
-<script src="./advanced-lab.js?v=20261020omgurkuV10b4"></script>
+<script src="./calibration.js?v=20261020omgurkuBack2"></script>
 </body>
 </html>

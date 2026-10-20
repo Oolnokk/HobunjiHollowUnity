@@ -11,7 +11,6 @@
   const SPRITES = Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/omgurku-lower_${frame}.png`])));
   const DEFAULT_PLACEMENT = Object.freeze({
     lowerWidth: 2.1, lowerHeight: 0.916356, visibleFloorCorrection: 0.151758205,
-    lowerScaleX: 1.5, lowerScaleY: 1.5, authoredGroundLift: 0.5,
     saddleU: 0.3087855747767857, saddleV: 0.3691508252181978,
     joinDepth: 0.03, riderScale: 1,
     upperOffsetX: 0, upperOffsetY: 0, upperOffsetZ: 0,
@@ -240,27 +239,18 @@
     const previewRaw = record.root.userData.omgurkuPreviewRawYaw;
     const preview = Number.isFinite(previewRaw);
     const rawYaw = preview ? previewRaw : (Number.isFinite(c.rawNpcYaw) ? c.rawNpcYaw : rootYaw);
-    const authoredLabPreview = preview && c.previewDeadzoneRadii;
-    // V10 mode: two independent instances of the game's perpClamp with the
-    // SAME camera-relative perpendiculars and separately adjustable radii.
-    // Movement yaw is logical; the two visual yaws ease independently.
     if (preview && perp.perpClamp) {
-      const riderRadius = authoredLabPreview ? c.previewDeadzoneRadii.rider*Math.PI/180 : perp.PERP_DEAD_RAD;
-      const clamped = perp.perpClamp(c.npcFacing ||= {},rawYaw,npcPerps,riderRadius);
-      const desired = clamped.snapTo ?? clamped.effectiveTarget;
+      const desired = perp.perpClamp(c.npcFacing ||= {},rawYaw,npcPerps,perp.PERP_DEAD_RAD).effectiveTarget;
       const rendered = Number.isFinite(c.previewNpcYaw)
-        ? c.previewNpcYaw + diffAngle(desired,c.previewNpcYaw)*Math.min(1,dt*(authoredLabPreview?11:10))
+        ? c.previewNpcYaw + diffAngle(desired,c.previewNpcYaw) * Math.min(1,dt*10)
         : desired;
-      c.previewNpcYaw=rendered;
-      c.upper.rotation.y=diffAngle(rendered,rootYaw)+(Number(record.root.userData.omgurkuPreviewAttackBodyYaw)||0);
+      c.previewNpcYaw = rendered;
+      c.upper.rotation.y = diffAngle(rendered,rootYaw);
     }
     // Real NPC walkers already clamp the portrait root; never re-clamp game NPCs.
     let target = rawYaw, snap = false;
     const dead = perp.CREATURE_PERP_DEAD_RAD;
-    if (authoredLabPreview && perp.perpClamp) {
-      const result = perp.perpClamp(c.animalFacing,rawYaw,npcPerps,c.previewDeadzoneRadii.animal*Math.PI/180);
-      target = result.snapTo ?? result.effectiveTarget;
-    } else if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
+    if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
       const result = perp.creatureSnapSwayTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
       target = result.target; snap = result.snap;
     } else if (perp.CREATURE_PLANE_ROT_MODE === 'sway' && perp.creatureDeadzoneTarget) {
@@ -269,7 +259,7 @@
       target = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead).effectiveTarget;
     }
     c.animalYaw = snap || !Number.isFinite(c.animalYaw) ? target
-      : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*(authoredLabPreview?11:10));
+      : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*10);
     for (const ref of c.lowerRefs) {
       ref.group.rotation.y = diffAngle(c.animalYaw,rootYaw);
       // The scene traversal already completed before onBeforeRender, so
@@ -278,10 +268,10 @@
       ref.frontPlane?.updateMatrixWorld?.(true);
       ref.backPlane?.updateMatrixWorld?.(true);
     }
-    // Re-solve the posterior every time either visual half turns. A static
-    // upper.position at the original saddle would drift away when the
-    // animal card rotates around its center.
-    alignPosteriorToSaddle(record,cameraPos,rootYaw);
+    // The animal's own deadzone rotation moves its saddle underneath the
+    // rider, even when the upper portrait continues facing independently.
+    // Update before rendering, so the rider follows in the same frame.
+    followLowerSaddleYaw(record);
     c.upper.updateMatrixWorld?.(true);
     status.facingUpdates++;
   }
@@ -299,117 +289,57 @@
     }
   }
 
-  function setPreviewFrame(root,frame) {
-    const c=root?.userData?.omgurkuComposite;
-    if(!c || !FRAMES.includes(frame))return false;
-    c.previewFrameOwner=true;
-    for(const record of live)if(record.root===root){setFrame(record,frame);return true;}
-    return false;
-  }
-
-  function setPreviewDeadzones(root, radii) {
-    const c=root?.userData?.omgurkuComposite;
-    if (!c) return false;
-    if (!radii) { c.previewDeadzoneRadii=null; return true; }
-    c.previewDeadzoneRadii={
-      animal: Math.max(0,Math.min(70,Number(radii.animal) || 0)),
-      rider: Math.max(0,Math.min(70,Number(radii.rider) || 0)),
-    };
-    c.animalFacing={};c.npcFacing={};
-    return true;
-  }
-
   function setPreviewFacing(root, radians) {
     if (!root?.userData?.omgurkuComposite) return false;
-    // Raw movement targets update each frame; never reset the persistent
-    // per-half clamp hysteresis on ordinary locomotion. Reset only when the
-    // user changes a radius via setPreviewDeadzones.
     root.userData.omgurkuPreviewRawYaw = Number(radians) || 0;
+    root.userData.omgurkuComposite.npcFacing = {};
+    root.userData.omgurkuComposite.animalFacing = {};
     return true;
   }
 
-  // V10 joins the NPC's rig-defined POSTERIOR, not the sprite/root center, to
-  // the lower image's saddle. Calculate this once per NPC (never per render).
-  function posteriorFor(options, upper) {
-    const appearance = options.appearance || options.npcRecord?.appearance || {};
-    const species = String(appearance.speciesId || ID).replace(/_/g,'-').toLowerCase();
-    const gender = String(appearance.gender || 'male').toLowerCase();
-    const profiles = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
-    const profile = profiles[species+'::'+gender] || profiles['engh-sho::male'] || {};
-    const anchor = profile.anchors?.posterior?.position || {};
-    const rule = profile.posteriorRule || {};
-    const h = Number(upper.userData?.portraitModelHeight) || Number(options.modelHeight) || .9;
-    const percentage = Number(rule.heightPercentFromFloor);
-    const authoredY = Number(anchor.y);
-    const offsetPercent = Number(rule.heightPercentOffset);
-    const y = Number.isFinite(percentage) ? h * percentage/100
-      : Number.isFinite(authoredY) && Math.abs(authoredY)>1e-6 ? authoredY
-      : Number.isFinite(offsetPercent) ? h * (.42+offsetPercent/100) : h*.42;
-    return {
-      x: Number(anchor.x) || 0, y, z: Number(anchor.z) || 0,
-      source: Number.isFinite(percentage) ? 'posterior-height-percent'
-        : Number.isFinite(authoredY) ? 'authored-posterior-anchor' : 'model-height-fallback',
-    };
-  }
-
-  function alignPosteriorToSaddle(record, cameraWorldPosition = null, rootWorldYaw = null) {
-    const root=record.root,c=root.userData.omgurkuComposite;
-    if(!c)return;
-    const w=placement.lowerWidth,h=placement.lowerHeight;
-    // V10: authored creature origin lift + *positive* visible-floor correction,
-    // then Large-class vertical scale around the native sprite midpoint.
-    const centerY=placement.authoredGroundLift+placement.visibleFloorCorrection+placement.lowerOffsetY;
-    const saddleY=centerY+(0.5-placement.saddleV)*h*placement.lowerScaleY;
-    const saddleZ=(.5-placement.saddleU)*w*placement.lowerScaleX;
-    // The saddle is carried by the ANIMAL's facing node, just as V10's
-    // saddleAnchor child moved with the Gar-wolf body. NPC upper yaw never
-    // rotates the saddle and never rotates the quadruped's gait cards.
-    const animalYaw=Number(c.lowerRefs[0]?.group?.rotation?.y)||0;
-    let sx=placement.lowerOffsetX+Math.sin(animalYaw)*saddleZ;
-    let sz=placement.lowerOffsetZ+Math.cos(animalYaw)*saddleZ;
-    if(cameraWorldPosition){
-      const origin=root.getWorldPosition(c.positionScratch);
-      const dx=cameraWorldPosition.x-origin.x,dz=cameraWorldPosition.z-origin.z;
-      const length=Math.hypot(dx,dz);
-      if(length>1e-6){
-        const yaw=Math.atan2(dx,dz)-(Number.isFinite(rootWorldYaw)?rootWorldYaw:(Number(root.rotation?.y)||0));
-        sx+=Math.sin(yaw)*placement.joinDepth;
-        sz+=Math.cos(yaw)*placement.joinDepth;
-      }
-    }else sz+=placement.joinDepth;
-    const post=c.posterior||{x:0,y:0,z:0},scale=placement.riderScale;
-    const upperYaw=Number(c.upper.rotation?.y)||0;
-    const px=post.x*Math.cos(upperYaw)+post.z*Math.sin(upperYaw);
-    const pz=post.z*Math.cos(upperYaw)-post.x*Math.sin(upperYaw);
-    c.upper.position.set(sx-px*scale+placement.upperOffsetX,
-      saddleY-post.y*scale+placement.upperOffsetY,
-      sz-pz*scale+placement.upperOffsetZ);
-    const join=root.userData.omgurkuJoin||{};
-    join.x=sx;join.y=saddleY;join.z=sz;join.lowerCenterY=centerY;
-    root.userData.omgurkuJoin=join;
+  // The lower portrait has its own creature-facing deadzone. Move only the
+  // rider's attachment point as that portrait turns, while retaining the
+  // earlier build's exact placement at yaw zero and the NPC's independent
+  // upper-body facing. No V10 posterior, large-scale or depth changes.
+  function followLowerSaddleYaw(record) {
+    const c = record?.root?.userData?.omgurkuComposite;
+    if (!c) return;
+    const yaw = Number(c.lowerRefs?.[0]?.group?.rotation?.y) || 0;
+    const saddleZ = (0.5 - placement.saddleU) * placement.lowerWidth;
+    const saddleX = Math.sin(yaw) * saddleZ;
+    const rotatedZ = Math.cos(yaw) * saddleZ;
+    c.upper.position.x = placement.lowerOffsetX + placement.upperOffsetX + saddleX;
+    c.upper.position.z = rotatedZ + placement.joinDepth + placement.upperOffsetZ;
+    const join = record.root.userData.omgurkuJoin;
+    if (join) { join.x = saddleX; join.z = rotatedZ + placement.lowerOffsetZ; }
   }
 
   function applyPlacement(record) {
-    const c=record?.root?.userData?.omgurkuComposite;
-    if(!c)return;
-    const w=placement.lowerWidth,h=placement.lowerHeight;
-    const centerY=placement.authoredGroundLift+placement.visibleFloorCorrection+placement.lowerOffsetY;
+    const c = record?.root?.userData?.omgurkuComposite; // Keeps the named NPC's root fixed while both visual halves reposition together.
+    if (!c) return;
+    const w = placement.lowerWidth, h = placement.lowerHeight;
+    const centerY = h / 2 - placement.visibleFloorCorrection + placement.lowerOffsetY;
+    const joinY = centerY + (0.5 - placement.saddleV) * h;
+    const joinZ = (0.5 - placement.saddleU) * w + placement.lowerOffsetZ;
+    c.upper.position.set(placement.lowerOffsetX + placement.upperOffsetX,
+      joinY + placement.upperOffsetY, joinZ + placement.joinDepth + placement.upperOffsetZ);
     c.upper.scale.setScalar(placement.riderScale);
-    // Native creature plane is quarter-turned: X and Z scale together so
-    // the authored Large width grows along the actually visible image axis.
-    // Keep the source GPU texture pairs untouched during slider dragging.
-    const scaleX=w*placement.lowerScaleX/c.builtLowerWidth,
-      scaleY=h*placement.lowerScaleY/c.builtLowerHeight;
-    for(const ref of c.lowerRefs){
-      ref.group.position.set(placement.lowerOffsetX,centerY,placement.lowerOffsetZ);
-      ref.group.scale.set(scaleX,scaleY,scaleX);
+    // Rebuilding the animal models is necessary to change their plane dimensions;
+    // changing a composite scale here avoids GPU texture churn while dragging sliders.
+    const lowerScaleX = w / c.builtLowerWidth, lowerScaleY = h / c.builtLowerHeight;
+    for (const ref of c.lowerRefs) {
+      ref.group.position.set(placement.lowerOffsetX, centerY, placement.lowerOffsetZ);
+      ref.group.scale.set(lowerScaleX, lowerScaleY, lowerScaleX);
     }
-    alignPosteriorToSaddle(record);
-    // Frame-driver hands and authored weapon grips belong to the upper,
-    // and their attachment inputs must remain in upper-local coordinates.
-    for(const key of ['handAttachX','handAttachY','portraitModelHeight','portraitModelWidth','armLength','scaledArmLength','armLengthBySide']){
-      if(c.upper.userData?.[key]!==undefined)record.root.userData[key]=c.upper.userData[key];
+    // The hand driver sees the outer NPC root as its avatar identity but uses
+    // proceduralHandParent=upper. Its hand coordinates must therefore remain
+    // in the ORIGINAL upper portrait's local frame. The upper's translation,
+    // yaw and scale now carry the hand sockets, just like the visible torso.
+    for (const key of ['handAttachX','handAttachY','portraitModelHeight','portraitModelWidth','armLength','scaledArmLength','armLengthBySide']) {
+      if (c.upper.userData?.[key] !== undefined) record.root.userData[key] = c.upper.userData[key];
     }
+    record.root.userData.omgurkuJoin = { x: 0, y: joinY, z: joinZ, lowerCenterY: centerY };
+    followLowerSaddleYaw(record);
   }
 
   function setFrame(record, frame) {
@@ -429,10 +359,6 @@
       if (!root.parent || !root.visible) continue;
       const c = root.userData.omgurkuComposite;
       if (!c) { live.delete(record); continue; }
-      // The original V10 workbench drives its own 12-frame/s preview cadence
-      // through the same three authored models. Never compete with that frame
-      // owner, and never change NPC simulation cadence in gameplay.
-      if (c.previewFrameOwner === true) continue;
       // Position comes exclusively from the existing NPC walker path/schedule/AI.
       // Do not independently translate the animal, and do not run another AI tick.
       const position = root.getWorldPosition(c.positionScratch);
@@ -463,37 +389,6 @@
             alphaTest: options.alphaTest,
           }));
         }
-        // V10 places the rider portrait's visual center half a body-height
-        // above its floor-origin actor and hand/socket basis. Earlier we
-        // aligned the posterior at the floor correctly but left the portrait
-        // artwork at y=0, burying much of the upper body in the quadruped.
-        const portraitHeight = Number(upper.userData?.portraitModelHeight)
-          || Number(options.modelHeight) || .9;
-        const portraitVisual = new THREE.Group();
-        portraitVisual.name = 'Omgurku_RiderPortraitVisualOffset';
-        for (const child of [...upper.children]) portraitVisual.add(child);
-        portraitVisual.position.y = portraitHeight / 2;
-        upper.add(portraitVisual);
-        // V10 intentionally draws NPC portrait cards above the animal
-        // silhouette. Use its front-side selection, not double-sided
-        // quads or world-depth clipping through the lower sprite.
-        portraitVisual.traverse(object => {
-          if (!object.isMesh && !object.isSkinnedMesh) return;
-          object.frustumCulled = false;
-          object.renderOrder = 100;
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          for (const mat of materials) {
-            if (!mat) continue;
-            mat.visible = true;
-            mat.transparent = true;
-            mat.opacity = 1;
-            mat.alphaTest = .001;
-            mat.depthTest = false;
-            mat.depthWrite = false;
-            mat.side = THREE.FrontSide;
-            mat.needsUpdate = true;
-          }
-        });
         const root = new THREE.Group(); // Sole NPC avatar group: collisions, dialogue, held items and movement remain under this parent.
         root.name = options.name || 'Omgurku_NPC_Hybrid';
         root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true,
@@ -509,8 +404,6 @@
           cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(),
           rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
           lastAnimalFacingAt: 0, tintColor: resolveBodyColorA(options),
-          posterior: posteriorFor(options, upper),
-          portraitVisual, portraitHeight,
         };
         root.userData.omgurkuComposite = c;
         const record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
@@ -559,8 +452,6 @@
       else if (key === 'riderScale') placement[key] = Math.max(0.5, Math.min(1.5, n));
       else if (key === 'lowerWidth') placement[key] = Math.max(0.4, Math.min(5, n));
       else if (key === 'lowerHeight') placement[key] = Math.max(0.2, Math.min(3, n));
-      else if (key === 'lowerScaleX' || key === 'lowerScaleY') placement[key] = Math.max(0.3,Math.min(3,n));
-      else if (key === 'authoredGroundLift') placement[key] = Math.max(-1,Math.min(2,n));
       else if (key === 'visibleFloorCorrection') placement[key] = Math.max(-0.75, Math.min(1.5, n));
       else placement[key] = Math.max(-1.5, Math.min(1.5, n));
     }
@@ -614,8 +505,6 @@
           parented: !!root.parent,
           handParentIsUpper: root.userData.proceduralHandParent === c?.upper,
           handRigAttached: !!root.userData.proceduralHandRig,
-          portraitLift: c?.portraitVisual?.position?.y ?? null,
-          portraitHeight: c?.portraitHeight ?? null,
           upperYaw: c?.upper?.rotation?.y ?? null,
           lowerYaw: c?.lowerRefs?.[0]?.group?.rotation?.y ?? null,
           rawNpcYaw: c?.rawNpcYaw ?? null,
@@ -665,7 +554,7 @@
 
   window.HobunjiOmgurkuSpecies = Object.freeze({
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
-    install, setPlacement, setPreviewFacing, setPreviewFrame, setPreviewDeadzones, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();

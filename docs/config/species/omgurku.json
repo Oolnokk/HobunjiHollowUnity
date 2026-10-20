@@ -158,9 +158,6 @@
     "upperOffsetZ": 0,
     "lowerOffsetX": 0,
     "lowerOffsetY": 0,
-    "lowerOffsetZ": 0,
-    "lowerScaleX": 1.5,
-    "lowerScaleY": 1.5,
-    "authoredGroundLift": 0.5
+    "lowerOffsetZ": 0
   }
 }

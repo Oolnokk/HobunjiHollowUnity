@@ -36,18 +36,6 @@ const calibrationHtml = read('docs/tools/omgurku-calibration/index.html');
 const calibrationScript = read('docs/tools/omgurku-calibration/calibration.js');
 assert(calibrationHtml.includes('calibration.js') && calibrationHtml.includes('spriteCanvas'));
 assert(calibrationHtml.includes('Download omgurku.json') && calibrationHtml.includes('Apply to game on this browser'));
-const v10Advanced = read('docs/tools/omgurku-calibration/advanced-lab.js');
-for (const id of ['v10Weapon','v10Attack','v10Combo','v10Stance','v10Speed','v10Loop','v10EraseMode',
-  'v10SaddleMode','v10Brush','v10DownloadSetup','v10ImportSetup','v10AnimalDead','v10RiderDead',
-  'v10NpcDbPath','v10CopyDebug']) {
-  assert(calibrationHtml.includes('id="'+id+'"'), 'restored original V10 control '+id);
-}
-assert(calibrationHtml.includes('advanced-lab.js'), 'V10 behavior loaded in calibrated tool');
-assert(v10Advanced.includes('config/combat/attack-values.json') &&
-       v10Advanced.includes('config/combat/weapon-idle-stances.json'), 'authored combat source');
-assert(v10Advanced.includes('omgurku_garwolf_setup.v1') &&
-       v10Advanced.includes("destination-out"), 'legacy mask export and non-destructive hidden-pixel painter');
-assert(read('docs/js/omgurku-species-runtime.js').includes('setPreviewDeadzones'), 'V10 independent radius API');
 assert(calibrationScript.includes('HobunjiOmgurkuSpecies') && calibrationScript.includes('hybridPlacement'));
 new vm.Script(calibrationScript, {filename:'calibration.js'});
 for (const slot of ['hat', 'hood', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'facialHair']) {
@@ -82,7 +70,6 @@ class Group {
   }
   add(child) { child.parent = this; this.children.push(child); }
   remove(child) { child.parent = null; this.children = this.children.filter(item => item !== child); }
-  traverse(visitor) { visitor(this); for (const child of this.children) child.traverse?.(visitor); }
   getWorldPosition(out) {
     let node = this;
     out.set(0, 0, 0);
@@ -164,22 +151,34 @@ async function main() {
   gaitTick();
   assert.match(root.userData.omgurkuComposite.frame, /^run[12]$/);
   const oldJoin = root.userData.omgurkuJoin.z;
-  assert.equal(window.HobunjiOmgurkuSpecies.setPreviewFrame(root,'run2'),true);
-  assert.equal(root.userData.omgurkuComposite.frame,'run2','preview may drive V10 12-frame/s cadence');
-  assert.equal(root.userData.omgurkuComposite.previewFrameOwner,true);
   assert.equal(window.HobunjiOmgurkuSpecies.setPreviewFacing(root, .6), true);
   assert.equal(root.userData.omgurkuPreviewRawYaw, .6);
   const initialWidth = lowerBuilds[0].options.modelWidth;
   window.HobunjiOmgurkuSpecies.setPlacement({ lowerWidth: initialWidth * 1.2, lowerHeight: .95,
     lowerOffsetX: .2, lowerOffsetY: .3, lowerOffsetZ: .1, upperOffsetY: .05 });
-  assert(Math.abs(lowerBuilds[0].group.scale.x - 1.2 * species.hybridPlacement.lowerScaleX) < 1e-6,
-    'V10 Large scale multiplies the live lower sprite width without rebuilding textures');
+  assert(Math.abs(lowerBuilds[0].group.scale.x - 1.2) < 1e-6, 'live width calibration');
   assert.equal(lowerBuilds[0].group.position.x, .2, 'per-half lower offset');
   assert.equal(lowerBuilds[0].group.position.z, .1, 'per-half depth offset');
   assert(root.userData.omgurkuJoin.y > .3, 'saddle follows lower floor offset');
   assert.equal(window.HobunjiOmgurkuSpecies.debugSnapshot().placement.lowerWidth, initialWidth * 1.2);
   window.HobunjiOmgurkuSpecies.setPlacement({ saddleU: 0.4 });
   assert.notEqual(root.userData.omgurkuJoin.z, oldJoin);
+  // At neutral yaw the restored geometry must remain identical to the
+  // pre-V10-parity build. Turning the animal rotates only its saddle
+  // attachment position, carrying the rider without changing rider yaw.
+  const upper = root.userData.omgurkuComposite.upper;
+  const neutral = { x: upper.position.x, z: upper.position.z };
+  const saddleRadius = (0.5 - 0.4) * (initialWidth * 1.2);
+  for (const ref of lowerBuilds) ref.group.rotation = { y: Math.PI / 2 };
+  window.HobunjiOmgurkuSpecies.setPlacement({});
+  assert(Math.abs(upper.position.x - (neutral.x + saddleRadius)) < 1e-6,
+    'the rider follows the turning animal saddle laterally');
+  assert(Math.abs(upper.position.z - (neutral.z - saddleRadius)) < 1e-6,
+    'the rider follows the turning animal saddle in depth');
+  for (const ref of lowerBuilds) ref.group.rotation.y = 0;
+  window.HobunjiOmgurkuSpecies.setPlacement({});
+  assert(Math.abs(upper.position.x - neutral.x) < 1e-6);
+  assert(Math.abs(upper.position.z - neutral.z) < 1e-6);
   api.disposeAvatarModel(root);
   assert.equal(lowerDisposals, 3);
   assert.equal(standardDisposals, 1);

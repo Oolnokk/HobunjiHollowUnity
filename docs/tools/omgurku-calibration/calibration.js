@@ -11,9 +11,6 @@
     { key:'joinDepth', label:'Join depth', min:-.35, max:.35, step:.005, group:'upperFields' },
     { key:'lowerWidth', label:'Lower body width', min:.4, max:5, step:.01, group:'lowerFields' },
     { key:'lowerHeight', label:'Lower body height', min:.2, max:3, step:.005, group:'lowerFields' },
-    { key:'lowerScaleX', label:'V10 Large creature width scale', min:.3, max:3, step:.01, group:'lowerFields' },
-    { key:'lowerScaleY', label:'V10 Large creature height scale', min:.3, max:3, step:.01, group:'lowerFields' },
-    { key:'authoredGroundLift', label:'V10 authored creature root lift', min:-1, max:2, step:.005, group:'lowerFields' },
     { key:'visibleFloorCorrection', label:'Visible floor correction', min:-.75, max:1.5, step:.005, group:'lowerFields' },
     ...['upper','lower'].flatMap(half => ['X','Y','Z'].map(axis => ({
       key:half+'Offset'+axis, label:half+' offset '+axis, min:-1.5, max:1.5, step:.005, group:'offsetFields',
@@ -129,9 +126,6 @@
           joinDepth:data.join.joinDepth, riderScale:data.join.riderScale,
           lowerWidth:data.creaturePlacement?.modelWidth,
           lowerHeight:data.creaturePlacement?.modelHeight,
-          lowerScaleX:data.creaturePlacement?.largeScale?.x,
-          lowerScaleY:data.creaturePlacement?.largeScale?.y,
-          authoredGroundLift:data.creaturePlacement?.authoredGroundLift,
           visibleFloorCorrection:data.creaturePlacement?.previewVisibleFloorCorrection,
         };
       }
@@ -149,12 +143,8 @@
   function setCam(view='angle') {
     if(!state.camera)return;
     const p={
-      // Both portrait and lower species sprites are 2D cards. Looking
-      // precisely along +Z made the animal vanish edge-on; the previous
-      // +X "Front" was actually showing the NPC's back. Use the known
-      // authored image normals instead of arbitrary axis labels.
-      front:[-3.6,1.7,0],side:[-3.6,1.7,2.0],back:[3.6,1.7,0],angle:[-3.6,2.1,3.0],
-    }[view] || [-3.6,2.1,3.0];
+      front:[3.6,1.7,0],side:[0,1.7,4.3],back:[-3.6,1.7,0],angle:[3.6,2.1,4.4],
+    }[view] || [3.6,2.1,4.4];
     state.camera.position.set(...p);
     state.controls?.target.set(0,.75,0);state.controls?.update();
     state.camera.lookAt(0,.75,0);
@@ -167,13 +157,12 @@
   }
   function tick(now){
     const dt=Math.min(.05,(now-(state.lastTime||now))/1000);state.lastTime=now;
-    if (window.HobunjiOmgurkuAdvanced?.tick) {
-      window.HobunjiOmgurkuAdvanced.tick(dt);
-    } else if(state.moving && state.model) {
+    if(state.moving && state.model){
       state.elapsed+=dt;
+      // Move only the preview root: the SAME 100 ms gameplay gaitTick selects run1/run2.
       const t=(state.elapsed*.8)%2;
       state.model.position.x=(t<1?t:2-t)*.5-.25;
-    } else if(state.model)state.model.position.x=0;
+    }else if(state.model)state.model.position.x=0;
     state.controls?.update();
     if(state.renderer){resizeOnChange();state.renderer.render(state.scene,state.camera);}
     const frame=state.model?.userData?.omgurkuComposite?.frame || 'unavailable';
@@ -261,7 +250,6 @@
         window.PNGPlaneAvatar.disposeAvatarModel(old);
       }
       state.scene.add(next);state.model=next;state.profile=profile;
-      window.HobunjiOmgurkuAdvanced?.previewReady?.();
       window.HobunjiOmgurkuSpecies.setPreviewFacing(next,Number($('headingRange').value)*Math.PI/180);
       state.built=true;
       applyPlacement();
@@ -292,9 +280,8 @@
     $('resetCameraBtn').addEventListener('click',()=>setCam('angle'));
     $('moveBtn').addEventListener('click',()=>{
       state.moving=!state.moving;state.elapsed=0;
-      $('moveBtn').textContent=state.moving?'Reset movement':'Start random movement';
+      $('moveBtn').textContent=state.moving?'■ Stop':'▶ Run';
       $('moveBtn').setAttribute('aria-pressed',String(state.moving));
-      window.HobunjiOmgurkuAdvanced?.movementChanged?.(state.moving);
     });
     $('refreshPreviewBtn').addEventListener('click',rebuildPreview);
     $('npcSelect').addEventListener('change',rebuildPreview);
@@ -380,11 +367,6 @@
     snapshot:()=>({ placement:{...state.placement}, hasComposite:!!state.model?.userData?.omgurkuComposite,
       frame:state.model?.userData?.omgurkuComposite?.frame, error:state.lastError }),
     setPlacement:changes=>{state.placement={...state.placement,...changes};applyPlacement();syncFields();},
-    context:()=>({model:state.model,scene:state.scene,camera:state.camera,THREE:state.THREE,
-      profile:state.profile,placement:{...state.placement},moving:state.moving,
-      image:state.image, spriteBounds:{...state.spriteBounds}, renderer:state.renderer,npcs:state.npcs}),
-    loadNpcSources:async()=>{state.npcs.length=0;await loadNpcSources();},
-    refreshMaskEditor:drawSaddleSprite,
   };
   start();
 })();
