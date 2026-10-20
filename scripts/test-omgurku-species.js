@@ -163,6 +163,9 @@ async function main() {
   gaitTick();
   assert.match(root.userData.omgurkuComposite.frame, /^run[12]$/);
   const oldJoin = root.userData.omgurkuJoin.z;
+  assert.equal(window.HobunjiOmgurkuSpecies.setPreviewFrame(root,'run2'),true);
+  assert.equal(root.userData.omgurkuComposite.frame,'run2','preview may drive V10 12-frame/s cadence');
+  assert.equal(root.userData.omgurkuComposite.previewFrameOwner,true);
   assert.equal(window.HobunjiOmgurkuSpecies.setPreviewFacing(root, .6), true);
   assert.equal(root.userData.omgurkuPreviewRawYaw, .6);
   const initialWidth = lowerBuilds[0].options.modelWidth;
