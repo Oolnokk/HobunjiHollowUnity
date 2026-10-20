@@ -119,6 +119,15 @@ spaceContext.deps.hostileObjects = [self, left, right];
 pushed = spaceContext.adjust(self, { x: 0, y: 0 });
 assert(pushed.x > 50, 'reversing actor order reverses the collision outcome, as before');
 
+// An avoidance push may move the target across a grid boundary, making
+// an actor in a previously unvisited bucket newly relevant.
+const chainA = { isBandit: true, health: 100, x: 99, y: 0 };
+const chainB = { isBandit: true, health: 100, x: 152, y: 0 };
+const chainC = { isBandit: true, health: 100, x: 218, y: 0 };
+spaceContext.deps.hostileObjects = [self, chainA, chainB, chainC];
+pushed = spaceContext.adjust(self, { x: 100, y: 0 });
+assert(pushed.x < 180 && pushed.x > 150, 'cross-cell avoidance includes the later bandit instead of missing its push');
+
 // Exercise the enemy's real trail owner. Color derives from ResourceRings,
 // while the shared Combat renderer keeps ownership of transient meshes.
 const trailStart = banditSource.indexOf('  const BANDIT_TRAIL_HALF_THICKNESS_TILES =');
