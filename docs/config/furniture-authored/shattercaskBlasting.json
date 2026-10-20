@@ -138,13 +138,29 @@
   "carryable": {
     "enabled": true,
     "billboardAnchor": {
-      "position": {"x": 0, "y": 0.53, "z": 0},
-      "rotation": {"x": 0, "y": 0, "z": 0},
-      "size": 1
+      "position": {
+        "x": -0.004,
+        "y": 0.2829,
+        "z": -0.187
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": 0.6
     },
     "handTargets": {
-      "left": {"x": -0.31, "y": 0.46, "z": 0.10},
-      "right": {"x": 0.31, "y": 0.46, "z": 0.10}
+      "left": {
+        "x": -0.31,
+        "y": 0.28,
+        "z": 0
+      },
+      "right": {
+        "x": 0.31,
+        "y": 0.28,
+        "z": 0
+      }
     }
   },
   "avatar": {
