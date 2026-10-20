@@ -15,6 +15,39 @@ assert(asset.recognizedSurfaces.length>0,'all original surface definitions survi
 assert(html.includes('src="js/shattercasks.js?v='),'shattercask runtime is loaded');
 assert(ranged.includes('Shattercasks?.projectileHit'),'ranged projectile segment detects shattercasks');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
+
+assert.equal(asset.particleEmitters.filter(e=>e.enabled&&e.type==='bubbles').length,2,
+  'both editor-authored bubble emitters are preserved');
+assert.equal(asset.carryable.enabled,true,'Shattercasks are authored as carryable world objects');
+assert(asset.carryable.billboardAnchor?.position,'carryable billboard anchor is saved');
+assert(asset.carryable.handTargets?.left && asset.carryable.handTargets?.right,
+  'individual authored left and right grip coordinates are saved');
+assert(code.includes('WorldPopupText?.setInteractionPrompts') &&
+  code.includes("WorldActionInputClaims?.setClaims") &&
+  !code.includes("document.createElement('button')"),
+  'pickup uses the world prompt and native interaction claims instead of a standalone DOM button');
+assert(code.includes('createEmitterVisual') && code.includes('emitterVisibilityElapsed'),
+  'only visible charges drive their authored particle emitters');
+assert(html.includes('src="js/procedural-furniture.js?v=20261020shapefull2"'),
+  'runtime receives the editor-parity curved barrel/cup geometry');
+const renderer=fs.readFileSync(path.join(root,'docs/js/procedural-furniture.js'),'utf8');
+assert(renderer.includes('createAuthoredVesselGeometry(part)') && renderer.includes("part.kind === 'barrel' || part.kind === 'cup'"),
+  'authored open cups and curved barrels do not fall back to closed generic cylinders');
+const reticle=fs.readFileSync(path.join(root,'docs/js/combat/ranged-hud-reticle.js'),'utf8');
+assert(reticle.includes('FILTER_ORANGE') && reticle.includes('wouldHitShattercask'),
+  'ranged reticle has orange Shattercask interception state');
+assert(ranged.includes('function wouldHitShattercask()') &&
+  ranged.includes("first={kind:'shattercask'"),'reticle shares projectile hit prediction');
+const handDriver=fs.readFileSync(path.join(root,'docs/js/procedural-hand-frame-driver.js'),'utf8');
+assert(handDriver.includes("target.mode === 'authored-world'") &&
+  handDriver.includes('window.Shattercasks?.heldHandTarget'),
+  'existing procedural hands accept authored world-object grip targets');
+const author=fs.readFileSync(path.join(root,'docs/tools/furniture-avatar-author/carryable-objects.js'),'utf8');
+const authorHtml=fs.readFileSync(path.join(root,'docs/tools/furniture-avatar-author/index.html'),'utf8');
+assert(authorHtml.includes('carryable-objects.js?v=') && author.includes('billboardAnchor') &&
+  author.includes('handTargets') && author.includes('exportData=function'),
+  'furniture author exports invisible held-item plane anchor and both editable grip points');
+
 assert(html.includes('id="devSpawnShattercaskBtn"'),'dev arena has a Shattercask spawn button');
 assert(devSpawner.includes("window.Shattercasks.spawnRandomInDevArena()"),'arena button dispatches to the runtime');
 
@@ -85,6 +118,12 @@ async function scenario(reloading=false) {
     return;
   }
   assert.equal(casks.vases.length,1,'the cave wall has an intact Shattercask');
+  // A projectile passes through the full height of the editor-authored neck,
+  // not the former narrow .37-radius / .42-height fake target.
+  const neck=game.Shattercasks.projectileHit({x:3,y:0.95,z:3.5},
+    {x:5.6,y:0.95,z:3.5},.08,1,area);
+  assert(neck && neck.t>=0 && neck.t<=1,'projectile can intercept the tall authored neck');
+
   // A shot from either team uses this same swept-segment intersection.
   const hit=game.Shattercasks.projectileHit({x:3,y:.42,z:3.5},{x:5.6,y:.42,z:3.5},.08,1,area);
   assert(hit&&hit.t>0&&hit.t<1,'swept projectile crosses the vase');
