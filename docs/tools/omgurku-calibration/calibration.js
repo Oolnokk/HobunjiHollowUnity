@@ -356,7 +356,6 @@
       await initThree();
       await loadNpcSources();
       await rebuildPreview();
-      window.HobunjiOmgurkuAdvanced?.previewReady?.();
       window.addEventListener('resize',resize);
     }catch(error){
       state.lastError=String(error.stack||error);
@@ -373,7 +372,7 @@
     setPlacement:changes=>{state.placement={...state.placement,...changes};applyPlacement();syncFields();},
     context:()=>({model:state.model,scene:state.scene,camera:state.camera,THREE:state.THREE,
       profile:state.profile,placement:{...state.placement},moving:state.moving,
-      image:state.image, spriteBounds:{...state.spriteBounds}, renderer:state.renderer}),
+      image:state.image, spriteBounds:{...state.spriteBounds}, renderer:state.renderer,npcs:state.npcs}),
     loadNpcSources:async()=>{state.npcs.length=0;await loadNpcSources();},
     refreshMaskEditor:drawSaddleSprite,
   };
