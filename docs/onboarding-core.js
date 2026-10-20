@@ -1833,8 +1833,8 @@
   function makeDefaultGenotype(kind) {
     if (kind === 'uumkaoii') {
       return {
-        fur:    { color: '#8a6d4b', copies: 2, inheritance: 'dominant' },
-        plates: { color: '#4b6d5f', copies: 2, inheritance: 'dominant' },
+        base: { color: '#8a6d4b', copies: 2, inheritance: 'dominant' },
+        shell: { color: '#4b6d5f', copies: 2, inheritance: 'dominant', enabled: true },
       };
     }
     return {};

@@ -915,6 +915,7 @@
     renderStudioAnimal,
     refreshSurfacePatternStatuses,
     noteCanonicalRender,
+    getPreviewEyeState: kind => window.CreatureGeneticsRender?.SPECIES?.[kind]?.eyes?.mode === 'cycle' ? previewEyeState : false, // Reused by the Fey preview's outer compositor.
     patternPaletteRules: PATTERN_PALETTE_RULES,
     getDebug: () => ({ ...debugState, appearance: isNpcTarget() ? clone(parseAppearance()) : null }),
   };

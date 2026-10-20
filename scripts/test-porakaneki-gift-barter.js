@@ -94,7 +94,7 @@ for (const rank of [1, 2, 3]) {
   if (rank === 3) assert.notEqual(genotype.sizeClass, 'medium');
 }
 const dual = windowStub.CreatureGenetics.makeRareGiftGenotype('uumkaoii', 2); // Dual-color wildlife has two rare colors rather than invented pattern genes.
-assert(dual.fur && dual.plates);
+assert(dual.base && dual.shell && dual.shell.enabled, 'Uumkao\'ii rare gifts must retain base + mandatory shell');
 
 day++;
 roll = 0.99;

@@ -265,8 +265,8 @@
   const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20261020animal1');
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
   const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
-  const source = moduleUrl('character-studio-animal-appearance.js', '20261020animal1');
-  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260921fey-size1');
+  const source = moduleUrl('character-studio-animal-appearance.js', '20261020animal2');
+  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20261020animal2');
 
   function appendModule(src, dataKey, errorLabel) {
     if (document.querySelector(`script[data-${dataKey}]`)) return;
