@@ -25,7 +25,7 @@
     },
     liveEasternMire: {
       label: 'LIVE — Eastern Mire exact',
-      settings: { entrySide:'west', preset:'greatBasin', boundaryMode:'followMapHeight', boundaryCliffBoost:2 },
+      settings: window.WildernessMapGenerator?.zoneSettings?.('map_eastern_mire') || {}, // One source for gameplay and Lab island controls.
     },
   });
 
