@@ -18,10 +18,38 @@ assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textur
 
 assert.equal(asset.particleEmitters.filter(e=>e.enabled&&e.type==='bubbles').length,2,
   'both editor-authored bubble emitters are preserved');
+const firstNeck=asset.parts.find(part=>part.id==='part_mveyqf1t_9i1bs');
+const secondNeck=asset.parts.find(part=>part.id==='part_mveyvcjl_p5vm5');
+const [firstBubble,secondBubble]=asset.particleEmitters;
+assert.equal(firstBubble.attachedPartId,firstNeck.id,'first bubble stays attached to first neck');
+assert.equal(secondBubble.attachedPartId,secondNeck.id,'second bubble tracks angled second neck instead of first');
+assert(Math.abs(firstBubble.position.y-(.2256*.2106/.4576))<1e-6,
+  'first emitter maintains mathematically exact normalized height after neck scaling');
+const oldNeck={x:.2026,y:.4632,z:.0029,angle:-11.382,sx:.2226,sy:.4083,sz:.2698};
+const oldWorld={x:-.0254+.2631,y:.6333+.0015,z:0};
+const a=-oldNeck.angle*Math.PI/180,dx=oldWorld.x-oldNeck.x,dy=oldWorld.y-oldNeck.y;
+const oldSecondLocal={x:dx*Math.cos(a)-dy*Math.sin(a),y:dx*Math.sin(a)+dy*Math.cos(a),z:oldWorld.z-oldNeck.z};
+assert(Math.abs(secondBubble.position.x-oldSecondLocal.x*secondNeck.transform.sx/oldNeck.sx)<1e-6 &&
+  Math.abs(secondBubble.position.y-oldSecondLocal.y*secondNeck.transform.sy/oldNeck.sy)<1e-6 &&
+  Math.abs(secondBubble.position.z-oldSecondLocal.z*secondNeck.transform.sz/oldNeck.sz)<1e-6,
+  'second emitter is reprojected from its old world point into the resized and re-angled second cup');
+assert(Math.abs(secondBubble.rotation.z-(-16.559-oldNeck.angle))<1e-6,
+  'second emitter preserves exact relative emission direction to the tilted neck');
+for(const [e,neck] of [[firstBubble,firstNeck],[secondBubble,secondNeck]])
+  assert(e.position.y>0 && e.position.y<neck.transform.sy/2 && e.size<.05 && e.radius<.07,
+    'each scaled bubble emitter sits just inside the correct cup mouth with matching particle size');
 assert.equal(asset.carryable.enabled,true,'Shattercasks are authored as carryable world objects');
 assert(asset.carryable.billboardAnchor?.position,'carryable billboard anchor is saved');
 assert(asset.carryable.handTargets?.left && asset.carryable.handTargets?.right,
   'individual authored left and right grip coordinates are saved');
+const actionArcCode=fs.readFileSync(path.join(root,'docs/js/action-arc-ui.js'),'utf8');
+const arcCss=fs.readFileSync(path.join(root,'docs/style.css'),'utf8');
+assert(actionArcCode.includes('window.Shattercasks?.toolArchTap?.()') &&
+  actionArcCode.includes('heldMode: () => deps?.getHeldMode?.() ?? null') &&
+  code.includes("window.ActionArcUI?.heldMode?.()!=='none'") &&
+  code.includes('syncToolArchPickup();') &&
+  arcCss.includes('#toolBtn.shattercask-context'),
+  'hands-free mobile tool control exposes pickup and set-down, but retains long-hold tool selection');
 assert(code.includes('WorldPopupText?.setInteractionPrompts') &&
   code.includes("WorldActionInputClaims?.setClaims") &&
   !code.includes("document.createElement('button')"),
@@ -258,6 +286,20 @@ async function arenaScenario() {
     assert.equal(activeScene.children.length,i+1,'real authored meshes appear in scene');
   }
   assert.equal(modelBuilds,4,'each explicit spawn creates one authored Shattercask');
+  // Touch Tool Select must remain a tool selector when a weapon is equipped,
+  // and switch to Pick Up only for an empty-handed player standing near a charge.
+  const first=game.Shattercasks.debugSnapshot().vases[0];
+  player.x=(first.col+.5)*64;player.y=(first.row+.5)*64;
+  let heldMode='tool';
+  game.ActionArcUI={heldMode:()=>heldMode};
+  assert.equal(game.Shattercasks.toolArchAction(),null,'wielded tools retain Tool Select');
+  assert.equal(game.Shattercasks.toolArchTap(),false,'wielded tool tap cannot steal pickup');
+  heldMode='none';
+  assert.equal(game.Shattercasks.toolArchAction(),'pickup','empty hands at charge expose Pick Up');
+  assert(game.Shattercasks.toolArchTap(),'a contextual tool tap picks up nearby Shattercask');
+  assert.equal(game.Shattercasks.toolArchAction(),'drop','held charge exposes Set Down');
+  assert(game.Shattercasks.toolArchTap(),'second contextual tap drops held Shattercask');
+  assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   const before=game.Shattercasks.debugSnapshot().vases.length;
   currentArea='town';
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/Testing Arena/);
