@@ -11,6 +11,7 @@
   const SPRITES = Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/omgurku-lower_${frame}.png`])));
   const DEFAULT_PLACEMENT = Object.freeze({
     lowerWidth: 2.1, lowerHeight: 0.916356, visibleFloorCorrection: 0.151758205,
+    lowerScaleX: 1.5, lowerScaleY: 1.5, authoredGroundLift: 0.5,
     saddleU: 0.3087855747767857, saddleV: 0.3691508252181978,
     joinDepth: 0.03, riderScale: 1,
     upperOffsetX: 0, upperOffsetY: 0, upperOffsetZ: 0,
@@ -347,9 +348,11 @@
     const root=record.root,c=root.userData.omgurkuComposite;
     if(!c)return;
     const w=placement.lowerWidth,h=placement.lowerHeight;
-    const centerY=h/2-placement.visibleFloorCorrection+placement.lowerOffsetY;
-    const saddleY=centerY+(0.5-placement.saddleV)*h;
-    const saddleZ=(.5-placement.saddleU)*w;
+    // V10: authored creature origin lift + *positive* visible-floor correction,
+    // then Large-class vertical scale around the native sprite midpoint.
+    const centerY=placement.authoredGroundLift+placement.visibleFloorCorrection+placement.lowerOffsetY;
+    const saddleY=centerY+(0.5-placement.saddleV)*h*placement.lowerScaleY;
+    const saddleZ=(.5-placement.saddleU)*w*placement.lowerScaleX;
     // The saddle is carried by the ANIMAL's facing node, just as V10's
     // saddleAnchor child moved with the Gar-wolf body. NPC upper yaw never
     // rotates the saddle and never rotates the quadruped's gait cards.
@@ -382,11 +385,13 @@
     const c=record?.root?.userData?.omgurkuComposite;
     if(!c)return;
     const w=placement.lowerWidth,h=placement.lowerHeight;
-    const centerY=h/2-placement.visibleFloorCorrection+placement.lowerOffsetY;
+    const centerY=placement.authoredGroundLift+placement.visibleFloorCorrection+placement.lowerOffsetY;
     c.upper.scale.setScalar(placement.riderScale);
-    // Scale native face geometry at the composite node while keeping cached
-    // animal source texture pairs untouched during mobile slider dragging.
-    const scaleX=w/c.builtLowerWidth,scaleY=h/c.builtLowerHeight;
+    // Native creature plane is quarter-turned: X and Z scale together so
+    // the authored Large width grows along the actually visible image axis.
+    // Keep the source GPU texture pairs untouched during slider dragging.
+    const scaleX=w*placement.lowerScaleX/c.builtLowerWidth,
+      scaleY=h*placement.lowerScaleY/c.builtLowerHeight;
     for(const ref of c.lowerRefs){
       ref.group.position.set(placement.lowerOffsetX,centerY,placement.lowerOffsetZ);
       ref.group.scale.set(scaleX,scaleY,scaleX);
@@ -510,6 +515,8 @@
       else if (key === 'riderScale') placement[key] = Math.max(0.5, Math.min(1.5, n));
       else if (key === 'lowerWidth') placement[key] = Math.max(0.4, Math.min(5, n));
       else if (key === 'lowerHeight') placement[key] = Math.max(0.2, Math.min(3, n));
+      else if (key === 'lowerScaleX' || key === 'lowerScaleY') placement[key] = Math.max(0.3,Math.min(3,n));
+      else if (key === 'authoredGroundLift') placement[key] = Math.max(-1,Math.min(2,n));
       else if (key === 'visibleFloorCorrection') placement[key] = Math.max(-0.75, Math.min(1.5, n));
       else placement[key] = Math.max(-1.5, Math.min(1.5, n));
     }
