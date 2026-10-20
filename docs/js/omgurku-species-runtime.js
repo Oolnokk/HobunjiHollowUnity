@@ -13,12 +13,15 @@
     lowerWidth: 2.1, lowerHeight: 0.916356, visibleFloorCorrection: 0.151758205,
     saddleU: 0.3087855747767857, saddleV: 0.3691508252181978,
     joinDepth: 0.03, riderScale: 1,
-  }); // Seed join point from Assembly Lab V10; adjustable only through the explicit debug panel.
+    upperOffsetX: 0, upperOffsetY: 0, upperOffsetZ: 0,
+    lowerOffsetX: 0, lowerOffsetY: 0, lowerOffsetZ: 0,
+  }); // V10 join seed; authored overrides live in config/species/omgurku.json.
   const DOCS_ROOT = (() => { // Absolute docs-root URL captured while this script still has currentScript.
     try { return new URL('../', document.currentScript?.src || new URL('js/', location.href)).href; }
     catch (_) { return new URL('./', location.href).href; }
   })();
-  const placement = { ...DEFAULT_PLACEMENT }; // Applied to all live composites by applyPlacement().
+  const LOCAL_PLACEMENT_KEY = 'hobunji.omgurku.hybridPlacement.v1';
+  const placement = { ...DEFAULT_PLACEMENT }; // Applied to every live composite by applyPlacement().
   const live = new Set(); // Tracks currently attached Omgurku roots for one low-frequency shared gait update.
   const tmpPosition = { x: 0, y: 0, z: 0 }; // Diagnostic fallback for incomplete Three.js stubs.
   const status = { // Surfaced by the in-page mobile debugger and debugSnapshot().
@@ -110,16 +113,23 @@
     const c = record?.root?.userData?.omgurkuComposite; // Keeps the named NPC's root fixed while both visual halves reposition together.
     if (!c) return;
     const w = placement.lowerWidth, h = placement.lowerHeight;
-    const centerY = h / 2 - placement.visibleFloorCorrection;
+    const centerY = h / 2 - placement.visibleFloorCorrection + placement.lowerOffsetY;
     const joinY = centerY + (0.5 - placement.saddleV) * h;
-    const joinZ = (0.5 - placement.saddleU) * w;
-    c.upper.position.set(0, joinY, joinZ + placement.joinDepth);
+    const joinZ = (0.5 - placement.saddleU) * w + placement.lowerOffsetZ;
+    c.upper.position.set(placement.lowerOffsetX + placement.upperOffsetX,
+      joinY + placement.upperOffsetY, joinZ + placement.joinDepth + placement.upperOffsetZ);
     c.upper.scale.setScalar(placement.riderScale);
-    for (const ref of c.lowerRefs) ref.group.position.set(0, centerY, 0);
+    // Rebuilding the animal models is necessary to change their plane dimensions;
+    // changing a composite scale here avoids GPU texture churn while dragging sliders.
+    const lowerScaleX = w / c.builtLowerWidth, lowerScaleY = h / c.builtLowerHeight;
+    for (const ref of c.lowerRefs) {
+      ref.group.position.set(placement.lowerOffsetX, centerY, placement.lowerOffsetZ);
+      ref.group.scale.set(lowerScaleX, lowerScaleY, lowerScaleX);
+    }
     // Shared attachment math reads handAttachY off the returned avatar root;
     // translate it with the upper torso rather than leaving weapon grips at ground height.
     const handY = Number(c.upper.userData?.handAttachY);
-    if (Number.isFinite(handY)) record.root.userData.handAttachY = handY * placement.riderScale + joinY;
+    if (Number.isFinite(handY)) record.root.userData.handAttachY = handY * placement.riderScale + joinY + placement.upperOffsetY;
     record.root.userData.omgurkuJoin = { x: 0, y: joinY, z: joinZ, lowerCenterY: centerY };
   }
 
@@ -174,7 +184,7 @@
         root.add(upper);
         for (const ref of lowerRefs) root.add(ref.group);
         const c = {
-          upper, lowerRefs, frame: null,
+          upper, lowerRefs, frame: null, builtLowerWidth: placement.lowerWidth, builtLowerHeight: placement.lowerHeight,
           positionScratch: new THREE.Vector3(), lastPosition: null,
         };
         root.userData.omgurkuComposite = c;
@@ -220,10 +230,49 @@
       if (!Object.prototype.hasOwnProperty.call(values, key) || !Number.isFinite(n)) continue;
       if (key === 'saddleU' || key === 'saddleV') placement[key] = Math.max(0, Math.min(1, n));
       else if (key === 'riderScale') placement[key] = Math.max(0.5, Math.min(1.5, n));
-      else if (key === 'joinDepth') placement[key] = Math.max(-0.35, Math.min(0.35, n));
+      else if (key === 'lowerWidth') placement[key] = Math.max(0.4, Math.min(5, n));
+      else if (key === 'lowerHeight') placement[key] = Math.max(0.2, Math.min(3, n));
+      else if (key === 'visibleFloorCorrection') placement[key] = Math.max(-0.75, Math.min(1.5, n));
+      else placement[key] = Math.max(-1.5, Math.min(1.5, n));
     }
     for (const record of live) applyPlacement(record);
     return { ...placement };
+  }
+
+  function readLocalPlacement() {
+    try {
+      const data = JSON.parse(localStorage.getItem(LOCAL_PLACEMENT_KEY) || 'null');
+      return data?.speciesId === ID && data?.hybridPlacement && typeof data.hybridPlacement === 'object'
+        ? data.hybridPlacement : null;
+    } catch (_) { return null; }
+  }
+
+  function saveLocalPlacement(values = placement) {
+    const next = setPlacement(values);
+    localStorage.setItem(LOCAL_PLACEMENT_KEY, JSON.stringify({
+      schema: 'hobunji.hybrid-placement.v1', speciesId: ID, hybridPlacement: next,
+    }));
+    return next;
+  }
+
+  function clearLocalPlacement() {
+    try { localStorage.removeItem(LOCAL_PLACEMENT_KEY); } catch (_) {}
+    setPlacement(DEFAULT_PLACEMENT);
+    return { ...placement };
+  }
+
+  async function loadAuthoredPlacement() {
+    const local = readLocalPlacement();
+    if (local) { setPlacement(local); status.placementSource = 'local override'; return; }
+    try {
+      const response = await fetch(new URL('config/species/omgurku.json', DOCS_ROOT));
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const cfg = await response.json();
+      // A local setting saved while this request was in flight always wins.
+      const latestLocal = readLocalPlacement();
+      if (latestLocal) { setPlacement(latestLocal); status.placementSource = 'local override'; return; }
+      if (cfg.hybridPlacement) { setPlacement(cfg.hybridPlacement); status.placementSource = 'authored species config'; }
+    } catch (error) { status.placementSource = 'built-in fallback'; status.placementLoadError = String(error?.message || error); }
   }
 
   function debugSnapshot() {
@@ -275,9 +324,11 @@
 
   window.HobunjiOmgurkuSpecies = Object.freeze({
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
-    install, setPlacement, debugSnapshot,
+    install, setPlacement, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();
+  loadAuthoredPlacement();
   installMobileDebug();
   setInterval(gaitTick, 100); // One shared, bounded-frequency visual gait tick; no parallel NPC simulation.
 })();
