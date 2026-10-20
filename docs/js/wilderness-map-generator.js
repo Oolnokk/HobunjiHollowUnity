@@ -8473,7 +8473,7 @@
       boundaryModeLabel: boundaryModeConfig.label,
       stepCurve: stepCurveConfig.id,
       stepCurveLabel: stepCurveConfig.label,
-      maxTier: resolvedMaxTier,
+      maxTier: merged.archipelagoEnabled ? clamp(Number(merged.islandHeight) || 6, 1, 20) : resolvedMaxTier,
       generationScale: GENERATION_TILE_SCALE
     };
     rng = makeRng(settings.seed);
