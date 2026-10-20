@@ -214,6 +214,8 @@
       guides[id]=marker;
     }
     refreshGuides();
+    // Rebind to the new marker after any furniture rebuild or JSON import.
+    if(activeEditorMode==='carry')select(state.selectedType==='carry'&&guides[state.selectedId]?state.selectedId:'anchor');
   }
   function refreshGuides() {
     const c=state.carryable;
