@@ -107,6 +107,8 @@ const server=http.createServer((req,res)=>{
       rig.group?.traverse?.(node=>{if(node.userData?.handModelKey==='feline')actual++;});
       return actual>=2;
     },null,{timeout:20000});
+    if(process.env.OMGURKU_CAPTURE_PREVIEW==='1')
+      await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','04-real-hands.png')});
     await page.waitForFunction(()=>{
       const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
       return Number.isFinite(frame?.upperYaw) && Number.isFinite(frame?.lowerYaw)
