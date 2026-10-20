@@ -92,3 +92,16 @@ assert(Renderer.ensureNpcPants(generatedFemale));
 assert.strictEqual(Renderer.garmentForCosmetics(generatedFemale.equippedCosmetics), 'layered_skirt');
 assert.strictEqual(Renderer.ensureNpcPants(generatedFemale), false, 'never add basic pants on top of a skirt');
 console.log('Layered leg garments: PASS');
+
+// Execute the production scoped-depth owner without constructing WebGL garments.
+{
+ const source=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // The same closure installed on each real garment handle.
+ const start=source.indexOf('    const depthBiasLimits=new Map();'),end=source.indexOf('    const createMesh =',start);
+ const handle={depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // A nearby character must occlude the garment's physical depth.
+ vm.runInNewContext(source.slice(start,end),{handle});
+ assert(handle.setDepthBiasLimit('close-contact',0));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
+ assert(handle.setDepthBiasLimit('other',.1));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
+ assert.equal(handle.setDepthBiasLimit('other',NaN),false);assert.equal(handle.setDepthBiasLimit('other',-1),false);
+ handle.setDepthBiasLimit('close-contact',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.1);
+ handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'last release restores the original feet-covering pull');
+}

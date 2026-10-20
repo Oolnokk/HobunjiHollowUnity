@@ -83,7 +83,7 @@
     return { ...building, footprintShape: shape };
   }
 
-  function authoredBuildingFootprintKeys(mapData) {
+  function authoredBuildingFootprintKeys(mapData, area = mapData?.id) {
     const keys = new Set(); // Rotated authored building footprint cells filtered from town/zone grass.
     const elevation = window.BuildingSubtleElevation; // Existing footprint math keeps grass and collision/elevation shapes identical.
     for (const rawBuilding of (Array.isArray(mapData?.buildings) ? mapData.buildings : [])) {
@@ -98,7 +98,7 @@
       const row = Math.round(Number(building?.gridZ) || 0);
       for (let r = row; r < row + depth; r++) for (let c = col; c < col + width; c++) keys.add(keyOf(c, r));
     }
-    for (const key of window.FurnitureTableSystem?.grassFootprintKeys?.(mapData?.id) || []) keys.add(key); // Furniture/locale footprints use the same reversible grass compaction as buildings.
+    for (const key of window.FurnitureTableSystem?.grassFootprintKeys?.(area) || []) keys.add(key); // Furniture/locale footprints use the same reversible grass compaction as buildings.
     return keys;
   }
 
@@ -179,8 +179,8 @@
     const scene = townDeps?.getTownScene?.(); // Active town scene whose decorative grass must respect authored buildings.
     const mapData = townDeps?.getTownZone?.(); // Active authored town map containing exact building footprint metadata.
     if (!scene || !mapData) return { meshes: 0, source: 0, visible: 0, suppressed: 0 };
-    const blocked = authoredBuildingFootprintKeys(mapData); // Exact, unexpanded building footprints; elevation falloff remains grassy.
-    _patchSceneAdd(scene, () => authoredBuildingFootprintKeys(townDeps?.getTownZone?.()), 'hobunjiTownBuildingGrass');
+    const blocked = authoredBuildingFootprintKeys(mapData, 'town'); // Projected runtime town layouts can omit the authored map ID; this owner still knows its area. elevation falloff remains grassy.
+    _patchSceneAdd(scene, () => authoredBuildingFootprintKeys(townDeps?.getTownZone?.(), 'town'), 'hobunjiTownBuildingGrass');
     const stats = filterScene(scene, blocked, 'hobunjiTownBuildingGrass');
     // Placement metadata may only contain the body bbox. Source piece JSON is
     // authoritative for porch/step/railing extension cells; refilter once those
@@ -189,7 +189,7 @@
       const liveScene = townDeps?.getTownScene?.();
       const liveMap = townDeps?.getTownZone?.();
       if (!liveScene || liveMap !== mapData) return;
-      const exact = filterScene(liveScene, authoredBuildingFootprintKeys(liveMap), 'hobunjiTownBuildingGrass');
+      const exact = filterScene(liveScene, authoredBuildingFootprintKeys(liveMap, 'town'), 'hobunjiTownBuildingGrass');
       if (exact.suppressed) townDeps?.debugLog?.(`Building piece footprints suppressed ${exact.suppressed} town grass instance(s), including extensions.`);
     });
     return stats;

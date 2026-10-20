@@ -13137,7 +13137,7 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
+          const layout = { id: townM.id, version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -18962,6 +18962,7 @@
         }
         if (activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet') { window.FestivalSystem?.receiveNpcReward?.(nearbyNpcWalker, activeAction); refreshActionBar(); return; }
         if (activeAction === 'festival_activity') { window.FestivalUI?.open?.(); return; }
+        if (activeAction === 'festival_dance_view') { window.FestivalWheelDanceRuntime?.toggleCameraView?.(); return; }
         if (activeAction === 'festival_stop_dance') { window.FestivalSystem?.cancelDance?.(); refreshActionBar(); return; }
         if (activeAction === 'npc_offer_gift') {
           window.NpcGifting?.offerGift?.(nearbyNpcWalker);
@@ -25132,6 +25133,7 @@
         }
       }
       function computeActionButtonsImpl() {
+        if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
         if (window.SocialActionWheel?.isDancing?.()) return [
           { icon: '♫', label: 'Dancing', action: 'dance_active', style: 'primary', allowed: false },
           { icon: '↻', label: 'Spin', action: 'dance_spin', style: 'secondary', inputAction: 'action2', allowed: true },
@@ -29099,6 +29101,8 @@
       window.FestivalWheelDanceRuntime?.init({
         getPlayerModel: () => playerAvatarGroup,
         getPlayerLegs: () => playerLegs,
+        shoulderOffsetH: () => s_shoulderSurfOffsetH_current, // Dance follow view shares the player's live horizontal shoulder setting.
+        refreshActions: refreshActionBar,
         surfaceY: (x,z) => npcSurfaceY('town',x,z), // Existing terrain and walkable furniture supports remain the floor authority.
         refreshCamera: updateCameraPosition,
         captureCamera: () => ({azimuth:cameraAzimuthOffsetDeg,angle:cameraAngleOffsetDeg}),

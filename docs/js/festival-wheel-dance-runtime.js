@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   const DURATION_S=4, RADIUS=(.34*1.18)/2, TILT_RAD=22*Math.PI/180; // Preserves the preview's transport and alternating rock rhythm.
+  const ORBIT_SPEED=4*Math.PI/180; // Slow world-space counter-orbit, independent of the dance's much faster spin.
   const SIDES=['left','right']; // Fixed two-hand/two-leg work, independent of the festival crowd.
   let lastStartFailure=null; // Mobile diagnostics distinguish preparation failures from an actual pose/reach failure.
   function failStart(code,actor=null,details={}){lastStartFailure={code,actor,...details};return false;}
@@ -25,6 +26,7 @@
     if([scale.x,scale.y,scale.z].some(v=>!Number.isFinite(v)||Math.abs(v)<1e-6)){failStart('invalid-rig-scale',who,{scale:{x:scale.x,y:scale.y,z:scale.z}});return null;} // Independent width/height and mirrored PNG roots are intentional; only singular transforms cannot be solved.
     const actor={root,model,legs,hands,neck:neck.neckJoint,anatomy:null,scale:Math.abs(scale.y),worldScale:scale,verticalFactor:Math.abs(scale.y),
       localUp:new T.Vector3(),inverseRotation:new T.Quaternion(),
+      pants:null, // Tracks the live garment owner so close dancers use physical depth without changing ordinary clothing rendering.
       initial:{position:root.position.clone(),quaternion:root.quaternion.clone(),legRotation:legs.group.quaternion.clone(),neck:neck.neckJoint.quaternion.clone()},
       shoulders:{},reach:{},worldShoulders:{left:new T.Vector3(),right:new T.Vector3()},
       targets:{left:new T.Vector3(),right:new T.Vector3()},
@@ -64,6 +66,7 @@
     window.WorldActionInputClaims?.clearClaims?.('paired-dance');
     for(const actor of old.actors) {
       actor.hands.setPoseProvider('paired-dance',null);
+      actor.pants?.setDepthBiasLimit?.('paired-dance',null);
       actor.root.position.copy(actor.initial.position);actor.root.quaternion.copy(actor.initial.quaternion);
       actor.legs.group.quaternion.copy(actor.initial.legRotation);actor.neck.quaternion.copy(actor.initial.neck);
       actor.legs.update(0,0,false,null);actor.legs.pants?.update?.();actor.hands.useIdlePose();
@@ -72,6 +75,7 @@
     deps?.restoreCamera?.(old.cameraState);
     old.lock?.release?.();lastStopReason=String(reason);
     window.__farmLog?.('[festival dance] stopped: '+lastStopReason,'social');
+    deps?.refreshActions?.();
     return true;
   }
   function start(walker,player) {
@@ -97,18 +101,53 @@
       pose:{},rotation:new T.Quaternion(),yaw:new T.Quaternion(),tilt:new T.Quaternion(),flip:new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0),Math.PI),
       up:new T.Vector3(0,1,0),xAxis:new T.Vector3(1,0,0),radial:new T.Vector3(),delta:new T.Vector3(),
       contacts:[new T.Vector3(),new T.Vector3()],cameraPosition:new T.Vector3(),cameraTarget:new T.Vector3(),cameraState:deps?.captureCamera?.(),
+      cameraMode:'follow',orbitAzimuth:0,shoulderOffsetH:0, // Camera mode and angle belong to this dance and pause on its simulation clock.
       supportPoint:new T.Vector3(),lastSupport:null,cameraRecord:null,lock:null}; // Reused vectors and a fixed count of analytic constraints replace per-frame anatomy checks/searches.
     if(!applyFrame()){stop('anatomical-reach');return failStart('anatomical-reach');}
     const s=session; // Callbacks retain only this action's preallocated pose buffers.
     for(const actor of s.actors)actor.hands.setPoseProvider('paired-dance',()=>applyHands(actor));
     s.lock=window.CharacterActionLocks?.acquire?.({owner:'festival-wheel-dance',reason:'Procedural paired dance',participants:[
       {id:'player',channels:['movement','tools','pose','facing','head','camera']},{id:window.NpcCharacterState?.participantId?.(walker.rec.id)||`npc:${walker.rec.id}`,channels:['movement','tools','actions','pose','facing','head']}]});
-    s.cameraRecord=window.CinematicCameraRuntime?.activate?.('town',{id:'paired-dance',fovDeg:48,blendSeconds:.25,
-      positionProvider:()=>s.cameraPosition,targetProvider:()=>s.cameraTarget,dialogueFraming:false},{reason:'paired-dance'});
-    window.WorldActionInputClaims?.setClaims?.('paired-dance',['dodge','action2'].map(actionId=>({actionId,label:'Stop dancing',priority:600,onPress:()=>stop('player-canceled')}))); // Uses the existing bound inputs on keyboard, touch and controller.
+    activateDanceCamera();
+    window.WorldActionInputClaims?.setClaims?.('paired-dance',[
+      ...['dodge','action1'].map(actionId=>({actionId,label:'Stop dancing',priority:600,onPress:()=>stop('player-canceled')})),
+      {actionId:'action2',label:'Switch dance view',priority:600,onPress:toggleCameraView},
+    ]); // One physical input route for keyboard, controller, mouse and the touch arch.
     lastStopReason='';
     deps?.refreshCamera?.();
     return true;
+  }
+  function activateDanceCamera() {
+    const s=session; // New shot identity lets the existing cinematic owner blend and collide both views.
+    s.cameraRecord=window.CinematicCameraRuntime?.activate?.('town',{id:s.cameraMode==='orbit'?'paired-dance-orbit':'paired-dance',fovDeg:48,blendSeconds:.65,
+      positionProvider:()=>s.cameraPosition,targetProvider:()=>s.cameraTarget,dialogueFraming:false},{reason:'paired-dance'});
+  }
+  function toggleCameraView() {
+    const s=session;if(!s)return false;
+    if(s.cameraRecord&&window.CinematicCameraRuntime?.activeRecord?.()!==s.cameraRecord){stop('camera-taken-over');return false;}
+    if(s.cameraMode==='follow') {
+      s.orbitAzimuth=Math.atan2(s.cameraPosition.x-(s.actors[0].eye.x+s.actors[1].eye.x)*.5,s.cameraPosition.z-(s.actors[0].eye.z+s.actors[1].eye.z)*.5);
+      s.cameraMode='orbit';
+    } else s.cameraMode='follow';
+    updateCameraView();activateDanceCamera();deps?.refreshCamera?.();deps?.refreshActions?.();return true;
+  }
+  function cameraButton() {
+    return session?{icon:'🎥',label:session.cameraMode==='follow'?'Orbit view':'Follow view',action:'festival_dance_view',inputAction:'action2',style:'secondary',allowed:true}:null;
+  }
+  function updateCameraView() {
+    const s=session,a=s.actors[0],b=s.actors[1]; // Eyes are already solved by the same constant-size mutual-gaze pass in both views.
+    if(s.cameraMode==='orbit') {
+      s.cameraTarget.copy(a.eye).add(b.eye).multiplyScalar(.5);
+      s.cameraTarget.y=(s.cameraTarget.y+(a.floor+b.floor)*.5)*.5;
+      const distance=Math.max(4.5,(a.legLength+b.legLength)*3.5,Math.max(a.eye.y-a.floor,b.eye.y-b.floor)*2.8); // Wide full-body framing scales with the actual pair.
+      s.cameraPosition.set(s.cameraTarget.x+Math.sin(s.orbitAzimuth)*distance,s.cameraTarget.y+distance*.38,s.cameraTarget.z+Math.cos(s.orbitAzimuth)*distance);
+    } else {
+      const offset=Number(deps?.shoulderOffsetH?.()); // Read the existing live Settings value, including left-shoulder/zero offsets.
+      s.shoulderOffsetH=Number.isFinite(offset)?offset:.35;
+      s.cameraTarget.copy(b.eye);
+      s.radial.set(s.shoulderOffsetH,0,-Math.max(1.25,(a.legLength+b.legLength)*1.4)).applyQuaternion(s.yaw);
+      s.cameraPosition.copy(a.eye).add(s.radial);s.cameraPosition.y+=.12;
+    }
   }
   function placeActor(actor,index,amplitude,support) {
     const s=session; // Both bodies share one world rock plane and face inward, just like the author preset.
@@ -190,6 +229,10 @@
     actor.root.position.y+=correction;actor.root.updateWorldMatrix(true,false);actor.wasSupport=true;
   }
   function applyLegs(actor) {
+    if(actor.pants!==(actor.legs.pants||null)) {
+      actor.pants?.setDepthBiasLimit?.('paired-dance',null);actor.pants=actor.legs.pants||null;
+      actor.pants?.setDepthBiasLimit?.('paired-dance',0); // A global feet-covering depth pull must not place this garment over the partner's portrait.
+    }
     const s=session; // Ground targets are straight below each actual transformed hip; knees fold forward in the existing leg solver.
     for(const leg of actor.anatomy) {
       actor.root.localToWorld(actor.hip.copy(leg.hip));
@@ -241,9 +284,7 @@
     for(const actor of s.actors){for(const side of SIDES)actor.handTargets[side].copy(actor.targets[side]);applyLegs(actor);applyHands(actor);}
     const a=s.actors[0],b=s.actors[1]; // Two fixed mutual-gaze passes reproduce the preview's moving eye-marker contact without a convergence search.
     for(let i=0;i<2;i++){eyeWorld(a);eyeWorld(b);aimEye(a,b.eye);aimEye(b,a.eye);}
-    eyeWorld(a);eyeWorld(b);s.cameraTarget.copy(b.eye);
-    s.radial.set(.3,0,-Math.max(1.25,(a.legLength+b.legLength)*1.4)).applyQuaternion(s.yaw);
-    s.cameraPosition.copy(a.eye).add(s.radial);s.cameraPosition.y+=.12;
+    eyeWorld(a);eyeWorld(b);updateCameraView();
     return true;
   }
   function update(dt,paused=false,currentArea='town') {
@@ -256,16 +297,17 @@
       if(!refreshLegAnatomy(actor)){stop('waiting-for-leg-anatomy');return;}
       session.hopHeight=Math.min(...session.actors.map(a=>Math.min(a.legLength*.42,a.reach.left*.35,a.reach.right*.35))); // A late GLB keeps its actual sole height and fixed leg reach.
     }
-    if(!paused)session.elapsed+=Math.max(0,Math.min(.05,Number(dt)||0));
+    if(!paused){const step=Math.max(0,Math.min(.05,Number(dt)||0));session.elapsed+=step;if(session.cameraMode==='orbit')session.orbitAzimuth-=ORBIT_SPEED*step;} // Counter-spin advances only with the dance, never while paused.
     if(!applyFrame()){stop('anatomical-reach');return;}
     deps?.refreshCamera?.(); // Reuses game.js's cinematic collision/framing owner after this frame's paired pose settles.
   }
   function diagnostics() {
-    return {latestChange:'Paired dancing accepts independent character width/height and mirrored roots; grounding uses the local leg metric and hands retain conservative anatomical reach.',
+    return {latestChange:'Action 2 switches shoulder-offset follow and wide slow counter-orbit views; paired garments use physical depth instead of a whole-garment feet-covering pull.',
       active:!!session,lastStopReason,lastStartFailure,...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
         baseTiltDeg:session.baseTilt*180/Math.PI,authorDurationS:DURATION_S,authorRevolutions:2,
-        actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,rigScale:{x:a.worldScale.x,y:a.worldScale.y,z:a.worldScale.z},verticalLegFactor:a.verticalFactor,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
-        cameraTarget:{x:session.cameraTarget.x,y:session.cameraTarget.y,z:session.cameraTarget.z}}:{})};
+        actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,rigScale:{x:a.worldScale.x,y:a.worldScale.y,z:a.worldScale.z},verticalLegFactor:a.verticalFactor,pantsDepthBias:a.pants?.maskUniforms?.uPantsDepthBias?.value??null,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
+        cameraMode:session.cameraMode,shoulderOffsetH:session.shoulderOffsetH,orbitAzimuthDeg:session.orbitAzimuth*180/Math.PI,orbitSpeedDegS:-4,
+        cameraPosition:{x:session.cameraPosition.x,y:session.cameraPosition.y,z:session.cameraPosition.z},cameraTarget:{x:session.cameraTarget.x,y:session.cameraTarget.y,z:session.cameraTarget.z}}:{})};
   }
-  window.FestivalWheelDanceRuntime=Object.freeze({init,start,stop,update,isActive:()=>!!session,activeFor,isPartner,elapsedSeconds,sample,diagnostics});
+  window.FestivalWheelDanceRuntime=Object.freeze({init,start,stop,update,isActive:()=>!!session,activeFor,isPartner,elapsedSeconds,sample,diagnostics,toggleCameraView,cameraButton});
 })();

@@ -69,7 +69,8 @@ function actor(height,x){
  setPoseProvider(_owner,fn){provider=fn;},applyOwnedPose(){provider?.();return !!provider;},applyToolCalibration(){},useIdlePose(){}};
  model.userData.proceduralHandRig=hands;
  let contact=.02,revision=0; // Simulates a late fallback-to-GLB sole/stance readiness change.
- const legs={group:legGroup,anatomyRevision:()=>revision,replaceFeet(){contact=0;revision++;},get contact(){return contact;},motionAnatomy:()=>['left','right'].map(side=>({side,hip:new Vector3((side==='left'?-1:1)*height*.055,height*.32,0),ankle:new Vector3(0,contact,0),length:height*.32-contact,bend:{x:0,z:0}})),
+ const pants={depthBiasBase:.25,maskUniforms:{uPantsDepthBias:{value:.25}},setDepthBiasLimit(owner,limit){this.maskUniforms.uPantsDepthBias.value=limit??this.depthBiasBase;},update(){}}; // Verifies action ownership/restoration; the garment module's own limit API is tested separately.
+ const legs={pants,group:legGroup,anatomyRevision:()=>revision,replaceFeet(){contact=0;revision++;},get contact(){return contact;},motionAnatomy:()=>['left','right'].map(side=>({side,hip:new Vector3((side==='left'?-1:1)*height*.055,height*.32,0),ankle:new Vector3(0,contact,0),length:height*.32-contact,bend:{x:0,z:0}})),
  applyWorldFootTargets(targets){this.targets={left:targets.left.clone(),right:targets.right.clone()};},update(){}};
  return {root,model,legs,hands,height};
 }
@@ -83,14 +84,26 @@ for(const [ha,hb,ax=1,ay=1,bx=1,by=1] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,
  a.root.scale.set(ax,ay,Math.abs(ax));b.root.scale.set(bx,by,Math.abs(bx)); // Ordinary independent width/height and PNG-facing reflection.
  const initialScaleA=a.root.scale.clone(),initialScaleB=b.root.scale.clone();
  const initialA=a.root.position.clone(),initialB=b.root.position.clone();
- api.init({getPlayerModel:()=>a.model,getPlayerLegs:()=>a.legs,surfaceY:()=>0,refreshCamera:()=>cameraRefreshes++});
+ api.init({getPlayerModel:()=>a.model,getPlayerLegs:()=>a.legs,surfaceY:()=>0,shoulderOffsetH:()=>.7,refreshCamera:()=>cameraRefreshes++});
  assert(api.start(walker,a.root),`start ${ha}/${hb}`);assert(!api.start(walker,a.root),'only one pair owns the actors');
  const shot=activeShot;assert.equal(shot.camera.id,'paired-dance');
+ assert.equal(api.diagnostics().shoulderOffsetH,.7,'follow reads the existing horizontal shoulder setting');
+ assert.equal(api.cameraButton().inputAction,'action2');
+ assert.equal(a.legs.pants.maskUniforms.uPantsDepthBias.value,0,'paired clothing retains physical depth');
  api.update(.05,true,'town');assert.equal(api.elapsedSeconds('sloomi'),0,'pause preserves the transport');
  let previousSupport=null,anchors=null,roles=new Set(); // Support anchors must remain fixed throughout a half-hop.
  for(let i=0;i<480;i++) {
-  if(i===240){a.legs.replaceFeet();previousSupport=null;}
-  api.update(1/60,false,'town');assert(api.activeFor('sloomi'),`pair remains anatomically reachable at frame ${i}`);
+  if(i===120){
+   const followDistance=new Vector3().copy(api.diagnostics().cameraPosition).distanceTo(api.diagnostics().cameraTarget); // View switch must zoom out significantly without changing the pair.
+   inputClaims.get('paired-dance').find(c=>c.actionId==='action2').onPress();
+   assert(api.isActive(),'view input does not cancel the dance');assert.equal(api.diagnostics().cameraMode,'orbit');
+   assert.equal(api.cameraButton().label,'Follow view');assert.notStrictEqual(activeShot,shot,'new shot blends through the existing camera owner');
+   const before=api.diagnostics();api.update(.05,true,'town');assert.equal(api.diagnostics().orbitAzimuthDeg,before.orbitAzimuthDeg,'paused orbit stays still');
+   assert(new Vector3().copy(before.cameraPosition).distanceTo(before.cameraTarget)>followDistance*2,'orbit frames the full pair from farther away');
+  }
+  if(i===240){assert(api.toggleCameraView());assert.equal(api.diagnostics().cameraMode,'follow');a.legs.replaceFeet();previousSupport=null;}
+  const beforeOrbit=api.diagnostics().orbitAzimuthDeg; // Counter-orbit speed is independent of the paired spin.
+  api.update(1/60,false,'town');if(api.diagnostics().cameraMode==='orbit')assert(Math.abs(api.diagnostics().orbitAzimuthDeg-beforeOrbit+4/60)<1e-8);assert(api.activeFor('sloomi'),`pair remains anatomically reachable at frame ${i}`);
   const diagnostic=api.diagnostics(),support=diagnostic.actors.findIndex(v=>v.grounded);roles.add(support);
   assert.equal(diagnostic.actors.filter(v=>v.grounded).length,1);
   if(support!==previousSupport){anchors={left:[a,b][support].legs.targets.left.clone(),right:[a,b][support].legs.targets.right.clone()};previousSupport=support;}
@@ -110,13 +123,15 @@ for(const [ha,hb,ax=1,ay=1,bx=1,by=1] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,
   }
   assert.equal(a.hands.applyOwnedPose(),true,'the final hand sync retains paired ownership');
   const eye=b.model.userData.neckRig.neckJoint.localToWorld(new Vector3(0,hb*.05,.006)); // Preview eye-marker landmark, including the solved moving neck.
-  assert(shot.camera.targetProvider().distanceTo(eye)<1e-6,'cinematic aims at the exact partner eye landmark');
+  if(diagnostic.cameraMode==='follow')assert(shot.camera.targetProvider().distanceTo(eye)<1e-6,'cinematic aims at the exact partner eye landmark');
  }
  assert(a.root.scale.distanceTo(initialScaleA)<1e-9&&b.root.scale.distanceTo(initialScaleB)<1e-9,'dance preserves authored proportions');
  assert.equal(roles.size,2,'both partners alternate supporting and hopping');
  const before=releaseCount;
  api.update(.01,false,'interior');assert(!api.activeFor('sloomi'));assert.equal(releaseCount,before+1);
  assert(a.root.position.distanceTo(initialA)<1e-6&&b.root.position.distanceTo(initialB)<1e-6,'roots restored');
+ assert.equal(a.legs.pants.maskUniforms.uPantsDepthBias.value,.25,'ordinary garment foot overlay restored');
+ assert.equal(api.cameraButton(),null,'view action disappears after stop');
  assert.equal(a.hands.applyOwnedPose(),false,'hand owner released');assert.equal(activeShot,null,'camera released');assert.equal(api.stop(),false);assert.equal(inputClaims.size,0,'cancel claims released');
 }
 assert(cameraRefreshes>0,'paired pose refreshes the existing cinematic camera owner');
@@ -140,3 +155,17 @@ assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagno
 api.init({getPlayerModel:()=>cancelA.model,getPlayerLegs:()=>cancelA.legs});cancelA.root.scale.set(0,1,1);
 assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'invalid-rig-scale');
 assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnostics expose the actual failed transform');
+
+// Execute the actual game wiring: paired controls take priority over an aimed chair.
+{
+ const game=fs.readFileSync('docs/game.js','utf8'); // Covers the mobile arch entry point rather than only exported runtime methods.
+ const a=game.indexOf('      function computeActionButtonsImpl() {'),b=game.indexOf('\n      // Fallback anchor',a);
+ const context=vm.createContext({window:{FestivalWheelDanceRuntime:{isActive:()=>true,cameraButton:()=>({action:'festival_dance_view',inputAction:'action2'})},FestivalSystem:{actionButton:()=>({action:'festival_stop_dance'})}}});
+ vm.runInContext(game.slice(a,b),context);
+ assert.deepEqual(Array.from(context.computeActionButtonsImpl(),b=>b.action),['festival_stop_dance','festival_dance_view']);
+ let injected=null;
+ const window={FestivalWheelDanceRuntime:{init:deps=>injected=deps}}; // The ordinary Settings value must reach the follow camera through production injection.
+ const init=game.indexOf('      window.FestivalWheelDanceRuntime?.init({');
+ vm.runInNewContext(game.slice(init,game.indexOf('\n      });',init)+10),{window,playerAvatarGroup:{},playerLegs:{},s_shoulderSurfOffsetH_current:-.4,refreshActionBar(){},updateCameraPosition(){}});
+ assert.equal(injected.shoulderOffsetH(),-.4,'negative left-shoulder offsets are preserved');
+}

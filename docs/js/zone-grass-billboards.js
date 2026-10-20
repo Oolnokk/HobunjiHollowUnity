@@ -319,7 +319,7 @@
     mesh.userData.hobunjiBillboardProjectMatrix = projectTownGrassMatrix;
     const filter = window.BuildingGrassSuppression;
     if (filter) {
-      const stats = filter.filterBillboardMesh(mesh, filter.authoredBuildingFootprintKeys(townDeps?.getTownZone?.()), 'hobunjiTownBuildingGrass');
+      const stats = filter.filterBillboardMesh(mesh, filter.authoredBuildingFootprintKeys(townDeps?.getTownZone?.(), 'town'), 'hobunjiTownBuildingGrass');
       mesh.userData.hobunjiTownSubtleElevated = true;
       return stats.visible;
     }

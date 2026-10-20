@@ -15,7 +15,7 @@ class Matrix4 {
 class Quaternion {}
 class Vector3 { constructor(x=0,y=0,z=0){this.set(x,y,z);} set(x,y,z){Object.assign(this,{x,y,z});return this;} setFromMatrixPosition(matrix){this.x=matrix.elements[12];this.y=matrix.elements[13];this.z=matrix.elements[14];return this;} }
 const scene={children:[],add(...objects){for(const obj of objects){obj.parent=this;this.children.push(obj);}return this;},remove(){},updateMatrixWorld(){},traverse(visit){this.children.forEach(visit);}};
-const map={id:'map_hobunji_town',decor:[{id:'buffet',key:'servingTable',col:10,row:10},{id:'chair',key:'chairSimple',col:3,row:3}],furniture:[],buildings:[]};
+const map={decor:[{id:'buffet',key:'servingTable',col:10,row:10},{id:'chair',key:'chairSimple',col:3,row:3}],furniture:[],buildings:[]};
 const window={ProceduralFurniture:{},StructurePreload:{ensureReady:()=>Promise.resolve({ready:false})}};
 function mesh(c,r,key,scene){
   const root={parent:null,userData:{},position:{x:c+defs[key].fw/2,y:0,z:r+defs[key].fd/2},rotation:{y:0},
@@ -43,7 +43,7 @@ function grass(){
 (async()=>{
   const old=grass();assert.equal(old.count,2);
   load('building-grass-suppression'); // house-pieces loads this after TownZoneBuildings.init in the real game.
-  assert.equal(old.count,1,'late module recovers initialized town dependencies and filters existing grass');
+  assert.equal(old.count,1,'late module uses the known town area even when the runtime projection has no map ID');
   const next=grass();await Promise.resolve();await Promise.resolve();
   assert.equal(next.count,1,'newly rebuilt grass uses the same clearing footprints');
   window.HobunjiTownSubtleElevation={sampleHeightAt:()=>.25};

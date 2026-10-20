@@ -218,13 +218,14 @@
       for (let i = 1; i < open.length; i++) if (open[i].f < open[best].f) best = i;
       return open.splice(best, 1)[0];
     };
-    addOpen({ c: startC, r: startR, key: startKey, f: heuristic(startC, startR) });
+    const startStructuralClear = isNpcPositionStructurallyWalkable(area, fromX, fromZ); // Checked once per search, not once per neighbor of the first node.
+    const startFullyClear = startStructuralClear && isNpcPositionWalkable(area, fromX, fromZ); // Chooses the seated/legacy-overlap escape rule for the first edge.
+    addOpen({ c: startC, r: startR, key: startKey, f: heuristic(startC, startR), escaping:startStructuralClear&&!startFullyClear }); // Only a furniture-overlapping origin may keep walking through its contiguous blocked prefix.
+
     const gScore = new Map([[startKey, 0]]);
     const cameFrom = new Map();
     const closed = new Set();
     let expanded = 0;
-    const startStructuralClear = isNpcPositionStructurallyWalkable(area, fromX, fromZ); // Checked once per search, not once per neighbor of the first node.
-    const startFullyClear = startStructuralClear && isNpcPositionWalkable(area, fromX, fromZ); // Chooses the seated/legacy-overlap escape rule for the first edge.
     debugStats.pathSearches = (debugStats.pathSearches || 0) + 1;
 
     while ((heap ? heap.size : open.length) && expanded < maxNodes) {
@@ -249,16 +250,19 @@
         const nc = cur.c + dc, nr = cur.r + dr;
         if (nc < minC || nc > maxC || nr < minR || nr > maxR) continue;
         const nk = key(nc, nr);
-        if (closed.has(nk) || !centerClear(nc, nr)) continue;
+        if (closed.has(nk)) continue;
+        const nextClear=centerClear(nc,nr); // Cached body-footprint probe reused when deciding whether the bed-exit prefix has ended.
+        if(!nextClear && (!cur.escaping || Math.max(Math.abs(nc-startC),Math.abs(nr-startR))>3 || !isNpcPositionStructurallyWalkable(area,nc+.5,nr+.5)))continue; // Bounded exit from multi-tile beds; never tunnel through a structural wall or re-enter furniture after clear floor.
         const targetStep = allowOccupiedTarget && nc === targetC && nr === targetR;
         const firstEdge = cur.key === startKey; // The first hop must originate at the NPC's real sub-tile position, not an assumed tile center.
         const edgeFromX = firstEdge ? fromX : cur.c + 0.5; // Used only for this edge's swept collision validation.
         const edgeFromZ = firstEdge ? fromZ : cur.r + 0.5; // Used only for this edge's swept collision validation.
-        const edgeClear = firstEdge && !startFullyClear
+        const escapingEdge = cur.escaping || (firstEdge && !startFullyClear); // Legacy structural-overlap saves retain their existing first-edge recovery.
+        const edgeClear = escapingEdge
           ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep })
           : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
         if (!edgeClear) continue;
-        if (dc !== 0 && dr !== 0) {
+        if (dc !== 0 && dr !== 0 && !escapingEdge) {
           // Prevent a diagonal body from squeezing between two blocked
           // orthogonal neighbors even when the diagonal center itself is open.
           if (!centerClear(cur.c + dc, cur.r) || !centerClear(cur.c, cur.r + dr)) continue;
@@ -267,7 +271,7 @@
         if (tentative >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, tentative);
         cameFrom.set(nk, cur.key);
-        addOpen({ c: nc, r: nr, key: nk, f: tentative + heuristic(nc, nr) });
+        addOpen({ c: nc, r: nr, key: nk, f: tentative + heuristic(nc, nr), escaping:cur.escaping&&!nextClear });
       }
     }
     return null;
