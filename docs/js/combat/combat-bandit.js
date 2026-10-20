@@ -1521,6 +1521,9 @@
   // normal within-frame movement before the next refresh. Always use live positions
   // for the actual push so neither the distance nor the order-dependent nudge is stale.
   const banditSpacingBuckets = new Map();
+  const banditSpacingOrder = new Map(); // Rebuild with the index: avoidance pushes are order-dependent.
+  const banditSpacingCandidates = []; // Reused scratch avoids a fresh neighbors array per bandit/frame.
+  function compareBanditSpacingOrder(a, b) { return banditSpacingOrder.get(a) - banditSpacingOrder.get(b); }
   let banditSpacingBuiltAt = -Infinity;
   let banditSpacingCollection = null;
   let banditSpacingCount = -1;
@@ -1535,8 +1538,11 @@
     if (banditSpacingCollection === hostiles && banditSpacingCount === count
       && banditSpacingCellSize === cellSize && tick - banditSpacingBuiltAt < BANDIT_SPACING_REFRESH_MS) return;
     banditSpacingBuckets.clear();
+    banditSpacingOrder.clear();
+    let order = 0;
     for (const hostile of hostiles || []) {
       if (!hostile?.isBandit || hostile.health <= 0) continue;
+      banditSpacingOrder.set(hostile, order++);
       const key = Math.floor(hostile.x / cellSize) + ',' + Math.floor(hostile.y / cellSize);
       let bucket = banditSpacingBuckets.get(key);
       if (!bucket) { bucket = []; banditSpacingBuckets.set(key, bucket); }
@@ -1554,23 +1560,26 @@
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
     refreshBanditSpacingBuckets(personalSpacePx);
-    // A push may move the target into the next cell; inspect that cell too.
-    // Preserve iteration order for colliding neighbors to avoid changing crowd feel.
+    // Avoidance is sequential: keep the original hostile iteration order
+    // even when neighbors are stored in different spatial buckets.
+    const candidates = banditSpacingCandidates;
+    candidates.length = 0;
     const cx = Math.floor(px / banditSpacingCellSize);
     const cy = Math.floor(py / banditSpacingCellSize);
     for (let y = cy - 1; y <= cy + 1; y++) {
       for (let x = cx - 1; x <= cx + 1; x++) {
         const neighbors = banditSpacingBuckets.get(x + ',' + y);
-        if (!neighbors) continue;
-        for (const o of neighbors) {
-          if (o === c || o.health <= 0) continue;
-          const dx = px - o.x, dy = py - o.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > 0.001 && dist < personalSpacePx) {
-            const push = personalSpacePx - dist;
-            px += (dx / dist) * push; py += (dy / dist) * push;
-          }
-        }
+        if (neighbors) for (const o of neighbors) candidates.push(o);
+      }
+    }
+    candidates.sort(compareBanditSpacingOrder);
+    for (const o of candidates) {
+      if (o === c || o.health <= 0) continue;
+      const dx = px - o.x, dy = py - o.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0.001 && dist < personalSpacePx) {
+        const push = personalSpacePx - dist;
+        px += (dx / dist) * push; py += (dy / dist) * push;
       }
     }
     return { x: px, y: py };
@@ -1992,6 +2001,12 @@
   function spawnBanditTrailArc(c, rangePx, halfConeRad, angle, pitch = null) {
     const colors = banditTrailColors(c);
     const count = colors.length;
+    // Color lanes split only the VISUAL mesh. Show Hitboxes must still show
+    // the original full gameplay cone, not just lane zero's narrow wedge.
+    if (count > 1) window.Combat?.spawnMeleeTrail?.({
+      actor: c, scene: c.scene, yaw: angle, pitch: pitch ?? c._banditAimPitch ?? 0,
+      rangePx, halfConeRad, debugOnly: true,
+    });
     for (let lane = 0; lane < count; lane++) {
       // Every lane claims an adjacent slice of the attack's visual cone.
       // The union has exactly the original attack width; damage uses the
@@ -2010,7 +2025,7 @@
         color: colors[lane],
         holdS: BANDIT_TRAIL_HOLD_S,
         fadeS: BANDIT_TRAIL_FADE_S,
-        debug: lane === 0, // The visual cone is recorded only once.
+        debug: count === 1, // Multi-lane attacks record their complete cone separately above.
       });
     }
   }
