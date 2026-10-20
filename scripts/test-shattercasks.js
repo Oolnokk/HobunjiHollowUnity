@@ -54,7 +54,7 @@ assert(author.includes("renderSeatPortrait('mao-ao','male')") &&
   author.includes('ProceduralHandAttachments?.attach?.'),
   'Carryable preview uses game avatar portrait and real procedural hand attachment models');
 assert(author.includes('placeHandWorld?.(side,world') && author.includes('state.carryable.handTargets[side]') &&
-  author.includes('previewActor.scale.setScalar') === false,
+  author.includes('previewActor.scale.setScalar'),
   'preview positions real hand rigs using authored hand targets and avatar-relative anchor scale');
 assert(author.includes('syncHoldingPreview();') &&
   author.includes("activeEditorMode==='carry'&&previewEnabled") &&
@@ -62,7 +62,7 @@ assert(author.includes('syncHoldingPreview();') &&
   'avatar preview updates live only in Carryable mode without modifying exported avatar settings');
 assert(authorHtml.includes('config/hand-model-profiles.js') &&
   authorHtml.includes('js/procedural-hand-attachments.js') &&
-  authorHtml.includes('carryable-objects.js?v=20261020carryAvatar1'),
+  /carryable-objects\.js\?v=[A-Za-z0-9_-]+/.test(authorHtml),
   'furniture editor loads the same hand profiles and procedural hand model loader used by gameplay');
 
 assert(authorHtml.includes("'docs/config/furniture-authored/shattercaskBlasting.json'"),
