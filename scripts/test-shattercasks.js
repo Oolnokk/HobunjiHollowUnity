@@ -47,6 +47,24 @@ const authorHtml=fs.readFileSync(path.join(root,'docs/tools/furniture-avatar-aut
 assert(authorHtml.includes('carryable-objects.js?v=') && author.includes('billboardAnchor') &&
   author.includes('handTargets') && author.includes('exportData=function'),
   'furniture author exports invisible held-item plane anchor and both editable grip points');
+assert(author.includes('id="carryShowAvatar"') && author.includes('id="carryFrameHoldingPose"'),
+  'Carryable mode provides visible avatar toggle and framing controls');
+assert(author.includes("renderSeatPortrait('mao-ao','male')") &&
+  author.includes('buildSinglePlaneAvatarModel') &&
+  author.includes('ProceduralHandAttachments?.attach?.'),
+  'Carryable preview uses game avatar portrait and real procedural hand attachment models');
+assert(author.includes('placeHandWorld?.(side,world') && author.includes('state.carryable.handTargets[side]') &&
+  author.includes('previewActor.scale.setScalar') === false,
+  'preview positions real hand rigs using authored hand targets and avatar-relative anchor scale');
+assert(author.includes('syncHoldingPreview();') &&
+  author.includes("activeEditorMode==='carry'&&previewEnabled") &&
+  !author.includes('state.avatar.visible=true'),
+  'avatar preview updates live only in Carryable mode without modifying exported avatar settings');
+assert(authorHtml.includes('config/hand-model-profiles.js') &&
+  authorHtml.includes('js/procedural-hand-attachments.js') &&
+  authorHtml.includes('carryable-objects.js?v=20261020carryAvatar1'),
+  'furniture editor loads the same hand profiles and procedural hand model loader used by gameplay');
+
 assert(authorHtml.includes("'docs/config/furniture-authored/shattercaskBlasting.json'"),
   'Shattercask is a known repository furniture entry even before GitHub tree discovery');
 assert(authorHtml.includes('RAWGITHACK_BUILD_REF') &&
