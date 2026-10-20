@@ -11,6 +11,9 @@
     { key:'joinDepth', label:'Join depth', min:-.35, max:.35, step:.005, group:'upperFields' },
     { key:'lowerWidth', label:'Lower body width', min:.4, max:5, step:.01, group:'lowerFields' },
     { key:'lowerHeight', label:'Lower body height', min:.2, max:3, step:.005, group:'lowerFields' },
+    { key:'lowerScaleX', label:'V10 Large creature width scale', min:.3, max:3, step:.01, group:'lowerFields' },
+    { key:'lowerScaleY', label:'V10 Large creature height scale', min:.3, max:3, step:.01, group:'lowerFields' },
+    { key:'authoredGroundLift', label:'V10 authored creature root lift', min:-1, max:2, step:.005, group:'lowerFields' },
     { key:'visibleFloorCorrection', label:'Visible floor correction', min:-.75, max:1.5, step:.005, group:'lowerFields' },
     ...['upper','lower'].flatMap(half => ['X','Y','Z'].map(axis => ({
       key:half+'Offset'+axis, label:half+' offset '+axis, min:-1.5, max:1.5, step:.005, group:'offsetFields',
@@ -126,6 +129,9 @@
           joinDepth:data.join.joinDepth, riderScale:data.join.riderScale,
           lowerWidth:data.creaturePlacement?.modelWidth,
           lowerHeight:data.creaturePlacement?.modelHeight,
+          lowerScaleX:data.creaturePlacement?.largeScale?.x,
+          lowerScaleY:data.creaturePlacement?.largeScale?.y,
+          authoredGroundLift:data.creaturePlacement?.authoredGroundLift,
           visibleFloorCorrection:data.creaturePlacement?.previewVisibleFloorCorrection,
         };
       }
