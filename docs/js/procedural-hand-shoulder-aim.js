@@ -251,9 +251,11 @@
       // and all held-weapon ownership intact.
       const upperOnlyHandY = avatarRoot.userData?.omgurkuNpc
         ? Number(avatarRoot.userData?.handAttachY) : NaN;
-      const handRestY = Number.isFinite(upperOnlyHandY)
-        ? upperOnlyHandY : posteriorYInParent() + armLengthOffsetY();
-      socket.position.y = handRestY + (Number(fallbackPose?.position?.y) || 0);
+      if (Number.isFinite(upperOnlyHandY)) {
+        socket.position.y = upperOnlyHandY + (Number(fallbackPose?.position?.y) || 0);
+      } else {
+        socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
+      }
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       return true;
