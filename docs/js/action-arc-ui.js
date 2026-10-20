@@ -534,8 +534,10 @@
         // tool is already out, in which case the same tap now dequips
         // instead (replacing the removed dedicated put-away button; see
         // its matching case in itemBtn's own pointerup below).
-        if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
-        else window._desktopSelectionArc.recallLastTool();
+        if (!window.Shattercasks?.toolArchTap?.()) {
+          if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
+          else window._desktopSelectionArc.recallLastTool();
+        }
       }
       _tHeld = false; _tMoved = false;
     });
@@ -631,5 +633,8 @@
 
   window.ActionArcUI = {
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
+    // Allow nearby world objects to expose contextual Tool Select behavior
+    // without retaining or mutating the selector's private equipment state.
+    heldMode: () => deps?.getHeldMode?.() ?? null,
   };
 })();
