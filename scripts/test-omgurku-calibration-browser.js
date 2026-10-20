@@ -102,6 +102,18 @@ const server=http.createServer((req,res)=>{
     const radii=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.context()
       .model.userData.omgurkuComposite.previewDeadzoneRadii);
     assert.equal(radii.animal,18);assert.equal(radii.rider,53);
+    const posteriorJoin=await page.evaluate(()=>{
+      const c=window.HobunjiOmgurkuCalibration.context(),v=c.model.userData.omgurkuComposite;
+      const join=c.model.userData.omgurkuJoin,scale=c.placement.riderScale;
+      return {jointY:join.y,posteriorY:v.posterior?.y,
+        reconstructedY:v.upper.position.y+v.posterior.y*scale,
+        handParentIsUpper:c.model.userData.proceduralHandParent===v.upper};
+    });
+    assert(Number.isFinite(posteriorJoin.posteriorY)&&posteriorJoin.posteriorY>0,
+      'gameplay composite resolves NPC posterior anchor from rig');
+    assert(Math.abs(posteriorJoin.jointY-posteriorJoin.reconstructedY)<.0001,
+      'V10 posterior is aligned to saddle, not portrait root');
+    assert(posteriorJoin.handParentIsUpper,'hands continue following vertically aligned portrait');
     await page.locator('#v10AttackBtn').click();
     await page.waitForFunction(()=>window.HobunjiOmgurkuAdvanced.snapshot().attack!=='idle',
       null,{timeout:3000});
