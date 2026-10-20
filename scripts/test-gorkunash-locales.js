@@ -54,10 +54,11 @@ const moved=structuredClone(town);
 moved.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand').col += 4;
 const movedMusic=W.MapLayoutSystem.getEffectiveMapData(moved,{dateOrdinal:civilDay,minutes:hour*60,weekday:'Anan'}).npcStations.find(station=>station.id===originalMusic.id);
 assert.equal(movedMusic.col,originalMusic.col+4,'music station follows moved root without a duplicate station list');
-assert.equal(originalRoot.col,42,'authored map remains unmutated after expansion');
+assert.equal(originalRoot.col,15,'authored map remains unmutated after expansion');
 W.NpcScheduling.stations=layout.npcStations;
 const itemDefs={meal:{label:'Special stew',isCookedFood:true,foodEffects:{vigor:2}}},inventory={meal:1};
-let player={c:47,r:43}, aimed={c:47.02,r:43.185}, heldMode='item', isSeated=true, queuedBite=null, bowlAnimationCount=0; // Player reticle and held state for bowl targeting and real seated animation checks.
+const buffet=layout.decor.find(p=>p.id==='gorkunash_feast');
+let player={c:buffet.col+1,r:buffet.row+1}, aimed={c:buffet.col+1.02,r:buffet.row+.185}, heldMode='item', isSeated=true, queuedBite=null, bowlAnimationCount=0; // Player reticle and held state for bowl targeting and real seated animation checks.
 let currentSeat=null; // Player's actual ordinary chair, shared with table membership and meal company.
 load('furniture-table-system');
 const furniture=W.FurnitureTableSystem; // Production area/table/targeting authority.
@@ -71,7 +72,7 @@ for(const record of layout.decor){
  if(record.serviceId)root.userData.authoredItemPlacements={children:servingData.itemPlacements.map(placement=>({userData:{surfacePlacement:placement},getWorldPosition(out){out.x=root.position.x+placement.position.u;out.z=root.position.z+placement.position.v;return out;}}))};
  furniture.registerPlacement('town',record,root,size);
 }
-function aimSurface(kind,index=0){const placement=servingData.itemPlacements.find(item=>item.service.kind===kind&&(kind!=='meal'||item.service.index===index));aimed={c:48+placement.position.u,r:43.5+placement.position.v};return furniture.aimedService('town');}
+function aimSurface(kind,index=0){const placement=servingData.itemPlacements.find(item=>item.service.kind===kind&&(kind!=='meal'||item.service.index===index));aimed={c:buffet.col+2+placement.position.u,r:buffet.row+.5+placement.position.v};return furniture.aimedService('town');}
 const api=W.FestivalSystem;
 api.init({getTownMap:()=>town,getNpcs:()=>residents,getWalkers:()=>walkers,getArea:()=> 'town',
  getPlayerTile:()=>player,getDecorSize:key=>({fw:['tableLong','servingTable'].includes(key)?4:key==='rug'?2:1,fd:key==='rug'?2:1}),
@@ -97,7 +98,7 @@ for (const festivalHour of [14.999, 15, 17, 23.999, 0.999, 1]) {
     assert.notEqual(api.actionButton()?.action,'festival_fill_bowl','taking a bowl is required before offering Fill');
   }
 }
-player={c:47,r:43};hour=17;
+player={c:buffet.col+1,r:buffet.row+1};hour=17;
 assert.equal(api.actionButton(),null,'Gorkunash never becomes an activity input');
 assert.equal(aimSurface('bowls').provider.buttons(aimSurface('bowls'))[0].action,'obj_take_bowl','the actual bowl stack offers Take');
 hour=17;assert.equal(api.feastMenu().length,5,'five free pots leave room for the first offering');

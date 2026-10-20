@@ -300,33 +300,42 @@
     proto.__hobunjiPathSurfaceTagPatched = true;
   }
 
-  function isTownBillboardMesh(obj) {
-    return !!(obj?.isInstancedMesh && obj.userData?.isBillboard === true && obj.count > 0);
+  function projectTownGrassMatrix(target) {
+    target.decompose(pos, quat, scale);
+    pos.y += sampleTownHeight(pos.x, pos.z);
+    target.compose(pos, quat, scale);
   }
 
   function elevateBillboardMesh(mesh) {
-    if (!isTownBillboardMesh(mesh)) return 0;
+    if (!mesh?.isInstancedMesh || mesh.userData?.isBillboard !== true) return 0;
     const requiredLength = mesh.instanceMatrix?.array?.length || 0;
     if (!requiredLength) return 0;
-    if (!mesh.userData.hobunjiTownSubtleBaseMatrices || mesh.userData.hobunjiTownSubtleBaseMatrices.length !== requiredLength) {
-      mesh.userData.hobunjiTownSubtleBaseMatrices = new Float32Array(mesh.instanceMatrix.array);
+    // A single pre-filter source prevents height refreshes from resurrecting
+    // compacted grass or accumulating elevation on repeated rebuilds.
+    if (!mesh.userData.hobunjiBillboardSourceMatrices || mesh.userData.hobunjiBillboardSourceMatrices.length !== requiredLength) {
+      mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(mesh.instanceMatrix.array);
+      mesh.userData.hobunjiBillboardSourceCount = mesh.count;
     }
-    const base = mesh.userData.hobunjiTownSubtleBaseMatrices;
-    let moved = 0;
-    for (let i = 0; i < mesh.count; i++) {
+    mesh.userData.hobunjiBillboardProjectMatrix = projectTownGrassMatrix;
+    const filter = window.BuildingGrassSuppression;
+    if (filter) {
+      const stats = filter.filterBillboardMesh(mesh, filter.authoredBuildingFootprintKeys(townDeps?.getTownZone?.()), 'hobunjiTownBuildingGrass');
+      mesh.userData.hobunjiTownSubtleElevated = true;
+      return stats.visible;
+    }
+    const base = mesh.userData.hobunjiBillboardSourceMatrices;
+    const count = mesh.userData.hobunjiBillboardSourceCount;
+    for (let i = 0; i < count; i++) {
       matrix.fromArray(base, i * 16);
-      matrix.decompose(pos, quat, scale);
-      const lift = sampleTownHeight(pos.x, pos.z);
-      pos.y += lift;
-      matrix.compose(pos, quat, scale);
+      projectTownGrassMatrix(matrix);
       mesh.setMatrixAt(i, matrix);
-      if (Math.abs(lift) > 1e-7) moved++;
     }
+    mesh.count = count;
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingBox?.();
     mesh.computeBoundingSphere?.();
     mesh.userData.hobunjiTownSubtleElevated = true;
-    return moved;
+    return count;
   }
 
   function isPathSurfaceGroup(obj) {
@@ -571,6 +580,7 @@
   function patchTownZoneBuildings() {
     const api = window.TownZoneBuildings;
     if (!api || api.__hobunjiExactSubtleFollowersPatched) return;
+    townDeps = api.grassContext?.() || townDeps;
     const originalInit = api.init;
     const originalSpawn = api.spawnTownBuildings;
     if (typeof originalInit !== 'function' || typeof originalSpawn !== 'function') return;

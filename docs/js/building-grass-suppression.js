@@ -106,33 +106,22 @@
     return !!(mesh?.isInstancedMesh && mesh.userData?.isBillboard === true && mesh.instanceMatrix?.array);
   }
 
-  function _cacheNames(cacheKey) {
-    const stem = String(cacheKey || 'hobunjiBuildingGrass'); // Stable userData prefix keeps independent scene filters from overwriting each other.
-    return {
-      matrices: `${stem}BaseMatrices`,
-      count: `${stem}BaseCount`,
-      capacity: `${stem}BaseCapacity`,
-    };
-  }
-
   function filterBillboardMesh(mesh, blockedKeys, cacheKey) {
     if (!isGrassBillboardMesh(mesh)) return { source: 0, visible: 0, suppressed: 0 };
-    const names = _cacheNames(cacheKey); // Cache property names for this caller's immutable source matrices.
-    const capacity = mesh.instanceMatrix.array.length; // Current matrix-buffer length detects rebuilt InstancedMeshes.
-    if (!mesh.userData[names.matrices] || mesh.userData[names.capacity] !== capacity) {
-      mesh.userData[names.matrices] = new Float32Array(mesh.instanceMatrix.array);
-      mesh.userData[names.count] = mesh.count;
-      mesh.userData[names.capacity] = capacity;
+    const capacity = mesh.instanceMatrix.array.length;
+    if (!mesh.userData.hobunjiBillboardSourceMatrices || mesh.userData.hobunjiBillboardSourceMatrices.length !== capacity) {
+      mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(mesh.instanceMatrix.array);
+      mesh.userData.hobunjiBillboardSourceCount = mesh.count;
     }
-
-    const base = mesh.userData[names.matrices]; // Original unfiltered matrices used to restore grass after a footprint moves.
-    const sourceCount = Math.min(Number(mesh.userData[names.count]) || 0, Math.floor(base.length / 16));
+    const base = mesh.userData.hobunjiBillboardSourceMatrices;
+    const sourceCount = Math.min(Number(mesh.userData.hobunjiBillboardSourceCount) || 0, Math.floor(base.length / 16));
     mesh.updateMatrixWorld(true);
     let write = 0; // Next visible output slot while compacting around blocked building cells.
     let suppressed = 0; // Number of grass instances omitted because their center is inside a footprint.
 
     for (let i = 0; i < sourceCount; i++) {
       localMatrix.fromArray(base, i * 16);
+      mesh.userData.hobunjiBillboardProjectMatrix?.(localMatrix);
       worldMatrix.multiplyMatrices(mesh.matrixWorld, localMatrix);
       worldPos.setFromMatrixPosition(worldMatrix);
       const cellKey = keyOf(Math.floor(worldPos.x), Math.floor(worldPos.z));

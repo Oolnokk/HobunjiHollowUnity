@@ -105,7 +105,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20260924flatslabshadow1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20261020hf715daf"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -436,7 +436,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261020hdf62bde&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261020h2c1f2f8&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -822,7 +822,7 @@
        window.ZoneGrassBillboards.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene and
        refreshZoneGroundVisuals, never synchronously during initial boot. -->
-  <script src="js/zone-grass-billboards.js?v=20260825chunks1"></script>
+  <script src="js/zone-grass-billboards.js?v=20261020hc09a003"></script>
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
@@ -2527,7 +2527,7 @@
   <script src="js/festival-props.js?v=20261019had6e4fb"></script>
   <script src="js/festival-wheel-dance-runtime.js?v=20261020h9a1c4a9"></script>
   <script src="js/npc-shared-meals.js?v=20261020meals1"></script>
-  <script src="js/festival-system.js?v=20261020hfa0913b"></script>
+  <script src="js/festival-system.js?v=20261020hf984ee1"></script>
   <script src="js/festival-dialogue.js?v=20261020gorkunash1"></script>
   <script src="js/festival-ui.js?v=20261018hgorkunash3"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>

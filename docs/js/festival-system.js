@@ -531,7 +531,7 @@
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
-      latestChange:'Grass/chairs/buffet fixed; family-table meal routines; six-tile social aim through scenery; musician handoffs; dance invitations stand/approach/retry rigs with specific failure diagnostics.' };
+      latestChange:'Festival furniture on grass around the square: temple-side stage/dance floor, inn-side buffet, scattered linked tables; grass compaction shares immutable matrices with terrain-height refresh.' };
   }
   function init(injected) {
     deps = injected;
