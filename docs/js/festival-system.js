@@ -199,7 +199,7 @@
     if(code==='different-floor-height')return 'Stand on the same level as your dance partner.';
     if(code==='camera-busy')return 'Finish the current camera scene before dancing.';
     if(code==='already-dancing')return 'Finish your current dance first.';
-    if(code==='anatomical-reach'||code==='nonuniform-rig-scale')return 'The paired pose could not fit these dancers. The dance diagnostics have the details.';
+    if(code==='anatomical-reach'||code==='invalid-rig-scale')return 'The paired pose could not fit these dancers. The dance diagnostics have the details.';
     return 'The dance animation is not ready yet. Please try again in a moment.';
   }
   function beginPairedDance(walker) {

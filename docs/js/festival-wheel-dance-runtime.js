@@ -4,7 +4,7 @@
   const DURATION_S=4, RADIUS=(.34*1.18)/2, TILT_RAD=22*Math.PI/180; // Preserves the preview's transport and alternating rock rhythm.
   const SIDES=['left','right']; // Fixed two-hand/two-leg work, independent of the festival crowd.
   let lastStartFailure=null; // Mobile diagnostics distinguish preparation failures from an actual pose/reach failure.
-  function failStart(code,actor=null){lastStartFailure={code,actor};return false;}
+  function failStart(code,actor=null,details={}){lastStartFailure={code,actor,...details};return false;}
   let deps=null, session=null, lastStopReason=''; // One scoped pair; no independent frame loop or world scan.
   function init(value){deps=value;}
   function sample(seconds,out={}) {
@@ -22,8 +22,9 @@
     if(!neck?.neckJoint){failStart('neck-not-ready',who);return null;}
     root.updateWorldMatrix(true,true);
     const scale=root.getWorldScale(new T.Vector3()); // Actual body scaling, including any scene/instance scale.
-    if(Math.max(scale.x,scale.y,scale.z)-Math.min(scale.x,scale.y,scale.z)>.001){failStart('nonuniform-rig-scale',who);return null;} // A distorted skeletal root cannot keep fixed anatomical segment lengths.
-    const actor={root,model,legs,hands,neck:neck.neckJoint,anatomy:null,scale:scale.y,
+    if([scale.x,scale.y,scale.z].some(v=>!Number.isFinite(v)||Math.abs(v)<1e-6)){failStart('invalid-rig-scale',who,{scale:{x:scale.x,y:scale.y,z:scale.z}});return null;} // Independent width/height and mirrored PNG roots are intentional; only singular transforms cannot be solved.
+    const actor={root,model,legs,hands,neck:neck.neckJoint,anatomy:null,scale:Math.abs(scale.y),worldScale:scale,verticalFactor:Math.abs(scale.y),
+      localUp:new T.Vector3(),inverseRotation:new T.Quaternion(),
       initial:{position:root.position.clone(),quaternion:root.quaternion.clone(),legRotation:legs.group.quaternion.clone(),neck:neck.neckJoint.quaternion.clone()},
       shoulders:{},reach:{},worldShoulders:{left:new T.Vector3(),right:new T.Vector3()},
       targets:{left:new T.Vector3(),right:new T.Vector3()},
@@ -38,7 +39,7 @@
       const shoulder=hands.shoulderPositionLocal(side,new T.Vector3()); // Canonical species/gender attachment-rig shoulders, including posterior placement.
       if(!shoulder){failStart('shoulders-not-ready',who);return null;}
       hands.parent.localToWorld(shoulder);root.worldToLocal(shoulder);actor.shoulders[side]=shoulder;
-      actor.reach[side]=hands.armLengthForSide(side)*Math.min(parentScale.x,parentScale.y,parentScale.z)*.98;
+      actor.reach[side]=hands.armLengthForSide(side)*Math.min(Math.abs(parentScale.x),Math.abs(parentScale.y),Math.abs(parentScale.z))*.98;
       if(!Number.isFinite(actor.reach[side])||actor.reach[side]<=0){failStart('arm-reach-not-ready',who);return null;}
     }
     actor.shoulderCenter=actor.shoulders.left.clone().add(actor.shoulders.right).multiplyScalar(.5);
@@ -84,9 +85,9 @@
     if(Math.hypot(n.x-p.x,n.z-p.z)>3.6)return failStart('too-far');
     if(Math.abs(p.y-n.y)>1)return failStart('different-floor-height');
     const a=captureActor(player,deps?.getPlayerModel?.(),deps?.getPlayerLegs?.(),'player');
-    if(!a){lastStopReason='waiting-for-procedural-rigs';return false;}
+    if(!a){lastStopReason=lastStartFailure?.code||'waiting-for-procedural-rigs';return false;}
     const b=captureActor(walker.root,walker.avatarGroup,walker.legs,'partner');
-    if(!b){lastStopReason='waiting-for-procedural-rigs';return false;}
+    if(!b){lastStopReason=lastStartFailure?.code||'waiting-for-procedural-rigs';return false;}
     const separation=Math.min(RADIUS*2*(a.scale+b.scale)/2,(Math.min(a.reach.left,a.reach.right)+Math.min(b.reach.left,b.reach.right))*.6); // Keep an elbow reserve instead of assuming all species have equal arms.
     const heightDifference=b.shoulderCenter.y*b.scale-a.shoulderCenter.y*a.scale; // Compensates for tall/short partners before adding rhythmic rocking.
     session={player,partner:walker.root,walker,actors:[a,b],elapsed:0,heading:Math.atan2(n.x-p.x,n.z-p.z),
@@ -113,13 +114,16 @@
     const s=session; // Both bodies share one world rock plane and face inward, just like the author preset.
     actor.root.quaternion.copy(s.rotation);if(index===1)actor.root.quaternion.multiply(s.flip);
     actor.legs.group.quaternion.identity();
+    actor.localUp.set(0,1,0).applyQuaternion(actor.inverseRotation.copy(actor.root.quaternion).invert());
+    actor.localUp.x/=actor.worldScale.x;actor.localUp.y/=actor.worldScale.y;actor.localUp.z/=actor.worldScale.z;
+    actor.verticalFactor=1/actor.localUp.length(); // World-vertical reach of a fixed local leg under this tilted, independently scaled root.
     s.radial.set(0,0,(index===0?-1:1)*s.separation*.5).applyQuaternion(s.yaw);
     actor.root.position.copy(s.anchor).add(s.radial);
     actor.grounded=index===support;actor.crouch=actor.grounded ? .22*amplitude : 0;
     actor.airBlend=amplitude;actor.lift=actor.grounded?0:s.hopHeight*amplitude;
-    s.radial.copy(actor.hipLocal).multiplyScalar(actor.scale).applyQuaternion(actor.root.quaternion);
+    s.radial.copy(actor.hipLocal).multiply(actor.worldScale).applyQuaternion(actor.root.quaternion);
     actor.floor=deps?.surfaceY?.(actor.root.position.x,actor.root.position.z) ?? s.anchor.y;
-    actor.root.position.y=actor.floor+actor.soleHeight+actor.legLength*(.995-actor.crouch)+actor.lift-s.radial.y; // Root height follows the posterior, not a portrait bounding-box guess.
+    actor.root.position.y=actor.floor+actor.soleHeight+actor.legLength/actor.scale*actor.verticalFactor*(.995-actor.crouch)+actor.lift-s.radial.y; // Root height follows the posterior, not a portrait bounding-box guess.
     actor.root.updateWorldMatrix(true,false);
   }
   function shoulderWorld(actor,side,out){return actor.root.localToWorld(out.copy(actor.shoulders[side]));}
@@ -131,7 +135,7 @@
       shoulderWorld(a,side,a.worldShoulders[side]);shoulderWorld(b,other,b.worldShoulders[other]);
     }
     let correctionY=0; // Common vertical correction preserves both body/arm proportions.
-    const floorY=air.floor+air.soleHeight+air.legLength*.995-s.radial.copy(air.hipLocal).multiplyScalar(air.scale).applyQuaternion(air.root.quaternion).y;
+    const floorY=air.floor+air.soleHeight+air.legLength/air.scale*air.verticalFactor*.995-s.radial.copy(air.hipLocal).multiply(air.worldScale).applyQuaternion(air.root.quaternion).y;
     for(const side of SIDES) {
       const other=side==='left'?'right':'left',pa=a.worldShoulders[side],pb=b.worldShoulders[other],limit=(a.reach[side]+b.reach[other])*.98;
       const dy=(support===0?pb.y-pa.y:pa.y-pb.y)+correctionY; // Reach reserve leaves room for natural hand rotations.
@@ -173,11 +177,15 @@
       actor.root.localToWorld(actor.hip.copy(leg.hip));
       const anchor=actor.groundAnchors[leg.side]; // Captured only at a support handoff; the planted feet do not skate around the pair's orbit.
       if(!actor.wasSupport){anchor.copy(actor.hip);anchor.y=actor.floor+leg.ankle.y*actor.scale;}
-      let horizontal=Math.hypot(actor.hip.x-anchor.x,actor.hip.z-anchor.z); // Short-legged anatomies may need the same bounded support slide used by ordinary lunges.
-      const length=leg.length*actor.scale,maxReach=length*.55;
-      if(horizontal>maxReach){const ratio=maxReach/horizontal;anchor.x=actor.hip.x+(anchor.x-actor.hip.x)*ratio;anchor.z=actor.hip.z+(anchor.z-actor.hip.z)*ratio;horizontal=maxReach;actor.supportSlides++;}
-      const vertical=Math.sqrt(Math.max(0,length*length*.998001-horizontal*horizontal)); // Analytic straight-leg limit, leaving a small non-singular knee bend.
-      correction=Math.min(correction,anchor.y+vertical-actor.hip.y);
+      const horizontal=Math.hypot(actor.hip.x-anchor.x,actor.hip.z-anchor.z); // Short-legged anatomies may need the same bounded support slide used by ordinary lunges.
+      const maxReach=leg.length*Math.min(Math.abs(actor.worldScale.x),Math.abs(actor.worldScale.y),Math.abs(actor.worldScale.z))*.55; // Conservative slide bound keeps the local two-bone solve reachable on every axis.
+      if(horizontal>maxReach){const ratio=maxReach/horizontal;anchor.x=actor.hip.x+(anchor.x-actor.hip.x)*ratio;anchor.z=actor.hip.z+(anchor.z-actor.hip.z)*ratio;actor.supportSlides++;}
+      actor.root.worldToLocal(actor.targetLocal.copy(anchor)).sub(leg.hip);
+      const delta=actor.targetLocal,up=actor.localUp; // Solve the ground anchor in the leg's canonical local metric, preserving both segment lengths.
+      const dot=delta.x*up.x+delta.y*up.y+delta.z*up.z,upSq=up.x*up.x+up.y*up.y+up.z*up.z;
+      const distanceSq=delta.x*delta.x+delta.y*delta.y+delta.z*delta.z;
+      const discriminant=Math.max(0,dot*dot-upSq*(distanceSq-leg.length*leg.length*.998001));
+      correction=Math.min(correction,(dot+Math.sqrt(discriminant))/upSq);
     }
     actor.root.position.y+=correction;actor.root.updateWorldMatrix(true,false);actor.wasSupport=true;
   }
@@ -186,7 +194,7 @@
     for(const leg of actor.anatomy) {
       actor.root.localToWorld(actor.hip.copy(leg.hip));
       const target=actor.footTargets[leg.side]; // Fixed-length world-vertical dangling or support legs, independent of body tilt.
-      target.copy(actor.hip);target.y-=leg.length*actor.scale*(actor.grounded ? .995-actor.crouch : .995-.025*actor.airBlend);
+      target.copy(actor.hip);target.y-=leg.length*actor.verticalFactor*(actor.grounded ? .995-actor.crouch : .995-.025*actor.airBlend);
       if(actor.grounded)target.copy(actor.groundAnchors[leg.side]);
     }
     actor.footYaw.copy(s.yaw);if(actor===s.actors[1])actor.footYaw.multiply(s.flip);
@@ -222,7 +230,7 @@
     for(let i=0;i<2;i++) {
       const actor=s.actors[i]; // The non-hopper pivots over planted soles; the hopper orbits around that support rather than dragging both feet around a midpoint.
       s.radial.set(0,0,i===support?0:(i===0?-1:1)*s.separation).applyQuaternion(s.yaw);
-      s.delta.copy(actor.hipLocal).multiplyScalar(actor.scale).applyQuaternion(actor.root.quaternion); // Rock around the real posterior so a body tilt does not drag planted hips sideways.
+      s.delta.copy(actor.hipLocal).multiply(actor.worldScale).applyQuaternion(actor.root.quaternion); // Rock around the real posterior so a body tilt does not drag planted hips sideways.
       actor.root.position.x=s.supportPoint.x+s.radial.x-s.delta.x;actor.root.position.z=s.supportPoint.z+s.radial.z-s.delta.z;
       const floor=deps?.surfaceY?.(actor.root.position.x,actor.root.position.z) ?? actor.floor; // Reuse the existing support registry after pivot transfer, including raised furniture.
       actor.root.position.y+=floor-actor.floor;actor.floor=floor;
@@ -253,10 +261,10 @@
     deps?.refreshCamera?.(); // Reuses game.js's cinematic collision/framing owner after this frame's paired pose settles.
   }
   function diagnostics() {
-    return {latestChange:'Specific dance start reasons and per-actor rig readiness; NPC pose lock uses the shared npc: participant ID; invitations prepare seated/solo dancers before capture.',
+    return {latestChange:'Paired dancing accepts independent character width/height and mirrored roots; grounding uses the local leg metric and hands retain conservative anatomical reach.',
       active:!!session,lastStopReason,lastStartFailure,...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
         baseTiltDeg:session.baseTilt*180/Math.PI,authorDurationS:DURATION_S,authorRevolutions:2,
-        actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
+        actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,rigScale:{x:a.worldScale.x,y:a.worldScale.y,z:a.worldScale.z},verticalLegFactor:a.verticalFactor,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
         cameraTarget:{x:session.cameraTarget.x,y:session.cameraTarget.y,z:session.cameraTarget.z}}:{})};
   }
   window.FestivalWheelDanceRuntime=Object.freeze({init,start,stop,update,isActive:()=>!!session,activeFor,isPartner,elapsedSeconds,sample,diagnostics});

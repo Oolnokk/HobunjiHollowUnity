@@ -12,6 +12,7 @@ class Vector3 {
   copy(v){return this.set(v.x,v.y,v.z);}
   add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
   sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+  multiply(v){this.x*=v.x;this.y*=v.y;this.z*=v.z;return this;}
   multiplyScalar(s){this.x*=s;this.y*=s;this.z*=s;return this;}
   length(){return Math.hypot(this.x,this.y,this.z);}
   distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
@@ -72,8 +73,15 @@ function actor(height,x){
  applyWorldFootTargets(targets){this.targets={left:targets.left.clone(),right:targets.right.clone()};},update(){}};
  return {root,model,legs,hands,height};
 }
-for(const [ha,hb] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,.6]]) {
+vm.runInNewContext(fs.readFileSync('docs/config/character-rig-scale-defaults.js','utf8'),{window});
+const authoredScaleCases=[['mao-ao','male','mashtzarr','male'],['nuhongan','female','kenkari','male']].map(([sa,ga,sb,gb])=>{
+ const a=window.HobunjiCharacterRigScaleDefaults.scaleFor(sa,ga),b=window.HobunjiCharacterRigScaleDefaults.scaleFor(sb,gb); // Shipped whole-character scales exercise the actual rejected inputs.
+ return [1,1,a.x,a.y,b.x,b.y];
+}); // Kept alongside neutral, mismatched-height and mirrored fixtures below.
+for(const [ha,hb,ax=1,ay=1,bx=1,by=1] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,.6],[1,1,.9,1.15,1.1,.85],[.8,1.3,1.15,.9,.85,1.2],[1,1,-.9,1.15,1.1,.85],...authoredScaleCases]) {
  const a=actor(ha,0),b=actor(hb,.6),walker={rec:{id:'sloomi'},area:'town',root:b.root,avatarGroup:b.model,legs:b.legs}; // Both orderings cover short and tall support phases.
+ a.root.scale.set(ax,ay,Math.abs(ax));b.root.scale.set(bx,by,Math.abs(bx)); // Ordinary independent width/height and PNG-facing reflection.
+ const initialScaleA=a.root.scale.clone(),initialScaleB=b.root.scale.clone();
  const initialA=a.root.position.clone(),initialB=b.root.position.clone();
  api.init({getPlayerModel:()=>a.model,getPlayerLegs:()=>a.legs,surfaceY:()=>0,refreshCamera:()=>cameraRefreshes++});
  assert(api.start(walker,a.root),`start ${ha}/${hb}`);assert(!api.start(walker,a.root),'only one pair owns the actors');
@@ -88,11 +96,14 @@ for(const [ha,hb] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,.6]]) {
   if(support!==previousSupport){anchors={left:[a,b][support].legs.targets.left.clone(),right:[a,b][support].legs.targets.right.clone()};previousSupport=support;}
   for(const [index,p] of [a,b].entries())for(const side of ['left','right']) {
    const wrist=p.hands.group.getObjectByName(side+'_hand_socket').localToWorld(new Vector3());
-   const shoulder=p.root.localToWorld(new Vector3((side==='left'?1:-1)*p.height*.13,p.height*.62,0));
-   assert(wrist.distanceTo(shoulder)<=p.height*.4+1e-6,'hand never exceeds this actor’s anatomical arm reach');
+   const localWrist=p.root.worldToLocal(wrist.clone()),localShoulder=new Vector3((side==='left'?1:-1)*p.height*.13,p.height*.62,0); // Reach is authored in rig-local units, including a mirrored root.
+   assert(localWrist.distanceTo(localShoulder)<=p.height*.4+1e-6,'hand never exceeds this actor’s anatomical arm reach');
+   const leg=p.legs.motionAnatomy().find(l=>l.side===side),localFoot=p.root.worldToLocal(p.legs.targets[side].clone());
+   assert(localFoot.distanceTo(leg.hip)<=leg.length+1e-6,'nonuniform scale never extends a local leg');
+   assert(localFoot.distanceTo(leg.hip)>=leg.length*.72-1e-6,'support stays inside the existing safe knee bend');
    const other=[a,b][1-index].hands.group.getObjectByName((side==='left'?'right':'left')+'_hand_socket').localToWorld(new Vector3());
    assert(wrist.distanceTo(other)<1e-6,'opposite hands share the same world contact');
-   if(index===support){assert(p.legs.targets[side].distanceTo(anchors[side])<1e-6,'support feet stay planted');assert(Math.abs(p.legs.targets[side].y-p.legs.contact)<1e-6,'support soles remain at the floor');}
+   if(index===support){assert(p.legs.targets[side].distanceTo(anchors[side])<1e-6,'support feet stay planted');assert(Math.abs(p.legs.targets[side].y-p.legs.contact*p.root.scale.y)<1e-6,'support soles remain at the floor');}
    assert(Number.isFinite(diagnostic.actors[index].neckDeg.pitch));
    assert(Math.abs(diagnostic.actors[index].neckDeg.pitch)<=32+1e-6,'preview pitch bound');
    assert(Math.abs(diagnostic.actors[index].neckDeg.yaw)<=38+1e-6,'preview yaw bound');
@@ -101,6 +112,7 @@ for(const [ha,hb] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,.6]]) {
   const eye=b.model.userData.neckRig.neckJoint.localToWorld(new Vector3(0,hb*.05,.006)); // Preview eye-marker landmark, including the solved moving neck.
   assert(shot.camera.targetProvider().distanceTo(eye)<1e-6,'cinematic aims at the exact partner eye landmark');
  }
+ assert(a.root.scale.distanceTo(initialScaleA)<1e-9&&b.root.scale.distanceTo(initialScaleB)<1e-9,'dance preserves authored proportions');
  assert.equal(roles.size,2,'both partners alternate supporting and hopping');
  const before=releaseCount;
  api.update(.01,false,'interior');assert(!api.activeFor('sloomi'));assert.equal(releaseCount,before+1);
@@ -124,3 +136,7 @@ window.SocialActionWheel={isDancing:()=>false};activeShot={camera:{id:'busy'}};
 assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'camera-busy');activeShot=null;
 scene.add(cancelB.root);api.init({getPlayerModel:()=>null,getPlayerLegs:()=>cancelA.legs});
 assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.actor,'player');assert.equal(api.diagnostics().lastStartFailure.code,'hands-not-ready');
+
+api.init({getPlayerModel:()=>cancelA.model,getPlayerLegs:()=>cancelA.legs});cancelA.root.scale.set(0,1,1);
+assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'invalid-rig-scale');
+assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnostics expose the actual failed transform');
