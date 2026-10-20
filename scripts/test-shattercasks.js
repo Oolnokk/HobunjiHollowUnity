@@ -28,7 +28,7 @@ assert(code.includes('WorldPopupText?.setInteractionPrompts') &&
   'pickup uses the world prompt and native interaction claims instead of a standalone DOM button');
 assert(code.includes('createEmitterVisual') && code.includes('emitterVisibilityElapsed'),
   'only visible charges drive their authored particle emitters');
-assert(html.includes('src="js/procedural-furniture.js?v=20261020shapefull2"'),
+assert(/src="js\/procedural-furniture\.js\?v=[A-Za-z0-9_-]+"/.test(html),
   'runtime receives the editor-parity curved barrel/cup geometry');
 const renderer=fs.readFileSync(path.join(root,'docs/js/procedural-furniture.js'),'utf8');
 assert(renderer.includes('createAuthoredVesselGeometry(part)') && renderer.includes("part.kind === 'barrel' || part.kind === 'cup'"),
@@ -51,10 +51,22 @@ assert(authorHtml.includes('carryable-objects.js?v=') && author.includes('billbo
 assert(html.includes('id="devSpawnShattercaskBtn"'),'dev arena has a Shattercask spawn button');
 assert(devSpawner.includes("window.Shattercasks.spawnRandomInDevArena()"),'arena button dispatches to the runtime');
 
-function vector() {
-  return {x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;},
-    setScalar(v){this.x=this.y=this.z=v;}};
+class Vector3 {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);}
+  set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+  setScalar(v){return this.set(v,v,v);}
+  copy(v){return this.set(v.x,v.y,v.z);}
+  clone(){return new Vector3(this.x,this.y,this.z);}
+  add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
+  addScaledVector(v,k){this.x+=v.x*k;this.y+=v.y*k;this.z+=v.z*k;return this;}
+  multiplyScalar(v){this.x*=v;this.y*=v;this.z*=v;return this;}
+  lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
+  length(){return Math.sqrt(this.lengthSq());}
+  normalize(){return this.multiplyScalar(1/(this.length()||1));}
+  crossVectors(a,b){return this.set(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x);}
+  distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
 }
+function vector() {return new Vector3();}
 class Node {
   constructor(){this.children=[];this.position=vector();this.scale=vector();this.rotation=vector();this.userData={};this.parent=null;}
   add(other){this.children.push(other);other.parent=this;}
@@ -66,13 +78,42 @@ class Node {
     return null;
   }
 }
-class Mesh extends Node {constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
+class Mesh extends Node {constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
 class InstancedMesh extends Mesh {constructor(geometry,material){super(geometry,material);this.instanceMatrix={};}setMatrixAt(){}}
 class Object3D extends Node {updateMatrix(){this.matrix={};}}
 class Geometry {dispose(){}}
 class Material {constructor(options){Object.assign(this,options);}dispose(){}}
-const THREE = {Group:Node,Mesh,InstancedMesh,Object3D,TetrahedronGeometry:Geometry,
-  SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
+// This mock casts a ray against a small authored silhouette, not the full
+// bounding volume. Production uses THREE.Mesh.raycast triangles directly.
+class Raycaster {
+  constructor(){this.near=0;this.far=Infinity;this.ray={origin:new Vector3(),direction:new Vector3()};}
+  intersectObjects(meshes,recursive,hits){
+    for(const mesh of meshes){
+      const parent=mesh.parent;
+      if(!mesh.geometry?.authoredMock || !parent)continue;
+      const ray=this.ray,dx=ray.direction.x;
+      if(Math.abs(dx)<1e-9)continue;
+      const distance=(parent.position.x+mesh.position.x-ray.origin.x)/dx;
+      if(distance<this.near || distance>this.far)continue;
+      const y=ray.origin.y+distance*ray.direction.y-parent.position.y;
+      const z=ray.origin.z+distance*ray.direction.z-parent.position.z;
+      // A narrow tapered neck rising to .89, and a broader rounded body.
+      const inBody=y>=.04&&y<=.57&&Math.abs(z)<.26;
+      const inNeck=y>.57&&y<=.88&&Math.abs(z)<.11;
+      if(inBody||inNeck)hits.push({distance,object:mesh});
+    }
+    hits.sort((a,b)=>a.distance-b.distance);
+    return hits;
+  }
+}
+function authoredGroup() {
+  const group=new Node(),mesh=new Mesh({attributes:{position:{count:3}},authoredMock:true},new Material({visible:true}));
+  group.add(mesh);
+  group.userData.meshById=new Map([['silhouette',mesh]]);
+  return group;
+}
+const THREE = {Group:Node,Mesh,InstancedMesh,Object3D,Vector3,Raycaster,
+  TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
 const storage = new Map();
@@ -98,7 +139,7 @@ async function scenario(reloading=false) {
       spawnMeleeTrail(){},meleeColliderVolume(){return null;}},
     GridTileAccessors:{getActiveScene:()=>scene,getActiveGrid:()=>tiles},
     CaveSiteSystem:{__test:{plansByMapId:new Map([[area,{shattercasks:[{id:'wall-charge',col:4,row:3}]}]])}},
-    AuthoredFurniture:{load:async()=>asset,buildGroup:()=>new Node()},
+    AuthoredFurniture:{load:async()=>asset,buildGroup:authoredGroup},
     DevSpawner:{init(){}},ResourceSystem:{spendFooting(){}},
     AudioSystem:{playWeaponHitSfx(){}},__farmLog(){},
   };
@@ -120,9 +161,18 @@ async function scenario(reloading=false) {
   assert.equal(casks.vases.length,1,'the cave wall has an intact Shattercask');
   // A projectile passes through the full height of the editor-authored neck,
   // not the former narrow .37-radius / .42-height fake target.
-  const neck=game.Shattercasks.projectileHit({x:3,y:0.95,z:3.5},
-    {x:5.6,y:0.95,z:3.5},.08,1,area);
-  assert(neck && neck.t>=0 && neck.t<=1,'projectile can intercept the tall authored neck');
+  const neck=game.Shattercasks.projectileHit({x:3,y:0.80,z:3.5},
+    {x:5.6,y:0.80,z:3.5},.08,1,area);
+  assert(neck && neck.t>=0 && neck.t<=1,'projectile intercepts the visible authored neck');
+  assert.equal(game.Shattercasks.projectileHit({x:3,y:1.2,z:3.5},
+    {x:5.6,y:1.2,z:3.5},.03,1,area),null,
+    'the space above the modeled neck is not an explosive hit target');
+  assert.equal(game.Shattercasks.projectileHit({x:3,y:.80,z:3.87},
+    {x:5.6,y:.80,z:3.87},.03,1,area),null,
+    'the empty space beside the narrow neck is not a mesh hit');
+  const limited=game.Shattercasks.projectileHit({x:3,y:.42,z:3.5},
+    {x:5.6,y:.42,z:3.5},.08,.15,area);
+  assert.equal(limited,null,'cover/terrain segment limits prevent hitting mesh behind them');
 
   // A shot from either team uses this same swept-segment intersection.
   const hit=game.Shattercasks.projectileHit({x:3,y:.42,z:3.5},{x:5.6,y:.42,z:3.5},.08,1,area);
@@ -165,7 +215,7 @@ async function arenaScenario() {
     Combat:{deps,init(){},update(){},beginStagedAction(){},spawnMeleeTrail(){}},
     GridTileAccessors:{getActiveScene:()=>activeScene,getActiveGrid:()=>tiles,
       isTownBuildingCollisionTile:(c,r)=>c===6&&r===6},
-    AuthoredFurniture:{load:async()=>asset,buildGroup:()=>{modelBuilds++;return new Node();}},
+    AuthoredFurniture:{load:async()=>asset,buildGroup:()=>{modelBuilds++;return authoredGroup();}},
     DevSpawner:{init(){}},__farmLog(){}};
   game.window=game;
   vm.createContext(game);
@@ -195,5 +245,5 @@ async function arenaScenario() {
   await arenaScenario();
   await scenario(false);
   await scenario(true);
-  console.log('PASS shattercasks: model + 5-tile area effect + swept hit + loot + reload');
+  console.log('PASS shattercasks: model silhouette raycast + 5-tile area effect + loot + reload');
 })().catch(error=>{console.error(error);process.exitCode=1;});
