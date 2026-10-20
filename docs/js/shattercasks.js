@@ -25,7 +25,7 @@
   let held = null; // The one intact vase held in front of the local player.
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
-  let promptButton = null; // Mobile-visible direct-action fallback for carry, drop, and rubble looting.
+  let promptRoot = null; // Same WorldPopupText prompts as other world interactions.
   let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
   let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
   const THREE = window.THREE;
@@ -152,6 +152,69 @@
     result.push(...cached.static);
     return result;
   }
+  // Authoring-space bounds, computed once per vase. Enlarged around tilted
+  // necks rather than assuming an arbitrary .37-radius cylinder.
+  function authoredBounds(data) {
+    const b={minX:Infinity,maxX:-Infinity,minY:Infinity,maxY:-Infinity,minZ:Infinity,maxZ:-Infinity};
+    for(const part of data.parts||[]){
+      const t=part.transform||{},w=Math.hypot(
+        (Number(t.sx)||.001)*Math.max(1,part.topScaleX||0,part.bottomScaleX||0)/2,
+        (Number(t.sy)||.001)/2,
+        (Number(t.sz)||.001)*Math.max(1,part.topScaleZ||0,part.bottomScaleZ||0)/2);
+      for(const [axis,center] of [['X',t.x],['Y',t.y],['Z',t.z]]){
+        const c=Number(center)||0;
+        b['min'+axis]=Math.min(b['min'+axis],c-w);
+        b['max'+axis]=Math.max(b['max'+axis],c+w);
+      }
+    }
+    return Number.isFinite(b.minX)?b:{minX:-.4,maxX:.4,minY:0,maxY:1,minZ:-.4,maxZ:.4};
+  }
+  function disposeEmitters(vase) {
+    for(const fx of vase.emitters||[])fx.dispose?.();
+    vase.emitters=null;
+  }
+  function heldItemHolder(){
+    const d=deps();
+    return d?.getHeldItemHandTarget?.()?.holder
+      ||d?.playerMesh?.children?.find(o=>o?.type==='Group'&&o.userData?.isPngPlane&&!String(o.name||'').trim())||null;
+  }
+  function alignHeldVase(vase) {
+    const body=deps()?.playerMesh,holder=heldItemHolder();
+    if(!body||!holder||!THREE.Quaternion||!vase?.group?.quaternion)return false;
+    if(vase.group.parent!==body)body.add(vase.group);
+    const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{};
+    const anchorQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      (Number(r.x)||0)*Math.PI/180,(Number(r.y)||0)*Math.PI/180,(Number(r.z)||0)*Math.PI/180));
+    vase.group.quaternion.copy(holder.quaternion).multiply(anchorQ.invert());
+    const v=new THREE.Vector3(Number(a.x)||0,Number(a.y)||0,Number(a.z)||0)
+      .applyQuaternion(vase.group.quaternion);
+    vase.group.position.copy(holder.position).sub(v);
+    vase.group.scale.setScalar((holder.scale?.x||1)/Math.max(.1,Number(cfg.size)||1));
+    return true;
+  }
+  function heldHandTarget(){
+    return held?.group?.parent&&held.group.parent===deps()?.playerMesh
+      ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{}}:null;
+  }
+  function updateEmitters(dt,mapId,targetScene){
+    const rec=records.get(mapId);
+    if(rec?.scene!==targetScene)return;
+    const player=playerPosition(),cam=deps()?.camera||deps()?.getActiveCamera?.()||deps()?.getCamera?.();
+    const frustum=cam?.projectionMatrix&&cam.matrixWorldInverse&&THREE.Frustum&&THREE.Matrix4
+      ?new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse)):null;
+    for(const vase of rec.vases.values()){
+      if(vase.exploded)continue;
+      const pos=vase.carried?player:vase.group.position;
+      const near=player&&pos&&Math.hypot(pos.x-player.x,pos.z-player.z)<18;
+      const visible=near&&(!frustum||frustum.intersectsSphere(new THREE.Sphere(
+        new THREE.Vector3(pos.x,vase.carried?0.9:vase.group.position.y+.55,pos.z),1)));
+      if(!visible){for(const fx of vase.emitters||[])fx.points.visible=false;continue;}
+      if(!vase.emitters&&window.AuthoredFurniture?.createEmitterVisual)
+        vase.emitters=(vase.data?.particleEmitters||[]).filter(e=>e.enabled!==false)
+          .map(e=>window.AuthoredFurniture.createEmitterVisual(vase.group,e,24));
+      for(const fx of vase.emitters||[])fx.update(dt,true);
+    }
+  }
   function createVase(rec,p,data) {
     // Shared construction for procedural and dev-spawned charges: identical model,
     // hit detection, pickup/drop, blast, and cleanup behavior.
@@ -161,7 +224,7 @@
     group.userData.shattercaskId=p.id;
     group.userData.shattercaskMap=p.mapId;
     rec.scene.add(group);
-    const vase={...p,group,exploded:false,carried:false};
+    const vase={...p,group,data,hitBounds:authoredBounds(data),emitters:null,exploded:false,carried:false};
     rec.vases.set(p.id,vase);
     return vase;
   }
@@ -241,6 +304,7 @@
   function pickUp(cask) {
     if(!cask||cask.exploded||held||cask.mapId!==area())return false;
     held=cask;cask.carried=true;
+    alignHeldVase(cask);
     Object.assign(lastEquipment,switchEquipment());
     lastEvent='picked up '+cask.id;
     deps()?.showToast?.('Carrying Shattercask — interact to set it down.',false);
@@ -251,6 +315,9 @@
     const cask=held,p=playerPosition(),g=grid();
     const origin=p?nearestOpen(g,Math.round(p.x-.5),Math.round(p.z-.5),2):null;
     if(origin){cask.col=origin.col;cask.row=origin.row;}
+    records.get(cask.mapId)?.scene.add(cask.group);
+    cask.group.quaternion?.identity?.();
+    cask.group.scale?.setScalar?.(1);
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     cask.carried=false;held=null;
     lastEvent='dropped '+cask.id;
@@ -302,25 +369,32 @@
     return false;
   }
   function prompt() {
-    if(typeof document==='undefined')return;
-    if(!promptButton) {
-      promptButton=document.createElement('button');
-      promptButton.id='shattercaskWorldAction';
-      promptButton.type='button';
-      promptButton.style.cssText='position:fixed;bottom:110px;right:18px;z-index:1200;min-width:86px;padding:10px;border:2px solid #e2cba0;border-radius:10px;background:#342c29e8;color:#fff;font:700 13px system-ui;display:none;touch-action:manipulation';
-      promptButton.addEventListener('pointerup',event=>{event.preventDefault();event.stopPropagation();interact();});
-      document.body.appendChild(promptButton);
+    // Native action-claim input + world-space interaction prompt. No extra
+    // button or direct keyboard event that bypasses rebinds and controllers.
+    const target=held?{type:'held',obj:held}:nearInteraction();
+    const label=target?.type==='held'?'Set down Shattercask':target?.type==='pile'
+      ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
+    const claim=target?target.type+':'+(target.obj?.id||''):'';
+    if(claim!==promptClaim){
+      if(target)window.WorldActionInputClaims?.setClaims?.('shattercask',
+        [{actionId:'interact',label,priority:410,onPress:interact}]);
+      else window.WorldActionInputClaims?.clearClaims?.('shattercask');
+      promptClaim=claim;
     }
-    const target=held?{type:'held'}:nearInteraction();
-    promptButton.style.display=target?'block':'none';
-    if(target)promptButton.textContent=target.type==='held'?'Set down Shattercask':target.type==='pile'?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
-    const claims=window.WorldActionInputClaims;
-    const nextClaim=target ? (target.type+':'+(target.obj?.id||'')) : '';
-    if(nextClaim!==promptClaim) {
-      if(target)claims?.setClaims?.('shattercask',[{actionId:'interact',label:promptButton.textContent,priority:410,onPress:interact}]);
-      else claims?.clearClaims?.('shattercask');
-      promptClaim=nextClaim;
+    if(!target){
+      if(promptRoot)window.WorldPopupText?.clearInteractionPrompts?.();
+      promptRoot=null;return;
     }
+    if(window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return;
+    const obj=target.obj;
+    const root=obj.group||obj.promptAnchor||(obj.promptAnchor=new THREE.Object3D());
+    if(!obj.group){
+      root.position.set(obj.col+.5,obj.y+.25,obj.row+.5);
+      if(!root.parent)records.get(obj.mapId)?.scene.add(root);
+    }
+    promptRoot=root;
+    window.WorldPopupText?.setInteractionPrompts?.(root,
+      [{label,worldInteraction:true,inputActionId:'interact',inputHint:'E'}],{scene:scene()});
   }
   function baseHeight(col,row) {
     const d=deps(),t=tileSize();
@@ -509,12 +583,18 @@
     if(!cask||cask.exploded)return false;
     cask.exploded=true;
     if(held===cask)held=null;
-    cask.group.parent?.remove(cask.group);
     const rec=records.get(cask.mapId);
+    const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
+    if(cask.carried&&cask.group.getWorldPosition&&THREE.Vector3){
+      const world=cask.group.getWorldPosition(new THREE.Vector3());
+      impact.x=world.x;impact.y=world.y;impact.z=world.z;
+    }
+    cask.group.parent?.remove(cask.group);
+    disposeEmitters(cask);
     rec?.vases.delete(cask.id);
     saveConsumed(cask.mapId+':'+cask.id);
-    const x=cask.group.position.x,z=cask.group.position.z;
-    const y=cask.carried?cask.group.position.y:baseHeight(cask.col,cask.row)+.30; // A charge shot out of someone's hands explodes where it is actually held.
+    const x=impact.x,z=impact.z;
+    const y=cask.carried?impact.y:baseHeight(cask.col,cask.row)+.30; // A charge shot out of someone's hands explodes where it is actually held.
     shatterVisual(rec?.scene||scene(),x,z,y);
     applyBlast(cask.mapId,x,z);
     const cleared=destroyTerrain(cask.mapId,rec,x,z);
@@ -541,16 +621,28 @@
   }
   function projectileHit(start,end,radius,limit,mapId) {
     let result=null;
-    for(const vase of records.get(mapId)?.vases.values()||[]) {
+    const cap=Math.max(0,Math.min(1,Number(limit)??1)),pad=Math.max(0,Number(radius)||0);
+    for(const vase of records.get(mapId)?.vases.values()||[]){
       if(vase.exploded)continue;
-      const vx=vase.group.position.x-start.x,vz=vase.group.position.z-start.z;
-      const dx=end.x-start.x,dz=end.z-start.z,den=dx*dx+dz*dz;
-      const hitT=den>1e-9?Math.max(0,Math.min(1,(vx*dx+vz*dz)/den)):0;
-      if(hitT>limit||result&&hitT>=result.t)continue;
-      const x=start.x+dx*hitT,z=start.z+dz*hitT,y=start.y+(end.y-start.y)*hitT;
-      if(Math.hypot(x-vase.group.position.x,z-vase.group.position.z)>.37+radius)continue;
-      if(Math.abs(y-(vase.carried?vase.group.position.y:baseHeight(vase.col,vase.row)+.42))>.65+radius)continue;
-      result={t:hitT,vase};
+      const b=vase.hitBounds||{minX:-.4,maxX:.4,minY:0,maxY:1,minZ:-.4,maxZ:.4};
+      let center=vase.group.position;
+      if(vase.carried&&vase.group.getWorldPosition&&THREE.Vector3)
+        center=vase.group.getWorldPosition(new THREE.Vector3());
+      // World objects use their authored bounds; carried billboard-rotated
+      // models use an enclosing volume in world coordinates.
+      const min=vase.carried?{x:center.x-.8,y:center.y-.8,z:center.z-.8}
+        :{x:center.x+b.minX,y:center.y+b.minY,z:center.z+b.minZ};
+      const max=vase.carried?{x:center.x+.8,y:center.y+.8,z:center.z+.8}
+        :{x:center.x+b.maxX,y:center.y+b.maxY,z:center.z+b.maxZ};
+      let enter=0,exit=cap;
+      for(const axis of ['x','y','z']){
+        const a=start[axis],d=end[axis]-a;
+        if(Math.abs(d)<1e-9){if(a<min[axis]-pad||a>max[axis]+pad){enter=Infinity;break;}continue;}
+        const t0=(min[axis]-pad-a)/d,t1=(max[axis]+pad-a)/d;
+        enter=Math.max(enter,Math.min(t0,t1));exit=Math.min(exit,Math.max(t0,t1));
+        if(enter>exit)break;
+      }
+      if(enter<=exit&&(!result||enter<result.t))result={t:enter,vase};
     }
     return result;
   }
@@ -587,11 +679,12 @@
     if(held && held.mapId!==mapId)drop();
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
-    if(held) {
+    if(held&&!alignHeldVase(held)) {
       const p=playerPosition();
       if(p)held.group.position.set(p.x+Math.cos(p.angle)*.60,
         baseHeight(Math.floor(p.x),Math.floor(p.z))+.75,p.z+Math.sin(p.angle)*.60);
     }
+    updateEmitters(Math.min(.1,Math.max(0,Number(dt)||0)),mapId,scene());
     elapsed+=Math.min(.2,Math.max(0,Number(dt)||0));
     if(elapsed<POLL_S)return;
     elapsed=0;
@@ -667,10 +760,6 @@
     }
   }
   if(typeof window.addEventListener==='function') {
-    window.addEventListener('keydown',event=>{
-      if(event.repeat||event.target?.closest?.('input,textarea,[contenteditable]'))return;
-      if(event.code==='KeyE'&&(!window.WorldActionInputClaims?.isClaimed?.('interact')))interact();
-    });
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
       const id=event.target?.closest?.('button')?.id||'';
@@ -678,9 +767,9 @@
     },true);
   }
   window.Shattercasks=Object.freeze({
-    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,detonate,
+    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,
+    debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
