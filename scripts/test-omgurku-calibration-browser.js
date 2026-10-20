@@ -40,6 +40,22 @@ const server=http.createServer((req,res)=>{
     const before=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.snapshot());
     assert.equal(before.error,null,'calibration load: '+before.error+'\npage errors: '+errors.join('\n'));
     assert.equal(before.hasComposite,true,'real hybrid Omgurku should build without selected NPC');
+    const rigIntegrity=await page.evaluate(()=>{
+      const model=window.HobunjiOmgurkuCalibration && [...(window.HobunjiOmgurkuSpecies?.debugSnapshot()?.liveFrames||[])][0];
+      const state=window.HobunjiOmgurkuSpecies.debugSnapshot();
+      return { coat:state.coatColor,mode:window.PerpRotation.CREATURE_PLANE_ROT_MODE,
+        animalDeadzone:window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+        npcDeadzone:window.PerpRotation.PERP_DEAD_RAD,
+        ref:window.CreatureGeneticsRender.SPECIES['omgurku-lower']?.baseRecolorKeyHex };
+    });
+    assert.equal(rigIntegrity.ref,'#99BF99','lower sprite borrows keyed Voorg coat recolor');
+    assert(rigIntegrity.npcDeadzone>rigIntegrity.animalDeadzone,'distinct deadzone angles');
+    await page.waitForFunction(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().tintedFrames>=3,
+      null,{timeout:25000});
+    await page.locator('#frontBtn').click();
+    await page.waitForFunction(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().facingUpdates>3,
+      null,{timeout:6000});
+    assert.deepEqual(errors,[],'all shared engine modules should load without uncaught errors');
     await page.locator('#number_saddleU').fill('0.421');
     await page.locator('#number_saddleU').dispatchEvent('change');
     const current=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.snapshot());
