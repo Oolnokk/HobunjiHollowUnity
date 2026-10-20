@@ -553,6 +553,82 @@
     return null;
   }
 
+  // One companion can be on a date at a time. A single cached retreat goal
+  // prevents a path search on every scheduler frame while nearby enemies move.
+  const RETREAT_REPLAN_MS = 1100; // Recheck this NPC's shelter when threats have had time to move.
+  const RETREAT_OFFSETS = Object.freeze(Array.from({ length: 3 }, (_, ring) =>
+    Array.from({ length: 12 }, (_, angle) => {
+      const radius = 3 + ring * 2; // Candidate distance from the NPC, balancing cover with a quick return to the player.
+      const radians = angle * Math.PI / 6; // Reused to sample all directions, including around corners.
+      return [Math.round(Math.cos(radians) * radius), Math.round(Math.sin(radians) * radius)];
+    })).flat());
+  let retreatPlan = null; // Per-date chosen cover tile and next planning time, consumed by dateTarget().
+  let lastRetreatDecision = null; // Mobile diagnostics in RomanceSystem.snapshot().
+
+  function occludedFromThreat(area, targetX, targetZ, enemy) {
+    if (!deps?.isCoverOccluder) return false;
+    const dx = enemy.x - targetX, dz = enemy.z - targetZ;
+    const distance = Math.hypot(dx, dz);
+    const steps = Math.ceil(distance * 2.5); // Only test intermediate tiles, not the two occupied end tiles.
+    for (let step = 2; step < steps - 1; step++) {
+      const x = targetX + dx * step / steps, z = targetZ + dz * step / steps;
+      if (deps.isCoverOccluder(area, Math.floor(x), Math.floor(z))) return true;
+    }
+    return false;
+  }
+
+  function retreatTarget(walker, player, area) {
+    if (!deps?.isCombatActive?.() || !walker || walker.area !== area) {
+      retreatPlan = null;
+      return null;
+    }
+    const threats = deps.getCombatThreats?.(area) || [];
+    if (!threats.length) { retreatPlan = null; return null; }
+    const now = typeof performance === 'object' ? performance.now() : Date.now();
+    const wx = walker.root.position.x, wz = walker.root.position.z;
+    if (retreatPlan?.npcId === walker.rec?.id && retreatPlan.area === area && now < retreatPlan.recheckAt
+      && Math.min(...threats.map(t => Math.hypot(retreatPlan.x - t.x, retreatPlan.z - t.z))) > 2.5) {
+      return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: true };
+    }
+    const pathfinding = window.NpcPathfinding;
+    if (!pathfinding) return null;
+    const scored = [];
+    const seen = new Set(); // Avoid testing duplicate rounded candidate tiles on adjacent compass bearings.
+    for (const [dc, dr] of RETREAT_OFFSETS) {
+      const c = Math.floor(wx) + dc, r = Math.floor(wz) + dr;
+      const key = c + ',' + r;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!pathfinding.isNpcTileWalkable(area, c, r)) continue;
+      const x = c + 0.5, z = r + 0.5;
+      const enemyDistance = Math.min(...threats.map(t => Math.hypot(x - t.x, z - t.z)));
+      if (enemyDistance < 3.2) continue; // Never select a hiding place within immediate melee reach.
+      const hidden = threats.filter(t => occludedFromThreat(area, x, z, t)).length;
+      const playerDistance = Math.hypot(x - player.x, z - player.z);
+      const travel = Math.hypot(x - wx, z - wz);
+      const score = hidden * 30 + Math.min(11, enemyDistance) * 2 - travel * 1.1 - Math.max(0, playerDistance - 11) * 2;
+      scored.push({ c, r, x, z, score, hidden, enemyDistance });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    let selected = null;
+    for (const candidate of scored.slice(0, 8)) {
+      // A cover spot on the far side of a wall is useless unless the NPC can navigate there.
+      if (pathfinding.canNpcBeeline(area, wx, wz, candidate.c, candidate.r)
+        || pathfinding.findNpcPath(area, wx, wz, candidate.c, candidate.r, { padding: 6, maxNodes: 450 })?.length) {
+        selected = candidate;
+        break;
+      }
+    }
+    if (!selected && retreatPlan?.area === area && pathfinding.isNpcTileWalkable(area, retreatPlan.c, retreatPlan.r)) {
+      selected = retreatPlan; // Keep the previous viable refuge instead of oscillating in a blocked corner.
+    }
+    retreatPlan = selected ? { ...selected, npcId: walker.rec?.id, area, recheckAt: now + RETREAT_REPLAN_MS } : null;
+    lastRetreatDecision = { npcId: walker.rec?.id, area, threats: threats.length, selected: selected ? { c: selected.c, r: selected.r, hiddenFrom: selected.hidden } : null, at: Date.now() };
+    return selected
+      ? { area, c: selected.c, r: selected.r, activity: 'taking cover', run: true }
+      : { area, c: Math.floor(wx), r: Math.floor(wz), activity: 'taking cover', run: false };
+  }
+
   // ── Date movement (follow / wait) ─────────────────────────────────────
   function dateTarget(rec) {
     const date = state.date;
@@ -563,16 +639,18 @@
     const area = currentNpcArea();
     if (!player || !area || !deps?.canHostNpc?.(area)) return walker ? { area: walker.area, c: Math.floor(walker.root.position.x), r: Math.floor(walker.root.position.z), activity: 'waiting for you' } : null;
     const pc = Math.floor(player.x), pr = Math.floor(player.z);
-    if (!walker || walker.area !== area) return { area, c: pc, r: pr, activity: 'following you' };
+    const safety = date.mode === 'follow' ? retreatTarget(walker, player, area) : null;
+    if (safety) return safety;
+    if (!walker || walker.area !== area) return { area, c: pc, r: pr, activity: 'following you', run: true };
     const pos = walker.root.position;
     const dx = pos.x - player.x, dz = pos.z - player.z;
     const dist = Math.hypot(dx, dz);
     const follow = num(cfg().followDistanceTiles, 1.7);
-    if (dist <= follow + 0.45) return { area, c: Math.floor(pos.x), r: Math.floor(pos.z), activity: 'following you' };
+    if (dist <= follow + 0.45) return { area, c: Math.floor(pos.x), r: Math.floor(pos.z), activity: 'following you', run: false };
     const tx = player.x + dx / dist * follow, tz = player.z + dz / dist * follow;
     const tc = Math.floor(tx), tr = Math.floor(tz);
     const walkable = window.NpcPathfinding?.isNpcTileWalkable?.(area, tc, tr) !== false;
-    return walkable ? { area, c: tc, r: tr, activity: 'following you' } : { area, c: pc, r: pr, activity: 'following you' };
+    return walkable ? { area, c: tc, r: tr, activity: 'following you', run: true } : { area, c: pc, r: pr, activity: 'following you', run: true };
   }
 
   function scheduleOverride(rec) {
@@ -639,6 +717,7 @@
     const base = defaultState();
     state = saved && typeof saved === 'object' ? { ...base, ...saved, dateCounts: { ...(saved.dateCounts || {}) }, lastDateRawDay: { ...(saved.lastDateRawDay || {}) } } : base;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
+    retreatPlan = null; // A loaded date must not inherit stale hiding coordinates from a previous world.
     if (state.date) {
       state.date.likeCounts = { ...(state.date.likeCounts || {}) };
       state.date.likeLastHour = { ...(state.date.likeLastHour || {}) };
@@ -666,6 +745,7 @@
       spouse: state.spouse ? { ...state.spouse } : null,
       family: window.RomanceFamily?.snapshot?.() || null,
       debug: { ...debug },
+      followerSafety: { retreatPlan: retreatPlan ? { npcId: retreatPlan.npcId, area: retreatPlan.area, c: retreatPlan.c, r: retreatPlan.r, hiddenFrom: retreatPlan.hidden } : null, lastDecision: lastRetreatDecision },
     };
   }
 
