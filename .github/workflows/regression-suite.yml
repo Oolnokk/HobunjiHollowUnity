@@ -48,3 +48,5 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Controller modal pin browser regression
         run: node scripts/test-controller-ui-modal-pin.js
+      - name: Omgurku hybrid calibration browser smoke
+        run: node scripts/test-omgurku-calibration-browser.js
