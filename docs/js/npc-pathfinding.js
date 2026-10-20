@@ -41,7 +41,7 @@
     if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
     if (area === 'town' && deps.isTownBuildingCollisionTile(c, r)) return false;
-    if (deps.isZoneArea(area) && deps.isTownBuildingCollisionTile(c, r, area)) return false;
+    if (deps.isZoneArea(area) && (tile.mapBoundary || tile.skipFloor || deps.isTownBuildingCollisionTile(c, r, area))) return false; // Wilderness boundary rock faces and tiles with no floor must not be selected for follower spawning or cover.
     return true;
   }
 
@@ -572,7 +572,7 @@
     return {
       ...debugStats,
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'Wilderness NPC collision/pathfinding now reads the active zone grid; zone-entry spawns are validated like building-door spawns.',
+      latestChange: 'Wilderness followers use the actual zone grid, reject missing-floor/boundary cells, and revalidate spawn tiles when pending NPCs attach to loaded scenes.',
     };
   }
 
