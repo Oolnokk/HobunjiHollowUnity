@@ -194,6 +194,17 @@
     }
     setCam('angle');
     resize();
+    // PerpRotation is the gameplay's one shared NPC+animal deadzone solver.
+    // It requires the loaded THREE module and angleDiff during initialization.
+    window.THREE = THREE;
+    await new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src='../../js/perp-rotation.js?v=20261019perpRotation1';
+      script.onload=resolve;
+      script.onerror=()=>reject(new Error('Could not load shared gameplay PerpRotation'));
+      document.head.append(script);
+    });
+    window.PerpRotation.init({angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b))});
     requestAnimationFrame(tick);
   }
   function getAppearanceRecord(){
@@ -239,6 +250,7 @@
         window.PNGPlaneAvatar.disposeAvatarModel(old);
       }
       state.scene.add(next);state.model=next;state.profile=profile;
+      window.HobunjiOmgurkuSpecies.setPreviewFacing(next,Number($('headingRange').value)*Math.PI/180);
       state.built=true;
       applyPlacement();
       $('stagebadge').textContent='Omgurku NPC · Engh-Sho upper + headless Omgurku quadruped';
@@ -255,6 +267,10 @@
       preview:{built:state.built,scene:!!state.scene,three:!!state.THREE,profileSpecies:state.profile?.fighter?.speciesId,
         error:state.lastError, frame:state.model?.userData?.omgurkuComposite?.frame},
       runtime:window.HobunjiOmgurkuSpecies?.debugSnapshot?.()||null,
+      facing:{mode:window.PerpRotation?.CREATURE_PLANE_ROT_MODE,
+        npcDeadzoneDegrees:(window.PerpRotation?.PERP_DEAD_RAD||0)*180/Math.PI,
+        animalDeadzoneDegrees:(window.PerpRotation?.CREATURE_PERP_DEAD_RAD||0)*180/Math.PI,
+        requestedHeadingDegrees:Number($('headingRange').value)},
       placement:state.placement,
     });
   }
@@ -269,6 +285,11 @@
     });
     $('refreshPreviewBtn').addEventListener('click',rebuildPreview);
     $('npcSelect').addEventListener('change',rebuildPreview);
+    $('headingRange').addEventListener('input',()=>{
+      const degrees=Number($('headingRange').value);
+      $('headingValue').textContent=degrees+'°';
+      if(state.model) window.HobunjiOmgurkuSpecies?.setPreviewFacing?.(state.model,degrees*Math.PI/180);
+    });
     $('saveLocalBtn').addEventListener('click',()=>{
       try{
         state.placement=window.HobunjiOmgurkuSpecies.saveLocalPlacement(state.placement);
