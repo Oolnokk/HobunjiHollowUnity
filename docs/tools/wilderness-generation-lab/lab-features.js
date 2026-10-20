@@ -193,6 +193,12 @@
     setControlRangeMax('trees', 5000); // Southern Cloud Forest currently needs 4000 trees, beyond the original lab cap of 500.
     setControlRangeMax('pathWindiness', 10); // Southern Cloud Forest currently needs windiness 8, beyond the original lab cap of 4.
     for (const [key, value] of Object.entries(resolved)) setControlValue(key, value);
+    // This derived-tier setting intentionally does not replace the ordinary maxTier slider.
+    // Include it in the Lab's real advanced overrides so LIVE Northern Cliffs
+    // previews the same post-boundary plateau lift as gameplay.
+    const advanced = document.getElementById('advancedJson');
+    if (advanced) advanced.value = Number.isFinite(settings?.plateauLiftToNorthWallGap)
+      ? JSON.stringify({ plateauLiftToNorthWallGap: settings.plateauLiftToNorthWallGap }, null, 2) : '';
     setHybridControls(hybrid);
     const generateButton = document.getElementById('generateBtn'); // Special recipes are meant to visibly apply immediately, not wait for Auto mode.
     setTimeout(() => { if (generateButton && !generateButton.disabled) generateButton.click(); }, 0);
