@@ -168,7 +168,8 @@ async function main() {
   const initialWidth = lowerBuilds[0].options.modelWidth;
   window.HobunjiOmgurkuSpecies.setPlacement({ lowerWidth: initialWidth * 1.2, lowerHeight: .95,
     lowerOffsetX: .2, lowerOffsetY: .3, lowerOffsetZ: .1, upperOffsetY: .05 });
-  assert(Math.abs(lowerBuilds[0].group.scale.x - 1.2) < 1e-6, 'live width calibration');
+  assert(Math.abs(lowerBuilds[0].group.scale.x - 1.2 * species.hybridPlacement.lowerScaleX) < 1e-6,
+    'V10 Large scale multiplies the live lower sprite width without rebuilding textures');
   assert.equal(lowerBuilds[0].group.position.x, .2, 'per-half lower offset');
   assert.equal(lowerBuilds[0].group.position.z, .1, 'per-half depth offset');
   assert(root.userData.omgurkuJoin.y > .3, 'saddle follows lower floor offset');
