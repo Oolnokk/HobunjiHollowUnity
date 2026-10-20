@@ -7,6 +7,23 @@ assert(V2, 'CloudForestRuntimeV2 export missing');
 assert.equal(V2.TREE_LATTICE_WORLD, 2, 'generated forest spacing should resolve to two final world units');
 assert.equal(V2.TREE_KEEP_PROBABILITY, 0.5625, 'Cloud Forest Shadewood keep probability should mirror thinning + variety conversion');
 
+require('../docs/js/wilderness-entry-corridor.js');
+const EntryCorridor = globalThis.WildernessEntryCorridor;
+assert.equal(EntryCorridor.CLOUD_FOREST_TREE_KEEP, (1 - .2) * (1 - 1/6));
+let totalSamples = 0, totalTrees = 0;
+for (let r = 0; r < 64; r++) for (let c = 0; c < 64; c++) {
+  const fromCorridor = EntryCorridor.cloudForestTreePosition(c, r);
+  assert.equal(V2.cloudForestTreePosition(c, r), fromCorridor,
+    'North-wall reforestation and causeway backfill must use identical tree eligibility');
+  if ((c & 1) === 0 && (r & 1) === 0) {
+    totalSamples++;
+    if (fromCorridor) totalTrees++;
+  }
+}
+assert(Math.abs(totalTrees / totalSamples - (1 - .2) * (1 - 1/6)) < 0.08,
+  'both Cloud Forest backfills must match the surviving original tree density');
+
+
 function makeWorkspace() {
   const cols = 20, rows = 18;
   const tiles = {};
@@ -133,6 +150,9 @@ for (const [key,tile] of replanted) {
   const [c,r] = key.split(',').map(Number); // Each restored tree's final renderer and grid position.
   assert.equal(tile.type,'shrub');
   assert.equal(tile.generatedObjectType,'copse');
+  assert(V2.cloudForestTreePosition(c,r), 'restored north-wall trees must follow exact normal forest thinning');
+  assert.equal(c & 1,0,'north-wall copse must have normal 2x source-grid spacing');
+  assert.equal(r & 1,0,'north-wall copse must have normal 2x source-grid spacing');
   assert.equal(tile.plateau,'north_wall','reforestation may not modify plateau ownership');
   assert(r >= 2 && r <= 8 && c >= 2 && c < filledRoot.cols-2, 'tree placement must honor outer edge margins');
   assert(Math.abs(c - 18) > 2, 'keep the entrance road and its shoulder clear');
