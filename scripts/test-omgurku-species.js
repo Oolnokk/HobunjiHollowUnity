@@ -36,6 +36,18 @@ const calibrationHtml = read('docs/tools/omgurku-calibration/index.html');
 const calibrationScript = read('docs/tools/omgurku-calibration/calibration.js');
 assert(calibrationHtml.includes('calibration.js') && calibrationHtml.includes('spriteCanvas'));
 assert(calibrationHtml.includes('Download omgurku.json') && calibrationHtml.includes('Apply to game on this browser'));
+const v10Advanced = read('docs/tools/omgurku-calibration/advanced-lab.js');
+for (const id of ['v10Weapon','v10Attack','v10Combo','v10Stance','v10Speed','v10Loop','v10EraseMode',
+  'v10SaddleMode','v10Brush','v10DownloadSetup','v10ImportSetup','v10AnimalDead','v10RiderDead',
+  'v10NpcDbPath','v10CopyDebug']) {
+  assert(calibrationHtml.includes('id="'+id+'"'), 'restored original V10 control '+id);
+}
+assert(calibrationHtml.includes('advanced-lab.js'), 'V10 behavior loaded in calibrated tool');
+assert(v10Advanced.includes('config/combat/attack-values.json') &&
+       v10Advanced.includes('config/combat/weapon-idle-stances.json'), 'authored combat source');
+assert(v10Advanced.includes('omgurku_garwolf_setup.v1') &&
+       v10Advanced.includes("destination-out"), 'legacy mask export and non-destructive hidden-pixel painter');
+assert(read('docs/js/omgurku-species-runtime.js').includes('setPreviewDeadzones'), 'V10 independent radius API');
 assert(calibrationScript.includes('HobunjiOmgurkuSpecies') && calibrationScript.includes('hybridPlacement'));
 new vm.Script(calibrationScript, {filename:'calibration.js'});
 for (const slot of ['hat', 'hood', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'facialHair']) {
