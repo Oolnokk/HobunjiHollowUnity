@@ -370,11 +370,24 @@
     window.FestivalProps?.refreshFeast?.();
     window.FestivalUI?.close?.();
   }
+  function musicPlaying() { // A musician is physically performing in town (or the player is playing there): the only time anyone dances.
+    if (window.MusicMinigame?.state?.active && deps?.getArea?.()==='town') return true;
+    return (window.NpcScheduling?.listInstrumentPerformers?.()||[]).some(p=>p.area==='town');
+  }
+  // The regular town soundtrack gives way to the live band for Gorkunash's gathering hours (15:00 inclusive to 01:00 exclusive).
+  function silencesTownMusic(area) {
+    if (area !== 'town' && area !== 'map_hobunji_town') return false;
+    return festival()?.id === 'gorkunash' && festivalHours();
+  }
   const gatheringAssignments = new Map(); // Stable per-shift destinations avoid aliasing occupied stations or flickering between locales.
+  function musicianAbsent(id) { // Dead, or not loaded at all: the other musician must cover so the festival is never silent.
+    const rec = (deps.getNpcs?.()||[]).find(npc=>npc.id===id);
+    return !rec || rec.dead || rec.deceased || !(deps.getWalkers?.()||[]).some(w=>w.rec?.id===id);
+  }
   function stageDuty(rec) {
     if (!['foroji_funji','kaboku_kunji'].includes(rec?.id)) return false;
     const hour = Number(window.CalendarSystem?.getHour?.())||0; // Incoming performers overlap their shift so the outgoing musician can wait for actual arrival.
-    if (rec.id === 'kaboku_kunji') return hour>=19.5 || hour<1;
+    if (rec.id === 'kaboku_kunji') return hour>=19.5 || (hour<1) || (hour>=14 && musicianAbsent('foroji_funji'));
     if (hour>=14 && hour<20) return true;
     if (!festivalHours()) return false;
     const incoming = (deps.getWalkers?.()||[]).find(w=>w.rec?.id==='kaboku_kunji');
@@ -538,14 +551,30 @@
     deps = injected;
     residentCacheAt = -Infinity;
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
+    const socialConfig = () => window.SCRATCHBONES_CONFIG?.game?.socialRelationships;
+    window.NpcFestivalDance?.init?.({
+      relationships: () => socialConfig()?.relationships, // Authored partner/family/friend pairs: the same graph the seating system reads.
+      isRomanceable,
+      inhibition: rec => window.NpcSocialInhibition?.profileFor?.(rec)?.base,
+      danceThreshold: value => window.NpcSocialInhibition?.danceThresholdFor?.(value) ?? (value <= 30 ? value : Math.min(99, 30 + (value - 30) * 2)),
+      drunkFraction: id => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(id),
+      likesDancing: id => (window.SCRATCHBONES_CONFIG?.game?.romance?.likes?.[id] || []).includes('dancing'),
+      playerSpouseId: () => window.RomanceSystem?.getSpouse?.()?.npcId || null,
+    });
     window.NpcSharedMeals?.init?.({
       enabled: () => festival()?.id === 'gorkunash' && festivalHours() && !deps.isFestivalSuspended?.(),
+      musicOn: musicPlaying,
       getLayout: layout, getWalkers: deps.getWalkers, minutes: () => worldHour()*60, paused: deps.socialPaused,
       owner:'festivals', canStandAt:deps.canStandAt,
       isMusician: stageDuty,
       companions: rec => {
         const bonds = new Map((window.DialogueContent?.relatedNpcBonds?.(rec.id)||[]).map(([id,weight])=>[id,weight*16])); // Existing household/workplace relation strengths.
         for (const id of window.AmbientDialogue?.friendIdsFor?.(rec.id)||[]) bonds.set(id,Math.max(3,bonds.get(id)||0));
+        for (const link of socialConfig()?.relationships||[]) { // Authored spouses, relatives and friends outrank mere housemates when picking a table.
+          const weight = socialConfig()?.seating?.baseRelationshipWeights?.[link.type] ?? ({partner:14,family:11,friend:8}[link.type]||0);
+          if (!link.members?.includes(rec.id)) continue;
+          for (const id of link.members) if (id !== rec.id) bonds.set(id,Math.max(weight,bonds.get(id)||0));
+        }
         return bonds;
       },
       visible: deps.canSeeNpc,
@@ -684,6 +713,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    socialOptionsFor, festivalHours, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();

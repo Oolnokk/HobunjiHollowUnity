@@ -84,7 +84,7 @@ Both social wheels use 20px labels with percentage placement above, rather than 
 
 `NpcSharedMeals` supplies cached ordinary schedule targets through the festival scheduling override. Authored `mealRole` stations (`bowls`, `fill`, `queue`) move with the dining locale. The serving table stays solid, has no seat/table membership, and remains available only for bowl/meal service. NPCs reserve distinct queue/serving points, physically arrive, take a bowl, fill it, and then reserve an explicitly linked chair at a separate dining table. Existing household/workplace bonds and ambient friend circles weight table choice; actual members and approaching reservations both count. Full tables cause waiting and eventually another locale, never duplicate occupancy.
 
-Seated meals last 20–40 game minutes, with bites 4–9 game minutes apart. Completion randomly starts another buffet visit or a 20–45 minute visit to another locale. The existing 200ms festival tick advances phases; frame-by-frame pathfinding reads cached targets. Missing asynchronously registered stations retry; layout changes, closing hours, floods, death, Follow/date ownership and route timeouts release meal state/reservations. `FestivalSystem.diagnostics().sharedMeals` reports phases, service counts, table IDs and bites.
+Seated meals last 10–20 game minutes, with bites 2–5 game minutes apart. Completion hands control to `NpcFestivalDance.decide` (see below) instead of a coin flip. The existing 200ms festival tick advances phases; frame-by-frame pathfinding reads cached targets. Missing asynchronously registered stations retry; layout changes, closing hours, floods, death, Follow/date ownership and route timeouts release meal state/reservations. `FestivalSystem.diagnostics().sharedMeals` reports phases, service counts, table IDs and bites.
 
 Visible diners use the existing authored Drink clip through `NpcDrinkInteraction.playAutonomous`. Its action lock applies only to the NPC; it never hides, moves, or locks the player. Off-camera diners advance logical meals without creating animations. Bowls and ambient held items publish root-keyed held-item targets to the existing procedural hand frame driver, sharing its grip math and final-render ownership. Cleanup releases the target, prop and lock.
 
@@ -99,3 +99,24 @@ The paired action's NPC lock uses `NpcCharacterState.participantId` (`npc:<id>`)
 
 
 Close-contact clothing uses the garment owner's scoped `setDepthBiasLimit(owner, limit)` API. During a pair, the `paired-dance` scope limits the whole-garment cosmetic foot-covering pull to zero; depth testing, skinning, portrait masks and ordinary polygon offset remain in force. That prevents an artificial camera-directed pull from drawing a partner's pants over a nearer portrait. Cancel/stop releases the scope and restores the exact ordinary bias, including when a garment attaches or is replaced during the dance. Camera mode, counter-orbit angle, horizontal offset, camera position/target and each garment's effective bias are included in the existing dance diagnostics.
+
+
+## Character-driven NPC festival behavior (Gorkunash)
+
+The gathering runs whether or not the player is in town: `NpcSharedMeals.update` rides the existing 200 ms festival tick and game-time minutes, and visible-only work (eating clips, bowl carry) is skipped off camera. One game minute is about 0.47 real seconds (672 s per game day), so a 10–20 minute plate is roughly 5–9 real seconds and a 16–28 minute song roughly 7–13 s.
+
+`js/npc-festival-dance.js` (`window.NpcFestivalDance`) holds the pure rules; `npc-shared-meals.js` is the thin state machine. There is no scripted sequence beyond the physical buffet path (bowl, pot, chair). Every free-time decision (arriving, finishing a plate, finishing a song, a mingle ending) weighs three options with `decide`:
+
+- **Seconds** — appetite (stable per-NPC hash, higher for children), dulled by each plate already eaten and revived by a long dance.
+- **Dance** — `danceDrive`: the same inhibition number and `danceThresholdFor` curve the ambient dance equation uses, plus shyness, sociability, drunkenness and stamina (fewer songs for the elderly, more for children). It is zero without a partner or without music.
+- **Mingle** — stand around the dance floor facing the stage; likelier for sociable and elderly characters.
+
+Dance rules come from the authored `socialRelationships` graph: **married** guests (a `partner` pair, or the player's spouse) dance only with their spouse and nobody else; **unmarried romanceable** adults dance with any other unmarried romanceable non-relative and usually swap partners after each song (a repeat partner is weighted down; friends and shared liking for dancing weight up); everyone else dances only with known friends or relatives, or alone if genuinely uninhibited. A waiting spouse also calls their partner away from the table once half a plate is eaten and weights their next decision toward the floor.
+
+Pairs claim two adjacent authored dance spots (`pairSlots` groups the floor's stations by nearest neighbour, so moving the dance locale in the editor moves the pairs), walk there, and begin on the same beat only once both have arrived. Both carry `socialDance`/`socialLookAt` so the existing render-time NPC dance presentation animates them facing each other; nothing is animated while the player is elsewhere.
+
+**Music is a hard prerequisite.** `FestivalSystem.musicPlaying` (an on-duty Kurraya performer in town, or the player playing there) gates starting and continuing every dance; when it stops, dancers drop out within one tick. If Foroji or Kaboku is dead or absent the other covers the stage for the whole gathering. Instrument audio is non-positional, so it is audible everywhere in town.
+
+While Gorkunash's gathering hours (15:00–01:00) are active the ordinary town soundtrack and ambient cues are suppressed (`FestivalSystem.silencesTownMusic`, consulted by `music-system.js` for town BGM and cue eligibility only; combat music, weather and other ambience are untouched).
+
+Tests: `node scripts/run-tests.js npc-festival-dance npc-shared-meals`.

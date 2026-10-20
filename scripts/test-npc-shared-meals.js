@@ -12,7 +12,8 @@ let minutes = 17*60, roll = 0, visible = true, animations = 0;
 const walkers = [], window = {};
 const context = vm.createContext({window,console,performance:{now:()=>minutes*1000}});
 const load = name => vm.runInContext(fs.readFileSync(`docs/js/${name}.js`,'utf8'),context,{filename:name});
-load('festival-calendar'); load('map-layout-system'); load('furniture-table-system'); load('npc-scheduling'); load('npc-shared-meals');
+load('festival-calendar'); load('map-layout-system'); load('furniture-table-system'); load('npc-scheduling'); load('npc-festival-dance'); load('npc-shared-meals');
+window.NpcFestivalDance.init({relationships:()=>[],isRomanceable:rec=>rec.relationship?.canDate===true}); // Decisions: roll 0 picks seconds, a high roll picks mingling.
 window.CalendarSystem = {getHour:()=>minutes/60,currentWeekdayName:()=> 'Anan'};
 const map = window.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:120});
 const meals = window.NpcSharedMeals, tables = window.FurnitureTableSystem, scheduling = window.NpcScheduling;
@@ -71,6 +72,7 @@ const dzibim=actor('dzibim_khibu'), dzahiri=actor('dzahiri_khibu');
 assert.equal(phase(dzahiri),'queue','second NPC cannot use the same bowl spot');
 const firstTarget=meals.targetFor(dzibim.rec);
 for(let n=0;n<100;n++)assert.equal(meals.targetFor(dzibim.rec),firstTarget,'schedule probes retain their cached target');
+roll=.5; // Mid-length plates (10-20 game minutes) so the assertions below fall inside the meal.
 serve(dzibim); const firstTable=dzibim.currentScheduleTarget.tableId;
 assert(tables.isSeatTaken('town',dzibim.currentScheduleTarget,'player'),'player cannot take a reserved/occupied chair');
 tick(); serve(dzahiri);

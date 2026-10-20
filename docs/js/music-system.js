@@ -1112,6 +1112,8 @@
     };
   }
 
+  // Live festival music replaces the ordinary soundtrack. This applies to scheduled BGM and ambient cues only; combat music keeps its own eligibility.
+  function festivalSilencesAmbient(area) { return window.FestivalSystem?.silencesTownMusic?.(area) === true; }
   function isAudioEntryEligible(entry, area = deps.getCurrentArea()) {
     if (!entry) return false;
     return window.ConditionRegistry?.entryEligible
@@ -1146,6 +1148,7 @@
 
   function isBgmTrackEligible(track, area = deps.getCurrentArea(), { alreadyPlaying = false } = {}) {
     if (!track?.url) return false;
+    if (festivalSilencesAmbient(area)) return false;
     if (track.rainingOnly && !deps.calendar.isRaining) return false;
     if (track.nightOnly && !isNightTime()) return false;
     if (!isSunriseBgmEligible(track)) return false;
@@ -1192,7 +1195,7 @@
     if (!idx || !resolved) return false;
     return (idx.ambient_cues || []).some(cue => {
       const cueUrl = (idx.__basePath || '') + (cue?.file || '');
-      return cue.file && resolveAudioUrl(cueUrl) === resolved && isAudioEntryEligible(cue, area) && !audioUrlFailed(cueUrl);
+      return cue.file && resolveAudioUrl(cueUrl) === resolved && !festivalSilencesAmbient(area) && isAudioEntryEligible(cue, area) && !audioUrlFailed(cueUrl);
     });
   }
 
@@ -1361,7 +1364,7 @@
       if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
       const eligibleCues = cues.filter(cue => {
         const cueUrl = (idx?.__basePath || '') + (cue?.file || '');
-        return cue?.file && isAudioEntryEligible(cue, currentArea) && !audioUrlFailed(cueUrl);
+        return cue?.file && !festivalSilencesAmbient(currentArea) && isAudioEntryEligible(cue, currentArea) && !audioUrlFailed(cueUrl);
       });
       if (!eligibleCues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
       const cue = eligibleCues[Math.floor(Math.random() * eligibleCues.length)];
