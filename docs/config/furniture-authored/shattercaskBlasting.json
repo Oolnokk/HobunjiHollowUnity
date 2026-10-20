@@ -87,7 +87,7 @@
       "attachedPartId": "part_mveyqf1t_9i1bs",
       "position": {
         "x": 0,
-        "y": 0.2256,
+        "y": 0.10382727,
         "z": 0
       },
       "rotation": {
@@ -97,10 +97,10 @@
       },
       "rate": 8,
       "lifetime": 2,
-      "size": 0.1,
-      "speed": 0.1,
-      "spread": 0.1,
-      "radius": 0.15,
+      "size": 0.04522168,
+      "speed": 0.04602273,
+      "spread": 0.04482639,
+      "radius": 0.06723959,
       "gravity": 0,
       "colorA": "#0000ff",
       "colorB": "#ff00ff"
@@ -110,23 +110,23 @@
       "name": "Bubble Emitter",
       "type": "bubbles",
       "enabled": true,
-      "attachedPartId": "part_mveyqf1t_9i1bs",
+      "attachedPartId": "part_mveyvcjl_p5vm5",
       "position": {
-        "x": 0.2631,
-        "y": 0.0015,
-        "z": 0
+        "x": 0.00024096,
+        "y": 0.08322193,
+        "z": -0.00136294
       },
       "rotation": {
         "x": 0.093,
         "y": 1.008,
-        "z": -16.559
+        "z": -5.177
       },
       "rate": 8,
       "lifetime": 2,
-      "size": 0.075,
-      "speed": 0.1,
-      "spread": 0.15,
-      "radius": 0.1,
+      "size": 0.03467354,
+      "speed": 0.04751408,
+      "spread": 0.06840462,
+      "radius": 0.04560308,
       "gravity": 0,
       "colorA": "#ffff00",
       "colorB": "#ffff00"
