@@ -5,7 +5,13 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
-const { chromium }=require('playwright');
+let chromium;
+try { ({ chromium } = require('playwright')); }
+catch (error) {
+  if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  console.log('skip: playwright not installed (browser-only test)');
+  process.exit(0);
+}
 const root=path.resolve(__dirname,'..');
 const types={'.js':'text/javascript','.html':'text/html','.json':'application/json','.png':'image/png','.jpg':'image/jpeg','.glb':'model/gltf-binary','.css':'text/css'};
 const server=http.createServer((req,res)=>{
