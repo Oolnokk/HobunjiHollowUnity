@@ -40,6 +40,17 @@ const server=http.createServer((req,res)=>{
     const before=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.snapshot());
     assert.equal(before.error,null,'calibration load: '+before.error+'\npage errors: '+errors.join('\n'));
     assert.equal(before.hasComposite,true,'real hybrid Omgurku should build without selected NPC');
+    if(process.env.OMGURKU_CAPTURE_PREVIEW==='1'){
+      fs.mkdirSync(path.join(root,'omgurku-visual-qa'),{recursive:true});
+      await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','01-angle.png')});
+      await page.locator('#sideBtn').click();
+      await page.waitForTimeout(150);
+      await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','02-side.png')});
+      await page.locator('#backBtn').click();
+      await page.waitForTimeout(150);
+      await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','03-back.png')});
+      await page.locator('#angleBtn').click();
+    }
     const rigIntegrity=await page.evaluate(()=>{
       const model=window.HobunjiOmgurkuCalibration && [...(window.HobunjiOmgurkuSpecies?.debugSnapshot()?.liveFrames||[])][0];
       const state=window.HobunjiOmgurkuSpecies.debugSnapshot();
@@ -102,6 +113,13 @@ const server=http.createServer((req,res)=>{
     const radii=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.context()
       .model.userData.omgurkuComposite.previewDeadzoneRadii);
     assert.equal(radii.animal,18);assert.equal(radii.rider,53);
+    const visual=await page.evaluate(()=>{
+      const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
+      return {portraitLift:frame?.portraitLift,portraitHeight:frame?.portraitHeight};
+    });
+    assert(visual.portraitHeight>0,'portrait basis must be positive');
+    assert(Math.abs(visual.portraitLift-visual.portraitHeight/2)<1e-6,
+      'V10 centers the portrait half a model height above its floor-origin hand root');
     const posteriorJoin=await page.evaluate(()=>{
       const c=window.HobunjiOmgurkuCalibration.context(),v=c.model.userData.omgurkuComposite;
       const join=c.model.userData.omgurkuJoin,scale=c.placement.riderScale;
