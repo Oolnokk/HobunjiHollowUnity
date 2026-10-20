@@ -57,7 +57,12 @@
     '<label>Roll<input id="carryRZ" type="number" step="1"></label>',
     '</div><label>Billboard size <input id="carrySize" type="number" min="0.1" max="10" step="0.05"></label>',
     '</div>',
-    '<p class="muted">Use the translate / rotate gizmos in the viewport, or type exact values here. Export JSON saves these markers as carryable.billboardAnchor and carryable.handTargets.</p>',
+    '<div class="section"><h2>Held avatar preview</h2>',
+    '<label class="row"><input type="checkbox" id="carryShowAvatar" checked> Show Mao’ao avatar holding this object</label>',
+    '<button type="button" id="carryFrameHoldingPose">Frame holding pose</button>',
+    '<p class="muted tight">Uses the game PNG-plane avatar and procedural hands. The holder’s torso position is an approximate standing reference, not a captured game animation.</p>',
+    '<div class="pill" id="carryAvatarStatus">Avatar loads when Carryable mode opens.</div></div>',
+    '<p class="muted">Use the viewport translate / rotate gizmos or edit numeric values. Avatar preview is editor-only; exported JSON retains the invisible billboard anchor and both hand targets.</p>',
     '<div id="carrySummary" class="pill"></div>',
     '</section>'
   ].join('');
@@ -68,6 +73,90 @@
   guideRoot.visible=false;
   helperRoot.add(guideRoot);
   const guides={};
+  // Transient reference model, kept outside root and never included in the exported furniture.
+  const heldPreview=new THREE.Group();
+  heldPreview.name='carry_avatar_preview_only';
+  heldPreview.visible=false;helperRoot.add(heldPreview);
+  let previewEnabled=true,previewStarted=false,previewActor=null,previewHands=null,modelW=.9,modelH=.9;
+  const handTurn={
+    left:new THREE.Quaternion().setFromEuler(new THREE.Euler(0,Math.PI/2,0)),
+    right:new THREE.Quaternion().setFromEuler(new THREE.Euler(0,-Math.PI/2,0))};
+  const tempRotation=new THREE.Quaternion(),tempOffset=new THREE.Vector3();
+  const status=message=>{const node=document.getElementById('carryAvatarStatus');if(node)node.textContent=message;};
+  const previewActive=()=>activeEditorMode==='carry'&&previewEnabled;
+  function syncHoldingPreview(){
+    heldPreview.visible=previewActive()&&!!previewActor;
+    if(!heldPreview.visible)return;
+    const a=state.carryable.billboardAnchor,p=a.position,r=a.rotation;
+    const scale=Math.max(.1,Number(a.size)||1);
+    // Runtime shattercask quaternion = holder quaternion * inverse(anchor quaternion).
+    tempRotation.setFromEuler(new THREE.Euler(r.x*DEG,r.y*DEG,r.z*DEG,'XYZ'));
+    // Keep authoring furniture at scale 1 and scale the actor instead: in game the
+    // vase receives holder.scale / anchor.size, preserving their relative size.
+    previewActor.scale.setScalar(scale);
+    previewActor.quaternion.copy(tempRotation);
+    tempOffset.set(0,modelH*.59,modelW*.30).multiplyScalar(scale).applyQuaternion(tempRotation);
+    previewActor.position.set(p.x,p.y,p.z).sub(tempOffset);
+    previewActor.updateWorldMatrix(true,true);
+    if(previewHands){
+      root.updateWorldMatrix(true,false);
+      for(const side of ['left','right']){
+        const h=state.carryable.handTargets[side],world=new THREE.Vector3(h.x,h.y,h.z);
+        root.localToWorld(world);
+        previewHands.placeHandWorld?.(side,world,tempRotation.clone().multiply(handTurn[side]));
+      }
+    }
+    status('Mao’ao pose with both authored grip points · anchor size '+scale.toFixed(2));
+  }
+  function frameHoldingPreview(){
+    const bounds=new THREE.Box3().setFromObject(root);
+    if(heldPreview.visible&&previewActor)bounds.expandByObject(previewActor);
+    if(bounds.isEmpty())return;
+    const center=bounds.getCenter(new THREE.Vector3()),extents=bounds.getSize(new THREE.Vector3());
+    const radius=Math.max(1,extents.x,extents.y,extents.z);
+    orbit?.target.copy(center);
+    camera.position.copy(center).add(new THREE.Vector3(radius*1.2,radius*.75,radius*2.1));
+    camera.lookAt(center);camera.updateProjectionMatrix();orbit?.update();
+  }
+  async function startPreview(){
+    if(previewStarted||!previewEnabled)return;
+    previewStarted=true;status('Loading Mao’ao avatar and hand models…');
+    try{
+      const portrait=await renderSeatPortrait('mao-ao','male');
+      const width=Number(effectiveAvatarConfig().worldModelWidth)||.9;
+      const options={backCanvas:portrait.back,profile:portrait.profile,
+        speciesId:'mao-ao',gender:'male',appearance:{speciesId:'mao-ao',species:'mao-ao',gender:'male'},
+        npcRecord:{species:'mao-ao',gender:'male'},name:'carry_preview_maoao',
+        modelWidth:width,modelHeight:width};
+      const model=window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel
+        ?window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,portrait.front,options)
+        :buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+      modelH=Math.max(.01,Number(model.userData?.portraitModelHeight)||width);
+      modelW=Math.max(.01,Number(model.userData?.portraitModelWidth)||width);
+      const actor=new THREE.Group();
+      actor.name='carry_preview_actor';
+      model.position.y=modelH/2;actor.add(model);heldPreview.add(actor);previewActor=actor;
+      previewHands=window.ProceduralHandAttachments?.attach?.(THREE,actor,{
+        name:'carry_preview',speciesId:'mao-ao',gender:'male',modelHeight:modelH,
+        handAttachY:Number(model.userData?.handAttachY)||modelH*.45,
+        avatarRoot:actor,
+        bodyColors:portrait.profile?.appearance?.bodyColors||portrait.profile?.bodyColors
+      })||null;
+      syncHoldingPreview();if(previewActive())frameHoldingPreview();
+      if(!previewHands)status('Mao’ao portrait loaded; hand assets unavailable, grip guides remain.');
+    }catch(error){previewStarted=false;status('Avatar unavailable: '+(error?.message||error));log('Carry preview: '+(error?.stack||error),'warn');}
+  }
+  function setHoldingVisibility(){
+    heldPreview.visible=previewActive()&&!!previewActor;
+    if(avatarGroup)avatarGroup.visible=!(previewActive()&&!!previewActor);
+    if(previewActive())startPreview();
+    syncHoldingPreview();
+  }
+  document.getElementById('carryShowAvatar').addEventListener('change',e=>{
+    previewEnabled=!!e.target.checked;setHoldingVisibility();
+  });
+  document.getElementById('carryFrameHoldingPose').addEventListener('click',frameHoldingPreview);
+
 
   function positionGuide(id) {
     const c=state.carryable;
@@ -167,6 +256,7 @@
       state.carryable.billboardAnchor.size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
     }
     refreshGuides();
+    syncHoldingPreview();
     queueUndoHistory('carryable guide edit');
     renderControls();
   }
@@ -180,6 +270,7 @@
         state.carryable.billboardAnchor.rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
     }
     renderControls();
+    syncHoldingPreview();
   }
   el('carrySelectAnchor').onclick=()=>select('anchor');
   el('carrySelectLeft').onclick=()=>select('left');
@@ -205,6 +296,7 @@
     const result=originalLoad(data);
     createGuides();
     renderControls();
+    setHoldingVisibility();
     return result;
   };
   const originalRebuild=rebuildAll;
@@ -212,6 +304,7 @@
     const result=originalRebuild(...args);
     createGuides();
     renderControls();
+    setHoldingVisibility();
     return result;
   };
   const originalMode=setEditorMode;
@@ -222,6 +315,8 @@
     document.querySelectorAll('[data-left-tab]').forEach(tab=>
       tab.classList.toggle('active',tab.dataset.leftTab===mode));
     if(mode==='carry')select('anchor');
+    setHoldingVisibility();
+    if(mode==='carry')frameHoldingPreview();
     return result;
   };
   button.addEventListener('click',()=>setEditorMode('carry'));
@@ -229,6 +324,6 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null})
+    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
   };
 })();
