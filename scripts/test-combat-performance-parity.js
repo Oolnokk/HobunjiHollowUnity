@@ -97,7 +97,7 @@ const spaceContext = {
   banditPersonalSpacePx: () => 64 * .85,
 };
 vm.createContext(spaceContext);
-vm.runInContext(banditSource.slice(spaceStart, spaceEnd) + '\nthis.adjust = banditPersonalSpaceAdjust;', spaceContext);
+vm.runInContext(banditSource.slice(spaceStart, spaceEnd) + '\nthis.adjust = banditPersonalSpaceAdjust; this.spacingCacheStats = () => ({ weakBucketReferences: [...banditSpacingBuckets.values()].every(bucket => bucket.every(ref => typeof ref.deref === "function")), candidateCount: banditSpacingCandidates.length, seenCount: banditSpacingSeen.size });', spaceContext);
 let pushed = spaceContext.adjust(self, { x: 0, y: 0 });
 assert(pushed.x < 0, 'nearby bandit pushes the movement target away');
 farPositionReads = 0;
@@ -127,6 +127,10 @@ const chainC = { isBandit: true, health: 100, x: 218, y: 0 };
 spaceContext.deps.hostileObjects = [self, chainA, chainB, chainC];
 pushed = spaceContext.adjust(self, { x: 100, y: 0 });
 assert(pushed.x < 180 && pushed.x > 150, 'cross-cell avoidance includes the later bandit instead of missing its push');
+const cacheStats = spaceContext.spacingCacheStats();
+assert.equal(cacheStats.weakBucketReferences, true, 'spatial buckets never hold actor objects strongly after unloading');
+assert.equal(cacheStats.candidateCount, 0, 'avoidance releases the last per-query strong-reference array');
+assert.equal(cacheStats.seenCount, 0, 'avoidance releases the last per-query strong-reference set');
 
 // Exercise the enemy's real trail owner. Color derives from ResourceRings,
 // while the shared Combat renderer keeps ownership of transient meshes.
