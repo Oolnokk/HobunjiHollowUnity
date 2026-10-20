@@ -56,9 +56,9 @@ deps.isZoneArea = area => area === 'wilderness_test';
 deps.npcGridForArea = area => area === 'wilderness_test' ? zoneGrid : openGrid;
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 2), false, 'wilderness pathfinding must read the zone wall, not the farm floor');
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), true, 'a walkable wilderness neighbor remains traversable');
-zoneGrid[3][2].skipFloor = true; // No rendered floor is never a valid NPC shortcut or hiding spot.
+zoneGrid[3][2].skipFloor = true; // Plateau floor is rendered by its continuous mesa lid, not by the flat grid mesh.
 zoneGrid[3][3].mapBoundary = true; // Map-border escarpments are not traversable even if marked grass.
-assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), false, 'wilderness skipFloor blocks movement');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), true, 'wilderness skipFloor retains walkable plateau-lid traversal');
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 3, 3), false, 'wilderness mapBoundary blocks movement');
 assert.match(gameSource, /w\.root\._pendingZoneAdd === mapId[\s\S]{0,600}nearestWalkableTile\?\.\(mapId, fromC, fromR\)/, 'pending wilderness followers revalidate their entry tile after their zone is built');
 assert.match(gameSource, /npcRunLeanPivot\.add\(avatarGroup\)/, 'the running portrait pivots independently of its feet and tool root');
