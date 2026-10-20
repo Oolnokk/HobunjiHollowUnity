@@ -30,7 +30,7 @@ const server=http.createServer((req,res)=>{
   try{
     const page=await browser.newPage({viewport:{width:1200,height:800}});
     const errors=[];
-    page.on('pageerror',err=>errors.push(err.message));
+    page.on('pageerror',err=>errors.push(err.stack||err.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/docs/tools/omgurku-calibration/index.html',
       {waitUntil:'domcontentloaded',timeout:25000});
     await page.waitForFunction(()=>{
