@@ -45,10 +45,15 @@
     return optionsFor(walker).length ? walker : null;
   }
   function syncClaims() {
-    if (deps?.isCombatActive?.()) { // A combat transition can happen while a hold or wheel is open.
+    if (deps?.isCombatActive?.()) { // Combat cancels a held Talk/Commands press without re-registering input claims each 100ms.
       if (press) { clearTimeout(press.timer); press = null; }
       if (wheelState) closeWheel();
-      claimSignature = null;
+      if (claimedWalker || claimSignature !== '') {
+        claimedWalker = null;
+        claimSignature = '';
+        window.WorldActionInputClaims?.clearClaims?.(OWNER_ID);
+      }
+      return;
     }
     if (wheelState || press) return; // Keep the claim stable for the life of a press / open wheel.
     const walker = eligibleWalker();
