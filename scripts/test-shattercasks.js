@@ -70,7 +70,9 @@ async function scenario(reloading=false) {
   vm.createContext(game);
   vm.runInContext(code,game,{filename:'shattercasks.js'});
   game.Combat.update(.18);
-  await Promise.resolve();await Promise.resolve();
+  // Furniture loading and the async spawn's continuation run on separate
+  // microtask turns in Node's vm context; yield a full event-loop turn.
+  await new Promise(resolve=>setImmediate(resolve));
   const casks=game.Shattercasks.debugSnapshot();
   if(reloading) {
     assert.equal(casks.vases.length,0,'exploded charge must not respawn after reload');
