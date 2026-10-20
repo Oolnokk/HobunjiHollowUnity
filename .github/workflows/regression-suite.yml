@@ -49,4 +49,14 @@ jobs:
       - name: Controller modal pin browser regression
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Omgurku hybrid calibration browser smoke
+        env:
+          OMGURKU_CAPTURE_PREVIEW: '1'
         run: node scripts/test-omgurku-calibration-browser.js
+      - name: Omgurku preview screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omgurku-visual-qa
+          path: omgurku-visual-qa/*.png
+          if-no-files-found: ignore
+          retention-days: 7
