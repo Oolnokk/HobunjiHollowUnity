@@ -10796,6 +10796,16 @@
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
         for (const w of npcWalkers) {
           if (w.root._pendingZoneAdd === mapId) {
+            // The NPC may have arrived before its zone grid existed. Validate against the NOW-built
+            // wilderness terrain before attaching, otherwise the follower remains inside entry cliffs.
+            const fromC = Math.floor(w.root.position.x), fromR = Math.floor(w.root.position.z); // Cached pre-build entry coordinate for relocation diagnostics.
+            const arrival = window.NpcPathfinding?.nearestWalkableTile?.(mapId, fromC, fromR) || { c: fromC, r: fromR }; // Uses the loaded zone grid after _zoneScenes.set().
+            if (arrival.c !== fromC || arrival.r !== fromR) {
+              w.root.position.set(arrival.c + 0.5, npcSurfaceY(mapId, arrival.c, arrival.r), arrival.r + 0.5);
+              w._legsPrevX = w.root.position.x; w._legsPrevZ = w.root.position.z; // Prevent a teleport from looking like a super-speed run.
+              w.resetRouteState?.(); // Any pending target must be replanned from the actual landing tile.
+              window.__farmLog?.(`[npc zone entry] ${w.rec?.id || 'npc'} repositioned ${fromC},${fromR} → ${arrival.c},${arrival.r} in ${mapId}`, 'npc');
+            }
             w.root._pendingZoneAdd = null;
             zScene.add(w.root); w.root._npcScene = zScene;
           }
@@ -11955,7 +11965,12 @@
         }
         root.add(groundShadow);
         const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, root, avatarGroup, rec?.id);
-        if (!alcoholPoseGroup) root.add(avatarGroup);
+        const npcRunLeanPivot = namedAnimalDef ? null : new THREE.Group(); // Only humanoids need the shared full-body run lean; the separate feet and held tools remain unaffected.
+        if (npcRunLeanPivot) {
+          npcRunLeanPivot.name = 'npc_run_lean_visual';
+          (alcoholPoseGroup || root).add(npcRunLeanPivot);
+          npcRunLeanPivot.add(avatarGroup); // Reparent the portrait under an additive ground-anchored pivot, not under the animated foot bones.
+        } else if (!alcoholPoseGroup) root.add(avatarGroup);
 
         const spawnTarget = resolveNpcSpawnPosition(rec, initialTarget);
         const spawnArea = normalizeNpcArea(spawnTarget.area);
@@ -12011,7 +12026,7 @@
           legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
-          _npcRunning: false, _npcRunMode: null, // Controls the shared leg run blend and emergency movement speed.
+          _npcRunning: false, _npcRunMode: null, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
           _ambientLookActive: false, // Whether _applyNpcAmbientLook currently owns this walker's neck joint (so it knows to ease back to rest once a station's `lookAt` no longer applies).
@@ -12327,6 +12342,14 @@
             if (this.legs) {
               if (sameArea) { this._offAreaLegsDt = 0; this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose, { allowSpeedRun: this._npcRunning }); }
               else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose, { allowSpeedRun: this._npcRunning }); this._offAreaLegsDt = 0; }
+            }
+            if (this._npcRunLeanPivot) {
+              const pitch = isVisibleArea && this._npcRunning && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // The canonical leg gait supplies the same run-lean strength used by the player.
+              if (pitch > 0.0001) {
+                const heading = this.desiredRot - root.rotation.y; // Respect actual travel direction independently of camera-facing portrait yaw/deadzones.
+                const sinHalf = Math.sin(pitch * 0.5); // Reused for this avatar's local pitch quaternion; avoids allocations in the frame loop.
+                this._npcRunLeanPivot.quaternion.set(Math.cos(heading) * sinHalf, 0, -Math.sin(heading) * sinHalf, Math.cos(pitch * 0.5));
+              } else this._npcRunLeanPivot.quaternion.identity();
             }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
