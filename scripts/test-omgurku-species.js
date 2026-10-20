@@ -169,6 +169,9 @@ async function main() {
   const upper = root.userData.omgurkuComposite.upper;
   const neutral = { x: upper.position.x, z: upper.position.z };
   const saddleRadius = (0.5 - 0.4) * (initialWidth * 1.2);
+  const layout = window.HobunjiOmgurkuSpecies.debugSnapshot().placement;
+  assert(Math.abs(neutral.z - (layout.lowerOffsetZ + saddleRadius + layout.joinDepth + layout.upperOffsetZ)) < 1e-6,
+    'neutral saddle retains the original authored lower depth offset');
   for (const ref of lowerBuilds) ref.group.rotation = { y: Math.PI / 2 };
   window.HobunjiOmgurkuSpecies.setPlacement({});
   assert(Math.abs(upper.position.x - (neutral.x + saddleRadius)) < 1e-6,
