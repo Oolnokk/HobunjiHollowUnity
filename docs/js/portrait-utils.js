@@ -186,6 +186,13 @@ function getBlinkConfig() {
 
 function blinkUrlFor(headOverlayUrl) {
   if (typeof headOverlayUrl !== 'string' || !headOverlayUrl.endsWith('.png')) return null;
+  // Omgurku's fighter folder has authored head + horn overlays with the
+  // variant suffix after "blink", unlike the older generic ur-head_blink.png.
+  // The fixed horns should never request nonexistent per-blink substitutes.
+  if (/\/ur-horns-(?:back|front)_omgurku_m\.png$/i.test(headOverlayUrl)) return null;
+  if (/\/ur-head_omgurku_m\.png$/i.test(headOverlayUrl)) {
+    return headOverlayUrl.replace(/ur-head_omgurku_m\.png$/i, 'ur-head_blink_omgurku_m.png');
+  }
   return headOverlayUrl.replace(/\.png$/i, '_blink.png');
 }
 
