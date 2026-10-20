@@ -107,6 +107,14 @@ const server=http.createServer((req,res)=>{
       rig.group?.traverse?.(node=>{if(node.userData?.handModelKey==='feline')actual++;});
       return actual>=2;
     },null,{timeout:20000});
+    const freeHand=await page.evaluate(()=>{
+      const model=window.HobunjiOmgurkuCalibration.context().model;
+      const socket=model.getObjectByName('left_hand_socket');
+      return {socketY:socket?.position.y,portraitHandY:model.userData.handAttachY,
+        source:model.userData.proceduralHandRig?.getDebug?.()?.shoulderCompass?.idlePositionRule};
+    });
+    assert(Math.abs(freeHand.socketY-freeHand.portraitHandY)<0.07,
+      'Omgurku free hand must rest at its own waist-up portrait attachment, not the animal posterior');
     if(process.env.OMGURKU_CAPTURE_PREVIEW==='1')
       await page.locator('#stage').screenshot({path:path.join(root,'omgurku-visual-qa','04-real-hands.png')});
     await page.waitForFunction(()=>{
