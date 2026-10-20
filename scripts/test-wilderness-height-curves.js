@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const Generator = require('../docs/js/wilderness-map-generator.js');
 
-const reductions = { // Keep this deterministic regression light without changing the underlying plateau or boundary algorithms.
+const reductions = { // Keep the comparison deterministic and cheap while exercising real geometry exports.
   width: 70, height: 70, plateaus: 36, ramps: 5,
   trees: 0, bushes: 0, logs: 0, ore: 0, boulders: 0,
   forage: 0, fruitBushes: 0, mushrooms: 0, prey: 0,
@@ -11,70 +11,79 @@ const reductions = { // Keep this deterministic regression light without changin
   structures: 0, caves: 0, rootTotems: 0, pathAnchors: 2
 };
 
-function inspectZone(zoneId, farSide) {
-  const zone = Generator.zoneSettings(zoneId); // Gameplay's actual Tothal Shift settings, not lab-only copies.
-  assert.equal(zone.heightCurves?.enabled, true, zoneId + ' must enable two-axis height profiles');
-  assert.equal(zone.boundaryFarRise?.[farSide], 2, zoneId + ' far boundary rise should be two tiers');
+function inspectZone(zoneId, overrides = {}) {
+  const zone = Generator.zoneSettings(zoneId);
+  assert.equal(zone.heightCurves?.enabled, true, zoneId + ' should use the two-axis height editor');
   assert.equal(zone.heightCurves.eastWest.length, 13);
   assert.equal(zone.heightCurves.northSouth.length, 13);
-  const workspace = Generator.generateWorkspace('height-curves-regression-' + zoneId, { ...zone, ...reductions }); // One small map per zone exercises real output.
-  const root = workspace.maps.find(map => !map.isSubmap); // Raw exported mask, whose border metadata survives the Tothal import.
+  const workspace = Generator.generateWorkspace('height-curves-regression-' + zoneId, { ...zone, ...reductions, ...overrides });
+  const root = workspace.maps.find(map => !map.isSubmap);
   assert(root && root.cols === 140 && root.rows === 140);
-  const groups = new Map((workspace.plateauGroups || []).map(group => [group.id, group.elevation])); // Find each rendered plateau tier from the exact exported mask.
-  const boundary = Object.values(root.tiles).filter(tile => tile.borderEscarpmentSide === farSide); // True cliff boundary, never distant backdrop.
-  assert(boundary.length > 10, zoneId + ' far boundary must contain real cliff tiles');
-  const boundaryTiers = boundary.map(tile => groups.get(tile.plateau)).filter(Number.isFinite); // Renderer plateau height resolved from group membership.
-  assert(boundaryTiers.length > 4, zoneId + ' boundary must export tiered plateau geometry');
-  assert(boundaryTiers.some(tier => tier === Math.max(zone.maxTier || Generator.defaultSettings().maxTier, 9) + 2),
-    zoneId + ' far cliffs must top out at highest playable tier + 2');
+  const groups = new Map((workspace.plateauGroups || []).map(group => [group.id, group.elevation]));
 
-  function regionAverage(c0, c1, r0, r1) {
+  function tierAt(tile) { return tile ? groups.get(tile.plateau) : undefined; }
+  function wall(side) {
+    const tiles = Object.values(root.tiles).filter(tile => tile.borderEscarpmentSide === side && tile.borderEscarpment);
+    assert(tiles.length > 10, zoneId + ' must retain real ' + side + ' boundary cliffs');
+    const tiers = tiles.map(tierAt).filter(Number.isFinite);
+    assert(tiers.length > 4, side + ' boundary needs real exported plateau tiers');
+    return { tiles: tiles.length, crest: Math.max(...tiers) };
+  }
+  function playableTop() {
+    return Math.max(...Object.values(root.tiles)
+      .filter(tile => !tile.borderEscarpment && !tile.distantBoundaryLandscape && tile.plateau)
+      .map(tierAt).filter(Number.isFinite));
+  }
+  function average(c0, c1, r0, r1) {
     let total = 0, count = 0;
     for (let row = r0; row < r1; row++) for (let col = c0; col < c1; col++) {
       const tile = root.tiles[col + ',' + row];
       if (!tile || tile.borderEscarpment || tile.distantBoundaryLandscape || !tile.plateau) continue;
-      const tier = groups.get(tile.plateau);
+      const tier = tierAt(tile);
       if (!Number.isFinite(tier)) continue;
       total += tier; count++;
     }
-    assert(count > 20, zoneId + ' profile sampling must include raised, playable plateau terrain');
+    assert(count > 20, zoneId + ' sample requires raised, playable plateau terrain');
     return total / count;
   }
-
-  return { workspace, root, groups, regionAverage, boundary:boundary.length };
+  return { root, zone, wall, playableTop, average };
 }
 
-const northern = inspectZone('map_northern_cliffs', 'north');
-const western = inspectZone('map_western_slope', 'west');
+const northern = inspectZone('map_northern_cliffs');
+const unlifted = inspectZone('map_northern_cliffs', { plateauLiftToNorthWallGap: null }); // Same seed; original cliffs, old-height shelves.
+const western = inspectZone('map_western_slope');
 
-const northernCliffs = Object.values(northern.root.tiles).filter(tile => tile.borderEscarpment && tile.borderEscarpmentSide);
-const northernWallTiers = new Map();
-for (const tile of northernCliffs) {
-  const tier = northern.groups.get(tile.plateau);
-  if (!Number.isFinite(tier)) continue; // The actual exported plateau group determines runtime wall geometry.
-  const side = tile.borderEscarpmentSide;
-  if (!northernWallTiers.has(side)) northernWallTiers.set(side, []);
-  northernWallTiers.get(side).push(tier);
+assert.equal(northern.zone.plateauLiftToNorthWallGap, 2, 'plateaus, not cliffs, must approach the old second-tier gap');
+assert.equal(northern.zone.boundaryCliffBoost, 5, 'restore the original high perimeter cliff boost');
+assert.equal(northern.zone.boundaryFarRise, undefined, 'do not replace the original north cliff with a short custom wall');
+assert.equal(northern.zone.boundaryLocalRise, undefined, 'do not shorten the original east, west, or south walls');
+for (const side of ['north', 'east', 'west']) {
+  assert.equal(northern.wall(side).crest, unlifted.wall(side).crest,
+    side + ' boundary wall crest must remain exactly the same with or without plateau lift');
 }
-const farNorthTop = Math.max(...(northernWallTiers.get('north') || []));
-assert.equal(farNorthTop, 11, 'north wall should finish two tiers above the Northern Cliffs maximum of 9');
-for (const side of ['east', 'west', 'south']) {
-  const tiers = northernWallTiers.get(side) || [];
-  assert(tiers.length > 10, 'Northern Cliffs must preserve a real ' + side + ' boundary wall');
-  assert(Math.max(...tiers) < farNorthTop,
-    side + ' wall must not tower over the far-north wall: side crest ' + Math.max(...tiers) + ', north crest ' + farNorthTop);
-}
-assert.deepEqual(Generator.zoneSettings('map_northern_cliffs').boundaryLocalRise,
-  { east: 1, west: 1, south: 1 }, 'side/front walls should track local ground, not inherit the older +5 boost');
+const originalCrest = unlifted.wall('north').crest;
+const elevatedCrest = northern.playableTop();
+assert(elevatedCrest > unlifted.playableTop() + 2,
+  'the playable plateaus should be substantially taller than in the old version');
+assert.equal(originalCrest - elevatedCrest, 2,
+  'the highest playable plateau should sit exactly two tiers beneath the UNCHANGED north wall');
 
-const ncNorth = northern.regionAverage(25, 112, 20, 45); // Walkable northern quarter, excluding the boundary wall.
-const ncSouth = northern.regionAverage(25, 112, 95, 120); // Corresponding southern quarter.
-assert(ncNorth > ncSouth + 2, 'Northern Cliffs terrain must climb markedly northward: ' + ncNorth + ' vs ' + ncSouth);
-const wsWest = western.regionAverage(20, 45, 25, 112); // Westward upper plateau quarter.
-const wsEast = western.regionAverage(95, 120, 25, 112); // Eastward low plateau quarter.
-assert(wsWest > wsEast + 4, 'Western Slope must climb steeply toward the west: ' + wsWest + ' vs ' + wsEast);
-const westDistant = Object.values(western.root.tiles).filter(tile => tile.distantBoundaryLandscapeSide === 'north' || tile.distantBoundaryLandscapeSide === 'south');
-assert(westDistant.length > 10, 'Western Slope north/south edges must retain distant scenery rather than full cliff walls');
-assert.equal(Generator.defaultSettings().heightCurves, null, 'Legacy custom presets should not opt into drawn curves by default');
-console.log('Wilderness height curves: northern ' + ncSouth.toFixed(1) + ' → ' + ncNorth.toFixed(1)
-  + ', western ' + wsEast.toFixed(1) + ' → ' + wsWest.toFixed(1) + '; far cliff rises +2 tiers.');
+const ncNorth = northern.average(25, 112, 20, 45);
+const ncSouth = northern.average(25, 112, 95, 120);
+assert(ncNorth > ncSouth + 2, 'Northern Cliffs must still climb substantially toward north: ' + ncNorth + ' vs ' + ncSouth);
+
+assert.equal(western.zone.boundaryFarRise?.west, 2, 'Western Slope should keep its west boundary policy');
+const westTop = western.wall('west').crest;
+assert(westTop > western.playableTop(), 'Western Slope west cliff must remain above the playable area');
+const wsWest = western.average(20, 45, 25, 112);
+const wsEast = western.average(95, 120, 25, 112);
+assert(wsWest > wsEast + 4, 'Western Slope must rise steeply westward: ' + wsWest + ' vs ' + wsEast);
+const westDistant = Object.values(western.root.tiles).filter(tile =>
+  tile.distantBoundaryLandscapeSide === 'north' || tile.distantBoundaryLandscapeSide === 'south');
+assert(westDistant.length > 10, 'Western Slope north/south edges must retain distant backdrops');
+assert.equal(Generator.defaultSettings().heightCurves, null, 'legacy presets should not enable height curves by default');
+
+console.log('Wilderness height curves: Northern Cliffs unchanged wall tier ' + originalCrest
+  + ', plateau max ' + unlifted.playableTop() + ' -> ' + elevatedCrest + ' (2-tier gap); '
+  + 'north/south playable averages ' + ncNorth.toFixed(1) + '/' + ncSouth.toFixed(1)
+  + '; Western Slope west/east ' + wsWest.toFixed(1) + '/' + wsEast.toFixed(1));
