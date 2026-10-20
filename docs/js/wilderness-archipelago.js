@@ -61,7 +61,7 @@
     let h = (Math.imul(x + 374761393, 668265263)
       ^ Math.imul(y + 2246822519, 3266489917) ^ Math.imul(salt + 11, 1274126177)) >>> 0;
     h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-    return (h ^ (h >>> 16)) / 4294967296;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   }
   function smoothNoise(x, y, salt) {
     const ix = Math.floor(x), iy = Math.floor(y);
