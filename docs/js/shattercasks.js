@@ -162,20 +162,42 @@
   }
   // Authoring-space bounds, computed once per vase. Enlarged around tilted
   // necks rather than assuming an arbitrary .37-radius cylinder.
-  function authoredBounds(data) {
-    const b={minX:Infinity,maxX:-Infinity,minY:Infinity,maxY:-Infinity,minZ:Infinity,maxZ:-Infinity};
-    for(const part of data.parts||[]){
-      const t=part.transform||{},w=Math.hypot(
-        (Number(t.sx)||.001)*Math.max(1,part.topScaleX||0,part.bottomScaleX||0)/2,
-        (Number(t.sy)||.001)/2,
-        (Number(t.sz)||.001)*Math.max(1,part.topScaleZ||0,part.bottomScaleZ||0)/2);
-      for(const [axis,center] of [['X',t.x],['Y',t.y],['Z',t.z]]){
-        const c=Number(center)||0;
-        b['min'+axis]=Math.min(b['min'+axis],c-w);
-        b['max'+axis]=Math.max(b['max'+axis],c+w);
+  // Collision reads the meshes built from the authored furniture parts, not a
+  // broad cylinder or the enclosing art box. The box is only a cheap rejection
+  // test before THREE.Mesh.raycast checks the actual triangles.
+  const shatterRaycaster = THREE.Raycaster ? new THREE.Raycaster() : null;
+  const shatterRayStart = THREE.Vector3 && new THREE.Vector3();
+  const shatterRayDirection = THREE.Vector3 && new THREE.Vector3();
+  const shatterRayOffset = THREE.Vector3 && new THREE.Vector3();
+  const shatterRayAcross = THREE.Vector3 && new THREE.Vector3();
+  const shatterRayUp = THREE.Vector3 && new THREE.Vector3();
+  const shatterRayBox = THREE.Box3 && new THREE.Box3();
+  const shatterRayBoxPoint = THREE.Vector3 && new THREE.Vector3();
+  const shatterRayHits = [];
+  let meshRaycastQueries = 0,meshRaycastBroadphaseRejects = 0,meshRaycastTriangleQueries=0;
+  const RAY_SAMPLES = [[0,0],[1,0],[-1,0],[0,1],[0,-1],
+    [.70710678,.70710678],[.70710678,-.70710678],[-.70710678,.70710678],[-.70710678,-.70710678]];
+  function collectMeshColliders(group) {
+    // Only real modeled parts are targets: do not raycast bubble particles,
+    // item sprites, invisible anchor guides, or explosion effects.
+    const authored = group.userData?.meshById;
+    const meshes = authored?.values ? [...authored.values()] : [];
+    return meshes.filter(mesh => mesh?.isMesh && mesh.visible !== false
+      && mesh.material?.visible !== false && mesh.geometry?.attributes?.position?.count > 0);
+  }
+  function refreshMeshBounds(vase) {
+    if(!vase?.meshBounds || !vase.meshColliders?.length)return;
+    vase.group.updateWorldMatrix?.(true,true);
+    vase.meshBounds.makeEmpty();
+    // setFromObject uses geometry bounds, and is called once at spawn/drop.
+    // Only the single carried charge requires refreshing during aim/flight.
+    for(const mesh of vase.meshColliders){
+      if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox?.();
+      if(mesh.geometry.boundingBox) {
+        mesh.updateWorldMatrix?.(true,false);
+        vase.meshBounds.union(shatterRayBox.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld));
       }
     }
-    return Number.isFinite(b.minX)?b:{minX:-.4,maxX:.4,minY:0,maxY:1,minZ:-.4,maxZ:.4};
   }
   function disposeEmitters(vase) {
     for(const fx of vase.emitters||[])fx.dispose?.();
@@ -244,7 +266,10 @@
     group.userData.shattercaskId=p.id;
     group.userData.shattercaskMap=p.mapId;
     rec.scene.add(group);
-    const vase={...p,group,data,hitBounds:authoredBounds(data),emitters:null,exploded:false,carried:false};
+    const vase={...p,group,data,meshColliders:collectMeshColliders(group),
+      meshBounds:THREE.Box3?new THREE.Box3():null,
+      emitters:null,exploded:false,carried:false};
+    if(vase.meshBounds)refreshMeshBounds(vase);
     rec.vases.set(p.id,vase);
     return vase;
   }
@@ -339,6 +364,7 @@
     cask.group.quaternion?.identity?.();
     cask.group.scale?.setScalar?.(1);
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
+    refreshMeshBounds(cask);
     cask.carried=false;held=null;
     lastEvent='dropped '+cask.id;
     return true;
@@ -649,29 +675,53 @@
     }
   }
   function projectileHit(start,end,radius,limit,mapId) {
+    const rec=records.get(mapId);
+    if(!rec?.vases.size || !shatterRaycaster || !shatterRayStart)return null;
+    const fraction=Number(limit),cap=Number.isFinite(fraction)?Math.max(0,Math.min(1,fraction)):1;
+    if(cap<=0)return null;
+    shatterRayStart.set(start.x,start.y,start.z);
+    shatterRayDirection.set(end.x-start.x,end.y-start.y,end.z-start.z);
+    const length=shatterRayDirection.length();
+    if(length<=1e-7)return null;
+    shatterRayDirection.multiplyScalar(1/length);
+    const pad=Math.max(0,Number(radius)||0),maxDistance=length*cap;
+    // Perpendicular offsets approximate the finite projectile radius while
+    // every accepted contact still intersects real mesh triangles.
+    shatterRayAcross.set(-shatterRayDirection.z,0,shatterRayDirection.x);
+    if(shatterRayAcross.lengthSq()<1e-8)shatterRayAcross.set(1,0,0);
+    shatterRayAcross.normalize();
+    shatterRayUp.crossVectors(shatterRayDirection,shatterRayAcross).normalize();
+    shatterRaycaster.near=0;
+    shatterRaycaster.far=maxDistance;
+    shatterRaycaster.ray.direction.copy(shatterRayDirection);
     let result=null;
-    const cap=Math.max(0,Math.min(1,Number(limit)??1)),pad=Math.max(0,Number(radius)||0);
-    for(const vase of records.get(mapId)?.vases.values()||[]){
-      if(vase.exploded)continue;
-      const b=vase.hitBounds||{minX:-.4,maxX:.4,minY:0,maxY:1,minZ:-.4,maxZ:.4};
-      let center=vase.group.position;
-      if(vase.carried&&vase.group.getWorldPosition&&carriedWorldPosition)
-        center=vase.group.getWorldPosition(carriedWorldPosition);
-      // World objects use their authored bounds; carried billboard-rotated
-      // models use an enclosing volume in world coordinates.
-      const min=vase.carried?{x:center.x-.8,y:center.y-.8,z:center.z-.8}
-        :{x:center.x+b.minX,y:center.y+b.minY,z:center.z+b.minZ};
-      const max=vase.carried?{x:center.x+.8,y:center.y+.8,z:center.z+.8}
-        :{x:center.x+b.maxX,y:center.y+b.maxY,z:center.z+b.maxZ};
-      let enter=0,exit=cap;
-      for(const axis of ['x','y','z']){
-        const a=start[axis],d=end[axis]-a;
-        if(Math.abs(d)<1e-9){if(a<min[axis]-pad||a>max[axis]+pad){enter=Infinity;break;}continue;}
-        const t0=(min[axis]-pad-a)/d,t1=(max[axis]+pad-a)/d;
-        enter=Math.max(enter,Math.min(t0,t1));exit=Math.min(exit,Math.max(t0,t1));
-        if(enter>exit)break;
+    meshRaycastQueries++;
+    for(const vase of rec.vases.values()){
+      if(vase.exploded || !vase.meshColliders?.length)continue;
+      if(vase.carried)refreshMeshBounds(vase);
+      else vase.group.updateWorldMatrix?.(true,true);
+      if(vase.meshBounds && shatterRayBox && shatterRayBoxPoint) {
+        shatterRayBox.copy(vase.meshBounds).expandByScalar(pad);
+        shatterRaycaster.ray.origin.copy(shatterRayStart);
+        const broadHit=shatterRaycaster.ray.intersectBox(shatterRayBox,shatterRayBoxPoint);
+        if(!broadHit || shatterRayStart.distanceTo(broadHit)>maxDistance+pad) {
+          meshRaycastBroadphaseRejects++;continue;
+        }
       }
-      if(enter<=exit&&(!result||enter<result.t))result={t:enter,vase};
+      for(const [sx,sy] of (pad>0?RAY_SAMPLES:[RAY_SAMPLES[0]])) {
+        shatterRayOffset.copy(shatterRayAcross).multiplyScalar(sx*pad)
+          .addScaledVector(shatterRayUp,sy*pad);
+        shatterRaycaster.ray.origin.copy(shatterRayStart).add(shatterRayOffset);
+        shatterRayHits.length=0;
+        meshRaycastTriangleQueries++;
+        shatterRaycaster.intersectObjects(vase.meshColliders,false,shatterRayHits);
+        if(shatterRayHits.length) {
+          const distance=shatterRayHits[0].distance;
+          if(Number.isFinite(distance)&&distance<=maxDistance
+            &&(!result||distance<result.t*length))
+              result={t:distance/length,vase};
+        }
+      }
     }
     return result;
   }
@@ -803,6 +853,7 @@
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
       performance:{ruinSnapshotReads,textureBatchesCreated,
+        meshRaycastQueries,meshRaycastBroadphaseRejects,meshRaycastTriangleQueries,
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
         cachedPlacementAreas:placementCache.size},
