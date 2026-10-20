@@ -169,3 +169,22 @@ assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnos
  vm.runInNewContext(game.slice(init,game.indexOf('\n      });',init)+10),{window,playerAvatarGroup:{},playerLegs:{},s_shoulderSurfOffsetH_current:-.4,refreshActionBar(){},updateCameraPosition(){}});
  assert.equal(injected.shoulderOffsetH(),-.4,'negative left-shoulder offsets are preserved');
 }
+
+// Real input ownership suppresses repeats and survives replacing clothing mid-action.
+{
+ cancelA.root.scale.set(1,1,1);
+ api.init({getPlayerModel:()=>cancelA.model,getPlayerLegs:()=>cancelA.legs});
+ vm.runInNewContext(fs.readFileSync('docs/js/world-action-input-claims.js','utf8'),{window,console});
+ assert(api.start(cancelWalker,cancelA.root));
+ const input=window.WorldActionInputClaims,oldPants=cancelA.legs.pants; // The production claim owner must pair each press/release.
+ assert(input.dispatch('action2','press'));assert.equal(api.diagnostics().cameraMode,'orbit');
+ assert(input.dispatch('action2','press'));assert.equal(api.diagnostics().cameraMode,'orbit','held input does not toggle repeatedly');
+ input.dispatch('action2','release');input.dispatch('action2','press');assert.equal(api.diagnostics().cameraMode,'follow');input.dispatch('action2','release');
+ const replacement=actor(1,0).legs.pants; // A wardrobe refresh replaces the handle while the action still owns its depth cap.
+ cancelA.legs.pants=replacement;api.update(.01,false,'town');
+ assert.equal(oldPants.maskUniforms.uPantsDepthBias.value,.25,'replaced garment releases its cap');
+ assert.equal(replacement.maskUniforms.uPantsDepthBias.value,0,'new garment gets physical depth');
+ input.dispatch('action1','press');assert(!api.isActive());assert.equal(replacement.maskUniforms.uPantsDepthBias.value,.25);
+ assert(input.dispatch('action1','release'),'stop consumes its matching release after clearing claims');
+ assert.equal(input.snapshot().pressed.length,0);assert.equal(input.snapshot().claims.length,0);
+}

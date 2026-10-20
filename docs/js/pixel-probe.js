@@ -698,6 +698,10 @@
     }
     const tables = window.FurnitureTableSystem?.snapshot?.(); // On-demand, so table diagnostics never add per-frame serialization.
     if (tables) lines.push(`Furniture tables: ${JSON.stringify(tables)}`);
+    const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
+    if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
+    const npcPathing = window.NpcPathfinding?.debugSnapshot?.(); // Search/blocked-move counters help distinguish a stuck sleeper from a scheduling issue.
+    if (npcPathing) lines.push(`NPC pathfinding: ${JSON.stringify(npcPathing)}`);
     const following = window.NpcFollowing?.snapshot?.(); // On-demand diagnostics keep mobile reports useful without adding per-frame serialization.
     if (following) lines.push(`NPC company: ${JSON.stringify(following)}`);
     const music = window.MusicMinigame?.diagnostics?.();
