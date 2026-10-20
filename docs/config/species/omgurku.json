@@ -1,0 +1,136 @@
+{
+  "speciesId": "omgurku",
+  "label": "Omgurku",
+  "parentSpecies": "engh-sho",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male"
+  ],
+  "inheritanceNotes": {
+    "transformSpecies": "engh-sho",
+    "wardrobeSpecies": "engh-sho",
+    "bodyColorSpecies": "engh-sho",
+    "appearanceCosmetics": false,
+    "lowerCreatureRigSpecies": "voorg-ass",
+    "lowerCreatureSprites": "omgurku-lower",
+    "assembly": "single-npc-hybrid"
+  },
+  "male": {
+    "headSprite": "fightersprites/engh-sho-m/head_omgurku_m.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-horns-back_omgurku_m.png"
+      },
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-head_omgurku_m.png"
+      },
+      {
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-horns-front_omgurku_m.png"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "allowedCosmetics": [
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho",
+      "rounded_pauldron"
+    ],
+    "cosmeticWeights": {
+      "overwear": {
+        "none": 60,
+        "rugged_poncho": 25,
+        "fine_poncho": 15
+      }
+    },
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "hat": [
+        "none"
+      ],
+      "hood": [
+        "none"
+      ]
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_omgurku_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_omgurku_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_omgurku_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "armLength": 0.558
+  }
+}
