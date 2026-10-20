@@ -476,10 +476,20 @@
   function debugSnapshot() {
     return {
       ...status, liveCount: live.size, placement: { ...placement }, sprites: { ...SPRITES },
-      liveFrames: [...live].map(({ root }) => ({
-        name: root.name, frame: root.userData.omgurkuComposite?.frame,
-        join: root.userData.omgurkuJoin, parented: !!root.parent,
-      })),
+      liveFrames: [...live].map(({ root }) => {
+        const c = root.userData.omgurkuComposite;
+        return {
+          name: root.name, frame: c?.frame, join: root.userData.omgurkuJoin,
+          parented: !!root.parent,
+          handParentIsUpper: root.userData.proceduralHandParent === c?.upper,
+          handRigAttached: !!root.userData.proceduralHandRig,
+          upperYaw: c?.upper?.rotation?.y ?? null,
+          lowerYaw: c?.lowerRefs?.[0]?.group?.rotation?.y ?? null,
+          rawNpcYaw: c?.rawNpcYaw ?? null,
+          requestedPreviewYaw: root.userData.omgurkuPreviewRawYaw ?? null,
+          coatColor: c?.tintColor ?? null,
+        };
+      }),
     };
   }
 
