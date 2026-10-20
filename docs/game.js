@@ -10803,7 +10803,6 @@
             if (arrival.c !== fromC || arrival.r !== fromR) {
               w.root.position.set(arrival.c + 0.5, npcSurfaceY(mapId, arrival.c, arrival.r), arrival.r + 0.5);
               w._legsPrevX = w.root.position.x; w._legsPrevZ = w.root.position.z; // Prevent a teleport from looking like a super-speed run.
-              w.resetRouteState?.(); // Any pending target must be replanned from the actual landing tile.
               window.__farmLog?.(`[npc zone entry] ${w.rec?.id || 'npc'} repositioned ${fromC},${fromR} → ${arrival.c},${arrival.r} in ${mapId}`, 'npc');
             }
             // Paths tried while the zone's terrain grid was unavailable are invalid
