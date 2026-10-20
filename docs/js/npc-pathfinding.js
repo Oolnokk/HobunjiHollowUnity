@@ -36,7 +36,7 @@
       return !!bg?.[r]?.[c] && (!deps.isSolid(bg[r][c].type) || bg[r][c].npcFurnitureCollider === true);
     }
     // Every area (especially a wilderness zone) must validate against its own terrain grid, not the farm's.
-    const g = deps.npcGridForArea?.(area) || (area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid());
+    const g = typeof deps.npcGridForArea === 'function' ? deps.npcGridForArea(area) : (area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid());
     const tile = g?.[r]?.[c];
     if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
