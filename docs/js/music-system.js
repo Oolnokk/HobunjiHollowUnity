@@ -1786,6 +1786,7 @@
     playGameplayCue,
     resetAmbientCueTimer,
     updateAmbientCues,
+    ambientDiagnostics: () => ({ area: _ambientCueState.area, mode: _ambientCueState.mode, bgm: _ambientCueState.currentBgm?._trackUrl || null, cue: _ambientCueState.currentCue?._trackUrl || null, festivalSilenced: festivalSilencesAmbient(deps?.getCurrentArea?.()) }), // Read-only snapshot for headless/mobile audio checks.
     updateLyreDucking,
     updateExteriorBgs,
     updateRainAudio,

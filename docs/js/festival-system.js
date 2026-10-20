@@ -384,16 +384,39 @@
     const rec = (deps.getNpcs?.()||[]).find(npc=>npc.id===id);
     return !rec || rec.dead || rec.deceased || !(deps.getWalkers?.()||[]).some(w=>w.rec?.id===id);
   }
-  function stageDuty(rec) {
-    if (!['foroji_funji','kaboku_kunji'].includes(rec?.id)) return false;
+  const MUSICIANS = ['foroji_funji','kaboku_kunji'];
+  const stageFailures = new Map(); // npcId -> festival day on which they proved unable to reach the stage; the other musician covers.
+  const dutyWatch = new Map(); // npcId -> world hour their current stage shift began without them being on stage.
+  function stageFailed(id) { return stageFailures.get(id) === day(); }
+  function stationFor(id) { return layout()?.npcStations?.find(s=>s.festivalNpcId===id && s.festivalLocaleKind==='bandstand'); }
+  function onStage(id) {
+    const walker = (deps.getWalkers?.()||[]).find(w=>w.rec?.id===id), station = stationFor(id);
+    return !!walker && !!station && walker.area==='town' && Math.hypot(walker.root.position.x-station.col-.5,walker.root.position.z-station.row-.5)<=.5;
+  }
+  function scheduledDuty(rec) { // The shift the band plan assigns, before any watchdog verdict.
     const hour = Number(window.CalendarSystem?.getHour?.())||0; // Incoming performers overlap their shift so the outgoing musician can wait for actual arrival.
-    if (rec.id === 'kaboku_kunji') return hour>=19.5 || (hour<1) || (hour>=14 && musicianAbsent('foroji_funji'));
+    if (rec.id === 'kaboku_kunji') return hour>=19.5 || (hour<1) || (hour>=14 && (musicianAbsent('foroji_funji') || stageFailed('foroji_funji')));
     if (hour>=14 && hour<20) return true;
     if (!festivalHours()) return false;
     const incoming = (deps.getWalkers?.()||[]).find(w=>w.rec?.id==='kaboku_kunji');
-    const station = layout()?.npcStations?.find(s=>s.festivalNpcId==='kaboku_kunji' && s.festivalLocaleKind==='bandstand');
-    return !incoming || incoming.rec.dead || incoming.area!=='town' || !station
-      || Math.hypot(incoming.root.position.x-station.col-.5,incoming.root.position.z-station.row-.5)>.5;
+    return stageFailed('kaboku_kunji') || !incoming || incoming.rec.dead || incoming.area!=='town' || !stationFor('kaboku_kunji') || !onStage('kaboku_kunji');
+  }
+  function stageDuty(rec) {
+    if (!MUSICIANS.includes(rec?.id)) return false;
+    return scheduledDuty(rec) && !stageFailed(rec.id);
+  }
+  // A musician who cannot walk to the stage (blocked route, trapped in a building) is relieved so the festival is never silent.
+  function watchStage() {
+    if (festival()?.id !== 'gorkunash') { dutyWatch.clear(); return; }
+    const now = worldHour();
+    for (const id of MUSICIANS) {
+      const rec = (deps.getNpcs?.()||[]).find(npc=>npc.id===id), walker = (deps.getWalkers?.()||[]).find(w=>w.rec?.id===id);
+      if (!rec || !walker || stageFailed(id) || !scheduledDuty(rec) || onStage(id)) { dutyWatch.delete(id); continue; }
+      if (!dutyWatch.has(id)) dutyWatch.set(id,now);
+      const waited = now - dutyWatch.get(id);
+      const routeFailed = !!walker._npcPathFailKey && Date.now() < (walker._npcPathFailUntil||0) && waited > 20/60; // Pathfinding repeatedly found no route.
+      if (routeFailed || waited > 1.5) { stageFailures.set(id,day()); dutyWatch.delete(id); window.__farmLog?.(`[festival] ${id} cannot reach the bandstand; the other musician covers`,'social'); }
+    }
   }
   function npcTarget(rec) {
     const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
@@ -487,6 +510,7 @@
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
     updateDanceInvitation(elapsed);
+    watchStage();
     window.NpcSharedMeals?.update?.(); // Existing low-frequency gathering tick owns meal decisions; no extra frame loop.
     const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
     if (festival()?.id === 'gorkunash' && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {

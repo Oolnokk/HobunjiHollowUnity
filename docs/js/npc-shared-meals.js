@@ -7,6 +7,7 @@
   let layout = null; // Cached destination source, rebuilt only when the editor/calendar changes its map object.
   let seats = [], bowls = [], pots = [], queues = [], alternatives = [], musicians = [], slots = [], leftovers = []; // Authored station targets grouped once per layout.
   let audience = null; // Centre of the dance floor; mingling and solo dancers face the stage from around it.
+  let commons = null; // Centre of the serving table: guests gather here while they wait for a bowl, a pot or a chair.
   let musicOn = true; // Refreshed once per gathering tick: nobody dances (or keeps dancing) without a musician actually playing.
   const states = new Map(); // Transient per-NPC meal/locale progress; never mutates shared NPC records.
   const byWalker = new Map(); // Refreshed by the existing gathering tick, rather than scanning the crowd in each schedule probe.
@@ -24,7 +25,7 @@
     if (next === layout && !pendingStations) return;
     if (next !== layout) { clear(); layout = next; }
     pendingStations = false;
-    seats = []; bowls = []; pots = []; queues = []; alternatives = []; musicians = []; slots = []; leftovers = []; audience = null;
+    seats = []; bowls = []; pots = []; queues = []; alternatives = []; musicians = []; slots = []; leftovers = []; audience = null; commons = null;
     for (const station of next?.npcStations || []) {
       if (!station.mealRole && station.festivalRole !== 'musician' && station.festivalLocaleKind !== 'dance' && !(station.pose === 'sit' && station.tableId)) continue;
       const target = window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
@@ -39,6 +40,8 @@
     }
     const grouped = dancing()?.pairSlots?.(alternatives) || { slots:[], leftovers:alternatives };
     slots = grouped.slots; leftovers = grouped.leftovers;
+    const serving = bowls.concat(pots);
+    if (serving.length) commons = { area:serving[0].area, x:serving.reduce((s,t)=>s+t.c+.5,0)/serving.length, z:serving.reduce((s,t)=>s+t.r+.5,0)/serving.length };
     if (alternatives.length) audience = { area:alternatives[0].area, x:alternatives.reduce((s,t)=>s+t.c+.5,0)/alternatives.length, z:alternatives.reduce((s,t)=>s+t.r+.5,0)/alternatives.length };
   }
   function occupied(target, id) {
@@ -61,27 +64,27 @@
     if (target?.pose === 'sit') window.FurnitureTableSystem?.setSeatTarget?.(state.id,target);
   }
   function waitTarget(state) {
-    return choose(queues,state) || state.wait; // Full queues wait at the NPC's current clear position, without a shared fallback tile.
+    return choose(queues,state) || stagingSpot(state) || state.wait; // Full queues overflow onto clear ground by the buffet; the NPC's own position is the last resort.
   }
-  function goBuffet(state, now) {
-    state.hasBowl = false; state.hasMeal = false; release(state);
-    const target = choose(bowls,state);
-    setPhase(state,target?'walk-bowl':'queue',target||waitTarget(state),now);
+  function goBuffet(state, now) { // Everyone walks to the buffet's queue first; the service points are reserved only once the guest is actually there.
+    state.hasBowl = false; state.hasMeal = false; state.readyAt = null; release(state);
+    setPhase(state,'queue',waitTarget(state),now);
   }
   function watching(target) { return audience ? { ...target, socialLookAt:{ stimulusId:FACING, x:audience.x, z:audience.z }, socialWatching:true } : target; }
-  function mingleSpot(state) {
-    if (!audience) return null;
-    for (let n = 0; n < 6; n++) { // A loose ring around the floor: listening, chatting, watching the dancers.
-      const angle = random()*Math.PI*2, radius = 3.4 + random()*2.6;
-      const c = audience.x + Math.cos(angle)*radius - .5, r = audience.z + Math.sin(angle)*radius - .5;
-      if (deps.canStandAt?.(audience.area,Math.floor(c),Math.floor(r)) === false) continue;
-      const target = { area:audience.area, c:Math.floor(c), r:Math.floor(r), pose:'stand', stationId:`mingle:${state.id}` };
+  function ringSpot(state, center, kind, near, far) { // A loose ring of free standing tiles around a locale: a real place to wait, never somebody's house.
+    if (!center) return null;
+    for (let n = 0; n < 10; n++) {
+      const angle = random()*Math.PI*2, radius = near + random()*(far-near);
+      const c = Math.floor(center.x + Math.cos(angle)*radius - .5), r = Math.floor(center.z + Math.sin(angle)*radius - .5);
+      if (deps.canStandAt?.(center.area,c,r) === false) continue;
       let crowded = false; // Keep a body's width between loiterers.
-      for (const other of states.values()) if (other.id !== state.id && other.target?.stationId?.startsWith('mingle:') && Math.hypot(other.target.c-target.c,other.target.r-target.r) < 1.2) { crowded = true; break; }
-      if (!crowded) return watching(target);
+      for (const other of states.values()) if (other.id !== state.id && other.target?.stationId?.startsWith(`${kind}:`) && Math.hypot(other.target.c-c,other.target.r-r) < 1.2) { crowded = true; break; }
+      if (!crowded) return { area:center.area, c, r, pose:'stand', stationId:`${kind}:${state.id}` };
     }
     return null;
   }
+  function mingleSpot(state) { const spot = ringSpot(state,audience,'mingle',3.4,6); return spot && watching(spot); } // Listening, chatting, watching the dancers.
+  function stagingSpot(state) { return ringSpot(state,commons,'staging',2.2,4.2); } // Waiting for the buffet without blocking its service points.
   function goOther(state, now) {
     release(state); state.hasBowl = false; state.hasMeal = false; dissolve(state);
     setPhase(state,'other',mingleSpot(state)||state.wait,now,12+random()*18);
@@ -115,7 +118,7 @@
       const wait = walker?.root ? {area:walker.area,c:walker.root.position.x-.5,r:walker.root.position.z-.5,pose:'stand'} : fallback;
       if (!wait) return null;
       state = {id:rec.id,rec,phase:'new',target:null,wait,bonds:deps.companions?.(rec)||new Map(),hasBowl:false,hasMeal:false,bites:0,nextBite:0,
-        helpings:0,songs:0,lastMealAt:deps.minutes(),partnerId:null,lastPartnerId:null,pairUntil:0,solo:false,spouseWasWaiting:false};
+        helpings:0,songs:0,readyAt:null,lastMealAt:deps.minutes(),partnerId:null,lastPartnerId:null,pairUntil:0,solo:false,spouseWasWaiting:false};
       states.set(rec.id,state);
       next(state,deps.minutes(),{arriving:true}); // Arriving guests are hungry, but a lively character may head straight for the floor.
     }
@@ -152,7 +155,7 @@
     const spot = here || chooseFloor(state);
     if (!spot) return goBuffet(state,now);
     if (solo) return setPhase(state,'dance-walk',watching(spot),now);
-    setPhase(state,'dance-wait',spot,now,12+random()*14*(1.2-dancing().traits(state.rec).shyness));
+    setPhase(state,'dance-wait',spot,now,24+random()*24*(1.2-dancing().traits(state.rec).shyness)); // Patient enough (roughly 12-25 real seconds) for a partner to finish eating and arrive.
   }
   function dissolve(state) { // Clears pairing bookkeeping; the partner notices on its next tick.
     if (state.partnerId) state.lastPartnerId = state.partnerId;
@@ -249,6 +252,11 @@
     }
     return true;
   }
+  function headOfQueue() { // The guest who has been standing in line longest takes the next bowl.
+    let head = null;
+    for (const state of states.values()) if (state.phase === 'queue' && state.readyAt !== null && (!head || state.readyAt < head.readyAt)) head = state;
+    return head;
+  }
   function update() {
     if (!deps?.enabled?.()) { if (states.size) clear(); return; }
     if (deps.paused?.()) return;
@@ -269,8 +277,10 @@
       if (state.phase === 'other') { if (now >= state.until) next(state,now); continue; }
       if (state.phase === 'dance-wait' || state.phase === 'dance-walk' || state.phase === 'dancing') { danceTick(state,walker,now); continue; }
       if (state.phase === 'queue') {
-        const target = choose(bowls,state); if (target) setPhase(state,'walk-bowl',target,now);
-        else if (now-state.since>35) goOther(state,now);
+        if (!arrived(walker,state.target)) { if (now-state.since>120) goOther(state,now); continue; } // Long walks from a house or workplace are fine; a stuck route is not.
+        if (state.readyAt === null) state.readyAt = now;
+        if (headOfQueue()?.id === state.id) { const target = choose(bowls,state); if (target) { setPhase(state,'walk-bowl',target,now); continue; } }
+        if (now-state.readyAt>45) goOther(state,now); // Gave up waiting: wander off and come back later.
         continue;
       }
       if (state.phase === 'walk-bowl' && arrived(walker,state.target)) setPhase(state,'take-bowl',state.target,now,1);

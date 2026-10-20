@@ -124,8 +124,8 @@ const eaters = new Map(); let lengths = [];
 for (let i = 0; i < 800; i++) {
   step(.5);
   for (const a of meals.diagnostics().actors) {
-    if (a.phase === 'eating' && !eaters.has(a.id)) eaters.set(a.id,minutes);
-    else if (a.phase !== 'eating' && eaters.has(a.id)) { lengths.push(minutes-eaters.get(a.id)); eaters.delete(a.id); }
+    if (a.phase === 'eating' && !eaters.has(a.id)) eaters.set(a.id,i === 0 ? NaN : minutes); // Plates already under way when measuring begins are not counted.
+    else if (a.phase !== 'eating' && eaters.has(a.id)) { if (a.phase !== 'musician' && !Number.isNaN(eaters.get(a.id))) lengths.push(minutes-eaters.get(a.id)); eaters.delete(a.id); } // Going on stage cuts a plate short.
   }
 }
 assert(lengths.length > 10,'many meals finished');

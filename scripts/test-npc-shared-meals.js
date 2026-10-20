@@ -55,6 +55,7 @@ function arrive(w) {
   w.root.position.x=target.c+.5;w.root.position.z=target.r+.5;tick();
 }
 function serve(w) {
+  if (phase(w) === 'queue') arrive(w); // Guests walk to the buffet queue first; service points are reserved only on arrival.
   assert.equal(phase(w),'walk-bowl'); arrive(w); assert.equal(phase(w),'take-bowl');
   assert.notEqual(w.currentScheduleTarget.pose,'sit');
   tick(1.1); assert.equal(phase(w),'walk-pot'); arrive(w); assert.equal(phase(w),'fill-bowl');
@@ -69,7 +70,11 @@ assert(meals.diagnostics().pendingStations);
 scheduling.registerNpcStations(map.npcStations,'town');meals.update();
 assert.equal(meals.diagnostics().pendingStations,false,'late station registration is retried for the same map');
 const dzibim=actor('dzibim_khibu'), dzahiri=actor('dzahiri_khibu');
+assert.equal(phase(dzibim),'queue','guests approach the buffet before reserving a bowl');
+arrive(dzibim);arrive(dzahiri);
+assert.equal(phase(dzibim),'walk-bowl','the guest waiting longest steps up first');
 assert.equal(phase(dzahiri),'queue','second NPC cannot use the same bowl spot');
+assert.notEqual(meals.targetFor(dzahiri.rec).stationId,meals.targetFor(dzibim.rec).stationId);
 const firstTarget=meals.targetFor(dzibim.rec);
 for(let n=0;n<100;n++)assert.equal(meals.targetFor(dzibim.rec),firstTarget,'schedule probes retain their cached target');
 roll=.5; // Mid-length plates (10-20 game minutes) so the assertions below fall inside the meal.
@@ -83,7 +88,7 @@ visible=false;const offscreen=animations;tick(5);assert.equal(animations,offscre
 assert(meals.diagnostics().actors.find(s=>s.id===dzibim.rec.id).bites>0);
 roll=.9;tick(30);assert.equal(phase(dzibim),'other','a completed meal can change locales');
 assert.notEqual(dzibim.currentScheduleTarget.pose,'sit');
-roll=0;tick(50);assert.equal(phase(dzibim),'walk-bowl','a locale visit can return to the buffet');
+roll=0;tick(50);assert.equal(phase(dzibim),'queue','a locale visit can return to the buffet');
 serve(dzibim);tick(25);assert(['walk-bowl','queue'].includes(phase(dzibim)),'a completed meal repeats through the buffet queue');
 const musician=actor('foroji_funji');tick();assert.equal(phase(musician),'musician');assert.equal(musician.currentScheduleTarget.toolKey,'kurraya');
 dzibim.currentScheduleTarget={overrideOwner:'friendly-follow',pose:'stand'};meals.update();
@@ -95,7 +100,7 @@ for (const station of map.npcStations.filter(s=>s.pose==='sit'&&s.tableId)) {
   const target=scheduling.resolveNpcStationTarget(station.id);
   walkers.push({rec:{id:`occupied:${station.id}`},area:'town',root:{position:{x:target.c+.5,z:target.r+.5}},currentScheduleTarget:target});
 }
-const waiting=actor('dzibim_khibu');arrive(waiting);tick(1.1);arrive(waiting);tick(2.1);
+const waiting=actor('dzibim_khibu');arrive(waiting);arrive(waiting);tick(1.1);arrive(waiting);tick(2.1);
 assert.equal(phase(waiting),'seek-seat');assert.notEqual(waiting.currentScheduleTarget.pose,'sit');
 walkers.shift();tick();assert.equal(phase(waiting),'walk-seat');
 // Execute the festival owner's actual stage override and readiness-based handoff.
@@ -110,6 +115,16 @@ minutes=20*60;assert.equal(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'
 walkers.push({rec:kaboku,area:'town',root:{position:{x:incomingTarget.c+.5,z:incomingTarget.r+.5}}});
 assert.notEqual(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'kurraya','outgoing host is released after relief arrives');
 assert.equal(scheduling.resolveNpcScheduleTarget(kaboku).toolKey,'kurraya');
+// A musician who cannot reach the stage (blocked route) is relieved, so the other one covers and the band never goes silent.
+{
+  const stuck={rec:foroji,area:'map_i_general_store',root:{position:{x:2.5,z:6.5}},_npcPathFailKey:'x',_npcPathFailUntil:Date.now()+1e7};
+  walkers.length=0;walkers.push(stuck,{rec:kaboku,area:'map_i_carpenters',root:{position:{x:12.5,z:8.5}}});
+  minutes=14.5*60;
+  window.FestivalSystem.update();minutes+=25;window.FestivalSystem.update();
+  assert.equal(scheduling.resolveNpcScheduleTarget(kaboku).toolKey,'kurraya','a stage-bound musician with no route is replaced by the other');
+  let relieved=null;try{relieved=scheduling.resolveNpcScheduleTarget(foroji);}catch(error){} // The ordinary schedule needs services this isolated fixture does not provide.
+  assert.notEqual(relieved?.toolKey,'kurraya','the relieved musician leaves the stage assignment');
+}
 console.log('Shared meals: real buffet collision/grass, queues, physical arrivals, family tables, distinct reservations, visibility, repeats, locale changes, music and interruption cleanup passed.');
 
 // A permanently blocked serving pot must not leave its guest holding the bowl station forever.
@@ -120,7 +135,8 @@ const isolated={NpcScheduling:{resolveNpcStationTarget:id=>blockedStations.find(
 vm.runInNewContext(fs.readFileSync('docs/js/npc-shared-meals.js','utf8'),{window:isolated});
 const blockedLayout={npcStations:blockedStations};
 isolated.NpcSharedMeals.init({enabled:()=>true,getLayout:()=>blockedLayout,getWalkers:()=>[blockedWalker],minutes:()=>blockedTime,random:()=>0,canStandAt:(area,c)=>c!==1});
-isolated.NpcSharedMeals.targetFor(blockedRec);isolated.NpcSharedMeals.update();blockedTime=2;isolated.NpcSharedMeals.update();
+const place=()=>{const t=isolated.NpcSharedMeals.targetFor(blockedRec);blockedWalker.root.position.x=t.c+.5;blockedWalker.root.position.z=t.r+.5;};
+isolated.NpcSharedMeals.targetFor(blockedRec);isolated.NpcSharedMeals.update();place();isolated.NpcSharedMeals.update();place();isolated.NpcSharedMeals.update();blockedTime=2;isolated.NpcSharedMeals.update();
 assert.equal(isolated.NpcSharedMeals.diagnostics().actors[0].phase,'seek-pot');
 blockedTime=40;isolated.NpcSharedMeals.update();
 assert.equal(isolated.NpcSharedMeals.diagnostics().actors[0].phase,'other');

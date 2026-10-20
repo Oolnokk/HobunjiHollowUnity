@@ -120,3 +120,7 @@ Pairs claim two adjacent authored dance spots (`pairSlots` groups the floor's st
 While Gorkunash's gathering hours (15:00–01:00) are active the ordinary town soundtrack and ambient cues are suppressed (`FestivalSystem.silencesTownMusic`, consulted by `music-system.js` for town BGM and cue eligibility only; combat music, weather and other ambience are untouched).
 
 Tests: `node scripts/run-tests.js npc-festival-dance npc-shared-meals`.
+
+**Buffet flow.** Guests first walk to a real queue spot (or a clear tile by the serving table) and reserve the bowl point only when they are at the front, so one guest's long walk from a house never blocks the line. The authored `buffet_queue_*` slots sit on the west side of the bowl stack (before the bowls, with the pots further east) so the line moves with the flow of service.
+
+**Stage reliability.** `FestivalSystem` watches whichever musician is due on the bandstand. If their route fails for 20 game minutes, or they have not arrived after 90, they are relieved for that day and the other musician takes the stage (`stageDuty`/`watchStage`). Known content issue found while testing: in `map_i_general_store` Foroji's "Checking Shelves" spot (2,6) is a dead-end aisle sealed by the stool at (4,6), so a direct route from the aisle to the town fails; Kaboku covers the whole gathering in that case.
