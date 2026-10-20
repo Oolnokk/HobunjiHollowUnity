@@ -183,7 +183,10 @@
     const unresolved = [...source.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)]
       .map(match => match[1]).filter(key => !(key in values));
     if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
-    return source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
+    const standardGreeting = source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
+    return targetId === 'player' && options.walker?.rec
+      ? window.DialogueContent?.contextGreeting?.(options.walker.rec, { standardGreeting, targetName: values.targetName, day, omitTargetName: !!options.omitTargetName }) || standardGreeting
+      : standardGreeting;
   }
 
   function friendSetFor(npcId) {
@@ -856,7 +859,7 @@
     const omitTargetName = targetId === 'player' && !mayUseActualPlayerName && !lowFavorNickname; // Used to clean punctuation only when neither an actual name nor a nickname may be spoken.
     const line = override?.text
       ? (mayUseActualPlayerName ? override.text : rewriteResolvedGreetingTargetName(override.text, configuredPlayerGreetingName(), lowFavorNickname))
-      : templateLine(targetName, speakerId, targetId, day, { omitTargetName });
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName, walker });
     show(walker.root, line, {
       speakerId,
       profile: walker.profile,

@@ -111,7 +111,17 @@
     const minute = parseNpcTimeMinutes(time); // Used to place the authored arrival/departure clock time on that day.
     return dayIndex >= 0 && minute !== null ? dayIndex * 1440 + minute : null;
   }
+  const presenceProviders = new Map(); // NPC-keyed event windows reuse visitor arrival/departure and flood sheltering.
+  function registerPresenceProvider(npcId, provider) {
+    if (!npcId) return false;
+    if (typeof provider === 'function') presenceProviders.set(String(npcId), provider);
+    else presenceProviders.delete(String(npcId));
+    return true;
+  }
+  function hasPresenceSchedule(rec) { return !!rec?.visitorPresence || presenceProviders.has(rec?.id); }
   function getVisitorPresence(rec) {
+    const provided = presenceProviders.get(rec?.id)?.(rec);
+    if (provided) return provided;
     const presence = rec?.visitorPresence; // Used as the optional recurring lifecycle authored by schedule-overrides.json.
     if (!presence?.entrance || !Array.isArray(presence.visits)) return null;
     const dayIndex = VISITOR_WEEKDAYS.indexOf(window.CalendarSystem.currentWeekdayName()); // Used to locate the current game time within the visitor week.
@@ -714,6 +724,8 @@
     resolveNpcStationTarget,
     findStationsByRole,
     getVisitorPresence,
+    registerPresenceProvider,
+    hasPresenceSchedule,
     resolveNpcScheduleTarget,
     registerTargetOverride,
     applyTownFloodShelter,

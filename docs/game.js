@@ -11669,7 +11669,7 @@
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
           npcSpawnDiagnostics.set(rec.id, { stage: target ? 'Queued for avatar build' : 'No schedule target', error: null });
-          if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
+          if (!target) { if (!window.NpcScheduling.hasPresenceSchedule(rec)) deferred.push(rec); continue; }
           spawnable.push({ rec, target });
         }
         // Each makeNpcWalker is a long async build (portrait composite, world
@@ -11686,7 +11686,7 @@
         const spawnWorker = async () => {
           while (nextSpawn < spawnable.length) {
             const { rec, target } = spawnable[nextSpawn++];
-            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
+            if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
             try {
               const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
@@ -11697,7 +11697,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule', rec?.id, e);
             }
-            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
         };
         await Promise.all(Array.from({ length: Math.min(NPC_SPAWN_CONCURRENCY, spawnable.length) }, spawnWorker));
@@ -11734,7 +11734,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
               stillDeferred.push(rec); continue;
             }
-            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
+            if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
             try {
               const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
@@ -11745,7 +11745,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
             }
-            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
@@ -12613,7 +12613,7 @@
         if (visitorArrivalCheckT > 0) return;
         visitorArrivalCheckT = 0.5;
         for (const rec of scheduledNpcRecords.values()) {
-          if (!rec?.visitorPresence || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+          if (!window.NpcScheduling.hasPresenceSchedule(rec) || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
           const target = resolveNpcScheduleTarget(rec); // Used to return the entrance only while one of this visitor's windows is active.
           if (!target?.visitorArrival) continue;
           visitorSpawnPending.add(rec.id);

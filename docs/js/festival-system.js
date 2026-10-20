@@ -339,6 +339,13 @@
     const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
     if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return release();
     if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return release();
+    if (festival()?.id === 'gorkunash') {
+      if (rec.id === 'father_hunundi_hodu') return release(); // The presence schedule owns his walk out of town.
+      if (rec.id === 'kinami_kunji') {
+        release();
+        return window.FestivalDialogue?.homeTarget?.(rec) || null;
+      }
+    }
     const stations=layout()?.npcStations||[], index=residents().findIndex(npc=>npc.id===rec.id);
     if(index<0)return release();
     const hour=Number(window.CalendarSystem.getHour())||0, shift=hour>=15?hour-15:hour+9;
@@ -466,11 +473,13 @@
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
-      latestChange:'Direct chair and pot interactions; authored surface furniture; explicit reusable table members; social-wheel participation anywhere.' };
+      festivalDialogue:window.FestivalDialogue?.diagnostics?.(),
+      latestChange:'Authored evening Gorkunash dialogue and greetings; Oliphanti includes Mashtzarr and Mammakh; Kinami stays home and Hunundi departs through an existing exit.' };
   }
   function init(injected) {
     deps = injected;
     residentCacheAt = -Infinity;
+    window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
     window.FurnitureTableSystem?.registerService?.('gorkunash-drinks', {
       enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
       buttons: () => claimed('liquor') ? [] : [{icon:'🍷',label:'Take a bottle',action:'obj_take_bottle',style:'primary',allowed:!deps?.isBlocked?.()}],
