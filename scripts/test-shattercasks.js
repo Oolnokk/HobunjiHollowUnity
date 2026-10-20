@@ -47,6 +47,15 @@ const authorHtml=fs.readFileSync(path.join(root,'docs/tools/furniture-avatar-aut
 assert(authorHtml.includes('carryable-objects.js?v=') && author.includes('billboardAnchor') &&
   author.includes('handTargets') && author.includes('exportData=function'),
   'furniture author exports invisible held-item plane anchor and both editable grip points');
+assert(authorHtml.includes("'docs/config/furniture-authored/shattercaskBlasting.json'"),
+  'Shattercask is a known repository furniture entry even before GitHub tree discovery');
+assert(authorHtml.includes('RAWGITHACK_BUILD_REF') &&
+  authorHtml.includes("encodeURIComponent(RAWGITHACK_BUILD_REF || 'main')"),
+  'furniture catalog discovers files at the active pinned build rather than always main');
+assert(authorHtml.includes('authoredProject&&$(\'replaceOnRepoImport\').checked') &&
+  authorHtml.includes('loadData(data); // Retain the original geometry, emitters, surfaces, and carryable anchors/grips.'),
+  'repository authored furniture imports retain complete anchor/grip metadata and emitters');
+
 
 assert(html.includes('id="devSpawnShattercaskBtn"'),'dev arena has a Shattercask spawn button');
 assert(devSpawner.includes("window.Shattercasks.spawnRandomInDevArena()"),'arena button dispatches to the runtime');
