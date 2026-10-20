@@ -36,6 +36,7 @@
   const carriedWorldPosition = THREE.Vector3 && new THREE.Vector3();
   const heldAnchorOffset = THREE.Vector3 && new THREE.Vector3();
   const heldAnchorQuat = THREE.Quaternion && new THREE.Quaternion();
+  const authoredAnchorQuat = THREE.Quaternion && new THREE.Quaternion(); // Reused each frame; no Quaternion allocation in carried update.
   const heldAnchorEuler = THREE.Euler && new THREE.Euler();
   const posteriorLocal = THREE.Vector3 && new THREE.Vector3();
   const posteriorOffset = THREE.Vector3 && new THREE.Vector3();
@@ -225,7 +226,10 @@
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
     if(vase.group.parent!==body)body.add(vase.group);
     const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
-    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+    const playerSpecies=String(body.userData?.speciesId||body.userData?.species||'mao-ao').toLowerCase();
+    const playerGender=String(body.userData?.gender||'male').toLowerCase();
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${playerSpecies}::${playerGender}`]
+      ||window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
     const posteriorY=window.PlayerBodyTransformComposer?.getPosteriorY?.();
     // A live composer value is authoritative; the profile is a safe startup
     // fallback while player avatar/hand meshes load asynchronously.
@@ -246,8 +250,8 @@
       heldAnchorQuat.copy(bodyWorldQuat).invert().multiply(holderWorldQuat);
     }else heldAnchorQuat.identity();
     heldAnchorEuler.set(finite(r.x)*Math.PI/180,finite(r.y)*Math.PI/180,finite(r.z)*Math.PI/180);
-    const anchorRotation=new THREE.Quaternion().setFromEuler(heldAnchorEuler).invert();
-    vase.group.quaternion.copy(heldAnchorQuat).multiply(anchorRotation);
+    authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
+    vase.group.quaternion.copy(heldAnchorQuat).multiply(authoredAnchorQuat);
     const size=Math.max(.1,finite(cfg.size,1));
     vase.group.scale.setScalar(1/size);
     // posteriorOffset is defined in portrait/body local coordinates, not in
