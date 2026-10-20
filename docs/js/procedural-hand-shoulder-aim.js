@@ -242,7 +242,18 @@
       const shoulder = shoulderInParent(side); // Resolved rig/manual/scanned shoulder point in the socket parent's local space.
       if (!socket || !shoulder) return false;
       socket.position.x = shoulder.x;
-      socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
+      // Omgurku is a waist-up portrait, not a full-height upright actor.
+      // Its independent animal/rider joint already uses the posterior;
+      // applying the generic full-body shoulder-to-posterior drop again
+      // leaves the otherwise correctly parented free hand hanging in the
+      // middle of the quadruped. Match Assembly Lab V10's actual
+      // handAttachY-relative idle position while keeping shoulder X
+      // and all held-weapon ownership intact.
+      const upperOnlyHandY = avatarRoot.userData?.omgurkuNpc
+        ? Number(avatarRoot.userData?.handAttachY) : NaN;
+      const handRestY = Number.isFinite(upperOnlyHandY)
+        ? upperOnlyHandY : posteriorYInParent() + armLengthOffsetY();
+      socket.position.y = handRestY + (Number(fallbackPose?.position?.y) || 0);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       return true;
