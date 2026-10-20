@@ -239,18 +239,27 @@
     const previewRaw = record.root.userData.omgurkuPreviewRawYaw;
     const preview = Number.isFinite(previewRaw);
     const rawYaw = preview ? previewRaw : (Number.isFinite(c.rawNpcYaw) ? c.rawNpcYaw : rootYaw);
+    const authoredLabPreview = preview && c.previewDeadzoneRadii;
+    // V10 mode: two independent instances of the game's perpClamp with the
+    // SAME camera-relative perpendiculars and separately adjustable radii.
+    // Movement yaw is logical; the two visual yaws ease independently.
     if (preview && perp.perpClamp) {
-      const desired = perp.perpClamp(c.npcFacing ||= {},rawYaw,npcPerps,perp.PERP_DEAD_RAD).effectiveTarget;
+      const riderRadius = authoredLabPreview ? c.previewDeadzoneRadii.rider*Math.PI/180 : perp.PERP_DEAD_RAD;
+      const clamped = perp.perpClamp(c.npcFacing ||= {},rawYaw,npcPerps,riderRadius);
+      const desired = clamped.snapTo ?? clamped.effectiveTarget;
       const rendered = Number.isFinite(c.previewNpcYaw)
-        ? c.previewNpcYaw + diffAngle(desired,c.previewNpcYaw) * Math.min(1,dt*10)
+        ? c.previewNpcYaw + diffAngle(desired,c.previewNpcYaw)*Math.min(1,dt*(authoredLabPreview?11:10))
         : desired;
-      c.previewNpcYaw = rendered;
-      c.upper.rotation.y = diffAngle(rendered,rootYaw);
+      c.previewNpcYaw=rendered;
+      c.upper.rotation.y=diffAngle(rendered,rootYaw)+(Number(record.root.userData.omgurkuPreviewAttackBodyYaw)||0);
     }
     // Real NPC walkers already clamp the portrait root; never re-clamp game NPCs.
     let target = rawYaw, snap = false;
     const dead = perp.CREATURE_PERP_DEAD_RAD;
-    if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
+    if (authoredLabPreview && perp.perpClamp) {
+      const result = perp.perpClamp(c.animalFacing,rawYaw,npcPerps,c.previewDeadzoneRadii.animal*Math.PI/180);
+      target = result.snapTo ?? result.effectiveTarget;
+    } else if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
       const result = perp.creatureSnapSwayTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
       target = result.target; snap = result.snap;
     } else if (perp.CREATURE_PLANE_ROT_MODE === 'sway' && perp.creatureDeadzoneTarget) {
@@ -259,7 +268,7 @@
       target = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead).effectiveTarget;
     }
     c.animalYaw = snap || !Number.isFinite(c.animalYaw) ? target
-      : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*10);
+      : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*(authoredLabPreview?11:10));
     for (const ref of c.lowerRefs) {
       ref.group.rotation.y = diffAngle(c.animalYaw,rootYaw);
       // The scene traversal already completed before onBeforeRender, so
@@ -283,6 +292,18 @@
         };
       }
     }
+  }
+
+  function setPreviewDeadzones(root, radii) {
+    const c=root?.userData?.omgurkuComposite;
+    if (!c) return false;
+    if (!radii) { c.previewDeadzoneRadii=null; return true; }
+    c.previewDeadzoneRadii={
+      animal: Math.max(0,Math.min(70,Number(radii.animal) || 0)),
+      rider: Math.max(0,Math.min(70,Number(radii.rider) || 0)),
+    };
+    c.animalFacing={};c.npcFacing={};
+    return true;
   }
 
   function setPreviewFacing(root, radians) {
@@ -532,7 +553,7 @@
 
   window.HobunjiOmgurkuSpecies = Object.freeze({
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
-    install, setPlacement, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setPreviewFacing, setPreviewDeadzones, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();
