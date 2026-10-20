@@ -309,7 +309,7 @@
     const saddleX = Math.sin(yaw) * saddleZ;
     const rotatedZ = Math.cos(yaw) * saddleZ;
     c.upper.position.x = placement.lowerOffsetX + placement.upperOffsetX + saddleX;
-    c.upper.position.z = rotatedZ + placement.joinDepth + placement.upperOffsetZ;
+    c.upper.position.z = placement.lowerOffsetZ + rotatedZ + placement.joinDepth + placement.upperOffsetZ;
     const join = record.root.userData.omgurkuJoin;
     if (join) { join.x = saddleX; join.z = rotatedZ + placement.lowerOffsetZ; }
   }
