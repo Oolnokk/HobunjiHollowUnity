@@ -17,6 +17,18 @@ assert.equal(species.playerSelectable, false);
 assert.deepEqual(species.genders, ['male']); // No female Omgurku assets were included in main.
 assert(index.entries.some(entry => entry.speciesId === 'omgurku' && entry.path === './omgurku.json'));
 assert.equal(species.parentSpecies, 'engh-sho');
+assert(species.hybridPlacement && typeof species.hybridPlacement === 'object');
+for (const key of ['lowerWidth','lowerHeight','visibleFloorCorrection','saddleU','saddleV','joinDepth','riderScale',
+  'upperOffsetX','upperOffsetY','upperOffsetZ','lowerOffsetX','lowerOffsetY','lowerOffsetZ']) {
+  assert(Number.isFinite(species.hybridPlacement[key]), 'authored placement: '+key);
+}
+assert(read('docs/tools/animation-author/index.html').includes('omgurku-calibration/index.html'), 'Animation Author link');
+const calibrationHtml = read('docs/tools/omgurku-calibration/index.html');
+const calibrationScript = read('docs/tools/omgurku-calibration/calibration.js');
+assert(calibrationHtml.includes('calibration.js') && calibrationHtml.includes('spriteCanvas'));
+assert(calibrationHtml.includes('Download omgurku.json') && calibrationHtml.includes('Apply to game on this browser'));
+assert(calibrationScript.includes('HobunjiOmgurkuSpecies') && calibrationScript.includes('hybridPlacement'));
+new vm.Script(calibrationScript, {filename:'calibration.js'});
 for (const slot of ['hat', 'hood', 'hairFront', 'hairBack', 'hairSide', 'hairSideL', 'facialHair']) {
   assert.deepEqual(species.male.exclusiveSlotCosmetics[slot], ['none'], slot);
 }
@@ -42,7 +54,7 @@ class Group {
   constructor() {
     this.userData = {};
     this.position = new Vector3();
-    this.scale = { setScalar() {} };
+    this.scale = { setScalar() {}, set(x,y,z) { this.x=x; this.y=y; this.z=z; } };
     this.visible = true;
     this.children = [];
     this.parent = null;
@@ -126,6 +138,14 @@ async function main() {
   gaitTick();
   assert.match(root.userData.omgurkuComposite.frame, /^run[12]$/);
   const oldJoin = root.userData.omgurkuJoin.z;
+  const initialWidth = lowerBuilds[0].options.modelWidth;
+  window.HobunjiOmgurkuSpecies.setPlacement({ lowerWidth: initialWidth * 1.2, lowerHeight: .95,
+    lowerOffsetX: .2, lowerOffsetY: .3, lowerOffsetZ: .1, upperOffsetY: .05 });
+  assert(Math.abs(lowerBuilds[0].group.scale.x - 1.2) < 1e-6, 'live width calibration');
+  assert.equal(lowerBuilds[0].group.position.x, .2, 'per-half lower offset');
+  assert.equal(lowerBuilds[0].group.position.z, .1, 'per-half depth offset');
+  assert(root.userData.omgurkuJoin.y > .3, 'saddle follows lower floor offset');
+  assert.equal(window.HobunjiOmgurkuSpecies.debugSnapshot().placement.lowerWidth, initialWidth * 1.2);
   window.HobunjiOmgurkuSpecies.setPlacement({ saddleU: 0.4 });
   assert.notEqual(root.userData.omgurkuJoin.z, oldJoin);
   api.disposeAvatarModel(root);
