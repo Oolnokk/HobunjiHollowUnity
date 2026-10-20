@@ -186,7 +186,8 @@
     await loadScript('../../js/portrait-utils.js?v=20261016h340e25a', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/den-cliff-placement.js', () => !!window.DenCliffPlacement?.findSites); // Den-entrance templates fit dens into cliffs inside the generator.
-    await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
+    await loadScript('../../js/wilderness-archipelago.js?v=20261020islandatlas1', () => !!window.WildernessArchipelago?.generate); // Eastern Mire island terrain must be available in the locale 3D preview too.
+    await loadScript('../../js/wilderness-map-generator.js?v=20261020islandatlas1', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
     await loadScript('../../js/locale-cave-runtime.js', () => !!window.LocaleCaveRuntime?.registerWorkspace);
     await loadScript('../../js/zone-den-totem-features.js', () => !!window.ZoneDenTotemFeatures?.buildAnimalDenMeshes);
