@@ -37,6 +37,12 @@
   const heldAnchorOffset = THREE.Vector3 && new THREE.Vector3();
   const heldAnchorQuat = THREE.Quaternion && new THREE.Quaternion();
   const heldAnchorEuler = THREE.Euler && new THREE.Euler();
+  const posteriorLocal = THREE.Vector3 && new THREE.Vector3();
+  const posteriorOffset = THREE.Vector3 && new THREE.Vector3();
+  const holderWorldQuat = THREE.Quaternion && new THREE.Quaternion();
+  const bodyWorldQuat = THREE.Quaternion && new THREE.Quaternion();
+  const defaultPosteriorY = .42;
+  function finite(v, defaultValue=0){const n=Number(v);return Number.isFinite(n)?n:defaultValue;}
   let emitterVisibilityElapsed = 0; // Cull only on the 140ms poll cadence, not every frame.
 
   function deps() { return window.Combat?.deps; }
@@ -209,18 +215,47 @@
     return d?.getHeldItemHandTarget?.()?.holder
       ||d?.playerMesh?.children?.find(o=>o?.type==='Group'&&o.userData?.isPngPlane&&!String(o.name||'').trim())||null;
   }
+  // "billboardAnchor.position" is the exact point on the authored furniture
+  // which mounts to the character's posterior, plus optional posteriorOffset.
+  // Solve in playerMesh-local coordinates: world placement of the dropped item
+  // must never leak into X/Z while carrying. Both position and scale are
+  // transformed before subtraction (old code omitted the scale).
   function alignHeldVase(vase) {
     const body=carryDeps()?.playerMesh,holder=heldItemHolder();
-    if(!body||!holder||!heldAnchorQuat||!heldAnchorOffset||!vase?.group?.quaternion)return false;
+    if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
     if(vase.group.parent!==body)body.add(vase.group);
-    const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{};
-    heldAnchorEuler.set((Number(r.x)||0)*Math.PI/180,(Number(r.y)||0)*Math.PI/180,(Number(r.z)||0)*Math.PI/180);
-    heldAnchorQuat.setFromEuler(heldAnchorEuler).invert();
-    vase.group.quaternion.copy(holder.quaternion).multiply(heldAnchorQuat);
-    heldAnchorOffset.set(Number(a.x)||0,Number(a.y)||0,Number(a.z)||0)
-      .applyQuaternion(vase.group.quaternion);
-    vase.group.position.copy(holder.position).sub(heldAnchorOffset);
-    vase.group.scale.setScalar((holder.scale?.x||1)/Math.max(.1,Number(cfg.size)||1));
+    const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+    const posteriorY=window.PlayerBodyTransformComposer?.getPosteriorY?.();
+    // A live composer value is authoritative; the profile is a safe startup
+    // fallback while player avatar/hand meshes load asynchronously.
+    const modelHeight=finite(body?.userData?.portraitModelHeight,.9);
+    const computed=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
+      profile?.posteriorRule,modelHeight,finite(body?.userData?.handAttachY,modelHeight/2));
+    const y=Number.isFinite(posteriorY)&&posteriorY!==0?posteriorY
+      :Number.isFinite(computed)?computed:defaultPosteriorY;
+    const origin=profile?.anchors?.posterior?.position||{};
+    posteriorLocal.set(finite(origin.x),y,finite(origin.z));
+    // Preserve the rendered character's orientation, including its billboard
+    // deadzone, without ever copying the generic holder's position or local Z.
+    body.updateWorldMatrix?.(true,false);
+    bodyWorldQuat.identity();
+    body.getWorldQuaternion?.(bodyWorldQuat);
+    if(holder?.getWorldQuaternion){
+      holder.getWorldQuaternion(holderWorldQuat);
+      heldAnchorQuat.copy(bodyWorldQuat).invert().multiply(holderWorldQuat);
+    }else heldAnchorQuat.identity();
+    heldAnchorEuler.set(finite(r.x)*Math.PI/180,finite(r.y)*Math.PI/180,finite(r.z)*Math.PI/180);
+    const anchorRotation=new THREE.Quaternion().setFromEuler(heldAnchorEuler).invert();
+    vase.group.quaternion.copy(heldAnchorQuat).multiply(anchorRotation);
+    const size=Math.max(.1,finite(cfg.size,1));
+    vase.group.scale.setScalar(1/size);
+    // posteriorOffset is defined in portrait/body local coordinates, not in
+    // original world-tile coordinates or the furniture's rotating local frame.
+    posteriorOffset.set(finite(o.x),finite(o.y),finite(o.z)).applyQuaternion(heldAnchorQuat);
+    heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
+      .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
+    vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
     return true;
   }
   function heldHandTarget(){
