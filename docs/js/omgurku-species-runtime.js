@@ -308,9 +308,10 @@
 
   function setPreviewFacing(root, radians) {
     if (!root?.userData?.omgurkuComposite) return false;
+    // Raw movement targets update each frame; never reset the persistent
+    // per-half clamp hysteresis on ordinary locomotion. Reset only when the
+    // user changes a radius via setPreviewDeadzones.
     root.userData.omgurkuPreviewRawYaw = Number(radians) || 0;
-    root.userData.omgurkuComposite.npcFacing = {};
-    root.userData.omgurkuComposite.animalFacing = {};
     return true;
   }
 
