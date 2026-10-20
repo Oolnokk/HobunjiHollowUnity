@@ -1591,7 +1591,7 @@
       if (o === c || o.health <= 0) continue;
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
-      if (dist <= 0.001 || dist >= personalSpacePx) continue;
+      if (!(dist > 0.001 && dist < personalSpacePx)) continue; // Preserve the old NaN/non-finite neighbor rejection.
       const push = personalSpacePx - dist;
       px += (dx / dist) * push; py += (dy / dist) * push;
       const nextX = Math.floor(px / banditSpacingCellSize);
