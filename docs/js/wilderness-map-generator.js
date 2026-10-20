@@ -8483,8 +8483,8 @@
       generateArchipelagoTerrain();
       applyManualPlateauPaintingRules();
       map.preselectedEntrySide = settings.entrySide === 'random' ? 'west' : settings.entrySide;
-      generateRamps();
       syncTileHeights();
+      generateRamps();
       generateCliffSkirts(); // Open sea is exempt from plateau waterfalls.
       chooseEntry();
       chooseTradeExit();
