@@ -103,7 +103,7 @@
   function ensureMarkerScriptLoaded() {
     if (window.WildernessLabPreview?.markerColors || document.querySelector('script[data-wilderness-lab-markers]')) return;
     const script = document.createElement('script'); // Dynamically loaded because older lab HTML already includes this feature module before lab-preview.js.
-    script.src = 'lab-markers.js';
+    script.src = 'lab-markers.js?v=20261020clouddensity1';
     script.async = false;
     script.dataset.wildernessLabMarkers = '1';
     script.addEventListener('load', () => {
