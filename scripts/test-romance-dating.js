@@ -123,7 +123,8 @@ const opened = [];
 const toasts = [];
 let nearby = tooth;
 const interior = [{ id: 'bed1', key: 'doubleBed', area: 'interior', col: 4, row: 4, rotYDeg: 0 }];
-W.NpcPathfinding = { isNpcTileWalkable: () => true };
+let combatOn = false; // Simulates a live hostile state for follower and NPC wheel tests.
+W.NpcPathfinding = { isNpcTileWalkable: () => true, canNpcBeeline: () => true, findNpcPath: () => [] };
 W.HousePieces = { debugPieceFeatures: () => [{ id: 'house', features: [{ type: 'entrance', doorTile: '10,10', approachTile: '10,11' }] }] };
 W.NpcScheduling.init({ npcWalkers, normalizeNpcArea: a => a, isBuildingArea: () => false, buildingScenes: new Map(), loadBuildingScene() {}, getSharedSchedules: () => [], getWorldNpcPaths: () => [], calendar: { day: 1, time01: 0 } });
 W.__hobunjiPlayerProfile = { nickname: 'Pell', appearance: { speciesId: 'engh-sho', gender: 'male', bodyColors: { A: { h: 100, s: 0, v: 0 }, B: { h: 110, s: 0, v: 0 }, C: { h: 120, s: 0, v: 0 } } } };
@@ -133,6 +134,9 @@ W.RomanceSystem.init({
   getNpcRecord: id => npcWalkers.find(w => w.rec.id === id)?.rec || null,
   getCurrentArea: () => player.area,
   normalizeNpcArea: a => a,
+  isCombatActive: () => combatOn,
+  getCombatThreats: () => [{ x: 23.5, z: 20.5 }],
+  isCoverOccluder: (area, c) => area === 'town' && c === 22, // This test wall can hide the NPC from the pursuer.
   canHostNpc: () => true,
   getPlayerTilePosition: () => ({ x: player.x, z: player.z }),
   isDialogueOpen: () => false,
@@ -192,6 +196,17 @@ assert.equal(W.NpcScheduling.resolveNpcScheduleTarget(tooth.rec).overrideOwner, 
 player.x = 30.5; player.z = 20.5;
 target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.ok(Math.abs(target.c + 0.5 - 30.5) <= 2.5 && target.c < 30, 'a following date stops a little behind the player');
+assert.equal(target.run, true, 'a following date can run after the player');
+combatOn = true;
+target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
+assert.equal(target.activity, 'taking cover', 'combat interrupts ordinary date following');
+assert.equal(target.run, true, 'a threatened follower flees at running speed');
+assert.ok(W.RomanceSystem.snapshot().followerSafety.lastDecision?.selected, 'retreat diagnostics identify the chosen spot');
+assert.ok(W.RomanceSystem.snapshot().followerSafety.lastDecision.selected.hiddenFrom > 0, 'a chosen cover tile breaks sight with the pursuer');
+combatOn = false;
+target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
+assert.equal(target.activity, 'following you', 'after combat the NPC resumes normal following');
+assert.equal(W.RomanceSystem.snapshot().followerSafety.retreatPlan, null, 'the cover cache is released after combat');
 player.area = 'farm';
 tick();
 assert.equal(tooth.area, 'farm', 'following dates hop areas with the player');
@@ -300,7 +315,7 @@ clock.hour = 12;
 assert.equal(fam.childTarget(child).area, 'farm', 'grown children leave the house during the day');
 
 // ── Hold-Action-1 wheel claim ───────────────────────────────────────────
-W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
+W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isCombatActive: () => combatOn, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
 W.NpcCommandWheel._test.syncClaims();
 assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel', 'facing a romanceable NPC claims Action 1');
 const before = opened.length;
@@ -319,6 +334,11 @@ assert.equal(W.NpcCommandWheel.snapshot().latched, true, 'releasing with nothing
 W.NpcCommandWheel.select(0);
 W.NpcCommandWheel.commit();
 assert.equal(W.NpcCommandWheel.isOpen(), false);
+combatOn = true;
+W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1'), null, 'combat revokes Talk / Commands ownership');
+assert.equal(W.NpcCommandWheel.open(tooth), false, 'command wheel cannot reopen during combat');
+combatOn = false;
 nearby = plain;
 W.NpcCommandWheel._test.syncClaims();
 assert.equal(W.WorldActionInputClaims.claimFor('action1'), null, 'NPCs with no commands leave Action 1 unclaimed');
