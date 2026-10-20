@@ -794,6 +794,7 @@
     const c = cfg();
     if (c.enabled === false) return null;
     const speciesId = normalizeKey(options.speciesId);
+    if (speciesId === 'omgurku') return null; // The Omgurku's Voorg-ass-derived quadruped lower rig owns all locomotion; never spawn humanoid feet.
     if (!speciesId) return null;
     const gender = normalizeGender(options.gender);
     const modelWidth = Number(options.modelWidth) || 0.9;
