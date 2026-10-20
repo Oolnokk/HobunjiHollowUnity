@@ -10,6 +10,8 @@
   const records = new Map(); // Area -> {scene, vases:Map, piles:Map}, reused until its rendered scene is destroyed.
   const burstEffects = []; // Short-lived instanced pottery shards and flashes ticked by Combat.update.
   const spawnPromises = new Set(); // Suppresses duplicate async furniture loads per area.
+  const placementCache = new Map(); // Area -> per-scene static placements; never regenerate the ruin's sorted occupancy on each frame.
+  let resolvedWorldId = null; // World ID memoized after authoritative save metadata first becomes available.
   const persisted = new Set(); // Already shattered/looted IDs, saved per player world.
   const terrainHistory = new Map(); // Area -> Map(tile -> original resource kind), preserves blasted openings on reload.
   const pileHistory = new Map(); // Area -> Map(pile id -> unlooted debris), restores one-input collectible piles.
@@ -35,7 +37,14 @@
     return p ? {x:p.x/t,z:p.y/t,angle:Number(p.angle ?? p.facing)||0} : null;
   }
   function worldId() {
-    const id=String(window.__hobunjiPlayerProfile?.worldId || window.__hobunjiPlayerProfile?.playerId || 'session');
+    if (!resolvedWorldId) {
+      const profileId=window.__hobunjiPlayerProfile?.worldId;
+      // FarmWorldSettings resolves the same selected-world id as the game's save system;
+      // unlike __hobunjiPlayerProfile it is present on ordinary production saves.
+      const selected=profileId || window.FarmWorldSettings?.read?.()?.world?.id;
+      if (selected) resolvedWorldId=String(selected);
+    }
+    const id=resolvedWorldId || 'session';
     let cycle='1'; // A Tothal Shift regenerates cave partitions and loose charges.
     try{cycle=String(window.CalendarSystem?.tothalCycle?.()||1);}catch(_){/* Calendar may not be initialized during boot. */}
     return id+'|'+cycle;
@@ -69,6 +78,7 @@
   function recordFor(mapId, targetScene) {
     const existing=records.get(mapId);
     if(existing?.scene===targetScene)return existing;
+    placementCache.delete(mapId); // Generated geometry changed; only then may the expensive placements be sampled again.
     const rec={scene:targetScene,vases:new Map(),piles:new Map()};
     records.set(mapId,rec);
     restoreSceneHistory(mapId,rec); // Scene reconstruction must retain both opened cave barriers and unlooted rubble.
@@ -88,58 +98,66 @@
     }
     return best;
   }
-  function eligiblePlacements(mapId,g) {
+  function eligiblePlacements(mapId,g,targetScene) {
+    let cached=placementCache.get(mapId);
+    if(cached?.scene!==targetScene) {
+      cached={scene:targetScene,static:[],ready:false};
+      placementCache.set(mapId,cached);
+    }
+    // Camps are dynamic: new camps may be generated after the zone scene loads.
     const result=[];
-    const cave=window.CaveSiteSystem?.__test?.plansByMapId?.get?.(mapId);
-    if(cave) for(const entry of cave.shattercasks||[]) result.push({
-      id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row
-    });
+    if(!cached.ready) {
+      const cave=window.CaveSiteSystem?.__test?.plansByMapId?.get?.(mapId);
+      if(cave)for(const entry of cave.shattercasks||[]) cached.static.push({
+        id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row
+      });
     const camps=window.BanditCamps?.campInstances?.get?.(mapId)||[];
     camps.forEach((camp,index)=>{
       const x=Math.floor(Number(camp.homeX)/tileSize()),z=Math.floor(Number(camp.homeY)/tileSize());
       const spot=nearestOpen(g,x,z,4);
       if(spot)result.push({id:'bandit_'+(camp.discoveryKey||index),...spot});
     });
-    // Ruins: choose reproducible walkable chambers from the runtime occupancy grid,
-    // not from decorative meshes or puzzle targets.
-    if(mapId==='map_i_dev_random_ruin') {
-      const snapshot=window.DevRandomRuinTileOccupancy?.getSnapshot?.();
-      const floor=Array.isArray(snapshot?.floor)?snapshot.floor:[];
-      if(floor.length) {
-        for(let i=0;i<Math.min(2,Math.floor(floor.length/24));i++) {
-          const value=floor[Math.floor((i+.3)*floor.length/2)];
-          const pair=Array.isArray(value)?value:String(value).split(',').map(Number);
-          const c=Number(pair[0]),r=Number(pair[1]);
-          const spot=nearestOpen(g,c,r,2);
-          if(spot)result.push({id:'ruin_'+i,...spot});
+      // Generated ruin occupancy sorts every floor cell when snapshotted:
+      // sample it once per generated scene, never once every 140ms.
+      if(mapId==='map_i_dev_random_ruin') {
+        const snapshot=window.DevRandomRuinTileOccupancy?.getSnapshot?.();
+        const floor=Array.isArray(snapshot?.floor)?snapshot.floor:[];
+        if(floor.length) {
+          for(let i=0;i<Math.min(2,Math.floor(floor.length/24));i++) {
+            const value=floor[Math.floor((i+.3)*floor.length/2)];
+            const pair=Array.isArray(value)?value:String(value).split(',').map(Number);
+            const spot=nearestOpen(g,Number(pair[0]),Number(pair[1]),2);
+            if(spot)cached.static.push({id:'ruin_'+i,...spot});
+          }
+        } else return result; // Ruin still building; retry once layout is available.
+      }
+      if(mapId.startsWith('map_i_town_mine_f_')) {
+        const p=playerPosition();
+        if(p) {
+          const spot=nearestOpen(g,Math.floor(p.x)+6,Math.floor(p.z)+3,5);
+          if(spot)cached.static.push({id:'mine_charge',...spot});
         }
       }
+      cached.ready=true;
     }
-    // Mining levels already use procedural cave geometry, and may contain loose charges.
-    if(mapId.startsWith('map_i_town_mine_f_')) {
-      const p=playerPosition();
-      if(p) {
-        const spot=nearestOpen(g,Math.floor(p.x)+6,Math.floor(p.z)+3,5);
-        if(spot)result.push({id:'mine_charge',...spot});
-      }
-    }
+    result.push(...cached.static);
     return result;
   }
   async function ensureArea(mapId,targetScene,g) {
     if(!mapId||!targetScene||!g)return;
     const rec=recordFor(mapId,targetScene);
-    const placements=eligiblePlacements(mapId,g).filter(p=>Number.isInteger(p.col)&&Number.isInteger(p.row)
+    const placements=eligiblePlacements(mapId,g,targetScene).filter(p=>Number.isInteger(p.col)&&Number.isInteger(p.row)
       &&!persisted.has(mapId+':'+p.id)&&!rec.vases.has(p.id)&&validTile(g,p.col,p.row));
     if(!placements.length||spawnPromises.has(mapId))return;
     spawnPromises.add(mapId);
     try {
       const data=await window.AuthoredFurniture?.load?.('shattercaskBlasting');
-      if(!data || recordFor(mapId,scene())!==rec)return;
+      if(!data || records.get(mapId)!==rec || scene()!==targetScene)return; // No scene creation or history replay in a stale async load callback.
       for(const p of placements) {
         if(persisted.has(mapId+':'+p.id)||rec.vases.has(p.id))continue;
         const group=window.AuthoredFurniture.buildGroup(data);
         group.name='shattercask_'+p.id;
-        group.position.set(p.col+.5, 0, p.row+.5);
+        group.position.set(p.col+.5, baseHeight(p.col,p.row), p.row+.5);
         group.userData.shattercaskId=p.id;
         group.userData.shattercaskMap=mapId;
         targetScene.add(group);
@@ -177,7 +195,7 @@
     const cask=held,p=playerPosition(),g=grid();
     const origin=p?nearestOpen(g,Math.round(p.x-.5),Math.round(p.z-.5),2):null;
     if(origin){cask.col=origin.col;cask.row=origin.row;}
-    cask.group.position.set(cask.col+.5,0,cask.row+.5);
+    cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     cask.carried=false;held=null;
     lastEvent='dropped '+cask.id;
     return true;
@@ -325,8 +343,7 @@
       const priorType=tile.type;
       tile.type=types.GRASS||'grass';
       if(kind==='rock') {
-        const visual=rec.scene.getObjectByProperty?.('name','cave_ore_'+col+'_'+row);
-        if(visual)visual.parent?.remove(visual);
+        window.CavernOreRocks?.removeVisual?.(mapId,col,row); // O(1) tile-index removal, never a full THREE.Scene traversal per rock.
         deps()?.removeZoneMineableRockVisual?.(mapId,col,row);
       } else {
         window.ZoneRegrowth?.updateClearedZoneVegetationVisual?.(mapId,col,row,priorType);
@@ -358,8 +375,7 @@
       const previousType=tile.type;
       tile.type=types.GRASS||'grass';
       if(info.kind==='rock'){
-        const mesh=rec.scene.getObjectByProperty?.('name','cave_ore_'+col+'_'+row);
-        mesh?.parent?.remove(mesh);
+        window.CavernOreRocks?.removeVisual?.(mapId,col,row);
         deps()?.removeZoneMineableRockVisual?.(mapId,col,row);
       }else {
         window.ZoneRegrowth?.updateClearedZoneVegetationVisual?.(mapId,col,row,previousType);
@@ -476,13 +492,19 @@
     }
   }
   function tick(dt=0) {
-    loadPersistence();
     const mapId=area(),targetScene=scene();
     if(held && held.mapId!==mapId)drop();
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
+    // Held objects must track the player every rendered frame, not every 140ms.
+    if(held) {
+      const p=playerPosition();
+      if(p)held.group.position.set(p.x+Math.cos(p.angle)*.60,
+        baseHeight(Math.floor(p.x),Math.floor(p.z))+.75,p.z+Math.sin(p.angle)*.60);
+    }
     elapsed+=Math.min(.2,Math.max(0,Number(dt)||0));
     if(elapsed<POLL_S)return;
     elapsed=0;
+    loadPersistence();
     if(mapId!==lastArea) {
       lastArea=mapId;
       window.WorldActionInputClaims?.clearClaims?.('shattercask');
@@ -492,7 +514,7 @@
     if(held) {
       const p=playerPosition(),equipment=switchEquipment();
       if(equipment.weapon!==lastEquipment.weapon||equipment.tool!==lastEquipment.tool||equipment.item!==lastEquipment.item)drop();
-      else if(p)held.group.position.set(p.x+Math.cos(p.angle)*.60,baseHeight(Math.floor(p.x),Math.floor(p.z))+.75,p.z+Math.sin(p.angle)*.60);
+      // The held visual already follows the player at full frame rate above.
     }
     prompt();
   }
