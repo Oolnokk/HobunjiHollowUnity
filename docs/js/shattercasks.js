@@ -35,13 +35,10 @@
   const emitterSphere = THREE.Sphere && THREE.Vector3 && new THREE.Sphere(new THREE.Vector3(),1);
   const carriedWorldPosition = THREE.Vector3 && new THREE.Vector3();
   const heldAnchorOffset = THREE.Vector3 && new THREE.Vector3();
-  const heldAnchorQuat = THREE.Quaternion && new THREE.Quaternion();
   const authoredAnchorQuat = THREE.Quaternion && new THREE.Quaternion(); // Reused each frame; no Quaternion allocation in carried update.
   const heldAnchorEuler = THREE.Euler && new THREE.Euler();
   const posteriorLocal = THREE.Vector3 && new THREE.Vector3();
   const posteriorOffset = THREE.Vector3 && new THREE.Vector3();
-  const holderWorldQuat = THREE.Quaternion && new THREE.Quaternion();
-  const bodyWorldQuat = THREE.Quaternion && new THREE.Quaternion();
   const defaultPosteriorY = .42;
   function finite(v, defaultValue=0){const n=Number(v);return Number.isFinite(n)?n:defaultValue;}
   let emitterVisibilityElapsed = 0; // Cull only on the 140ms poll cadence, not every frame.
@@ -222,7 +219,7 @@
   // must never leak into X/Z while carrying. Both position and scale are
   // transformed before subtraction (old code omitted the scale).
   function alignHeldVase(vase) {
-    const body=carryDeps()?.playerMesh,holder=heldItemHolder();
+    const body=carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
     if(vase.group.parent!==body)body.add(vase.group);
     const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
@@ -240,23 +237,19 @@
       :Number.isFinite(computed)?computed:defaultPosteriorY;
     const origin=profile?.anchors?.posterior?.position||{};
     posteriorLocal.set(finite(origin.x),y,finite(origin.z));
-    // Preserve the rendered character's orientation, including its billboard
-    // deadzone, without ever copying the generic holder's position or local Z.
-    body.updateWorldMatrix?.(true,false);
-    bodyWorldQuat.identity();
-    body.getWorldQuaternion?.(bodyWorldQuat);
-    if(holder?.getWorldQuaternion){
-      holder.getWorldQuaternion(holderWorldQuat);
-      heldAnchorQuat.copy(bodyWorldQuat).invert().multiply(holderWorldQuat);
-    }else heldAnchorQuat.identity();
+    // The playerMesh is the actual character/posterior frame. The renderer
+    // already applies body yaw and camera deadzone to that whole hierarchy.
+    // Never inherit the *generic held-item holder's* extra bottle/tool rotation
+    // or its world position: doing so rotates authored Z clearance into a
+    // different axis and makes authoring disagree with gameplay.
     heldAnchorEuler.set(finite(r.x)*Math.PI/180,finite(r.y)*Math.PI/180,finite(r.z)*Math.PI/180);
     authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
-    vase.group.quaternion.copy(heldAnchorQuat).multiply(authoredAnchorQuat);
+    vase.group.quaternion.copy(authoredAnchorQuat);
     const size=Math.max(.1,finite(cfg.size,1));
     vase.group.scale.setScalar(1/size);
     // posteriorOffset is defined in portrait/body local coordinates, not in
     // original world-tile coordinates or the furniture's rotating local frame.
-    posteriorOffset.set(finite(o.x),finite(o.y),finite(o.z)).applyQuaternion(heldAnchorQuat);
+    posteriorOffset.set(finite(o.x),finite(o.y),finite(o.z));
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
