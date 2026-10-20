@@ -636,9 +636,13 @@
     if (!selected && retreatPlan?.area === area && pathfinding.isNpcTileWalkable(area, retreatPlan.c, retreatPlan.r)) {
       selected = retreatPlan; // Keep the previous viable refuge instead of oscillating in a blocked corner.
     }
+    const previousPlan = retreatPlan; // Used only to log genuine refuge changes to the in-game diagnostics instead of spamming every planner tick.
     retreatPlan = selected
       ? { ...selected, npcId: walker.rec?.id, area, recheckAt: now + RETREAT_REPLAN_MS }
       : { c: Math.floor(wx), r: Math.floor(wz), x: wx, z: wz, hidden: 0, noCover: true, npcId: walker.rec?.id, area, recheckAt: now + RETREAT_REPLAN_MS }; // Rate-limit a failed cover search as well.
+    if (!previousPlan || previousPlan.c !== retreatPlan.c || previousPlan.r !== retreatPlan.r || !!previousPlan.noCover !== !!retreatPlan.noCover) {
+      window.__farmLog?.(`[npc cover] ${walker.rec?.id || 'npc'}: ${selected ? `retreat to ${selected.c},${selected.r} (hidden from ${selected.hidden}/${threats.length})` : 'no reachable cover; holding position'}`, 'npc');
+    }
     lastRetreatDecision = { npcId: walker.rec?.id, area, threats: threats.length, selected: selected ? { c: selected.c, r: selected.r, hiddenFrom: selected.hidden } : null, at: Date.now() };
     return { area, c: retreatPlan.c, r: retreatPlan.r, activity: 'taking cover', run: !retreatPlan.noCover };
   }
