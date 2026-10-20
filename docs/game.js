@@ -12026,7 +12026,7 @@
           legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
-          _npcRunning: false, _npcRunMode: null, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
+          _npcRunning: false, _npcRunMode: null, _npcRunLeanActive: false, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
           _ambientLookActive: false, // Whether _applyNpcAmbientLook currently owns this walker's neck joint (so it knows to ease back to rest once a station's `lookAt` no longer applies).
@@ -12349,7 +12349,11 @@
                 const heading = this.desiredRot - root.rotation.y; // Respect actual travel direction independently of camera-facing portrait yaw/deadzones.
                 const sinHalf = Math.sin(pitch * 0.5); // Reused for this avatar's local pitch quaternion; avoids allocations in the frame loop.
                 this._npcRunLeanPivot.quaternion.set(Math.cos(heading) * sinHalf, 0, -Math.sin(heading) * sinHalf, Math.cos(pitch * 0.5));
-              } else this._npcRunLeanPivot.quaternion.identity();
+                this._npcRunLeanActive = true;
+              } else if (this._npcRunLeanActive) {
+                this._npcRunLeanPivot.quaternion.identity(); // Do not dirty every idle NPC's transform every frame.
+                this._npcRunLeanActive = false;
+              }
             }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
