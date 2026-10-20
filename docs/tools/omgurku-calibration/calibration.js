@@ -157,12 +157,13 @@
   }
   function tick(now){
     const dt=Math.min(.05,(now-(state.lastTime||now))/1000);state.lastTime=now;
-    if(state.moving && state.model){
+    if (window.HobunjiOmgurkuAdvanced?.tick) {
+      window.HobunjiOmgurkuAdvanced.tick(dt);
+    } else if(state.moving && state.model) {
       state.elapsed+=dt;
-      // Move only the preview root: the SAME 100 ms gameplay gaitTick selects run1/run2.
       const t=(state.elapsed*.8)%2;
       state.model.position.x=(t<1?t:2-t)*.5-.25;
-    }else if(state.model)state.model.position.x=0;
+    } else if(state.model)state.model.position.x=0;
     state.controls?.update();
     if(state.renderer){resizeOnChange();state.renderer.render(state.scene,state.camera);}
     const frame=state.model?.userData?.omgurkuComposite?.frame || 'unavailable';
@@ -250,6 +251,7 @@
         window.PNGPlaneAvatar.disposeAvatarModel(old);
       }
       state.scene.add(next);state.model=next;state.profile=profile;
+      window.HobunjiOmgurkuAdvanced?.previewReady?.();
       window.HobunjiOmgurkuSpecies.setPreviewFacing(next,Number($('headingRange').value)*Math.PI/180);
       state.built=true;
       applyPlacement();
@@ -280,8 +282,9 @@
     $('resetCameraBtn').addEventListener('click',()=>setCam('angle'));
     $('moveBtn').addEventListener('click',()=>{
       state.moving=!state.moving;state.elapsed=0;
-      $('moveBtn').textContent=state.moving?'■ Stop':'▶ Run';
+      $('moveBtn').textContent=state.moving?'Reset movement':'Start random movement';
       $('moveBtn').setAttribute('aria-pressed',String(state.moving));
+      window.HobunjiOmgurkuAdvanced?.movementChanged?.(state.moving);
     });
     $('refreshPreviewBtn').addEventListener('click',rebuildPreview);
     $('npcSelect').addEventListener('change',rebuildPreview);
@@ -353,6 +356,7 @@
       await initThree();
       await loadNpcSources();
       await rebuildPreview();
+      window.HobunjiOmgurkuAdvanced?.previewReady?.();
       window.addEventListener('resize',resize);
     }catch(error){
       state.lastError=String(error.stack||error);
@@ -367,6 +371,11 @@
     snapshot:()=>({ placement:{...state.placement}, hasComposite:!!state.model?.userData?.omgurkuComposite,
       frame:state.model?.userData?.omgurkuComposite?.frame, error:state.lastError }),
     setPlacement:changes=>{state.placement={...state.placement,...changes};applyPlacement();syncFields();},
+    context:()=>({model:state.model,scene:state.scene,camera:state.camera,THREE:state.THREE,
+      profile:state.profile,placement:{...state.placement},moving:state.moving,
+      image:state.image, spriteBounds:{...state.spriteBounds}, renderer:state.renderer}),
+    loadNpcSources:async()=>{state.npcs.length=0;await loadNpcSources();},
+    refreshMaskEditor:drawSaddleSprite,
   };
   start();
 })();
