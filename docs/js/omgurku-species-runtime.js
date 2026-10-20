@@ -23,10 +23,13 @@
   const LOCAL_PLACEMENT_KEY = 'hobunji.omgurku.hybridPlacement.v1';
   const placement = { ...DEFAULT_PLACEMENT }; // Applied to every live composite by applyPlacement().
   const live = new Set(); // Tracks currently attached Omgurku roots for one low-frequency shared gait update.
+  const LOWER_TINT_KIND = 'omgurku-lower';
+  let coatTextureCache = null; // Shared generated native animal-coat textures; refcounted through CreatureTextureCache.
   const tmpPosition = { x: 0, y: 0, z: 0 }; // Diagnostic fallback for incomplete Three.js stubs.
   const status = { // Surfaced by the in-page mobile debugger and debugSnapshot().
     registered: false, rigProfiles: 0, handInherited: false, wardrobeInherited: false,
     paletteInherited: false, lowerRig: LOWER_RIG, lastError: null, builds: 0, disposals: 0,
+    tintedFrames: 0, coatColor: null, facingUpdates: 0,
   };
   const normalize = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -126,10 +129,13 @@
       ref.group.position.set(placement.lowerOffsetX, centerY, placement.lowerOffsetZ);
       ref.group.scale.set(lowerScaleX, lowerScaleY, lowerScaleX);
     }
-    // Shared attachment math reads handAttachY off the returned avatar root;
-    // translate it with the upper torso rather than leaving weapon grips at ground height.
-    const handY = Number(c.upper.userData?.handAttachY);
-    if (Number.isFinite(handY)) record.root.userData.handAttachY = handY * placement.riderScale + joinY + placement.upperOffsetY;
+    // The hand driver sees the outer NPC root as its avatar identity but uses
+    // proceduralHandParent=upper. Its hand coordinates must therefore remain
+    // in the ORIGINAL upper portrait's local frame. The upper's translation,
+    // yaw and scale now carry the hand sockets, just like the visible torso.
+    for (const key of ['handAttachX','handAttachY','portraitModelHeight','portraitModelWidth','armLength','scaledArmLength','armLengthBySide']) {
+      if (c.upper.userData?.[key] !== undefined) record.root.userData[key] = c.upper.userData[key];
+    }
     record.root.userData.omgurkuJoin = { x: 0, y: joinY, z: joinZ, lowerCenterY: centerY };
   }
 
@@ -144,6 +150,7 @@
     if (typeof document !== 'undefined' && document.hidden) return;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     for (const record of live) {
+      bindNpcFacing(record); // Reuses the walker raw target for creature and NPC deadzones, never starts a second AI.
       const root = record.root;
       if (!root.parent || !root.visible) continue;
       const c = root.userData.omgurkuComposite;
@@ -180,17 +187,26 @@
         }
         const root = new THREE.Group(); // Sole NPC avatar group: collisions, dialogue, held items and movement remain under this parent.
         root.name = options.name || 'Omgurku_NPC_Hybrid';
-        root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true };
+        root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true,
+          // ProceduralHandFrameDriver attaches pending hands directly beneath
+          // this lifted, scaled, NPC-deadzone portrait half — never the animal.
+          proceduralHandParent: upper };
+        upper.userData.proceduralHandParent = upper;
         root.add(upper);
         for (const ref of lowerRefs) root.add(ref.group);
         const c = {
           upper, lowerRefs, frame: null, builtLowerWidth: placement.lowerWidth, builtLowerHeight: placement.lowerHeight,
           positionScratch: new THREE.Vector3(), lastPosition: null,
+          cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(),
+          rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
+          lastAnimalFacingAt: 0, tintColor: resolveBodyColorA(options),
         };
         root.userData.omgurkuComposite = c;
-        const record = { root }; // The shared 100 ms gait scheduler uses this record and disposes it with the NPC's normal avatar.
+        const record = { root, npcId: options.npcRecord?.id || null }; // Same record owns facing and genotype visuals.
         live.add(record);
         applyPlacement(record);
+        installFacingCallbacks(record);
+        prepareLowerCoat(THREE, record);
         setFrame(record, 'idle');
         status.builds += 1;
         return root;
