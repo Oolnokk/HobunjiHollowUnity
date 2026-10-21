@@ -298,7 +298,8 @@
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
     if(aimingThrow?.vase===vase){
-      const poses=throwPoses(),neutral=poses?.neutral,pose=aimingThrow.phase==='releasing'?poses?.strike:poses?.windup;
+      const poses=throwPoses(),neutral=aimingThrow.phase==='releasing'?poses?.windup:poses?.neutral,
+        pose=aimingThrow.phase==='releasing'?poses?.strike:poses?.windup;
       const blend=Math.min(1,aimingThrow.elapsed/(aimingThrow.phase==='releasing'?THROW_RELEASE_DELAY:.34));
       if(neutral&&pose){
         // Only flask pose Y/Z translations: never the attack animator's hand
@@ -433,7 +434,7 @@
     };
   }
   function pickUp(cask) {
-    if(!cask||cask.exploded||held||cask.mapId!==area())return false;
+    if(!cask||cask.exploded||cask.flying||held||cask.mapId!==area())return false;
     // The contextual Tool Select press stows whatever is held automatically.
     window.ActionArcUI?.stowForCarry?.();
     held=cask;cask.carried=true;
@@ -441,6 +442,7 @@
     setHeldRearXray(cask);
     Object.assign(lastEquipment,switchEquipment());
     lastEvent='picked up '+cask.id;
+    refreshCarriedArch();
     deps()?.showToast?.('Carrying Shattercask — Item Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
@@ -456,6 +458,7 @@
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     refreshMeshBounds(cask);
     cask.carried=false;held=null;
+    refreshCarriedArch();
     lastEvent='dropped '+cask.id;
     return true;
   }
@@ -464,7 +467,7 @@
     if(!p||!rec)return null;
     let choice=null,smallest=1.65;
     for(const vase of rec.vases.values()) {
-      if(vase.exploded||vase.carried)continue;
+      if(vase.exploded||vase.carried||vase.flying)continue;
       const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
     }
@@ -598,11 +601,13 @@
       ['btnItemAction1','Throw Shattercask','↗'],['btnItemAction2','Set Down Shattercask','⬇']]){
       const b=document.getElementById(id);if(!b)continue;
       if(held){
-        b.classList?.remove?.('abt-hidden');
-        b.style.display='';
-        b.dataset.action=id==='btnItemAction1'?'shattercask_throw':'shattercask_drop';
-        b.setAttribute('aria-label',label);
-        if(b.dataset.shattercaskPresentation!=='1'){
+        b.classList?.remove?.('abt-hidden','blocked');
+        b.disabled=false;
+        if(b.style.display)b.style.display='';
+        const action=id==='btnItemAction1'?'shattercask_throw':'shattercask_drop';
+        if(b.dataset.action!==action)b.dataset.action=action;
+        if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label);
+        if(b.dataset.shattercaskPresentation!=='1'||!b.textContent?.includes(icon)){
           b.textContent=icon;b.dataset.shattercaskPresentation='1';
         }
       }else if(b.dataset.shattercaskPresentation==='1'){
@@ -661,7 +666,7 @@
       const vx=cask.col+.5-origin.x,vz=cask.row+.5-origin.z;
       const toward=Math.hypot(vx,vz)||1;
       const cosine=(forward.x*vx+forward.z*vz)/(mag*toward);
-      if(d>.3&&cosine<(ray?.direction?.x!=null?.75:.25))continue;
+      if(d>.3 && cosine < (ray?.direction?.x != null ? .75 : .25))continue;
       result=cask;closest=d;
     }
     return result;
