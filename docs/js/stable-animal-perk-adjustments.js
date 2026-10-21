@@ -405,6 +405,7 @@
 
       const ambientAnimal = animalForAmbientTarget(options);
       if (npcId && ambientAnimal && options.directedAtPlayer === true) {
+        if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) return null; // Suppress pet greeting and its Rapport grant before entering the delayed queue.
         return queueAnimalReaction(target, text, options, ambientAnimal);
       }
 
