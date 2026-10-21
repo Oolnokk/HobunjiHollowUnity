@@ -386,6 +386,8 @@
 
     api.show = function stableAnimalGreetingRapportShow(target, text, options = {}) {
       const npcId = String(options?.speakerId || '');
+      const animalTarget = npcId ? animalForAmbientTarget(options) : null; // The live stable animal, if the reaction is addressed to the player's pet/mount.
+      if (animalTarget && window.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) return null; // Great Fey never greet pets or award greeting Rapport, regardless of which wrapper called show().
       const playerGreeting = !!(npcId && options.greeting === true && options.directedAtPlayer === true);
       if (playerGreeting) {
         const result = originalShow(target, text, options);
@@ -403,10 +405,8 @@
         return result;
       }
 
-      const ambientAnimal = animalForAmbientTarget(options);
-      if (npcId && ambientAnimal && options.directedAtPlayer === true) {
-        if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) return null; // Suppress pet greeting and its Rapport grant before entering the delayed queue.
-        return queueAnimalReaction(target, text, options, ambientAnimal);
+      if (npcId && animalTarget && options.directedAtPlayer === true) {
+        return queueAnimalReaction(target, text, options, animalTarget);
       }
 
       const animal = rapportAnimalForGreeting(options);
