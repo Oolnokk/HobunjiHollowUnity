@@ -61,15 +61,17 @@
     } else if (type === 'potluck' || type === 'offering') {
       const done = api.claimed(type);
       html = `<p>${type === 'potluck' && f.id==='gorkunash'
-        ? 'Choose one cooked dish to contribute during Gorkunash. Every villager who likes or tolerates it receives ten times the normal gift Favor; those who dislike or hate it receive nothing. The sixth pot is reserved for your dish and becomes a fresh meal on later festival days.'
+        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
         : type==='potluck'?'Give one cooked meal to the feast.':'Give one item. Its 1–5 star quality becomes your chosen blessing’s level, lasting 336 days.'}</p>`;
       if(type==='potluck'&&f.id==='gorkunash') {
         const bowl=api.festivalBowl();
         const dishes=api.feastMenu();
-        html+=`<h3>Help yourself at the six pots</h3><p class="festival-note">The feast runs from 3 PM to 1 AM. Pick up a temporary bowl, fill it with ten portions of one meal, then eat while sitting with the villagers. Each portion adds five minutes of that food buff (up to fifty). At 10/10 fullness, no more festival food can be eaten for eighteen in-game hours from the first serving.</p>`;
+        html+=`<h3>Seven pots · day ${api.contestStandings()?.day || 1} of 7</h3><p class="festival-note">The feast runs from 3 PM to 1 AM. Pick up a temporary bowl, fill it with ten portions of one meal, then eat while sitting with the villagers. Each portion adds five minutes of that food buff (up to fifty). At 10/10 fullness, no more festival food can be eaten for eighteen in-game hours from the first serving.</p>`;
         html+=`<p>🥣 Bowl: ${bowl?.meal ? esc(bowl.meal.label)+' · '+bowl.uses+'/10':bowl?'empty · 0/10':'not held'} · Fullness ${api.currentFullness()}/10</p>`;
         html+=button('Take fresh bowl','take-bowl',!api.festivalHours());
-        html+=`<div class="festival-options">${dishes.map((meal,index)=>button(`${meal.icon} Pot ${index+1}: ${meal.label}`,'fill-bowl',!bowl||!api.festivalHours(),`data-pot-index="${index}"`)).join('')}${dishes.length===5?'<span class="festival-note">Pot 6: reserved for your offering</span>':''}</div>`;
+        html+=`<div class="festival-options">${dishes.map((meal,index)=>button(`${meal.icon} Pot ${index+1}: ${meal.label}${meal.id==='reserved'?'':' · '+meal.score+'★'}`,'fill-bowl',!bowl||!api.festivalHours()||meal.id==='reserved',`data-pot-index="${index}"`)).join('')}</div>`;
+        const standings=api.contestStandings?.();
+        if(standings)html+=`<p class="festival-note">Current highest NPC entry: ${esc(standings.strongest?.label||'None')} · ${standings.strongest?.score||0}★. ${standings.entry ? 'Your entry: '+esc(standings.entry.label)+' · '+standings.entry.score+'★'+(standings.winning?' (currently ahead or tied).':' (try stronger ingredients next year).') : 'You have not entered yet.'}</p>`;
         html+=`<p class="festival-note">To eat: sit in a festival dining chair and use the Eat bowl prompt. Your character will take another bite every few seconds, with the normal Drink animation and a ${bowl?.uses ?? 0}/10 portion counter. Stand or switch equipment to stop.</p>`;
       }
       if (done) html += '<p>You have already contributed your one festival meal or offering.</p>';
