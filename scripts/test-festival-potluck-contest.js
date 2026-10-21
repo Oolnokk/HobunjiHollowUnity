@@ -34,6 +34,22 @@ for (const meal of every) {
  assert(meal.score >= meal.minimum && meal.score <= meal.cap,'every cook observes their minimum and maximum');
  assert(meal.label.startsWith(meal.owner + "'s "),'pot labels name the individual cook');
 }
+for (const meal of every)
+ assert.deepEqual(meal.foodEffects,rules.mealEffects(meal.ingredients,defs),'stored NPC eating buffs reflect every ingredient quality and processing tier');
+const weak = rules.ingredientEffects('nelkMeat',1,defs).strength;
+const strong = rules.ingredientEffects('nelkMeat',5,defs).strength;
+assert(strong > weak,'higher quality meat increases its actual food buff, not merely the contest score');
+const processed = rules.ingredientEffects('nelkMayonnaise',5,defs);
+const unprocessed = rules.ingredientEffects('nelkEggs',5,defs);
+assert(Object.values(processed).some(value=>value>Math.min(...Object.values(unprocessed))),'processing can amplify ingredient food effects');
+const ingredientDetails = rules.ingredientBreakdown([{key:'nelkMeat',stars:5},{key:'nelkMayonnaise',stars:3}],defs);
+assert.equal(ingredientDetails.reduce((total,item)=>total+item.points,0),
+  rules.scoreIngredients([{key:'nelkMeat',stars:5},{key:'nelkMayonnaise',stars:3}],defs),
+  'visible ingredient points match real contest judging');
+assert(ingredientDetails.every(item=>Object.keys(item.effects).length),'ingredient detail includes actual effects alongside stars');
+window.CookingSystem = { ingredientEffectTotals:(_def,stars)=>({cooking:Number(stars)*7}) };
+assert.equal(rules.ingredientEffects('nelkMeat',4,defs).cooking,28,'the inspector delegates to the initialized cooking system');
+delete window.CookingSystem;
 const find = id=>every.filter(entry=>entry.npcId===id);
 assert(find('teacup_unumanuk').every(entry=>entry.minimum > 23),'grandmother has highest minimum');
 assert(find('hreesh').every(entry=>entry.minimum > 16),'Hreesh minimum exceeds mother minimum');
