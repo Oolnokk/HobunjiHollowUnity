@@ -114,7 +114,8 @@
     const profile = profileFor(rec), variants = MENUS[profile] || MENUS.town;
     const selection = variants[Math.floor(rng() * variants.length)];
     const allowed = selection.keys.filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]);
-    const keys = allowed.length ? allowed : selection.keys; // Name/ingredients remain inspectable in test contexts without the full catalog.
+    const fallback = Object.keys(window.HobunjiCookingData?.items || {}).filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]).slice(0,4); // Reduced cooking fixtures still serve real registered ingredients.
+    const keys = allowed.length ? allowed : (fallback.length ? fallback : selection.keys);
     const limits = bounds(rec);
     const target = limits.min + Math.floor(rng() * (limits.max - limits.min + 1)); // One rolled strength target per dish; experienced cooks have higher floors.
     let best = null; // Closest *achievable* ingredient sum, never a fabricated clamped rating.
