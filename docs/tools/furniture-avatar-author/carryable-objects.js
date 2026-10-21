@@ -302,7 +302,9 @@
       marker.position.set(pos.x,pos.y,pos.z);
       if(id==='hitbox'){
         marker.visible=c.hitbox.enabled;
-        marker.children[0]?.scale.set(c.hitbox.size.x,c.hitbox.size.y,c.hitbox.size.z);
+        // Outer marker scale is authoritative so TransformControls scale-gizmo
+        // edits can resize the hitbox, not only its numeric inputs.
+        marker.scale.set(c.hitbox.size.x,c.hitbox.size.y,c.hitbox.size.z);
       }else if(id==='anchor'){
         const r=c.billboardAnchor.rotation;
         marker.rotation.set(r.x*DEG,r.y*DEG,r.z*DEG,'XYZ');
@@ -358,7 +360,10 @@
     const id=state.selectedId,marker=guides[id],point=positionGuide(id);
     if(!marker||!point)return;
     for(const axis of ['x','y','z'])point[axis]=Number(marker.position[axis].toFixed(4));
-    if(id==='anchor'){
+    if(id==='hitbox'){
+      for(const axis of ['x','y','z'])
+        state.carryable.hitbox.size[axis]=Math.max(.01,Number(Math.abs(marker.scale[axis]).toFixed(4)));
+    }else if(id==='anchor'){
       for(const axis of ['x','y','z'])
         state.carryable.billboardAnchor.rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
     }else if(id==='left'||id==='right'){
