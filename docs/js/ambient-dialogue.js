@@ -644,7 +644,7 @@
   }
 
   function show(root, text, options = {}) {
-    if (String(options.speakerId || '') === 'banubu') return null; // Banubu speaks only through his authored, player-initiated quest dialogue.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const message = String(text || '').trim();
