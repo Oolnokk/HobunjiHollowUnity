@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>Hobunji Hollow — GitHack Commit Link Builder</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080e1a;
+      --panel: #121e30;
+      --panel-soft: #19283b;
+      --border: #344763;
+      --text: #f0f6ff;
+      --muted: #adbed7;
+      --accent: #82b7ff;
+      --good: #5ce2b4;
+      --warning: #ffd17b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 18px 14px 36px;
+      background: linear-gradient(165deg, #070d18, #11243a);
+      color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+    main { width: min(100%, 820px); margin: 0 auto; }
+    h1 { margin: 12px 0 5px; font-size: clamp(1.35rem, 4vw, 1.85rem); }
+    h2 { margin: 0 0 10px; font-size: 1.1rem; }
+    p { color: var(--muted); margin: 0 0 14px; }
+    a { color: var(--accent); overflow-wrap: anywhere; }
+    nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 18px; }
+    nav a { border: 1px solid var(--border); padding: 9px 12px; border-radius: 10px; text-decoration: none; font-weight: 650; }
+    nav a:focus-visible, button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .panel {
+      background: rgba(18, 30, 48, .98);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      padding: 18px;
+      margin-top: 13px;
+    }
+    .fields, .outputs { display: grid; gap: 15px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    label { display: block; font-weight: 700; margin: 0 0 7px; }
+    input, button {
+      font: inherit;
+      min-height: 45px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+    }
+    input {
+      width: 100%;
+      background: #0a1424;
+      color: var(--text);
+      padding: 10px 12px;
+      min-width: 0;
+    }
+    input[readonly] { background: #0a1729; color: #cce3ff; }
+    button {
+      background: var(--accent);
+      color: #071426;
+      padding: 10px 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button.secondary { background: var(--panel-soft); color: var(--text); }
+    button:disabled { opacity: .65; cursor: progress; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+    .actions > * { flex: 1 1 auto; }
+    .hint, .micro { color: var(--muted); font-size: .85rem; margin-top: 7px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+    .result-label { font-weight: 700; margin-top: 15px; margin-bottom: 6px; }
+    .result-label:first-child { margin-top: 0; }
+    .status {
+      margin-top: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #0c1728;
+      padding: 11px 13px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    .status.good { border-color: #277b64; color: var(--good); }
+    .status.warning { border-color: #896631; color: var(--warning); }
+    .commit-meta { color: var(--muted); font-size: .9rem; margin-top: 12px; overflow-wrap: anywhere; }
+    details { margin-top: 13px; color: var(--muted); }
+    summary { cursor: pointer; padding: 7px 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #07101d; padding: 12px; border-radius: 9px; max-height: 230px; overflow-y: auto; font-size: .79rem; }
+    footer { color: var(--muted); font-size: .86rem; margin: 17px 3px 0; }
+    @media (max-width: 640px) {
+      .fields, .outputs { grid-template-columns: minmax(0, 1fr); }
+      .panel { padding: 15px; }
+      .actions button, .actions a { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Hobunji Hollow — GitHack Link Builder</h1>
+  <p>Standalone launcher for commit-specific Game and Tool Hub links. No Tool Hub session is required.</p>
+
+  <nav aria-label="Repository shortcuts">
+    <a id="commitsPage" href="https://github.com/Oolnokk/HobunjiHollowUnity/commits/main" target="_blank" rel="noopener noreferrer">↗ Commits</a>
+    <a href="https://github.com/Oolnokk/HobunjiHollowUnity/pulls" target="_blank" rel="noopener noreferrer">↗ Pull requests</a>
+    <a href="https://github.com/Oolnokk/HobunjiHollowUnity" target="_blank" rel="noopener noreferrer">↗ Repository</a>
+  </nav>
+
+  <section class="panel" aria-labelledby="revisionHeading">
+    <h2 id="revisionHeading">1. Select the revision</h2>
+    <div class="fields">
+      <div>
+        <label for="branch">GitHub branch to check</label>
+        <input id="branch" class="mono" value="main" autocomplete="off" spellcheck="false" aria-describedby="branchHelp">
+        <div id="branchHelp" class="hint">Use <span class="mono">main</span> or a feature branch such as <span class="mono">feature/my-change</span>.</div>
+      </div>
+      <div>
+        <label for="commit">Commit SHA, tag, or ref</label>
+        <input id="commit" class="mono" placeholder="Fetched automatically, or paste a SHA" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <div class="hint">Editable. A full 40-character SHA produces a fixed, commit-pinned link.</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="fetchLatest" type="button">↻ Get latest commit</button>
+      <button id="copySha" type="button" class="secondary">Copy SHA</button>
+    </div>
+    <div id="commitMeta" class="commit-meta" aria-live="polite">Looking up the latest commit…</div>
+    <div id="status" class="status" role="status" aria-live="polite">Ready to look up GitHub.</div>
+  </section>
+
+  <div class="outputs">
+    <section class="panel" aria-labelledby="gameHeading">
+      <h2 id="gameHeading">2. Game</h2>
+      <label for="gamePath">Game HTML path</label>
+      <input id="gamePath" class="mono" value="docs/index.html" autocomplete="off" spellcheck="false">
+      <div class="result-label"><label for="gameLink">Game GitHack URL</label></div>
+      <input id="gameLink" class="mono" readonly placeholder="Waiting for a SHA…" aria-label="Generated Game URL">
+      <div class="actions">
+        <button id="openGame" type="button">↗ Open game</button>
+        <button id="copyGame" type="button" class="secondary">Copy URL</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="hubHeading">
+      <h2 id="hubHeading">3. Tool Hub</h2>
+      <label for="hubPath">Tool Hub HTML path</label>
+      <input id="hubPath" class="mono" value="docs/tools/index.html" autocomplete="off" spellcheck="false">
+      <div class="result-label"><label for="hubLink">Tool Hub GitHack URL</label></div>
+      <input id="hubLink" class="mono" readonly placeholder="Waiting for a SHA…" aria-label="Generated Tool Hub URL">
+      <div class="actions">
+        <button id="openHub" type="button">↗ Open Tool Hub</button>
+        <button id="copyHub" type="button" class="secondary">Copy URL</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" aria-label="Other options">
+    <div class="actions" style="margin-top: 0">
+      <button id="copyBoth" class="secondary" type="button">Copy both URLs</button>
+      <button id="copyBuilder" class="secondary" type="button">Copy this page’s address</button>
+    </div>
+    <p class="micro">Bookmark this standalone page in your Quick Tab. GitHub's API resolves the branch head directly, avoiding the stale <span class="mono">/main/</span> GitHack cache. GitHack may still need a moment to serve a newly pushed commit.</p>
+    <details>
+      <summary>Diagnostics (works without devtools)</summary>
+      <pre id="debugLog" aria-label="Diagnostic event log">No diagnostics yet.</pre>
+      <div class="actions"><button id="copyDebug" type="button" class="secondary">Copy diagnostics</button></div>
+    </details>
+  </section>
+  <footer>No login or access token required for a public repository. GitHub may limit anonymous API requests; manual SHA entry continues working if the API is unavailable.</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const REPO = "Oolnokk/HobunjiHollowUnity"; // Used by the GitHub API and both generated links.
+  const STORAGE_KEY = "hobunji.githack-link-builder.v1"; // Stores branch and page paths (never a stale SHA).
+  const elements = {}; // Holds UI nodes accessed throughout the builder.
+  const ids = ["branch", "commit", "gamePath", "hubPath", "gameLink", "hubLink", "fetchLatest", "copySha", "openGame", "copyGame", "openHub", "copyHub", "copyBoth", "copyBuilder", "copyDebug", "commitsPage", "commitMeta", "status", "debugLog"];
+  ids.forEach(function (id) { elements[id] = document.getElementById(id); });
+
+  let requestGeneration = 0; // Prevents stale GitHub replies from overwriting newer selections.
+  let requestController = null; // Cancels an obsolete commit lookup.
+  let diagnostics = []; // Holds mobile-friendly debug entries.
+  let currentLinks = { game: "", hub: "" }; // Used by copy/open actions for each output.
+
+  function log(message) {
+    diagnostics.push(new Date().toLocaleTimeString() + " | " + message);
+    if (diagnostics.length > 35) diagnostics.shift();
+    elements.debugLog.textContent = diagnostics.join("\n");
+  }
+
+  function status(message, tone) {
+    elements.status.textContent = message;
+    elements.status.className = "status" + (tone ? " " + tone : "");
+    log(message);
+  }
+
+  function savePreferences() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        branch: elements.branch.value,
+        gamePath: elements.gamePath.value,
+        hubPath: elements.hubPath.value
+      }));
+    } catch (error) {
+      log("Preferences not saved: " + String(error.message || error));
+    }
+  }
+
+  function loadPreferences() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!stored || typeof stored !== "object") return;
+      ["branch", "gamePath", "hubPath"].forEach(function (key) {
+        if (typeof stored[key] === "string" && stored[key].length < 500) {
+          elements[key].value = stored[key];
+        }
+      });
+    } catch (error) {
+      log("Using default preferences: " + String(error.message || error));
+    }
+  }
+
+  function validBranch(value) {
+    return !!value && value.length <= 200 && /^[A-Za-z0-9._/-]+$/.test(value)
+      && !value.includes("..") && !value.startsWith("/") && !value.endsWith("/")
+      && !value.includes("//");
+  }
+
+  function validRef(value) {
+    return !!value && value.length <= 100 && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
+      && value !== ".." && !value.includes("..");
+  }
+
+  function repoPath(value) {
+    let path = value.trim();
+    if (path.startsWith("https://")) {
+      // Old builder URLs may be pasted here: extract the file after owner/repo/ref.
+      const url = new URL(path);
+      if (!["raw.githack.com", "rawcdn.githack.com"].includes(url.hostname)
+        || url.username || url.password || url.search || url.hash) {
+        throw new Error("Use a repository HTML path or a GitHack URL.");
+      }
+      const prefix = "/" + REPO + "/";
+      if (!url.pathname.startsWith(prefix)) throw new Error("The URL belongs to a different repository.");
+      const segments = url.pathname.slice(prefix.length).split("/");
+      if (segments.length < 2) throw new Error("The GitHack URL must include a ref and HTML path.");
+      path = segments.slice(1).join("/");
+    }
+    path = path.replace(/^\/+/, "");
+    if (!path || !path.endsWith(".html") || path.length > 250
+      || !/^[A-Za-z0-9._/-]+$/.test(path)
+      || path.split("/").some(function (segment) { return !segment || segment === "." || segment === ".."; })) {
+      throw new Error("Enter a valid relative HTML path, e.g. docs/index.html.");
+    }
+    return path;
+  }
+
+  function gitHackUrl(ref, path) {
+    return "https://raw.githack.com/" + REPO + "/" + encodeURIComponent(ref)
+      + "/" + path.split("/").map(encodeURIComponent).join("/");
+  }
+
+  function updateCommitPage() {
+    const branch = elements.branch.value.trim();
+    elements.commitsPage.href = "https://github.com/" + REPO + "/commits/"
+      + (validBranch(branch) ? branch.split("/").map(encodeURIComponent).join("/") : "main");
+  }
+
+  function renderLinks() {
+    currentLinks = { game: "", hub: "" };
+    const ref = elements.commit.value.trim();
+    const fields = [{ id: "game", path: elements.gamePath, output: elements.gameLink },
+                    { id: "hub", path: elements.hubPath, output: elements.hubLink }];
+    for (const field of fields) {
+      try {
+        if (!validRef(ref)) throw new Error("Enter a commit SHA, tag, or single-segment ref.");
+        currentLinks[field.id] = gitHackUrl(ref, repoPath(field.path.value));
+        field.output.value = currentLinks[field.id];
+        field.output.placeholder = "";
+        field.output.removeAttribute("aria-invalid");
+      } catch (error) {
+        field.output.value = "";
+        field.output.placeholder = error.message;
+        field.output.setAttribute("aria-invalid", "true");
+      }
+    }
+    ["openGame", "copyGame"].forEach(function (id) { elements[id].disabled = !currentLinks.game; });
+    ["openHub", "copyHub"].forEach(function (id) { elements[id].disabled = !currentLinks.hub; });
+    elements.copyBoth.disabled = !currentLinks.game || !currentLinks.hub;
+    elements.copySha.disabled = !validRef(ref);
+  }
+
+  function cancelLookup() {
+    requestGeneration += 1;
+    if (requestController) requestController.abort();
+    requestController = null;
+    elements.fetchLatest.disabled = false;
+  }
+
+  async function fetchLatest() {
+    const branch = elements.branch.value.trim();
+    if (!validBranch(branch)) {
+      status("Invalid branch name. Use a GitHub branch like main or feature/name.", "warning");
+      return;
+    }
+    cancelLookup();
+    const generation = requestGeneration;
+    const controller = new AbortController(); // Bounds network waits and cancels obsolete branch lookups.
+    requestController = controller;
+    const apiUrl = new URL("https://api.github.com/repos/" + REPO + "/commits");
+    apiUrl.searchParams.set("sha", branch);
+    apiUrl.searchParams.set("per_page", "1");
+    const timer = setTimeout(function () { controller.abort(); }, 15000); // Avoids indefinite waits on mobile.
+    elements.fetchLatest.disabled = true;
+    elements.commitMeta.textContent = "Checking branch " + branch + "…";
+    status("Fetching latest commit from GitHub for " + branch + "…");
+    log("GET " + apiUrl.toString());
+    try {
+      const response = await fetch(apiUrl.toString(), {
+        method: "GET",
+        headers: { "Accept": "application/vnd.github+json" },
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        log("GitHub HTTP " + response.status);
+        if (response.status === 403 || response.status === 429)
+          throw new Error("GitHub API rate limit or access restriction. Paste a SHA from the Commits page.");
+        if (response.status === 404)
+          throw new Error("Branch not found on GitHub. Check the branch name.");
+        throw new Error("GitHub request failed (HTTP " + response.status + "). Paste a SHA manually.");
+      }
+      const commits = await response.json();
+      if (!Array.isArray(commits) || !commits[0] || !/^[a-f0-9]{40}$/i.test(commits[0].sha))
+        throw new Error("GitHub returned no usable commit SHA.");
+      if (generation !== requestGeneration) return;
+      const sha = commits[0].sha; // Used to build immutable GitHack page links.
+      elements.commit.value = sha;
+      renderLinks();
+      const time = commits[0].commit && commits[0].commit.committer && commits[0].commit.committer.date;
+      const dateText = time ? new Date(time).toLocaleString() : "Date unavailable";
+      elements.commitMeta.textContent = "Resolved " + branch + " → " + sha.slice(0, 12) + " · Commit date: " + dateText;
+      status("Latest GitHub SHA loaded. Both links are ready.", "good");
+    } catch (error) {
+      if (generation !== requestGeneration) return;
+      elements.commitMeta.textContent = "Automatic lookup unavailable. Manual SHA entry still works.";
+      status(error.name === "AbortError" ? "GitHub lookup timed out. Paste a SHA manually or retry."
+        : String(error.message || error), "warning");
+    } finally {
+      clearTimeout(timer);
+      if (generation === requestGeneration) {
+        elements.fetchLatest.disabled = false;
+        requestController = null;
+      }
+    }
+  }
+
+  async function copyText(text, description, selectInput) {
+    if (!text) {
+      status("There is nothing to copy yet.", "warning");
+      return;
+    }
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(text);
+      status(description + " copied.", "good");
+      return;
+    } catch (error) {
+      log("Clipboard API fallback: " + String(error.message || error));
+    }
+    const temp = selectInput || document.createElement("textarea"); // Supports older mobile browsers.
+    if (!selectInput) {
+      temp.value = text;
+      temp.style.position = "fixed";
+      temp.style.opacity = "0";
+      document.body.appendChild(temp);
+    }
+    temp.focus();
+    temp.select();
+    if (typeof temp.setSelectionRange === "function") temp.setSelectionRange(0, text.length);
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (error) { log("Fallback copy failed: " + error); }
+    if (!selectInput) temp.remove();
+    status(copied ? description + " copied." : "Copy unavailable. The text has been selected for manual copying.",
+      copied ? "good" : "warning");
+  }
+
+  function openLink(kind) {
+    const url = currentLinks[kind];
+    if (!url) { status("Enter a valid commit and HTML path first.", "warning"); return; }
+    window.open(url, "_blank", "noopener,noreferrer");
+    status("Opened " + (kind === "game" ? "Game" : "Tool Hub") + " in a new tab.", "good");
+  }
+
+  elements.branch.addEventListener("input", function () {
+    cancelLookup();
+    elements.commit.value = "";
+    elements.commitMeta.textContent = "Branch changed. Select Get latest commit to resolve it.";
+    updateCommitPage();
+    savePreferences();
+    renderLinks();
+  });
+  elements.commit.addEventListener("input", function () {
+    cancelLookup(); // A manual SHA must never be overwritten by an in-flight API response.
+    elements.commitMeta.textContent = "Manual revision selected. A 40-character SHA is recommended.";
+    renderLinks();
+  });
+  ["gamePath", "hubPath"].forEach(function (id) {
+    elements[id].addEventListener("input", function () { savePreferences(); renderLinks(); });
+  });
+  elements.branch.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") { event.preventDefault(); fetchLatest(); }
+  });
+  elements.fetchLatest.addEventListener("click", fetchLatest);
+  elements.copySha.addEventListener("click", function () { copyText(elements.commit.value.trim(), "Revision"); });
+  elements.openGame.addEventListener("click", function () { openLink("game"); });
+  elements.openHub.addEventListener("click", function () { openLink("hub"); });
+  elements.copyGame.addEventListener("click", function () { copyText(currentLinks.game, "Game URL", elements.gameLink); });
+  elements.copyHub.addEventListener("click", function () { copyText(currentLinks.hub, "Tool Hub URL", elements.hubLink); });
+  elements.copyBoth.addEventListener("click", function () {
+    copyText("Game: " + currentLinks.game + "\nTool Hub: " + currentLinks.hub, "Both URLs");
+  });
+  elements.copyBuilder.addEventListener("click", function () {
+    copyText(location.href, "Builder page address");
+  });
+  elements.copyDebug.addEventListener("click", function () { copyText(diagnostics.join("\n"), "Diagnostics"); });
+
+  window.addEventListener("error", function (event) { log("Page error: " + event.message); });
+  window.addEventListener("unhandledrejection", function (event) { log("Unhandled promise: " + String(event.reason)); });
+  loadPreferences();
+  updateCommitPage();
+  renderLinks();
+  fetchLatest();
+})();
+</script>
+</body>
+</html>
