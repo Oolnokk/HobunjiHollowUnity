@@ -1432,5 +1432,29 @@
     "label": "Nazgraku Crate",
     "icon": "🐟",
     "cat": "livestock"
+  },
+  "cosmetic:replica_bzabag_helm": {
+    "key": "cosmetic:replica_bzabag_helm",
+    "label": "Replica Helm of Bzabag",
+    "icon": "🪖",
+    "cat": "clothing"
+  },
+  "cloudSaffron": {
+    "key": "cloudSaffron",
+    "label": "Cloud Saffron",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "starpepper": {
+    "key": "starpepper",
+    "label": "Starpepper",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "nightCardamom": {
+    "key": "nightCardamom",
+    "label": "Night Cardamom",
+    "icon": "🌶️",
+    "cat": "ingredient"
   }
 }

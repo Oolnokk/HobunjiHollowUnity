@@ -423,6 +423,8 @@
         foodEffects: effects, foodQuality: stars, cookingDefaultStars: stars,
         ingredientKeys: selections.map(({ selected }) => selected.key), // Used by ordinary item-trait inheritance for this cooked stack.
         giftIngredientKeys: selections.map(({ selected }) => selected.key), // Used by specific NPC food preferences; cooked stack identity is unique to this exact ingredient signature.
+        festivalIngredientQuality: selections.map(({ slot, selected }) => ({key:selected.key,stars:selected.stars,slotId:slot.id,contributesEffects:slot.contributesEffects !== false})), // Snapshot source tier and recipe slot: structural ingredients still score points but never grant cooking buffs.
+        festivalContestScore: window.FestivalPotluckContest?.scoreIngredients?.(selections.map(({ selected })=>selected),deps.ITEM_DEFS) || selections.reduce((sum,{selected})=>sum+selected.stars,0), // Uses provenance-based processing multipliers; not the output meal's aggregate star label.
       });
       deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + servings);
       recordItemQuality(key, stars, servings); // Both servings share the same completed dish quality/effects because the perk increases batch yield, not recipe resolution.

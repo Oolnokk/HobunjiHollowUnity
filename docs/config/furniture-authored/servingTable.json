@@ -487,7 +487,7 @@
       "itemName": "Serving pot 2",
       "surfaceId": "table-top",
       "position": {
-        "u": 0.0,
+        "u": 0,
         "v": -0.23,
         "normal": 0.005
       },
@@ -539,11 +539,11 @@
       "itemName": "Serving pot 4",
       "surfaceId": "table-top",
       "position": {
-        "u": -0.85,
+        "u": -1.2,
         "v": 0.23,
         "normal": 0.005
       },
-      "scale": 1,
+      "scale": 0.91,
       "rotation": {
         "x": 0,
         "y": 0,
@@ -565,11 +565,11 @@
       "itemName": "Serving pot 5",
       "surfaceId": "table-top",
       "position": {
-        "u": 0.0,
+        "u": -0.4,
         "v": 0.23,
         "normal": 0.005
       },
-      "scale": 1,
+      "scale": 0.91,
       "rotation": {
         "x": 0,
         "y": 0,
@@ -591,11 +591,11 @@
       "itemName": "Serving pot 6",
       "surfaceId": "table-top",
       "position": {
-        "u": 0.85,
+        "u": 0.4,
         "v": 0.23,
         "normal": 0.005
       },
-      "scale": 1,
+      "scale": 0.91,
       "rotation": {
         "x": 0,
         "y": 0,
@@ -610,6 +610,32 @@
       "cameraRelativeDeadzone": false,
       "gridSnapped": false,
       "liquidColor": "#aa8746"
+    },
+    {
+      "id": "pot-6",
+      "furnitureKey": "servingPot",
+      "itemName": "Serving pot 7 — player entry",
+      "surfaceId": "table-top",
+      "position": {
+        "u": 1.2,
+        "v": 0.23,
+        "normal": 0.005
+      },
+      "scale": 0.91,
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "visible": true,
+      "service": {
+        "kind": "meal",
+        "index": 6
+      },
+      "placementPreset": "furniture",
+      "cameraRelativeDeadzone": false,
+      "gridSnapped": false,
+      "liquidColor": "#e6b15a"
     },
     {
       "id": "bowls",

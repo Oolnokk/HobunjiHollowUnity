@@ -507,6 +507,11 @@
     for (const key of shuffled(rng, outOfSeasonProduce(season)).slice(0, intRoll(rng, 1, 2))) {
       stock.push(itemEntry(key, intRoll(rng, 2, 4), itemPrice(key), { note: 'Out of season here' }));
     }
+    // Rare imported spices from far-ranging trade routes; every caravan has at least one.
+    const importedSpices = ['cloudSaffron','starpepper','nightCardamom']; // Sold alongside the established foreign fish and seasonal crops.
+    for (const key of shuffled(rng, importedSpices).slice(0,intRoll(rng,1,2))) {
+      if (deps?.ITEM_DEFS?.[key]) stock.push(itemEntry(key,intRoll(rng,1,3),Math.max(35,itemPrice(key,5)),{note:'Rare imported spice',rare:true}));
+    }
     const metals = deps?.VERDIGRIS_METAL_KEYS || [];
     const ceiling = num(window.TownMine?.maximumMetalTierForTownValue?.(value), value + 1);
     if (metals.length && rng() < 0.5) {

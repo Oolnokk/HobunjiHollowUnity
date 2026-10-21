@@ -34,11 +34,12 @@ W.NpcGifting={evaluateHeldGift:rec=>({tier:rec.id==='friend'?'disliked':'liked',
 W.DialogueContent={getNpcDlgState:id=>({favor:favors.get(id)||0}),adjustNpcFavor:(id,amount,reason)=>{awarded.push({id,amount,reason});favors.set(id,(favors.get(id)||0)+amount);}};
 W.NpcRapport={get:()=>250};
 W.SocialActionWheel={startDance:()=>true,stopDance(){},getDebug:()=>({dancing:true})};
-W.FestivalUI={close(){},update(){}};
+let inspectedPot = null; // Records which surface opened the festival inspection; should not consume a serving.
+W.FestivalUI={close(){},update(){},openFeast(index){inspectedPot=index;return true;}};
 W.AmbientDialogue={showAlcoholOfferResponse(){}};
 W.HobunjiActivityEvents={emit(){}};
 W.SCRATCHBONES_CONFIG={game:{romance:{likes:{sloomi:['favorite']}}}};
-load('festival-system');
+load('festival-potluck-contest'); load('festival-system');
 const effective=()=>W.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:civilDay,minutes:hour*60,weekday:'Anan'}); // Selected map layout with all locale children.
 const layout=effective();
 assert.equal(layout.activeLayoutId,'festival_gorkunash');
@@ -101,13 +102,51 @@ for (const festivalHour of [14.999, 15, 17, 23.999, 0.999, 1]) {
 player={c:buffet.col+1,r:buffet.row+1};hour=17;
 assert.equal(api.actionButton(),null,'Gorkunash never becomes an activity input');
 assert.equal(aimSurface('bowls').provider.buttons(aimSurface('bowls'))[0].action,'obj_take_bowl','the actual bowl stack offers Take');
-hour=17;assert.equal(api.feastMenu().length,5,'five free pots leave room for the first offering');
+hour=17;assert.equal(api.feastMenu().length,7,'six rotating NPC dishes and the reserved player pot');
+assert.equal(api.feastMenu()[6].id,'reserved','player pot stays empty before donation');
 assert.equal(api.takeFestivalBowl().ok,true);
 assert.equal(aimSurface('meal').provider.buttons(aimSurface('meal'))[0].action,'obj_fill_bowl','the actual pot offers Fill');
+const inspected = aimSurface('meal',2);
+assert(inspected.provider.buttons(inspected).some(button=>button.action==='obj_inspect_meal' && button.allowed),'a dish can be inspected independently of filling the bowl');
+const servingsBefore = api.festivalBowl().uses;
+assert.equal(inspected.provider.onAction('obj_inspect_meal',inspected).ok,true,'inspect action is wired to the existing furniture service');
+assert.equal(inspectedPot,2,'the inspector opens the pot that the player aimed at');
+assert.equal(api.festivalBowl().uses,servingsBefore,'inspecting never consumes a bowl serving');
+assert.equal(api.feastDishDetails(2).score,api.feastDishDetails(2).ingredientDetails.reduce((sum,item)=>sum+item.points,0),'visible ingredient points explain the contest score');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(api.feastDishDetails(2).foodEffects)),
+  JSON.parse(JSON.stringify(W.FestivalPotluckContest.mealEffects(api.feastDishDetails(2).ingredients,itemDefs))),
+  'dish preview displays exactly the effects that festival eating applies'
+);
+
+aimSurface('meal',0); // Restore the physical reticle to pot zero after inspecting pot two.
 assert.equal(api.fillFestivalBowl(0).ok,true);
 assert.equal(api.festivalBowl().uses,10);
+// Open the real festival inspection UI without a mouse, console, or browser devtools.
+const fakeNodes = Object.fromEntries(['#festivalTitle','#festivalSubtitle','#festivalContent','#festivalStatus']
+  .map(id=>[id,{textContent:'',innerHTML:'',hidden:false}]));
+const modal = {style:{display:'',setProperty(){}},setAttribute(){},addEventListener(){},
+  querySelector(key){return fakeNodes[key] || (key==='button:not(:disabled)'?{focus(){}}:null);}};
+context.document.createElement=tag=>tag==='section'?modal:{textContent:'',append(){}};
+context.document.head={append(){}};
+context.document.body={append(){}};
+context.document.activeElement={focus(){}};
+context.document.exitPointerLock=()=>{};
+W.CalendarSystem.formatCalendarDate=()=> 'Highheat 8';
+load('festival-ui');
+const surfaceForDetails=aimSurface('meal',0);
+assert.equal(surfaceForDetails.provider.onAction('obj_inspect_meal',surfaceForDetails).ok,true,'real modal opens via the actual furniture service');
+assert.equal(W.FestivalUI.isOpen(),true,'inspection uses the shared accessible modal');
+assert.match(fakeNodes['#festivalContent'].innerHTML,/Ingredient quality and contribution/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/Effects when eaten/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/contest points/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/data-festival-action="inspect-pot"/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/★/);
+W.FestivalUI.close();
+assert.equal(W.FestivalUI.isOpen(),false,'closing the inspector restores ordinary interactions');
+
 assert.equal(api.eatFestivalBowl().ok,true);
-assert.equal(api.festivalFoodStacks('speed'),1,'festival meal contributes to the live cooking stat');
+assert.equal(api.festivalFoodStacks('speed'),api.feastDishDetails(0).foodEffects.speed || 0,'festival meal contributes to the live cooking stat');
 assert.equal(api.festivalBowl().uses,9);
 assert.equal(api.currentFullness(),1);
 const seat=layout.decor.find(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple');
@@ -141,15 +180,36 @@ const potluck=aimSurface('meal');
 assert.equal(potluck.provider.onAction('obj_contribute_meal',potluck).ok,true,'contribute the normal held meal directly to its serving pot');
 assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'disliked meal is neutral');
 assert(awarded.some(e=>e.id==='kaboku_kunji'&&e.amount===40&&e.reason==='festival_potluck'),'liked meal gives tenfold Favor');
-assert.equal(api.feastMenu().length,6,'donated dish fills reserved sixth pot immediately');
-assert.equal(api.feastMenu()[5].label,'Special stew','sixth serving pot contains the supplied meal, not a random one');
+assert.equal(api.feastMenu().length,7,'the seven pots remain after donation');
+assert.equal(api.feastMenu()[6].label,'Your Special stew','seventh serving pot permanently holds the contest entry');
 const state=api.serialize();
 assert(state.feastBuffs[0].remainingS>0,'meal remaining duration is portable');
 api.restore(state);
 assert.equal(api.currentFullness(),2,'fullness survives save/load after real drink-strike servings');
-assert.equal(api.festivalFoodStacks('speed'),1,'festival food buff survives save/load');
+assert.equal(api.festivalFoodStacks('speed'),api.feastDishDetails(0).foodEffects.speed || 0,'festival food buff survives save/load');
+const originalContest = Object.keys(state.potluckContests)[0]; // Upgrade a prize-entry record written by the initial potluck implementation.
+const legacyState = JSON.parse(JSON.stringify(state));
+const legacyEntry = legacyState.potluckContests[originalContest].entry;
+const previousScore = legacyEntry.score;
+delete legacyEntry.ingredients;
+delete legacyEntry.foodEffects;
+delete legacyEntry.estimatedQuality;
+W.HobunjiCookingData.recipes.push({id:'tea_test',slots:[{id:'main',contributesEffects:true},{id:'milk',contributesEffects:false}]});
+itemDefs.meal.recipeId = 'tea_test';
+itemDefs.meal.festivalIngredientQuality = [{key:'a',stars:5},{key:'b',stars:3}]; // Old quality snapshots had no slot contribution flags.
+api.restore(legacyState);
+const upgraded = api.feastDishDetails(6);
+assert.equal(upgraded.score,previousScore,'migrating previous saves never rerolls the donated meal score');
+assert.equal(upgraded.ingredientDetails[0].stars,5,'legacy input quality is retained');
+assert.equal(upgraded.ingredientDetails[1].points,3,'structural ingredients continue to count in judging');
+assert.equal(Object.keys(upgraded.ingredientDetails[1].effects).length,0,'legacy no-buff slots do not advertise eating effects');
+assert.equal(upgraded.foodEffects.vigor,2,'legacy donated meal retains the original cooked eating buff total');
+assert.equal(Object.keys(upgraded.foodEffects).length,1,'legacy eating buff has no extra effects');
+assert.equal(api.serialize().potluckContests[originalContest].entry.ingredients[1].contributesEffects,false,'migration persists reconstructed slot provenance');
+
 civilDay++;
-assert.equal(api.feastMenu().length,6,'the sixth pot is filled with a new meal next day');
+assert.equal(api.feastMenu().length,7,'the seven-pot layout persists next day');
+assert.equal(api.feastMenu()[6].label,'Your Special stew','the player contribution remains on display for the full festival');
 api.addFestivalFun('sloomi',201);
 api.update();
 civilDay++;
@@ -218,4 +278,4 @@ for(const rec of residents){
 assert(standing>0,'overflow guests without another preferred locale wait standing');
 assert(seats.size>0,'available dining chairs are still used');
 
-console.log('Gorkunash locale placement, schedule shifts, six-pot food, potluck, save, and heart conversion passed.');
+console.log('Gorkunash locale placement, schedule shifts, seven-pot contest food, potluck, save, and heart conversion passed.');

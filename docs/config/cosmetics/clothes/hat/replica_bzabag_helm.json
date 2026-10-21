@@ -1,0 +1,68 @@
+{
+  "slot": "hat",
+  "tintSlot": "HAT",
+  "material": "metal",
+  "tags": [
+    "material:metal"
+  ],
+  "specialHeadwearRules": false,
+  "onlyExactSpeciesVariant": true,
+  "meta": {
+    "name": "Replica Helm of Bzabag"
+  },
+  "palette": {
+    "layers": {
+      "base": "A",
+      "trim": "B"
+    }
+  },
+  "parts": {},
+  "speciesVariants": {
+    "mao-ao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/replica_bzabag's_helm-cap_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/replica_bzabag's_helm-faceguard_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "trim"
+            }
+          }
+        }
+      }
+    }
+  }
+}
