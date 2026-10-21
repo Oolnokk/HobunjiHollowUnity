@@ -57,6 +57,12 @@
     return !!rec && !rec.isChild && (rec.relationship?.canDate === true
       || (window.SCRATCHBONES_CONFIG?.game?.romance?.likes?.[rec.id] || []).length > 0);
   }
+  function contestIngredients(definition, stars) {
+    if (Array.isArray(definition?.festivalIngredientQuality) && definition.festivalIngredientQuality.length)
+      return { ingredients:definition.festivalIngredientQuality.map(item=>({key:item.key,stars:item.stars})), estimated:false };
+    // Meals cooked before the ingredient-quality snapshot existed can show only estimated tiers.
+    return { ingredients:(definition?.ingredientKeys || []).map(key=>({key,stars})), estimated:true };
+  }
   function contestData() {
     const key = year() + ':gorkunash'; // Stable seven-day result is member/world-owned and survives all sleeps and reloads.
     const cached = state.potluckContests[key];
@@ -74,24 +80,42 @@
     const donated = claims().potluck; // Old-world donations migrate through their original cooked-food definition.
     if (contest && donated && !contest.entry) {
       const definition = deps?.getItemDefs?.()?.[donated.key] || {};
+      const snapshot = contestIngredients(definition,donated.stars); // Recover legacy donations without rewriting their recorded contest result.
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
-        score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,deps.getItemDefs()) };
+        score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,deps.getItemDefs()),
+        ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
+        foodEffects:{...(definition.foodEffects||{})} };
       deps?.save?.();
     }
     const offset = Math.max(0,Math.min(6,day() - (year()*336 + 4*28 + 8 - 1)));
     const key = day() + ':' + (contest ? 'roster' : 'loading') + ':' + (contest?.entry?.key || 'none');
     if (feastCache?.key === key && feastCache.contest === contest) return feastCache.menu;
     const days = contest?.days || window.FestivalPotluckContest?.buildDays?.([], year(), deps?.getItemDefs?.() || {}) || [];
-    const dishes = (days[offset] || []).map(dish => ({ ...dish, ingredients:dish.ingredients || [] }));
+    const defs = deps?.getItemDefs?.() || {};
+    const dishes = (days[offset] || []).map(dish => ({
+      ...dish, ingredients:dish.ingredients || [],
+      foodEffects:window.FestivalPotluckContest?.mealEffects?.(dish.ingredients,defs) || dish.foodEffects || {},
+    })); // Recalculate legacy saved NPC buffs with the canonical quality/processing rules, once per day.
     const entry = contest?.entry;
     const definition = entry && deps?.getItemDefs?.()?.[entry.key];
     dishes.push(entry ? { id:'player:' + entry.key,label:"Your " + entry.label,owner:'You',dish:entry.label,
-      icon:definition?.icon || '🍲',score:entry.score,ingredients:definition?.festivalIngredientQuality || [],
-      foodEffects:{...(definition?.foodEffects || {})} }
+      icon:definition?.icon || '🍲',score:entry.score,
+      ingredients:entry.ingredients || definition?.festivalIngredientQuality || [],
+      estimatedQuality:!!entry.estimatedQuality,
+      foodEffects:{...(entry.foodEffects || definition?.foodEffects || {})} }
       : { id:'reserved',label:'Your contest entry (empty)',owner:'You',dish:'Awaiting entry',
         icon:'🍲',score:0,foodEffects:{},ingredients:[] });
     feastCache = { key,contest,menu:dishes };
     return dishes;
+  }
+  function feastDishDetails(index) {
+    const dishes = feastMenu(); // A bounded, saved seven-pot menu rather than another recipe or item catalog search.
+    const safeIndex = Number(index);
+    if (!Number.isInteger(safeIndex) || safeIndex < 0 || safeIndex >= dishes.length) return null;
+    const meal = dishes[safeIndex];
+    if (!meal) return null;
+    return { ...meal, index:safeIndex,
+      ingredientDetails:window.FestivalPotluckContest?.ingredientBreakdown?.(meal.ingredients,deps?.getItemDefs?.() || {}) || [] };
   }
   function contestStandings() {
     const record = contestData();
@@ -612,10 +636,10 @@
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
-      dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
+      dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
-      latestChange:'Seven-pot Gorkunash contest with persisted weeklong rival scores, ingredient provenance scoring and Hreesh doorstep reward.' };
+      latestChange:'Inspect each festival dish for original ingredient quality, contest points and real quality-scaled eating buffs.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
@@ -703,6 +727,7 @@
         const index = Number(target.placement.service.index), meal = feastMenu()[index]; // Every serving pot carries its own authored menu slot.
         const buttons = meal ? [{ icon:'🍲', label:heldBowl ? 'Fill bowl: ' + meal.label + (meal.id==='reserved'?'':' · '+meal.score+'★') : 'Take a bowl first', action:'obj_fill_bowl', style:'primary', allowed:!!heldBowl && meal.id!=='reserved' }] : [];
         const held = deps?.getHeldMealChoice?.(); // The normal item wheel determines which dish and quality are donated.
+        if (meal?.id !== 'reserved') buttons.push({icon:'📋',label:'Inspect ingredients & effects',action:'obj_inspect_meal',style:'secondary',allowed:true}); // Inspection never consumes a bowl or meal.
         if (!claimed('potluck') && held && deps.getItemDefs()[held.key]?.isCookedFood) buttons.push({ icon:'🍲',label:'Contribute held meal',action:'obj_contribute_meal',style:'secondary',allowed:true });
         return buttons;
       },
@@ -710,6 +735,11 @@
         if (!festivalHours() || festival()?.id !== 'gorkunash' || deps?.isBlocked?.()) return fail('This serving table is closed.');
         if (action === 'obj_take_bowl' && target.placement.service.kind === 'bowls') return takeFestivalBowl();
         if (action === 'obj_fill_bowl' && target.placement.service.kind === 'meal') return fillFestivalBowl(Number(target.placement.service.index));
+        if (action === 'obj_inspect_meal' && target.placement.service.kind === 'meal') {
+          const index = Number(target.placement.service.index);
+          return feastDishDetails(index)?.id !== 'reserved' && window.FestivalUI?.openFeast?.(index)
+            ? {ok:true} : fail('The dish cannot be inspected right now.');
+        }
         if (action === 'obj_contribute_meal') {
           const held = deps?.getHeldMealChoice?.();
           const stars = held?.stars ?? window.CookingSystem?.peekLowestQuality?.(held?.key); // Uses PackHold's selected tier through the existing quality owner.
@@ -748,8 +778,13 @@
       recipients++;
     }
     const contest = contestData();
-    if (contest) contest.entry = {key:payload.key,stars:payload.stars,label:definition?.label||payload.key,
-      score:window.FestivalPotluckContest.scoreCooked(definition,payload.stars,deps.getItemDefs())};
+    if (contest) {
+      const snapshot = contestIngredients(definition,payload.stars); // Snapshot real input tiers before the donated meal leaves inventory.
+      contest.entry = {key:payload.key,stars:payload.stars,label:definition?.label||payload.key,
+        score:window.FestivalPotluckContest.scoreCooked(definition,payload.stars,deps.getItemDefs()),
+        ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
+        foodEffects:{...(definition?.foodEffects || {})}};
+    }
     mark('potluck',{key:payload.key,stars:payload.stars,day:day()});
     feastCache = null; // The seventh physical serving pot becomes available immediately.
     return commit(`Contributed ${definition?.label||payload.key}; 10× normal gift Favor for ${recipients} villagers who do not dislike it.`);
@@ -819,6 +854,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
