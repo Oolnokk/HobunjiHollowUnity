@@ -86,9 +86,9 @@
       { name:'Overworked Victory Stew', keys:['smokedMeat','nelkMayonnaise','fishSauce','uumkaoiiCheese','heftrootFlour'] },
     ],
     'innkeeper': [
-      { name:'Hreesh’s Hearth Special', keys:['smokedMeat','heftroot','nelkEggs','garlink','nelkMayonnaise'] },
-      { name:'Innkeeper’s Finest Chowder', keys:['nelkMeat','puktukMilk','needlegrain','travelSpice','smokedMeat'] },
-      { name:'Hreesh’s Slow-Cooked Stew', keys:['smokedMeat','heftroot','ongyums','puktukMilk','fishSauce'] },
+      { name:'Hearth Special', keys:['smokedMeat','heftroot','nelkEggs','garlink','nelkMayonnaise'] },
+      { name:'Finest Chowder', keys:['nelkMeat','puktukMilk','needlegrain','travelSpice','smokedMeat'] },
+      { name:'Slow-Cooked Stew', keys:['smokedMeat','heftroot','ongyums','puktukMilk','fishSauce'] },
     ],
     'town': [
       { name:'Shared Hearth Supper', keys:['heftroot','nelkMeat','garlink','nelkEggs'] },
