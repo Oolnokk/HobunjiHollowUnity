@@ -28880,6 +28880,20 @@
         },
         saveMemberWorldData,
       });
+      window.NpcSeatRequest?.init?.({ // "Ask for seat" on the More wheel: the module owns the request; these are the game's narrow adapters.
+        getArea: () => currentArea,
+        getWalkers: () => npcWalkers,
+        getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        isPlayerSeated: () => !!sitInteraction,
+        isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
+        canSit: () => !window.FarmAnimals.isHarvesting() && (window.Mounts?.rideState ?? 'none') === 'none',
+        beginSitAtTarget: target => { // The NPC's own physical seat (key, tile, seat index, facing), the same transform the player's Sit action uses.
+          const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
+          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0);
+        },
+        toast: showToast,
+        now: () => performance.now(),
+      });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,
         isDialogueOpen: () => dialogueOpen,

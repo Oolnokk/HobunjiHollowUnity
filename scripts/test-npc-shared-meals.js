@@ -20,7 +20,8 @@ const meals = window.NpcSharedMeals, tables = window.FurnitureTableSystem, sched
 const normalize = area => area === town.id ? 'town' : area;
 scheduling.init({normalizeNpcArea:normalize,npcWalkers:walkers,calendar:{get time01(){return minutes/(24*60);}},decorativeFurnitureDefs:defs});
 scheduling.registerNpcStations(map.npcStations,'town');
-tables.init({getWalkers:()=>walkers,getArea:()=> 'town',getPlayerSeat:()=>null});
+let playerSeat = null; // Set by the Ask-for-seat check below.
+tables.init({getWalkers:()=>walkers,getArea:()=> 'town',getPlayerSeat:()=>playerSeat});
 for (const record of map.decor) {
   const def = defs[record.key]; if (!def) continue;
   const root = {parent:{},position:{x:record.col+def.fw/2+(record.postX||0),y:0,z:record.row+def.fd/2+(record.postZ||0)},
@@ -103,6 +104,20 @@ for (const station of map.npcStations.filter(s=>s.pose==='sit'&&s.tableId)) {
 const waiting=actor('dzibim_khibu');arrive(waiting);arrive(waiting);tick(1.1);arrive(waiting);tick(2.1);
 assert.equal(phase(waiting),'seek-seat');assert.notEqual(waiting.currentScheduleTarget.pose,'sit');
 walkers.shift();tick();assert.equal(phase(waiting),'walk-seat');
+// "Ask for seat": a player who takes a diner's chair sends them to another free chair with their bowl, as if they had just arrived.
+{
+  walkers.length=0;meals.clear();minutes=17*60;roll=0;
+  const diner=actor('dzibim_khibu');serve(diner);
+  const oldSeat={...diner.currentScheduleTarget};
+  playerSeat={...oldSeat};tables.setSeatTarget('dzibim_khibu',null);diner.currentScheduleTarget=null; // The seat is vacated, then the player sits in it.
+  assert(meals.reseat('dzibim_khibu'),'a seated diner can be re-seated');
+  assert.equal(phase(diner),'seek-seat'); tick();
+  assert.equal(phase(diner),'walk-seat','another free chair is chosen at once');
+  assert.notEqual(meals.targetFor(diner.rec).stationId,oldSeat.stationId,'never the chair the player now occupies');
+  assert(meals.diagnostics().actors.find(a=>a.id==='dzibim_khibu').hasBowl,'their bowl stays in hand');
+  assert(!meals.reseat('nobody'),'unknown guests are ignored');
+  playerSeat=null;meals.clear();walkers.length=0;
+}
 // Execute the festival owner's actual stage override and readiness-based handoff.
 load('festival-system');
 Object.assign(window.CalendarSystem,{isInitialized:()=>true,monthNumber:()=>5,dayOfMonth:()=>8,aotYearNumber:()=>1155});

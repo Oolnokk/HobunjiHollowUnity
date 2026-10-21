@@ -135,3 +135,14 @@ The cup rides the ordinary alcohol pipeline instead of a parallel one: `HobunjiD
 **NPCs drink from the same keg.** Three authored `drinks` tap spots sit beside it. A guest chooses "go to the keg" among their free-time options (`NpcFestivalDance.decide`); thirst grows the longer they have gone without a cup and jumps when a cup empties. Sips change real sobriety through `addNpcDrunkenness`, so drunkenness feeds back into dance willingness, speed and blackouts like any offered swig. Pacing comes from **base** inhibition (a stable trait): characters at or below 15 have no limit; the limit falls to about a fifth of sobriety by the mid-60s and to a single polite cup by the mid-80s (`drinkProfile.fStop`, with willingness fading over the last quarter before the limit). Sip cadence is `66 + 0.9 × (inhibition − 12)` game minutes ±30%, which puts the seventh swig (112 > 100 sobriety) of the least inhibited guest around 23:30–00:00; this is a tuning guideline verified by simulation, not a scripted time. Children never drink. A blacked-out guest drops their cup, seat and dance partner and lies where they are until they wake.
 
 Tests: `node scripts/run-tests.js festival-keg`.
+
+## Ask for seat (More wheel, works anywhere)
+
+`js/npc-seat-request.js` (`window.NpcSeatRequest`) adds **Ask for seat** to the hold-Action-1 "More" wheel (`NpcCommandWheel.optionsFor`). It appears only while the NPC is physically seated in a real chair (`_seatedStationKey`, a `sit` target with a furniture key) in the player's area, and the player is not already sitting. It is not festival-specific: the inn, temple, homes and festival tables all use the same path.
+
+NPCs at zero or more hearts accept (negative hearts refuse with an ambient reply and nothing changes). On accepting, the NPC's seat reservation is released, they are set down on a free walkable tile beside the chair (clear of furniture, other walkers and the player), their route state resets, and the player sits in the same physical seat through the ordinary `beginSitInteraction`, so table membership, Festival Fun from tablemates and the seated camera all behave exactly as if the player had walked up and used the chair. The displaced NPC then behaves as if they had just shown up:
+
+- At the Gorkunash feast `NpcSharedMeals.reseat` puts them back in the seat search with their bowl, so the usual family/friend table preference picks another free chair (the player's chair counts as taken).
+- Everywhere else the planner re-resolves their target each frame, and `NpcSocialSeating` now treats any chair that `FurnitureTableSystem.isSeatTaken` reports (the player's, or another live reservation) as occupied before it scores the free seats. An NPC with a single fixed chair and no alternative simply waits beside it until the player stands.
+
+Tests: `node scripts/run-tests.js npc-seat-request npc-social-seating npc-shared-meals`.

@@ -351,11 +351,21 @@
     }
     if (musicOn) matchmake(now);
   }
+  // Someone took this diner's chair ("Ask for seat"): keep the bowl and look for another free seat by table preference, as if just arrived.
+  function reseat(id) {
+    const state = states.get(id);
+    if (!state || state.target?.pose !== 'sit') return false;
+    const walker = byWalker.get(id);
+    const here = walker?.root ? { area:walker.area, c:walker.root.position.x-.5, r:walker.root.position.z-.5, pose:'stand' } : waitTarget(state);
+    state.wait = here;
+    setPhase(state,'seek-seat',here,deps.minutes());
+    return true;
+  }
   function interrupt(id) { const state=states.get(id); if(!state)return; drop(state); states.delete(id); } // An accepted social invitation releases its meal/seat before approaching; a dance partner notices on the next tick.
   function diagnostics() {
     return { latestChange:'NPCs queue, take/fill bowls, sit with spouses/family/friends, eat 10-20 minutes, then choose seconds, a facing-pair dance (spouses together; unmarried romanceable guests swap partners) or mingling, and only dance while a musician plays.',
       pendingStations,seats:seats.length,bowlSpots:bowls.length,servingSpots:pots.length,kegSpots:kegs.length,queueSpots:queues.length,danceSpots:alternatives.length,pairSlots:slots.length,musicOn,
       actors:[...states.values()].map(s=>({id:s.id,phase:s.phase,station:s.target?.stationId,tableId:s.target?.tableId||null,hasBowl:s.hasBowl,hasMeal:s.hasMeal,bites:s.bites,helpings:s.helpings,songs:s.songs,partner:s.partnerId||null,cupSwigs:s.cupSwigs,drinks:s.drinks,drunk:deps?.drunkFraction?.(s.id)??0})) };
   }
-  window.NpcSharedMeals = { init,targetFor,update,clear,interrupt,diagnostics };
+  window.NpcSharedMeals = { init,targetFor,update,clear,interrupt,reseat,diagnostics };
 })();

@@ -36,7 +36,7 @@
   // ── Claims ────────────────────────────────────────────────────────────
   function optionsFor(walker) {
     try {
-      const options=[...(window.NpcFollowing?.commandOptionsFor?.(walker)||[]),...(window.RomanceSystem?.commandOptionsFor?.(walker)||[]),...(window.FestivalSystem?.socialOptionsFor?.(walker)||[])];
+      const options=[...(window.NpcFollowing?.commandOptionsFor?.(walker)||[]),...(window.RomanceSystem?.commandOptionsFor?.(walker)||[]),...(window.FestivalSystem?.socialOptionsFor?.(walker)||[]),...(window.NpcSeatRequest?.optionsFor?.(walker)||[])];
       if(!options.length)return [];
       if(!options.some(option=>option.id==='talk'))options.unshift({id:'talk',icon:'💬',label:'Talk',run:()=>deps?.openNpcDialogue?.(walker)});
       const seen=new Set(); // Existing romance Follow/Wait commands retain their behavior without duplicate sectors.
