@@ -32,6 +32,8 @@ button:disabled{opacity:.4}select,input[type=text]{width:100%}
 .slid input[type=number]{width:70px;min-width:0;padding:6px;font-variant-numeric:tabular-nums}
 #spriteWrap{position:relative;border-radius:9px;background:#08111d;overflow:hidden;border:1px solid var(--edge)}
 #spriteCanvas{display:block;width:100%;height:160px;image-rendering:pixelated;touch-action:none;cursor:crosshair}
+.connectorRigCanvas{display:block;width:100%;height:auto;max-height:260px;border:1px solid #314b65;border-radius:9px;background:#080f19;image-rendering:pixelated;touch-action:none;cursor:crosshair;margin:7px 0}
+#omgurkuConnectorSection input[type=file]{color:var(--muted);border:1px solid var(--edge);border-radius:8px;padding:5px}
 #portrait{height:84px;width:84px;background:#06111c;image-rendering:pixelated;border:1px solid var(--edge);border-radius:10px;object-fit:contain}
 pre{font:11px/1.42 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
 input[type=file]{display:none}
@@ -40,6 +42,8 @@ input[type=file]{display:none}
 </style>
 <script src="../../config/attachment-rig-profiles.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/pants-rigs.js?v=20261020connector1"></script>
+<script src="../../js/pants-rig-core.js?v=20261020connector1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/portrait-utils.js?v=20261020omgurkuBack1"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
@@ -73,6 +77,39 @@ input[type=file]{display:none}
 <input id="headingRange" type="range" min="-180" max="180" value="0" step="1" style="width:100%;accent-color:#65adff">
 <p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses the side-view creature deadzone (including its moving snap). Orbit the camera to examine both.</p>
 </section>
+<section id="omgurkuConnectorSection">
+<h2>Deforming waist-to-neck connector</h2>
+<p>A transparent PNG becomes a flexible bridge: its <strong>top five-point waistband</strong> follows the rider's exact Engh-Sho pants waistline, while the <strong>bottom five-point waistband</strong> fits near the animal's neck and follows its own turning.</p>
+<label for="connectorFile">Connector artwork (transparent PNG)</label>
+<input id="connectorFile" type="file" accept="image/png,.png" style="display:block;width:100%;font-size:12px">
+<small id="connectorAssetStatus">No connector PNG selected. The optional connector remains hidden.</small>
+<div class="row" style="margin-top:7px">
+<button id="connectorSourceTopBtn" class="good">Edit upper PNG seam</button>
+<button id="connectorSourceBottomBtn">Edit lower PNG seam</button>
+</div>
+<canvas id="connectorSourceCanvas" width="480" height="260" class="connectorRigCanvas" aria-label="PNG connector with two draggable five-point seams"></canvas>
+<small>Tap or drag the lime (upper) and orange (lower) nodes. The five points follow the Pants Rig Author's normalized-spline convention.</small>
+<h2 style="margin-top:14px">Rider waist target</h2>
+<canvas id="connectorRiderCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Read-only five-point Engh-Sho waistband fit"></canvas>
+<small>The lime spline is the canonical Engh-Sho male portraitBeltSpline from the Pants Rig Author—not a separately guessed waistband.</small>
+<h2 style="margin-top:14px">Animal neck target</h2>
+<canvas id="connectorAnimalCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Animal sprite with editable five-point neck spline"></canvas>
+<small>Drag orange nodes to where the connector should meet the animal's neck. This edge follows the quadruped's own deadzone and gait.</small>
+<label for="connectorOpacity">Connector opacity <output id="connectorOpacityValue">100%</output></label>
+<input id="connectorOpacity" type="range" min=".1" max="1" step=".025" value="1" style="width:100%">
+<div class="row" style="margin-top:8px">
+<button id="connectorSave" class="good">Apply connector to this browser</button>
+<button id="connectorClear">Hide / reset connector</button>
+</div>
+<div class="row" style="margin-top:7px">
+<button id="connectorExport">Export connector rig JSON</button>
+<button id="connectorDownloadPng">Download connector PNG</button>
+<button id="connectorImport">Import connector rig</button>
+<input id="connectorImportFile" type="file" accept=".json,application/json" style="display:none">
+</div>
+<p>The local PNG and splines preview in the game on this browser. For a permanent game asset, commit the exported PNG at <code>docs/assets/portraitsprites/omgurku-connector.png</code> alongside the exported connector settings in <code>omgurku.json</code>.</p>
+<div id="connectorFeedback" role="status" aria-live="polite" style="font-size:12px;color:#75edc1"></div>
+</section>
 <section>
 <h2>Place saddle on lower sprite</h2>
 <div id="spriteWrap"><canvas id="spriteCanvas" width="520" height="240" aria-label="Drag crosshair to select the upper body attachment point"></canvas></div>
@@ -98,5 +135,6 @@ input[type=file]{display:none}
 </div>
 </div>
 <script src="./calibration.js?v=20261020omgurkuBack2"></script>
+<script src="./connector-author.js?v=20261020omgurkuConnector1"></script>
 </body>
 </html>
