@@ -40,11 +40,16 @@ api.init({
 });
 const tick = intervals[0];
 
-const field = { id: 'plot_a', label: 'Field', kind: 'till', tiles: [[5, 5], [6, 5]], crop: 'needlegrain', tillers: ['aliri', 'backup'], seeders: ['seedy'], harvesters: ['reaper'], hours: [8, 16] };
-const trench = { id: 'plot_b', label: 'Trench', kind: 'dig', tiles: [[10, 10]], diggers: ['digger'] };
+const field = { id: 'plot_a', label: 'Field', kind: 'till', tiles: [[5, 5], [6, 5]], crop: 'needlegrain', tillers: ['aliri', 'backup'], seeders: ['seedy'], harvesters: ['reaper'], hours: [8, 16], startWorked: false };
+const trench = { id: 'plot_b', label: 'Trench', kind: 'dig', tiles: [[10, 10]], diggers: ['digger'], startWorked: false };
 const plain = { id: 'plot_c', label: 'Plain', kind: 'till', tiles: [[20, 20]], tillers: [] };
 api.registerMap('map_hobunji_town', [field, trench, plain]);
 
+// Plots authored as already worked start that way (the painted look) until upkeep lapses.
+api.registerMap('map_x', [{ id: 'plot_w', kind: 'till', tiles: [[1, 1]], crop: 'needlegrain', tillers: ['w'], hours: [0, 24] }]);
+assert.equal(api._test.jobsFor(api.plots().find(p => p.id === 'plot_w'), 'w').length, 0, 'painted tiles start tilled');
+api.registerMap('map_x', []);
+api.registerMap('map_hobunji_town', [field, trench, plain]);
 // Managed tiles start as grass; unassigned plots stay plain painted tiles.
 assert.equal(api.isManagedTile('map_hobunji_town', 5, 5), true);
 assert.equal(api.isManagedTile('map_hobunji_town', 10, 10), true);

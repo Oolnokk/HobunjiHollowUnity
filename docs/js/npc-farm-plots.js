@@ -62,6 +62,7 @@
       const plot = {
         id: String(raw.id), mapId, area: area(mapId), kind, label: raw.label || raw.id, crop: raw.crop || '',
         tillers: lineupOf(raw, 'tillers'), seeders: lineupOf(raw, 'seeders'), harvesters: lineupOf(raw, 'harvesters'), diggers: lineupOf(raw, 'diggers'),
+        startWorked: raw.startWorked !== false, // Show the plot as painted (tilled / dug) until upkeep lapses; false starts it bare.
         hours: Array.isArray(raw.hours) && raw.hours.length === 2 ? [num(raw.hours[0], DEFAULT_HOURS[0]), num(raw.hours[1], DEFAULT_HOURS[1])] : DEFAULT_HOURS.slice(),
         tiles: raw.tiles.map(t => ({ c: Math.floor(num(t[0], 0)), r: Math.floor(num(t[1], 0)) })),
       };
@@ -95,7 +96,11 @@
   // ── Tile state ────────────────────────────────────────────────────────
   function stateOf(plot, c, r, create = false) {
     let plotState = states[plot.id];
-    if (!plotState) { if (!create) return null; plotState = states[plot.id] = {}; }
+    if (!plotState) {
+      if (!create && !plot.startWorked) return null;
+      plotState = states[plot.id] = {};
+      if (plot.startWorked) for (const t of plot.tiles) plotState[keyOf(t.c, t.r)] = plot.kind === 'dig' ? { dug: true } : { tilled: true }; // As authored in the Map Editor.
+    }
     const key = keyOf(c, r);
     if (!plotState[key] && create) plotState[key] = {};
     return plotState[key] || null;
