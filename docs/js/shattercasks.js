@@ -74,6 +74,7 @@
     const identity=worldId();
     if (storeIdentity===identity) return;
     storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();records.clear();placementCache.clear();
+    if(held||backXray.size)setHeldRearXray(null); // Never leak held portrait depth state into the next world.
     held=null; // A different world must never inherit another world's held charge.
     promptClaim='';
     if (identity.startsWith('session|')) return;
@@ -962,13 +963,19 @@
     if(!collider)return;
     for(const vase of allActive().values()) {
       if(vase.exploded||vase.carried)continue;
-      const dx=vase.col+.5-collider.origin.x,dz=vase.row+.5-collider.origin.z;
+      const box=worldHitbox(vase);
+      const cx=box?(box.min.x+box.max.x)/2:vase.col+.5;
+      const cz=box?(box.min.z+box.max.z)/2:vase.row+.5;
+      const centerY=box?(box.min.y+box.max.y)/2:baseHeight(vase.col,vase.row)+.35;
+      const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
+      const height=box?(box.max.y-box.min.y)/2:.40;
+      const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
       const radial=Math.hypot(dx,dz);
-      if(radial>collider.horizontalRangeWorld+.3)continue;
+      if(radial>collider.horizontalRangeWorld+radius)continue;
       const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
       if(delta>(collider.halfConeRad||.5)+.10)continue;
       const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
-      if(Math.abs(expectedY-(baseHeight(vase.col,vase.row)+.35))>collider.halfHeightWorld+.40)continue;
+      if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
       detonate(vase,'melee');break;
     }
   }
