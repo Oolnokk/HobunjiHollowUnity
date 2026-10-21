@@ -318,6 +318,7 @@
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
     if(aimingThrow?.vase===vase){
+      vase.group.position.x=0; // Throwing animation must not inherit flask's authored sideways sweep.
       const poses=throwPoses(),neutral=aimingThrow.phase==='releasing'?poses?.windup:poses?.neutral,
         pose=aimingThrow.phase==='releasing'?poses?.strike:poses?.windup;
       const blend=Math.min(1,aimingThrow.elapsed/(aimingThrow.phase==='releasing'?THROW_RELEASE_DELAY:.34));
@@ -1164,7 +1165,7 @@
     }
   }
   if(typeof window.addEventListener==='function') {
-    const throwPointers=new Map(),capturedToolKeys=new Set();
+    const throwPointers=new Map(),dropPointers=new Set(),capturedToolKeys=new Set();
     const actionButton=event=>event.target?.closest?.('button')?.id||'';
     // Native action-arch buttons are also targeted by desktop synthetic input
     // and controller bridges. Capture them before ordinary held-item handlers.
@@ -1173,7 +1174,7 @@
       const id=actionButton(event);
       if(id!=='btnItemAction1'&&id!=='btnItemAction2')return;
       event.preventDefault?.();event.stopImmediatePropagation?.();
-      if(id==='btnItemAction2'){drop();return;}
+      if(id==='btnItemAction2'){dropPointers.add(event.pointerId);drop();return;}
       throwPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
       startShatterAim();
     },true);
@@ -1184,11 +1185,17 @@
       event.preventDefault?.();event.stopImmediatePropagation?.();
     },true);
     window.addEventListener('pointerup',event=>{
+      if(dropPointers.delete(event.pointerId)){
+        event.preventDefault?.();event.stopImmediatePropagation?.();return;
+      }
       if(!throwPointers.delete(event.pointerId))return;
       event.preventDefault?.();event.stopImmediatePropagation?.();
       releaseShatterAim();
     },true);
     window.addEventListener('pointercancel',event=>{
+      if(dropPointers.delete(event.pointerId)){
+        event.preventDefault?.();event.stopImmediatePropagation?.();return;
+      }
       if(!throwPointers.delete(event.pointerId))return;
       event.preventDefault?.();event.stopImmediatePropagation?.();
       cancelShatterAim();
@@ -1207,7 +1214,7 @@
       event.preventDefault();event.stopImmediatePropagation?.();
     },true);
     window.addEventListener('blur',()=>{
-      throwPointers.clear();capturedToolKeys.clear();cancelShatterAim();
+      throwPointers.clear();dropPointers.clear();capturedToolKeys.clear();cancelShatterAim();
     });
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
