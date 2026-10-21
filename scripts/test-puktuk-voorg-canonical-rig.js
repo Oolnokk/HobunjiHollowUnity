@@ -124,7 +124,7 @@ assert.equal(Object.prototype.hasOwnProperty.call(voorgSpec, 'eyes'), false, 'Vo
 assert.ok(fs.existsSync(path.join(ROOT, 'docs/assets/creaturesprites/puktuk_eye.png')), 'Puktuk open-eye asset exists');
 assert.ok(fs.existsSync(path.join(ROOT, 'docs/assets/creaturesprites/puktuk_blink.png')), 'Puktuk blink asset exists');
 assert.match(rendererSource, /if \(spec\.eyes\)[\s\S]*blinkShut \? spec\.eyes\.blink : spec\.eyes\.open/, 'shared compositor swaps Puktuk open/blink art through the normal eye layer');
-assert.match(rendererSource, /if \(spec\.eyes\) urls\.push\(spec\.eyes\.open, spec\.eyes\.blink\)/, 'renderer prewarm includes eye assets');
+assert.match(rendererSource, /if \(spec\.eyes\) urls\.push\(\.\.\.\(spec\.eyes\.variants \|\| \[spec\.eyes\.open, spec\.eyes\.blink\]\)\)/, 'renderer prewarm includes eye assets');
 assert.match(bridgeSource, /HOBUNJI_ATTACHMENT_RIG_MASTER\?\.profiles\?\.creatures\?\.\[kind\]/, 'Animation Author missing-profile repair checks the immutable same-kind canonical profile first');
 assert.match(bridgeSource, /canonical \? clone\(canonical\) : seededProfile/, 'analogue seeding is only a compatibility fallback after canonical lookup');
 assert.doesNotMatch(loaderSource, /attachment-rig-livestock-authored/, 'gameplay no longer requests the deleted post-master livestock sidecar');

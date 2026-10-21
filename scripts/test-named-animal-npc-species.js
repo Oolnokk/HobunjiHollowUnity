@@ -98,7 +98,7 @@ assert.match(nativeAppearance, /patternScale/, 'normalized animal pattern scale 
 assert.match(nativeAppearance, /refreshSurfacePatternStatuses/, 'animal appearance editor must visibly confirm whether a selected repo pattern rendered');
 assert.match(nativeAppearance, /noteCanonicalRender/, 'base animal diagnostics can be synchronized when the Fey extras wrapper owns the outer preview call');
 assert.match(creatureRenderer, /getLastPatternPaintDebug/, 'runtime animal compositor must expose surface-pattern application status for the editor');
-assert.match(feyExtras, /await renderer\.composeFrame\(kind, 'idle', genotype, false\)/, 'Fey/custom-color preview must source its pixels from the canonical runtime creature compositor so repo surface patterns are not skipped');
+assert.match(feyExtras, /await renderer\.composeFrame\(kind, 'idle', genotype, (?:false|eyeState)\)/, 'Fey/custom-color preview must source its pixels from the canonical runtime creature compositor so repo surface patterns are not skipped');
 assert.match(feyExtras, /canonical\+fey:/, 'Fey preview debug explicitly reports that the canonical compositor supplied the animal frame');
 assert.doesNotMatch(feyExtras.slice(feyExtras.indexOf('async function composeAnimal'), feyExtras.indexOf('function fitToCanvas')), /recoloredSource\(/, 'Fey preview compose path must not use its obsolete private recolor/pattern compositor');
 assert.match(nativeAppearance, /renderStudioAnimal/, 'native editor must retain the regular Character Studio live preview integration');
@@ -107,7 +107,7 @@ assert.match(spriteRecolor, /colorFillApi\(\)\.shadeFillPixels/, 'SpriteRecolor 
 assert.match(colorFill, /isAuthoredWhite\(sourceData\[i\], sourceData\[i \+ 1\], sourceData\[i \+ 2\]\)/, 'white sprite pixels are excluded from the common recolor reference');
 assert.match(creatureRenderer, /window\.ColorFill\?\.shadeFillPixels/, 'Banubu and other animals tint through the same canonical ColorFill implementation used by weaving');
 assert.match(nativeAppearance, /waitForCanonicalCreatureRenderer/, 'animal previews must wait for the shared runtime creature compositor instead of racing into an editor-only tint path');
-assert.match(nativeAppearance, /await renderer\.composeFrame\(kind, 'idle', genotype, false\)/, 'Character Studio animal tint/pattern preview must call the exact runtime composeFrame implementation');
+assert.match(nativeAppearance, /await renderer\.composeFrame\(kind, 'idle', genotype, (?:false|eyeState)\)/, 'Character Studio animal tint/pattern preview must call the exact runtime composeFrame implementation');
 assert.doesNotMatch(nativeAppearance.slice(nativeAppearance.indexOf('async function renderStudioAnimal'), nativeAppearance.indexOf('function installPreviewHooks')), /composeEditorAnimal/, 'authoritative Character Studio animal preview must never fall back to the approximate editor-only compositor');
 assert.match(nativeAppearance, /canonical-failed/, 'renderer failure must surface as a canonical preview failure rather than silently changing tint algorithms');
 assert.ok(studio.indexOf('scratchbones-config.js') < studio.indexOf('repo-picker.js'), 'Character Studio must load shared tint configuration before booting its animal runtime modules');
