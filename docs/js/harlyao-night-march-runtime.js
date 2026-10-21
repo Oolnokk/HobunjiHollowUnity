@@ -8,6 +8,7 @@
   const DORMANT_AREA_PREFIX = '__harlyao_march_dormant__:'; // Skips parked rigs in hostile AI.
   const FALLBACK_CHUNK_TILES = 16; // Music/debug chunk coordinates only.
   const TICK_INTERVAL_S = 0.2; // Planner cadence; native AI owns per-frame movement.
+  const RESOURCE_FIELDS = ['health', 'maxHealth', 'stamina', 'maxStamina', 'footing', 'maxFooting', 'lastAttackAttemptAt', 'lastAttackReceivedAt']; // Logical resources retained across portrait retirement.
   const SCHEDULER_ID = 'harlyao-night-march'; // One shared frame subscription.
   let deps = null; // BanditCombat dependency seam.
   let cfg = null; // Shared config loaded once.
@@ -108,8 +109,16 @@
     const options = { color: visual.color, opacity: visual.opacity, emissiveIntensity: visual.emissiveIntensity }; // Ghostify input for body and weapon.
     window.Ghostify?.apply?.(c.avatarRef?.group, options);
     window.Ghostify?.apply?.(c._banditToolHolder, options);
+    if (c.avatarRef?.dispose && !c._harlyaoGhostDisposalWrapped) {
+      const dispose = c.avatarRef.dispose; // Restore source materials before the canonical avatar/tool disposal path runs.
+      c.avatarRef.dispose = function disposeHarlyaoAvatar(...args) {
+        window.Ghostify?.restore?.(c.avatarRef.group, { disposeTextures: true });
+        window.Ghostify?.restore?.(c._banditToolHolder, { disposeTextures: true });
+        return dispose.apply(this, args);
+      };
+      c._harlyaoGhostDisposalWrapped = true;
+    }
     if (c.groundShadow?.material) {
-      c.groundShadow.material = c.groundShadow.material.clone?.() || c.groundShadow.material;
       c.groundShadow.material.transparent = true;
       c.groundShadow.material.opacity = Math.min(0.16, Number(c.groundShadow.material.opacity) || 0.16);
     }
@@ -181,6 +190,9 @@
     c.homeX = c.x;
     c.homeY = c.y;
     c.areaId = zoneId;
+    c._travelPath = null;
+    c._travelPathTarget = null;
+    c._travelStuckT = 0; // A parked actor must not follow waypoints from its old physical location.
     const col = clamp(Math.floor(tile.col), 0, Math.max(0, c.areaCols - 1)); // Terrain sample column.
     const row = clamp(Math.floor(tile.row), 0, Math.max(0, c.areaRows - 1)); // Terrain sample row.
     const terrain = c.areaGrid?.[row]?.[col]; // Tile below this cached avatar.
@@ -212,7 +224,9 @@
     const end = { ...start }; // Route exit; reaching it is optional before dawn.
     const key = s.route.axis === 'x' ? 'col' : 'row'; // Moving coordinate.
     const extent = key === 'col' ? dims.cols : dims.rows; // Full generated map extent.
-    start[key] = s.route.direction > 0 ? pad : extent - pad;
+    const trailDepth = Math.ceil((expectedMemberCount() - 1) / Math.max(1, num(cfg?.formation?.columns, 4))) * Math.max(0.5, num(cfg?.formation?.longitudinalSpacingTiles, 1.2)); // Keep trailing ranks inside the map instead of clamping them into the same entry tile.
+    const inset = Math.min(extent * 0.5, pad + trailDepth); // Small maps still get a bounded starting point.
+    start[key] = s.route.direction > 0 ? inset : extent - inset;
     end[key] = s.route.direction > 0 ? extent - pad : pad;
     return { start, end };
   }
@@ -247,12 +261,22 @@
     return replacement;
   }
 
+  function rememberResources(agent, c) {
+    agent.resources = {}; // Only copied at retirement, never serialized or cloned every frame.
+    for (const field of RESOURCE_FIELDS) if (Number.isFinite(c[field])) agent.resources[field] = c[field];
+    agent.resources.afflictions = { ...(c.afflictions || {}) };
+    agent.resources.exhaustion = { ...(c.exhaustion || {}) };
+    if (c.rosterRecord) agent.roster = c.rosterRecord; // Preserve the generated appearance as well as the simulated identity.
+  }
+
   function syncAgents() {
     for (const agent of state.agents) {
       const c = agent.entity; // Existing visible rig is authoritative until parked.
       if (!c) continue;
-      if (c.health <= 0) { agent.dead = true; continue; }
+      if (!state.provoked && (c.health < c.maxHealth || c.hitFlashT > 0)) provoke(c.id);
       if (c.areaId === state.zoneId) { agent.x = c.x / deps.TILE; agent.y = c.y / deps.TILE; }
+      if (c.health <= 0) agent.dead = true;
+      if (c._banditDisposed || !deps.hostileObjects.has(c)) releaseEntity(agent, true); // World resets and corpse ownership can remove a rig outside this controller.
     }
   }
 
@@ -332,11 +356,12 @@
     window.__farmLog?.('[harlyao-march] Army provoked; surviving marchers defend their commander.', 'warn', 'wildlife');
   }
 
-  function releaseEntity(agent) {
+  function releaseEntity(agent, alreadyDisposed = false) {
     const c = agent.entity; // Cached rig being retired; data-only identity/position survives.
     if (!c) return;
+    rememberResources(agent, c);
     deps?.hostileObjects?.delete?.(c);
-    window.BanditCombat?.discardEntity?.(c);
+    if (!alreadyDisposed && c.health > 0) window.BanditCombat?.discardEntity?.(c); // Dead bodies belong to CreatureDeath, including their eventual disposal.
     const index = state.members.indexOf(c); // Keep compatibility diagnostics limited to retained entities.
     if (index >= 0) state.members.splice(index, 1);
     agent.entity = null;
@@ -366,12 +391,18 @@
       const w = weapon(agent.index); // Existing melee equipment pool.
       const c = await window.BanditCombat.makeEntity({ ...gangCfg, speciesWeights: { [SPECIES_ID]: 1 }, rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 } }, 'grunt', 0, agent.x * deps.TILE, agent.y * deps.TILE, {
         zoneId: s.zoneId,
-        rosterOverride: roster(agent.index),
+        rosterOverride: agent.roster || roster(agent.index),
         defOverride: { label: agent.index === state.commanderIndex ? 'Harlyao Commander' : 'Harlyao Marcher', weaponKey: w.weaponKey, weaponShapeKey: w.shapeKey, weaponMetalKey: w.metalKey, attackTag: w.attackTag, rangedWeaponKey: null },
         extra: { isHarlyaoArmyMember: true, harlyaoArmyIndex: agent.index, harlyaoCommanderId: state.agents[state.commanderIndex]?.id, harlyaoWeaponShape: w.shapeKey },
       });
       if (!c) return;
       if (generation !== buildGeneration || !routeState().active || !shouldRender(agent)) { window.BanditCombat.discardEntity?.(c); return; }
+      if (agent.resources) {
+        Object.assign(c, agent.resources);
+        c.afflictions = { ...agent.resources.afflictions };
+        c.exhaustion = { ...agent.resources.exhaustion };
+      }
+      agent.roster = c.rosterRecord || agent.roster;
       agent.entity = c;
       state.members.push(c);
       ghostify(c);
@@ -391,7 +422,7 @@
   }
 
   function update(dt) {
-    if (deps?.isPaused?.()) return;
+    if (deps?.isPaused?.() || deps?.isGameStarted?.() === false || window.DevTestingSwitchbox?.flags?.noNpcBehavior) return;
     tickAccum += clamp(num(dt), 0, 0.5); // Browser stalls never become map-length teleports.
     if (tickAccum < TICK_INTERVAL_S) return;
     const step = tickAccum; // Real elapsed time, independent of game-clock deadlines.
@@ -406,9 +437,6 @@
     }
     resetForRoute(s);
     syncAgents();
-    if (!state.provoked) for (const c of state.members) {
-      if (c.health < c.maxHealth || c.hitFlashT > 0) { provoke(c.id); break; }
-    }
     planFormation(s);
     coarseAccum += step;
     const interval = Math.max(0.2, num(cfg?.behavior?.offChunkTickSeconds, 1)); // Cheap abstract steering cadence.
@@ -633,7 +661,7 @@
       builds: state.builds, wakes: state.wakes, sleeps: state.sleeps,
       coarseTicks: state.coarseTicks, updateTicks: state.updateTicks,
       lastUpdateAt: state.lastUpdateAt, tickOwner: state.tickOwner, reason: state.reason,
-      latestChange: 'Commander-led persistent simulation; loose regrouping, individual distance LOD, native travel and moving 3D beacon.',
+      latestChange: 'Review: preserve wounded resources/appearance, respect external rig disposal and corpse ownership, clear stale wake paths, and separate entry ranks.',
       agents: state.agents.map(agent => ({ id: agent.id, index: agent.index, x: agent.x, y: agent.y, dead: agent.dead, target: agent.target })),
     };
   }

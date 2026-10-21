@@ -28724,6 +28724,7 @@
 
       window.BanditCombat?.init({
         isPaused: () => paused, // The commander-led army pauses its abstract planner with the game.
+        isGameStarted: () => window.__hobunjiGameStarted === true, // Prevent abstract marching while the title/creator owns the world.
         rnd,
         clamp: window.FormatUtils.clamp,
         debugLog,

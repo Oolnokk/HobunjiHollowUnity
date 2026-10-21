@@ -38,7 +38,7 @@
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20260909b'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
-    ['Ghostify', 'ghostify.js?v=20260909a'],
+    ['Ghostify', 'ghostify.js?v=20261021h79140c0'],
     // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261021h701b0ca'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
