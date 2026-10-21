@@ -18080,7 +18080,7 @@
                               "nodes": [
                                     {
                                           "id": "n_nohuknuk_fallback_1",
-                                          "type": "choice",
+                                          "type": "text",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -18089,13 +18089,8 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal",
-                                          "choices": [
-                                                {"label":"What kinds of gifts do you like?","next":"n_nohuknuk_gift_hint"},
-                                                {"label":"Goodbye.","next":null}
-                                          ]
-                                    },
-                                    {"id":"n_nohuknuk_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_nohuknuk_gift_hints}}","next":null}
+                                          "revealSpeed": "normal"
+                                    }
                               ]
                         }
                   ],
@@ -18394,20 +18389,6 @@
                                           }
                                     }
                               ]
-                        },
-                        {
-                          "id": "pool_nohuknuk_gift_hints",
-                          "name": "Old Man Nohuknuk Gift Hints",
-                          "entries": [
-                            {
-                              "id": "pe_nohuknuk_gift_hint_1",
-                              "text": "<Something that indicates that I love receiving crops as gifts.>"
-                            },
-                            {
-                              "id": "pe_nohuknuk_gift_hint_2",
-                              "text": "<Something that indicates that I like meat dishes as gifts.>"
-                            }
-                          ]
                         }
                   ]
             },
@@ -18555,7 +18536,7 @@
                               "nodes": [
                                     {
                                           "id": "n_hiki_hiki_fallback_1",
-                                          "type": "choice",
+                                          "type": "text",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -18564,13 +18545,8 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal",
-                                          "choices": [
-                                                {"label":"What kinds of gifts do you like?","next":"n_hiki_hiki_gift_hint"},
-                                                {"label":"Goodbye.","next":null}
-                                          ]
-                                    },
-                                    {"id":"n_hiki_hiki_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_hiki_hiki_gift_hints}}","next":null}
+                                          "revealSpeed": "normal"
+                                    }
                               ]
                         }
                   ],
@@ -18868,20 +18844,6 @@
                                           }
                                     }
                               ]
-                        },
-                        {
-                          "id": "pool_hiki_hiki_gift_hints",
-                          "name": "Hiki-hiki Gift Hints",
-                          "entries": [
-                            {
-                              "id": "pe_hiki_hiki_gift_hint_1",
-                              "text": "<Something that indicates that I love receiving food as gifts.>"
-                            },
-                            {
-                              "id": "pe_hiki_hiki_gift_hint_2",
-                              "text": "<Something that indicates that I like fish dishes as gifts.>"
-                            }
-                          ]
                         }
                   ]
             },
@@ -19155,7 +19117,7 @@
                               "nodes": [
                                     {
                                           "id": "n_mother_rahayobi_fallback_1",
-                                          "type": "choice",
+                                          "type": "text",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -19164,13 +19126,8 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal",
-                                          "choices": [
-                                                {"label":"What kinds of gifts do you like?","next":"n_mother_rahayobi_gift_hint"},
-                                                {"label":"Goodbye.","next":null}
-                                          ]
-                                    },
-                                    {"id":"n_mother_rahayobi_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_mother_rahayobi_gift_hints}}","next":null}
+                                          "revealSpeed": "normal"
+                                    }
                               ]
                         }
                   ],
@@ -19469,20 +19426,6 @@
                                           }
                                     }
                               ]
-                        },
-                        {
-                          "id": "pool_mother_rahayobi_gift_hints",
-                          "name": "Mother Rahayobi Gift Hints",
-                          "entries": [
-                            {
-                              "id": "pe_mother_rahayobi_gift_hint_1",
-                              "text": "<Something that indicates that I love receiving herbs and potion reagents as gifts.>"
-                            },
-                            {
-                              "id": "pe_mother_rahayobi_gift_hint_2",
-                              "text": "<Something that indicates that I like fish dishes as gifts.>"
-                            }
-                          ]
                         }
                   ]
             },
