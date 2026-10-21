@@ -82,7 +82,8 @@ assert.equal(rules.ingredientPoints('sauce',4,processDefs),16,'multiple processi
 assert.equal(rules.scoreCooked({festivalIngredientQuality:[{key:'root',stars:5},{key:'sauce',stars:3}]},1,processDefs),17,'actual input quality beats the output meal star rating');
 assert(!rules.winner({score:0},days),'poor entry loses');
 assert(rules.winner({score:100},days),'excellent processed dish can win');
-let currentDay=1156*336 + 119 + 6, complete=false, granted=[], provider=null, saveCount=0;
+let currentDay=1156*336 + 119 + 6, complete=false, granted=[], provider=null, saveCount=0, prepared=0;
+window.MetalArmorSystem={prepareFestivalHelmPrize:()=>{prepared++;return true;}}; // The doorstep reward converts the existing cosmetic prize to a metal faceguard and wool cap.
 window.DoorstepVisits={registerProvider:p=>{provider=p;},markDone(){}};
 const contests={'1156:gorkunash':{entry:{key:'meal',label:'Grand Feast',score:100},days,rewarded:false}};
 rules.registerRewardVisit({
@@ -96,13 +97,16 @@ assert.equal(visit.npcId,'hreesh','Hreesh delivers the prize');
 assert.match(visit.tree.nodes.at(-1).text,/Replica Helm of Bzabag/);
 assert.equal(granted.length,0,'dialogue beginning does not award item');
 assert(provider.onComplete(visit),'natural completion awards helm');
-assert(complete && saveCount>0 && granted[0]==='replica_bzabag_helm');
+assert(complete && saveCount>0 && granted[0]==='replica_bzabag_helm' && prepared===1,'prize normalized to mixed metal/cloth after award');
 assert.equal(provider.next(),null,'reward cannot recur');
 const cosmetic = JSON.parse(fs.readFileSync('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json','utf8'));
 const catalog = JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json','utf8'));
 assert(catalog.entries.some(entry=>entry.id===rules.HELM_ID));
 assert(cosmetic.onlyExactSpeciesVariant && Object.keys(cosmetic.parts).length===0,'non-illustrated characters cannot render Mao-ao male art');
 assert.deepEqual(Object.keys(cosmetic.speciesVariants),['mao-ao_male']);
+assert.equal(cosmetic.material,'mixed');
+assert.equal(cosmetic.speciesVariants['mao-ao_male'].parts.head.layers.back.materialKind,'cloth');
+assert.equal(cosmetic.speciesVariants['mao-ao_male'].parts.head.layers.front.materialKind,'metal');
 for (const file of ["replica_bzabag's_helm-cap_m.png","replica_bzabag's_helm-faceguard_m.png"])
  assert(fs.existsSync('docs/assets/cosmetics/clothes/hat/'+file),'real helm PNG available: '+file);
 const traderSource = fs.readFileSync('docs/js/slagothim-traders.js','utf8');
