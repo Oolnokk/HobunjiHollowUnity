@@ -6696,11 +6696,13 @@
                           "id": "pool_sloomi_date_hints",
                           "name": "Sloomi Date Hints",
                           "entries": [
-                            {
-                              "id": "pe_sloomi_date_hint_1",
-                              "text": "<TODO: Configure my liked date activities in romance.likes, then write a dialogue hint.>"
-                            }
-                          ]
+                                    {"id":"pe_sloomi_date_hint_1","text":"<Something that indicates that I like mining ore on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_2","text":"<Something that indicates that I like chopping down trees on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_3","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_4","text":"<Something that indicates that I like opening treasure chests on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_5","text":"<Something that indicates that I like cooking meals on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_6","text":"<Something that indicates that I like brewing potions on dates.>"}
+                              ]
                         }
                   ]
             },
@@ -7730,11 +7732,12 @@
                           "id": "pool_jubmir_date_hints",
                           "name": "Jubmir Date Hints",
                           "entries": [
-                            {
-                              "id": "pe_jubmir_date_hint_1",
-                              "text": "<TODO: Configure my liked date activities in romance.likes, then write a dialogue hint.>"
-                            }
-                          ]
+                                    {"id":"pe_jubmir_date_hint_1","text":"<Something that indicates that I like being offered drinks on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_2","text":"<Something that indicates that I like petting animals on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_3","text":"<Something that indicates that I like harvesting products from livestock on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_4","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_5","text":"<Something that indicates that I like cooking meals on dates.>"}
+                              ]
                         }
                   ]
             },
