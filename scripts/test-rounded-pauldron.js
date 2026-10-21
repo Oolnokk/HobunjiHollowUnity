@@ -230,6 +230,7 @@ assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.back.m
 assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.front.materialKind,'metal');
 assert(weaving.includes('metalItem: hybrid ? item : null'),'icon compositor uses exact plated/patinated faceguard state');
 assert(weaving.includes('isReweavableClothComponent(item)'),'loom can reweave the cloth cap without adding a smith blueprint to craftables');
+assert(weaving.includes('cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)'),'unavailable helm variants cannot leak Mao-ao art into icons/loom previews');
 assert(portrait.includes('isMetalPortraitLayer?.(entry.layer, entry.metalState) === false'),'portrait skips metal bake on cloth cap');
 
 const prizeInventory={gold:150,bar_tinBronze:20,lightWool:2,puktukWool:3}; // Tracks exact resource spending across both smith-only wool recipes.

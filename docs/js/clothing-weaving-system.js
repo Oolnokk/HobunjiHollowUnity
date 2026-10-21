@@ -1083,7 +1083,7 @@
         const currentLayer = base.layers?.[roleKey] || {}; // Used to retain Advanced Loom pattern stack slot 2 while previewing edits to slot 1.
         const currentStack = normalizePatternStack(currentLayer.patterns?.length ? currentLayer.patterns : currentLayer.pattern);
         const weaving = { layers: { ...base.layers, [roleKey]: { ...currentLayer, pattern: patternData, patterns: currentStack[1] ? [patternData, currentStack[1]] : [patternData], swapPatternColors: !!swapPatternColors } } };
-        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view }).then(r => r.canvas);
+        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view, metalItem: hybridCap ? reweaveItem : null }).then(r => r.canvas); // Cap pattern authoring must keep the real alloy/patina/plating on its faceguard.
       };
       const patternRoleCount = patternRoles().length; // UI wording follows logical weave roles rather than raw front/back raster count.
       window.PatternAuthoring?.openEditor?.({
@@ -1678,9 +1678,10 @@
   function resolveIconLayerUrls(cfg, speciesId, gender) {
     const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null;
     const slot = cfg?.slot || null; // Carries garment semantics into flat inventory/loom rendering without hard-coding a specific cosmetic id.
-    const variantKeys = typeof window.portraitVariantKeysForFighter === 'function'
-      ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot })
-      : speciesVariantKeyCandidates(speciesId, gender); // Matches the portrait's inherited and nearest supported garment variant.
+    const variantKeys = cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)
+      : typeof window.portraitVariantKeysForFighter === 'function'
+        ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot })
+        : speciesVariantKeyCandidates(speciesId, gender); // Partially illustrated prize helmets must not borrow a nearest species' headgear in icons, looms or editor previews. // Matches the portrait's inherited and nearest supported garment variant.
     for (const key of variantKeys) {
       const layers = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
       if (layers.length) return layers.map(layer => ({ ...layer, slot }));
