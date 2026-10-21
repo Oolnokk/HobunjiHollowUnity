@@ -89,7 +89,6 @@ assert(code.includes("mesh.name==='npc_avatar_back_plane'") &&
   code.includes('overlay.bind(mesh.skeleton,mesh.bindMatrix)') &&
   code.includes('backMaterial.visible=false') &&
   code.includes('rearMaterial.depthTest=true') &&
-  code.includes('mesh.renderOrder=1.5') &&
   code.includes('setHeldRearXray(null)') &&
   code.includes('setHeldRearXray(held); // Recheck'),
   'carrying uses one back-only skinned draw (or legacy rigid back) above the vase, while respecting world depth and restoring normal portrait state');
@@ -221,6 +220,15 @@ class Mesh extends Node {constructor(geometry,material){super();this.geometry=ge
 class InstancedMesh extends Mesh {constructor(geometry,material){super(geometry,material);this.instanceMatrix={};}setMatrixAt(){}}
 class Object3D extends Node {updateMatrix(){this.matrix={};}}
 class Geometry {dispose(){}}
+class RingGeometry extends Geometry {
+  constructor(innerRadius,outerRadius,segments,radialSegments){
+    super();Object.assign(this,{innerRadius,outerRadius,segments,radialSegments});
+    this.heights=[0,0,0];this.samples=0;
+    this.attributes={position:{count:3,getX:index=>[0,1,0][index],getY:index=>[0,0,1][index],
+      setZ:(index,value)=>{this.heights[index]=value;this.samples++;}}};
+  }
+  computeBoundingSphere(){this.boundsUpdated=true;}
+}
 class Material {
   constructor(options){Object.assign(this,options);}
   clone(){return new Material({...this});}
@@ -259,7 +267,7 @@ function authoredGroup() {
   group.userData.meshById=new Map([['silhouette',mesh]]);
   return group;
 }
-const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Raycaster,
+const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Raycaster,RingGeometry,
   TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
@@ -349,6 +357,7 @@ async function scenario(reloading=false) {
 }
 async function arenaScenario() {
   let currentArea='map_dev_arena',modelBuilds=0;
+  let groundProjectionBinds=0; // Counts raised-surface binding of the reusable throw preview.
   const tiles=Array.from({length:9},()=>Array.from({length:9},()=>({type:'grass',water:0})));
   tiles[2][3]={type:'rock',rockKind:'diggableRockOre'};
   tiles[3][2]={type:'water',water:1};
@@ -359,6 +368,7 @@ async function arenaScenario() {
   const deps={TILE:64,player,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,hostileObjects:new Set(),showToast(){}};
   const game={console,THREE,localStorage,__hobunjiPlayerProfile:{worldId:'arena-regression'},
+    EnvironmentSurfaceMicroPlateau:{bindGroundProjection(mesh){groundProjectionBinds++;mesh.userData.environmentGroundProjection=true;}},
     Combat:{deps,init(){},update(){},beginStagedAction(){},spawnMeleeTrail(){}},
     GridTileAccessors:{getActiveScene:()=>activeScene,getActiveGrid:()=>tiles,
       isTownBuildingCollisionTile:(c,r)=>c===6&&r===6},
@@ -415,6 +425,14 @@ async function arenaScenario() {
   assert.equal(rearOverlay.material[1].depthWrite,true,'rear x-ray still occludes objects behind the carrier');
   assert.equal(rearOverlay.skeleton,portrait.skeleton,'rear overlay reuses existing bones rather than a second rig');
   assert.equal(rearState.heldPartsWithoutDepthWrite,1,'only held cask mesh stops writing depth');
+  // Execute the production classifier: render order 1.5 silently opts a mesh
+  // into a separate post-world weapon draw, overriding portrait ordering.
+  const heldRenderer=fs.readFileSync(path.join(root,'docs/js/held-object-render-order.js'),'utf8');
+  const isLegacyHeldPlane=vm.runInNewContext('('+heldRenderer.match(/function isLegacyHeldPlane\(object\) \{[\s\S]*?\n  \}/)[0]+')',
+    {LEGACY_HELD_RENDER_ORDER:1.5});
+  assert(isLegacyHeldPlane({isMesh:true,renderOrder:1.5,userData:{}}),'fixture exercises the reserved weapon replay order');
+  for(const mesh of activeScene.children.find(node=>node.userData?.shattercaskId===first.id).userData.meshById.values())
+    assert.equal(isLegacyHeldPlane(mesh),false,'physical cask stays in world colour pass below rear portrait');
   // A late portrait rebuild must replace the overlay and restore the old
   // material before attaching the new skinned back on the next poll.
   const rebuilt=new SkinnedMesh(portrait.geometry,[
@@ -435,8 +453,23 @@ async function arenaScenario() {
   const aimSnapshot=game.Shattercasks.debugSnapshot().throwAim;
   assert(aimSnapshot.target.x>player.x/64+1,
     'low camera angle can hit ground behind the player, but the Shattercask reticle stays forward');
+  const ring=activeScene.children.find(node=>node.name==='shattercask_ground_projected_throw_reticle'); // Actual reusable aim mesh.
+  assert(ring?.visible,'holding throw displays a ground preview');
+  assert.equal(ring.geometry.innerRadius,0,'filled footprint includes the landing point');
+  assert.equal(ring.geometry.radialSegments,6,'interior rings allow uneven ground projection');
+  assert.equal(ring.scale.x,game.Shattercasks.RADIUS,'preview matches actual blast radius');
+  assert.equal(ring.renderOrder,40,'preview draws above raised terrain covers like flasks');
+  assert.equal(groundProjectionBinds,1,'raised-surface projection is bound once');
+  deps.getGroundYAtWorld=(x,z)=>.2*x-.1*z;
+  game.Combat.update(.1);
+  assert(Math.abs(ring.geometry.heights[1]-.2)<1e-6,'preview outer edge follows rising terrain');
+  assert(Math.abs(ring.geometry.heights[2]-.1)<1e-6,'ground rotation uses the correct Z sign');
+  assert(ring.geometry.boundsUpdated,'terrain changes refresh culling bounds');
+  assert.equal(game.Shattercasks.debugSnapshot().throwPreview.terrainProjected,true,'mobile diagnostics report projection');
   assert(game.Shattercasks.releaseShatterAim(),'releasing Item Action 1 starts the throw stage');
+  assert.equal(ring.visible,true,'preview remains visible through release windup');
   game.Shattercasks.cancelShatterAim();
+  assert.equal(ring.visible,false,'cancel hides the preview');
   assert(game.Shattercasks.drop(),'Item Action 2 drops held Shattercask');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');

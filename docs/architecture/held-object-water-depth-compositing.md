@@ -33,6 +33,24 @@
   handling, classification, and the two actual flood-probe distances.
   It is not a GPU screenshot regression.
 
+## Physical carryables must stay out of the weapon PNG replay
+
+`isLegacyHeldPlane()` treats a rigid mesh with `renderOrder: 1.5` as a
+weapon/tool PNG and permanently registers it for the later selective replay.
+That value is a classification marker, not merely a convenient draw order.
+Using it for a carried Shattercask hides the cask from the ordinary world
+colour pass and redraws it over the carrier's already-rendered rear portrait.
+Disabling the cask's depth writes or raising the rear portrait's draw order
+cannot fix ordering across those separate passes.
+
+Shattercask parts use `CARRIED_VESSEL_RENDER_ORDER` (1.4) instead. Their
+normal colour draw leaves depth writes off only while held, allowing the
+back-only portrait pass to draw over the vessel while still testing against
+world geometry. Drop/launch restores the original material and draw order.
+Do not opt these physical parts into `markHeldPlane()` or the reserved 1.5
+marker. `scripts/test-shattercasks.js` executes the production classifier
+against the held parts and tests the filled, terrain-projected blast preview.
+
 ## Why the compositor exists
 
 The game renders many avatars and items as PNG planes and combines them

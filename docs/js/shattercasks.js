@@ -256,7 +256,8 @@
   const backXray=new Map(),heldRenderOrders=new Map();
   const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
-  const CARRIED_REAR_RENDER_ORDER=2.4; // After carried vessel parts (1.5), before existing hat x-ray (2.5).
+  const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
+  const CARRIED_REAR_RENDER_ORDER=2.4; // After carried vessel parts, before existing hat x-ray (2.5).
   const CARRIED_REAR_HEAD_RENDER_ORDER=2.6; // Head's back-only hat/hair pass over the held vessel and hat-front pass.
   function restoreRearHeadwear() {
     for(const [mesh,stored] of rearHeadwearXray){
@@ -396,7 +397,10 @@
         materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material])
           .filter(Boolean).map(material=>[material,material.depthWrite])
       });
-      mesh.renderOrder=1.5;
+      // Keep physical furniture in the normal colour pass. The held-object
+      // renderer treats 1.5 as a legacy PNG marker and would replay this
+      // vessel over the rear portrait, regardless of its depthWrite setting.
+      mesh.renderOrder=CARRIED_VESSEL_RENDER_ORDER;
       for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
         if(material&&material.depthWrite!==false){
           material.depthWrite=false;
@@ -709,15 +713,35 @@
   function showThrowRing(target){
     if(!target||!THREE.RingGeometry||!THREE.MeshBasicMaterial)return;
     if(!throwRing){
-      throwRing=new THREE.Mesh(new THREE.RingGeometry(RADIUS-.10,RADIUS,48),
+      // Match the flask's filled, radially subdivided ground preview so the
+      // entire blast footprint follows terrain rather than cutting into it.
+      throwRing=new THREE.Mesh(new THREE.RingGeometry(0,1,48,6),
         new THREE.MeshBasicMaterial({color:0xffb45e,side:THREE.DoubleSide,transparent:true,
-          opacity:.64,depthWrite:false}));
+          opacity:.24,depthWrite:false}));
+      window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(throwRing);
       throwRing.rotation.x=-Math.PI/2;
+      throwRing.renderOrder=40;
       throwRing.name='shattercask_ground_projected_throw_reticle';
     }
     const active=scene();if(!active)return;
     if(throwRing.parent!==active)active.add(throwRing);
-    throwRing.position.set(target.x,target.y+.04,target.z);
+    const groundY=thrownGround(target.x,target.z); // Same landing surface used by the physical throw.
+    const changed=throwRing.userData.targetX!==target.x||throwRing.userData.targetZ!==target.z
+      ||throwRing.userData.groundY!==groundY; // Resample only when the target or its terrain height changes.
+    throwRing.position.set(target.x,groundY+.035,target.z);
+    throwRing.scale.setScalar(RADIUS);
+    if(changed){
+      const positions=throwRing.geometry.attributes?.position; // Local Z becomes height after the ground-plane rotation.
+      if(positions){
+        for(let index=0;index<positions.count;index++){
+          positions.setZ(index,(thrownGround(target.x+positions.getX(index)*RADIUS,
+            target.z-positions.getY(index)*RADIUS)-groundY)/RADIUS);
+        }
+        positions.needsUpdate=true;
+        throwRing.geometry.computeBoundingSphere?.();
+      }
+      Object.assign(throwRing.userData,{targetX:target.x,targetZ:target.z,groundY});
+    }
     throwRing.visible=true;
   }
   function cancelShatterAim(){
@@ -1455,19 +1479,21 @@
     RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Terrain-projected filled throw preview; physical cask excluded from weapon PNG replay.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
       rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
         rearHeadwearOverlays:rearHeadwearXray.size,
         heldPartsWithoutDepthWrite:heldRenderOrders.size,
+        heldPartsInWeaponReplay:[...heldRenderOrders.keys()].filter(mesh=>mesh.userData?.hobunjiHeldObjectPlane===true).length,
         skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
       performance:{ruinSnapshotReads,textureBatchesCreated,
         meshRaycastQueries,meshRaycastBroadphaseRejects,meshRaycastTriangleQueries,
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
         cachedPlacementAreas:placementCache.size},
+      throwPreview:{visible:!!throwRing?.visible,radius:RADIUS,terrainProjected:!!throwRing?.userData.environmentGroundProjection},
       throwAim:aimingThrow?{phase:aimingThrow.phase,target:aimingThrow.target,manual:!!aimingThrow.manualTarget,
         heading:throwHeading(),sharedPose:aimingThrow.sharedPose}:null,
       throwFlight:flight?{origin:{x:flight.origin.x,y:flight.origin.y,z:flight.origin.z},target:flight.target,
