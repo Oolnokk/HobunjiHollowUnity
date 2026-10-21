@@ -141,7 +141,7 @@
       textNode('banubu_intro_5', 'I’d love to help, and I get how urgent this all is with your little village and all that, but I’m in a bit of a pickle. I’m just so dang sleepy these days. Even if I got up, I ain’t got the energy to be much help.', 'banubu_intro_6'),
       textNode('banubu_intro_6', 'I think if I only had something good to eat, maybe it’d give me enough of a push to get moving. But I’m far too tired to get up and hunt.', 'banubu_intro_7'),
       textNode('banubu_intro_7', 'Huh. You know what? Maybe you could help me.', 'banubu_intro_8'),
-      textNode('banubu_intro_8', 'You know what always revitalizes me? A good Three-Fish Pie. It’s my favorite. I’ll teach you the recipe. If you can make me one, that could give me the boost I need to at least get up and start moving.', 'banubu_intro_9'),
+      textNode('banubu_intro_8', 'You know what always revitalizes me? A good Three-Fish Pie. It’s my favorite. <Something that indicates that I like receiving fish as gifts.> I’ll teach you the recipe. If you can make me one, that could give me the boost I need to at least get up and start moving.', 'banubu_intro_9'),
       textNode('banubu_intro_9', 'But if you want me to be any real help, it’s gotta be really nutritious. I’ve been lying here an awfully long time, even by my standards.', 'banubu_intro_10'),
       textNode('banubu_intro_10', 'I need a good Three-Fish Pie that can give me {{banubuRequestedBuffs}}.', 'banubu_intro_11'),
       textNode('banubu_intro_11', 'Bring me one of those and we can get started.', 'banubu_intro_commit'),
@@ -179,7 +179,7 @@
     1,
     'banubu_q1_active_1',
     [
-      textNode('banubu_q1_active_1', 'Zzzzz… Three-Fish Pie… three fish… flour… fat… {{banubuRequestedBuffs}}…', null),
+      textNode('banubu_q1_active_1', 'Zzzzz… Three-Fish Pie… three fish… flour… fat… {{banubuRequestedBuffs}}… <Something that indicates that I like receiving fish as gifts.>', null),
     ],
     { questType: 'threeFishPie', buffCount: 3, minStacks: 1 },
   );
@@ -288,7 +288,7 @@
     3,
     'banubu_blocked_1',
     [
-      textNode('banubu_blocked_1', 'Zzzzz.', null),
+      textNode('banubu_blocked_1', 'Zzzzz. <Something that indicates that I like receiving fish as gifts.>', null),
     ],
     { questType: 'blocked', authoringBlocked: true },
   );
