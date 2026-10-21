@@ -7,7 +7,7 @@ for(const name of ['furniture-table-system','npc-following'])vm.runInContext(fs.
 let area='town',playerSeat=null,player={x:3.5,z:3.5},override=null; // Live world inputs can change without rebuilding the movement provider.
 const friend={rec:{id:'friend'},area,root:{position:{x:8.5,z:3.5}}};
 W.NpcScheduling={registerTargetOverride(_id,fn){override=fn;}};
-W.NpcPathfinding={isNpcTileWalkable:()=>true};
+W.NpcPathfinding={isNpcTileWalkable:()=>true,canNpcBeeline:()=>true,findNpcPath:()=>[]}; // Shared NPC navigation authority for cover candidates.
 W.FurnitureTableSystem.init({getArea:()=>area,getPlayerSeat:()=>playerSeat,getPlayerPosition:()=>player,getWalkers:()=>[friend]});
 W.NpcFollowing.init({findWalker:()=>friend,getPlayerTilePosition:()=>player,getCurrentArea:()=>area,normalizeNpcArea:a=>a,canHostNpc:()=>true});
 W.NpcFollowing.commandOptionsFor(friend).find(o=>o.id==='follow').run();
@@ -40,3 +40,39 @@ W.RomanceSystem=null;W.NpcRapport={get:()=>0};
 assert(W.NpcFollowing.setMode(friend,'follow'));
 assert(override(friend.rec));W.NpcFollowing.clear();
 assert.equal(override(friend.rec),null,'save restore can clear session-only company');
+
+ 
+// Combat retreat must be shared by ordinary friendly followers and dates, without breaking seating.
+let combatOn = false; // Drives the combat gate for a normal follower's schedule override.
+let danger = [{x:10.5,z:3.5}]; // Simulated nearby pursuer on the opposite side of a cover wall.
+let followNow = 1000; // Deterministic clock checks whether the same cover is retained after replan expiry.
+context.performance.now = () => followNow;
+W.NpcFollowing.init({
+  findWalker:()=>friend,getPlayerTilePosition:()=>player,getCurrentArea:()=>area,normalizeNpcArea:a=>a,canHostNpc:()=>true,
+  isCombatActive:()=>combatOn,getCombatThreats:()=>danger,
+  isCoverOccluder:(_area,c)=>c===9, // Continuous wall between the hunter and the following NPC.
+});
+playerSeat=null;
+friend.area='town';friend.root.position.x=8.5;friend.root.position.z=3.5;player.x=3.5;player.z=3.5;
+assert(W.NpcFollowing.setMode(friend,'follow'));
+combatOn=true;
+let retreat=override(friend.rec);
+assert.equal(retreat.activity,'taking cover','ordinary companions retreat rather than follow into combat');
+assert.equal(retreat.run,true,'companions run for refuge');
+assert(W.NpcFollowing.snapshot().lastDecision?.selected?.hiddenFrom>0,'retreat selects line-of-sight cover');
+const chosen={c:retreat.c,r:retreat.r}; // Prevent oscillation between safe positions after the cache expires.
+friend.root.position.x=chosen.c+.5;friend.root.position.z=chosen.r+.5;followNow=5000;
+retreat=override(friend.rec);
+assert.deepEqual({c:retreat.c,r:retreat.r},chosen,'safe shelter remains the target after replan expiry');
+combatOn=false;
+assert.equal(override(friend.rec).activity,'following you','a follower returns after combat');
+assert.equal(W.NpcFollowing.snapshot().retreats.length,0,'combat-end clears pending retreat routes');
+friend.transferToArea=function(nextArea,spot){this.area=nextArea;this.root.position.x=spot.c+.5;this.root.position.z=spot.r+.5;}; // Exercises ordinary follower cross-area transitions like dates.
+W.NpcPathfinding.nearestWalkableTile=(_area,c,r)=>({c:c+1,r}); // The destination entrance tile is structurally blocked.
+area='wilderness_test';
+const zoneFollow=override(friend.rec);
+assert.equal(friend.area,'wilderness_test','ordinary followers transition into the wilderness zone');
+assert.equal(friend.root.position.x,Math.floor(player.x)+1.5,'cross-area follower uses validated arrival coordinates');
+assert.equal(zoneFollow.area,'wilderness_test');
+W.NpcFollowing.clear();
+console.log('Shared combat cover, stable refuge, recovery and wilderness following passed.');
