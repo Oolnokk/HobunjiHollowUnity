@@ -1,9 +1,10 @@
 {
   "slot": "hat",
   "tintSlot": "HAT",
-  "material": "metal",
+  "material": "mixed",
   "tags": [
-    "material:metal"
+    "material:metal",
+    "material:cloth"
   ],
   "specialHeadwearRules": false,
   "onlyExactSpeciesVariant": true,
@@ -39,7 +40,8 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "materialKind": "cloth"
             },
             "front": {
               "image": {
@@ -58,7 +60,8 @@
                   }
                 }
               },
-              "layerRole": "trim"
+              "layerRole": "trim",
+              "materialKind": "metal"
             }
           }
         }
