@@ -230,17 +230,35 @@
       for(const [mesh,v] of backXray){
         mesh.renderOrder=v.order;
         if(mesh.material===v.material){
-          v.material.depthTest=v.depthTest;v.material.depthWrite=v.depthWrite;v.material.needsUpdate=true;
+          v.material.depthTest=v.depthTest;
+          v.material.depthWrite=v.depthWrite;
+          v.material.needsUpdate=true;
         }
       }
       backXray.clear();
-      for(const [mesh,order] of heldRenderOrders)mesh.renderOrder=order;
+      for(const [mesh,snap] of heldRenderOrders){
+        mesh.renderOrder=snap.order;
+        for(const [material,depthWrite] of snap.materials){
+          material.depthWrite=depthWrite;material.needsUpdate=true;
+        }
+      }
       heldRenderOrders.clear();
       return;
     }
+    // The cask does not write into the depth buffer *while held*.
+    // The rear portrait is drawn AFTER it, but retains depth testing
+    // against walls, terrain, and all other regular occluders.
     for(const mesh of cask.meshColliders||[]){
-      if(!heldRenderOrders.has(mesh))heldRenderOrders.set(mesh,mesh.renderOrder);
-      mesh.renderOrder=3;
+      if(!heldRenderOrders.has(mesh))heldRenderOrders.set(mesh,{
+        order:mesh.renderOrder,
+        materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material])
+          .filter(Boolean).map(material=>[material,material.depthWrite])
+      });
+      mesh.renderOrder=1.5;
+      for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
+        if(material&&material.depthWrite!==false){
+          material.depthWrite=false;material.needsUpdate=true;
+        }
     }
     carryDeps()?.playerMesh?.traverse?.(mesh=>{
       if(!mesh?.isMesh||mesh.name!=='npc_avatar_back_plane')return;
@@ -248,7 +266,8 @@
       if(!material)return;
       if(!backXray.has(mesh))backXray.set(mesh,{
         material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
-      mesh.renderOrder=4;material.depthTest=false;material.depthWrite=false;material.needsUpdate=true;
+      mesh.renderOrder=2.5;
+      material.depthTest=true;material.needsUpdate=true;
     });
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
@@ -1072,6 +1091,7 @@
     }
     if(targetScene)ensureArea(mapId,targetScene,grid());
     if(held) {
+      if(!backXray.size)setHeldRearXray(held); // Late-loading portrait: retry only on 140ms poll.
       const p=playerPosition(),equipment=switchEquipment();
       if(equipment.weapon!==lastEquipment.weapon||equipment.tool!==lastEquipment.tool||equipment.item!==lastEquipment.item)drop();
       // The held visual already follows the player at full frame rate above.
