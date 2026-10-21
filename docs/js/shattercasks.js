@@ -488,6 +488,7 @@
   function throwTarget(){
     const p=playerPosition(),d=deps();
     if(!p)return null;
+    if(aimingThrow?.manualTarget)return aimingThrow.manualTarget;
     let x=p.x+Math.cos(p.angle)*3,z=p.z+Math.sin(p.angle)*3;
     const ray=d?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.()
       ||window.__hitboxDebug?.interactionRay;
@@ -528,6 +529,16 @@
     throwRing.visible=true;
   }
   function cancelShatterAim(){aimingThrow=null;if(throwRing)throwRing.visible=false;}
+  function pointThrowFromDrag(dx,dy){
+    if(aimingThrow?.phase!=='aim')return;
+    const p=playerPosition(),mag=Math.hypot(dx,dy);
+    if(!p||mag<7)return;
+    const range=Math.min(MAX_THROW_RADIUS,mag/240*MAX_THROW_RADIUS);
+    const x=p.x+dx/mag*range,z=p.z-dy/mag*range;
+    aimingThrow.manualTarget={x,y:thrownGround(x,z),z};
+    aimingThrow.target=aimingThrow.manualTarget;
+    showThrowRing(aimingThrow.target);
+  }
   function startShatterAim(){
     if(!held||aimingThrow)return false;
     aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0};
@@ -1023,6 +1034,7 @@
   function tick(dt=0) {
     const mapId=area();
     if(held && held.mapId!==mapId)drop();
+    if(flight&&flight.vase.mapId!==mapId){flight.vase.flying=false;flight=null;}
     updateShatterThrow(dt);
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
@@ -1109,6 +1121,51 @@
     }
   }
   if(typeof window.addEventListener==='function') {
+    const throwPointers=new Map(),capturedToolKeys=new Set();
+    const actionButton=event=>event.target?.closest?.('button')?.id||'';
+    // Native action-arch buttons are also targeted by desktop synthetic input
+    // and controller bridges. Capture them before ordinary held-item handlers.
+    window.addEventListener('pointerdown',event=>{
+      if(!held)return;
+      const id=actionButton(event);
+      if(id!=='btnItemAction1'&&id!=='btnItemAction2')return;
+      event.preventDefault?.();event.stopImmediatePropagation?.();
+      if(id==='btnItemAction2'){drop();return;}
+      throwPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      startShatterAim();
+    },true);
+    window.addEventListener('pointermove',event=>{
+      const origin=throwPointers.get(event.pointerId);
+      if(!origin)return;
+      pointThrowFromDrag(event.clientX-origin.x,event.clientY-origin.y);
+      event.preventDefault?.();event.stopImmediatePropagation?.();
+    },true);
+    window.addEventListener('pointerup',event=>{
+      if(!throwPointers.delete(event.pointerId))return;
+      event.preventDefault?.();event.stopImmediatePropagation?.();
+      releaseShatterAim();
+    },true);
+    window.addEventListener('pointercancel',event=>{
+      if(!throwPointers.delete(event.pointerId))return;
+      event.preventDefault?.();event.stopImmediatePropagation?.();
+      cancelShatterAim();
+    },true);
+    const toolBinding=()=>window.InputBindings?.getCurrentBindings?.()?.desktop?.toolSelect
+      ||window.InputBindings?.getDefaultBindings?.('desktop')?.toolSelect;
+    window.addEventListener('keydown',event=>{
+      const binding=toolBinding();
+      if(event.repeat||toolArchAction()!=='pickup'||!binding
+        ||![event.code,event.key].includes(binding))return;
+      event.preventDefault();event.stopImmediatePropagation?.();
+      capturedToolKeys.add(event.code);toolArchTap();
+    },true);
+    window.addEventListener('keyup',event=>{
+      if(!capturedToolKeys.delete(event.code))return;
+      event.preventDefault();event.stopImmediatePropagation?.();
+    },true);
+    window.addEventListener('blur',()=>{
+      throwPointers.clear();capturedToolKeys.clear();cancelShatterAim();
+    });
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
       const id=event.target?.closest?.('button')?.id||'';
