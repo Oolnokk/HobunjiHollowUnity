@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   let deps = null; // Runtime-owned inventory, scene, NPC, and persistence closures.
-  let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0 } }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
+  let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0 }, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
   let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let heldBowl = null; // Temporary ten-portion festival bowl: never added to real inventory or character saves.
@@ -57,39 +57,49 @@
     return !!rec && !rec.isChild && (rec.relationship?.canDate === true
       || (window.SCRATCHBONES_CONFIG?.game?.romance?.likes?.[rec.id] || []).length > 0);
   }
+  function contestData() {
+    const key = year() + ':gorkunash'; // Stable seven-day result is member/world-owned and survives all sleeps and reloads.
+    const cached = state.potluckContests[key];
+    if (cached) return cached;
+    const guests = residents(); // Never freeze an empty resident list during initial asset/NPC loading.
+    if (!guests.length || !window.FestivalPotluckContest) return null;
+    const created = { days:window.FestivalPotluckContest.buildDays(guests,year(),deps?.getItemDefs?.() || {}),entry:null,rewarded:false };
+    state.potluckContests[key] = created;
+    deps?.save?.(); // The original opponent rolls are persisted before a contribution can be accepted.
+    return created;
+  }
   function feastMenu() {
     if (festival()?.id !== 'gorkunash') return [];
-    const source = window.HobunjiCookingData || {}; // Actual authored cooking recipes/ingredients determine the daily dishes.
-    const cacheKey = `${day()}:${claimed('potluck') ? claims().potluck?.day : 'no-donation'}`;
-    if(feastCache?.key === cacheKey && feastCache.source === source) return feastCache.menu;
-    const recipes = (source.recipes || []).filter(recipe => recipe?.slots?.length);
-    const defs = deps?.getItemDefs?.() || {};
-    const prepared = Object.entries(defs).filter(([,def]) => def?.isCookedFood && Object.keys(def.foodEffects || {}).length);
-    const indexSeed = Math.abs((day() * 1103515245 + 12345) | 0);
-    const donated=claims().potluck; // Once an offering is accepted, pot six immediately displays the contributed recipe, then rerolls on subsequent days.
-    const count = donated ? 6 : 5;
-    const meals = []; // Stable within a civil day, so closing the menu cannot reroll free food.
-    for (let i=0;i<count;i++) {
-      if(i===5 && donated?.day===day()) {
-        const contribution=defs[donated.key];
-        meals.push({id:`donated:${day()}:${donated.key}`,label:contribution?.label||'Contributed meal',icon:contribution?.icon||'🍲',
-          foodEffects:{...(contribution?.foodEffects||{})}});
-      } else if (recipes.length) {
-        const recipe = recipes[(indexSeed + i*7) % recipes.length];
-        const ingredients = (recipe.slots || []).map((slot,j) => {
-          const choices = Object.values(source.items || {}).filter(item => item.categories?.some(cat => slot.accepts?.includes(cat)));
-          return choices.length ? choices[(indexSeed + i*17 + j*11) % choices.length] : null;
-        }).filter(Boolean);
-        const foodEffects = {};
-        for (const item of ingredients) if (item.primaryEffect) foodEffects[item.primaryEffect] = (foodEffects[item.primaryEffect] || 0) + Math.max(1,Math.ceil(Number(item.baseBoost)||1));
-        meals.push({ id:`day:${day()}:pot:${i}`, label:recipe.baseOutputName || recipe.name || 'Festival meal',icon:recipe.outputIcon || '🍲',foodEffects });
-      } else if (prepared.length) {
-        const [key,def] = prepared[(indexSeed+i*13)%prepared.length];
-        meals.push({id:key,label:def.label||'Cooked meal',icon:def.icon||'🍲',foodEffects:{...def.foodEffects}});
-      } else meals.push({id:`day:${day()}:pot:${i}`,label:'Festival stew',icon:'🍲',foodEffects:{vigor:1}});
+    const contest = contestData();
+    const donated = claims().potluck; // Old-world donations migrate through their original cooked-food definition.
+    if (contest && donated && !contest.entry) {
+      const definition = deps?.getItemDefs?.()?.[donated.key] || {};
+      contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
+        score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,deps.getItemDefs()) };
+      deps?.save?.();
     }
-    feastCache={key:cacheKey,source,menu:meals};
-    return meals;
+    const offset = Math.max(0,Math.min(6,day() - (year()*336 + 4*28 + 8 - 1)));
+    const key = day() + ':' + (contest ? 'roster' : 'loading') + ':' + (contest?.entry?.key || 'none');
+    if (feastCache?.key === key && feastCache.contest === contest) return feastCache.menu;
+    const days = contest?.days || window.FestivalPotluckContest?.buildDays?.([], year(), deps?.getItemDefs?.() || {}) || [];
+    const dishes = (days[offset] || []).map(dish => ({ ...dish, ingredients:dish.ingredients || [] }));
+    const entry = contest?.entry;
+    const definition = entry && deps?.getItemDefs?.()?.[entry.key];
+    dishes.push(entry ? { id:'player:' + entry.key,label:"Your " + entry.label,owner:'You',dish:entry.label,
+      icon:definition?.icon || '🍲',score:entry.score,ingredients:definition?.festivalIngredientQuality || [],
+      foodEffects:{...(definition?.foodEffects || {})} }
+      : { id:'reserved',label:'Your contest entry (empty)',owner:'You',dish:'Awaiting entry',
+        icon:'🍲',score:0,foodEffects:{},ingredients:[] });
+    feastCache = { key,contest,menu:dishes };
+    return dishes;
+  }
+  function contestStandings() {
+    const record = contestData();
+    if (!record) return null;
+    const rivals = record.days.flat();
+    const champion = rivals.reduce((best,entry)=>entry.score > (best?.score ?? -1) ? entry : best,null);
+    return { entry:record.entry, strongest:champion, winning:window.FestivalPotluckContest.winner(record.entry,record.days),
+      rewarded:record.rewarded, day:Math.min(7,Math.max(1,day()-(year()*336+4*28+8-1)+1)) };
   }
   function currentFullness() {
     const full = state.fullness || {stacks:0,expiresHour:0};
@@ -378,7 +388,7 @@
   }
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
-    state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0} };
+    state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0}, potluckContests:{} };
     heldBowl=null; seatedMeal=null; feastCache=null;
     window.NpcSharedMeals?.clear?.();
     if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.max(0,points);
@@ -389,6 +399,13 @@
       .slice(0,24).map(entry=>({...entry,expiresAt:now+Math.min(3000,entry.remainingS)}));
     if (saved?.claims && typeof saved.claims === 'object' && !Array.isArray(saved.claims)) {
       for (const [key, value] of Object.entries(saved.claims)) if (/^\d+:[a-z_]+$/.test(key) && value && typeof value === 'object' && !Array.isArray(value)) state.claims[key] = { ...value };
+    }
+    if (saved?.potluckContests && typeof saved.potluckContests === 'object') {
+      for (const [key,value] of Object.entries(saved.potluckContests)) {
+        if (!/^\\d+:gorkunash$/.test(key) || !Array.isArray(value?.days) || value.days.length !== 7) continue;
+        state.potluckContests[key] = {days:value.days.map(d=>Array.isArray(d)?d.slice(0,6):[]),
+          entry:value.entry || null,rewarded:!!value.rewarded};
+      }
     }
     if (window.FestivalCalendar.blessings[saved?.blessing?.stat] && Number.isFinite(saved.blessing.expiresDay) && Number.isFinite(saved.blessing.level)) state.blessing = { stat: saved.blessing.stat, level: Math.max(1, Math.min(5, Math.trunc(saved.blessing.level))), expiresDay: saved.blessing.expiresDay };
     cancelDance();
@@ -593,10 +610,10 @@
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
-      dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
+      dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
-      latestChange:'Whole-PR review: paired dance stops at closing, blocked buffet recovery, transient save-state cleanup, selected donation quality, scaled collision heights and editor texture paths.' };
+      latestChange:'Seven-pot Gorkunash contest with persisted weeklong rival scores, ingredient provenance scoring and Hreesh doorstep reward.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
@@ -623,6 +640,9 @@
     deps = injected;
     residentCacheAt = -Infinity;
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
+    window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>state.potluckContests,event=>{
+      if (state.potluckContests[event]) state.potluckContests[event].rewarded = true;
+    },day); // Shared doorstep queue awards the prize only on natural dialogue completion.
     const socialConfig = () => window.SCRATCHBONES_CONFIG?.game?.socialRelationships;
     window.NpcFestivalDance?.init?.({
       relationships: () => socialConfig()?.relationships, // Authored partner/family/friend pairs: the same graph the seating system reads.
@@ -679,7 +699,7 @@
         if (deps?.isBlocked?.()) return [];
         if (target.placement.service.kind === 'bowls') return [{ icon:'🥣', label:'Take bowl', action:'obj_take_bowl', style:'primary', allowed:true }];
         const index = Number(target.placement.service.index), meal = feastMenu()[index]; // Every serving pot carries its own authored menu slot.
-        const buttons = meal ? [{ icon:'🍲', label:heldBowl ? `Fill bowl: ${meal.label}` : 'Take a bowl first', action:'obj_fill_bowl', style:'primary', allowed:!!heldBowl }] : [];
+        const buttons = meal ? [{ icon:'🍲', label:heldBowl ? 'Fill bowl: ' + meal.label + (meal.id==='reserved'?'':' · '+meal.score+'★') : 'Take a bowl first', action:'obj_fill_bowl', style:'primary', allowed:!!heldBowl && meal.id!=='reserved' }] : [];
         const held = deps?.getHeldMealChoice?.(); // The normal item wheel determines which dish and quality are donated.
         if (!claimed('potluck') && held && deps.getItemDefs()[held.key]?.isCookedFood) buttons.push({ icon:'🍲',label:'Contribute held meal',action:'obj_contribute_meal',style:'secondary',allowed:true });
         return buttons;
@@ -698,7 +718,7 @@
       },
       decorate(holder, record) {
         if (record.service.kind !== 'meal') return;
-        const available = Number(record.service.index) < feastMenu().length; // An empty reserved pot keeps its real vessel and only hides the liquid.
+        const available = feastMenu()[Number(record.service.index)]?.id !== 'reserved'; // An empty reserved pot keeps its real vessel and only hides the liquid.
         holder.traverse?.(node=>{ if (node.userData?.authoredPart?.kind==='liquidSurface' && node.visible!==available) node.visible=available; });
       },
     });
@@ -725,7 +745,11 @@
       giveFavor(rec.id,points,'potluck');
       recipients++;
     }
+    const contest = contestData();
+    if (contest) contest.entry = {key:payload.key,stars:payload.stars,label:definition?.label||payload.key,
+      score:window.FestivalPotluckContest.scoreCooked(definition,payload.stars,deps.getItemDefs())};
     mark('potluck',{key:payload.key,stars:payload.stars,day:day()});
+    feastCache = null; // The seventh physical serving pot becomes available immediately.
     return commit(`Contributed ${definition?.label||payload.key}; 10× normal gift Favor for ${recipients} villagers who do not dislike it.`);
   });
   registerActivity('offering', payload => {
@@ -793,6 +817,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
