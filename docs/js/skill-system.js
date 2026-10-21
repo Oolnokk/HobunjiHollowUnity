@@ -142,7 +142,7 @@
   }
 
   function foodStacks(skillKey) {
-    return Math.max(0, Number(deps?.getFoodEffectStacks?.(skillKey)) || 0); // Used to add the currently active food skill stacks.
+    return Math.max(0, Number(deps?.getFoodEffectStacks?.(skillKey)) || 0) + (window.DateCompanion?.buffStacks?.(skillKey) || 0); // Used to add the currently active food skill stacks, plus the buff a date earns by joining in (js/date-companion-activities.js).
   }
 
   function level(skillKey) {
@@ -257,7 +257,7 @@
 
   function rareFishWeightMultiplier(rarity) {
     const perceptionStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('perception')) || 0); // Used to let Perception food contribute to fish selection.
-    const power = Math.min(0.5, perceptionStacks * 0.02); // Used to bias only uncommon and rare entries; the Increased Chance of Rare Fish perk applies its own separate multiplier (see fishing-minigame.js).
+    const power = Math.min(0.5, (perceptionStacks + (window.DateCompanion?.luckStacks?.() || 0)) * 0.02); // A fishing date's luck stacks with Perception food. // Used to bias only uncommon and rare entries; the Increased Chance of Rare Fish perk applies its own separate multiplier (see fishing-minigame.js).
     const alchemyPerception = window.AlchemySystem?.getPerceptionMultiplier?.() || 1; // Reuses the existing fishing Perception check.
     if (rarity === 'rare') return (1 + power * 2.5) * alchemyPerception;
     if (rarity === 'uncommon') return (1 + power * 1.1) * alchemyPerception;

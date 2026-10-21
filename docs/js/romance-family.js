@@ -305,6 +305,8 @@
         ? { ...anchor, activity: 'toddling around', stationId: `child_toddle_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: 3 }
         : { ...anchor, activity: 'sleeping' };
     }
+    const chore = phase === 'child' ? window.NpcFarmPlots?.targetFor?.({ id: child.id }) : null; // Farm plots assigned to this child in the farm editor (js/npc-farm-plots.js).
+    if (chore) return chore;
     const vat = vatObject(child);
     if (vat && hour >= 8 && hour < 18 && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
       const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);

@@ -8518,6 +8518,7 @@
           member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
           member.romanceState = window.RomanceSystem?.serialize?.() || null;
+          member.npcFarmPlotState = window.NpcFarmPlots?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
@@ -11807,6 +11808,7 @@
         normalizeNpcArea,
         findNpcWalker,
         listNpcWalkersInArea,
+        npcGridForArea, // The 'fish' activity searches the area's tile grid for a bank.
       });
       window.NpcActivityPlanner.init({
         calendar,
@@ -12457,7 +12459,7 @@
                 const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
-                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: target.toolFlip === true });
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) root.add(this.stationToolMesh);
@@ -13016,6 +13018,7 @@
                 continue;
               }
               let type = t.type || 'grass';
+              if (!offsetC && !offsetR && (type === 'tilled' || type === 'trench') && window.NpcFarmPlots?.isManagedTile(m.id, c, r)) type = 'grass'; // Worked by NPCs instead.
               // Decorative (non-plateau) rock tiles are always-solid in the engine
               // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
               // them across the walkable ground — turn the un-tagged ones back to
@@ -13087,6 +13090,7 @@
             if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
+            window.NpcFarmPlots?.registerMap(zoneMapId, zm.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
             mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
             window.MapBoundaryGuard?.markMergedTiles?.(zm, outTiles); // Border escarpments stay unclimbable/unwalkable (js/map-boundary-guard.js).
@@ -13137,10 +13141,11 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
+          window.NpcFarmPlots?.registerMap(townM.id, townM.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
           const layout = { id: townM.id, version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
-            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+            if (t) layout.tiles.push({ c, r, type: window.NpcFarmPlots?.isManagedTile(townM.id, c, r) && (t.type === 'tilled' || t.type === 'trench') ? 'grass' : (t.type || 'grass') });
           }
           layout.routes = [];
           (townM.routes || townM.npcPaths || []).forEach(p => {
@@ -21566,26 +21571,9 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map((dirSign, index, stages) => ({
-        pose: true,
-        dirSign,
-        dur: 0.55,
-        sfxKey: 'chop',
-        terminalSfxKey: index === stages.length - 1 ? 'breakTree' : null,
-      }));
-
-      // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
-      // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
-      // flipped spike-forward in this slot (see makeToolPlaneMesh's flip
-      // option) specifically so mining reads as stabbing that spike in, not
-      // swinging an axe-style pose that was authored for a bladed edge.
-      // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map((_, index, stages) => ({
-        anim: 'thrust',
-        dur: 0.55,
-        sfxKey: 'pick',
-        terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
-      }));
+      // The chop/mine hold timelines now live in js/tool-activity-stages.js so NPCs play the same stages.
+      const CHOP_TREE_STAGES = window.ToolActivityStages.CHOP_TREE_STAGES;
+      const MINE_ROCK_STAGES = window.ToolActivityStages.MINE_ROCK_STAGES;
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -21725,6 +21713,7 @@
           refillTurnSign,
           finalStrikeCommitted: false, // Prevents cancellation after a terminal break cue has already sounded.
         };
+        window.DateCompanion?.onChargeStart?.({ tool: activeTool, col: reticle.col, row: reticle.row }); // A date who likes woodcutting/mining walks over to help (js/date-companion-activities.js).
         beginChargeStage();
       }
 
@@ -21732,7 +21721,7 @@
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
         const skillKey = chargeAction.tool === 'axe' ? 'foraging' : chargeAction.tool === 'pick' ? 'mining' : null; // Used to map held axe/pick actions onto their progression speed bonus.
-        const speedMultiplier = skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier(); // Used to scale every supported held tool action independently.
+        const speedMultiplier = (skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier()) * (window.DateCompanion?.helpSpeedMultiplier?.(chargeAction.tool, chargeAction.col, chargeAction.row) || 1); // Used to scale every supported held tool action independently; a date working the same tree/rock beside you speeds it up.
         const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
@@ -21971,6 +21960,7 @@
 
       function cancelChargeAction() {
         if (!chargeAction) return;
+        window.DateCompanion?.onChargeEnd?.({ tool: chargeAction.tool, col: chargeAction.col, row: chargeAction.row, completed: false });
         chargeAction = null;
         toolSwingT = 0;
         chargeAnimOverride = null;
@@ -21991,6 +21981,7 @@
           return;
         }
         const result = applyAction(tool, action, col, row);
+        window.DateCompanion?.onChargeEnd?.({ tool, col, row, completed: result.ok !== false });
         lastActionMessage = result.message;
         showToast(result.message, result.ok !== false);
         spawnActionParticles(col, row, action, result.ok !== false);
@@ -24903,6 +24894,7 @@
         calendar.day += 1;
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
+        window.NpcFarmPlots?.onNewDay?.();
         // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
@@ -28879,6 +28871,78 @@
         },
         saveMemberWorldData,
       });
+      window.NpcFarmPlots?.init?.({
+        findWalker: npcId => findNpcWalker(npcId),
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        cropData,
+        isRaining: () => !!calendar.isRaining,
+        surfaceY: (areaId, c, r) => npcSurfaceY(areaId, c, r),
+        getAreaScene: areaId => areaId === 'town' ? townScene : areaId === 'farm' ? scene : (_isZoneArea(areaId) ? (_zoneScenes.get(areaId)?.scene || null) : null),
+        buildCropMesh: (crop, growth, ready, c, r) => window.VegetationCropRendering?.buildStandaloneCropMesh?.(crop, growth, ready, c, r) || null,
+        saveMemberWorldData,
+        // The player's farm grid, for plots worked by the spouse and children (see FarmPlotEditor). The live farm tiles are
+        // edited directly — no tool-mastery or Farming XP goes to the player for an NPC's work.
+        farmTileInfo: (c, r) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return null;
+          const free = !window.GridTileAccessors.isHouseFootprint(c, r) && !worldObjects.has(c + ',' + r) && !tile.dewPile;
+          const trench = tile.type === TileType.TRENCH;
+          return {
+            tilled: tile.type === TileType.TILLED || tile.type === TileType.RAISED, crop: tile.crop || '', ready: !!tile.cropReady,
+            dug: trench && (tile.depth ?? 1) >= 0.6, // Rain silts a trench shallower; below this it needs redigging.
+            canTill: free && (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) && !tile.crop, // Weeds are cleared as they till.
+            canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
+          };
+        },
+        seedAvailable: crop => {
+          const seedKey = cropData[crop]?.seedKey;
+          return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
+        },
+        applyFarmJob: (job, c, r, crop) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return false;
+          if (job === 'till') {
+            if ((tile.type !== TileType.GRASS && tile.type !== TileType.WEEDS) || tile.crop) return false;
+            tile.type = TileType.TILLED;
+          } else if (job === 'dig') {
+            if (tile.crop || tile.type === TileType.ROCK) return false;
+            tile.type = TileType.TRENCH; tile.depth = 1; tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          } else if (job === 'seed') {
+            const data = cropData[crop];
+            const store = _loadWorldStorage() || {};
+            if (!data || tile.crop || !(Number(store[data.seedKey]) > 0) || ![TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
+            store[data.seedKey] -= 1;
+            if (store[data.seedKey] <= 0) delete store[data.seedKey];
+            _saveWorldStorage(store); // Seeds come out of Farm Storage, not your pockets.
+            tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
+          } else return false;
+          markTileDirty(c, r);
+          if (currentArea === 'farm') window.WaterSystem.recomputeWater(false);
+          window.FarmEditor.saveFarmLayout();
+          return true;
+        },
+      });
+      window.FarmPlotEditor?.init?.({ save: () => window.FarmEditor.saveFarmLayout(), cropLabel: crop => cropData[crop] ? `${cropData[crop].emoji || ''} ${cropData[crop].label || crop}`.trim() : crop });
+      window.DateCompanion?.init?.({
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        getPlayerTilePosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        showToast,
+        // Wild plants a date can run ahead and pick: reagent herbs and berry bushes (their own onAction credits the player
+        // exactly like a manual pick) and cave mushroom clusters.
+        listPickables: area => {
+          const out = [];
+          for (const objects of [_zoneReagentObjects.get(area), _zoneBerryObjects.get(area)]) {
+            objects?.forEach(obj => {
+              const action = obj.getButtons?.()?.[0]?.action;
+              if (action) out.push({ col: obj.col, row: obj.row, pick: () => obj.onAction(action) });
+            });
+          }
+          for (const mushroom of window.CaveSiteSystem?.pickableMushrooms?.(area) || []) out.push(mushroom);
+          return out;
+        },
+      });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,
         isDialogueOpen: () => dialogueOpen,
@@ -30506,6 +30570,7 @@
         }
         const _worldLayout = window.FarmEditor.loadFarmLayout();
         if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
+        else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
@@ -30569,6 +30634,7 @@
         questProgress = { ...(playerData.questProgress || {}) };
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
         window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
+        window.NpcFarmPlots?.restore?.(playerData.npcFarmPlotState); // NPC-tended field/trench state (js/npc-farm-plots.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and

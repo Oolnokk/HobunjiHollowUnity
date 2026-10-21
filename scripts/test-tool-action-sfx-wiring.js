@@ -1,7 +1,8 @@
 const fs = require('fs');
 const assert = require('assert');
 const vm = require('vm');
-const game = fs.readFileSync('docs/game.js', 'utf8');
+const stages = fs.readFileSync('docs/js/tool-activity-stages.js', 'utf8'); // The chop/mine hold timelines (shared with NPCs) live here; game.js aliases them.
+const game = fs.readFileSync('docs/game.js', 'utf8') + '\n' + stages;
 const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');
 const audio = fs.readFileSync('docs/js/audio-system.js', 'utf8'); // Evaluated below to exercise preload and keyed playback without a browser.
 for (const file of ['sfx_dig.mp3', 'sfx_pick.mp3', 'sfx_chop.mp3', 'sfx_break_tree.mp3', 'sfx_break_rock.mp3']) {

@@ -29,6 +29,7 @@
   //     destinationStationId: '',       // exact station id (for genuinely unique/story spots)
   //     destinationArea: '',            // optional area hint for role search
   //     day / days / daysExcept: ...,   // same weekday filtering as legacy scheduleHooks rules
+  //     chance: 0.4,                    // optional — only on this fraction of days (seeded per npc/day/beat)
   //     activityLabel: 'Smithing',      // human label — feeds legacy-compatible `activity` string
   //     preferences: {},                // activity-specific hints (see e.g. npc-activities.js's `socialize`)
   //     interruptibility: 0..1,         // optional override of the activity's default
@@ -190,6 +191,9 @@
   // ordering is what keeps them from starving anything more specific.
   const WEEKDAYS = Object.freeze(['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']); // Used to attribute the post-midnight part of an overnight beat to its starting weekday.
   function isBeatActiveNow(beat, { npcId, day, weekdayName, nowMin } = {}) {
+    // `chance` (0..1): this beat only happens on that fraction of days, decided once per (npc, day, beat) — e.g. a
+    // child who "sometimes decides to go fishing" during play hours.
+    if (Number.isFinite(beat.chance) && dailySeed(npcId, day, `${beat.id}:chance`) >= beat.chance) return false;
     const activeToday = isBeatActiveOnDay(beat, weekdayName); // Today's day restrictions apply to starts occurring today.
     if (beat.alwaysEligible) return activeToday;
     const win = resolveBeatWindow(beat, { npcId, day }); // Today's window uses today's deterministic jitter seed.
