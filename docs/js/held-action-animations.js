@@ -215,12 +215,12 @@
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20261015h893bb39', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261019h6344309', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261018hd8de386', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261019h8ec8350', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261020hf492753', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time

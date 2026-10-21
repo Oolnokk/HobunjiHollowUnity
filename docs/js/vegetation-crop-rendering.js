@@ -400,6 +400,9 @@
       }
     }
     townGrassBillMesh.count = idx;
+    // Capture before scene.add: height followers and footprint filtering share this flat source.
+    townGrassBillMesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(townGrassBillMesh.instanceMatrix.array);
+    townGrassBillMesh.userData.hobunjiBillboardSourceCount = idx;
     townGrassBillMesh.instanceMatrix.needsUpdate = true;
     townScene.add(townGrassBillMesh);
   }

@@ -45,6 +45,7 @@
   let _npcDialogueVisibleCharacters = 0; // Number of plain-text characters revealed by the existing cadence.
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
+  const _contextProviders = new Map(); // Event-owned content routed at conversation/greeting time, never per frame.
   const _dialogueTreeProviders = new Map(); // npcId → provider(rec), used by stateful systems that select an authored tree at interaction time.
   const _dialogueActionHandlers = new Map(); // action type → handler(action, context), used to extend choice actions without adding NPC-specific branches here.
   const _dialogueNodeEnterHandlers = new Map(); // npcId → handler(node, context), used by feature-owned world presentation when an authored node becomes current.
@@ -361,6 +362,23 @@
     return true;
   }
 
+  function registerContextProvider(id, provider) {
+    if (!id) return false;
+    if (provider) _contextProviders.set(String(id), provider);
+    else _contextProviders.delete(String(id));
+    return true;
+  }
+
+  function contextGreeting(rec, context) {
+    for (const [id, provider] of _contextProviders) {
+      try {
+        const line = provider.greetingFor?.(rec, context);
+        if (line) return line;
+      } catch (error) { console.warn('[npc-dialogue] context greeting failed', id, error); }
+    }
+    return context.standardGreeting;
+  }
+
   function registerActionHandler(type, handler) {
     if (!type || typeof handler !== 'function') return false;
     _dialogueActionHandlers.set(String(type), handler);
@@ -545,10 +563,17 @@
     // omitted/'any' (the default) is visible to everyone.
     const all = (rec?.dialogueTrees || [])
       .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility));
-    if (!all.length) return null;
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
     const picked = _pickBestEntry(all, world, heard);
+    for (const [id, context] of _contextProviders) {
+      try {
+        const provided = context.treeFor?.(rec, { world, defaultTree: picked });
+        if (!provided) continue;
+        if (_traceActive()) _dlgTraceSelection = { mode: 'context', source: id, reason: 'Contextual content replaced the normal fallback', world, candidates: [] };
+        return provided;
+      } catch (error) { console.warn('[npc-dialogue] context tree failed', id, rec?.id, error); }
+    }
     if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection(all, world, heard, picked) };
     return picked;
   }
@@ -1210,7 +1235,10 @@
     npcBaseDispositions: _npcBaseDispositions,
     hasQueuedConversationTree: npcId => queuedConversationTrees.has(npcId),
     queueConversationTree,
+    relatedNpcBonds, // Household/workplace bonds shared with social gathering table preferences.
     registerTreeProvider,
+    registerContextProvider,
+    contextGreeting,
     registerActionHandler,
     registerNodeEnterHandler,
   };

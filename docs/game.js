@@ -2442,6 +2442,10 @@
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
+        servingTable: { itemKey:'servingTableFurniture', icon:'🍲', name:'Serving Table', fw:4, fd:1, color:0x926a43, area:'any', price:40, desc:'A table with reusable furniture placed on its authored surface.' },
+        servingPot: { itemKey:'servingPotFurniture', icon:'🍲', name:'Serving Pot', fw:1, fd:1, color:0x52433e, area:'any', price:10, desc:'An open serving pot for surface placement.' },
+        bowlStack: { itemKey:'bowlStackFurniture', icon:'🥣', name:'Stack of Bowls', fw:1, fd:1, color:0x906344, area:'any', price:8, desc:'Stacked bowls for a shared table.' },
+        festivalArch:  { itemKey:'festivalArchFurniture',icon:'🎏',name:'Festival Road Arch',fw:1,fd:1,color:0x906344,area:'any',walkable:true,price:32,desc:'Modular overhead wooden arch with PNG pennants; festivalArchWidth sets its clear span in authored maps.' }, // Map/editor and inventory furniture registry for reusable, walk-through festival arches.
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         artifactPedestal: { itemKey: 'artifactPedestalFurniture', icon: '🏛️', name: 'Artifact Pedestal', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'any', fixture: true, desc: 'Garanki’s display pedestal for donated artifacts.' },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
@@ -2508,6 +2512,7 @@
       // actually placed/rendered; buildFurnitureVisual falls back to the
       // procedural CATALOG for any key not (yet) in this list.
       const AUTHORED_FURNITURE_KEYS = new Set([
+        'servingTable', 'servingPot', 'bowlStack',
         'chairSimple', 'chairCushion', 'stool', 'bench',
         'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
         'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
@@ -3159,6 +3164,7 @@
 
       function furnitureBlocksMovementAt(area, x, z) {
         if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -3607,6 +3613,7 @@
         _markOutline(group);
         _markFurnitureEdgeId(group);
         targetScene.add(group);
+        window.FurnitureTableSystem?.registerPlacement(area, { key:furnitureKey, col, row, rotY:rotYDeg }, group, def); // Inventory furniture shares map-authored chair and table relationships.
 
         let light = null;
         if (def.light) {
@@ -3645,8 +3652,10 @@
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
-        interiorFurnitureObjects.push({ id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
-          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner });
+        const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
+          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner }; // Stable save record also owns editable table membership.
+        interiorFurnitureObjects.push(placedFurniture);
+        window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
         if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
         registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
         window.HudUpdate.refreshItemScroll();
@@ -3732,6 +3741,7 @@
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
         if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
         registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+        window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
       }
@@ -3769,6 +3779,7 @@
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
         if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, obj.col, obj.row, fw, fd, nextRot);
         registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
+        window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
       }
@@ -4160,14 +4171,16 @@
 
       function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
-        const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
+        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, {col,row,seatIndex}, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
+        const seat = window.FurnitureTableSystem?.seatTransform(currentArea, { furnitureKey, col, row, seatIndex })
+          || resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
         const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
-          furnitureKey, col, row,
+          furnitureKey, col, row, seatIndex,
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
@@ -4262,6 +4275,7 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
+        if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
@@ -9983,6 +9997,7 @@
         getInteriorGrid: () => interiorGrid,
         getTownGrid: () => townGrid,
         getTownScene: () => townScene,
+        DECORATIVE_FURNITURE_DEFS, // Shared exterior chair definitions for direct interaction and table membership.
         getTownZone: () => _townZone,
         getHousePieces: () => housePieces,
         getFarmBuildings: () => farmBuildings,
@@ -11411,6 +11426,7 @@
         return {
           icon: cfg.icon || '💬',
           label: name ? `${cfg.label || 'Talk'}: ${name}` : (cfg.label || 'Talk'),
+          holdLabel: window.NpcCommandWheel?.hasOptions?.(nearbyNpcWalker) ? 'More' : '', // Floating list adds Hold <bound input> More without changing the ordinary Talk label.
           action: npcDialogueAction(),
           style: cfg.style || 'primary',
           allowed: true,
@@ -11653,7 +11669,7 @@
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
           npcSpawnDiagnostics.set(rec.id, { stage: target ? 'Queued for avatar build' : 'No schedule target', error: null });
-          if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
+          if (!target) { if (!window.NpcScheduling.hasPresenceSchedule(rec)) deferred.push(rec); continue; }
           spawnable.push({ rec, target });
         }
         // Each makeNpcWalker is a long async build (portrait composite, world
@@ -11670,7 +11686,7 @@
         const spawnWorker = async () => {
           while (nextSpawn < spawnable.length) {
             const { rec, target } = spawnable[nextSpawn++];
-            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
+            if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
             try {
               const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
@@ -11681,7 +11697,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule', rec?.id, e);
             }
-            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
         };
         await Promise.all(Array.from({ length: Math.min(NPC_SPAWN_CONCURRENCY, spawnable.length) }, spawnWorker));
@@ -11718,7 +11734,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
               stillDeferred.push(rec); continue;
             }
-            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
+            if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
             try {
               const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
@@ -11729,7 +11745,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
             }
-            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
@@ -11863,6 +11879,8 @@
         if (target?.pose !== 'sit' || !target.furnitureKey) return null;
         const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
         if (!def?.sit) return null;
+        const placedSeat = window.FurnitureTableSystem?.seatTransform(target.area, target); // Named chairs retain their table binding and locale transform.
+        if (placedSeat) return placedSeat;
         return resolveSeatWorldTransform(
           target.furnitureKey, target.c, target.r, def.fw || 1, def.fd || 1,
           target.rotY || 0, target.seatIndex || 0
@@ -12276,6 +12294,7 @@
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
             const target = resolveNpcScheduleTarget(this.rec);
+            window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
@@ -12594,7 +12613,7 @@
         if (visitorArrivalCheckT > 0) return;
         visitorArrivalCheckT = 0.5;
         for (const rec of scheduledNpcRecords.values()) {
-          if (!rec?.visitorPresence || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+          if (!window.NpcScheduling.hasPresenceSchedule(rec) || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
           const target = resolveNpcScheduleTarget(rec); // Used to return the entrance only while one of this visitor's windows is active.
           if (!target?.visitorArrival) continue;
           visitorSpawnPending.add(rec.id);
@@ -12672,6 +12691,21 @@
       // avatars (with distance-scaled refresh rates) now lives in
       // js/world-portrait-life.js.
       window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, savedSpecies: _playerData?.appearance?.speciesId, renderedSpecies: playerAvatarProfile?.fighter?.speciesId, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
+      window.FurnitureTableSystem?.init({
+        getArea: () => currentArea,
+        getWalkers: () => npcWalkers,
+        getPlayerSeat: () => sitInteraction,
+        getPlayerPosition: () => ({x:player.x/TILE,z:player.y/TILE}),
+        focusCandidates: (candidates,range) => window.RangedWeapons?.focusCandidates?.(candidates,range), // Existing camera-ray authority selects NPCs, chairs and serving objects together.
+        actorHitbox: walker => window.RangedWeapons?.actorHitbox?.(walker),
+        frameId: () => window.RuntimeFrameScheduler?.frameId?.(),
+        npcReach: () => npcMovementConfig().socialInteractionRadiusTiles ?? 6,
+        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) : null,
+        getAim: () => { const aim = getReticleTile(); return { c:aim.probeX / TILE, r:aim.probeY / TILE }; },
+        assignmentChanged: area => { if (area === 'farm' || area === 'interior') window.FarmEditor?.saveFarmLayout?.(); }, // Stable inventory chair/table links survive reloads.
+        surfaceY: furnitureSurfaceYAtWorld,
+        makeSitInteractable,
+      });
       window.WorldPortraitLife.init({
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
@@ -12688,6 +12722,7 @@
         // NPC detection below running so a frozen villager is still talkable.
         if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
           updateNpcVisitorArrivals(dt);
+          const npcUpdateNowMs = performance.now(); // Bounds retries for one broken NPC without stalling the rest of the simulation.
           // Backwards indexed loop (not `for...of [...npcWalkers]`) so a walker
           // that despawns itself mid-update (npcWalkers.splice in
           // despawnNpcVisitor above) is tolerated without cloning the whole
@@ -12695,23 +12730,26 @@
           for (let i = npcWalkers.length - 1; i >= 0; i--) {
             const w = npcWalkers[i];
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
-            w.update(dt);
-            if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+            if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
+            if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
+            try {
+              w.update(dt);
+              if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+              if (w._npcUpdateError) w._npcUpdateError = null;
+            } catch (error) {
+              const message = String(error?.message || error); // Identifies repeated failures while retaining the full location in the mobile Debug report.
+              const previous = w._npcUpdateError; // Reuses the reporting deadline when the same NPC fails again after its cooldown.
+              w._npcUpdateError = { message, stack: String(error?.stack || message), retryAt: npcUpdateNowMs + 1000,
+                reportAt: previous?.message === message ? previous.reportAt : -Infinity };
+              if (npcUpdateNowMs >= w._npcUpdateError.reportAt) {
+                w._npcUpdateError.reportAt = npcUpdateNowMs + 5000;
+                window.__farmLog?.(`[schedule] ${w.rec?.id || 'npc'} update failed; retrying in 1s: ${w._npcUpdateError.stack}`, 'error');
+              }
+            }
           }
           _logGarankiDiagnostic(dt);
         }
-        let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
-        const px = player.x / TILE, pz = player.y / TILE;
-        for (const w of npcWalkers) {
-          if (w.combatTutorialSuspended || w.area !== currentArea) continue;
-          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
-          if (d < closestDist) { closestDist = d; closest = w; }
-        }
-        if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
-          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
-          if (hunter) closest = hunter;
-        }
-        nearbyNpcWalker = closest;
+        nearbyNpcWalker = window.FurnitureTableSystem?.focusedTarget(currentArea)?.walker || null; // A nearer off-ray villager cannot steal an aimed NPC or chair prompt.
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
         window.InteriorDoorTiles?.update(dt);
       }
@@ -13099,7 +13137,7 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
+          const layout = { id: townM.id, version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -13665,6 +13703,7 @@
               bScene.add(ph);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
+            window.FurnitureTableSystem?.registerPlacement(mapId, { ...f, key:furnitureKey }, renderedFurniture, def); // Interior records use the same explicit chair-to-table ids as exterior and locale furniture.
             if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
@@ -15494,6 +15533,8 @@
       }
 
       function getWorldObjectAt(col, row) {
+        const furniture = window.FurnitureTableSystem?.objectAt(currentArea, col, row); // Exterior chairs and attached surface furniture use ordinary world inputs.
+        if (furniture) return furniture;
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
@@ -16119,6 +16160,7 @@
       }
 
       function cycleActiveInventoryItem(delta) {
+        window.FestivalSystem?.discardFestivalBowl?.('selected-another-item'); // A bowl is a temporary held item, not part of the ordinary inventory carousel.
         const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         activeItemIndex = (activeItemIndex + delta + stacks.length) % stacks.length;
@@ -16151,6 +16193,7 @@
       // the player is currently offering up") should call — resolves the
       // manual hold first, falling back to the ordinary wheel selection.
       function getHeldGiftItem() {
+        if (window.FestivalSystem?.festivalCup?.()) return null; // The keg cup is temporary and can be shared as a swig, never gifted.
         if (manualHeldItem?.kind === 'clothing') {
           const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
           if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
@@ -17724,6 +17767,7 @@
         // than the mover cannot slip between two corner samples. worldY is
         // only passed by projectile sweeps, so shots can clear low props.
         if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
         const tileWorldY = Number.isFinite(worldY) ? worldY - radius / TILE : worldY; // Include the projectile underside when testing finite tile cover.
         return tileSpeedAt(wx - radius, wy - radius, tileWorldY) !== null
             && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
@@ -18811,6 +18855,8 @@
       // object a press/strike is aimed at.
       function resolveObjActionTarget(action) {
         const _r = getReticleTile();
+        const furniture = window.FurnitureTableSystem?.objectAt(currentArea, _r.col, _r.row); // Same target used by the action bar, across every map kind.
+        if (furniture) return furniture;
         // worldObjects is farm-scene-only (see its declaration) — interior
         // interactables (e.g. a bed) live in interiorFurnitureObjects
         // instead, via getInteriorInteractableAt. Ordinary building/town
@@ -18828,6 +18874,7 @@
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) {
           if (activeAction === 'obj_stand') endSitInteraction();
+          else if (activeAction === 'obj_eat_meal') window.FestivalSystem?.toggleSeatedMeal?.();
           else if (activeAction === 'calendar_wait') window.CalendarSystem?.openTimePassage?.('wait');
           else if (activeAction === 'temple_pray') window.TemplePrayerRestBlessings?.openMenu?.();
           return;
@@ -18942,6 +18989,7 @@
         }
         if (activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet') { window.FestivalSystem?.receiveNpcReward?.(nearbyNpcWalker, activeAction); refreshActionBar(); return; }
         if (activeAction === 'festival_activity') { window.FestivalUI?.open?.(); return; }
+        if (activeAction === 'festival_dance_view') { window.FestivalWheelDanceRuntime?.toggleCameraView?.(); return; }
         if (activeAction === 'festival_stop_dance') { window.FestivalSystem?.cancelDance?.(); refreshActionBar(); return; }
         if (activeAction === 'npc_offer_gift') {
           window.NpcGifting?.offerGift?.(nearbyNpcWalker);
@@ -22605,7 +22653,7 @@
         getActiveTool: () => activeTool,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
-        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        getItemDef: itemKey => window.FestivalSystem?.vesselDef?.(itemKey) || ITEM_DEFS[itemKey], // Temporary festival bowl/cup vessels have no inventory entry.
         poseAt: heldActionPoseAt,
         makeBottlePlane: makeHeldItemPlaneMesh,
         disposeBottlePlane: disposeHeldItemPlaneMesh,
@@ -22617,8 +22665,9 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || getActiveInventoryItem(); // Performance reuses its equipped prop descriptor instead of allocating one every frame.
+          || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -24625,7 +24674,7 @@
           snapShoulderSurfAzimuth();
         }
         if (!paused) updateMobileAutoTargetCamera(dt); // Steer existing offsets before the normal camera pose/collision owner applies them.
-        updateCameraPosition();
+        if (!window.FestivalWheelDanceRuntime?.isActive?.()) updateCameraPosition(); // Paired choreography refreshes this same owner once after its final pose, avoiding a second camera-collision solve.
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
         // reflects the current camera — including a horizontal offset slide
@@ -24759,6 +24808,10 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
+        // Festival paired animation is a post-locomotion visual layer: both
+        // actual avatar roots are positioned together after NPC and player
+        // simulation, with no second requestAnimationFrame.
+        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
@@ -25230,6 +25283,7 @@
         }
       }
       function computeActionButtonsImpl() {
+        if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
         if (window.SocialActionWheel?.isDancing?.()) return [
           { icon: '♫', label: 'Dancing', action: 'dance_active', style: 'primary', allowed: false },
           { icon: '↻', label: 'Spin', action: 'dance_spin', style: 'secondary', inputAction: 'action2', allowed: true },
@@ -25237,10 +25291,12 @@
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
-          const seatedActions = [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }]; // Shared seated actions drive touch, keyboard, controller and floating prompts.
+          const seatedActions = [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active', promptRoot:playerMesh }]; // Shared seated actions drive touch, keyboard, controller and floating prompts.
           seatedActions.push({ icon: '⏳', label: 'Wait', action: 'calendar_wait', inputAction: 'action2', style: 'secondary', allowed: sitInteraction.phase === 'active' && !!window.CalendarSystem?.openTimePassage });
           const prayerAction = window.TemplePrayerRestBlessings?.getPrayerAction?.(); // The blessing owner supplies the same eligible prayer used by its menu.
           if (prayerAction) seatedActions.push(prayerAction);
+          const mealAction = sitInteraction.phase === 'active' ? window.FestivalSystem?.seatedMealAction?.() : null; // Eating becomes a real seated Action button next to Stand/Wait, with the bowl's n/10 badge.
+          if (mealAction) seatedActions.push({ ...mealAction,worldInteraction:true,promptRoot:playerMesh }); // Shows a floating Eat prompt by the seated character as well as the n/10 portion badge on the action arch.
           return seatedActions;
         }
         // Fishing gets its own arc buttons instead of the harpoon's normal
@@ -25291,7 +25347,12 @@
           ];
         }
 
+        const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
+        const directFurniture = !farmEditMode && window.FurnitureTableSystem?.objectAt(currentArea, furnitureAim.col, furnitureAim.row);
+        const directFurnitureButtons = directFurniture?.getButtons?.() || [];
+        if (directFurnitureButtons.length) return directFurnitureButtons;
         const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
+        if ((window.FestivalSystem?.dance?.targetNpcId || window.FestivalSystem?.pendingDance?.targetNpcId) && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
@@ -25724,7 +25785,7 @@
         });
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
-        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -28970,6 +29031,20 @@
         },
         saveMemberWorldData,
       });
+      window.NpcSeatRequest?.init?.({ // "Ask for seat" on the More wheel: the module owns the request; these are the game's narrow adapters.
+        getArea: () => currentArea,
+        getWalkers: () => npcWalkers,
+        getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        isPlayerSeated: () => !!sitInteraction,
+        isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
+        canSit: () => !window.FarmAnimals.isHarvesting() && (window.Mounts?.rideState ?? 'none') === 'none',
+        beginSitAtTarget: target => { // The NPC's own physical seat (key, tile, seat index, facing), the same transform the player's Sit action uses.
+          const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
+          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0);
+        },
+        toast: showToast,
+        now: () => performance.now(),
+      });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,
         isDialogueOpen: () => dialogueOpen,
@@ -29189,15 +29264,62 @@
         saveMemberWorldData,
       });
 
+      window.FestivalWheelDanceRuntime?.init({
+        getPlayerModel: () => playerAvatarGroup,
+        getPlayerLegs: () => playerLegs,
+        shoulderOffsetH: () => s_shoulderSurfOffsetH_current, // Dance follow view shares the player's live horizontal shoulder setting.
+        refreshActions: refreshActionBar,
+        surfaceY: (x,z) => npcSurfaceY('town',x,z), // Existing terrain and walkable furniture supports remain the floor authority.
+        refreshCamera: updateCameraPosition,
+        captureCamera: () => ({azimuth:cameraAzimuthOffsetDeg,angle:cameraAngleOffsetDeg}),
+        restoreCamera: state => { if(state){cameraAzimuthOffsetDeg=state.azimuth;cameraAngleOffsetDeg=state.angle;} }, // Manual look input during the cinematic never leaks into the restored gameplay view.
+      });
+      const npcMealScreenPoint = new THREE.Vector3(); // Reused only on the gathering tick to skip off-camera meal presentation.
       window.FestivalSystem?.init({
+        refreshActions: refreshActionBar, // Invitation start/cancel refreshes only the action arch.
+        prepareDance: walker => {
+          if(sitInteraction)endSitInteraction();
+          window.NpcSharedMeals?.interrupt?.(walker.rec.id);
+          window.NpcDrinkInteraction?.stopAutonomous?.(walker);
+          window.FurnitureTableSystem?.setSeatTarget?.(walker.rec.id,null);
+        },
+        canStartDance: () => !sitInteraction,
+        canSeeNpc: walker => {
+          if (!walker?.root?.parent || walker.area !== currentArea || walker.root.visible === false || walker._npcLodFar) return false;
+          npcMealScreenPoint.copy(walker.root.position); npcMealScreenPoint.y += .5; npcMealScreenPoint.project(camera);
+          return Math.abs(npcMealScreenPoint.x)<=1.1 && Math.abs(npcMealScreenPoint.y)<=1.1 && npcMealScreenPoint.z>=-1 && npcMealScreenPoint.z<=1;
+        },
         inventory,
         getItemDefs: () => ITEM_DEFS,
         getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
         getWalkers: () => npcWalkers,
+        getPlayerMesh: () => playerMesh, // Passes the real player avatar root into authored pair animation without registering a clone.
         getTownMap: () => _rawExteriorMaps.get('map_hobunji_town'),
         getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],
         getArea: () => currentArea,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }),
+        getAimPosition: () => { const aim = getReticleTile(); return {c:aim.probeX/TILE, r:aim.probeY/TILE}; }, // Fractional reticle probe selects one of the six nearby pots without a second targeter.
+        canStandAt: (area,c,r) => isNpcTileWalkable(area,c,r), // Full movement collision selects a clear standing spot if preferred gathering locales are full.
+        getHeldMealChoice: () => { const key = (manualHeldItem?.kind === 'bagItem' ? manualHeldItem.key : null) || (heldMode === 'item' ? getActiveInventoryItem()?.key : null); return key ? { key } : null; }, // The normal held-quality ordering in CookingSystem preserves Pack Hold's selected star tier.
+        socialPaused: () => paused || dialogueOpen || menuOpen || isPlayerInCombat(), // Wheel music/dancing is permitted; UI/combat pauses are not.
+        getActiveItemKey: () => getActiveInventoryItem()?.key || '', // Used only to cancel temporary festival bowls when the selection wheel changes.
+        getHeldMode: () => heldMode,
+        isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active', // Any ordinary chair can be used; explicit table links determine company.
+        getPlayerSeatedSeat: () => sitInteraction?.phase === 'active' ? sitInteraction : null, // Matches the player chair against nearby dining stations instead of every NPC in the feast locale.
+        cancelFestivalDrink: () => {
+          if(_heldItemKey!=='festival_bowl'&&_heldItemKey!=='festival_cup')return;
+          _heldDrinkPhase=null;_heldDrinkApply=null;_heldDrinkApplied=false; // Prevent a delayed bite after switching to a weapon or leaving the feast.
+          disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
+          _heldItemPlane=null;_heldItemKey=null;heldItemHolder.visible=false;
+        },
+        equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        playFestivalBowlDrink: onBite => {
+          if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
+          updateHeldItemHolder(0);
+          if(!beginHeldDrinkAnimation('festival_bowl',onBite))return false;
+          continueHeldDrinkAnimation();
+          return true;
+        }, // Uses the authored Drink animation's strike event to expend exactly one portion.
         isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || _layoutSwapInProgress || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
         isFestivalSuspended: () => !!window.WaterSystem?.isTownFloodEmergency?.(),
         save: saveMemberWorldData,
@@ -29566,6 +29688,7 @@
       });
 
       window.TownZoneBuildings?.init({
+        DECORATIVE_FURNITURE_DEFS, // Outdoor chairs, collision and grass use the same definitions as their rendered furniture.
         getTownZone: () => _townZone,
         debugLog,
         getTownScene: () => townScene,

@@ -161,3 +161,16 @@ assert(debug?.candidates?.length >= 2, 'mobile/debug snapshot should expose cand
 assert.equal(debug.chosenStationId, 'furniture_chair_map_i_inn_17_10');
 
 console.log('npc social seating tests passed');
+
+// A chair the player is sitting in (or any live reservation) is taken for everyone: Leaf, who would sit by Pahu, picks another stool.
+{
+  const takenBySomeoneElse = new Set(['5,10']);
+  sandbox.window.FurnitureTableSystem = { isSeatTaken: (area, seat) => takenBySomeoneElse.has(`${seat.c},${seat.r}`) };
+  snapshots = { pahu: { area: 'map_i_inn', x: 4.5, z: 8.5, currentScheduleTarget: { stationId: 'furniture_chair_map_i_inn_4_8', c: 4, r: 8 } } };
+  const displaced = sandbox.window.NpcActivities.resolveDestination(
+    { id: 'legacy', activity: 'legacyScheduleActivity' },
+    { rec: { id: 'leaf' }, now: { day, nowMin: 15 * 60 }, mockTarget: fixedLeaf });
+  assert.notEqual(displaced.target.stationId, 'furniture_chair_map_i_inn_5_10', 'a seat the player occupies is never chosen while others are free');
+  assert.notEqual(displaced.target.stationId, 'furniture_chair_map_i_inn_4_8', 'nor Pahu\'s own stool');
+  console.log('Social seating: occupied-by-player seats are skipped.');
+}

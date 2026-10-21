@@ -1,0 +1,61 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "servingPot",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "pot",
+      "name": "pot",
+      "kind": "cup",
+      "transform": {
+        "x": 0,
+        "y": 0.13,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.42,
+        "sy": 0.26,
+        "sz": 0.42
+      },
+      "color": "#52433e",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12
+    },
+    {
+      "id": "broth",
+      "name": "broth",
+      "kind": "liquidSurface",
+      "transform": {
+        "x": 0,
+        "y": 0.13,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.42,
+        "sy": 0.26,
+        "sz": 0.42
+      },
+      "color": "#ab6042",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12,
+      "liquidContainerId": "pot",
+      "liquidLevel": 0.9,
+      "surfaceOpacity": 0.9
+    }
+  ]
+}

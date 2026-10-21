@@ -159,8 +159,10 @@
 
   // Bag items (potions, flasks, large carried objects) live on game.js's heldItemHolder, not
   // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
-  function playerHeldItemTarget(record) {
+  function heldItemTarget(record) {
     if (inAttackEditor() || record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
+    const npcTarget = global.NpcDrinkInteraction?.heldItemTarget?.(record.rig?.parent); // Meals and ambient bottles share the existing world-space held-item grip solve.
+    if (npcTarget) return npcTarget;
     if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
     if (gameDeps.toolHolder?.visible) return null;
     const target = gameDeps.getHeldItemHandTarget?.();
@@ -693,10 +695,11 @@
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
+      if (record.rig.applyOwnedPose?.()) return; // A paired action retains its hand contacts through the final render-time sync too.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
-        const heldItem = playerHeldItemTarget(record);
+        const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
@@ -740,10 +743,11 @@
       }
       record._poseSyncSkipped = false;
       updateFallbackMotion(record);
+      if (record.rig.applyOwnedPose?.()) continue; // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
-        const heldItem = playerHeldItemTarget(record);
+        const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
@@ -781,6 +785,7 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
+        if(record.rig.applyOwnedPose?.()){results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
           results.push(syncCalibrationWorkspace(record, true));
         } else {

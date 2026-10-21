@@ -119,7 +119,8 @@
   function toast(message, good = true) { deps?.showToast?.(message, good); }
   function say(walker, text, accepted = true) {
     if (!walker || !text) return;
-    if (window.AmbientDialogue?.showAlcoholOfferResponse) window.AmbientDialogue.showAlcoholOfferResponse(walker, { text, line: text, accepted, reason: 'romance' });
+    const response = window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse; // Shared directed chathead speech for invitations and ongoing date commands.
+    if (response) response(walker, { text, line: text, accepted, reason: 'romance' });
     else toast(`${walker.rec?.name || 'They'}: ${text}`, accepted);
   }
   function showRomancePopup(npcId, amount) {
@@ -191,7 +192,7 @@
     if (!npcId) return false;
     const check = askEligibility(npcId);
     if (!check.ok) {
-      if (check.line) converse(walker, [{ text: check.line }]);
+      if (check.line) say(walker, check.line, false);
       return false;
     }
     const hours = num(cfg().dateDurationHours, 4);
@@ -217,6 +218,7 @@
       startedRawDay: rawDay(),
     };
     state.lastDateRawDay[npcId] = rawDay();
+    say(findWalker(npcId), "I'd love to. Let's go together!");
     toast(`💕 You're on a date with ${npcName(npcId)} for ${num(cfg().dateDurationHours, 4)} hours.`, true);
     persist();
     return true;
@@ -558,21 +560,7 @@
     const date = state.date;
     if (!date || rec.id !== date.npcId) return null;
     if (date.mode === 'wait' && date.waitSpot) return { ...date.waitSpot, activity: 'waiting for you' };
-    const walker = findWalker(rec.id);
-    const player = playerTilePos();
-    const area = currentNpcArea();
-    if (!player || !area || !deps?.canHostNpc?.(area)) return walker ? { area: walker.area, c: Math.floor(walker.root.position.x), r: Math.floor(walker.root.position.z), activity: 'waiting for you' } : null;
-    const pc = Math.floor(player.x), pr = Math.floor(player.z);
-    if (!walker || walker.area !== area) return { area, c: pc, r: pr, activity: 'following you' };
-    const pos = walker.root.position;
-    const dx = pos.x - player.x, dz = pos.z - player.z;
-    const dist = Math.hypot(dx, dz);
-    const follow = num(cfg().followDistanceTiles, 1.7);
-    if (dist <= follow + 0.45) return { area, c: Math.floor(pos.x), r: Math.floor(pos.z), activity: 'following you' };
-    const tx = player.x + dx / dist * follow, tz = player.z + dz / dist * follow;
-    const tc = Math.floor(tx), tr = Math.floor(tz);
-    const walkable = window.NpcPathfinding?.isNpcTileWalkable?.(area, tc, tr) !== false;
-    return walkable ? { area, c: tc, r: tr, activity: 'following you' } : { area, c: pc, r: pr, activity: 'following you' };
+    return window.NpcFollowing.target(rec,date,num(cfg().followDistanceTiles,1.7));
   }
 
   function scheduleOverride(rec) {
@@ -636,6 +624,7 @@
     return JSON.parse(JSON.stringify({ ...state, family: window.RomanceFamily?.serialize?.() ?? state.family ?? null }));
   }
   function restore(saved) {
+    window.NpcFollowing?.clear?.();
     const base = defaultState();
     state = saved && typeof saved === 'object' ? { ...base, ...saved, dateCounts: { ...(saved.dateCounts || {}) }, lastDateRawDay: { ...(saved.lastDateRawDay || {}) } } : base;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
@@ -649,6 +638,7 @@
   // ── Wiring ────────────────────────────────────────────────────────────
   function init(injected) {
     deps = injected || {};
+    window.NpcFollowing?.init({...deps,findWalker}); // Dates and ordinary companions share one follow/wait/seat resolver.
     window.DialogueContent?.registerActionHandler?.('romance', handleDialogueAction);
     window.NpcScheduling?.registerTargetOverride?.('romance', scheduleOverride);
     window.HobunjiActivityEvents?.on?.(onActivity);

@@ -258,6 +258,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
           <input id="nonCollidingFurniture" type="checkbox">
           Non-colliding
         </label>
+        <div class="field"><label>Belongs to table</label><select id="pTableId"><option value="">No table</option></select></div>
         <div id="gridFurnSummary" class="hint" style="margin-top:5px">Grid footprint —</div>
         <div class="hint" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Fine 3D transform. These values are residual offsets/scale on top of the grid placement.</div>
         <div class="grid3" style="margin-top:6px">
@@ -475,6 +476,9 @@ var CATALOG = [
   { key:'rugFurniture',           label:'Woven Rug',         modelFile:'rug_woven_small.glb',           fw:2, fd:2, col:0x8a5a3a },
   { key:'standingLampFurniture',  label:'Bronze Lamp',       modelFile:'standing_lamp_bronze.glb',      fw:1, fd:1, col:0xb87333 },
   { key:'stoolFurniture',         label:'Round Stool',       modelFile:'stool_round.glb',               fw:1, fd:1, col:0x7a5c3a },
+  { key:'servingTableFurniture', label:'Serving Table', fw:4, fd:1, col:0x926a43 },
+  { key:'servingPotFurniture', label:'Serving Pot', fw:1, fd:1, col:0x52433e },
+  { key:'bowlStackFurniture', label:'Stack of Bowls', fw:1, fd:1, col:0x906344 },
   { key:'tableLongFurniture',     label:'Long Table',        modelFile:'table_long.glb',                fw:4, fd:1, col:0x7a5c3a },
   { key:'tableRoundFurniture',    label:'Round Table',       modelFile:'table_round.glb',               fw:2, fd:2, col:0x7a5c3a },
   { key:'tableSmallFurniture',    label:'Small Table',       modelFile:'table_small.glb',               fw:1, fd:1, col:0x7a5c3a },
@@ -1057,6 +1061,10 @@ function selectFurn(id){
     $('nonCollidingFurniture').disabled=!!f.walkableElevation;
     $('gridFurnSummary').textContent=info.gridW+'×'+info.gridD+' tiles · grid rotation '+info.gridRot+'°'+(f.walkableElevation?' · walkable elevation forces non-colliding':(f.nonColliding?' · non-colliding':' · collision on occupied tiles'));
     var defS=f.postScale!=null?f.postScale:1;
+    var tableSelect=$('pTableId'); // Same map-local instance ids consumed by the gameplay table registry.
+    tableSelect.replaceChildren(new Option('No table',''));
+    activeFurniture().filter(function(candidate){return candidate.id!==f.id&&/table|desk|counter/i.test(candidate.itemKey);}).forEach(function(table){tableSelect.add(new Option((catOf(table.itemKey).label||table.itemKey)+' ('+table.id+')',table.id));});
+    tableSelect.value=f.tableId||'';
     $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
     $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
     $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
@@ -1101,6 +1109,7 @@ $('nonCollidingFurniture').addEventListener('change',function(){
 $('applyPTBtn').addEventListener('click',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
+  f.tableId=$('pTableId').value; // Saved alongside the chair's normal transform in either the base room or its active layout.
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
   delete f.postScale;
