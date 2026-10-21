@@ -107,7 +107,12 @@
   function speciesDocument() {
     if (!state.speciesConfig) throw new Error('Species config has not loaded.');
     // The exported file is drop-in ready for config/species/omgurku.json.
-    return { ...state.speciesConfig, hybridPlacement:{ ...state.placement } };
+    return { ...state.speciesConfig, hybridPlacement:{ ...state.placement },
+      // The authored JSON references the PNG path; the actual uploaded image
+      // is downloaded separately, never embedded as a multi-MB data URL.
+      connector:window.HobunjiOmgurkuConnectorAuthor?.exportConfig?.()
+        || window.HobunjiOmgurkuConnector?.snapshot?.()
+        || state.speciesConfig.connector };
   }
   function download(value,filename){
     const url=URL.createObjectURL(new Blob([copyJSON(value)],{type:'application/json'}));
@@ -250,6 +255,7 @@
         window.PNGPlaneAvatar.disposeAvatarModel(old);
       }
       state.scene.add(next);state.model=next;state.profile=profile;
+      window.HobunjiOmgurkuConnectorAuthor?.previewReady?.();
       window.HobunjiOmgurkuSpecies.setPreviewFacing(next,Number($('headingRange').value)*Math.PI/180);
       state.built=true;
       applyPlacement();
@@ -343,7 +349,8 @@
       state.placement={...runtime.debugSnapshot().placement};
       fillFields();
       const img=new Image();
-      img.onload=()=>{state.image=img;drawSaddleSprite();};
+      img.onload=()=>{state.image=img;drawSaddleSprite();
+        window.HobunjiOmgurkuConnectorAuthor?.previewReady?.();};
       img.onerror=()=>feedback('Lower idle sprite failed to load.',true);
       img.src='../../assets/creaturesprites/omgurku-lower_idle.png';
       await window.NpcAvatarPreview.ensurePortraitCosmetics({
