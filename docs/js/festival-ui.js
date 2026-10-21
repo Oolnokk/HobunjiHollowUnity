@@ -91,6 +91,7 @@
         html += `<section class="festival-dish-info"><h3>${esc(chosen.label)}</h3>`;
         html += `<p class="festival-dish-total"><strong>${chosen.score} contest points</strong> · ${chosen.ingredientDetails.length} ingredients</p>`;
         if (chosen.estimatedQuality) html += '<p class="festival-note">This older dish predates ingredient-quality records. Ingredient stars are estimated from finished-food quality; the saved contest score and eating buffs remain authoritative.</p>';
+        if (chosen.estimatedEffects) html += '<p class="festival-note">Individual ingredient buffs are approximate for this older recipe; the total eating effects shown below are the stored values.</p>';
         html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
