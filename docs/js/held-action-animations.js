@@ -220,7 +220,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261019h6344309', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261019h8ec8350', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261020hf492753', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261021h0ad9507', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time

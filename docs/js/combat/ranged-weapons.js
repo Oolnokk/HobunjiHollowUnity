@@ -1262,6 +1262,7 @@
     const segmentLimit = Math.max(0, Math.min(1, Number(maxSegmentT) || 0));
     const rawCoverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     const coverHit = rawCoverHit && rawCoverHit.t <= segmentLimit + AIM_EPSILON ? rawCoverHit : null;
+    const shatterHit = window.Shattercasks?.projectileHit?.(start,end,projectileRadius,segmentLimit,p.areaId) || null; // Same swept-segment interval as actor/terrain impact: no tunneling or hitting a vase behind cover.
     const falloff = projectileFalloffMultiplier(p);
     const scaledDamage = p.def.damage * falloff * (Number.isFinite(p.damageScale) ? p.damageScale : 1);
     const damage = p.team === 'player' && p.def.rangedType === 'thrown'
@@ -1271,9 +1272,14 @@
     if (p.team === 'player') {
       let nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
       if (nearest && nearest.interval.enter > segmentLimit + AIM_EPSILON) nearest = null;
-      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+      if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
         playProjectileImpactSfx(p, coverHit.t);
         return { kind: 'cover', t: coverHit.t, coverHit };
+      }
+      if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
+        window.Shattercasks.hitProjectile(shatterHit);
+        playProjectileImpactSfx(p,shatterHit.t);
+        return {kind:'actor',t:shatterHit.t,shattercask:true};
       }
       if (!nearest) return null;
       const c = nearest.creature;
@@ -1296,9 +1302,14 @@
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
     }
-    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter)) {
+    if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
       playProjectileImpactSfx(p, coverHit.t);
       return { kind: 'cover', t: coverHit.t, coverHit };
+    }
+    if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
+      window.Shattercasks.hitProjectile(shatterHit);
+      playProjectileImpactSfx(p,shatterHit.t);
+      return {kind:'actor',t:shatterHit.t,shattercask:true};
     }
     if (!nearest) return null;
     playProjectileImpactSfx(p, nearest.interval.enter);
@@ -1645,48 +1656,44 @@
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
   const WOULD_HIT_LOS_STEP_PX = 48;
-  function computeWouldHitHostile() {
-    const itemKey = deps?.getEquippedRangedKey?.();
-    const def = defFor(itemKey);
-    if (!def || !isLoaded(itemKey)) return false;
-    const solution = playerAimSolution(itemKey);
-    if (!solution) return false;
-    const segment = shotSegment(solution, def);
-    const projectileRadius = def.projectileRadiusPx / deps.TILE;
-    let nearest = null;
-    for (const hostile of deps.hostileObjects) {
-      if (hostile.health <= 0 || hostile.areaId !== deps.getCurrentArea()) continue;
-      const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(hostile), projectileRadius);
-      if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
-      nearest = { hostile, interval };
+  function computeWouldHitTarget() {
+    const key=deps?.getEquippedRangedKey?.(),def=defFor(key);
+    if(!def||!isLoaded(key))return null;
+    const solution=playerAimSolution(key);if(!solution)return null;
+    const segment=shotSegment(solution,def),radius=def.projectileRadiusPx/deps.TILE;
+    let first=null;
+    for(const actor of deps.hostileObjects){
+      if(actor.health<=0||actor.areaId!==deps.getCurrentArea())continue;
+      const interval=segmentHitboxInterval(segment.start,segment.end,actorHitbox(actor),radius);
+      if(interval&&(!first||interval.enter<first.t))first={kind:'hostile',t:interval.enter};
     }
-    if (!nearest) return false;
-    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, projectileRadius) || null;
-    if (coverHit && coverHit.t <= nearest.interval.enter) return false;
-    const maxRangePx = def.rangeTiles * deps.TILE;
-    const hitDistancePx = nearest.interval.enter * maxRangePx;
-    const horizontalDirX = (segment.end.x - segment.start.x) / def.rangeTiles;
-    const horizontalDirY = (segment.end.z - segment.start.z) / def.rangeTiles;
-    for (let distancePx = WOULD_HIT_LOS_STEP_PX; distancePx < hitDistancePx; distancePx += WOULD_HIT_LOS_STEP_PX) {
-      const fraction = distancePx / maxRangePx;
-      const x = deps.player.x + horizontalDirX * distancePx;
-      const y = deps.player.y + horizontalDirY * distancePx;
-      const worldY = THREE.MathUtils.lerp(segment.start.y, segment.end.y, fraction);
-      if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, worldY) || worldY <= deps.worldSurfaceY(x, y) + 0.08) return false;
+    const charge=window.Shattercasks?.projectileHit?.(segment.start,segment.end,radius,1,deps.getCurrentArea());
+    if(charge&&(!first||charge.t<first.t))first={kind:'shattercask',t:charge.t};
+    if(!first)return null;
+    const cover=window.NearbyVolumeCollision?.segmentHit?.(segment.start,segment.end,radius);
+    if(cover&&cover.t<=first.t)return null;
+    const maxRangePx=def.rangeTiles*deps.TILE,hitDistancePx=first.t*maxRangePx;
+    const dirX=(segment.end.x-segment.start.x)/def.rangeTiles;
+    const dirY=(segment.end.z-segment.start.z)/def.rangeTiles;
+    for(let distancePx=WOULD_HIT_LOS_STEP_PX;distancePx<hitDistancePx;distancePx+=WOULD_HIT_LOS_STEP_PX){
+      const f=distancePx/maxRangePx,x=deps.player.x+dirX*distancePx,y=deps.player.y+dirY*distancePx;
+      const height=THREE.MathUtils.lerp(segment.start.y,segment.end.y,f);
+      if(!deps.canOccupyAt(x,y,def.projectileRadiusPx,height)
+          ||height<=deps.worldSurfaceY(x,y)+.08)return null;
     }
-    return true;
+    return first.kind;
   }
-
-  function wouldHitHostile() {
-    const now = performance.now();
-    if (now - wouldHitCacheAt < WOULD_HIT_CACHE_MS) {
-      wouldHitCacheHits++;
-      return wouldHitCacheValue;
+  function wouldHitTarget(){
+    const now=performance.now();
+    if(now-wouldHitCacheAt<WOULD_HIT_CACHE_MS){
+      wouldHitCacheHits++;return wouldHitCacheValue;
     }
-    wouldHitCacheAt = now;
-    wouldHitCacheValue = computeWouldHitHostile();
+    wouldHitCacheAt=now;
+    wouldHitCacheValue=computeWouldHitTarget();
     return wouldHitCacheValue;
   }
+  function wouldHitHostile(){return wouldHitTarget()==='hostile';}
+  function wouldHitShattercask(){return wouldHitTarget()==='shattercask';}
 
   function updateBanditAimLabel() {
     if (!deps?.isWeaponAiming?.()) {
@@ -1719,7 +1726,7 @@
       x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.def.projectileRadiusPx / deps.TILE,
       previous: { x: p.prevX / deps.TILE, y: p.prevWorldY, z: p.prevY / deps.TILE },
     })),
-    wouldHitHostile, playerAimSolution, actorHitbox,
+    wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,

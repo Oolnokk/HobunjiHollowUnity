@@ -83,7 +83,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20260918utilityplacement1"></script>
+  <script src="js/action-arc-ui.js?v=20261020shatterthrow2"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -181,9 +181,9 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261021hc7f8f95"></script>
+  <script src="js/held-action-animations.js?v=20261021he76b24d"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261019h583d9be"></script>
+  <script src="js/character-action-locks.js?v=20261021hbdfc11c"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -225,7 +225,7 @@
   <!-- Procedural foliage / crop geometry -->
   <script src="js/foliage-generator.js?v=20261015h9d88421"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261016h83b78a0"></script>
+  <script src="js/procedural-furniture.js?v=20261020shapefull2"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <script src="js/interior-door-tiles.js?v=20261018h0336068"></script>
@@ -329,8 +329,8 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261017h8208aad"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20261010haf3daa5"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261020hitcolor2"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261010hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
@@ -358,7 +358,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261021h2bf9813"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261021hea38b23"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -367,9 +367,9 @@
   <script src="js/perk-system.js?v=20261016h23d3bfa"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261018trinketgear1"></script>
-  <script src="js/cooking-data.js?v=20261021potluck1-20260811a"></script>
+  <script src="js/cooking-data.js?v=20261021potluck2"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
-  <script src="js/cooking-system.js?v=20261021potluck1-20261018hgorkunash1"></script>
+  <script src="js/cooking-system.js?v=20261021potluck2"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -380,7 +380,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
-  <script src="js/alchemy-flasks.js?v=20261018hca63062"></script>
+  <script src="js/alchemy-flasks.js?v=20261021sharedthrowflight1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -638,7 +638,7 @@
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
-  <script src="js/dev-spawner.js?v=20261014h1eb17d9"></script>
+  <script src="js/dev-spawner.js?v=20261019arenacask1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -782,7 +782,7 @@
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261013hfdce263"></script>
-  <script src="js/cavern-ore-rocks.js?v=20261010caveore1"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261019cavecracks1"></script>
   <script src="js/town-mine.js?v=20261015h57682f9"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
@@ -812,7 +812,10 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261019hebb0b6f"></script>
+  <script src="js/cave-site-system.js?v=20261019thickbarrier1"></script>
+  <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
+       hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
+  <script src="js/shattercasks.js?v=20261021h4500785"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -841,7 +844,7 @@
   <script src="js/crop-growth.js?v=20261015hcrop001"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261016h7dd69ee"></script>
+  <script src="js/perception-mode.js?v=20261021hd899004"></script>
   <script src="js/world-portrait-life.js?v=20261020hf6210b5"></script>
 </head>
 <body>
@@ -1079,6 +1082,13 @@
       <div class="fed-section">
         <div class="fed-label" id="devSpawnStatus" role="status">Ready to spawn.</div>
         <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Shattercask testing — spawn one explosive vase on a random walkable arena tile</div>
+        <div class="fed-actions">
+          <button type="button" class="fed-action-btn" id="devSpawnShattercaskBtn">💥 Spawn Random Shattercask</button>
+        </div>
+        <div class="fed-label" id="devShattercaskSpawnStatus" role="status">Ready to spawn a Shattercask.</div>
       </div>
       <div class="fed-section">
         <div class="fed-label">Foliage / objects — trees/stumps participate in the same view-corridor culling and camera-occlusion fade as a real wilderness zone's, for testing that behavior without leaving the arena</div>
@@ -2532,8 +2542,8 @@
   <script src="js/festival-wheel-dance-runtime.js?v=20261020h3d77f11"></script>
   <script src="js/npc-festival-dance.js?v=20261020hd350a73"></script>
   <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
-  <script src="js/festival-potluck-contest.js?v=20261021potluck1"></script>
-  <script src="js/festival-system.js?v=20261021potluck1"></script>
+  <script src="js/festival-potluck-contest.js?v=20261021potluck2"></script>
+  <script src="js/festival-system.js?v=20261021potluck2"></script>
   <script src="js/festival-dialogue.js?v=20261020gorkunash1"></script>
   <script src="js/festival-ui.js?v=20261020h9788c01"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
