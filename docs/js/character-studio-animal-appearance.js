@@ -15,6 +15,9 @@
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
     grehlr: ['mitts', 'spectacles', 'coloredstripe'],
     drenkirra: ['bodystripes', 'spectacles'],
+    uumkaoii: ['shell'],
+    nelk: ['brushtail', 'cape', 'spectacles'],
+    nazgraku: ['spectacles'],
   }); // Used only until creature-genetics.js finishes loading in this standalone tool.
   const PATTERN_PALETTE_RULES = Object.freeze({
     grehlr: Object.freeze({ coloredstripe: Object.freeze({ minLightnessColorId: 'fawn' }) }),
@@ -24,7 +27,9 @@
     drenkirra: { label: 'Drenkirra', prefix: 'drnk', base: 'drenkirra_idle.png', eyes: 'drenkirra_eye.png' },
     'gar-wolf': { label: 'Gar-wolf', prefix: 'gw', base: 'gar-wolf_idle.png', eyes: 'gar-wolf_eye.png' },
     'dabinggi-hound': { label: 'Dabinggi-hound', prefix: 'dh', base: 'dabinggi-hound_idle.png', eyes: 'dabinggi-hound_eye.png' },
-    uumkaoii: { label: "Uumkao'ii", prefix: 'uum', base: "uumkao'ii.png", singleFrame: true },
+    uumkaoii: { label: "Uumkao'ii", prefix: 'uum', base: "uumkao'ii_idle.png" },
+    nelk: { label: 'Nelk', prefix: 'nelk', base: 'nelk_idle.png', eyes: 'nelk_eye-A.png', eyeMode: 'cycle' },
+    nazgraku: { label: 'Nazgraku', prefix: 'nzg', base: 'nazgraku_idle.png', eyes: 'nazgraku_eye.png' },
   }); // Used for species buttons and the editor-only fallback compositor.
   const debugState = {
     installed: false,
@@ -41,6 +46,7 @@
   let controls = null; // Container repainted whenever the selected NPC/genotype changes.
   let debugEl = null; // Mobile-visible debug line updated with the latest animal appearance state.
   let lastSyncSignature = ''; // Prevents the polling bridge from rebuilding unchanged editor controls.
+  let previewEyeState = 'A'; // Tool-only visual inspection choice; never stored in the NPC genotype or game save.
   let maskPromise = null; // Caches decoded creature base masks used by the standalone editor preview.
   const imageCache = new Map(); // Caches creature sprite/pattern image requests within Character Studio.
   const recolorCache = new Map(); // Caches recolored source canvases keyed by URL+color.
@@ -162,35 +168,30 @@
     const palette = paletteFor(kind); // Supplies breeding-authored colors for initial editable genotype fields.
     const firstColor = palette[0]?.hex || '#8c7a66'; // Used as the default base/fur region color.
     const secondColor = palette[1]?.hex || firstColor; // Used as the default optional-pattern/secondary-region fallback color.
-    if (kind === 'uumkaoii') {
-      return {
-        fur: { color: firstColor, copies: 2, inheritance: 'dominant' },
-        plates: { color: secondColor, copies: 2, inheritance: 'dominant' },
-        sizeClass: 'medium',
-      };
-    }
     const genotype = { base: { color: firstColor, copies: 2, inheritance: 'dominant' }, sizeClass: 'medium' }; // Exact base/pattern object shape expected by CreatureGeneticsRender and breeding records.
     for (const patternId of patternIdsFor(kind)) {
       const patternPalette = paletteFor(kind, patternId); // Applies breeding's pattern-specific palette rules to authored defaults too.
       const patternColor = patternPalette[1]?.hex || patternPalette[0]?.hex || secondColor;
-      genotype[patternId] = { color: patternColor, copies: 0, inheritance: 'dominant', enabled: false };
+      const permanent = kind === 'uumkaoii' && patternId === 'shell'; // This anatomical shell is mandatory, unlike the optional Nelk markings.
+      genotype[patternId] = { color: patternColor, copies: permanent ? 2 : 0, inheritance: 'dominant', enabled: permanent };
     }
     return genotype;
   }
   function normalizeGenotype(kind, source) {
     const genotype = source && typeof source === 'object' ? clone(source) : defaultAnimalGenotype(kind); // Editable copy prevents UI mutations from sharing nested objects with imported JSON.
+    if (kind === 'uumkaoii') {
+      if (!genotype.base && genotype.fur) genotype.base = { ...genotype.fur }; // Keeps the animal's previous coat color in imported NPC appearances.
+      if (!genotype.shell && genotype.plates) genotype.shell = { ...genotype.plates }; // Plates now inherit as one mandatory shell overlay.
+    }
     const defaults = defaultAnimalGenotype(kind); // Supplies missing legacy/imported fields without rerolling any authored values.
     genotype.sizeClass = ['small', 'medium', 'large'].includes(genotype.sizeClass) ? genotype.sizeClass : (defaults.sizeClass || 'medium');
-    if (kind === 'uumkaoii') {
-      for (const region of ['fur', 'plates']) genotype[region] = { ...(defaults[region] || {}), ...(genotype[region] || {}), copies: 2, inheritance: 'dominant' };
-      return genotype;
-    }
     genotype.base = { ...defaults.base, ...(genotype.base || {}), copies: 2, inheritance: 'dominant' };
     for (const patternId of patternIdsFor(kind)) {
       const layer = { ...(defaults[patternId] || {}), ...(genotype[patternId] || {}) }; // Normalized layer feeds both UI toggles and runtime compositor.
-      const enabled = layer.enabled !== false && Number(layer.copies) > 0; // Breeding renderer treats copies>0 plus non-false enabled as expressed.
+      const permanent = kind === 'uumkaoii' && patternId === 'shell'; // No UI/import can remove this anatomical region.
+      const enabled = permanent || (layer.enabled !== false && Number(layer.copies) > 0); // Breeding renderer treats copies>0 plus non-false enabled as expressed.
       layer.color = normalizedPaletteColor(layer.color, paletteFor(kind, patternId)); // Invalid imported colors are snapped into the same legal breeding palette for this pattern.
-      genotype[patternId] = { ...layer, copies: enabled ? Math.max(1, Number(layer.copies) || 1) : 0, inheritance: layer.inheritance || 'dominant', enabled };
+      genotype[patternId] = { ...layer, copies: permanent ? 2 : (enabled ? Math.max(1, Number(layer.copies) || 1) : 0), inheritance: layer.inheritance || 'dominant', enabled };
     }
     return genotype;
   }
@@ -263,7 +264,7 @@
 
   function paintableSurfaceRegions(kind, genotype) {
     const spec = window.CreatureGeneticsRender?.SPECIES?.[kind];
-    const ids = spec?.patterns || (kind === 'uumkaoii' ? ['fur', 'plates'] : patternIdsFor(kind));
+    const ids = spec?.patterns || patternIdsFor(kind);
     const regions = [];
     if (genotype?.base?.color) regions.push({ id: 'base', label: 'Base coat', color: genotype.base.color });
     for (const id of ids) {
@@ -348,35 +349,31 @@
     const speciesButtons = Object.entries(ANIMAL_META).map(([id, meta]) =>
       `<button type="button" class="selBtn animalNpcSpecies ${id === kind ? 'selected' : ''}" data-kind="${esc(id)}">${esc(meta.label)}</button>`
     ).join('');
-    let geneticsHtml = '';
-    if (kind === 'uumkaoii') {
-      geneticsHtml = ['fur', 'plates'].map(region => `
+    let geneticsHtml = `
+      <div class="hr"></div>
+      <div class="cosmeticRow" style="align-items:flex-start">
+        <div class="cosmeticLabel">Base coat</div>
+        <div class="selGroup" style="flex:1">${swatchButtons(kind, 'base', genotype.base?.color)}</div>
+      </div>`;
+    for (const patternId of patternIdsFor(kind)) {
+      const layer = genotype[patternId] || {}; // Breeding-authored optional or permanent layer.
+      const permanent = kind === 'uumkaoii' && patternId === 'shell'; // Permanent shell has a swatch, never a checkbox.
+      geneticsHtml += `
         <div class="hr"></div>
-        <div class="cosmeticRow" style="align-items:flex-start">
-          <div class="cosmeticLabel">${esc(title(region))}</div>
-          <div class="selGroup" style="flex:1">${swatchButtons(kind, region, genotype[region]?.color)}</div>
-        </div>`).join('');
-    } else {
-      geneticsHtml = `
-        <div class="hr"></div>
-        <div class="cosmeticRow" style="align-items:flex-start">
-          <div class="cosmeticLabel">Base coat</div>
-          <div class="selGroup" style="flex:1">${swatchButtons(kind, 'base', genotype.base?.color)}</div>
-        </div>`;
-      for (const patternId of patternIdsFor(kind)) {
-        const layer = genotype[patternId] || {}; // Supplies toggle/color state for this breeding-authored pattern allele.
-        geneticsHtml += `
-          <div class="hr"></div>
-          <div class="row" style="justify-content:space-between;align-items:center">
-            <label style="margin:0;display:flex;align-items:center;gap:7px;color:var(--text)">
-              <input type="checkbox" class="animalNpcPatternToggle" data-pattern="${esc(patternId)}" ${layer.enabled && Number(layer.copies) > 0 ? 'checked' : ''} style="width:auto">
-              ${esc(title(patternId))}
-            </label>
-            <span class="sectionTag">breeding pattern</span>
-          </div>
-          <div class="selGroup" style="margin-top:7px">${swatchButtons(kind, patternId, layer.color)}</div>`;
-      }
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <label style="margin:0;display:flex;align-items:center;gap:7px;color:var(--text)">
+            ${permanent ? '' : `<input type="checkbox" class="animalNpcPatternToggle" data-pattern="${esc(patternId)}" ${layer.enabled && Number(layer.copies) > 0 ? 'checked' : ''} style="width:auto">`}
+            ${esc(title(patternId))}
+          </label>
+          <span class="sectionTag">${permanent ? 'permanent shell' : 'breeding pattern'}</span>
+        </div>
+        <div class="selGroup" style="margin-top:7px">${swatchButtons(kind, patternId, layer.color)}</div>`;
     }
+    const cyclesEyes = (window.CreatureGeneticsRender?.SPECIES?.[kind]?.eyes?.mode || ANIMAL_META[kind]?.eyeMode) === 'cycle'; // Shared metadata enables any future chameleon-eyed species.
+    const eyePreviewHtml = cyclesEyes
+      ? `<div class="hr"></div><div class="help">Eye pose preview (game changes directions automatically at blink intervals)</div>
+        <div class="selGroup">${['A','B','C','D'].map(eye => `<button type="button" class="selBtn animalNpcEyePreview ${previewEyeState === eye ? 'selected' : ''}" data-eye="${eye}">Eye ${eye}</button>`).join('')}</div>`
+      : ''; // Displays all four authored eye positions without adding a fake inheritable allele.
     const repoPatterns = repoPatternEntries();
     const surfaceRegions = paintableSurfaceRegions(kind, genotype);
     const surfaceHtml = `
@@ -421,6 +418,7 @@
       <div class="help" style="margin-bottom:7px">Animal species</div>
       <div class="selGroup">${speciesButtons}</div>
       ${geneticsHtml}
+      ${eyePreviewHtml}
       ${surfaceHtml}
       <div class="row" style="margin-top:10px">
         <button type="button" id="animalNpcResetCoat" class="secondary">Reset coat</button>
@@ -429,6 +427,15 @@
 
     controls.querySelectorAll('.animalNpcSpecies').forEach(button => {
       button.addEventListener('click', () => setAnimalKind(button.dataset.kind));
+    });
+    controls.querySelectorAll('.animalNpcEyePreview').forEach(button => {
+      button.addEventListener('click', () => {
+        previewEyeState = button.dataset.eye || 'A'; // Changes only the authored preview, not gameplay's ambient eye timer.
+        debugState.lastAction = `eye preview → ${previewEyeState}`;
+        syncUi(true); // Repaint the selected control without touching the exported genotype.
+        const target = $('apCanvas'); // This canvas exists on both mobile and desktop Character Studio.
+        if (target) void renderStudioAnimal(target, parseAppearance());
+      });
     });
     controls.querySelectorAll('.animalNpcColor').forEach(button => {
       button.addEventListener('click', () => {
@@ -616,7 +623,7 @@
       prefix: fallback.prefix,
       singleFrame: !!fallback.singleFrame,
       base: { idle: `assets/creaturesprites/${fallback.base}` },
-      patterns: kind === 'uumkaoii' ? ['fur', 'plates'] : patternIdsFor(kind),
+      patterns: patternIdsFor(kind),
       ...(fallback.eyes ? { eyes: { open: `assets/creaturesprites/${fallback.eyes}` } } : {}),
     };
   }
@@ -735,7 +742,7 @@
     const output = makeCanvas(width, height); // Final creature composite used by 2D and 3D Character Studio previews.
     const ctx = output.getContext('2d');
     ctx.drawImage(baseSource, 0, 0, width, height);
-    const patternIds = kind === 'uumkaoii' ? ['fur', 'plates'] : patternIdsFor(kind); // Same visible layer order as breeding/genotype rendering.
+    const patternIds = patternIdsFor(kind); // Same visible layer order as breeding/genotype rendering.
     for (const patternId of patternIds) {
       const layer = genotype?.[patternId]; // Authored allele determines whether and how this pattern is drawn.
       if (!layer?.color || Number(layer.copies) <= 0 || layer.enabled === false) continue;
@@ -803,9 +810,10 @@
     const genotype = normalizeGenotype(kind, appearance.creatureGenotype || appearance.genotype); // Same authored genotype passed to runtime on export.
     try {
       const renderer = await waitForCanonicalCreatureRenderer(); // Never substitute the old editor-only shade-fill compositor: preview must be runtime-identical.
-      const source = await renderer.composeFrame(kind, 'idle', genotype, false); // Exact game compositor: base tint + genetics + Color Pools/repo surface paint + eyes.
+      const eyeState = renderer.SPECIES?.[kind]?.eyes?.mode === 'cycle' ? previewEyeState : false; // Preview the selected direction while gameplay randomizes per animal.
+      const source = await renderer.composeFrame(kind, 'idle', genotype, eyeState); // Exact game compositor: base tint + genetics + Color Pools/repo surface paint + eyes.
       if (!source) throw new Error(`Runtime creature compositor returned no ${kind} frame.`);
-      debugState.lastRender = `canonical:${kind}`;
+      debugState.lastRender = `canonical:${kind}${typeof eyeState === 'string' ? ':eye-' + eyeState : ''}`;
       refreshSurfacePatternStatuses(); // Makes repo-pattern success/failure visible immediately after the exact preview compositor finishes.
       const rendered = fitSourceToCanvas(source, target, renderOptions);
       if (!rendered) debugState.lastError = 'target canvas unavailable';
@@ -907,6 +915,7 @@
     renderStudioAnimal,
     refreshSurfacePatternStatuses,
     noteCanonicalRender,
+    getPreviewEyeState: kind => window.CreatureGeneticsRender?.SPECIES?.[kind]?.eyes?.mode === 'cycle' ? previewEyeState : false, // Reused by the Fey preview's outer compositor.
     patternPaletteRules: PATTERN_PALETTE_RULES,
     getDebug: () => ({ ...debugState, appearance: isNpcTarget() ? clone(parseAppearance()) : null }),
   };

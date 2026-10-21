@@ -41,7 +41,6 @@ assert(W.NpcFollowing.setMode(friend,'follow'));
 assert(override(friend.rec));W.NpcFollowing.clear();
 assert.equal(override(friend.rec),null,'save restore can clear session-only company');
 
- 
 // Combat retreat must be shared by ordinary friendly followers and dates, without breaking seating.
 let combatOn = false; // Drives the combat gate for a normal follower's schedule override.
 let danger = [{x:10.5,z:3.5}]; // Simulated nearby pursuer on the opposite side of a cover wall.

@@ -79,31 +79,72 @@
       patterns: ['bodystripes', 'spectacles'],
       eyes: { open: 'assets/creaturesprites/drenkirra_eye.png', blink: 'assets/creaturesprites/drenkirra_blink.png' },
     },
-    // Uumkao'ii has one static sprite (no run1/run2 art — see CREATURE_DB's
-    // sprites.run reusing the idle frame), and its two regions are always
-    // both present (see makeDefaultGenotype's uumkaoii branch: fur/plates
-    // are permanent copies:2 layers with no `enabled` roll at all, unlike
-    // gar-wolf/dabinggi-hound's optional pattern layers) — composeFrame's
-    // enabled-gate below treats a layer with no `enabled` field as always-on
-    // for exactly this reason. singleFrame tells patternUrl to skip the
-    // _idle/_run1/_run2 suffix these two overlay files don't have.
+    // Uumkao'ii now owns three locomotion frames and a permanent shell over a recolorable base.
+    // Old saved fur/plates genotypes are adapted without rewriting their save files.
     uumkaoii: {
       prefix: 'uum',
-      singleFrame: true,
+      fullBaseRecolor: true,
       base: {
-        idle: "assets/creaturesprites/uumkao'ii.png",
-        run1: "assets/creaturesprites/uumkao'ii.png",
-        run2: "assets/creaturesprites/uumkao'ii.png",
+        idle: "assets/creaturesprites/uumkao'ii_idle.png",
+        run1: "assets/creaturesprites/uumkao'ii_run1.png",
+        run2: "assets/creaturesprites/uumkao'ii_run2.png",
       },
-      patterns: ['fur', 'plates'],
+      patterns: ['shell'],
+      eyes: { open: "assets/creaturesprites/uumkao'ii_eye.png", blink: "assets/creaturesprites/uumkao'ii_blink.png" },
+    },
+    nelk: {
+      prefix: 'nelk',
+      fullBaseRecolor: true,
+      patternAssetRoot: 'assets/creaturesprites',
+      comboPatterns: { brushtail: { when: 'cape', sprite: 'brushtail-caped' } }, // The uploaded file's exact spelling is -caped, not -cape.
+      base: {
+        idle: 'assets/creaturesprites/nelk_idle.png',
+        run1: 'assets/creaturesprites/nelk_run1.png',
+        run2: 'assets/creaturesprites/nelk_run2.png',
+      },
+      patterns: ['brushtail', 'cape', 'spectacles'],
+      eyes: { mode: 'cycle', variants: ['A','B','C','D'].map(id => `assets/creaturesprites/nelk_eye-${id}.png`) },
+    },
+    nazgraku: {
+      prefix: 'nzg',
+      fullBaseRecolor: true,
+      base: {
+        idle: 'assets/creaturesprites/nazgraku_idle.png',
+        run1: 'assets/creaturesprites/nazgraku_run1.png',
+        run2: 'assets/creaturesprites/nazgraku_run2.png',
+      },
+      patterns: ['spectacles'],
+      eyes: { open: 'assets/creaturesprites/nazgraku_eye.png', blink: 'assets/creaturesprites/nazgraku_blink.png' },
+      // Future rider-hand rein attachment: nazgraku-mounted_reinwhisker-grippable.png
+      // and ...-stable.png. For now use the NORMAL whiskered idle/run portraits on mounts.
     },
   };
 
-  function patternUrl(kind, patternId, frame) {
+  function patternUrl(kind, patternId, frame, genotype = null) {
     const spec = SPECIES[kind];
     if (!spec) return null;
-    if (spec.singleFrame) return `assets/creaturesprites/patterns/${spec.prefix}_${patternId}.png`;
-    return `assets/creaturesprites/patterns/${spec.prefix}_${patternId}_${frame}.png`;
+    const combo = spec.comboPatterns?.[patternId]; // Selects the visual asset only; breeding still inherits two independent patterns.
+    const other = genotype?.[combo?.when]; // An expressed cape substitutes Nelk's tail art, without replacing the cape itself.
+    const assetId = combo && other?.enabled !== false && other?.copies > 0
+      ? combo.sprite : patternId;
+    const root = spec.patternAssetRoot || 'assets/creaturesprites/patterns';
+    if (spec.singleFrame) return `${root}/${spec.prefix}_${assetId}.png`;
+    return `${root}/${spec.prefix}_${assetId}_${frame}.png`;
+  }
+
+  function effectiveGenotype(kind, genotype) {
+    if (kind !== 'uumkaoii' || !genotype || (genotype.base && genotype.shell)) return genotype;
+    // Old saves stored permanent fur/plates. Translate their colors into base/shell at read time.
+    return { ...genotype,
+      base: genotype.base || genotype.fur,
+      shell: genotype.shell || (genotype.plates && { ...genotype.plates, copies: 2, enabled: true }),
+    };
+  }
+  function eyeStateKey(state) {
+    return typeof state === 'string' && /^[A-D]$/.test(state) ? 'eye-' + state : (state ? 'b' : 'o');
+  }
+  function eyeStatesForKind(kind) {
+    return SPECIES[kind]?.eyes?.mode === 'cycle' ? ['A','B','C','D'] : [false, true];
   }
 
   function makeCanvas(w, h) {
@@ -433,6 +474,7 @@
     const t0 = performance.now();
     lastPatternPaintDebug = { kind, frame, layers: {} }; // Reset per composite so Character Studio status reflects this exact preview frame.
     const spec = SPECIES[kind];
+    genotype = effectiveGenotype(kind, genotype); // Supports permanent-shell rendering on old saves.
     if (!spec) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no SPECIES config for "${kind}" — returning null (creature falls back to its plain sprite)`, 'wildlife');
       return null;
@@ -475,7 +517,7 @@
       // EXPLICIT `enabled: false` (gar-wolf/dabinggi-hound's optional
       // pattern roll) turns a layer off.
       if (layer?.enabled === false || !(layer?.copies > 0) || !layer?.color) continue;
-      const url = patternUrl(kind, patternId, frame);
+      const url = patternUrl(kind, patternId, frame, genotype);
       try {
         // Drenkirra bodystripes invert only their own two color roles: the
         // body uses their pattern color above and these stripes use the
@@ -496,7 +538,9 @@
       }
     }
     if (spec.eyes) {
-      const eyeUrl = blinkShut ? spec.eyes.blink : spec.eyes.open;
+      const eyeUrl = spec.eyes.mode === 'cycle'
+        ? spec.eyes.variants[Math.max(0, Math.min(3, 'ABCD'.indexOf(typeof blinkShut === 'string' ? blinkShut : 'A')))]
+        : (blinkShut ? spec.eyes.blink : spec.eyes.open); // Shared boolean blinks and four-way chameleon eyes use one compositing pipeline.
       try {
         const eyeImg = await loadImage(eyeUrl);
         ctx.drawImage(eyeImg, 0, 0, c.width, c.height);
@@ -535,14 +579,18 @@
       urls.push(spec.base.idle, spec.base.run1, spec.base.run2);
       for (const patternId of spec.patterns) {
         urls.push(patternUrl(kind, patternId, 'idle'), patternUrl(kind, patternId, 'run1'), patternUrl(kind, patternId, 'run2'));
+        if (spec.comboPatterns?.[patternId]) for (const frame of ['idle', 'run1', 'run2']) {
+          urls.push(`${spec.patternAssetRoot || 'assets/creaturesprites/patterns'}/${spec.prefix}_${spec.comboPatterns[patternId].sprite}_${frame}.png`);
+        }
       }
-      if (spec.eyes) urls.push(spec.eyes.open, spec.eyes.blink);
+      if (spec.eyes) urls.push(...(spec.eyes.variants || [spec.eyes.open, spec.eyes.blink]));
     }
     await Promise.all(urls.filter(Boolean).map(u => loadImage(u).catch(() => null)));
     window.__farmLog?.(`[genotype-render] prewarm(${targets.join(',')}): masks + ${urls.length} sprite URLs cached in ${(performance.now() - t0).toFixed(0)}ms`, 'wildlife');
   }
 
   function genotypeSignature(kind, genotype) {
+    genotype = effectiveGenotype(kind, genotype); // Legacy Uumkao'ii genes still get a correct stable cache signature.
     const spec = SPECIES[kind];
     if (!spec) return 'none';
     const parts = [genotype?.base?.color || ''];
@@ -555,7 +603,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, SPECIES, recolorPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, SPECIES, recolorPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);

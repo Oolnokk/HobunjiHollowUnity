@@ -262,11 +262,11 @@
   const spriteRecolorSource = moduleUrl('sprite-recolor.js', '20260923colorfill2');
   const repoPatternSource = moduleUrl('repo-pattern-library.js', '20260920repo1');
   const weavingSource = moduleUrl('clothing-weaving-system.js', '20260925animaloutline1');
-  const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20260924overpassgap1');
+  const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20261020animal1');
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
   const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
-  const source = moduleUrl('character-studio-animal-appearance.js', '20260924outline3');
-  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260921fey-size1');
+  const source = moduleUrl('character-studio-animal-appearance.js', '20261020animal2');
+  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20261020animal2');
 
   function appendModule(src, dataKey, errorLabel) {
     if (document.querySelector(`script[data-${dataKey}]`)) return;

@@ -100,6 +100,10 @@
     ['uumkaoii',[0,0.6408071738820479,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
     ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
     ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[1.164,1.164],[0.75,0.75],[0.27,0.27]],null], // Large is 20% above the September 15 0.97 calibration so wild Large adults read distinctly bigger.
+    // Uncalibrated starter anchors make these newly registered animals selectable in Animation Author.
+    // The zero saddle/grip and automatic ground offsets are intentionally editable—not claimed as approved fits.
+    ['nelk',[0,0,0],'uncalibrated-defaults',null,null,null,[0,0,0],[[1.5,1.5],[1,1],[0.35,0.35]],null],
+    ['nazgraku',[0,0,0],'uncalibrated-defaults',null,null,null,[0,0,0],[[1.5,1.5],[1,1],[0.35,0.35]],null],
   ];
   const staleCreatureSaddles = Object.freeze({ // Used by reconcileProfiles and the Animation Author repair bridge to migrate only exact superseded defaults.
     drenkirra: Object.freeze([Object.freeze([0,0.09289353489875796,0.02])]),

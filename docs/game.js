@@ -1277,10 +1277,34 @@
           defaultSizeClass: 'large',
           mountSpeed: 340,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii',
+        },
+        // New creature art registered alongside Gar-wolf; biome ecology and rewards remain to be authored.
+        nelk: {
+          label: 'Nelk', hostile: false, diet: 'carnivore', liveBirth: false, // Prey selected by the food-web graph, not the old blanket role.
+          aggroRangePx: TILE * 5, leashRangePx: TILE * 14,
+          maxHealth: 42, maxStamina: 36, moveSpeed: 135, chaseSpeed: 195,
+          attackDamage: 8, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
+          canClimb: true, canSwim: false, modelWidth: 0.89, spriteAspect: 525 / 800, tint: 0xffffff, // Width/aspect from the real 800x525 sprite: Large Nelk's opaque width is ~90% of a Large Voorg-Ass.
+          defaultSizeClass: 'large', mountSpeed: 340, // Wild specimens roll the species default Size, so Nelk spawn Large.
+          sprites: { idle: 'assets/creaturesprites/nelk_idle.png', run: ['assets/creaturesprites/nelk_run1.png', 'assets/creaturesprites/nelk_run2.png'] },
+        },
+        nazgraku: {
+          label: 'Nazgraku', hostile: false, diet: 'herbivore', liveBirth: false,
+          aggroRangePx: TILE * 3, leashRangePx: TILE * 8, // Food-site combat leash; no proactive aggression elsewhere.
+          maxHealth: 52, maxStamina: 40, moveSpeed: 130, chaseSpeed: 185,
+          attackDamage: 10, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
+          canClimb: false, canSwim: true, modelWidth: 1.21, spriteAspect: 378 / 900, tint: 0xffffff, // From the real 900x378 sprite: Large Nazgraku's opaque height is ~110% of a Large Voorg-Ass.
+          defaultSizeClass: 'large', mountSpeed: 340,
+          // Mounted animals deliberately use the regular whiskered sprites until rein deformation is designed.
+          sprites: { idle: 'assets/creaturesprites/nazgraku_idle.png', run: ['assets/creaturesprites/nazgraku_run1.png', 'assets/creaturesprites/nazgraku_run2.png'] },
         },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true, liveBirth: true,
@@ -1375,8 +1399,8 @@
           canClimb: false, canSwim: false,
           modelWidth: 1.6, tint: 0xffffff,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii-wild',
         },
@@ -1418,8 +1442,8 @@
           canClimb: false, canSwim: false,
           modelWidth: 2.8, tint: 0x8a6a3a,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii-wild-den-mother',
         },
@@ -1488,6 +1512,8 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['grehlr'],
+          roamingForagerSpecies: ['nazgraku'], // Separate forager slot preserves both existing Voorg-Ass herds.
+          roamingForagerCount: 1,
           // Northern Cliffs caverns are Grehlr dens. Voorg-Asses are not
           // den wildlife at all: WildlifeSpawn maintains two independent
           // large exterior herds that bed down together in the open at night.
@@ -1563,6 +1589,7 @@
           cols: 50, rows: 40,
           groundColor: 0x6b6a52, fogColor: 0x35342a,
           herbivoreSpecies: ['uumkaoii-wild'],
+          packSpecies: ['nelk'], // Selective carnivore, not a generic hunter of any herbivore.
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
@@ -2618,9 +2645,9 @@
 
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
-        { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
+        { key: 'nelkCrate', icon: '🦎', name: 'Nelk Crate', desc: 'A Nelk for your farm. Add the crate from the Farm tab and assign the animal to a barn.', price: 90, gives: { nelkCrate: 1 }, category: 'livestock' },
         { key: 'uumkaoiiCrate', icon: '🦆', name: 'Uumkao’ii Crate', desc: 'A travel crate with one uumkao’ii inside. Add it to the farm’s livestock from the Farm tab.', price: 150, gives: { uumkaoiiCrate: 1 }, category: 'livestock' },
-        { key: 'nazgraku', icon: '🦃', name: 'Nazgraku', desc: 'Coming soon: meat, eggs, and combat-leaning produce.', price: 160, comingSoon: true },
+        { key: 'nazgrakuCrate', icon: '🐟', name: 'Nazgraku Crate', desc: 'A Nazgraku for your farm. Add the crate from the Farm tab and assign it to a barn.', price: 160, gives: { nazgrakuCrate: 1 }, category: 'livestock' },
         { key: 'drenkirra', icon: '🪿', name: 'Drenkirra', desc: 'Coming soon: meat, eggs, and agile produce.', price: 140, comingSoon: true },
         { key: 'grehlr',   icon: '🦨', name: 'Grehlr',   desc: 'Coming soon: meat and denatured stink oil.', price: 130, comingSoon: true },
         { key: 'voorgAss', icon: '🫏', name: 'Voorg-Ass', desc: 'Coming soon: meat and white milk.', price: 135, comingSoon: true },
@@ -4451,7 +4478,7 @@
           return null;
         }
         const sig = renderer.genotypeSignature(kind, genotype);
-        const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
+        const key = `${kind}|${frame}|${sig}|${renderer.eyeStateKey?.(blinkShut) || (blinkShut ? 'b' : 'o')}`;
         if (_genotypeTexCache.front.has(key)) {
           return _genotypeTextureResidency.get(key);
         }
@@ -4910,6 +4937,7 @@
       function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
         if (c?.combatTutorialTarget) { c.health = c.maxHealth; return false; } // Sparring partners never produce kills, corpses, or loot.
         if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
+        window.WildlifeFoodWeb?.abandon?.(c); // Release reserved bushes when an animal dies or is forcibly removed.
         c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
         // damageCreature's lethal branch returns before its "every hit cancels
         // the attack" block, and bandit swings/ripostes tick from Combat.update
@@ -5037,7 +5065,7 @@
         // animal mid-fight should never make it flee instead; it's
         // supposed to protect its home, not bail the moment it takes a hit.
         const territorialPhase = c._territorialBehavior?.phase;
-        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+        if (c.def?.hostile === false && !c.isCompanion && !window.WildlifeFoodWeb?.isDefending?.(c) && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
           // A drenkirra mid-forage or asleep is pinned to a branch —
           // clear that (see wildlife-cloud-forest-behavior.js's
           // interruptForFlee) before the state flip below, or the
@@ -5973,7 +6001,7 @@
         // short-circuit it here instead of teaching a shared, per-instance
         // timer about one species' mode field.
         const asleep = c._cfDrenkirra?.mode === 'sleeping';
-        const blinkShut = genotypeKind ? (asleep || (window.CreatureBlink?.isShut(c, performance.now()) || false)) : false;
+        const blinkShut = genotypeKind ? (asleep ? true : (window.CreatureBlink?.getVisualState?.(c, genotypeKind, performance.now()) ?? false)) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -5982,7 +6010,7 @@
         if (!c.def.sprites) return;
         if (!moving) {
           const frameKey = 'idle';
-          const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+          const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
           const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
           if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
             (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
@@ -6020,7 +6048,7 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
-        const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+        const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
         const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
         if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
           (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
@@ -6263,6 +6291,8 @@
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
 
       function updateHostiles(dt) {
+        window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
+        const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
@@ -6332,6 +6362,16 @@
           // persists for the rest of the chase so the creature doesn't
           // flicker between equally-near players every frame.
           if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
+          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, players, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
+          // The den-night/retaliation/chase branches outrank forage animation.
+          // Cancel its residual dive/chew pose here rather than waiting for
+          // tickForage (which those higher-priority branches never reach).
+          if (c._foodWeb?.phase && c._foodWeb.phase !== 'rest' &&
+              (c.state === 'chase' || c.state === 'patrol-chase' || c.state === 'fleeing-low-health' ||
+               c.state === 'return' || c.prone || c.knockbackT > 0 ||
+               ((c.denKey || c.herdKey) && window.Music?.isNightTime?.()))) {
+            window.WildlifeFoodWeb?.cancelForage?.(c);
+          }
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
@@ -6408,7 +6448,7 @@
           // radius check against grazing herbivores tied to the same foliage
           // patch (no line-of-sight system exists for creature-vs-creature
           // sight today).
-          const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
+          const predatorAvailable = def.diet !== 'herbivore' && !window.WildlifeFoodWeb?.profile?.(c)?.hunts && !onFleeCooldown
             && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
           if (predatorAvailable) {
             if (!Number.isFinite(c._predatorSightT)) c._predatorSightT = rnd() * PREDATOR_SIGHT_INTERVAL_S;
@@ -6439,7 +6479,7 @@
             }
           }
 
-          let moving = false, aimAngle = c.facing || 0;
+          let moving = false, aimAngle = c.facing || 0, forageResult = null; // Shared foraging return feeds ordinary movement + sprite animation.
           if (c._knockbackLedgeFall) {
             advanceKnockbackLedgeFall(c, entityDt);
           } else if (c.prone) {
@@ -6675,6 +6715,9 @@
               if (c.avatarRef?.group) c.avatarRef.group.visible = false;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
+          } else if ((forageResult = window.WildlifeFoodWeb?.tickForage?.(c, entityDt, foodWebCtx))?.handled) {
+            moving = forageResult.moving;
+            aimAngle = forageResult.aimAngle;
           } else if (def.diet === 'herbivore') {
             // Active hours: a herbivore periodically breaks off grazing to
             // visit water (see assignWildlifeStation's waterTile, checked
@@ -6833,6 +6876,7 @@
 
           const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
           if (skipDistantVisualUpdate) continue;
+          window.WildlifeFoodWeb?.applyPose?.(c, entityDt); // Burrow-first-phase reversal and staggered chewing applied before final creature mesh placement.
           updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
           // swing, updateBanditToolMesh leans the avatar body's own rotation
@@ -12278,6 +12322,22 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
+            // a visible nonlethal flight instead of a fake resource-system death.
+            // Existing moveToward stays responsible for walking/collision and
+            // the normal authored schedule resumes as soon as the threat expires.
+            if (this.area === currentArea && this._wildlifeThreatUntil > performance.now() && this._wildlifeThreatSource) {
+              const source = this._wildlifeThreatSource; // Threat position saved by WildlifeFoodWeb's NPC-actor skirmish adapter.
+              const awayX = root.position.x - source.x / TILE;
+              const awayZ = root.position.z - source.y / TILE;
+              const len = Math.max(0.001, Math.hypot(awayX, awayZ));
+              const targetC = Math.floor(root.position.x + awayX / len * 3);
+              const targetR = Math.floor(root.position.z + awayZ / len * 3);
+              const safe = window.NpcPathfinding?.nearestWalkableTile?.(this.area, targetC, targetR);
+              if (safe) this.moveToward(safe.c + 0.5, safe.r + 0.5, dt * 1.55);
+              this.state = 'wildlife-flight';
+              return;
+            }
             if (this.animalDef && !this._animalSleepPresentationRegistered && window.AnimalSleepPresentation?.registerExternalSleeper) {
               this._animalSleepPresentationRegistered = window.AnimalSleepPresentation.registerExternalSleeper(this, {
                 id: this.rec?.id || this.animalKind,
@@ -15678,6 +15738,8 @@
         { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'nelkCrate',          icon: '🦎', label: 'NELK CRATE',        max: 9  },
+        { key: 'nazgrakuCrate',      icon: '🐟', label: 'NAZGRAKU CRATE',    max: 9  },
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
@@ -15737,6 +15799,8 @@
         drenkirraMeat: { icon: '🥩', label: 'Drenkirra Meat', cat: 'material', sellPrice: 10, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a cloud-forest drenkirra.' },
         drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        nelkCrate: { icon: '🦎', label: 'Nelk Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nelk to your livestock through the Farm tab.' },
+        nazgrakuCrate: { icon: '🐟', label: 'Nazgraku Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nazgraku to your livestock through the Farm tab.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
@@ -31093,8 +31157,8 @@
           for (const entity of entities.values()) {
             const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
             if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
-            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
-              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of window.CreatureGeneticsRender.eyeStatesForKind(kind)) {
+              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${window.CreatureGeneticsRender.eyeStateKey(blink)}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
               const pin = {}; // A distinct temporary owner lets every preloaded frame stay resident.
               preloadPins.push(pin);
               _genotypeTextureResidency.retain(pin, key);
