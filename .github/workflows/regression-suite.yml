@@ -50,3 +50,6 @@ jobs:
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Omgurku hybrid calibration browser smoke
         run: node scripts/test-omgurku-calibration-browser.js
+
+      - name: Omgurku NPC gameplay browser smoke
+        run: node scripts/test-omgurku-gameplay-browser.js

@@ -136,6 +136,8 @@ async function main() {
   const root = api.buildSinglePlaneAvatarModel({ Group, Vector3 }, {}, { speciesId: 'omgurku',npcRecord:{id:'hybrid-test'} });
   assert.equal(humanoidBuilds, 1);
   assert.equal(root.userData.omgurkuNpc, true);
+  assert.equal(root.userData.avatarGroundLift,0,'compound NPC uses a floor-relative world origin');
+  assert.equal(root.userData.proceduralBodyRoot,root.userData.omgurkuComposite.upper,'held stances rotate the mounted torso and hands together');
   assert.equal(root.children.length, 4);
   assert.equal(root.userData.proceduralHandParent.parent, root.userData.omgurkuComposite.upper, 'hand parent must remain in same NPC hierarchy');
   assert.equal(lowerBuilds.length, 3);

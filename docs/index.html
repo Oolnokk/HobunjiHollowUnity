@@ -171,7 +171,7 @@
   </script>
   <script src="js/portrait-utils.js?v=20261020omgurkuBack1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20261010h76d5f7b"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261021hbc9a71f"></script>
   <script src="js/png-plane-avatar.js?v=20261017h64afb2a"></script>
   <script src="js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -181,13 +181,13 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261021hcc68ec5"></script>
+  <script src="js/held-action-animations.js?v=20261021hcc4643a"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261017hf727ba3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
-  <script src="js/npc-drink-interaction.js?v=20260811b"></script>
+  <script src="js/npc-drink-interaction.js?v=20261021hc5d3e61"></script>
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
@@ -197,7 +197,7 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261021h75b5bd3"></script>
-  <script src="js/pants-garment-renderer.js?v=20261015hdd401fe"></script>
+  <script src="js/pants-garment-renderer.js?v=20261021hcba9292"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -355,7 +355,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261019h1117c9f"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261021h0b8b5dc"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2672,7 +2672,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261019h387290f"></script>
+  <script src="game.js?v=20261021hfead191"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261018jubmirorbit-worldstory1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

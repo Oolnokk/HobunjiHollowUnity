@@ -92,3 +92,7 @@ assert(Renderer.ensureNpcPants(generatedFemale));
 assert.strictEqual(Renderer.garmentForCosmetics(generatedFemale.equippedCosmetics), 'layered_skirt');
 assert.strictEqual(Renderer.ensureNpcPants(generatedFemale), false, 'never add basic pants on top of a skirt');
 console.log('Layered leg garments: PASS');
+
+const hybrid = { appearance: { speciesId: 'omgurku', gender: 'male' } }; // Generated NPCs resolve species from the same appearance source as the avatar.
+assert.strictEqual(Renderer.ensureNpcPants(hybrid),false,'hybrid lower body does not receive humanoid pants');
+assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does not mutate its wardrobe');

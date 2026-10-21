@@ -391,8 +391,8 @@
         const riderFrame = new THREE.Group(); // Floor-relative humanoid pose frame, mounted under the centered upper portrait.
         riderFrame.name = 'Omgurku_Mounted_Rider_Floor';
         upper.add(riderFrame);
-        root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true,
-          proceduralHandParent: riderFrame };
+        root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true, avatarGroundLift: 0,
+          proceduralHandParent: riderFrame, proceduralBodyRoot: upper };
         upper.userData.proceduralHandParent = riderFrame;
         root.add(upper);
         for (const ref of lowerRefs) root.add(ref.group);
@@ -538,7 +538,7 @@
         const c = root.userData.omgurkuComposite;
         return {
           name: root.name, frame: c?.frame, join: root.userData.omgurkuJoin,
-          parented: !!root.parent,
+          parented: !!root.parent, avatarGroundLift: root.userData.avatarGroundLift, appliedLift: root.position.y,
           handParentIsRider: root.userData.proceduralHandParent === c?.riderFrame,
           riderFloorY: c?.riderFrame?.position.y ?? null,
           lowerDeadzoneDegrees: placement.lowerDeadzoneDegrees,

@@ -11875,7 +11875,7 @@
         window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
-          speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
+          speciesId: (NPC_SPECIES_IDS.includes(guessSpecies) || Object.hasOwn(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {}, guessSpecies)) ? guessSpecies : undefined,
           gender: rec?.gender === 'female' ? 'female' : 'male',
           cosmetics: {},
         };
@@ -11927,7 +11927,8 @@
         );
         const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
         const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
-        const avatarGroundLift = namedAnimalDef
+        const authoredGroundLift = avatarGroup.userData?.avatarGroundLift; // Compound avatars can own a floor origin instead of the ordinary centered portrait origin.
+        const avatarGroundLift = Number.isFinite(authoredGroundLift) ? authoredGroundLift : namedAnimalDef
           ? (Number.isFinite(namedAnimalGroundOffset) ? namedAnimalGroundOffset : avatarHeight / 2)
           : avatarHeight / 2; // Animal ground lift exactly mirrors makeCreatureEntity; humanoids keep their historical center placement.
         if (namedAnimalDef) window.CreatureGenetics.applyCreatureBillboardScale(avatarGroup, namedAnimalSizeScale); // Grehlr size class owns world scaling before any NPC state wrapper.
@@ -12437,11 +12438,11 @@
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
-                  if (this.stationToolMesh) root.remove(this.stationToolMesh);
+                  if (this.stationToolMesh) this.stationToolMesh.parent?.remove(this.stationToolMesh);
                   this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
-                  if (this.stationToolMesh) root.add(this.stationToolMesh);
+                  if (this.stationToolMesh) (avatarGroup.userData?.proceduralHandParent || root).add(this.stationToolMesh);
                 }
                 if (this.stationToolMesh && isKurraya) {
                   // Same held-still-until-a-note-sounds treatment as the
@@ -12495,12 +12496,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
+                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
+            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
@@ -12577,7 +12578,12 @@
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
         if (walker._animalSleepPresentationRegistered) window.AnimalSleepPresentation?.unregisterExternalSleeper?.(walker); // Releases the shared sleep presenter when a visitor despawns.
+        window.NpcHeldEquipment?.detachCutsceneWalker?.(walker); // Release owned tool/hand claims before the avatar hierarchy is torn down.
         walker.legs?.dispose?.();
+        if (walker.avatarGroup) {
+          window.PNGPlaneAvatar?.disposeAvatarModel?.(walker.avatarGroup); // Refcounted hybrid textures and procedural hands must use their owning disposer.
+          walker.avatarGroup.parent?.remove(walker.avatarGroup);
+        }
         walker.root?.traverse?.(object => {
           object.geometry?.dispose?.();
           const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.

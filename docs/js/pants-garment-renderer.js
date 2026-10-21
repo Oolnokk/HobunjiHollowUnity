@@ -18,7 +18,7 @@
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
-  const PANTLESS_SPECIES = new Set(); // Species that never wear pants in the game (none at the moment).
+  const PANTLESS_SPECIES = new Set(['omgurku']); // The hybrid lower body has no humanoid leg/pants rig.
   const DEFAULT_GARMENT_ID = 'pants_basic';
   const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
   const DOUBLE_SIDE = 2;
@@ -831,7 +831,7 @@
   }
 
   function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
-    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.speciesId || rec.species)) return false;
+    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.appearance?.speciesId || rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
     if (garmentForCosmetics(rec.equippedCosmetics)) return false;
     if (garmentId === DEFAULT_GARMENT_ID && String(rec.appearance?.speciesId || rec.speciesId || rec.species).toLowerCase().replace(/_/g, '-') === 'mao-ao'
