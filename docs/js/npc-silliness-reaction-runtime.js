@@ -289,6 +289,7 @@
     const wrappedShow = function personalityAnimalDialogueShow(target, text, options = {}) {
       const npcId = String(options?.speakerId || ''); // Speaker selects personality assignment for animal-directed lines.
       const animal = npcId && options?.directedAtPlayer === true ? activeAnimalForTarget(options) : null; // Existing directed animal face target distinguishes stable reactions from ordinary greetings.
+      if (animal && global.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) return null; // No reactive pet speech for the Great Fey, even from direct show() callers.
       if (animal) {
         const replacement = animalLine(npcId, animal); // Personality line replaces only the old hardcoded stable-animal copy.
         if (replacement) {
@@ -424,7 +425,7 @@
 
   function react(walker, options = {}) {
     if (!walker?.root || !walker?.rec?.id || !global.AmbientDialogue?.show) return false;
-    if (walker.rec.id === 'banubu') return false; // Banubu does not react to ambient social stimuli.
+    if (global.NpcInteractionPolicy?.isPassiveGreatFey?.(walker.rec)) return false; // Great Fey do not react to dances, music, or silliness.
     if (global.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(walker.rec.id)) return false;
     if (state.plannerDeps?.isDialogueOpen?.() || state.plannerDeps?.isPaused?.()) return false;
 
@@ -498,7 +499,7 @@
 
     for (const walker of walkers) {
       const id = String(walker?.rec?.id || ''); // Candidate NPC ID keys encounter state and profile selection.
-      if (id === 'banubu') continue; // Skip reaction state and portrait work for the permanently sleeping Fey.
+      if (global.NpcInteractionPolicy?.isPassiveGreatFey?.(id)) continue; // Skip reaction state/portrait work for all four Great Fey.
       if (!id || !walker?.root || stimulus.sourceNpcId === id) continue;
       liveIds.add(id);
       let encounter = state.encounters.get(id); // Existing encounter reused across repeated interval/update calls.
