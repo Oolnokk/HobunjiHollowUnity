@@ -141,6 +141,13 @@
         const n=Number(settings[spec.key]);
         if(settings[spec.key]!==undefined && Number.isFinite(n))next[spec.key]=clamp(n,spec.min,spec.max);
       }
+      if (data.connector) {
+        const bridge=window.HobunjiOmgurkuConnector; // Validate before changing either part of a full species import.
+        if(data.connector.schema!==bridge.schema || ['sourceTop','sourceBottom','animalNeck']
+          .some(key=>!bridge.validateFivePointSpline(data.connector[key])))
+          throw new Error('Invalid connector rig in species JSON.');
+        window.HobunjiOmgurkuConnectorAuthor.importConfig(data.connector);
+      }
       state.placement=next;applyPlacement();syncFields();
       feedback('Imported '+file.name+'; preview updated. Save locally or export to retain changes.');
     }catch(error){feedback('Import failed: '+error.message,true);}
@@ -342,6 +349,7 @@
     try{
       await window.HobunjiHandRuntimeReady;
       if(!window.HobunjiOmgurkuSpecies)throw Error('Omgurku runtime script did not load from attachment-rig bootstrap.');
+      await window.HobunjiOmgurkuSpecies.ready;
       const response=await fetch('../../config/species/omgurku.json');
       if(!response.ok)throw Error('Species JSON HTTP '+response.status);
       state.speciesConfig=await response.json();
@@ -349,6 +357,7 @@
       state.placement={...runtime.debugSnapshot().placement};
       fillFields();
       const img=new Image();
+      img.crossOrigin='anonymous'; // The connector author draws this sprite into a canvas.
       img.onload=()=>{state.image=img;drawSaddleSprite();
         window.HobunjiOmgurkuConnectorAuthor?.previewReady?.();};
       img.onerror=()=>feedback('Lower idle sprite failed to load.',true);
@@ -373,6 +382,7 @@
   window.HobunjiOmgurkuCalibration={
     snapshot:()=>({ placement:{...state.placement}, hasComposite:!!state.model?.userData?.omgurkuComposite,
       frame:state.model?.userData?.omgurkuComposite?.frame, error:state.lastError }),
+    context:()=>({model:state.model,image:state.image}), // Shared author preview and browser diagnostics.
     setPlacement:changes=>{state.placement={...state.placement,...changes};applyPlacement();syncFields();},
   };
   start();

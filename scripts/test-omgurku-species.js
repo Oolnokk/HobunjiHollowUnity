@@ -89,10 +89,10 @@ let standardDisposals = 0; // Checks upper-body teardown is delegated to PNGPlan
 let lowerDisposals = 0; // Counts direct calls to each animal-plane refcounted disposal.
 const lowerBuilds = []; // Exposes selected Omgurku art URLs and Voorg-ass rig selection.
 const api = {
-  buildSinglePlaneAvatarModel() {
+  buildSinglePlaneAvatarModel(_THREE,_canvas,options={}) {
     humanoidBuilds++;
     const group = new Group();
-    group.userData = { handAttachY: 0.6, portraitModelHeight: 1, neckRig: { available: true } };
+    group.userData = { speciesId: options.speciesId,gender:options.gender,handAttachY: 0.6, portraitModelHeight: 1, neckRig: { available: true } };
     return group;
   },
   buildAnimalPlaneAvatarModel(_THREE, url, options) {
@@ -130,7 +130,10 @@ assert.equal(window.resolveOptionLayers(null, { speciesId: 'harlyao' }), 'harlya
 async function main() {
   const cosmetics = await window.loadPortraitCosmetics();
   assert.equal(cosmetics.bodyColorRangesByGender.O, cosmetics.bodyColorRangesByGender.E);
-  const root = api.buildSinglePlaneAvatarModel({ Group, Vector3 }, {}, { speciesId: 'omgurku' });
+  const facing = function(raw=this.desiredRot) { return raw; }; // Original walker method must survive repeated avatar rebuilds.
+  const walker = { rec:{id:'hybrid-test'}, desiredRot:.8, applyFacingDeadzone:facing };
+  window._npcWalkers=[walker];
+  const root = api.buildSinglePlaneAvatarModel({ Group, Vector3 }, {}, { speciesId: 'omgurku',npcRecord:{id:'hybrid-test'} });
   assert.equal(humanoidBuilds, 1);
   assert.equal(root.userData.omgurkuNpc, true);
   assert.equal(root.children.length, 4);
@@ -147,6 +150,8 @@ async function main() {
     'direct hand driver must parent the free/tool hands under the same upper portrait half');
   new Group().add(root);
   gaitTick(); // Initial stationary state stays on the idle frame.
+  assert.equal(walker.applyFacingDeadzone,facing,'hybrid facing never wraps the NPC update method');
+  assert.equal(walker.applyFacingDeadzone(),.8);
   root.position.x += 1; // NPC-owned path movement drives lower-frame selection.
   gaitTick();
   assert.match(root.userData.omgurkuComposite.frame, /^run[12]$/);
@@ -183,11 +188,24 @@ async function main() {
   assert(Math.abs(upper.position.x - neutral.x) < 1e-6);
   assert(Math.abs(upper.position.z - neutral.z) < 1e-6);
   api.disposeAvatarModel(root);
+  assert.equal(walker.applyFacingDeadzone,facing,'disposal leaves the canonical walker method intact');
+  api.disposeAvatarModel(root); // Repeated teardown must not double-dispose upper GPU resources.
   assert.equal(lowerDisposals, 3);
   assert.equal(standardDisposals, 1);
   assert.equal(window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount, 0);
   api.buildSinglePlaneAvatarModel({ Group, Vector3 }, {}, { speciesId: 'engh-sho' });
   assert.equal(humanoidBuilds, 2);
+  const appearanceRoot=api.buildSinglePlaneAvatarModel({Group,Vector3},{},{appearance:{speciesId:'omgurku'}});
+  assert(appearanceRoot.userData.omgurkuComposite,'appearance-only callers receive the hybrid too');
+  assert.equal(appearanceRoot.userData.omgurkuComposite.upper.userData.speciesId,'omgurku',
+    'appearance-only callers pass species identity to the canonical anatomy builder');
+  api.disposeAvatarModel(appearanceRoot);
+  window.HobunjiOmgurkuConnector={snapshot:()=>({enabled:true}),create(){throw Error('failed connector');}};
+  const fallback=api.buildSinglePlaneAvatarModel({Group,Vector3},{},{speciesId:'omgurku'});
+  assert(!fallback.userData.omgurkuComposite,'failed optional construction returns the original upper avatar');
+  assert.equal(fallback.parent,null,'fallback upper is detached from the failed hybrid root');
+  assert.equal(window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount,0,'partial builds do not leak live avatar records');
+  assert.equal(fallback.userData.proceduralHandParent,undefined,'fallback removes the hybrid-only hand parent');
   console.log('Omgurku NPC subspecies/hybrid rig tests passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -26,9 +26,19 @@ const server=http.createServer((req,res)=>{
 });
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
-  const browser=await chromium.launch({args:['--enable-webgl','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+  const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,args:['--enable-webgl','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   try{
     const page=await browser.newPage({viewport:{width:1200,height:800}});
+    // Optional installed Three.js package makes this smoke test independent of CDN access.
+    if(process.env.HOBUNJI_THREE_TEST_ROOT)await page.route('https://esm.sh/**',async route=>{
+      const suffix=new URL(route.request().url()).pathname.replace(/^\/three@[^/]+\/?/,'');
+      const relative=suffix||'build/three.module.js'; // Use the same version as the game's configured CDN module.
+      const base=path.resolve(process.env.HOBUNJI_THREE_TEST_ROOT);
+      const file=path.resolve(base,relative);
+      if(!file.startsWith(base+path.sep))return route.abort();
+      try{await route.fulfill({contentType:'text/javascript',body:fs.readFileSync(file,'utf8').replace(/from ['"']three['"']/g,"from 'https://esm.sh/three@0.128.0'")});}
+      catch(error){await route.abort();}
+    });
     const errors=[];
     page.on('pageerror',err=>errors.push(err.stack||err.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/docs/tools/omgurku-calibration/index.html',
@@ -40,6 +50,8 @@ const server=http.createServer((req,res)=>{
     const before=await page.evaluate(()=>window.HobunjiOmgurkuCalibration.snapshot());
     assert.equal(before.error,null,'calibration load: '+before.error+'\npage errors: '+errors.join('\n'));
     assert.equal(before.hasComposite,true,'real hybrid Omgurku should build without selected NPC');
+    await page.waitForFunction(()=>window.HobunjiOmgurkuCalibration.context().image?.naturalWidth>0,
+      null,{timeout:6000});
     const rigIntegrity=await page.evaluate(()=>{
       const model=window.HobunjiOmgurkuCalibration && [...(window.HobunjiOmgurkuSpecies?.debugSnapshot()?.liveFrames||[])][0];
       const state=window.HobunjiOmgurkuSpecies.debugSnapshot();
@@ -100,7 +112,7 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>{
       const c=window.HobunjiOmgurkuConnector;
       return c?.live?.size===1 && [...c.live][0].mesh.visible
-        && [...c.live][0].mesh.geometry.attributes.position.needsUpdate!==undefined;
+        && [...c.live][0].mesh.geometry.attributes.position.version>0;
     },null,{timeout:12000});
     const bridgeBefore=await page.evaluate(()=>{
       const c=window.HobunjiOmgurkuConnector,handle=[...c.live][0],
@@ -124,7 +136,27 @@ const server=http.createServer((req,res)=>{
     for(let i=0;i<3;i++)
       assert(Math.abs(bridgeBefore.first[i]-bridgeBefore.topTarget[i])<.0001,
         'top of connector attached exactly to pants waistband');
-    const original=bridgeBefore.first;
+    const performanceCheck=await page.evaluate(()=>{
+      const handle=[...window.HobunjiOmgurkuConnector.live][0];
+      const model=window.HobunjiOmgurkuCalibration.context().model;
+      handle.update(true);
+      const version=handle.mesh.geometry.attributes.position.version;
+      model.position.x+=100;model.rotation.y+=.8;
+      const rebuilt=handle.update();
+      const stable=version===handle.mesh.geometry.attributes.position.version;
+      model.position.x-=100;model.rotation.y-=.8;
+      const image=handle.mesh.material.map;
+      const next=window.HobunjiOmgurkuConnector.snapshot({includeImage:true});
+      next.sourceTop[2].y+=.02;
+      window.HobunjiOmgurkuConnector.set(next);
+      return {rebuilt,stable,sameTexture:handle.mesh.material.map===image,
+        depthTest:handle.mesh.material.depthTest,depthWrite:handle.mesh.material.depthWrite};
+    });
+    assert.equal(performanceCheck.rebuilt,false,'world movement does not deform a root-local connector');
+    assert.equal(performanceCheck.stable,true,'world movement does not upload unchanged vertex buffers');
+    assert.equal(performanceCheck.sameTexture,true,'rigging edits reuse the decoded PNG');
+    assert.equal(performanceCheck.depthTest,true,'scenery occludes the connector');
+    assert.equal(performanceCheck.depthWrite,true,'connector uses ordinary PNG cutout depth');
     await page.locator('#headingRange').evaluate(input=>{
       input.value='90';input.dispatchEvent(new Event('input',{bubbles:true}));
     });
@@ -146,6 +178,23 @@ const server=http.createServer((req,res)=>{
     assert(savedConnector.imageDataUrl.startsWith('data:image/png;base64,'));
     const exported=await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.exportConfig());
     assert(!exported.imageDataUrl,'species export references PNG asset, not inline megabytes');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await page.waitForFunction(()=>window.HobunjiOmgurkuCalibration?.snapshot().hasComposite
+      && [...(window.HobunjiOmgurkuConnector?.live||[])][0]?.mesh.visible,
+      null,{timeout:55000});
+    assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().uploaded),true,
+      'saved PNG is restored into the author after reload');
+    const imported=JSON.parse(fs.readFileSync(path.join(root,'docs/config/species/omgurku.json'),'utf8'));
+    imported.hybridPlacement.saddleU=.377;
+    imported.connector.enabled=true;imported.connector.sourceTop[2].x=.537;
+    await page.locator('#fileInput').setInputFiles({name:'omgurku.json',mimeType:'application/json',
+      buffer:Buffer.from(JSON.stringify(imported))});
+    await page.waitForFunction(()=>window.HobunjiOmgurkuCalibration.snapshot().placement.saddleU===.377);
+    const restored=await page.evaluate(()=>({rig:window.HobunjiOmgurkuConnector.snapshot({includeImage:true}),
+      author:window.HobunjiOmgurkuConnectorAuthor.exportConfig()}));
+    assert.equal(restored.rig.sourceTop[2].x,.537,'full species imports restore connector settings');
+    assert.equal(restored.author.sourceTop[2].x,.537,'author controls follow imported connector settings');
+    assert(restored.rig.imageDataUrl,'rig-only import preserves the uploaded artwork');
     await page.locator('#connectorClear').click();
     assert.equal((await page.evaluate(()=>window.HobunjiOmgurkuConnector.live.size)),0);
     assert.deepEqual(errors,[],'uncaught browser exceptions');

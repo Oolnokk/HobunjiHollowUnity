@@ -31,6 +31,7 @@ const BROWSER = new Set([
   'test-dev-random-ruin-browser.js',
   'test-dev-random-ruin-collision-browser.js',
   'test-controller-ui-modal-pin.js',
+  'test-omgurku-calibration-browser.js', // Runs in the existing browser workflow step.
 ]);
 
 // Tests that fail on main and are skipped until fixed. Keep this empty: a

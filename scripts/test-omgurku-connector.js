@@ -33,6 +33,7 @@ assert(read('docs/js/omgurku-species-runtime.js').includes('c.connector?.update?
 new vm.Script(runtime,{filename:'omgurku-connector-rig.js'});
 new vm.Script(editor,{filename:'connector-author.js'});
 const mem=new Map();
+const serializedImages=[]; // Track accidental copies of uploaded artwork during live rig edits.
 const world={
  HOBUNJI_PANTS_RIGS:{characters:{'engh-sho::male':{
     portraitBeltSpline:[
@@ -49,7 +50,10 @@ vm.runInNewContext(runtime,{
   getItem:k=>mem.get(k)||null,setItem:(k,v)=>mem.set(k,v),
   removeItem:k=>mem.delete(k)
  },
- console,
+ console,URL,JSON:{parse:JSON.parse,stringify(value,...args){
+  if(value?.imageDataUrl)serializedImages.push(value.imageDataUrl.length);
+  return JSON.stringify(value,...args);
+ }},
 });
 const mod=world.HobunjiOmgurkuConnector;
 assert.deepEqual(Array.from(mod.belt(),p=>p.x),[.3,.4,.5,.6,.7],
@@ -58,6 +62,8 @@ assert.equal(mod.live.size,0,'no mesh allocated before an NPC is built');
 const invalid=mod.normalize({...cfg.connector,enabled:true,sourceTop:[{x:2,y:2}]});
 assert.equal(invalid.sourceTop.length,5,'invalid source seams are replaced with safe defaults');
 assert.equal(invalid.sourceTop[0].x,.32);
+assert.doesNotThrow(()=>mod.normalize({sourceTop:[null,null,null,null,null]}),
+ 'malformed external JSON falls back without crashing');
 assert.equal(mod.splineAt(cfg.connector.animalNeck,.5).x,.30,
  'five point middle control is an exact interpolation landmark');
 const saved=mod.set({...cfg.connector,enabled:true,opacity:.8,
@@ -66,6 +72,12 @@ assert.equal(saved.enabled,true);
 assert.equal(saved.opacity,.8);
 assert.equal(saved.imageDataUrl,undefined,'export never embeds uploaded PNG');
 assert(mem.get(mod.storageKey).includes('imageDataUrl'),'browser keeps real uploaded PNG');
+const serializedBefore=serializedImages.length;
+mod.snapshot();
+const uploaded=mod.snapshot({includeImage:true});
+assert.equal(uploaded.imageDataUrl,'data:image/png;base64,iVBORw0KGgo=');
+mod.set({...uploaded,opacity:.7});
+assert.equal(serializedImages.length,serializedBefore,'live rig edits and snapshots never serialize PNG bytes');
 assert(!mod.reset().enabled,'reset disables optional connector and frees no-NPC preview');
 assert.equal(mem.has(mod.storageKey),false,'reset clears local override');
 console.log('Omgurku two-spline connector rig authoring contract passed');

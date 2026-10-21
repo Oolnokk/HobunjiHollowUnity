@@ -25,7 +25,6 @@
   const live = new Set(); // Tracks currently attached Omgurku roots for one low-frequency shared gait update.
   const LOWER_TINT_KIND = 'omgurku-lower';
   let coatTextureCache = null; // Shared generated native animal-coat textures; refcounted through CreatureTextureCache.
-  const tmpPosition = { x: 0, y: 0, z: 0 }; // Diagnostic fallback for incomplete Three.js stubs.
   const status = { // Surfaced by the in-page mobile debugger and debugSnapshot().
     registered: false, rigProfiles: 0, handInherited: false, wardrobeInherited: false,
     paletteInherited: false, lowerRig: LOWER_RIG, lastError: null, builds: 0, disposals: 0,
@@ -34,7 +33,7 @@
   const normalize = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const isOmgurku = options => normalize(options?.speciesId || options?.profile?.fighter?.speciesId ||
-    options?.profile?.appearance?.speciesId || options?.npcRecord?.appearance?.speciesId) === ID;
+    options?.profile?.appearance?.speciesId || options?.appearance?.speciesId || options?.npcRecord?.appearance?.speciesId) === ID;
 
   function installSpeciesData() {
     const config = window.SCRATCHBONES_CONFIG?.game; // Read the canonical mutable appearance config only after parser bootstrap.
@@ -179,9 +178,7 @@
           .then(canvas => {
             if (!canvas) return null;
             const display = window.CreatureTextureCache.fitGeneratedCanvas(canvas);
-            const texture = new THREE.CanvasTexture(display);
-            texture.colorSpace = THREE.SRGBColorSpace;
-            texture.needsUpdate = true;
+            const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, display, key); // Match the shared PNG appearance contract.
             return coatTextureCache.put(key, { front: texture, back: texture });
           })
           .catch(error => {
@@ -205,14 +202,13 @@
     for (const walker of walkers) {
       if (!walker || walker.rec?.id !== record.npcId || typeof walker.applyFacingDeadzone !== 'function') continue;
       record.walker = walker;
-      const previous = walker.applyFacingDeadzone;
-      walker.applyFacingDeadzone = function omgurkuReadNpcFacing(rawYaw, ...args) {
-        if (Number.isFinite(rawYaw) && record.root.userData?.omgurkuComposite)
-          record.root.userData.omgurkuComposite.rawNpcYaw = rawYaw;
-        return previous.call(this, rawYaw, ...args);
-      };
       break;
     }
+  }
+
+  function releaseRecord(record) {
+    live.delete(record);
+    record.walker = null;
   }
 
   const diffAngle = (a,b) => Math.atan2(Math.sin(a-b), Math.cos(a-b));
@@ -227,7 +223,8 @@
     if (!perp) return;
     const origin = record.root.getWorldPosition(c.positionScratch);
     const cameraPos = camera.getWorldPosition(c.cameraScratch);
-    const cameraWorld = { x: cameraPos.x, z: cameraPos.z };
+    const cameraWorld = c.cameraWorld; // Reuse camera coordinates across render callbacks.
+    cameraWorld.x = cameraPos.x; cameraWorld.z = cameraPos.z;
     const npcPerps = perp.cameraRelativePerpsAtWorldPosition?.(origin,cameraWorld);
     const animalPerps = perp.cameraRelativeCreaturePerpsAtWorldPosition?.(origin,cameraWorld);
     if (!npcPerps || !animalPerps) return;
@@ -236,6 +233,7 @@
       const dir = record.root.getWorldDirection(c.directionScratch);
       rootYaw = Math.atan2(dir.x,dir.z);
     }
+    if (Number.isFinite(record.walker?.desiredRot)) c.rawNpcYaw = record.walker.desiredRot; // Read the NPC's authoritative raw heading without wrapping its per-frame method.
     const previewRaw = record.root.userData.omgurkuPreviewRawYaw;
     const preview = Number.isFinite(previewRaw);
     const rawYaw = preview ? previewRaw : (Number.isFinite(c.rawNpcYaw) ? c.rawNpcYaw : rootYaw);
@@ -278,15 +276,17 @@
   }
 
   function installFacingCallbacks(record) {
-    for (const ref of record.root.userData.omgurkuComposite.lowerRefs) {
-      for (const plane of [ref.frontPlane,ref.backPlane]) {
-        if (!plane) continue;
-        const previous = plane.onBeforeRender;
-        plane.onBeforeRender = function omgurkuIndependentFacing(renderer,scene,camera,geometry,material,group) {
-          updateIndependentFacing(record,camera);
-          previous?.call(this,renderer,scene,camera,geometry,material,group);
-        };
-      }
+    const c = record.root.userData.omgurkuComposite; // Cache both halves once, before rendering begins.
+    const planes = []; // Either half can render first after transparent-object sorting.
+    c.upper.traverse?.(node => { if (node.isMesh) planes.push(node); });
+    for (const ref of c.lowerRefs) planes.push(ref.frontPlane, ref.backPlane);
+    for (const plane of planes) {
+      if (!plane) continue;
+      const previous = plane.onBeforeRender; // Preserve canonical sprite hooks.
+      plane.onBeforeRender = function omgurkuIndependentFacing(renderer,scene,camera,geometry,material,group) {
+        updateIndependentFacing(record,camera);
+        previous?.call(this,renderer,scene,camera,geometry,material,group);
+      };
     }
   }
 
@@ -378,9 +378,10 @@
     if (!original || typeof api?.buildAnimalPlaneAvatarModel !== 'function' || original.__omgurkuHybridWrapped) return;
     const wrapped = function buildOmgurkuNpc(THREE, sourceCanvas, options = {}) {
       if (!isOmgurku(options)) return original.apply(this, arguments);
-      const upper = original.apply(this, arguments); // Retains the real NPC portrait + skinned head, not a fake rider actor.
+      const upper = original.call(this, THREE, sourceCanvas, { ...options, speciesId: ID, gender: 'male' }); // Resolve the canonical hand/anatomy rig for appearance-only callers too.
       if (!upper) return upper;
       const lowerRefs = [];
+      let record = null; // Allows partial composite construction to unwind safely.
       try {
         for (const frame of FRAMES) {
           lowerRefs.push(api.buildAnimalPlaneAvatarModel(THREE, new URL(SPRITES[frame], DOCS_ROOT).href, {
@@ -403,12 +404,12 @@
         const c = {
           upper, lowerRefs, frame: null, builtLowerWidth: placement.lowerWidth, builtLowerHeight: placement.lowerHeight,
           positionScratch: new THREE.Vector3(), lastPosition: null,
-          cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(),
+          cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(), cameraWorld: { x: 0, z: 0 },
           rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
           lastAnimalFacingAt: 0, tintColor: resolveBodyColorA(options),
         };
         root.userData.omgurkuComposite = c;
-        const record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
+        record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
         live.add(record);
         // Optional garment bridge; no mesh or GPU work until an authored/uploaded
         // PNG is enabled. Parent is this SAME NPC root, not a second actor.
@@ -421,6 +422,12 @@
         status.builds += 1;
         return root;
       } catch (error) {
+        if (record) {
+          releaseRecord(record);
+          record.root.userData.omgurkuComposite?.connector?.dispose?.();
+          record.root.remove(upper);
+          delete upper.userData.proceduralHandParent;
+        }
         for (const ref of lowerRefs) ref?.dispose?.();
         status.lastError = String(error?.message || error);
         window.__farmLog?.(`[omgurku] hybrid build failed: ${status.lastError}`, 'warn');
@@ -436,13 +443,17 @@
       const disposeWrapped = function disposeOmgurkuNpc(root) {
         const c = root?.userData?.omgurkuComposite;
         if (!c) return dispose.call(this, root);
-        for (const record of live) if (record.root === root) { live.delete(record); break; }
+        for (const record of live) if (record.root === root) { releaseRecord(record); break; }
+        if (c.disposed) return;
+        c.disposed = true;
         c.connector?.dispose?.();
         for (const ref of c.lowerRefs) ref?.dispose?.();
         // Do not call the generic recursive disposal on the combined root:
         // animal texture maps are refcounted by buildAnimalPlaneAvatarModel.
         dispose.call(this, c.upper);
         root.parent?.remove?.(root);
+        delete root.userData.proceduralHandParent;
+        delete c.upper.userData.proceduralHandParent;
         status.disposals += 1;
       };
       disposeWrapped.__omgurkuHybridWrapped = true;
@@ -583,13 +594,14 @@
     return debugSnapshot();
   }
 
+  const ready = loadAuthoredPlacement(); // Editors await the same authored/local configuration as gameplay.
   window.HobunjiOmgurkuSpecies = Object.freeze({
+    ready,
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
     install, setPlacement, setConnector, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();
-  loadAuthoredPlacement();
   installMobileDebug();
   setInterval(gaitTick, 100); // One shared, bounded-frequency visual gait tick; no parallel NPC simulation.
 })();

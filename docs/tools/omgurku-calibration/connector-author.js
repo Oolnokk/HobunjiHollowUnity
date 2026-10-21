@@ -28,7 +28,7 @@ function drawCanvas(id,image,points,extraPoints=null){
    g.fillStyle='#ffffff08';g.fillRect(x,y,16,16);
  }
  const rect=rectFor(canvas,image);
- if(image){g.imageSmoothingEnabled=false;g.drawImage(image,rect.x,rect.y,rect.w,rect.h);}
+ if(image && (!('complete' in image)||image.complete) && (image.naturalWidth||image.width)){g.imageSmoothingEnabled=false;g.drawImage(image,rect.x,rect.y,rect.w,rect.h);}
  if(!image){
    g.fillStyle='#9ab9d3';g.font='13px system-ui';
    g.fillText(id==='connectorSourceCanvas'?'Upload a transparent connector PNG':'Waiting for gameplay sprite…',12,h/2);
@@ -70,7 +70,7 @@ function refresh(){
 function apply(){
  if(!state.settings)return;
  const next=cpy(state.settings);
- next.enabled=!!state.dataUrl||!!next.enabled;
+ next.enabled=state.settings.enabled===true;
  if(state.dataUrl)next.imageDataUrl=state.dataUrl;
  const accepted=species()?.setConnector?.(next);
  if(!accepted){tell('Connector runtime is not ready yet.',true);return;}
@@ -122,6 +122,7 @@ async function png(file){
  const image=new Image();
  await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('PNG decode failed'));image.src=url;});
  if(!image.naturalWidth||!image.naturalHeight)throw Error('Empty connector image');
+ if(!bridge().normalize({imageDataUrl:url}).imageDataUrl)throw Error('PNG exceeds the browser storage budget.');
  state.image=image;state.dataUrl=url;state.settings.enabled=true;
  apply();tell('Connector uploaded. Drag the two source seams and the animal-neck spline.');
 }
@@ -138,23 +139,37 @@ async function importRig(file){
    if(src.schema!==bridge().schema)throw Error('Expected a hobunji.omgurku-connector.v1 rig');
    for(const key of ['sourceTop','sourceBottom','animalNeck'])
      if(!bridge().validateFivePointSpline(src[key]))throw Error('Invalid five-point '+key+' spline');
-   state.settings=bridge().normalize(src);
-   // The external PNG remains separate; do not replace a previously loaded PNG.
-   state.settings.enabled=!!state.dataUrl || state.settings.enabled;
-   apply();tell('Imported both connector source seams and animal neck fit.');
+   importConfig(src);
+   tell('Imported both connector source seams and animal neck fit.');
  }catch(error){tell('Import failed: '+error.message,true);}
+}
+function importConfig(config){
+ const next=bridge().normalize(config); // Rig-only imports retain an already uploaded PNG.
+ if(state.dataUrl && !next.imageDataUrl)next.imageDataUrl=state.dataUrl;
+ species().setConnector(next);
+ state.settings=null;state.dirty=false;
+ previewReady();state.dirty=true;
+ refresh();
 }
 function previewReady(){
  const current=bridge()?.snapshot({includeImage:true});
- if(!state.settings && current){
+ if(!state.dirty && current){
    state.settings=bridge().normalize(current);
+   delete state.settings.imageDataUrl; // Artwork is held separately, so dragging clones only small rig settings.
    state.dataUrl=current.imageDataUrl||null;
-   if(state.dataUrl){
-     const img=new Image();img.onload=()=>{state.image=img;refresh();};img.src=state.dataUrl;
-   }
+   const url=state.dataUrl || (current.enabled?new URL('../../'+current.assetPath,location.href).href:null); // Preview saved and authored artwork too.
+   if(url && state.image?.src!==url){
+     const img=new Image(); // Do not let an older PNG load overwrite a later import/reset.
+     img.crossOrigin='anonymous';
+     state.image=img;
+     img.onload=()=>{if(state.image===img)refresh();};
+     img.onerror=()=>{if(state.image===img){state.image=null;refresh();tell('Connector PNG could not load.',true);}};
+     img.src=url;
+   }else if(!url)state.image=null;
  }
  refresh();
 }
+
 function hook(){
  $('connectorFile').addEventListener('change',async e=>{
    try{await png(e.target.files?.[0]);}catch(error){tell(error.message,true);}
@@ -165,6 +180,7 @@ function hook(){
  pointerRig('connectorSourceCanvas','source','source');
  pointerRig('connectorAnimalCanvas','animalNeck','animal');
  $('connectorOpacity').addEventListener('input',()=>{
+   if(!state.settings)return;
    state.settings.opacity=clamp($('connectorOpacity').value);
    apply();
  });
@@ -199,7 +215,7 @@ function hook(){
  });
 }
 window.HobunjiOmgurkuConnectorAuthor={
- previewReady,
+ previewReady,importConfig,
  exportConfig:()=>bridge()?.snapshot()||defaults(),
  snapshot:()=>({enabled:state.settings?.enabled===true,uploaded:!!state.dataUrl,
   top:state.settings?.sourceTop?.length||0,bottom:state.settings?.sourceBottom?.length||0,

@@ -12,6 +12,8 @@ const DOCS_ROOT=(() => {
 const MAX_IMAGE_CHARS=2400000;
 const TOP=[.32,.41,.50,.59,.68].map(x=>({x,y:.10}));
 const BOTTOM=[.28,.39,.50,.61,.72].map(x=>({x,y:.90}));
+const FALLBACK_BELT=[{x:.325,y:1},{x:.405,y:.99},{x:.485,y:.985},
+ {x:.565,y:.99},{x:.645,y:1}]; // Reused when no authored pants fit exists.
 const NECK=[.20,.25,.30,.35,.40].map((x,i)=>({x,y:[.32,.295,.28,.295,.32][i]}));
 const DEFAULT={
  schema:ID, enabled:false, assetPath:'assets/portraitsprites/omgurku-connector.png',
@@ -19,9 +21,9 @@ const DEFAULT={
 };
 const clone=o=>JSON.parse(JSON.stringify(o));
 const clamp=(n,min=0,max=1)=>Math.max(min,Math.min(max,Number(n)||0));
-const valid=points=>global.HobunjiPantsRig?.validateFivePointSpline?.(points)
+const valid=points=>Array.isArray(points)&&points.length===5&&points.every(p=>p && typeof p==='object') && (global.HobunjiPantsRig?.validateFivePointSpline?.(points)
   || (Array.isArray(points)&&points.length===5&&points.every(p=>
-     Number.isFinite(+p.x)&&Number.isFinite(+p.y)&&+p.x>=0&&+p.x<=1&&+p.y>=0&&+p.y<=1));
+     p && Number.isFinite(+p.x)&&Number.isFinite(+p.y)&&+p.x>=0&&+p.x<=1&&+p.y>=0&&+p.y<=1)));
 function normalize(raw){
  const out={...clone(DEFAULT)};
  if(!raw||typeof raw!=='object')return out;
@@ -45,13 +47,13 @@ function belt(){
  const chars=global.HOBUNJI_PANTS_RIGS?.characters||{};
  const found=chars['omgurku::male']?.portraitBeltSpline
        || chars['engh-sho::male']?.portraitBeltSpline;
- return valid(found)?found: [{x:.325,y:1},{x:.405,y:.99},{x:.485,y:.985},
-     {x:.565,y:.99},{x:.645,y:1}];
+ return valid(found)?found:FALLBACK_BELT;
 }
-function splineAt(points,t){
+function splineAt(points,t,target={}){
  const scaled=clamp(t)*4,index=Math.min(3,Math.floor(scaled)),f=scaled-index;
  const a=points[index],b=points[index+1];
- return {x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f};
+ target.x=a.x+(b.x-a.x)*f;target.y=a.y+(b.y-a.y)*f;
+ return target;
 }
 function sample3(points,t,target){
  const u=clamp(t)*4,i=Math.min(3,Math.floor(u)),f=u-i;
@@ -89,8 +91,8 @@ function create(THREE,root){
  geometry.setAttribute('position',new THREE.BufferAttribute(positions,3)
    .setUsage(THREE.DynamicDrawUsage));
  geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));
- const material=new THREE.MeshBasicMaterial({transparent:true,side:THREE.DoubleSide,
-   depthTest:false,depthWrite:false,alphaTest:.002,opacity:settings.opacity});
+ const material=global.HobunjiSpritePngSurface.makeMaterial(THREE,null,
+   'omgurku_connector_material',{side:THREE.DoubleSide,opacity:settings.opacity}); // Shared PNG depth and cutout rules.
  const mesh=new THREE.Mesh(geometry,material);
  mesh.name='Omgurku_WaistToNeckConnector';
  mesh.renderOrder=2.5;
@@ -98,9 +100,12 @@ function create(THREE,root){
  root.add(mesh);
  const vec=()=>new THREE.Vector3();
  const targetsTop=Array.from({length:5},vec),targetsBottom=Array.from({length:5},vec);
- const tempTop=vec(),tempBottom=vec(),tempSourceTop=vec(),tempSourceBottom=vec();
- const local=vec(),lastState={key:'',rev:-1};
- let imageUrl=null,texture=null,disposed=false,loadEpoch=0;
+ const tempTop=vec(),tempBottom=vec(); // Reused interpolation endpoints.
+ const local=vec(),lastState={rev:-1}; // Last mesh-space transforms avoid per-frame string construction.
+ const upperMatrix=new THREE.Matrix4(),lowerMatrix=new THREE.Matrix4(); // Geometry depends on relative transforms only.
+ const sourceTop={x:0,y:0},sourceBottom={x:0,y:0}; // Reuse source spline samples during deformation.
+ const previousUpper=new THREE.Matrix4(),previousLower=new THREE.Matrix4(); // Compare without serializing matrices.
+ let texture=null,disposed=false,loadEpoch=0; // Own pending and decoded PNG lifetimes.
  function applyImage(){
    const current=++loadEpoch;
    if(texture){material.map=null;material.needsUpdate=true;texture.dispose();texture=null;}
@@ -108,20 +113,16 @@ function create(THREE,root){
      new URL(settings.assetPath,DOCS_ROOT).href:null);
    if(!settings.enabled||!src){mesh.visible=false;return;}
    const loader=new THREE.TextureLoader();
-   imageUrl=src;
    const next=loader.load(src,()=>{
      if(disposed||current!==loadEpoch){next.dispose();return;}
-     next.colorSpace=THREE.SRGBColorSpace;
-     next.magFilter=THREE.NearestFilter;
-     next.minFilter=THREE.LinearFilter;
+     global.HobunjiSpritePngSurface.configureTexture(THREE,next,'omgurku_connector_png');
      material.map=next;material.needsUpdate=true;mesh.visible=true;
+     update(true); // Fit before the first visible render after decode.
    },undefined,error=>{
      if(disposed||current!==loadEpoch)return;
      mesh.visible=false;
      console.warn('[omgurku-connector] PNG unavailable; connector stays hidden',error);
    });
-   next.colorSpace=THREE.SRGBColorSpace;
-   next.magFilter=THREE.NearestFilter;
    texture=next;
    mesh.visible=false; // Only render after successful image decode.
  }
@@ -133,40 +134,41 @@ function create(THREE,root){
    const w=Number(dims.width)||Number(lower?c.builtLowerWidth:c.upper.userData?.portraitModelWidth)||1;
    const h=Number(dims.height)||Number(lower?c.builtLowerHeight:c.upper.userData?.portraitModelHeight)||1;
    result.set((p.x-.5)*w,(.5-p.y)*h,depth);
-   plane.localToWorld(result);
-   root.worldToLocal(result);
+   result.applyMatrix4(lower?lowerMatrix:upperMatrix);
    return result;
+ }
+ function relativeMatrix(plane,target){
+   target.identity();
+   for(let node=plane;node && node!==root;node=node.parent){
+     if(node.matrixAutoUpdate)node.updateMatrix();
+     target.premultiply(node.matrix);
+   }
  }
  function update(force=false){
    if(disposed || !mesh.visible)return false;
    // One small 24×12 mesh, recomputed only when transforms or rigging change.
-   const upper=c.upper,lower=c.lowerRefs[0].group;
-   upper.updateWorldMatrix?.(true,true);
-   lower.updateWorldMatrix?.(true,true);
-   root.updateWorldMatrix?.(true,false);
-   const key=[
-     ...upper.matrixWorld.elements,
-     ...lower.matrixWorld.elements,
-     Number(upperPlane.position?.z)||0,
-     Number(lowerPlane.position?.x)||0
-   ].map(n=>Math.round(n*100000)/100000).join(',');
-   if(!force && lastState.rev===revision &&lastState.key===key)return false;
-   lastState.key=key;lastState.rev=revision;
+   relativeMatrix(upperPlane,upperMatrix);
+   relativeMatrix(lowerPlane,lowerMatrix);
+   if(!force && lastState.rev===revision && previousUpper.equals(upperMatrix)
+      && previousLower.equals(lowerMatrix))return false;
+   previousUpper.copy(upperMatrix);previousLower.copy(lowerMatrix);
+   lastState.rev=revision;
    const b=belt();
    for(let i=0;i<5;i++){
      localPoint(upperPlane,b[i],targetsTop[i],.012,false);
      localPoint(lowerPlane,settings.animalNeck[i],targetsBottom[i],.012,true);
    }
    let offset=0,tex=geometry.attributes.uv.array;
-   for(let j=0;j<=rows;j++){
-     const t=j/rows;
-     for(let i=0;i<=columns;i++){
+   for(let i=0;i<=columns;i++){
        const x=i/columns;
        sample3(targetsTop,x,tempTop);
        sample3(targetsBottom,x,tempBottom);
-       const sourceTop=splineAt(settings.sourceTop,x),
-          sourceBottom=splineAt(settings.sourceBottom,x);
+       splineAt(settings.sourceTop,x,sourceTop);
+       splineAt(settings.sourceBottom,x,sourceBottom);
+       for(let j=0;j<=rows;j++){
+       const t=j/rows; // Interpolate every row between this column's fixed seams.
        local.copy(tempTop).lerp(tempBottom,t);
+       offset=(j*(columns+1)+i)*3;
        positions[offset++]=local.x;positions[offset++]=local.y;positions[offset++]=local.z;
        const index=(j*(columns+1)+i)*2;
        // UV follows the two authored image splines, not the full rectangle;
@@ -203,8 +205,9 @@ function set(next,{persist=false}={}){
  return snapshot();
 }
 function snapshot({includeImage=false}={}){
- const out=clone(settings);
- if(!includeImage)delete out.imageDataUrl;
+ const {imageDataUrl,...rig}=settings; // Keep multi-MB PNG bytes out of rig snapshots and drag-time JSON clones.
+ const out=clone(rig);
+ if(includeImage && imageDataUrl)out.imageDataUrl=imageDataUrl;
  return out;
 }
 function reset(){
