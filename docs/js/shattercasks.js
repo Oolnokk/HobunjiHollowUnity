@@ -592,11 +592,25 @@
     return Number(d?.getGroundYAtWorld?.(x,z)??d?.getGroundY?.(x*t,z*t)
       ??d?.worldSurfaceY?.(x*t,z*t))||0;
   }
+  // Camera-aligned ground heading, in the same X/Z frame as AlchemyFlasks
+  // and RangedCameraRayAuthority. Screen drag must never be assumed to be
+  // fixed world +X/-Z: the camera rotates around the player.
+  function throwHeading(){
+    const p=playerPosition(),d=deps();
+    const ray=d?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.()
+      ||window.__hitboxDebug?.interactionRay;
+    const dx=Number(ray?.direction?.x),dz=Number(ray?.direction?.z);
+    const len=Math.hypot(dx,dz);
+    if(Number.isFinite(len)&&len>1e-5)return {x:dx/len,z:dz/len,source:'camera-ray'};
+    const angle=Number(d?.getAimAngle?.()??p?.angle??0);
+    return {x:Math.cos(angle),z:Math.sin(angle),source:'player-aim'};
+  }
   function throwTarget(){
     const p=playerPosition(),d=deps();
     if(!p)return null;
     if(aimingThrow?.manualTarget)return aimingThrow.manualTarget;
-    let x=p.x+Math.cos(p.angle)*3,z=p.z+Math.sin(p.angle)*3;
+    const heading=throwHeading();
+    let x=p.x+heading.x*3,z=p.z+heading.z*3;
     const ray=d?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.()
       ||window.__hitboxDebug?.interactionRay;
     if(ray?.origin&&ray?.direction){
@@ -617,7 +631,14 @@
         z=p.z+MAX_THROW_RADIUS*ray.direction.z/h;
       }
     }
-    const dx=x-p.x,dz=z-p.z,len=Math.hypot(dx,dz);
+    let dx=x-p.x,dz=z-p.z,len=Math.hypot(dx,dz);
+    // At a steep camera pitch the ray can hit terrain BETWEEN the camera and
+    // player, i.e. BEHIND the hand. Reject that surface rather than launching
+    // backward toward the camera (the old low-crosshair failure).
+    if(dx*heading.x+dz*heading.z<.5){
+      x=p.x+heading.x*3;z=p.z+heading.z*3;
+      dx=x-p.x;dz=z-p.z;len=Math.hypot(dx,dz);
+    }
     if(len>MAX_THROW_RADIUS){x=p.x+dx*MAX_THROW_RADIUS/len;z=p.z+dz*MAX_THROW_RADIUS/len;}
     return {x,y:thrownGround(x,z),z};
   }
@@ -645,7 +666,10 @@
     const p=playerPosition(),mag=Math.hypot(dx,dy);
     if(!p||mag<7)return;
     const range=Math.min(MAX_THROW_RADIUS,mag/240*MAX_THROW_RADIUS);
-    const x=p.x+dx/mag*range,z=p.z-dy/mag*range;
+    const forward=throwHeading(),right={x:-forward.z,z:forward.x};
+    const vx=right.x*dx-forward.x*dy,vz=right.z*dx-forward.z*dy;
+    const length=Math.hypot(vx,vz)||1;
+    const x=p.x+vx/length*range,z=p.z+vz/length*range;
     aimingThrow.manualTarget={x,y:thrownGround(x,z),z};
     aimingThrow.target=aimingThrow.manualTarget;
     showThrowRing(aimingThrow.target);
@@ -667,11 +691,23 @@
   }
   function launchShattercask(){
     if(!held||!aimingThrow?.target)return false;
-    const c=held,target=aimingThrow.target;
+    const c=held;
+    let target=aimingThrow.target;
     c.group.updateWorldMatrix?.(true,true);
     const origin=c.group.getWorldPosition?.(new THREE.Vector3())||c.group.position.clone();
     const quat=c.group.getWorldQuaternion?.(new THREE.Quaternion())||c.group.quaternion.clone();
     const scale=c.group.getWorldScale?.(new THREE.Vector3())||c.group.scale.clone();
+    // The held mesh starts a little IN FRONT of the player's posterior. A
+    // target just beyond the player's feet can thus be behind its actual
+    // release point even if it was ahead of the player. Guarantee forward
+    // travel from the physical release position, not only from player center.
+    const heading=throwHeading();
+    const deltaX=target.x-origin.x,deltaZ=target.z-origin.z;
+    if(deltaX*heading.x+deltaZ*heading.z<.4){
+      const distance=Math.min(MAX_THROW_RADIUS,Math.max(3,Math.hypot(deltaX,deltaZ)));
+      target={x:origin.x+heading.x*distance,z:origin.z+heading.z*distance};
+      target.y=thrownGround(target.x,target.z);
+    }
     const active=records.get(c.mapId)?.scene||scene();
     if(!active)return false;
     setHeldRearXray(null);
@@ -1365,6 +1401,10 @@
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
         cachedPlacementAreas:placementCache.size},
+      throwAim:aimingThrow?{phase:aimingThrow.phase,target:aimingThrow.target,manual:!!aimingThrow.manualTarget,
+        heading:throwHeading(),sharedPose:aimingThrow.sharedPose}:null,
+      throwFlight:flight?{origin:{x:flight.origin.x,y:flight.origin.y,z:flight.origin.z},target:flight.target,
+        progress:flight.t/flight.duration,distance:flight.distanceTiles}:null,
       interactionClaim:window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId||null}),
   });
   attachRuntime();
