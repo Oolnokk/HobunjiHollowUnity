@@ -185,8 +185,16 @@ function create(THREE,root){
  return handle;
 }
 function set(next,{persist=false}={}){
+ const last=settings;
  settings=normalize(next);revision++;
- for(const h of live){h.mesh.material.opacity=settings.opacity;h.applyImage();h.update(true);}
+ const newImage=last.enabled!==settings.enabled
+   || last.assetPath!==settings.assetPath
+   || last.imageDataUrl!==settings.imageDataUrl;
+ for(const h of live){
+   h.mesh.material.opacity=settings.opacity;
+   if(newImage)h.applyImage();
+   else h.update(true); // Dragged spline: geometry only, never re-decode PNG.
+ }
  if(persist) localStorage.setItem(KEY,JSON.stringify(settings));
  return snapshot();
 }
