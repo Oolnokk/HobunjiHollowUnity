@@ -441,6 +441,10 @@
     {
       "id": "festivalmask_voorg-ass",
       "path": "./clothes/masks/festivalmask_voorg-ass.json"
+    },
+    {
+      "id": "replica_bzabag_helm",
+      "path": "./clothes/hat/replica_bzabag_helm.json"
     }
   ]
 }
