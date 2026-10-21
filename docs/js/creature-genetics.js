@@ -40,7 +40,7 @@
     const widths = livestockCfg.animalWidths || (livestockCfg.animalWidths = {}); // Used by farm-animals.js and nursery/incubator previews.
     widths[PUKTUK_KIND] = Number(widths['gar-wolf']) || 1.9;
     const diets = livestockCfg.diet || (livestockCfg.diet = {}); // Used by barn trough feeding rules.
-    diets[PUKTUK_KIND] = 'predator';
+    diets[PUKTUK_KIND] = 'prey'; // Barn fodder remains plant-based; field ecology separately lists buried small-animal food.
     const resources = livestockCfg.resources || (livestockCfg.resources = {}); // Used by the generic livestock collection/cooldown path.
     resources[PUKTUK_KIND] = { itemKey: 'puktukWool', cooldownDays: 1, verb: 'Shear' };
     return true;
@@ -216,14 +216,10 @@
     drenkirra: ['bodystripes', 'spectacles'],
     puktuk: ['belly', 'foxtail'],
     'voorg-ass': ['belly'],
-    uumkaoii: ['shell'],
-    nelk: ['brushtail', 'cape', 'spectacles'],
-    nazgraku: ['spectacles'],
   };
   const LIVESTOCK_ALWAYS_PRESENT_PATTERNS = {
     puktuk: new Set(['belly']),
     'voorg-ass': new Set(['belly']),
-    uumkaoii: new Set(['shell']),
   }; // Used by fresh rolls and breeding so authored belly regions can never disappear.
   function _patternAlwaysPresent(kind, patternId) {
     return LIVESTOCK_ALWAYS_PRESENT_PATTERNS[kind]?.has(patternId) || false;
@@ -317,15 +313,7 @@
   // on this shape — checked by membership here, not a hardcoded
   // `kind === 'uumkaoii'` at each site, so a second dual-region species
   // is a one-line addition instead of a hunt through 3 functions.
-  const DUAL_REGION_GENOTYPE_KINDS = new Set(); // Kept for any future two-region species; Uumkao'ii now uses base + mandatory shell.
-
-  function normalizeLegacyGenotype(kind, genotype) {
-    if (kind !== 'uumkaoii' || !genotype || (genotype.base && genotype.shell)) return genotype;
-    return { ...genotype,
-      base: genotype.base || genotype.fur,
-      shell: genotype.shell || (genotype.plates && { ...genotype.plates, enabled: true, copies: 2, inheritance: 'dominant' }),
-    }; // Keeps old fur/plates offspring and stable records readable without mutating shared data.
-  }
+  const DUAL_REGION_GENOTYPE_KINDS = new Set(['uumkaoii']);
 
   // A creature's Size (small/medium/large, carried on genotype.sizeClass)
   // gates which one of the personal stable's three equip slots it's
@@ -417,10 +405,9 @@
     return overrides[id] || String(id || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').replace(/^./, char => char.toUpperCase());
   }
   function genotypeTraits(kind, genotype) {
-    genotype = normalizeLegacyGenotype(kind, genotype); // Existing Uumkao'ii specimens use shell traits without save migration.
     const colors = []; // Rendered as named color chips in Farm and Stable.
     const patterns = []; // Rendered as visible-pattern or carrier chips in Farm and Stable.
-    if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
+    if (genotype?.fur || genotype?.plates) {
       for (const id of ['fur', 'plates']) {
         const layer = genotype?.[id]; // Supplies one always-visible dual-region color.
         if (layer?.color) colors.push({ id, label: _traitLabel(id), color: layer.color, colorName: _furPaletteName(layer.color) });
@@ -457,7 +444,7 @@
       const minWeight = Math.min(...entries.map(entry => Number(entry.weight) || 1)); // Lowest authored weight defines the rarest available coat colors.
       return _pickWeightedFurEntry(entries.filter(entry => (Number(entry.weight) || 1) === minWeight))?.hex;
     };
-    if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
+    if (genotype.fur || genotype.plates) {
       for (const id of (rank >= 2 ? ['fur', 'plates'] : ['fur'])) {
         if (genotype[id] && palette.length) genotype[id].color = rareColor(palette);
       }
@@ -564,7 +551,6 @@
   // base-vs-pattern-color contrast.
   const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315, 490];
   function sellValueFor(genotype, kind = 'uumkaoii') {
-    genotype = normalizeLegacyGenotype(kind, genotype); // Old farm inventories retain meaningful color valuation.
     if (DUAL_REGION_GENOTYPE_KINDS.has(kind) || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
       const fur = genotype?.fur, plates = genotype?.plates;
       if (!fur?.color || !plates?.color) {
@@ -616,8 +602,6 @@
   // parents' average heart level) can raise the odds of a rarer offspring
   // without duplicating this function's own trait math.
   function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii', mutationChance = LIVESTOCK_MUTATION_CHANCE) {
-    genotypeA = normalizeLegacyGenotype(kind, genotypeA); // Breed inherited fur as base instead of throwing away old genes.
-    genotypeB = normalizeLegacyGenotype(kind, genotypeB); // Breed inherited plates as shell.
     if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
       const child = {};
       for (const layerId of ['fur', 'plates']) {
@@ -716,6 +700,7 @@
           ...existing,
           label: 'Puktuk',
           hostile: false,
+          diet: 'herbivore', // Ecology's selective protein forage is not general carnivore aggression.
           defaultSizeClass: 'medium',
           modelWidth: 2.1,
           spriteAspect: 0.43636,
@@ -737,14 +722,21 @@
           legacyDrenkirraRemoved++;
         }
       }
+      if (Array.isArray(herbivores) && !herbivores.includes(PUKTUK_KIND)) herbivores.push(PUKTUK_KIND); // Defensive group diggers occupy the grazing pool.
       const packs = westernZone
         ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
-        : null; // General predator ecology; Puktuk remains available outside its explicit den assignment.
-      if (Array.isArray(packs) && !packs.includes(PUKTUK_KIND)) packs.push(PUKTUK_KIND);
+        : null;
+      if (Array.isArray(packs)) {
+        for (let i = packs.length - 1; i >= 0; i--) if (packs[i] === PUKTUK_KIND) packs.splice(i, 1);
+        if (creatureDb?.nelk && !packs.includes('nelk')) packs.push('nelk');
+      }
       const denSpecies = westernZone
         ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
         : null; // Explicit den-only occupants. Future Western Slope den species can be authored here without changing pack/herd ecology.
-      if (Array.isArray(denSpecies) && !denSpecies.includes(PUKTUK_KIND)) denSpecies.push(PUKTUK_KIND);
+      if (Array.isArray(denSpecies)) {
+        if (!denSpecies.includes(PUKTUK_KIND)) denSpecies.push(PUKTUK_KIND);
+        if (creatureDb?.nelk && !denSpecies.includes('nelk')) denSpecies.push('nelk');
+      }
 
       const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator filters den species through this table before it will assign a Den-Mother.
       if (denMotherDefs) {
@@ -755,7 +747,8 @@
           nestItemKey: existingMother.nestItemKey ?? null,
         };
       }
-      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=puktuk belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && Array.isArray(packs) && packs.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
+      if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Nelk joins West dens without inventing collectible hatchlings.
+      window.__farmLog?.(`[puktuk] registered defensive forager species: default=medium sizeProfile=puktuk belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=prey; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && herbivores?.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };
     wildlifeApi.__puktukBootstrapInstalled = true;
@@ -803,8 +796,6 @@
     genotypeTraits,
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,
-    ALWAYS_PRESENT_PATTERNS: LIVESTOCK_ALWAYS_PRESENT_PATTERNS,
-    normalizeLegacyGenotype,
     SPECIES_ALIAS: GENOTYPE_SPECIES_ALIAS,
     MUTATION_CHANCE: LIVESTOCK_MUTATION_CHANCE,
   };

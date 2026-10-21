@@ -1283,7 +1283,8 @@
         },
         // New creature art registered alongside Gar-wolf; biome ecology and rewards remain to be authored.
         nelk: {
-          label: 'Nelk', hostile: false, diet: 'herbivore', liveBirth: false,
+          label: 'Nelk', hostile: false, diet: 'carnivore', liveBirth: false, // Prey selected by the food-web graph, not the old blanket role.
+          aggroRangePx: TILE * 5, leashRangePx: TILE * 14,
           maxHealth: 42, maxStamina: 36, moveSpeed: 135, chaseSpeed: 195,
           attackDamage: 8, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.05,
@@ -1294,6 +1295,7 @@
         },
         nazgraku: {
           label: 'Nazgraku', hostile: false, diet: 'herbivore', liveBirth: false,
+          aggroRangePx: TILE * 3, leashRangePx: TILE * 8, // Food-site combat leash; no proactive aggression elsewhere.
           maxHealth: 52, maxStamina: 40, moveSpeed: 130, chaseSpeed: 185,
           attackDamage: 10, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.05,
@@ -1509,6 +1511,8 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['grehlr'],
+          roamingForagerSpecies: ['nazgraku'], // Separate forager slot preserves both existing Voorg-Ass herds.
+          roamingForagerCount: 1,
           // Northern Cliffs caverns are Grehlr dens. Voorg-Asses are not
           // den wildlife at all: WildlifeSpawn maintains two independent
           // large exterior herds that bed down together in the open at night.
@@ -1584,6 +1588,7 @@
           cols: 50, rows: 40,
           groundColor: 0x6b6a52, fogColor: 0x35342a,
           herbivoreSpecies: ['uumkaoii-wild'],
+          packSpecies: ['nelk'], // Selective carnivore, not a generic hunter of any herbivore.
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
@@ -4917,6 +4922,7 @@
       function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
         if (c?.combatTutorialTarget) { c.health = c.maxHealth; return false; } // Sparring partners never produce kills, corpses, or loot.
         if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
+        window.WildlifeFoodWeb?.abandon?.(c); // Release reserved bushes when an animal dies or is forcibly removed.
         c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
         // damageCreature's lethal branch returns before its "every hit cancels
         // the attack" block, and bandit swings/ripostes tick from Combat.update
@@ -5044,7 +5050,7 @@
         // animal mid-fight should never make it flee instead; it's
         // supposed to protect its home, not bail the moment it takes a hit.
         const territorialPhase = c._territorialBehavior?.phase;
-        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+        if (c.def?.hostile === false && !c.isCompanion && !window.WildlifeFoodWeb?.isDefending?.(c) && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
           // A drenkirra mid-forage or asleep is pinned to a branch —
           // clear that (see wildlife-cloud-forest-behavior.js's
           // interruptForFlee) before the state flip below, or the
@@ -6270,6 +6276,8 @@
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
 
       function updateHostiles(dt) {
+        window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
+        const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
@@ -6339,6 +6347,16 @@
           // persists for the rest of the chase so the creature doesn't
           // flicker between equally-near players every frame.
           if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
+          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, players, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
+          // The den-night/retaliation/chase branches outrank forage animation.
+          // Cancel its residual dive/chew pose here rather than waiting for
+          // tickForage (which those higher-priority branches never reach).
+          if (c._foodWeb?.phase && c._foodWeb.phase !== 'rest' &&
+              (c.state === 'chase' || c.state === 'patrol-chase' || c.state === 'fleeing-low-health' ||
+               c.state === 'return' || c.prone || c.knockbackT > 0 ||
+               ((c.denKey || c.herdKey) && window.Music?.isNightTime?.()))) {
+            window.WildlifeFoodWeb?.cancelForage?.(c);
+          }
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
@@ -6415,7 +6433,7 @@
           // radius check against grazing herbivores tied to the same foliage
           // patch (no line-of-sight system exists for creature-vs-creature
           // sight today).
-          const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
+          const predatorAvailable = def.diet !== 'herbivore' && !window.WildlifeFoodWeb?.profile?.(c)?.hunts && !onFleeCooldown
             && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
           if (predatorAvailable) {
             if (!Number.isFinite(c._predatorSightT)) c._predatorSightT = rnd() * PREDATOR_SIGHT_INTERVAL_S;
@@ -6446,7 +6464,7 @@
             }
           }
 
-          let moving = false, aimAngle = c.facing || 0;
+          let moving = false, aimAngle = c.facing || 0, forageResult = null; // Shared foraging return feeds ordinary movement + sprite animation.
           if (c._knockbackLedgeFall) {
             advanceKnockbackLedgeFall(c, entityDt);
           } else if (c.prone) {
@@ -6682,6 +6700,9 @@
               if (c.avatarRef?.group) c.avatarRef.group.visible = false;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
+          } else if ((forageResult = window.WildlifeFoodWeb?.tickForage?.(c, entityDt, foodWebCtx))?.handled) {
+            moving = forageResult.moving;
+            aimAngle = forageResult.aimAngle;
           } else if (def.diet === 'herbivore') {
             // Active hours: a herbivore periodically breaks off grazing to
             // visit water (see assignWildlifeStation's waterTile, checked
@@ -6840,6 +6861,7 @@
 
           const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
           if (skipDistantVisualUpdate) continue;
+          window.WildlifeFoodWeb?.applyPose?.(c, entityDt); // Burrow-first-phase reversal and staggered chewing applied before final creature mesh placement.
           updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
           // swing, updateBanditToolMesh leans the avatar body's own rotation
@@ -12258,6 +12280,22 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
+            // a visible nonlethal flight instead of a fake resource-system death.
+            // Existing moveToward stays responsible for walking/collision and
+            // the normal authored schedule resumes as soon as the threat expires.
+            if (this.area === currentArea && this._wildlifeThreatUntil > performance.now() && this._wildlifeThreatSource) {
+              const source = this._wildlifeThreatSource; // Threat position saved by WildlifeFoodWeb's NPC-actor skirmish adapter.
+              const awayX = root.position.x - source.x / TILE;
+              const awayZ = root.position.z - source.y / TILE;
+              const len = Math.max(0.001, Math.hypot(awayX, awayZ));
+              const targetC = Math.floor(root.position.x + awayX / len * 3);
+              const targetR = Math.floor(root.position.z + awayZ / len * 3);
+              const safe = window.NpcPathfinding?.nearestWalkableTile?.(this.area, targetC, targetR);
+              if (safe) this.moveToward(safe.c + 0.5, safe.r + 0.5, dt * 1.55);
+              this.state = 'wildlife-flight';
+              return;
+            }
             if (this.animalDef && !this._animalSleepPresentationRegistered && window.AnimalSleepPresentation?.registerExternalSleeper) {
               this._animalSleepPresentationRegistered = window.AnimalSleepPresentation.registerExternalSleeper(this, {
                 id: this.rec?.id || this.animalKind,
