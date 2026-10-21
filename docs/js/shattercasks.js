@@ -1175,6 +1175,32 @@
       if(/(?:weapon|tool|item|dequip|swap)/i.test(id))drop();
     },true);
   }
+  // ControllerInput already edge-detects every configured action. Subscribe
+  // before selection/gameplay so a Shattercask owns its input without asking
+  // the generic tool/item action router to understand a fabricated item key.
+  const controllerSuppressed=new Set();
+  function controllerCode(id){
+    const bindings=window.InputBindings?.getCurrentBindings?.()?.controller;
+    return bindings?.[id]||window.InputBindings?.getDefaultBindings?.('controller')?.[id]||null;
+  }
+  window.ControllerInput?.subscribe?.('shattercask-context-actions',frame=>{
+    if(!frame?.focused||!frame.pad||window.ControllerInput?.owner!=='gameplay')return;
+    for(const [id,press]of [
+      ['toolSelect',()=>toolArchTap()],
+      ['action4',()=>startShatterAim()],
+      ['action5',()=>drop()]
+    ]){
+      const code=controllerCode(id);if(!code)continue;
+      const claimed=id==='toolSelect'?toolArchAction()==='pickup':!!held;
+      if(frame.pressed?.has?.(code)&&claimed){
+        press();controllerSuppressed.add(code);frame.pressed.delete(code);
+      }
+      if(frame.released?.has?.(code)&&controllerSuppressed.delete(code)){
+        if(id==='action4')releaseShatterAim();
+        frame.released.delete(code);
+      }
+    }
+  },12);
   window.Shattercasks=Object.freeze({
     RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
