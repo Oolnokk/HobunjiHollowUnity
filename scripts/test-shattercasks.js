@@ -84,8 +84,11 @@ assert(author.includes('id="carrySelectHitbox"') &&
   author.includes('carryHitboxSX')&&author.includes('carryHitboxSY')&&author.includes('carryHitboxSZ'),
   'furniture editor can display, select, translate and resize the authored hitbox');
 assert(code.includes("mesh.name!=='npc_avatar_back_plane'") &&
-  code.includes('mesh.renderOrder=4')&&code.includes('setHeldRearXray(null)'),
-  'only the player rear portrait x-rays over held furniture and the render changes are reverted on release');
+  code.includes('mesh.renderOrder=2.5') &&
+  code.includes('mesh.renderOrder=1.5') &&
+  code.includes('material.depthTest=true') &&
+  code.includes('setHeldRearXray(null)'),
+  'held rear portrait draws over Shattercask without losing ordinary environment depth, with reversible materials');
 assert(code.includes('updateShatterThrow(dt)') &&
   code.includes('Math.sin(Math.PI*ratio)') &&
   code.includes("['btnItemAction1','Throw Shattercask'") &&
