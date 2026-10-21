@@ -361,7 +361,7 @@
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20261018hgorkunash1"></script>
-  <script src="js/skill-system.js?v=20261015h31a0bda"></script>
+  <script src="js/skill-system.js?v=20261021h9b59622"></script>
   <script src="js/perk-system.js?v=20261016h23d3bfa"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261015h587b47e"></script>
@@ -2569,8 +2569,8 @@
        call time, not parse time) but all four must load before
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
-  <script src="js/npc-agenda.js?v=20261018a"></script>
-  <script src="js/npc-activities.js?v=20261019h7912e56"></script>
+  <script src="js/npc-agenda.js?v=20261021h429f814"></script>
+  <script src="js/npc-activities.js?v=20261021h319f0cb"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
   <script src="js/npc-activity-planner.js?v=20261018b"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
@@ -2665,14 +2665,16 @@
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
-  <script src="config/romance-config.js?v=20261013h88e81c7"></script>
+  <script src="config/romance-config.js?v=20261021h1dcedc3"></script>
   <script src="js/romance-family.js?v=20261007romance1"></script>
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/npc-following.js?v=20261020h4f6f2e8"></script>
+  <script src="js/date-companion-activities.js?v=1"></script>
   <script src="js/romance-system.js?v=20261020hbc46a84"></script>
   <script src="js/npc-command-wheel.js?v=20261019h34c3216"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
        load before game.js, which calls window.ToolMastery.init(...). -->
+  <script src="js/tool-activity-stages.js?v=1"></script>
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
   <script src="game.js?v=20261020h358334b"></script>

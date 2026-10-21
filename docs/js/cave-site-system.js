@@ -878,21 +878,40 @@
   // Walk-up harvest, like the hidden cache: grants the Duskcap reagent through
   // the same loot grant, with the Foraging bonus roll and XP that wild reagent
   // plants use. The cluster regrows after MUSHROOM_REGROW_DAYS.
+  function pickMushroom(profile, state, mushroom) {
+    state.mushroomsPickedDay = { ...(state.mushroomsPickedDay || {}), [mushroom.id]: currentDay() };
+    const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
+    const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: 1 + bonus }) || [];
+    wildlifeDeps?.awardForagingXp?.();
+    const group = mushroomMeshesByMapId.get(profile.mapId)?.get(mushroom.id);
+    group?.parent?.remove(group);
+    mushroomMeshesByMapId.get(profile.mapId)?.delete(mushroom.id);
+    persistState();
+    const label = window.AlchemySystem?.REAGENT_DEFS?.[mushroom.reagentKey]?.label || 'mushrooms';
+    wildlifeDeps?.showToast?.(parts.length ? `Picked ${parts.join(', ')}${bonus ? ' (Foraging bonus)' : ''}` : `Picked ${label}.`, true);
+    return { ok: true, bonus };
+  }
+
   function harvestMushrooms(profile, plan, state) {
     if (!plan.mushrooms?.length) return;
     for (const mushroom of plan.mushrooms) {
       if (!mushroomAvailable(state, mushroom) || caveDistanceTiles(mushroom) > MUSHROOM_PICK_RADIUS_TILES) continue;
-      state.mushroomsPickedDay = { ...(state.mushroomsPickedDay || {}), [mushroom.id]: currentDay() };
-      const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
-      const parts = devSpawnerDeps?.grantLoot?.({ [mushroom.reagentKey]: 1 + bonus }) || [];
-      wildlifeDeps?.awardForagingXp?.();
-      const group = mushroomMeshesByMapId.get(profile.mapId)?.get(mushroom.id);
-      group?.parent?.remove(group);
-      mushroomMeshesByMapId.get(profile.mapId)?.delete(mushroom.id);
-      persistState();
-      const label = window.AlchemySystem?.REAGENT_DEFS?.[mushroom.reagentKey]?.label || 'mushrooms';
-      wildlifeDeps?.showToast?.(parts.length ? `Picked ${parts.join(', ')}${bonus ? ' (Foraging bonus)' : ''}` : `Picked ${label}.`, true);
+      pickMushroom(profile, state, mushroom);
     }
+  }
+
+  // Unpicked mushroom clusters in the cave the player is standing in, for a date companion who runs
+  // ahead and picks one for them (js/date-companion-activities.js). pick() credits the player exactly
+  // like walking up to it does.
+  function pickableMushrooms(mapId = wildlifeDeps?.getCurrentArea?.()) {
+    const id = String(mapId || '');
+    const plan = plansByMapId.get(id);
+    const profile = plan && sitesByMapId.get(id);
+    if (!profile || !plan.mushrooms?.length) return [];
+    const state = stateFor(profile);
+    return plan.mushrooms
+      .filter(mushroom => mushroomAvailable(state, mushroom))
+      .map(mushroom => ({ id: mushroom.id, col: mushroom.col, row: mushroom.row, kind: 'cave-mushroom', pick: () => pickMushroom(profile, state, mushroom) }));
   }
 
   function makeSkeleton(mapId, x, y, extra, roster = null) {
@@ -1135,6 +1154,7 @@
     decorateCavernMapData,
     syncTransitionLabels,
     updateCurrentCaveRuntime,
+    pickableMushrooms,
     installIntegrations,
     debugSnapshot,
     buildInteriorProps,

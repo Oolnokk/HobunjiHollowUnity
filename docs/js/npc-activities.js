@@ -254,6 +254,58 @@
   // concerns. They're also independently registered so an author can point
   // an ordinary agenda beat straight at one (e.g. `activity: 'wander'`).
 
+  // ── Fishing ───────────────────────────────────────────────────────────
+  // "Go fish at the nearest clear bank": the closest walkable tile next to open water, facing it, holding the
+  // fishing spear and playing the player's own cast timeline (js/tool-activity-stages.js via `toolActivity`).
+  // Purely visual — NPCs don't catch anything. The spot is chosen once per NPC/beat/day and remembered, so the
+  // planner's per-tick re-resolution never scans the grid or makes them shuffle between banks.
+  const FISH_WATER_TYPES = new Set(['water', 'river', 'stream']);
+  const fishSpotCache = new Map();
+  function fishSpotFor(ctx, area) {
+    const key = `${ctx.npcId}|${area}|${ctx.now?.day}|${ctx.beat?.id}`;
+    if (fishSpotCache.has(key)) return fishSpotCache.get(key);
+    if (fishSpotCache.size > 64) fishSpotCache.clear();
+    const grid = deps.npcGridForArea?.(area);
+    if (!grid) return null; // Area not loaded yet: don't cache, ask again next tick.
+    const walkable = (c, r) => window.NpcPathfinding?.isNpcTileWalkable?.(area, c, r) !== false;
+    const isWater = (c, r) => FISH_WATER_TYPES.has(grid[r]?.[c]?.type);
+    const origin = ctx.walker && ctx.walker.area === area
+      ? { c: ctx.walker.root.position.x, r: ctx.walker.root.position.z }
+      : (ctx.beat.preferences?.near ? { c: ctx.beat.preferences.near[0], r: ctx.beat.preferences.near[1] } : { c: (grid[0]?.length || 0) / 2, r: grid.length / 2 });
+    const taken = (deps.listNpcWalkersInArea?.(area) || []).filter(w => w.rec?.id !== ctx.npcId && w.currentScheduleTarget?.toolActivity === 'fish');
+    const candidates = [];
+    for (let r = 0; r < grid.length; r += 1) for (let c = 0; c < (grid[r]?.length || 0); c += 1) {
+      if (isWater(c, r) || !walkable(c, r)) continue;
+      const bank = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dc, dr]) => isWater(c + dc, r + dr));
+      if (!bank) continue;
+      if (taken.some(w => Math.hypot(w.root.position.x - (c + 0.5), w.root.position.z - (r + 0.5)) < 2)) continue; // Give other anglers elbow room.
+      candidates.push({ c, r, dist: Math.hypot(c + 0.5 - origin.c, r + 0.5 - origin.r), bank });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => a.dist - b.dist);
+    const near = candidates.slice(0, Math.min(5, candidates.length));
+    const pick = pickDeterministic(near, ctx.npcId, ctx.now?.day, `${ctx.beat.id}:fish-spot`);
+    const spot = { c: pick.c, r: pick.r, waterC: pick.c + pick.bank[0], waterR: pick.r + pick.bank[1] };
+    fishSpotCache.set(key, spot);
+    return spot;
+  }
+
+  register('fish', {
+    resolveDestination(ctx) {
+      const area = ctx.beat.destinationArea ? deps.normalizeNpcArea(ctx.beat.destinationArea) : (ctx.walker?.area || deps.normalizeNpcArea('town'));
+      if (!area) return invalidContent('fish activity needs a destinationArea (or an existing walker)');
+      const spot = fishSpotFor(ctx, area);
+      if (!spot) return waitingOrUnavailable(area, 'no clear bank next to water');
+      const dx = spot.waterC - spot.c, dz = spot.waterR - spot.r;
+      return ready({
+        area, c: spot.c, r: spot.r, pose: 'stand', id: `fish-${ctx.npcId}`,
+        toolKey: window.ToolActivityStages?.toolKeyFor?.('fish') || 'fishingspear', toolActivity: 'fish',
+        rotY: (-Math.atan2(dz, dx) + Math.PI / 2) * 180 / Math.PI, // The facing moveToward would turn to when walking toward the water.
+        activity: ctx.beat.activityLabel || 'fishing',
+      }, 'fishing at the nearest bank');
+    },
+  });
+
   register('wander', {
     resolveDestination(ctx) {
       if (!ctx.walker) return invalidContent('wander requires an existing walker (no position to wander around)');

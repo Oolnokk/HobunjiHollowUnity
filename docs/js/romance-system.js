@@ -321,7 +321,7 @@
     }
   }
 
-  function scoreLike(date, likeId, walker) {
+  function scoreLike(date, likeId, walker, opts = null) {
     const now = hourStamp();
     const cooldownHours = num(cfg().likeCooldownGameMinutes, 6) / 60;
     if (now - num(date.likeLastHour[likeId], -Infinity) < cooldownHours) return 0;
@@ -330,13 +330,20 @@
     date.likeCounts[likeId] = count + 1;
     date.likeLastHour[likeId] = now;
     const applied = awardRomance(date.npcId, amount, `like:${likeId}`);
-    const label = cfg().likeLabels?.[likeId] || likeId;
+    const label = opts?.label || cfg().likeLabels?.[likeId] || likeId;
     debug.lastLike = { npcId: date.npcId, likeId, applied, at: Date.now() };
     if (applied > 0) {
-      if (count === 0) say(walker, likeReaction(likeId));
+      if (count === 0) say(walker, opts?.line || likeReaction(likeId));
       toast(`💗 ${npcName(date.npcId)} loves ${label}! (+${applied} Romance)`, true);
     }
     return applied;
+  }
+  // Scores a liked activity the date is doing or helping with themselves (joining your fishing, chopping the same
+  // tree), which has no matching player activity event — same cooldown, decay and toast as a liked activity they watch.
+  function scoreCompanionLike(likeId, opts = null) {
+    const date = state.date;
+    if (!date || !likesFor(date.npcId).includes(likeId)) return 0;
+    return scoreLike(date, likeId, findWalker(date.npcId), opts);
   }
   function likeReaction(likeId) {
     const lines = {
@@ -560,6 +567,8 @@
     const date = state.date;
     if (!date || rec.id !== date.npcId) return null;
     if (date.mode === 'wait' && date.waitSpot) return { ...date.waitSpot, activity: 'waiting for you' };
+    const joined = window.DateCompanion?.targetFor?.(rec, date); // Fishing / chopping / mining beside you, or running to pick a wild plant (js/date-companion-activities.js).
+    if (joined) return joined;
     return window.NpcFollowing.target(rec,date,num(cfg().followDistanceTiles,1.7));
   }
 
@@ -583,7 +592,7 @@
         }
         const dist = distanceToPlayerTiles(walker);
         const catchUp = num(cfg().followCatchUpDistanceTiles, 4);
-        walker.catchup = dist > catchUp ? clamp(1 + (dist - catchUp) * 0.35, 1, num(cfg().followMaxSpeedMultiplier, 3.2)) : 1.6;
+        if (window.DateCompanion?.ownsPace?.(date.npcId)) { /* the companion activity sets its own run speed */ } else walker.catchup = dist > catchUp ? clamp(1 + (dist - catchUp) * 0.35, 1, num(cfg().followMaxSpeedMultiplier, 3.2)) : 1.6;
       }
     }
     maybeStartWedding();
@@ -676,6 +685,8 @@
     dateHoursLeft,
     commandOptionsFor,
     onActivity,
+    scoreCompanionLike,
+    likesFor,
     // Marriage
     canPropose,
     propose,

@@ -11807,6 +11807,7 @@
         normalizeNpcArea,
         findNpcWalker,
         listNpcWalkersInArea,
+        npcGridForArea, // The 'fish' activity searches the area's tile grid for a bank.
       });
       window.NpcActivityPlanner.init({
         calendar,
@@ -12457,7 +12458,7 @@
                 const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
-                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: target.toolFlip === true });
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) root.add(this.stationToolMesh);
@@ -21566,26 +21567,9 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map((dirSign, index, stages) => ({
-        pose: true,
-        dirSign,
-        dur: 0.55,
-        sfxKey: 'chop',
-        terminalSfxKey: index === stages.length - 1 ? 'breakTree' : null,
-      }));
-
-      // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
-      // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
-      // flipped spike-forward in this slot (see makeToolPlaneMesh's flip
-      // option) specifically so mining reads as stabbing that spike in, not
-      // swinging an axe-style pose that was authored for a bladed edge.
-      // Mining progression shortens this flurry in beginChargeStage.
-      const MINE_ROCK_STAGES = [0, 0, 0].map((_, index, stages) => ({
-        anim: 'thrust',
-        dur: 0.55,
-        sfxKey: 'pick',
-        terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
-      }));
+      // The chop/mine hold timelines now live in js/tool-activity-stages.js so NPCs play the same stages.
+      const CHOP_TREE_STAGES = window.ToolActivityStages.CHOP_TREE_STAGES;
+      const MINE_ROCK_STAGES = window.ToolActivityStages.MINE_ROCK_STAGES;
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -21725,6 +21709,7 @@
           refillTurnSign,
           finalStrikeCommitted: false, // Prevents cancellation after a terminal break cue has already sounded.
         };
+        window.DateCompanion?.onChargeStart?.({ tool: activeTool, col: reticle.col, row: reticle.row }); // A date who likes woodcutting/mining walks over to help (js/date-companion-activities.js).
         beginChargeStage();
       }
 
@@ -21732,7 +21717,7 @@
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
         const skillKey = chargeAction.tool === 'axe' ? 'foraging' : chargeAction.tool === 'pick' ? 'mining' : null; // Used to map held axe/pick actions onto their progression speed bonus.
-        const speedMultiplier = skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier(); // Used to scale every supported held tool action independently.
+        const speedMultiplier = (skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier()) * (window.DateCompanion?.helpSpeedMultiplier?.(chargeAction.tool, chargeAction.col, chargeAction.row) || 1); // Used to scale every supported held tool action independently; a date working the same tree/rock beside you speeds it up.
         const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
@@ -21971,6 +21956,7 @@
 
       function cancelChargeAction() {
         if (!chargeAction) return;
+        window.DateCompanion?.onChargeEnd?.({ tool: chargeAction.tool, col: chargeAction.col, row: chargeAction.row, completed: false });
         chargeAction = null;
         toolSwingT = 0;
         chargeAnimOverride = null;
@@ -21991,6 +21977,7 @@
           return;
         }
         const result = applyAction(tool, action, col, row);
+        window.DateCompanion?.onChargeEnd?.({ tool, col, row, completed: result.ok !== false });
         lastActionMessage = result.message;
         showToast(result.message, result.ok !== false);
         spawnActionParticles(col, row, action, result.ok !== false);
@@ -28878,6 +28865,25 @@
           return walker;
         },
         saveMemberWorldData,
+      });
+      window.DateCompanion?.init?.({
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        getPlayerTilePosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        showToast,
+        // Wild plants a date can run ahead and pick: reagent herbs and berry bushes (their own onAction credits the player
+        // exactly like a manual pick) and cave mushroom clusters.
+        listPickables: area => {
+          const out = [];
+          for (const objects of [_zoneReagentObjects.get(area), _zoneBerryObjects.get(area)]) {
+            objects?.forEach(obj => {
+              const action = obj.getButtons?.()?.[0]?.action;
+              if (action) out.push({ col: obj.col, row: obj.row, pick: () => obj.onAction(action) });
+            });
+          }
+          for (const mushroom of window.CaveSiteSystem?.pickableMushrooms?.(area) || []) out.push(mushroom);
+          return out;
+        },
       });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,

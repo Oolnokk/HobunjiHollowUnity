@@ -78,6 +78,35 @@
       nest_stolen: 'stealing from a nest',
     },
 
+    // ── Joining in (js/date-companion-activities.js) ─────────────────────
+    // A date who likes an activity (see `likes`) joins it instead of just trailing you: they fish beside you,
+    // work the tree/rock you're on from another side, and run ahead to pick wild plants for you.
+    companionActivities: {
+      tickMs: 250,
+      // Which liked activities qualify a date for each joined activity. "Foraging" likes cover woodcutting
+      // (felling is Foraging XP), "ore"/"rock" likes cover mining.
+      joinLikes: {
+        fish: ['fish_caught'],
+        chop: ['tree_felled', 'herb_picked'],
+        mine: ['rock_broken', 'ore_mined'],
+        pick: ['herb_picked'],
+      },
+      helpSpeedMultiplier: 1.6, // The held chop / mining flurry runs this much faster while the date is in position beside the tree/rock.
+      helpReachTiles: 0.8, // Within this of their work spot they count as in position.
+      helpSearchRadius: 2, // Tiles around the tree/rock searched for a free tile on another side.
+      fishSpotMinTiles: 1.4, // Fishing spot distance from you.
+      fishSpotMaxTiles: 4,
+      fishCatchSecondsMin: 20, // Real seconds between the date's (visual) catches while you fish.
+      fishCatchSecondsMax: 45,
+      pickSightTiles: 9, // A wild plant this close to you counts as "in sight" for the date.
+      pickReachTiles: 0.9,
+      pickCooldownSeconds: 2.5,
+      pickRunSpeedMultiplier: 2.4, // Their walk speed multiplier while running ahead — a little quicker than you.
+      // Temporary skill-stack buffs for the rest of the date once they've joined (the same +2%/stack Food effects use:
+      // Foraging/Mining add yield chance, speed and quality; fishing adds rare-fish luck).
+      buffStacks: { foraging: 5, mining: 5, fishing: 5 },
+    },
+
     // ── Marriage ─────────────────────────────────────────────────────────
     minHeartsToPropose: 10,
     minDatesToPropose: 3,

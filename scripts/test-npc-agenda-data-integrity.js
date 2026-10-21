@@ -20,7 +20,7 @@ const ROOT = path.join(__dirname, '..');
 // Mirrors js/npc-activities.js's registry (register(...) calls) and
 // game.js's KNOWN_ACTIVITY_KEYS/ACTIVITIES_REQUIRING_EXPLICIT_DESTINATION —
 // keep in sync with both if the registry ever changes.
-const KNOWN_ACTIVITY_KEYS = new Set(['legacyScheduleActivity', 'goToStation', 'goToRole', 'work', 'eat', 'drink', 'sleep', 'shop', 'performMusic', 'joinPerformance', 'idle', 'break', 'freeTime', 'socialize', 'visit', 'wander', 'sit', 'chat', 'watchPerformance']);
+const KNOWN_ACTIVITY_KEYS = new Set(['legacyScheduleActivity', 'goToStation', 'goToRole', 'work', 'eat', 'drink', 'sleep', 'shop', 'performMusic', 'joinPerformance', 'idle', 'break', 'freeTime', 'socialize', 'visit', 'wander', 'sit', 'chat', 'watchPerformance', 'fish']);
 const ACTIVITIES_REQUIRING_EXPLICIT_DESTINATION = new Set(['work', 'goToStation', 'goToRole']);
 const KNOWN_OBLIGATIONS = new Set(['critical', 'duty', 'plan', 'leisure']);
 const KNOWN_DAYPARTS = new Set(['dawn', 'morning', 'midday', 'afternoon', 'evening', 'night', 'lateNight']);

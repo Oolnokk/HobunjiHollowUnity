@@ -2535,6 +2535,16 @@
                               "activityLabel": "playing around the square"
                         },
                         {
+                              "id": "fish",
+                              "activity": "fish",
+                              "obligation": "plan",
+                              "window": ["09:00", "18:00"],
+                              "duration": ["45m", "1h30m"],
+                              "chance": 0.4,
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "fishing at the stream"
+                        },
+                        {
                               "id": "sleep",
                               "activity": "sleep",
                               "obligation": "plan",
@@ -8797,6 +8807,16 @@
                               "destinationRole": "temple-grounds",
                               "destinationArea": "map_hobunji_town",
                               "activityLabel": "wandering the temple grounds"
+                        },
+                        {
+                              "id": "fish",
+                              "activity": "fish",
+                              "obligation": "plan",
+                              "days": ["Hronu", "Tothu"],
+                              "window": ["14:00", "17:30"],
+                              "duration": ["1h30m", "2h30m"],
+                              "destinationArea": "map_hobunji_town",
+                              "activityLabel": "fishing at the stream"
                         },
                         {
                               "id": "evening-service",
