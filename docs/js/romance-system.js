@@ -205,6 +205,7 @@
   }
 
   function startDate(npcId) {
+    window.NpcFollowing?.clearRetreat?.(npcId); // New dates must not inherit a previous companion's hiding place.
     const start = hourStamp();
     state.date = {
       npcId,
@@ -229,6 +230,7 @@
     if (!date || (mode !== 'follow' && mode !== 'wait')) return false;
     const walker = findWalker(date.npcId);
     date.mode = mode;
+    window.NpcFollowing?.clearRetreat?.(date.npcId); // Follow/Wait transitions cancel stale cover commitments.
     if (mode === 'wait') {
       const pos = walker?.root?.position;
       date.waitSpot = walker && pos ? { area: walker.area, c: Math.floor(pos.x), r: Math.floor(pos.z) } : null;
@@ -257,6 +259,7 @@
     if (!date) return;
     const walker = findWalker(date.npcId);
     if (walker) walker.catchup = 1;
+    window.NpcFollowing?.clearRetreat?.(date.npcId); // Date expiry/dismissal releases the old refuge.
     if (reason === 'expired') {
       const nearby = walker && walker.area === currentNpcArea() && distanceToPlayerTiles(walker) <= num(cfg().likeAwareRadiusTiles, 14) * 1.5;
       if (date.mode === 'wait' && !nearby) applyLoss(date.npcId, 'date_abandoned');
@@ -656,6 +659,7 @@
       spouse: state.spouse ? { ...state.spouse } : null,
       family: window.RomanceFamily?.snapshot?.() || null,
       debug: { ...debug },
+      followerSafety: window.NpcFollowing?.snapshot?.() || null, // Mobile-friendly combat cover and follower diagnostics.
     };
   }
 

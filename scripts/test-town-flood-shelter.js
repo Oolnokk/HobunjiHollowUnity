@@ -244,4 +244,7 @@ function makeGrid(rows, cols, type, water = 0) {
   assert.equal(loadCalls, 1, 'per-frame resolves must not restart an in-flight shelter interior load');
 }
 
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Checks shared humanoid sprint mode without spinning up the rendering runtime.
+assert.match(gameSource, /this\._npcRunMode !== 'flood' \|\| this\.area === 'town'/, 'flood evacuees sprint outdoors and stop running once safely inside the building');
+
 console.log('Town flood drainage + shelter regression: PASS');

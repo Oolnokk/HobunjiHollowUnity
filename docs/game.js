@@ -370,6 +370,7 @@
       // conversations such as js/romance-system.js's date/proposal/wedding
       // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
       async function openNpcDialogue(walker, opts = null) {
+        if (!walker || isPlayerInCombat()) return false; // Combat disables both direct dialogue calls and contextual Talk commands.
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -10854,6 +10855,19 @@
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
         for (const w of npcWalkers) {
           if (w.root._pendingZoneAdd === mapId) {
+            // The NPC may have arrived before its zone grid existed. Validate against the NOW-built
+            // wilderness terrain before attaching, otherwise the follower remains inside entry cliffs.
+            const fromC = Math.floor(w.root.position.x), fromR = Math.floor(w.root.position.z); // Cached pre-build entry coordinate for relocation diagnostics.
+            const arrival = window.NpcPathfinding?.nearestWalkableTile?.(mapId, fromC, fromR) || { c: fromC, r: fromR }; // Uses the loaded zone grid after _zoneScenes.set().
+            if (arrival.c !== fromC || arrival.r !== fromR) {
+              w.root.position.set(arrival.c + 0.5, npcSurfaceY(mapId, arrival.c, arrival.r), arrival.r + 0.5);
+              w._legsPrevX = w.root.position.x; w._legsPrevZ = w.root.position.z; // Prevent a teleport from looking like a super-speed run.
+              window.__farmLog?.(`[npc zone entry] ${w.rec?.id || 'npc'} repositioned ${fromC},${fromR} → ${arrival.c},${arrival.r} in ${mapId}`, 'npc');
+            }
+            // Paths tried while the zone's terrain grid was unavailable are invalid
+            // even when this arrival tile itself happened to be safe.
+            w.resetRouteState?.();
+            w._npcPathFailKey = null; w._npcPathFailUntil = 0;
             w.root._pendingZoneAdd = null;
             zScene.add(w.root); w.root._npcScene = zScene;
           }
@@ -12016,7 +12030,12 @@
         }
         root.add(groundShadow);
         const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, root, avatarGroup, rec?.id);
-        if (!alcoholPoseGroup) root.add(avatarGroup);
+        const npcRunLeanPivot = namedAnimalDef ? null : new THREE.Group(); // Only humanoids need the shared full-body run lean; the separate feet and held tools remain unaffected.
+        if (npcRunLeanPivot) {
+          npcRunLeanPivot.name = 'npc_run_lean_visual';
+          (alcoholPoseGroup || root).add(npcRunLeanPivot);
+          npcRunLeanPivot.add(avatarGroup); // Reparent the portrait under an additive ground-anchored pivot, not under the animated foot bones.
+        } else if (!alcoholPoseGroup) root.add(avatarGroup);
 
         const spawnTarget = resolveNpcSpawnPosition(rec, initialTarget);
         const spawnArea = normalizeNpcArea(spawnTarget.area);
@@ -12072,6 +12091,7 @@
           legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
+          _npcRunning: false, _npcRunMode: null, _npcRunLeanActive: false, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
           _ambientLookActive: false, // Whether _applyNpcAmbientLook currently owns this walker's neck joint (so it knows to ease back to rest once a station's `lookAt` no longer applies).
@@ -12127,6 +12147,9 @@
             this.routeTarget = null;
             this.routePath = null;
             this._routePathTargetKey = null;
+            this._gridPath = null; this._gridPathTargetKey = null; // Cross-area hops must not retain a path planned on a different terrain grid.
+            this._npcPathFailKey = null; this._npcPathFailUntil = 0; // Reset failed-path cooldown when an area becomes newly available.
+            this._wanderTarget = null; this._wanderGridPath = null;
           },
           // `spawnPos` is where the NPC reappears in `nextArea` — normally the
           // Spot they're entering through, never the final schedule target,
@@ -12281,7 +12304,8 @@
             const cfg = npcMovementConfig();
             const sobrietySpeedMul = window.NpcCharacterState?.movementSpeedMultiplier?.(rec?.id) ?? 1;
             const speciesSpeedTiles = this.animalDef ? (Number(this.animalDef.moveSpeed) || 0) * devGlobalSpeedMul / TILE : 0; // Named animals walk at their real creature speed before NPC catch-up/sobriety modifiers.
-            const speed = (this.animalDef ? speciesSpeedTiles : (cfg.speedTilesPerSecond ?? 1.25)) * this.catchup * sobrietySpeedMul;
+            const runMultiplier = !this.animalDef && this._npcRunning ? (this._npcRunMode === 'follow' ? 1.35 : 1.9) : 1; // Only follow, retreat and flood-shelter movement may sprint.
+            const speed = (this.animalDef ? speciesSpeedTiles : (cfg.speedTilesPerSecond ?? 1.25)) * this.catchup * sobrietySpeedMul * runMultiplier;
             const dx = tx - root.position.x, dz = tz - root.position.z;
             const d = Math.hypot(dx, dz);
             if (d <= Math.max(0.001, speed * dt)) {
@@ -12356,6 +12380,11 @@
             const target = resolveNpcScheduleTarget(this.rec);
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
+            // Running remains limited to player-following, combat escape and flood evacuation.
+            this._npcRunMode = target?.floodShelter ? 'flood' : target?.activity === 'taking cover' ? 'cover' : target?.activity === 'following you' ? 'follow' : null;
+            this._npcRunning = !this.animalDef && !!this._npcRunMode && (this._npcRunMode !== 'flood' || this.area === 'town')
+              && (target?.run !== false || this._npcRunMode === 'flood')
+              && (target?.floodShelter || target?.area !== this.area || Math.hypot(root.position.x - (target.c + 0.5), root.position.z - (target.r + 0.5)) > (npcMovementConfig().arrivalRadiusTiles ?? 0.18));
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
             if (window.NpcCharacterState?.update?.(this, dt, {
@@ -12394,8 +12423,20 @@
             // Off-area walkers can't be seen at all: settle their resting pose
             // at ~2 Hz instead of solving it (plus the drunk layer) every frame.
             if (this.legs) {
-              if (sameArea) { this._offAreaLegsDt = 0; this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose); }
-              else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose); this._offAreaLegsDt = 0; }
+              if (sameArea) { this._offAreaLegsDt = 0; this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose, { allowSpeedRun: this._npcRunning }); }
+              else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose, { allowSpeedRun: this._npcRunning }); this._offAreaLegsDt = 0; }
+            }
+            if (this._npcRunLeanPivot) {
+              const pitch = isVisibleArea && this._npcRunning && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // The canonical leg gait supplies the same run-lean strength used by the player.
+              if (pitch > 0.0001) {
+                const heading = this.desiredRot - root.rotation.y; // Respect actual travel direction independently of camera-facing portrait yaw/deadzones.
+                const sinHalf = Math.sin(pitch * 0.5); // Reused for this avatar's local pitch quaternion; avoids allocations in the frame loop.
+                this._npcRunLeanPivot.quaternion.set(Math.cos(heading) * sinHalf, 0, -Math.sin(heading) * sinHalf, Math.cos(pitch * 0.5));
+                this._npcRunLeanActive = true;
+              } else if (this._npcRunLeanActive) {
+                this._npcRunLeanPivot.quaternion.identity(); // Do not dirty every idle NPC's transform every frame.
+                this._npcRunLeanActive = false;
+              }
             }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
@@ -12809,7 +12850,7 @@
           }
           _logGarankiDiagnostic(dt);
         }
-        nearbyNpcWalker = window.FurnitureTableSystem?.focusedTarget(currentArea)?.walker || null; // A nearer off-ray villager cannot steal an aimed NPC or chair prompt.
+        nearbyNpcWalker = isPlayerInCombat() ? null : window.FurnitureTableSystem?.focusedTarget(currentArea)?.walker || null; // Preserve aimed-NPC selection, but disable every NPC social action during combat.
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
         window.InteriorDoorTiles?.update(dt);
       }
@@ -18933,6 +18974,10 @@
       }
 
       function useActiveAction() {
+        // A stale bound button/press may arrive after combat began but before the next action-bar refresh.
+        if (isPlayerInCombat() && (activeAction === npcDialogueAction() || activeAction === smithyAction() || activeAction === generalStoreAction() || activeAction === carpenterAction()
+          || activeAction === 'npc_offer_alcohol_swig' || activeAction === 'npc_offer_gift' || activeAction === 'npc_open_wardrobe' || activeAction === 'npc_slagothim_trade'
+          || activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet')) return;
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
         if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
@@ -25420,7 +25465,7 @@
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
-        if (nearbyNpcWalker && !farmEditMode) {
+        if (nearbyNpcWalker && !farmEditMode && !isPlayerInCombat()) {
           // Slagothim caravan members are transient visitors: Talk + Trade only
           // (see js/slagothim-traders.js), no gifts/wardrobe/command wheel.
           if (window.SlagothimTraders?.isTraderWalker?.(nearbyNpcWalker)) {
@@ -29074,6 +29119,19 @@
         getNpcRecord: id => scheduledNpcRecords.get(id) || null,
         getCurrentArea: () => currentArea,
         normalizeNpcArea,
+        isCombatActive: isPlayerInCombat, // Shared combat gate for date followers and their contextual interactions.
+        getCombatThreats: area => { // Avoid enemy AI work or allocations unless a follower is actively choosing cover.
+          const threats = [];
+          for (const enemy of hostileObjects) if (enemy.health > 0 && enemy.areaId === area && !enemy._denHidden && !enemy.denDisplacedPrey && (enemy.state === 'chase' || enemy.state === 'searching') && Number.isFinite(enemy.x) && Number.isFinite(enemy.y)) {
+            threats.push({ x: enemy.x / TILE, z: enemy.y / TILE });
+          }
+          return threats;
+        },
+        isCoverOccluder: (area, c, r) => { // Walls, cliff/rock tiles and building footprints obstruct enemy sight; open water does not provide cover.
+          const tile = npcGridForArea(area)?.[r]?.[c];
+          return !!tile && (isSolid(tile.type) || window.GridTileAccessors.isTownBuildingCollisionTile(c, r, area)
+            || !!window.AreaFootprintBlockers?.blocksBox?.(area, c + 0.5, r + 0.5, 0.08, null));
+        },
         canHostNpc: area => area === 'farm' || area === 'interior' || area === 'town' || _isBuildingArea(area) || _isZoneArea(area),
         getPlayerTilePosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
         isDialogueOpen: () => dialogueOpen,
@@ -29111,6 +29169,7 @@
       });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,
+        isCombatActive: isPlayerInCombat,
         isDialogueOpen: () => dialogueOpen,
         isMenuOpen: () => menuOpen,
         isFarmEditMode: () => farmEditMode,

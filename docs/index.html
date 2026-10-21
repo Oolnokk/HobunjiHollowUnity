@@ -185,7 +185,7 @@
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261019h583d9be"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
-  <script src="js/npc-character-state.js?v=20260811a"></script>
+  <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261020h2974281"></script>
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
@@ -269,7 +269,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261018kyliebluntdw015"></script>
+  <script src="js/condition-registry.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -2607,7 +2607,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261020h6f55030"></script>
+  <script src="js/npc-pathfinding.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
@@ -2673,9 +2673,9 @@
   <script src="config/romance-config.js?v=20261013h88e81c7"></script>
   <script src="js/romance-family.js?v=20261007romance1"></script>
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
-  <script src="js/npc-following.js?v=20261020h4f6f2e8"></script>
-  <script src="js/romance-system.js?v=20261020hbc46a84"></script>
-  <script src="js/npc-command-wheel.js?v=20261021h3716f3d"></script>
+  <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/romance-system.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/npc-command-wheel.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
        load before game.js, which calls window.ToolMastery.init(...). -->
