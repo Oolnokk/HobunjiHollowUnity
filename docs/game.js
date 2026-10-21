@@ -28881,7 +28881,49 @@
         getAreaScene: areaId => areaId === 'town' ? townScene : areaId === 'farm' ? scene : (_isZoneArea(areaId) ? (_zoneScenes.get(areaId)?.scene || null) : null),
         buildCropMesh: (crop, growth, ready, c, r) => window.VegetationCropRendering?.buildStandaloneCropMesh?.(crop, growth, ready, c, r) || null,
         saveMemberWorldData,
+        // The player's farm grid, for plots worked by the spouse and children (see FarmPlotEditor). The live farm tiles are
+        // edited directly — no tool-mastery or Farming XP goes to the player for an NPC's work.
+        farmTileInfo: (c, r) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return null;
+          const free = !window.GridTileAccessors.isHouseFootprint(c, r) && !worldObjects.has(c + ',' + r) && !tile.dewPile;
+          const trench = tile.type === TileType.TRENCH;
+          return {
+            tilled: tile.type === TileType.TILLED || tile.type === TileType.RAISED, crop: tile.crop || '', ready: !!tile.cropReady,
+            dug: trench && (tile.depth ?? 1) >= 0.6, // Rain silts a trench shallower; below this it needs redigging.
+            canTill: free && (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) && !tile.crop, // Weeds are cleared as they till.
+            canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
+          };
+        },
+        seedAvailable: crop => {
+          const seedKey = cropData[crop]?.seedKey;
+          return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
+        },
+        applyFarmJob: (job, c, r, crop) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return false;
+          if (job === 'till') {
+            if ((tile.type !== TileType.GRASS && tile.type !== TileType.WEEDS) || tile.crop) return false;
+            tile.type = TileType.TILLED;
+          } else if (job === 'dig') {
+            if (tile.crop || tile.type === TileType.ROCK) return false;
+            tile.type = TileType.TRENCH; tile.depth = 1; tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          } else if (job === 'seed') {
+            const data = cropData[crop];
+            const store = _loadWorldStorage() || {};
+            if (!data || tile.crop || !(Number(store[data.seedKey]) > 0) || ![TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
+            store[data.seedKey] -= 1;
+            if (store[data.seedKey] <= 0) delete store[data.seedKey];
+            _saveWorldStorage(store); // Seeds come out of Farm Storage, not your pockets.
+            tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
+          } else return false;
+          markTileDirty(c, r);
+          if (currentArea === 'farm') window.WaterSystem.recomputeWater(false);
+          window.FarmEditor.saveFarmLayout();
+          return true;
+        },
       });
+      window.FarmPlotEditor?.init?.({ save: () => window.FarmEditor.saveFarmLayout(), cropLabel: crop => cropData[crop] ? `${cropData[crop].emoji || ''} ${cropData[crop].label || crop}`.trim() : crop });
       window.DateCompanion?.init?.({
         getCurrentArea: () => currentArea,
         normalizeNpcArea,
@@ -30528,6 +30570,7 @@
         }
         const _worldLayout = window.FarmEditor.loadFarmLayout();
         if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
+        else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()

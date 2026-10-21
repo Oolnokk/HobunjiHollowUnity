@@ -49,13 +49,16 @@
     return api;
   }
 
+  function rebuildWorkers() {
+    workerIds.clear();
+    for (const p of plotsById.values()) if (p.managed) for (const role of ['tillers', 'seeders', 'harvesters', 'diggers']) for (const id of p[role]) workerIds.add(id);
+  }
   function lineupOf(plot, role) { return Array.isArray(plot[role]) ? plot[role].filter(Boolean) : []; }
 
   // Called when an exterior map loads. Replaces that map's plots (a map reload must not duplicate them).
   function registerMap(mapId, rawPlots) {
     for (const [id, plot] of [...plotsById]) if (plot.mapId === mapId) plotsById.delete(id);
     for (const key of [...managedKeys.keys()]) if (key.startsWith(`${mapId}:`)) managedKeys.delete(key);
-    const rebuildWorkers = () => { workerIds.clear(); for (const p of plotsById.values()) if (p.managed) for (const role of ['tillers', 'seeders', 'harvesters', 'diggers']) for (const id of p[role]) workerIds.add(id); };
     for (const raw of Array.isArray(rawPlots) ? rawPlots : []) {
       if (!raw?.id || !Array.isArray(raw.tiles) || !raw.tiles.length) continue;
       const kind = raw.kind === 'dig' ? 'dig' : 'till';
@@ -73,19 +76,41 @@
     rebuildWorkers();
   }
 
+  // The player's own farm: plots drawn in the farm editor (js/farm-plot-editor.js) and worked by family — the spouse and
+  // children. These act on the live farm grid (real tilled soil, trenches and crops, with the real water sim), so nothing
+  // is drawn or simulated here; seeds come out of Farm Storage.
+  function registerFarmPlots(rawPlots) {
+    for (const [id, plot] of [...plotsById]) if (plot.grid) plotsById.delete(id);
+    for (const raw of Array.isArray(rawPlots) ? rawPlots : []) {
+      if (!raw?.id || !Array.isArray(raw.tiles) || !raw.tiles.length) continue;
+      const kind = raw.kind === 'dig' ? 'dig' : 'till';
+      const workers = lineupOf(raw, 'workers');
+      const plot = {
+        id: String(raw.id), mapId: 'farm', area: 'farm', grid: true, family: true, kind, label: raw.label || raw.id, crop: raw.crop || '',
+        tillers: kind === 'till' ? workers : [], seeders: kind === 'till' ? workers : [], harvesters: [], diggers: kind === 'dig' ? workers : [],
+        startWorked: false,
+        hours: Array.isArray(raw.hours) && raw.hours.length === 2 ? [num(raw.hours[0], DEFAULT_HOURS[0]), num(raw.hours[1], 17)] : [8, 17],
+        tiles: raw.tiles.map(t => ({ c: Math.floor(num(t[0], 0)), r: Math.floor(num(t[1], 0)) })),
+      };
+      plot.managed = workers.length > 0;
+      plotsById.set(plot.id, plot);
+    }
+    rebuildWorkers();
+  }
+
   // The map loaders ask this so a managed plot's tiles start as plain grass instead of tilled / trench.
   function isManagedTile(mapId, c, r) { return managedKeys.has(`${mapId}:${keyOf(c, r)}`); }
 
   // ── Who is free to work ───────────────────────────────────────────────
   // A lineup NPC is skipped while they are following you (companion), on a date with you, or married to you.
-  function unavailable(npcId) {
+  function unavailable(npcId, plot) {
     if (window.RomanceSystem?.isOnDateWith?.(npcId)) return true;
-    if (window.RomanceSystem?.getSpouse?.()?.npcId === npcId) return true;
+    if (!plot?.family && window.RomanceSystem?.getSpouse?.()?.npcId === npcId) return true; // Town hands step aside for their spouse; your own family is who the farm plots are for.
     if (window.NpcFollowing?.isCompanion?.(npcId)) return true;
     return false;
   }
   function activeWorker(plot, role) {
-    return lineupOf(plot, role).find(id => !unavailable(id)) || null;
+    return lineupOf(plot, role).find(id => !unavailable(id, plot)) || null;
   }
   function inHours(plot) {
     const hour = num(window.CalendarSystem?.getHour?.(), 12);
@@ -105,13 +130,28 @@
     if (!plotState[key] && create) plotState[key] = {};
     return plotState[key] || null;
   }
-  const tileOf = (plot, c, r) => stateOf(plot, c, r) || {};
+  const tileOf = (plot, c, r) => plot.grid ? (deps?.farmTileInfo?.(c, r) || { blocked: true }) : (stateOf(plot, c, r) || {});
 
   function cropDef(crop) { return deps?.cropData?.[crop] || null; }
 
   // ── Job picking ───────────────────────────────────────────────────────
   function jobsFor(plot, npcId) {
     const jobs = []; // { c, r, job }
+    if (plot.grid) {
+      if (plot.kind === 'dig') {
+        if (activeWorker(plot, 'diggers') !== npcId) return jobs;
+        for (const t of plot.tiles) { const i = tileOf(plot, t.c, t.r); if (i.canDig && !i.dug) jobs.push({ c: t.c, r: t.r, job: 'dig' }); }
+        return jobs;
+      }
+      const tiller = activeWorker(plot, 'tillers') === npcId;
+      const seeder = plot.crop && activeWorker(plot, 'seeders') === npcId && deps?.seedAvailable?.(plot.crop);
+      for (const t of plot.tiles) {
+        const i = tileOf(plot, t.c, t.r);
+        if (seeder && i.tilled && !i.crop) jobs.push({ c: t.c, r: t.r, job: 'seed' });
+        else if (tiller && i.canTill) jobs.push({ c: t.c, r: t.r, job: 'till' });
+      }
+      return jobs;
+    }
     if (plot.kind === 'dig') {
       if (activeWorker(plot, 'diggers') !== npcId) return jobs;
       for (const t of plot.tiles) if (!tileOf(plot, t.c, t.r).dug) jobs.push({ c: t.c, r: t.r, job: 'dig' });
@@ -204,6 +244,10 @@
 
   // ── Doing the work ────────────────────────────────────────────────────
   function applyJob(plot, claim) {
+    if (plot.grid) {
+      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, plot.crop)) { debug.jobsDone += 1; debug.lastJob = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() }; }
+      return;
+    }
     const s = stateOf(plot, claim.c, claim.r, true);
     if (claim.job === 'till') { s.tilled = true; s.idle = 0; }
     else if (claim.job === 'seed') { s.crop = plot.crop; s.age = 0; s.ready = false; s.idle = 0; }
@@ -240,7 +284,7 @@
   function rainShower() {
     rainedToday = true;
     for (const plot of plotsById.values()) {
-      if (plot.kind !== 'dig' || !plot.managed) continue;
+      if (plot.kind !== 'dig' || !plot.managed || plot.grid) continue;
       for (const t of plot.tiles) {
         const s = stateOf(plot, t.c, t.r);
         if (s?.dug && !s.water) { s.water = 1; refreshTile(plot, t.c, t.r); scheduleSave(); }
@@ -251,7 +295,7 @@
   // Day rollover (game.js advanceDay): crops grow, bare soil overgrows, rained-on trenches may silt in.
   function onNewDay() {
     for (const plot of plotsById.values()) {
-      if (!plot.managed) continue;
+      if (!plot.managed || plot.grid) continue; // The farm's own grid grows, waters and silts itself.
       for (const t of plot.tiles) {
         const s = stateOf(plot, t.c, t.r);
         if (!s) continue;
@@ -353,7 +397,7 @@
   }
 
   function refreshTile(plot, c, r) {
-    if (plot.area === deps?.getCurrentArea?.()) drawTile(plot, c, r);
+    if (!plot.grid && plot.area === deps?.getCurrentArea?.()) drawTile(plot, c, r);
   }
 
   // Draws every tile of this area's plots once the player is there (cheap when nothing changed: signatures compare).
@@ -365,7 +409,7 @@
     if (syncedVersion > 0) return;
     let any = false;
     for (const plot of plotsById.values()) {
-      if (plot.area !== currentArea || !plot.managed) continue;
+      if (plot.area !== currentArea || !plot.managed || plot.grid) continue;
       for (const t of plot.tiles) drawTile(plot, t.c, t.r);
       any = true;
     }
@@ -387,7 +431,7 @@
   }
 
   const api = {
-    init, registerMap, isManagedTile, onNewDay, serialize, restore,
+    init, registerMap, registerFarmPlots, isManagedTile, onNewDay, serialize, restore,
     targetFor, tick,
     plots: () => [...plotsById.values()],
     snapshot: () => ({

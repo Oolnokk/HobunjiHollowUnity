@@ -89,7 +89,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261019h317d759&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261021h2d163bd&window=20260926rebase1"></script>
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -986,6 +986,10 @@
           <button class="fed-btn" data-btype="furniture" data-bval="agingBarrel" onclick="window._farmEditor?.setBrush('furniture','agingBarrel')">🛢️ Aging Barrel</button>
           <button class="fed-btn" data-btype="furniture" data-bval="agingVase"   onclick="window._farmEditor?.setBrush('furniture','agingVase')">🏺 Aging Vase</button>
         </div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Family plots</div>
+        <div id="farmPlotsPane"></div>
       </div>
       <div class="fed-section fed-actions">
         <button class="fed-btn fed-erase" data-btype="erase" data-bval="erase" onclick="window._farmEditor?.setBrush('erase','erase')">🗑️ Erase</button>
@@ -2666,11 +2670,12 @@
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
   <script src="config/romance-config.js?v=20261021h1dcedc3"></script>
-  <script src="js/romance-family.js?v=20261007romance1"></script>
+  <script src="js/romance-family.js?v=20261021hecced47"></script>
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/npc-following.js?v=20261020h4f6f2e8"></script>
   <script src="js/date-companion-activities.js?v=1"></script>
   <script src="js/npc-farm-plots.js?v=1"></script>
+  <script src="js/farm-plot-editor.js?v=1"></script>
   <script src="js/romance-system.js?v=20261020hbc46a84"></script>
   <script src="js/npc-command-wheel.js?v=20261019h34c3216"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must

@@ -141,4 +141,63 @@ api.restore(saved);
 assert.ok(tile('plot_a', seedJob.c, seedJob.r));
 
 console.log('ok - npc farm plots');
+// ── The player's farm: family plots work the real grid, seeds come from Farm Storage ────────────────────────────
+const farm = { tiles: {}, storage: { needlegrainSeed: 1 }, jobs: [] };
+const key = (c, r) => `${c},${r}`;
+const farmTile = (c, r) => farm.tiles[key(c, r)] || (farm.tiles[key(c, r)] = { type: 'grass', crop: '', depth: 0 });
+const farmApi = {
+  farmTileInfo: (c, r) => {
+    const t = farmTile(c, r);
+    return { tilled: t.type === 'tilled', crop: t.crop, ready: false, dug: t.type === 'trench' && t.depth >= 0.6, canTill: t.type === 'grass' && !t.crop, canDig: !t.crop && (t.type === 'trench' ? t.depth < 1 : true) };
+  },
+  seedAvailable: crop => crop === 'needlegrain' && farm.storage.needlegrainSeed > 0,
+  applyFarmJob: (job, c, r, crop) => {
+    const t = farmTile(c, r);
+    if (job === 'till') t.type = 'tilled';
+    else if (job === 'dig') { t.type = 'trench'; t.depth = 1; }
+    else if (job === 'seed') { if (!(farm.storage.needlegrainSeed > 0) || t.type !== 'tilled') return false; farm.storage.needlegrainSeed -= 1; t.crop = crop; }
+    farm.jobs.push(job);
+    return true;
+  },
+};
+api.init({
+  findWalker: id => walkers[id] || null, getCurrentArea: () => 'farm', normalizeNpcArea: id => id, cropData: { needlegrain: { growDays: 3 } }, isRaining: () => false,
+  surfaceY: () => 0, getAreaScene: () => null, buildCropMesh: () => null, saveMemberWorldData() {}, ...farmApi,
+});
+api.registerFarmPlots([
+  { id: 'fam_field', kind: 'till', tiles: [[2, 2], [3, 2]], crop: 'needlegrain', workers: ['spouse1', 'kid1'], hours: [8, 17] },
+  { id: 'fam_trench', kind: 'dig', tiles: [[6, 6]], workers: ['kid1'], hours: [8, 17] },
+  { id: 'fam_none', kind: 'till', tiles: [[9, 9]], workers: [] },
+]);
+spouse = { npcId: 'spouse1' };
+hour.value = 10;
+walkers.spouse1 = { area: 'farm', rec: rec('spouse1'), root: { position: { x: 2.5, z: 4.5 } } };
+walkers.kid1 = { area: 'farm', rec: rec('kid1'), root: { position: { x: 6.5, z: 8.5 } } };
+let fam = api.targetFor(rec('spouse1'));
+assert.ok(fam, 'a married spouse still works the family plots (unlike town hands)');
+assert.equal(fam.area, 'farm');
+assert.equal(api.targetFor(rec('stranger')), null);
+assert.equal(api.targetFor(rec('kid1')).toolActivity, 'dig', 'the child digs the trench group');
+// Tick through: spouse tills both tiles, then seeds one (only one seed in storage), then has nothing more to do.
+const claimFam = id => api.snapshot().claims.find(c => c.npc === id);
+for (let step = 0; step < 6; step += 1) {
+  const c = claimFam('spouse1') || (api.targetFor(rec('spouse1')), claimFam('spouse1'));
+  if (!c) break;
+  walkers.spouse1.root.position.x = c.standC + 0.5; walkers.spouse1.root.position.z = c.standR + 0.5;
+  for (let i = 0; i < 10; i += 1) tick();
+  api.targetFor(rec('spouse1'));
+}
+assert.equal(farm.jobs.filter(j => j === 'till').length, 2);
+assert.equal(farm.jobs.filter(j => j === 'seed').length, 1, 'only the one seed in storage is sown');
+assert.equal(farm.storage.needlegrainSeed, 0);
+assert.equal(api.targetFor(rec('spouse1')), null, 'no seeds left: nothing more to do');
+// The spouse yields to a backup only while on a date / following you.
+date.npcId = 'spouse1';
+assert.equal(api.targetFor(rec('spouse1')), null);
+date.npcId = null;
+// Trenches silted below the threshold get redug.
+farmTile(6, 6).type = 'trench'; farmTile(6, 6).depth = 0.3;
+assert.equal(api.targetFor(rec('kid1')).toolActivity, 'dig');
+assert.equal(api.targetFor(rec('stranger')), null);
+console.log('ok - farm family plots');
 process.exit(0);
