@@ -13,7 +13,7 @@ const runtime=read('docs/js/omgurku-connector-rig.js');
 const editor=read('docs/tools/omgurku-calibration/connector-author.js');
 const boot=read('docs/js/attachment-rig-latest-authored-snapshot.js');
 assert.equal(cfg.connector.schema,'hobunji.omgurku-connector.v1');
-assert.equal(cfg.connector.enabled,false,'missing PNG must not show placeholders or throw');
+assert.equal(cfg.connector.enabled,true,'authored calibration retains the user’s enabled connector');
 assert.equal(cfg.connector.assetPath,'assets/portraitsprites/omgurku-connector.png');
 assert(!fs.existsSync(path.join(root,'docs',cfg.connector.assetPath)),
   'the connector starts as an optional user-provided PNG');
@@ -62,9 +62,16 @@ assert.equal(mod.live.size,0,'no mesh allocated before an NPC is built');
 const invalid=mod.normalize({...cfg.connector,enabled:true,sourceTop:[{x:2,y:2}]});
 assert.equal(invalid.sourceTop.length,5,'invalid source seams are replaced with safe defaults');
 assert.equal(invalid.sourceTop[0].x,.32);
+assert.equal(mod.defaults.enabled,false,'an unconfigured optional connector stays disabled');
+assert.equal(mod.deformationFraction(0,.9),0);
+assert.equal(mod.deformationFraction(1,.9),1);
+assert.equal(mod.deformationFraction(.5,.5),.5);
+assert(mod.deformationFraction(.5,.85)<mod.deformationFraction(.5,.15),'higher upper influence gives less control to the lower end');
+assert.equal(mod.normalize({upperInfluence:2}).upperInfluence,1);
+assert.equal(mod.normalize({upperInfluence:-2}).upperInfluence,0);
 assert.doesNotThrow(()=>mod.normalize({sourceTop:[null,null,null,null,null]}),
  'malformed external JSON falls back without crashing');
-assert.equal(mod.splineAt(cfg.connector.animalNeck,.5).x,.30,
+assert.equal(mod.splineAt(cfg.connector.animalNeck,.5).x,cfg.connector.animalNeck[2].x,
  'five point middle control is an exact interpolation landmark');
 const saved=mod.set({...cfg.connector,enabled:true,opacity:.8,
  imageDataUrl:'data:image/png;base64,iVBORw0KGgo='},{persist:true});

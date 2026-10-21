@@ -91,6 +91,8 @@ function refresh(){
    toolbar.output.textContent=Math.round(state.settings.shrinkwrapDirections[field])+'°';
  }
  $('connectorUndo').disabled=!state.history.length;
+ $('connectorUpperInfluence').value=String(state.settings.upperInfluence);
+ $('connectorUpperInfluenceValue').textContent=Math.round(state.settings.upperInfluence*100)+'%';
  $('connectorOpacity').value=String(state.settings.opacity);
  $('connectorOpacityValue').textContent=Math.round(state.settings.opacity*100)+'%';
  $('connectorSourceTopBtn').classList.toggle('good',state.mode==='sourceTop');
@@ -282,6 +284,12 @@ function hook(){
  pointerRig('connectorSourceCanvas','source','source');
  pointerRig('connectorRiderCanvas','riderWaist','rider');
  pointerRig('connectorAnimalCanvas','animalNeck','animal');
+ $('connectorUpperInfluence').addEventListener('pointerdown',()=>{if(state.settings)remember();});
+ $('connectorUpperInfluence').addEventListener('keydown',()=>{if(state.settings)remember();});
+ $('connectorUpperInfluence').addEventListener('input',()=>{
+   if(!state.settings)return;
+   state.settings.upperInfluence=clamp($('connectorUpperInfluence').value);apply();
+ });
  $('connectorOpacity').addEventListener('input',()=>{
    if(!state.settings)return;
    state.settings.opacity=clamp($('connectorOpacity').value);
@@ -324,7 +332,7 @@ window.HobunjiOmgurkuConnectorAuthor={
   top:state.settings?.sourceTop?.length||0,bottom:state.settings?.sourceBottom?.length||0,
   neck:state.settings?.animalNeck?.length||0,dirty:state.dirty,
   live:bridge()?.live?.size||0,arrows:cpy(arrows),directions:cpy(state.settings?.shrinkwrapDirections||{}),
-  latestChange:'Directional pixel shrinkwrap, whole-spline transforms and flat connector ends.'})
+  latestChange:'Upper body authority, saddle-pivot lower body, adjustable connector influence and shared weapon previews.'})
 };
 hook();previewReady();
 })();

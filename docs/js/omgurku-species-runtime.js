@@ -10,12 +10,12 @@
   const FRAMES = Object.freeze(['idle', 'run1', 'run2']); // Authored lower PNGs, decoded by the shared animal-plane texture cache.
   const SPRITES = Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/omgurku-lower_${frame}.png`])));
   const DEFAULT_PLACEMENT = Object.freeze({
-    lowerWidth: 2.1, lowerHeight: 0.916356, visibleFloorCorrection: 0.151758205,
-    saddleU: 0.3087855747767857, saddleV: 0.3691508252181978,
-    joinDepth: 0.03, riderScale: 1,
+    lowerWidth: 1.94, lowerHeight: 0.916356, visibleFloorCorrection: 0.151758205,
+    saddleU: 0.2751161581999556, saddleV: 0.26826246967617995,
+    joinDepth: 0.01, riderScale: 1,
     upperOffsetX: 0, upperOffsetY: 0, upperOffsetZ: 0,
     lowerOffsetX: 0, lowerOffsetY: 0, lowerOffsetZ: 0,
-  }); // V10 join seed; authored overrides live in config/species/omgurku.json.
+  }); // Latest user calibration; authored overrides live in config/species/omgurku.json.
   const DOCS_ROOT = (() => { // Absolute docs-root URL captured while this script still has currentScript.
     try { return new URL('../', document.currentScript?.src || new URL('js/', location.href)).href; }
     catch (_) { return new URL('./', location.href).href; }
@@ -238,7 +238,8 @@
     const preview = Number.isFinite(previewRaw);
     const rawYaw = preview ? previewRaw : (Number.isFinite(c.rawNpcYaw) ? c.rawNpcYaw : rootYaw);
     if (preview && perp.perpClamp) {
-      const desired = perp.perpClamp(c.npcFacing ||= {},rawYaw,npcPerps,perp.PERP_DEAD_RAD).effectiveTarget;
+      const bodyYaw = Number(record.root.userData.omgurkuPreviewBodyYaw) || 0; // Attack turning goes through the same NPC deadzone, so the portrait never becomes an edge-on sliver.
+      const desired = perp.perpClamp(c.npcFacing ||= {},rawYaw + bodyYaw,npcPerps,perp.PERP_DEAD_RAD).effectiveTarget;
       const rendered = Number.isFinite(c.previewNpcYaw)
         ? c.previewNpcYaw + diffAngle(desired,c.previewNpcYaw) * Math.min(1,dt*10)
         : desired;
@@ -260,16 +261,10 @@
       : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*10);
     for (const ref of c.lowerRefs) {
       ref.group.rotation.y = diffAngle(c.animalYaw,rootYaw);
-      // The scene traversal already completed before onBeforeRender, so
-      // propagate new yaw into both cards immediately rather than lag a frame.
-      ref.group.updateMatrixWorld?.(true);
-      ref.frontPlane?.updateMatrixWorld?.(true);
-      ref.backPlane?.updateMatrixWorld?.(true);
+      // pivotLowerAroundJoin propagates the final position/yaw into both cards once.
     }
-    // The animal's own deadzone rotation moves its saddle underneath the
-    // rider, even when the upper portrait continues facing independently.
-    // Update before rendering, so the rider follows in the same frame.
-    followLowerSaddleYaw(record);
+    // Reposition the lower card around its fixed attachment before either half renders.
+    pivotLowerAroundJoin(record);
     c.upper.updateMatrixWorld?.(true);
     c.connector?.update?.();
     status.facingUpdates++;
@@ -298,21 +293,20 @@
     return true;
   }
 
-  // The lower portrait has its own creature-facing deadzone. Move only the
-  // rider's attachment point as that portrait turns, while retaining the
-  // earlier build's exact placement at yaw zero and the NPC's independent
-  // upper-body facing. No V10 posterior, large-scale or depth changes.
-  function followLowerSaddleYaw(record) {
+  // Keep the humanoid weapon/hand frame fixed. The animal turns like a lever
+  // around its authored saddle instead of translating the armed upper body.
+  function pivotLowerAroundJoin(record) {
     const c = record?.root?.userData?.omgurkuComposite;
     if (!c) return;
-    const yaw = Number(c.lowerRefs?.[0]?.group?.rotation?.y) || 0;
-    const saddleZ = (0.5 - placement.saddleU) * placement.lowerWidth;
-    const saddleX = Math.sin(yaw) * saddleZ;
-    const rotatedZ = Math.cos(yaw) * saddleZ;
-    c.upper.position.x = placement.lowerOffsetX + placement.upperOffsetX + saddleX;
-    c.upper.position.z = placement.lowerOffsetZ + rotatedZ + placement.joinDepth + placement.upperOffsetZ;
-    const join = record.root.userData.omgurkuJoin;
-    if (join) { join.x = saddleX; join.z = rotatedZ + placement.lowerOffsetZ; }
+    const saddleZ = (0.5 - placement.saddleU) * placement.lowerWidth; // Radius from lower card center to its fixed attachment.
+    for (const ref of c.lowerRefs) {
+      const yaw = Number(ref.group.rotation?.y) || 0; // Each gait card shares the animal's deadzone rotation.
+      ref.group.position.x = placement.lowerOffsetX - Math.sin(yaw) * saddleZ;
+      ref.group.position.z = placement.lowerOffsetZ + saddleZ * (1 - Math.cos(yaw));
+      ref.group.updateMatrixWorld?.(true);
+    }
+    const join = record.root.userData.omgurkuJoin; // Debug marker remains at the fixed saddle.
+    if (join) { join.x = placement.lowerOffsetX; join.z = placement.lowerOffsetZ + saddleZ; }
   }
 
   function applyPlacement(record) {
@@ -340,7 +334,7 @@
       if (c.upper.userData?.[key] !== undefined) record.root.userData[key] = c.upper.userData[key];
     }
     record.root.userData.omgurkuJoin = { x: 0, y: joinY, z: joinZ, lowerCenterY: centerY };
-    followLowerSaddleYaw(record);
+    pivotLowerAroundJoin(record);
     c.connector?.update?.(true);
   }
 

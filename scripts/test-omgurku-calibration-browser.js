@@ -78,6 +78,55 @@ const server=http.createServer((req,res)=>{
       return Number.isFinite(frame?.upperYaw) && Number.isFinite(frame?.lowerYaw)
         && Math.abs(frame.upperYaw-frame.lowerYaw)>0.15;
     },null,{timeout:6000});
+    const idleSignature=await page.evaluate(()=>{
+      const rig=window.HobunjiOmgurkuCalibration.context().model.userData.proceduralHandRig;
+      return JSON.stringify(rig.group.children.map(child=>[...child.position.toArray(),...child.quaternion.toArray()]));
+    });
+    await page.waitForFunction(previous=>{
+      const rig=window.HobunjiOmgurkuCalibration.context().model.userData.proceduralHandRig;
+      return JSON.stringify(rig.group.children.map(child=>[...child.position.toArray(),...child.quaternion.toArray()]))!==previous;
+    },idleSignature,{timeout:5000});
+    await page.locator('#weaponPreviewMode').selectOption('stance');
+    await page.waitForFunction(()=>window.HobunjiOmgurkuWeaponPreview.snapshot().weaponLoaded
+      && window.HobunjiOmgurkuWeaponPreview.snapshot().holderVisible);
+    await page.locator('#weaponPreviewStance').selectOption('lightWeapon');
+    await page.waitForFunction(()=>Math.abs(window.HobunjiOmgurkuWeaponPreview.snapshot().sample.bodyYawRad+40*Math.PI/180)<1e-7);
+    if(process.env.HOBUNJI_WEAPON_QA_SCREENSHOT){
+      await page.locator('#angleBtn').click();
+      await page.waitForTimeout(300);
+      await page.locator('#viewport').screenshot({path:process.env.HOBUNJI_WEAPON_QA_SCREENSHOT});
+    }
+    await page.locator('#weaponPreviewAttack').selectOption('1');
+    await page.locator('#weaponPreviewPlay').click();
+    await page.waitForFunction(()=>window.HobunjiOmgurkuWeaponPreview.snapshot().progress>.08);
+    const armed=await page.evaluate(()=>{
+      const model=window.HobunjiOmgurkuCalibration.context().model;
+      return {state:window.HobunjiOmgurkuWeaponPreview.snapshot(),
+        parent:model.userData.proceduralHandToolHolder.parent===model.userData.omgurkuComposite.upper,
+        grip:!!model.userData.proceduralHandAnimationGrip,
+        driver:window.RuntimeFrameScheduler.getDebug()};
+    });
+    assert(armed.parent&&armed.grip,'preview weapon and gameplay grip driver share the upper portrait frame');
+    assert.equal(armed.driver.frameDriverErrorCount,0,'idle and combat pre-render updates run without swallowed driver errors');
+    await page.locator('#weaponPreviewScrub').evaluate(input=>{input.value='.5';input.dispatchEvent(new Event('input',{bubbles:true}));});
+    await page.waitForFunction(()=>Math.abs(window.HobunjiOmgurkuWeaponPreview.snapshot().progress-.5)<1e-8);
+    for(const toolKey of ['fishingspear','plainsSword','pickshovel','bronzehoe','hatchet']){
+      await page.locator('#weaponPreviewTool').selectOption(toolKey);
+      await page.waitForFunction(key=>{
+        const preview=window.HobunjiOmgurkuWeaponPreview.snapshot();
+        return preview.toolKey===key && preview.weaponLoaded && !preview.error;
+      },toolKey,{timeout:8000});
+    }
+    await page.locator('#weaponPreviewStance').selectOption('heavyWeapon');
+    await page.locator('#weaponPreviewMode').selectOption('stance');
+    await page.waitForFunction(()=>Math.abs(window.HobunjiOmgurkuWeaponPreview.snapshot().sample.bodyYawRad+15*Math.PI/180)<1e-7);
+    await page.locator('#refreshPreviewBtn').click();
+    await page.waitForFunction(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount===1
+      && window.HobunjiOmgurkuWeaponPreview.snapshot().weaponLoaded);
+    assert.equal(await page.evaluate(()=>window.RuntimeFrameScheduler.getDebug().frameDriverErrorCount),0,
+      'rebuilding the avatar releases and rebinds the preview weapon without leaving a stale hand owner');
+    await page.locator('#weaponPreviewIdle').click();
+    await page.waitForFunction(()=>!window.HobunjiOmgurkuWeaponPreview.snapshot().holderVisible);
     assert.deepEqual(errors,[],'all shared engine modules should load without uncaught errors');
     await page.locator('#number_saddleU').fill('0.421');
     await page.locator('#number_saddleU').dispatchEvent('change');
@@ -97,7 +146,8 @@ const server=http.createServer((req,res)=>{
     await page.locator('#moveBtn').click();
     // Omgurku connector: use a real in-browser PNG upload, not a mocked
     // renderer. It is disabled until the artwork arrives.
-    assert.equal((await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot())).enabled,false);
+    assert.equal(await page.evaluate(()=>[...window.HobunjiOmgurkuConnector.live].every(handle=>!handle.mesh.visible)),true,
+      'the authored connector remains hidden while its PNG is unavailable');
     await page.evaluate(()=>{
       const canvas=document.createElement('canvas');canvas.width=80;canvas.height=120;
       const g=canvas.getContext('2d');g.fillStyle='#caa05d';g.beginPath();
@@ -136,6 +186,20 @@ const server=http.createServer((req,res)=>{
     for(let i=0;i<3;i++)
       assert(Math.abs(bridgeBefore.first[i]-bridgeBefore.topTarget[i])<.0001,
         'top of connector attached exactly to pants waistband');
+    const influenceCheck=await page.evaluate(()=>{
+      const input=document.getElementById('connectorUpperInfluence'),handle=[...window.HobunjiOmgurkuConnector.live][0];
+      input.value='.1';input.dispatchEvent(new Event('input',{bubbles:true}));
+      const before=Array.from(handle.mesh.geometry.attributes.position.array);
+      input.value='.9';input.dispatchEvent(new Event('input',{bubbles:true}));
+      const after=Array.from(handle.mesh.geometry.attributes.position.array);
+      return {moved:after.some((v,i)=>Math.abs(v-before[i])>1e-5),
+        fixedTop:after.slice(0,3).every((v,i)=>v===before[i]),
+        fixedBottom:after.slice(-3).every((v,i)=>v===before[before.length-3+i]),
+        value:window.HobunjiOmgurkuConnector.snapshot().upperInfluence};
+    });
+    assert(influenceCheck.moved&&influenceCheck.fixedTop&&influenceCheck.fixedBottom,
+      'upper/lower influence changes the bridge while keeping both attachment edges fixed');
+    assert.equal(influenceCheck.value,.9);
     const performanceCheck=await page.evaluate(()=>{
       const handle=[...window.HobunjiOmgurkuConnector.live][0];
       const model=window.HobunjiOmgurkuCalibration.context().model;
@@ -174,7 +238,7 @@ const server=http.createServer((req,res)=>{
     await page.evaluate(()=>{
       const next=window.HobunjiOmgurkuConnector.snapshot();
       next.sourceTop=next.sourceTop.map(p=>({...p,y:0}));
-      next.shrinkwrapDirections.sourceTop=90;
+      next.shrinkwrapDirections.sourceTop=90;next.shrinkwrapDirections.sourceBottom=270;
       window.HobunjiOmgurkuConnectorAuthor.importConfig(next);
     });
     await page.locator('#connectorSourceCanvas').scrollIntoViewIfNeeded();
@@ -242,6 +306,7 @@ const server=http.createServer((req,res)=>{
       return JSON.parse(localStorage.getItem(k));
     });
     assert.equal(savedConnector.enabled,true);
+    assert.equal(savedConnector.upperInfluence,.9,'deformation influence survives the local rig save');
     assert.equal(savedConnector.sourceTop.length,5);
     assert.equal(savedConnector.sourceBottom.length,5);
     assert.equal(savedConnector.animalNeck.length,5);
@@ -255,6 +320,7 @@ const server=http.createServer((req,res)=>{
       null,{timeout:55000});
     assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().directions.sourceTop),90,
       'saved arrow directions restore after reload');
+    assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot().upperInfluence),.9,'deformation influence restores after reload');
     assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().uploaded),true,
       'saved PNG is restored into the author after reload');
     const imported=JSON.parse(fs.readFileSync(path.join(root,'docs/config/species/omgurku.json'),'utf8'));

@@ -53,7 +53,11 @@ input[type=file]{display:none}
 <script src="../../js/voorg-ass-registration.js?v=20261015h47a3826"></script>
 <script src="../../js/creature-genetics-render.js?v=20261019omgurkuTint1"></script>
 <script src="../../js/runtime-frame-scheduler.js"></script>
-<script src="../../js/held-action-animations.js?v=20261021h08cda3f"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=1"></script>
+<script src="../../js/combat/attack-pose-templates.js?v=1"></script>
+<script src="../../js/combat/melee-pose-spacing.js?v=1"></script>
+<script src="../../js/species-pose-scaling.js?v=1"></script>
+<script src="../../js/held-action-animations.js?v=20261021h76c2b88"></script>
 </head>
 <body>
 <div id="app">
@@ -78,6 +82,19 @@ input[type=file]{display:none}
 <input id="headingRange" type="range" min="-180" max="180" value="0" step="1" style="width:100%;accent-color:#65adff">
 <p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses the side-view creature deadzone (including its moving snap). Orbit the camera to examine both.</p>
 </section>
+<section>
+<h2>Hands, weapon stances &amp; attacks</h2>
+<label for="weaponPreviewMode">Preview</label><select id="weaponPreviewMode"><option value="idle">Procedural idle hands</option><option value="stance">Weapon stance</option><option value="attack">Weapon attack</option></select>
+<label for="weaponPreviewTool">Weapon</label><select id="weaponPreviewTool"></select>
+<label for="weaponPreviewStance">Resting stance</label><select id="weaponPreviewStance"><option value="heavyWeapon">Heavy weapon</option><option value="lightWeapon">Light weapon</option><option value="tool">Ordinary tool</option></select>
+<label for="weaponPreviewAttack">Existing attack</label><select id="weaponPreviewAttack"></select>
+<div class="row" style="margin-top:8px"><button id="weaponPreviewPlay">Play attack</button><button id="weaponPreviewIdle">Return to idle</button></div>
+<label><input type="checkbox" id="weaponPreviewLoop" checked> Loop attack</label>
+<label for="weaponPreviewSpeed">Playback speed</label><select id="weaponPreviewSpeed"><option value=".25">¼ speed</option><option value=".5">½ speed</option><option value="1" selected>Normal</option></select>
+<label for="weaponPreviewScrub">Attack timeline</label><input id="weaponPreviewScrub" type="range" min="0" max="1" step=".001" value="0" style="width:100%">
+<p id="weaponPreviewStatus" role="status">Procedural idle hands</p>
+<p>The upper body and weapon share one frame. The lower body turns around its fixed saddle while the connector bridges their independent rotations.</p>
+</section>
 <section id="omgurkuConnectorSection">
 <h2>Deforming waist-to-neck connector</h2>
 <p>A transparent PNG becomes a flexible bridge: its <strong>top five-point waistband</strong> follows the rider's exact Engh-Sho pants waistline, while the <strong>bottom five-point waistband</strong> fits near the animal's neck and follows its own turning.</p>
@@ -100,7 +117,10 @@ input[type=file]{display:none}
 <small>Fit the lower edge to the animal's neck. Both connector ends always lie flat against their attached sprite planes.</small>
 <div id="connectorAnimalTools" class="splineTools"></div>
 <button id="connectorUndo" disabled>Undo last spline edit</button>
-<p id="connectorLatestChange">Latest change: whole-spline transforms, directional pixel shrinkwrap, and flat connector ends.</p>
+<p id="connectorLatestChange">Latest change: fixed upper body, lower-body saddle pivot, adjustable deformation influence, and live weapon previews.</p>
+<label for="connectorUpperInfluence">Upper body deformation influence <output id="connectorUpperInfluenceValue">65%</output></label>
+<input id="connectorUpperInfluence" type="range" min="0" max="1" step=".01" value=".65" style="width:100%">
+<small>Lower values let the animal lead more of the connector. Higher values let the upper body lead more. Both attachment ends stay flat.</small>
 <label for="connectorOpacity">Connector opacity <output id="connectorOpacityValue">100%</output></label>
 <input id="connectorOpacity" type="range" min=".1" max="1" step=".025" value="1" style="width:100%">
 <div class="row" style="margin-top:8px">
@@ -140,7 +160,8 @@ input[type=file]{display:none}
 </aside>
 </div>
 </div>
-<script src="./calibration.js?v=20261021h3246c23"></script>
-<script src="./connector-author.js?v=20261021hcc6966a"></script>
+<script src="./weapon-preview.js?v=1"></script>
+<script src="./calibration.js?v=20261021h83cdb27"></script>
+<script src="./connector-author.js?v=20261021hdf27aab"></script>
 </body>
 </html>

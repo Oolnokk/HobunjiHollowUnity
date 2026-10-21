@@ -168,9 +168,8 @@ async function main() {
   assert.equal(window.HobunjiOmgurkuSpecies.debugSnapshot().placement.lowerWidth, initialWidth * 1.2);
   window.HobunjiOmgurkuSpecies.setPlacement({ saddleU: 0.4 });
   assert.notEqual(root.userData.omgurkuJoin.z, oldJoin);
-  // At neutral yaw the restored geometry must remain identical to the
-  // pre-V10-parity build. Turning the animal rotates only its saddle
-  // attachment position, carrying the rider without changing rider yaw.
+  // Neutral placement remains authored, while the animal turns around a fixed saddle.
+  // The humanoid weapon/hand frame must never translate with the lower deadzone.
   const upper = root.userData.omgurkuComposite.upper;
   const neutral = { x: upper.position.x, z: upper.position.z };
   const saddleRadius = (0.5 - 0.4) * (initialWidth * 1.2);
@@ -179,10 +178,21 @@ async function main() {
     'neutral saddle retains the original authored lower depth offset');
   for (const ref of lowerBuilds) ref.group.rotation = { y: Math.PI / 2 };
   window.HobunjiOmgurkuSpecies.setPlacement({});
-  assert(Math.abs(upper.position.x - (neutral.x + saddleRadius)) < 1e-6,
-    'the rider follows the turning animal saddle laterally');
-  assert(Math.abs(upper.position.z - (neutral.z - saddleRadius)) < 1e-6,
-    'the rider follows the turning animal saddle in depth');
+  assert(Math.abs(upper.position.x-neutral.x)<1e-6 && Math.abs(upper.position.z-neutral.z)<1e-6,
+    'animal deadzone rotation never translates the upper weapon/hand frame');
+  assert(Math.abs(lowerBuilds[0].group.position.x+saddleRadius-layout.lowerOffsetX)<1e-6,
+    'the rotated lower card still meets the fixed attachment laterally');
+  assert(Math.abs(lowerBuilds[0].group.position.z-(layout.lowerOffsetZ+saddleRadius))<1e-6,
+    'the lower card pivots like a lever around its attachment');
+  for(const yaw of [-Math.PI,-1.2,0,.7,Math.PI]){
+    for(const ref of lowerBuilds)ref.group.rotation.y=yaw;
+    window.HobunjiOmgurkuSpecies.setPlacement({});
+    assert(Math.abs(upper.position.x-neutral.x)<1e-6&&Math.abs(upper.position.z-neutral.z)<1e-6);
+    for(const ref of lowerBuilds){
+      assert(Math.abs(ref.group.position.x+Math.sin(yaw)*saddleRadius-layout.lowerOffsetX)<1e-6);
+      assert(Math.abs(ref.group.position.z+Math.cos(yaw)*saddleRadius-(layout.lowerOffsetZ+saddleRadius))<1e-6);
+    }
+  }
   for (const ref of lowerBuilds) ref.group.rotation.y = 0;
   window.HobunjiOmgurkuSpecies.setPlacement({});
   assert(Math.abs(upper.position.x - neutral.x) < 1e-6);

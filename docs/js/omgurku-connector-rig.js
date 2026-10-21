@@ -17,7 +17,7 @@ const FALLBACK_BELT=[{x:.325,y:1},{x:.405,y:.99},{x:.485,y:.985},
 const NECK=[.20,.25,.30,.35,.40].map((x,i)=>({x,y:[.32,.295,.28,.295,.32][i]}));
 const DEFAULT={
  schema:ID, enabled:false, assetPath:'assets/portraitsprites/omgurku-connector.png',
- sourceTop:TOP, sourceBottom:BOTTOM, animalNeck:NECK, riderWaist:null, opacity:1,
+ sourceTop:TOP, sourceBottom:BOTTOM, animalNeck:NECK, riderWaist:null, opacity:1, upperInfluence:.65,
  shrinkwrapDirections:{sourceTop:90,sourceBottom:270,riderWaist:270,animalNeck:90}
 };
 const clone=o=>JSON.parse(JSON.stringify(o));
@@ -39,6 +39,7 @@ function normalize(raw){
    const angle=raw.shrinkwrapDirections?.[field]; // Direction arrows travel with saved/exported rigs.
    if(angle!=null && Number.isFinite(Number(angle)))out.shrinkwrapDirections[field]=((Number(angle)%360)+360)%360;
  }
+ if(raw.upperInfluence!=null && Number.isFinite(Number(raw.upperInfluence)))out.upperInfluence=clamp(raw.upperInfluence);
  if(Number.isFinite(Number(raw.opacity)))out.opacity=clamp(raw.opacity);
  // An uploaded PNG never enters a committed species JSON by accident.
  if(typeof raw.imageDataUrl==='string'&&raw.imageDataUrl.startsWith('data:image/png;base64,')
@@ -60,6 +61,10 @@ function splineAt(points,t,target={}){
  const a=points[index],b=points[index+1];
  target.x=a.x+(b.x-a.x)*f;target.y=a.y+(b.y-a.y)*f;
  return target;
+}
+function deformationFraction(t,influence=settings.upperInfluence){
+ const u=clamp(t),weight=Number.isFinite(Number(influence))?clamp(influence):.65; // Larger weights keep more of the bridge under upper-body control.
+ return Math.pow(u,Math.pow(4,2*(weight-.5)));
 }
 function sample3(points,t,target){
  const u=clamp(t)*4,i=Math.min(3,Math.floor(u)),f=u-i;
@@ -190,7 +195,7 @@ function create(THREE,root){
        if(j<=attachmentRows)local.copy(tempTop).addScaledVector(tangentTop,t);
        else if(j>=rows-attachmentRows)local.copy(tempBottom).addScaledVector(tangentBottom,t-1);
        else{
-         const u=(t-collar)/middleSpan,u2=u*u,u3=u2*u; // Smoothly join the two flat contact sections.
+         const u=deformationFraction((t-collar)/middleSpan),u2=u*u,u3=u2*u; // Smoothly join the two flat contact sections.
          local.copy(curveTop).multiplyScalar(2*u3-3*u2+1)
            .addScaledVector(tangentTop,(u3-2*u2+u)*middleSpan)
            .addScaledVector(curveBottom,-2*u3+3*u2)
@@ -245,7 +250,7 @@ function reset(){
 function updateAll(){for(const h of live)h.update();}
 global.HobunjiOmgurkuConnector={
  schema:ID,storageKey:KEY,defaults:clone(DEFAULT),
- validateFivePointSpline:valid,normalize,belt,splineAt,
+ validateFivePointSpline:valid,normalize,belt,splineAt,deformationFraction,
  create,set,snapshot,reset,updateAll,live,
 };
 })(window);

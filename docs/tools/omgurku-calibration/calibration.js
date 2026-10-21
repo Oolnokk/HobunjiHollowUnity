@@ -176,10 +176,11 @@
       state.model.position.x=(t<1?t:2-t)*.5-.25;
     }else if(state.model)state.model.position.x=0;
     state.controls?.update();
+    window.HobunjiOmgurkuWeaponPreview?.update(dt);
+    window.RuntimeFrameScheduler.checkpoint('pre-render'); // Drives the same procedural idle/grip hand phase as gameplay.
     if(state.renderer){resizeOnChange();state.renderer.render(state.scene,state.camera);}
     const frame=state.model?.userData?.omgurkuComposite?.frame || 'unavailable';
     if($('frameBadge').textContent!==frame)$('frameBadge').textContent=frame;
-    requestAnimationFrame(tick);
   }
   let lastSize='';
   function resizeOnChange(){
@@ -217,7 +218,7 @@
       document.head.append(script);
     });
     window.PerpRotation.init({angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b))});
-    requestAnimationFrame(tick);
+    window.RuntimeFrameScheduler.setFrameDriver(context=>tick(context.timestamp)); // One clock owns preview animation and the hand-driver checkpoint.
   }
   function getAppearanceRecord(){
     const idx=Number($('npcSelect').value);
@@ -258,10 +259,12 @@
           (window.HobunjiOmgurkuSpecies?.debugSnapshot()?.lastError||'no Omgurku hybrid wrapper'));
       }
       if(state.model){
+        window.HobunjiOmgurkuWeaponPreview.unbind();
         const old=state.model;state.scene.remove(old);
         window.PNGPlaneAvatar.disposeAvatarModel(old);
       }
       state.scene.add(next);state.model=next;state.profile=profile;
+      window.HobunjiOmgurkuWeaponPreview.bind(state.THREE,next);
       window.HobunjiOmgurkuConnectorAuthor?.previewReady?.();
       window.HobunjiOmgurkuSpecies.setPreviewFacing(next,Number($('headingRange').value)*Math.PI/180);
       state.built=true;
@@ -279,6 +282,7 @@
     $('diagnostics').textContent=copyJSON({
       preview:{built:state.built,scene:!!state.scene,three:!!state.THREE,profileSpecies:state.profile?.fighter?.speciesId,
         error:state.lastError, frame:state.model?.userData?.omgurkuComposite?.frame},
+      weapon:window.HobunjiOmgurkuWeaponPreview?.snapshot(),
       runtime:window.HobunjiOmgurkuSpecies?.debugSnapshot?.()||null,
       facing:{mode:window.PerpRotation?.CREATURE_PLANE_ROT_MODE,
         npcDeadzoneDegrees:(window.PerpRotation?.PERP_DEAD_RAD||0)*180/Math.PI,
@@ -366,6 +370,7 @@
         assetBase:new URL('../../assets/',location.href).href,
         configBase:new URL('../../config/',location.href).href,
       });
+      await window.HobunjiOmgurkuWeaponPreview.init();
       await initThree();
       await loadNpcSources();
       await rebuildPreview();
