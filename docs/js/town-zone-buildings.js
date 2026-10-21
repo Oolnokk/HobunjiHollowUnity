@@ -175,6 +175,7 @@
       mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     }
     _townDecorFurnitureGroups = [];
+    window.FurnitureTableSystem?.clearArea('town');
     if (!townScene || !townMap) return;
     // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
     // dev-placed/moved/removed pieces; the authored lists pass through otherwise.
@@ -217,6 +218,7 @@
         sfxOffsetX: result.sfxSource ? result.sfxSource.x - result.mesh.position.x : 0,
         sfxOffsetZ: result.sfxSource ? result.sfxSource.z - result.mesh.position.z : 0,
       };
+      window.FurnitureTableSystem?.registerPlacement('town', d, result.mesh, deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {});
       _townDecorFurnitureGroups.push(result.mesh);
     }
     for (const f of furnitureDefs) {
@@ -236,6 +238,7 @@
       const sfxSource = window.Music?.registerFurnitureSfxSource('map_hobunji_town', f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
+    window.BuildingGrassSuppression?.refreshTown?.(); // Registered furniture and locale roots now contribute their full clearing footprints.
     deps.debugLog(`spawnTownDecorFurniture: built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
 
@@ -563,6 +566,7 @@
         result.light.position.y += y + (d.postY || 0);
         result.light.position.z += d.postZ || 0;
       }
+      window.FurnitureTableSystem?.registerPlacement(mapId, d, result.mesh, deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {});
       result.mesh.userData.mapEditorRef = { mapId, kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row,
         postX: d.postX || 0, postY: d.postY || 0, postZ: d.postZ || 0, rotY: d.rotY || 0,
         postSX: d.postSX ?? d.postScale ?? 1, postSY: d.postSY ?? d.postScale ?? 1, postSZ: d.postSZ ?? d.postScale ?? 1 };
@@ -593,10 +597,12 @@
       const sfxSource = window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
+    window.BuildingGrassSuppression?.refreshArea?.(mapId, scene, zoneData);
     deps.debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
 
   window.TownZoneBuildings = {
+    grassContext: () => deps, // Late-loaded grass suppression can recover the already-initialized scene/map adapters.
     init,
     detectTownBuildings,
     loadHousePieceFaceTexture,

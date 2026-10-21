@@ -49,6 +49,27 @@ const deps = {
 };
 window.NpcPathfinding.init(deps);
 
+// Regression: the farm grid is intentionally different from the wilderness grid.
+const zoneGrid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({ type: 0, crop: false }))); // Active zone terrain for collision and arrival tests.
+zoneGrid[2][2].type = 1; // A zone wall where the farm is clear: the historical mismatch stranded followers.
+deps.isZoneArea = area => area === 'wilderness_test';
+deps.npcGridForArea = area => area === 'wilderness_test' ? zoneGrid : openGrid;
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 2), false, 'wilderness pathfinding must read the zone wall, not the farm floor');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), true, 'a walkable wilderness neighbor remains traversable');
+zoneGrid[3][2].skipFloor = true; // Plateau floor is rendered by its continuous mesa lid, not by the flat grid mesh.
+zoneGrid[3][3].mapBoundary = true; // Map-border escarpments are not traversable even if marked grass.
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 2, 3), true, 'wilderness skipFloor retains walkable plateau-lid traversal');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', 3, 3), false, 'wilderness mapBoundary blocks movement');
+assert.match(gameSource, /w\.root\._pendingZoneAdd === mapId[\s\S]{0,600}nearestWalkableTile\?\.\(mapId, fromC, fromR\)/, 'pending wilderness followers revalidate their entry tile after their zone is built');
+assert.match(gameSource, /npcRunLeanPivot\.add\(avatarGroup\)/, 'the running portrait pivots independently of its feet and tool root');
+const initialFurnitureBlocks = deps.furnitureBlocksMovementAt; // Preserves the existing interior furniture fixture during wilderness spawn tests.
+deps.furnitureBlocksMovementAt = (area, x, z) => area === 'wilderness_test' && Math.floor(x) === 0 && Math.floor(z) === 0 || initialFurnitureBlocks(area, x, z);
+const furnishedArrival = window.NpcPathfinding.nearestWalkableTile('wilderness_test', 0, 0);
+assert.notDeepEqual([furnishedArrival.c, furnishedArrival.r], [0, 0], 'wilderness spawns do not remain inside blocking outdoor furniture');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', furnishedArrival.c, furnishedArrival.r), true);
+const zoneArrival = window.NpcPathfinding.nearestWalkableTile('wilderness_test', 2, 2);
+assert.notDeepEqual([zoneArrival.c, zoneArrival.r], [2, 2], 'wilderness entry relocates a blocked arrival');
+assert.equal(window.NpcPathfinding.isNpcTileWalkable('wilderness_test', zoneArrival.c, zoneArrival.r), true);
 assert.equal(window.NpcPathfinding.isNpcTileWalkable('interior', 1, 1), true);
 assert.equal(window.NpcPathfinding.canNpcBeeline('interior', 1.5, 1.5, 3, 1), false, 'thin wall must break a beeline');
 
@@ -259,3 +280,45 @@ const cutWalker = {
   assert.ok(debug.pathReplans >= 2);
   console.log('npc collision-aware pathing tests passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });
+
+// A sleeper may need several hops through its existing multi-tile bed before reaching clear floor.
+{
+ const bedGrid=Array.from({length:4},(_,r)=>Array.from({length:9},(_,c)=>({type:r===1&&c>=1&&c<=7?0:1}))); // A wall-side bed with its only exit at the foot end.
+ const bedWindow={}; // Fresh pathfinding owner keeps this regression independent of the live-walker fixtures above.
+ vm.runInNewContext(pathfindingSource,{window:bedWindow,console,Math,Number,Date,Object,Array,Map,Set,WeakMap,WeakSet,Promise});
+ bedWindow.NpcPathfinding.init({...deps,npcGridForArea:()=>bedGrid,getGrid:()=>bedGrid,getInteriorGrid:()=>bedGrid,
+   furnitureBlocksMovementAt:(area,x,z)=>x>=1&&x<4&&z>=1&&z<2});
+ const path=bedWindow.NpcPathfinding.findNpcPath('interior',1.5,1.5,7,1); // Festival, work and other schedule changes all use this same path owner.
+ assert(path?.length,'a sleeper can plan from the head of a multi-tile bed through its foot end');
+ assert(path.some(p=>p.col===2)&&path.some(p=>p.col===3),'route preserves physical bed-exit steps');
+ assert(path.every(p=>p.row===1),'bed escape never enters the wall');
+ assert.equal(bedWindow.NpcPathfinding.findNpcPath('interior',7.5,1.5,2,1),null,'an awake NPC cannot use the escape rule to enter another occupied bed');
+}
+
+// Authored bedrooms must be escapable through their real floor and furniture layout.
+{
+ const defsAt=gameSource.indexOf('const DECORATIVE_FURNITURE_DEFS =');
+ const defs=vm.runInNewContext(gameSource.slice(defsAt,gameSource.indexOf('\n      };',defsAt)+9)+';DECORATIVE_FURNITURE_DEFS'); // Same dimensions used by runtime placement.
+ for(const [name,stationId] of [['map_i_general_store_F2_R1','station_v4n8x'],['map_i_general_store_F2_R2','station_r3p5w'],['map_i_kunjis_potions_F2','station_di22s']]) {
+  const map=JSON.parse(fs.readFileSync(path.join(repo,'docs/config/maps',name+'.json'),'utf8'));
+  const floor=new Set(map.floor.map(p=>p.join(','))),walls=new Set(map.colliders.map(p=>p.join(','))); // Authored structural cells stay impassable.
+  const grid=Array.from({length:map.rows},(_,r)=>Array.from({length:map.cols},(_,c)=>({type:floor.has(c+','+r)&&!walls.has(c+','+r)?0:1})));
+  const owner={};
+  const env={window:owner,console,Math,Number,Date,Object,Array,Map,Set,WeakMap,WeakSet,Promise};
+  vm.runInNewContext(fs.readFileSync(path.join(repo,'docs/js/furniture-table-system.js'),'utf8'),env);
+  for(const record of map.furniture) {
+   const pair=Object.entries(defs).find(([,def])=>def.itemKey===record.itemKey);if(!pair)continue;
+   const [key,def]=pair;
+   owner.FurnitureTableSystem.registerPlacement(name,{...record,key,rotY:record.gridRot??record.rotY},{parent:{},position:{x:record.col+(record.gridW||def.fw)/2+(record.postX||0),y:0,z:record.row+(record.gridD||def.fd)/2+(record.postZ||0)},scale:{x:record.postSX||1,y:1,z:record.postSZ||1}},def);
+  }
+  vm.runInNewContext(pathfindingSource,env);
+  owner.NpcPathfinding.init({...deps,isBuildingArea:()=>true,npcGridForArea:()=>grid,getGrid:()=>grid,getInteriorGrid:()=>grid,furnitureBlocksMovementAt:(area,x,z)=>owner.FurnitureTableSystem.blocksBox(area,x,z)});
+  const station=map.npcStations.find(s=>s.id===stationId),[c,r]=map.exits[0].tiles[0];
+  const target={c,r},walker={area:name,rec:{id:name},currentScheduleTarget:target,root:{position:{x:station.col+.5,z:station.row+.5}},state:'idle',_tryStartGridPath(){return false;},_stepGridPath:vm.runInNewContext('({'+stepGridPathSource+'})._stepGridPath',env),moveToward(tx,tz,dt){const p=this.root.position,dx=tx-p.x,dz=tz-p.z,d=Math.hypot(dx,dz),travel=Math.min(d,dt*1.25);if(d){p.x+=dx/d*travel;p.z+=dz/d*travel;}return d<=travel;}}; // Exercise production waypoint stepping, not just search success.
+  owner.NpcPathfinding.decorateWalkerCollision(walker);
+  assert(owner.NpcPathfinding.findNpcPath(name,walker.root.position.x,walker.root.position.z,c,r)?.length,name+' can plan from its bed to its stairs');
+  assert(walker._tryStartGridPath(target));
+  for(let frame=0;frame<2400&&Math.hypot(walker.root.position.x-c-.5,walker.root.position.z-r-.5)>.01;frame++)walker._stepGridPath(target,1/60);
+  assert(Math.hypot(walker.root.position.x-c-.5,walker.root.position.z-r-.5)<.01,name+' walks out of bed and reaches its stairs');
+ }
+}

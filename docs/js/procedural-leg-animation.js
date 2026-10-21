@@ -862,6 +862,7 @@
     const legBend = { left: { x: bendBase.x, z: bendBase.z }, right: { x: -bendBase.x, z: bendBase.z } };
 
     const state = {
+      anatomyRevision: 0, // Rare GLB/torso-scan completion invalidates action-start anatomy without rescanning it every frame.
       runLean: 0, // Current forward body pitch consumed by player/enemy render composition.
       runBlend: 0, // Blends combat running into the existing walking gait.
       motionMode: 'idle', // Reported by the existing mobile leg diagnostics.
@@ -1096,6 +1097,7 @@
         state.right = rightMesh;
         state.leftContactY = leftMesh.userData.contactRadiusY;
         state.rightContactY = rightMesh.userData.contactRadiusY;
+        state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
         window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
@@ -1125,6 +1127,7 @@
         const recenterShift = posteriorX - (scannedLeftX + scannedRightX) / 2;
         state.idleLeftX = scannedLeftX + recenterShift;
         state.idleRightX = scannedRightX + recenterShift;
+        state.anatomyRevision++;
         syncHipX('left');
         syncHipX('right');
         if (state.left) { state.leftTarget.x = state.idleLeftX; applyLegChain('left'); }
@@ -1310,6 +1313,46 @@
 
     function isHoverMode() {
       return !!state.hoverEnabled;
+    }
+
+    const pairedFootLocal = new THREE.Vector3(); // Reused inverse-transform target for externally owned grounded poses.
+    const pairedFootRotation = new THREE.Quaternion(); // Cancels body pitch so planted soles stay horizontal.
+    const pairedForward = new THREE.Vector3(0,0,1); // Anatomical forward knee pole shared with the normal folding solver.
+    let pairedBend = null; // Applies the species/gender bend to the knee pole without per-frame allocation.
+    function motionAnatomy() {
+      return ['left','right'].map(side => ({side,hip:legChains[side].hip.position.clone(),
+        ankle:new THREE.Vector3(side==='left'?state.idleLeftX:state.idleRightX,state[`${side}ContactY`],0),
+        length:Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])),bend:{...legBend[side]}})); // Captured once when a paired action starts, including the actual posterior and GLB sole offset.
+    }
+    function applyWorldFootTargets(targets,footWorldQuaternion=null) {
+      if(state.disposed || !window.LegBones)return false;
+      root.updateWorldMatrix(true,false);
+      pairedBend ||= new THREE.Euler(); // Lazily initialized only for an explicitly owned paired pose.
+      for(const side of ['left','right']) {
+        const chain=legChains[side],mesh=state[side],target=targets?.[side]; // Uses the existing bones that also drive pants deformation.
+        if(!mesh || !target)continue;
+        root.worldToLocal(pairedFootLocal.copy(target));
+        const length=Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])); // Rest segment length also handles authored posteriors below the sprite root; never use a signed height as a length.
+        const distance=pairedFootLocal.distanceTo(chain.hip.position); // Knee flex stays below 90 degrees; targets never lengthen the leg.
+        if(distance>1e-8)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*.72,Math.min(length*.999,distance))/distance).add(chain.hip.position);
+        pairedForward.set(0,0,1).applyEuler(pairedBend.set(legBend[side].x*Math.PI/180,0,legBend[side].z*Math.PI/180));
+        const solved=window.LegBones.solveTwoBoneLeg(THREE,{hip:chain.hip.position,foot:pairedFootLocal,foldMaxLength:length,foldForward:pairedForward}); // Shared fixed-length two-bone solve; authored bend chooses the safe forward pole.
+        chain.thigh.position.set(0,0,0);
+        chain.thigh.quaternion.copy(solved.thighQuaternion);
+        chain.calf.position.set(0,-solved.thighLength,0);
+        chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+        chain.calf.userData.hobunjiCalfLength=solved.calfLength;
+        mesh.position.set(0,-solved.calfLength,0);
+        // The foot is parented under the calf, so cancel that complete frame rather than only the dancer root.
+        chain.calf.getWorldQuaternion(pairedFootRotation).invert();
+        mesh.quaternion.copy(pairedFootRotation);
+        if(footWorldQuaternion)mesh.quaternion.multiply(footWorldQuaternion);
+        state[`${side}Target`].copy(pairedFootLocal);
+        applyBoneGuideTransforms(chain,solved.thighLength,solved.calfLength);
+      }
+      state.runLean=0;
+      state.motionMode='paired-dance';
+      return true;
     }
 
     function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
@@ -1500,7 +1543,7 @@
     }
 
     return {
-      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge,
+      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets,
       getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
@@ -1514,6 +1557,7 @@
       },
       setHoverMode, isHoverMode,
       standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
+      anatomyRevision: () => state.anatomyRevision,
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
   }

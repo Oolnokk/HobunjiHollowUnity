@@ -1152,6 +1152,8 @@
     };
   }
 
+  // Live festival music replaces the ordinary soundtrack. This applies to scheduled BGM and ambient cues only; combat music keeps its own eligibility.
+  function festivalSilencesAmbient(area) { return window.FestivalSystem?.silencesTownMusic?.(area) === true; }
   function isAudioEntryEligible(entry, area = deps.getCurrentArea()) {
     if (!entry) return false;
     return window.ConditionRegistry?.entryEligible
@@ -1186,6 +1188,7 @@
 
   function isBgmTrackEligible(track, area = deps.getCurrentArea(), { alreadyPlaying = false } = {}) {
     if (!track?.url) return false;
+    if (festivalSilencesAmbient(area)) return false;
     if (track.rainingOnly && !deps.calendar.isRaining) return false;
     if (track.nightOnly && !isNightTime()) return false;
     if (!isSunriseBgmEligible(track)) return false;
@@ -1234,7 +1237,7 @@
     if (area === _ambientCueState.area && snd === _ambientCueState.currentCue) return true; // Finish the chosen motif if conditions change mid-cue.
     return (idx.ambient_cues || []).some(cue => {
       const cueUrl = (idx.__basePath || '') + (cue?.file || '');
-      return cue.file && resolveAudioUrl(cueUrl) === resolved && isAudioEntryEligible(cue, area) && !audioUrlFailed(cueUrl);
+      return cue.file && resolveAudioUrl(cueUrl) === resolved && !festivalSilencesAmbient(area) && isAudioEntryEligible(cue, area) && !audioUrlFailed(cueUrl);
     });
   }
 
@@ -1436,7 +1439,7 @@
       if (!idx && _ambientCueState.indexId && _cueIndexLoad.status !== 'ready') return; // Allow manifest retries during B instead of immediately replaying the song.
       const eligibleCues = cues.filter(cue => {
         const cueUrl = (idx?.__basePath || '') + (cue?.file || '');
-        return cue?.file && isAudioEntryEligible(cue, currentArea) && !audioUrlFailed(cueUrl);
+        return cue?.file && !festivalSilencesAmbient(currentArea) && isAudioEntryEligible(cue, currentArea) && !audioUrlFailed(cueUrl);
       });
       if (!eligibleCues.length) { finishAmbientCuePhase('no playable cues: index=' + _ambientCueState.indexId + ' pool=' + cues.length + ' failed=' + cues.filter(cue => audioUrlFailed((idx?.__basePath || '') + cue.file)).length); _ambientCueState.nextAt = performance.now() + 5000; return; }
       const alternates = eligibleCues.filter(cue => cue.id !== _ambientCueState.lastCueId); // Avoid a repeated motif when more than one is eligible.
@@ -1924,6 +1927,7 @@
     playGameplayCue,
     resetAmbientCueTimer,
     updateAmbientCues,
+    ambientDiagnostics: () => ({ area: _ambientCueState.area, mode: _ambientCueState.mode, bgm: _ambientCueState.currentBgm?._trackUrl || null, cue: _ambientCueState.currentCue?._trackUrl || null, festivalSilenced: festivalSilencesAmbient(deps?.getCurrentArea?.()) }), // Read-only snapshot for headless/mobile audio checks.
     updateLyreDucking,
     updateExteriorBgs,
     updateRainAudio,

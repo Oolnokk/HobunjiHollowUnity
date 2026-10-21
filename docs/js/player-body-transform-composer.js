@@ -137,6 +137,7 @@
   // screen, clamp the locked branch here rather than reintroducing a second
   // aim authority upstream.
   function applyPlayerNeckYawLimit(renderDebug, camera) {
+    if(window.CharacterActionLocks?.isLocked?.('player','head'))return; // A scoped authored/procedural gaze keeps its own anatomical limits.
     const neckJoint = currentPlayerNeckJoint();
     if (!neckJoint) return;
     if (headAimEnabled && headAimSource === 'fishing-water') {
@@ -173,7 +174,7 @@
   }
 
   function applyPlayerHeadAim(undo, renderDebug) {
-    if (!headAimEnabled) return;
+    if (!headAimEnabled || window.CharacterActionLocks?.isLocked?.('player','head')) return;
     const neck = currentPlayerNeckJoint(); // Uses the current rebuilt rig rather than a second head registry.
     if (!neck?.parent) return;
     neck.updateWorldMatrix(true, false);
@@ -376,6 +377,7 @@
   const renderFacingPivot = new THREE.Vector3(); // Reused posterior pivot for final facing correction.
   const renderFacingRotation = new THREE.Quaternion(); // Reused collision-free billboard yaw delta.
   function applyRenderedFacingDeadzone(camera, undo, renderDebug) {
+    if(window.CharacterActionLocks?.isLocked?.('player','facing'))return; // Paired inward-facing choreography must not be counter-rotated by the ordinary billboard clamp.
     const api = window.PerpRotation; // Shared hysteresis/clamp authority; unavailable in isolated editor fixtures.
     if (!api?.perpClamp || !camera?.position || playerMesh?.visible === false) return;
     const perps = api.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
@@ -483,7 +485,8 @@
         composedWorldEulerDeg: null,
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
-      if (playerMesh) {
+      const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
+      if (playerMesh && !poseLocked) {
         const bodyDelta = resolveDelta('player');
         const externalDelta = resolveDelta('external');
         renderDebug.appliedOrder = [...new Set([...bodyDelta.applied, ...externalDelta.applied])];
@@ -505,7 +508,7 @@
         }
       }
 
-      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); applyWorldChannels(undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
+      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
       lastRenderDebug = renderDebug;
 
       try {

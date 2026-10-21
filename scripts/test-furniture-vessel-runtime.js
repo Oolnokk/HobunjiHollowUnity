@@ -84,7 +84,7 @@ assert(vessel.includes('InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(tar
 assert(vessel.includes('InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(ready, cached'),
   'already-cached authored furniture must use the same ambient VFX readiness hook');
 
-assert(zone.includes("ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js')"),
+assert.match(zone, /ensureCompanionScript\('FurnitureVesselRuntime', 'furniture-vessel-runtime\.js(?:\?v=[A-Za-z0-9_-]+)?'\)/,
   'normal game boot must install the shared vessel correction');
 assert(authoredRuntime.includes('window.ProceduralFurniture.buildPartMesh(part, baseColor)'),
   'authored furniture should consume the corrected shared part builder');

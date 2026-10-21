@@ -906,7 +906,10 @@
       refreshModelProfile();
     });
 
+    let poseOwner=null, poseProvider=null; // Scoped procedural actions share the normal hand driver and its render-time synchronization.
     const api = {
+      setPoseProvider(owner, provider) { if(provider || poseOwner===owner){poseOwner=provider?owner:null;poseProvider=provider||null;} },
+      applyOwnedPose() { if(!poseProvider)return false;poseProvider(api);return true; },
       group: root,
       parent,
       avatarRoot: options.avatarRoot || null,
@@ -942,6 +945,7 @@
           speciesId,
           gender,
           mode: 'direct-tool-attachments',
+          poseOwner,
           noArmIK: true,
           authoredGlbOriginPreserved: true,
           modelKey: state.modelKey,

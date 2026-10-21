@@ -269,6 +269,7 @@
       deps.interiorFurnitureObjects.forEach(obj => {
         if (obj.derivedLinkedWindow) return; // Opposite-side farmhouse windows are runtime derivatives; only the inventory-backed primary belongs in the authoritative decor save.
         layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
+          tableId: obj.tableId || null, surfaceItems: obj.surfaceItems || null, serviceId: obj.serviceId || null,
           patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
           localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
           localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
@@ -428,7 +429,7 @@
         console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
     });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides }) => {
+    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId }) => {
       try {
         if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
         const def = deps.DECORATIVE_FURNITURE_DEFS[key];
@@ -443,6 +444,8 @@
             mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
             ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
             localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
+          restoredObject.tableId = tableId || ''; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
+          window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def); // Restores map-local relationships only after the stable furniture id exists.
           restoredObject.patternOverrides = patternOverrides || null;
           window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
           deps.interiorFurnitureObjects.push(restoredObject);

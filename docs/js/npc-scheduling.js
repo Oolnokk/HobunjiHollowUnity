@@ -111,7 +111,17 @@
     const minute = parseNpcTimeMinutes(time); // Used to place the authored arrival/departure clock time on that day.
     return dayIndex >= 0 && minute !== null ? dayIndex * 1440 + minute : null;
   }
+  const presenceProviders = new Map(); // NPC-keyed event windows reuse visitor arrival/departure and flood sheltering.
+  function registerPresenceProvider(npcId, provider) {
+    if (!npcId) return false;
+    if (typeof provider === 'function') presenceProviders.set(String(npcId), provider);
+    else presenceProviders.delete(String(npcId));
+    return true;
+  }
+  function hasPresenceSchedule(rec) { return !!rec?.visitorPresence || presenceProviders.has(rec?.id); }
   function getVisitorPresence(rec) {
+    const provided = presenceProviders.get(rec?.id)?.(rec);
+    if (provided) return provided;
     const presence = rec?.visitorPresence; // Used as the optional recurring lifecycle authored by schedule-overrides.json.
     if (!presence?.entrance || !Array.isArray(presence.visits)) return null;
     const dayIndex = VISITOR_WEEKDAYS.indexOf(window.CalendarSystem.currentWeekdayName()); // Used to locate the current game time within the visitor week.
@@ -169,6 +179,8 @@
         || deps.getDecorativeFurnitureKeyByItemKey?.(station.sourceFurnitureKey)
         || (deps.decorativeFurnitureDefs?.[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
       seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
+      furnitureId: station.furnitureId || '', // Optional explicit chair instance, shared by table membership and seated pose resolution.
+      tableId: station.tableId || '', // Authored relationship; never guessed from nearby tables.
       toolKey: station.toolKey || '',
       toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
       toolAnimStyle: station.toolAnimStyle || '',
@@ -194,6 +206,10 @@
       // no roles authored is simply never returned by findStationsByRole
       // below, and every existing exact-stationId lookup is unaffected.
       roles: Array.isArray(station.roles) ? station.roles.filter(r => typeof r === 'string' && r) : [],
+      festivalLocaleKind: station.festivalLocaleKind || '', // Lets the festival controller recognize dancing and dining targets after normalizing the station.
+      festivalLocaleParent: station.festivalLocaleParent || '', // Keeps a stable movable locale identity when players relocate its root in the editor.
+      festivalRole: station.festivalRole || '', // Preserves guest/musician/diner semantics across the existing pathfinding registry.
+      festivalNpcId: station.festivalNpcId || '', // Preserves named host assignment without cloning or mutating NPC schedules.
       lookAt: normalizeStationLookAt(station.lookAt),
     };
   }
@@ -684,6 +700,7 @@
         area: walker.area, state: walker.state,
         x: walker.root?.position?.x, z: walker.root?.position?.z,
         stationToolKey: walker.stationToolKey || null,
+        updateError: walker._npcUpdateError?.stack || null, // Read-only mobile diagnostic for an NPC isolated from the world loop until its next retry.
         currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
         floodShelter: floodShelterAssignmentsByNpcId.get(npcId) ? { ...floodShelterAssignmentsByNpcId.get(npcId) } : null,
       };
@@ -707,6 +724,8 @@
     resolveNpcStationTarget,
     findStationsByRole,
     getVisitorPresence,
+    registerPresenceProvider,
+    hasPresenceSchedule,
     resolveNpcScheduleTarget,
     registerTargetOverride,
     applyTownFloodShelter,

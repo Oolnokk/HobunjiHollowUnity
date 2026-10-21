@@ -14,7 +14,7 @@ function rectangle(prop) {
   const def = defs[prop.key]; // The same unrotated center and post-scale as TownZoneBuildings.
   assert(def, `unknown furniture ${prop.key}`);
   const c = prop.col + def.fw / 2 + (prop.postX || 0), r = prop.row + def.fd / 2 + (prop.postZ || 0);
-  const w = def.fw * (prop.postSX ?? prop.postScale ?? 1), d = def.fd * (prop.postSZ ?? prop.postScale ?? 1);
+  const w = (['bandstand','dance'].includes(prop.festivalLocale?.kind) ? prop.festivalLocale.width : def.fw) * (prop.postSX ?? prop.postScale ?? 1), d = (['bandstand','dance'].includes(prop.festivalLocale?.kind) ? prop.festivalLocale.depth : def.fd) * (prop.postSZ ?? prop.postScale ?? 1);
   const yaw = (prop.rotY || 0) * Math.PI / 180;
   const halfW = (Math.abs(Math.cos(yaw)) * w + Math.abs(Math.sin(yaw)) * d) / 2;
   const halfD = (Math.abs(Math.sin(yaw)) * w + Math.abs(Math.cos(yaw)) * d) / 2;
@@ -31,7 +31,7 @@ for (const layout of town.layouts) {
     assert(!props.slice(0, index).some(other => overlaps(rect, rectangle(other))), `${prop.id} overlaps another prop`);
     for (let row = Math.floor(rect[1]); row < Math.ceil(rect[3]); row++) for (let col = Math.floor(rect[0]); col < Math.ceil(rect[2]); col++) {
       const tile = town.tiles[`${col},${row}`];
-      assert(!['path', 'stream', 'river', 'trench', 'tilled'].includes(tile?.type), `${prop.id} obstructs ${tile?.type} at ${col},${row}`);
+      assert(prop.festivalRoadArch || !['path', 'stream', 'river', 'trench', 'tilled'].includes(tile?.type), `${prop.id} obstructs ${tile?.type} at ${col},${row}`); // Tall arches explicitly span unobstructed roads.
     }
     for (const exit of town.transitions) {
       const dx = Math.max(rect[0] - exit.col - .5, 0, exit.col + .5 - rect[2]);
@@ -47,6 +47,23 @@ for (const layout of town.layouts) {
     const key = `${station.col},${station.row}`;
     assert(!occupied.has(key), `${station.id} shares another guest's spot`); occupied.add(key);
   }
+}
+// Validate every expanded chair/table and destination, not only the locale roots.
+const geometryWindow = {};
+const geometryContext = vm.createContext({window:geometryWindow,console});
+vm.runInContext(source('festival-calendar'),geometryContext);
+vm.runInContext(source('map-layout-system'),geometryContext);
+const festivalMap = geometryWindow.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:120});
+for (const prop of festivalMap.decor.filter(p=>p.festivalLocaleParent)) {
+  const rect=rectangle(prop);
+  assert(!buildings.some(b=>overlaps(rect,b)),`${prop.id} inside building`);
+  for(let r=Math.floor(rect[1]);r<Math.ceil(rect[3]);r++)for(let c=Math.floor(rect[0]);c<Math.ceil(rect[2]);c++)
+    assert(!['path','stream','river','trench'].includes(town.tiles[`${c},${r}`]?.type),`${prop.id} on path/water ${c},${r}`);
+  assert(Math.hypot((rect[0]+rect[2])/2-31.5,(rect[1]+rect[3])/2-31.5)<19,`${prop.id} too far from square`);
+}
+for(const st of festivalMap.npcStations.filter(s=>s.festivalLocaleParent)) {
+  assert(!['path','stream','river','trench'].includes(town.tiles[`${Math.floor(st.col)},${Math.floor(st.row)}`]?.type),`${st.id} stands on path/water`);
+  assert(!buildings.some(b=>overlaps([st.col+.2,st.row+.2,st.col+.8,st.row+.8],b)),`${st.id} inside building`);
 }
 // Editor copy-on-write, JSON export, and switching back to the untouched base.
 const editorContext = vm.createContext({});
@@ -104,3 +121,7 @@ assert(scheduling.resolveNpcStationTarget('other'));
   assert.equal(builds, 2); assert.equal(transitions, 3); assert.equal(context._workspaceDefinition.maps[0].decor.length, 2);
   console.log('Festival spacing, open exits, editor round-trip, station cleanup, and live layout lifecycle passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+const atlasUrls=[]; // Nested editor documents must still resolve textures from docs/assets.
+vm.runInNewContext(source('festival-props'),{URL,document:{currentScript:{src:'https://example.test/commit/docs/js/festival-props.js'}},window:{THREE:{TextureLoader:class {load(url){atlasUrls.push(url);return {};}}}}});
+assert.deepEqual(atlasUrls,['https://example.test/commit/docs/assets/furniture/festival-wood.png','https://example.test/commit/docs/assets/furniture/festival-flags.png']);

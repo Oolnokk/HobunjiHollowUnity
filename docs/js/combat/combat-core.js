@@ -1594,6 +1594,16 @@
 
   window.HobunjiAlcohol = {
     profileForItem(key) { return alcoholProfileForDef(itemDefs()?.[key]); },
+    profileForDef(def) { return alcoholProfileForDef(def); }, // Same strength table for temporary drinks that are not inventory items (the Gorkunash keg cup).
+    // One swig of a drink that has no inventory entry: identical drunkenness/health/blackout math to a bottled swig.
+    drinkDef(def, stars = 3, key = def?.key || 'virtual') {
+      const player = window.Combat?.deps?.player, profile = alcoholProfileForDef(def);
+      if (!player || !profile) return { ok: false, message: "No alcoholic drink to consume." };
+      const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+      const result = RS.addDrunkenness(player, profile.footing, profile.health * (HEALTH_QUALITY_MULTIPLIERS[safeStars] || 1), { source: key, label: def?.label || key, stars: safeStars });
+      lastDrink = { key, label: def?.label || key, footingAdded: result.footingAdded, healthAdded: result.healthAdded, deficitPercent: result.deficitPercent, at: performance.now() };
+      return { ok: true, profile, result, message: `${def?.icon || "🍺"} Drank a swig of ${def?.label || key}.${result.blackout ? ` Blackout: ${Math.round(result.deficitPercent)}% deficit.` : ""}` };
+    },
     blackoutMinutesForDeficit(deficitPercent) {
       return Math.max(BLACKOUT_MIN_SKIP_MINUTES,
         Math.round(Math.max(1, Number(deficitPercent) || 0) * BLACKOUT_MINUTES_PER_PERCENT));

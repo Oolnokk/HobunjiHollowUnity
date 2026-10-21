@@ -578,7 +578,13 @@
     return originalStart(creature, resolvedId, context);
   };
 
-  window.HobunjiGrehlrBurrow = { applyConfig, tuning }; // Used by debug/editor integrations and the compatibility loader's already-loaded check.
+  function applyForagingDivePose(creature, progress) {
+    const eased = easeOutCubic(progress); // Shares the first Grehlr burrow animation and allows a straight reverse instead of emergence.
+    setDivePose(creature, eased);
+    creature.scaleY = 1 - (1 - tuning.HIDDEN_SCALE_Y) * eased;
+  }
+
+  window.HobunjiGrehlrBurrow = { applyConfig, tuning, applyForagingDivePose }; // Used by debug/editor integrations and the compatibility loader's already-loaded check.
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.grehlrBurrow; // Used when authored combat config finished loading before this module executed.
   if (initialConfig) applyConfig(initialConfig);

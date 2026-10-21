@@ -687,6 +687,25 @@
     if (!debug) return null;
     const entries = debug.entries || [];
     const lines = [`Frame scheduler: registered=${debug.registered} enabled=${debug.enabled} scheduled=${debug.scheduled ? 1 : 0} frameDriver=${debug.hasFrameDriver ? 'attached' : 'MISSING'}${debug.frameDriverErrorCount ? ` driverErrors=${debug.frameDriverErrorCount} lastDriverError=${String(debug.frameDriverLastError || '').split('\n')[0]}` : ''}`];
+    if (debug.frameDriverLastError) lines.push(`Gameplay error trace: ${String(debug.frameDriverLastError).split('\n').slice(0, 6).join(' | ')}`);
+    const portraitLife = window.WorldPortraitLife?.snapshot?.(); // On-demand mobile report verifies the one-tile breathing limit and crowd render pressure.
+    if (portraitLife) {
+      lines.push(`World breathing: player + NPCs within ${portraitLife.config.farTiles} tile; NPC refreshes=${portraitLife.npcRefreshes} distance skips=${portraitLife.npcDistanceSkips} busy skips=${portraitLife.npcBudgetSkips} pending=${portraitLife.npcLifePending ? 1 : 0}`);
+      lines.push('Latest breathing change: one-tile NPC radius; one NPC portrait composite at a time; player animation remains independent.');
+    }
+    for (const walker of window._npcWalkers || []) {
+      if (walker._npcUpdateError) lines.push(`NPC update error (${walker.rec?.id || 'npc'}): ${walker._npcUpdateError.stack.split('\n').slice(0, 6).join(' | ')}`);
+    }
+    const tables = window.FurnitureTableSystem?.snapshot?.(); // On-demand, so table diagnostics never add per-frame serialization.
+    if (tables) lines.push(`Furniture tables: ${JSON.stringify(tables)}`);
+    const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
+    if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
+    const npcPathing = window.NpcPathfinding?.debugSnapshot?.(); // Search/blocked-move counters help distinguish a stuck sleeper from a scheduling issue.
+    if (npcPathing) lines.push(`NPC pathfinding: ${JSON.stringify(npcPathing)}`);
+    const following = window.NpcFollowing?.snapshot?.(); // On-demand diagnostics keep mobile reports useful without adding per-frame serialization.
+    if (following) lines.push(`NPC company: ${JSON.stringify(following)}`);
+    const music = window.MusicMinigame?.diagnostics?.();
+    if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);

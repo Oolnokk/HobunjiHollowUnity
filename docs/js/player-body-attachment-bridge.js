@@ -30,8 +30,8 @@
     }
   }
   if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-09-18-uploads2') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20260918uploads2', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20260918uploads2', 'animal-head-rig-authored');
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261021h5726e9c', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261021h5726e9c', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 3) {

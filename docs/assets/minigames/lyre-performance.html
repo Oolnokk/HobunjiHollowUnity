@@ -1575,6 +1575,7 @@
     gameplaySelection:'freeplay', // V86: the song selector doubles as the Free Play/song mode switch.
     bpm:104,
     hitWindow:170,
+    ambientOnly:false, // Hidden NPC performances never consume keyboard/controller input or interrupt their generated song.
     game:{active:false,startTime:0,pausedAt:0,pauseAccum:0,events:[],score:0,combo:0,hits:0,attempts:0,total:0,travelMs:3000,endAt:0,songType:null,beatMs:0,quarterBeatMs:0,timeSignature:[4,4],beatGrouping:[4],countInBeats:4,countInMs:0,totalSongBeats:0,demoActive:false,demoMode:null,demoNextSlowArpDirection:'forward',backupAccompaniment:false}, // Song notes, metronome, harmony, auto-pick, and successful-preview playback all read this shared beat transport.
     log:[]
   };
@@ -3670,13 +3671,14 @@
 
   function backupPlayerInputBlocked(sourceId = 'player input') {
     const source = String(sourceId || '');
+    if (state.ambientOnly && !source.startsWith('demo-')) return true;
     if (!state.game.backupAccompaniment || state.backupPlayerEquipped !== false || source.startsWith('demo-')) return false;
     feedback('Kurraya stowed','#ffc45f');
     return true;
   }
 
   function interruptSuccessfulPreviewForPlayer(sourceId = 'player input') {
-    if (!state.game.demoActive || String(sourceId).startsWith('demo-')) return false;
+    if (state.ambientOnly || !state.game.demoActive || String(sourceId).startsWith('demo-')) return false;
     if (state.game.backupAccompaniment) return false; // Backup freeplay is deliberately allowed over the lead character's successful preview run.
     stopSong('Successful preview interrupted by player input.');
     log('Successful preview interrupted',String(sourceId));
@@ -4492,6 +4494,7 @@
     const bankKeyMap = new Map([['ArrowUp','lt'],['ArrowRight','rt'],['ArrowLeft','lb'],['ArrowDown','rb']]); // Plain arrows select the five color-group banks around Open.
     const autoPickSectorMap = new Map([['ArrowUp',0],['ArrowRight',1],['ArrowDown',2],['ArrowLeft',3]]); // Shift+Arrow selects one of the four slottable Auto Pick modes.
     window.addEventListener('keydown', event => {
+      if (state.ambientOnly) return;
       const hostedLayout = window.__hobunjiHostedInputLayout; // Prevents hidden iframe keyboard bindings from leaking into Mobile or Controller layout.
       if (hostedLayout && hostedLayout !== 'keyboard') return;
       if (event.repeat || event.target?.matches?.('input,select,textarea')) return;
@@ -4575,7 +4578,7 @@
   }
 
   function pollGamepad() {
-    const pads = navigator.getGamepads?.() || [];
+    const pads = state.ambientOnly ? [] : (navigator.getGamepads?.() || []);
     let gamepad = state.gamepadIndex != null ? pads[state.gamepadIndex] : null;
     if (!gamepad) {
       gamepad = [...pads].find(Boolean);
@@ -7726,6 +7729,7 @@
     // songId lets a host join the player into whatever a nearby NPC is
     // already leading rather than always falling back to state.selectedSong.
     async startBackupPreviewSong(songId) {
+      state.ambientOnly = false;
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.backupPlayerEquipped = state.backupPlayerEquipped !== false;
@@ -7747,7 +7751,12 @@
     // startSong/the endAt handler below — for as long as an NPC is parked
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
+    ambientPerformanceState() {
+      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,generated:!!state.game.proceduralAmbient,inputCount:state.inputCount};
+    },
     async startAmbientLead(songId, footstepSampleUrl) {
+      state.ambientOnly = true; // Set before audio loading so held overworld controls cannot hijack an initializing NPC performance.
+      releaseAllInputs();
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.ambientMetronomeBuffer = null;

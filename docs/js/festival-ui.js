@@ -53,15 +53,26 @@
     const f = api.festival();
     const type = prop.activity.type;
     root.querySelector('#festivalTitle').textContent = `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
-    root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings 10:00–22:00`;
+    root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings 15:00–01:00`;
     const content = root.querySelector('#festivalContent');
     let html = '';
     if (type === 'welcome') {
       html = `<p>${esc(f.description)}</p><p class="festival-note">All roads, building entrances, and town exits remain open. Rewards are once per festival unless stated otherwise.</p><ul>${api.activityProps().filter(p => p.activity.type !== 'welcome').map(p => `<li>${esc(p.activity.label || window.FestivalCalendar.activityLabels[p.activity.type])} — town tile ${p.col}, ${p.row}</li>`).join('')}</ul>`;
     } else if (type === 'potluck' || type === 'offering') {
       const done = api.claimed(type);
-      html = `<p>${type === 'potluck' ? 'Give one cooked meal. Quality 1–5 earns 1 / 3 / 6 / 10 / 16 Favor with every townsfolk. One contribution this festival.' : 'Give one item. Its 1–5 star quality becomes your chosen blessing’s level. It lasts 336 calendar days, replacing your previous ancestor blessing. One offering this festival.'}</p>`;
-      if (done) html += '<p>You have completed this year’s offering.</p>';
+      html = `<p>${type === 'potluck' && f.id==='gorkunash'
+        ? 'Choose one cooked dish to contribute during Gorkunash. Every villager who likes or tolerates it receives ten times the normal gift Favor; those who dislike or hate it receive nothing. The sixth pot is reserved for your dish and becomes a fresh meal on later festival days.'
+        : type==='potluck'?'Give one cooked meal to the feast.':'Give one item. Its 1–5 star quality becomes your chosen blessing’s level, lasting 336 days.'}</p>`;
+      if(type==='potluck'&&f.id==='gorkunash') {
+        const bowl=api.festivalBowl();
+        const dishes=api.feastMenu();
+        html+=`<h3>Help yourself at the six pots</h3><p class="festival-note">The feast runs from 3 PM to 1 AM. Pick up a temporary bowl, fill it with ten portions of one meal, then eat while sitting with the villagers. Each portion adds five minutes of that food buff (up to fifty). At 10/10 fullness, no more festival food can be eaten for eighteen in-game hours from the first serving.</p>`;
+        html+=`<p>🥣 Bowl: ${bowl?.meal ? esc(bowl.meal.label)+' · '+bowl.uses+'/10':bowl?'empty · 0/10':'not held'} · Fullness ${api.currentFullness()}/10</p>`;
+        html+=button('Take fresh bowl','take-bowl',!api.festivalHours());
+        html+=`<div class="festival-options">${dishes.map((meal,index)=>button(`${meal.icon} Pot ${index+1}: ${meal.label}`,'fill-bowl',!bowl||!api.festivalHours(),`data-pot-index="${index}"`)).join('')}${dishes.length===5?'<span class="festival-note">Pot 6: reserved for your offering</span>':''}</div>`;
+        html+=`<p class="festival-note">To eat: sit in a festival dining chair and use the Eat bowl prompt. Your character will take another bite every few seconds, with the normal Drink animation and a ${bowl?.uses ?? 0}/10 portion counter. Stand or switch equipment to stop.</p>`;
+      }
+      if (done) html += '<p>You have already contributed your one festival meal or offering.</p>';
       else {
         html += `<div class="festival-options">${api.qualityChoices(type).map(choice => button(`${choice.label} · ${'★'.repeat(choice.stars)} ×${choice.count}`, 'select-item', false, `data-key="${esc(choice.key)}" data-stars="${choice.stars}" aria-pressed="${selection.key === choice.key && selection.stars === choice.stars}"`)).join('') || '<p>No eligible items in your bag.</p>'}</div>`;
         if (type === 'offering') html += `<h3>Choose your blessing</h3><div class="festival-options">${Object.entries(window.FestivalCalendar.blessings).map(([id, def]) => button(`${def.icon} ${def.label} · ${def.description} +${Math.round(def.perLevel * 100 * (selection.stars || 1))}%`, 'select-stat', false, `data-stat="${id}" aria-pressed="${selection.stat === id}"`)).join('')}</div>`;
@@ -75,8 +86,8 @@
     } else if (type === 'remembrance') {
       html = '<p>Little wooden carvings stand for the ancestors. Honor those lost, and appreciate the peace in death.</p><p>“Everyone gets a little engh-sho-ey today,” Kinami says of the Mashtzarr.</p><p class="festival-note">The offering shrine nearby grants your chosen year-long blessing.</p>';
     } else {
-      const descriptions = { dance: `${f.id === 'five_blossoms' ? 'The Five Blossom Dance' : 'The festival dance'}: stay in the marked court and dance for 20 seconds. Your first completed dance this festival earns +2 Favor with every townsfolk. You can dance again for pleasure.`, story: 'Hear Father Hunundi tell how laughter defeated the Hachutu and their magical masks.', duel: 'Spearhead supervises a safe, live sparring round with Oddclaw in this ring. Land three hits. Borrowed equipment and your original resources are restored when you finish or leave. First completion: +6 Favor with each of them.', music: 'Join the existing music minigame. The festival musician supplies live accompaniment when present.', liquor: 'Collect one bottle this festival. Hold it to drink or offer a swig through the ordinary alcohol system.' }; // Mechanical promises shown before entering an activity.
-      html = `<p>${esc(descriptions[type] || '')}</p>${button(window.FestivalCalendar.activityLabels[type], 'perform', type === 'liquor' && api.claimed('liquor'))}`;
+      const descriptions = { dance: `${f.id === 'five_blossoms' ? 'The Five Blossom Dance' : 'The festival dance'}: stay in the marked court and dance for 20 seconds. Your first completed dance this festival earns +2 Favor with every townsfolk. You can dance again for pleasure.`, story: 'Hear Father Hunundi tell how laughter defeated the Hachutu and their magical masks.', duel: 'Spearhead supervises a safe, live sparring round with Oddclaw in this ring. Land three hits. Borrowed equipment and your original resources are restored when you finish or leave. First completion: +6 Favor with each of them.', music: 'Join the existing music minigame. The festival musician supplies live accompaniment when present.', liquor: 'The festival keg pours a free, already-filled cup. Hold it to drink or offer a swig (which earns Festival Fun) through the ordinary alcohol system, and refill whenever you like. It cannot be stowed or gifted.' }; // Mechanical promises shown before entering an activity.
+      html = `<p>${esc(descriptions[type] || '')}</p>${button(window.FestivalCalendar.activityLabels[type], 'perform', false)}`;
     }
     content.innerHTML = html;
     status('');
@@ -91,6 +102,12 @@
       return;
     }
     if (!prop || busy) return;
+    if (['take-bowl','fill-bowl','eat-bowl'].includes(action)) {
+      const result=action==='take-bowl'?system().takeFestivalBowl():
+        action==='fill-bowl'?system().fillFestivalBowl(Number(target.dataset.potIndex)):
+        system().eatFestivalBowl();
+      render();status(result?.message||'');return;
+    }
     if (action === 'select-item') { selection.key = target.dataset.key; selection.stars = Number(target.dataset.stars); render(); return; }
     if (action === 'select-stat') { selection.stat = target.dataset.stat; render(); return; }
     if (action !== 'perform') return;
