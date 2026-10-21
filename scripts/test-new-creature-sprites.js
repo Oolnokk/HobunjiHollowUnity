@@ -98,4 +98,22 @@ assert(game.includes("typeof blinkShut === 'string' ? ':eye-'"),
 assert(game.includes('window.CreatureGeneticsRender.eyeStatesForKind(kind)'),
   'cutscene preloader enumerates every supported eye state');
 
+// The bestiary/editor and synchronous renderer must share the same authored Nazgraku rig.
+const nazgrakuRig = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json'))
+  .creatures.find(creature => creature.id === 'nazgraku')?.headRig; // Authored head rig shared by gameplay and editor.
+assert(nazgrakuRig?.enabled, 'Nazgraku must have its authored head rig enabled');
+assert.deepEqual(JSON.parse(JSON.stringify(render.ANIMAL_HEAD_RIGS.nazgraku)), nazgrakuRig,
+  'Nazgraku runtime head rig must match its bestiary authoring data');
+assert.equal(nazgrakuRig.pivot.x, 0.421875);
+assert.equal(nazgrakuRig.pivot.y, 0.42592592592592593);
+for (const channel of ['weightMap', 'compressibilityMap', 'stretchabilityMap']) {
+  const grid = nazgrakuRig[channel]; // Checks each author-painted channel covers its declared grid.
+  assert.equal(grid.encoding, 'rle-u9');
+  assert.equal(grid.data.length % 2, 0, channel + ': runs must have paired count/value entries');
+  assert.equal(grid.data.filter((_, index) => !(index % 2)).reduce((sum, count) => sum + count, 0),
+    grid.width * grid.height, channel + ': RLE data must fill the complete grid');
+  assert(grid.data.every((value, index) => Number.isInteger(value) && value >= 0
+    && (index % 2 === 0 ? value > 0 : value <= 256)), channel + ': invalid RLE values');
+}
+
 console.log('creature new sprite integration: all regression checks passed');
