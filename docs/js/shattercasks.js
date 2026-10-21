@@ -478,6 +478,133 @@
     }
     return choice;
   }
+  // Shares AlchemyFlasks' camera-ground projection, maximum throw radius,
+  // ballistic duration, and sinusoidal height. This is the *physical* furniture.
+  function thrownGround(x,z){
+    const d=deps(),t=tileSize();
+    return Number(d?.getGroundYAtWorld?.(x,z)??d?.getGroundY?.(x*t,z*t)
+      ??d?.worldSurfaceY?.(x*t,z*t))||0;
+  }
+  function throwTarget(){
+    const p=playerPosition(),d=deps();
+    if(!p)return null;
+    let x=p.x+Math.cos(p.angle)*3,z=p.z+Math.sin(p.angle)*3;
+    const ray=d?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.()
+      ||window.__hitboxDebug?.interactionRay;
+    if(ray?.origin&&ray?.direction){
+      let prev=null,found=false;
+      for(let t=0;t<=36;t+=.22){
+        const px=ray.origin.x+ray.direction.x*t,pz=ray.origin.z+ray.direction.z*t;
+        const gap=ray.origin.y+ray.direction.y*t-thrownGround(px,pz);
+        if(gap<=.035&&prev?.gap>.035){
+          const ratio=prev.gap/(prev.gap-gap||1);
+          x=prev.x+(px-prev.x)*ratio;z=prev.z+(pz-prev.z)*ratio;
+          found=true;break;
+        }
+        prev={x:px,z:pz,gap};
+      }
+      if(!found){
+        const h=Math.hypot(ray.direction.x,ray.direction.z)||1;
+        x=p.x+MAX_THROW_RADIUS*ray.direction.x/h;
+        z=p.z+MAX_THROW_RADIUS*ray.direction.z/h;
+      }
+    }
+    const dx=x-p.x,dz=z-p.z,len=Math.hypot(dx,dz);
+    if(len>MAX_THROW_RADIUS){x=p.x+dx*MAX_THROW_RADIUS/len;z=p.z+dz*MAX_THROW_RADIUS/len;}
+    return {x,y:thrownGround(x,z),z};
+  }
+  function showThrowRing(target){
+    if(!target||!THREE.RingGeometry||!THREE.MeshBasicMaterial)return;
+    if(!throwRing){
+      throwRing=new THREE.Mesh(new THREE.RingGeometry(RADIUS-.10,RADIUS,48),
+        new THREE.MeshBasicMaterial({color:0xffb45e,side:THREE.DoubleSide,transparent:true,
+          opacity:.64,depthWrite:false}));
+      throwRing.rotation.x=-Math.PI/2;
+      throwRing.name='shattercask_ground_projected_throw_reticle';
+    }
+    const active=scene();if(!active)return;
+    if(throwRing.parent!==active)active.add(throwRing);
+    throwRing.position.set(target.x,target.y+.04,target.z);
+    throwRing.visible=true;
+  }
+  function cancelShatterAim(){aimingThrow=null;if(throwRing)throwRing.visible=false;}
+  function startShatterAim(){
+    if(!held||aimingThrow)return false;
+    aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0};
+    showThrowRing(aimingThrow.target);
+    lastEvent='started Shattercask throw aim';
+    return true;
+  }
+  function releaseShatterAim(){
+    if(!held||aimingThrow?.phase!=='aim')return false;
+    aimingThrow.target=throwTarget()||aimingThrow.target;
+    aimingThrow.phase='releasing';aimingThrow.elapsed=0;
+    return true;
+  }
+  function launchShattercask(){
+    if(!held||!aimingThrow?.target)return false;
+    const c=held,target=aimingThrow.target;
+    c.group.updateWorldMatrix?.(true,true);
+    const origin=c.group.getWorldPosition?.(new THREE.Vector3())||c.group.position.clone();
+    const quat=c.group.getWorldQuaternion?.(new THREE.Quaternion())||c.group.quaternion.clone();
+    const scale=c.group.getWorldScale?.(new THREE.Vector3())||c.group.scale.clone();
+    const active=records.get(c.mapId)?.scene||scene();
+    if(!active)return false;
+    setHeldRearXray(null);
+    active.add(c.group);c.group.position.copy(origin);
+    c.group.quaternion.copy(quat);c.group.scale.copy(scale);
+    c.carried=false;c.flying=true;held=null;cancelShatterAim();
+    const distanceTiles=Math.hypot(target.x-origin.x,target.z-origin.z);
+    flight={vase:c,origin,target,distanceTiles,
+      duration:Math.min(.9,Math.max(.42,.42+distanceTiles*.034)),t:0};
+    lastEvent='launched Shattercask '+c.id;
+    return true;
+  }
+  function updateShatterThrow(dt){
+    dt=Math.min(.1,Math.max(0,Number(dt)||0));
+    if(aimingThrow){
+      aimingThrow.elapsed+=dt;
+      if(aimingThrow.phase==='aim'){
+        aimingThrow.rayElapsed+=dt;
+        if(aimingThrow.rayElapsed>.075){
+          aimingThrow.rayElapsed=0;aimingThrow.target=throwTarget()||aimingThrow.target;
+          showThrowRing(aimingThrow.target);
+        }
+      }else if(aimingThrow.elapsed>=THROW_RELEASE_DELAY)launchShattercask();
+    }
+    if(flight){
+      const f=flight,c=f.vase;
+      f.t+=dt;
+      const ratio=Math.min(1,f.t/f.duration);
+      const arc=Math.sin(Math.PI*ratio)*Math.min(1.65,.72+f.distanceTiles*.065);
+      c.group.position.set(f.origin.x+(f.target.x-f.origin.x)*ratio,
+        f.origin.y+(f.target.y-f.origin.y)*ratio+arc,
+        f.origin.z+(f.target.z-f.origin.z)*ratio);
+      c.group.rotation.set(f.t*8,0,f.t*5);
+      // There is no heldHandTarget after launch: hands stay on the player.
+      if(ratio>=1){flight=null;detonate(c,'throw-impact');}
+    }
+  }
+  function refreshCarriedArch(){
+    if(typeof document==='undefined')return;
+    for(const [id,label,icon] of [
+      ['btnItemAction1','Throw Shattercask','↗'],['btnItemAction2','Set Down Shattercask','⬇']]){
+      const b=document.getElementById(id);if(!b)continue;
+      if(held){
+        b.classList?.remove?.('abt-hidden');
+        b.style.display='';
+        b.dataset.action=id==='btnItemAction1'?'shattercask_throw':'shattercask_drop';
+        b.setAttribute('aria-label',label);
+        if(b.dataset.shattercaskPresentation!=='1'){
+          b.textContent=icon;b.dataset.shattercaskPresentation='1';
+        }
+      }else if(b.dataset.shattercaskPresentation==='1'){
+        b.removeAttribute('data-shattercask-presentation');
+        b.removeAttribute('data-action');
+        b.textContent='';
+      }
+    }
+  }
   function grantLoot(items) {
     if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
     const inv=deps()?.inventory;
@@ -923,6 +1050,7 @@
     }
     prompt();
     syncToolArchPickup();
+    refreshCarriedArch();
   }
   function attachRuntime() {
     const combat=window.Combat;
@@ -991,7 +1119,8 @@
     },true);
   }
   window.Shattercasks=Object.freeze({
-    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,detonate,heldHandTarget,
+    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,
+    startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
     debugSnapshot:()=>({lastEvent,area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
