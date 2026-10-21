@@ -5,7 +5,7 @@
   "portraitFogMaskHidden": false,
   "bladedHazard": false,
   "fireHazard": false,
-  "createdAt": "2026-10-20T05:57:12.962Z",
+  "createdAt": "2026-10-21T01:35:30.192Z",
   "surfaceRecognition": {
     "splitAngleDeg": 68,
     "colorCode": false,
@@ -138,43 +138,43 @@
   "carryable": {
     "enabled": true,
     "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
       "position": {
         "x": -0.004,
-        "y": 0.1513,
-        "z": 0.0071
+        "y": -0.0788,
+        "z": -0.1535
       },
       "rotation": {
         "x": 0,
         "y": 0,
         "z": 0
       },
-      "size": 0.6,
-      "coordinateSpace": "posterior-relative",
       "posteriorOffset": {
         "x": 0,
         "y": 0,
         "z": 0
-      }
+      },
+      "size": 0.6
     },
     "handTargets": {
       "left": {
-        "x": -0.1241,
-        "y": 0.1231,
-        "z": 0,
+        "x": 0.1701,
+        "y": 0.123,
+        "z": 0.016,
         "rotation": {
-          "x": 0,
+          "x": -180,
           "y": 0,
-          "z": 0
+          "z": -90
         }
       },
       "right": {
-        "x": 0.1567,
+        "x": -0.1132,
         "y": 0.12,
-        "z": 0,
+        "z": 0.006,
         "rotation": {
           "x": 0,
           "y": 0,
-          "z": 0
+          "z": 90
         }
       }
     }
