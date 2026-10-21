@@ -81,7 +81,7 @@ assert.match(gameSource,
   /npcSeatTransformForTarget[\s\S]{0,900}resolveSeatWorldTransform/,
   'NPCs reuse the player seat-anchor resolver');
 assert.match(gameSource,
-  /this\.legs\.update\(dt, this\._moveSpeedTiles, !isVisibleArea, seatedPose\)/,
+  /this\.legs\.update\(dt, this\._moveSpeedTiles, !isVisibleArea, seatedPose, \{ allowSpeedRun: this\._npcRunning \}\)/,
   'NPC legs receive the same seated-pose data as player legs');
 assert.match(npcPathfindingSource,
   /allowOccupiedTarget[\s\S]{0,500}c === targetC && r === targetR/,

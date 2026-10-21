@@ -123,6 +123,7 @@ const plain = makeWalker({ id: 'kzubug', name: 'Kzubug', relationship: { canDate
 npcWalkers.push(tooth, hunundi, plain);
 const player = { x: 21.5, z: 20.5, area: 'town' };
 const opened = [];
+let combatOn = false; // A live combat gate for Talk/Commands claims and active wheel cancellation.
 const toasts = [];
 let nearby = tooth;
 const interior = [{ id: 'bed1', key: 'doubleBed', area: 'interior', col: 4, row: 4, rotYDeg: 0 }];
@@ -306,7 +307,7 @@ clock.hour = 12;
 assert.equal(fam.childTarget(child).area, 'farm', 'grown children leave the house during the day');
 
 // ── Hold-Action-1 wheel claim ───────────────────────────────────────────
-W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
+W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isCombatActive: () => combatOn, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
 W.NpcCommandWheel._test.syncClaims();
 assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel', 'facing a romanceable NPC claims Action 1');
 const before = opened.length;
@@ -331,6 +332,16 @@ assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command
 assert(W.NpcCommandWheel.optionsFor(plain).some(option=>option.id==='follow'));
 nearby=null;W.NpcCommandWheel._test.syncClaims();
 assert.equal(W.WorldActionInputClaims.claimFor('action1'),null,'looking away releases the Talk input claim');
+nearby = plain;
+W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel');
+combatOn = true;
+W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1'), null, 'combat cancels claims for all NPC social commands');
+assert.equal(W.NpcCommandWheel.open(plain), false, 'Follow/Wait and other commands cannot open in combat');
+combatOn = false;
+nearby = null;
+W.NpcCommandWheel._test.syncClaims();
 
 // ── Save round-trip ─────────────────────────────────────────────────────
 const saved = JSON.parse(JSON.stringify(W.RomanceSystem.serialize()));
