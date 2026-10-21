@@ -28723,6 +28723,7 @@
       });
 
       window.BanditCombat?.init({
+        isPaused: () => paused, // The commander-led army pauses its abstract planner with the game.
         rnd,
         clamp: window.FormatUtils.clamp,
         debugLog,

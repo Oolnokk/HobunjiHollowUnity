@@ -1,48 +1,32 @@
 (() => {
   'use strict';
 
-  // Harlyao Night March — only the army's coarse chunk exists offscreen.
-  // Real humanoid entities are built/woken only while the player shares that
-  // chunk. While visible, actual motion may advance ahead of the hourly clock.
-  const CONFIG_URL = 'config/harlyao-night-march.json'; // Route/equipment/visual tuning source.
-  const SPECIES_ID = 'harlyao'; // Forced species for every generated marcher.
-  const DORMANT_AREA_PREFIX = '__harlyao_march_dormant__:'; // Makes updateHostiles skip cached hidden marchers.
-  const FALLBACK_CHUNK_TILES = 16; // Matches WildernessChunks' canonical tile chunk size.
-  const MATERIALIZE_BATCH = 2; // Portraits yielded after this many builds to reduce one-frame hitching.
-  const MIN_MARCH_SPEED_TILES_S = 0.1; // Guards malformed zero/negative visual speed.
-
-  let deps = null; // Captured from BanditCombat.init; used by movement, terrain, tools, scenes, and hostileObjects.
-  let cfg = null; // Parsed harlyao-night-march.json used by all route/formation logic.
-  let gangCfg = null; // Existing bandit balance config reused for combat stats/abilities.
-  let buildPromise = null; // Prevents duplicate 20-member materialization jobs and partial-formation wake races.
-  let buildGeneration = 0; // Invalidates an async build when the night/day route is torn down.
-  let scheduleKey = null; // Whole-day/hour key; offscreen chunk is recomputed only when this changes.
-  let scheduled = null; // Cached hourly route/chunk result used between schedule changes.
-  let unregisterGlow = null; // Owns the one formation-level Ghostify glow source.
-
+  // Persistent data-only marchers travel offscreen; nearby members use the
+  // ordinary hostile return/travel state, just like Porakaneki residents.
+  const CONFIG_URL = 'config/harlyao-night-march.json'; // Shared march tuning.
+  const SPECIES_ID = 'harlyao'; // Forced army species.
+  const DORMANT_AREA_PREFIX = '__harlyao_march_dormant__:'; // Skips parked rigs in hostile AI.
+  const FALLBACK_CHUNK_TILES = 16; // Music/debug chunk coordinates only.
+  const TICK_INTERVAL_S = 0.2; // Planner cadence; native AI owns per-frame movement.
+  const SCHEDULER_ID = 'harlyao-night-march'; // One shared frame subscription.
+  let deps = null; // BanditCombat dependency seam.
+  let cfg = null; // Shared config loaded once.
+  let gangCfg = null; // Cached humanoid balance definitions.
+  let buildPromise = null; // At most one portrait build is requested at a time.
+  let buildGeneration = 0; // Cancels builds across dawn/day/zone changes.
+  let tickAccum = 0; // Detailed planner elapsed seconds.
+  let coarseAccum = 0; // Abstract travel elapsed seconds.
   const state = {
-    day: null, // Civil day currently represented by this controller.
-    zoneId: null, // One wilderness zone selected for this civil day.
-    members: [], // Cached live humanoid entities created only after first observation.
-    visible: false, // True only while player and army share the army's live chunk.
-    provoked: false, // Whole formation becomes hostile after any member is hit.
-    liveChunk: null, // Leader's actual observed chunk while visible; stable build target while materializing.
-    observedStep: 0, // Furthest route step physically observed; prevents later schedule snap-back.
-    lastLogKey: null, // Throttles mobile log to hourly route changes.
-    reason: 'boot', // Last lifecycle transition for mobile debug reports.
-    builds: 0, // Count of materialization jobs started.
-    wakes: 0, // Count of complete cached formation wake-ups.
-    sleeps: 0, // Count of visible-to-dormant chunk exits.
-    updateTicks: 0, // Proves the BanditCamps game-loop seam is still calling this controller.
-    lastUpdateAt: 0, // Last performance timestamp observed by update(), used by mobile diagnostics.
-  };
-
+    day: null, zoneId: null, members: [], agents: [], commanderIndex: 0,
+    visible: false, provoked: false, liveChunk: null, regrouping: false,
+    reason: 'boot', builds: 0, wakes: 0, sleeps: 0, coarseTicks: 0,
+    updateTicks: 0, lastUpdateAt: 0, tickOwner: 'uninstalled',
+  }; // Single authority for identities, simulated positions, lifecycle and diagnostics.
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+  const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const chunkTiles = () => Number(window.WildernessChunks?.constants?.CHUNK_TILES) || FALLBACK_CHUNK_TILES;
-  const chunkCount = tiles => Math.max(1, Math.ceil(Math.max(1, Number(tiles) || 1) / chunkTiles()));
-  const sameChunk = (a, b) => !!a && !!b && a.cx === b.cx && a.cz === b.cz;
-  const expectedMemberCount = () => Math.max(1, Math.floor(Number(cfg?.memberCount) || 20));
-
+  const chunkCount = tiles => Math.max(1, Math.ceil(Math.max(1, num(tiles, 1)) / chunkTiles()));
+  const expectedMemberCount = () => Math.max(1, Math.floor(num(cfg?.memberCount, 20)));
   function civilDay() {
     const rawDay = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Absolute day survives the civil-midnight bridge.
     if (Number.isFinite(rawDay)) return Math.max(1, Math.floor(rawDay));
@@ -62,128 +46,13 @@
   }
 
   function zoneDims(zoneId) {
-    // deps.zoneLayouts holds each wilderness zone's real PROCEDURALLY
-    // GENERATED dimensions (see game.js's own ZCOLS/ZROWS: `zoneData?.cols ||
-    // zdef?.cols`, the same precedence used here) -- EXTERIOR_ZONES[zoneId]'s
-    // own cols/rows are a pre-procedural-generation placeholder (22x16/50x40)
-    // that every wilderness zone's actual generated terrain (~200x200, see
-    // wilderness-map-generator.js's GENERATION_TILE_SCALE export) long since
-    // outgrew. Reading that placeholder first (as this used to) meant every
-    // route/chunk computation below ran against a route only 1-3 chunks wide
-    // instead of the real map's ~13 -- the "whole zone traverse" collapsed
-    // into a sliver near one corner of the actual terrain, so the army (and
-    // its beacon) never actually covered ground a player exploring the real
-    // map would cross paths with.
+    // Generated layout dimensions win over the small pre-generation zone definitions.
     const live = deps?.zoneLayouts?.get?.(zoneId) || window.zoneLayouts?.get?.(zoneId) || null;
     const def = deps?.EXTERIOR_ZONES?.[zoneId] || window.EXTERIOR_ZONES?.[zoneId] || null; // Fallback only for a zone with no live layout yet.
     return {
       cols: Math.max(1, Number(live?.cols) || Number(def?.cols) || 200),
       rows: Math.max(1, Number(live?.rows) || Number(def?.rows) || 200),
     };
-  }
-
-  function coarseStateFor(day, hour, config = cfg, dimsOverride = null) {
-    const route = routeForDay(day, config); // Selects exactly one daily wilderness zone.
-    const start = Number(config?.activeHours?.start ?? 0); // Inclusive 00:00 boundary.
-    const end = Number(config?.activeHours?.end ?? 6); // Exclusive 06:00 boundary.
-    const stepHours = Math.max(0.25, Number(config?.activeHours?.coarseStepHours ?? 1)); // One hour in authored config.
-    if (!route || !Number.isFinite(Number(hour)) || hour < start || hour >= end) {
-      return { active: false, day, hour, route, zoneId: route?.zoneId || null };
-    }
-
-    const dims = dimsOverride || zoneDims(route.zoneId); // Route-axis and cross-axis extents.
-    const routeTiles = route.axis === 'z' ? dims.rows : dims.cols; // N/S uses rows; E/W uses columns.
-    const crossTiles = route.axis === 'z' ? dims.cols : dims.rows; // Perpendicular lane dimension.
-    const routeChunks = chunkCount(routeTiles); // Current 200-tile axes produce 13 chunks.
-    const crossChunks = chunkCount(crossTiles); // Used for one stable center-ish lane.
-    const slots = Math.max(1, Math.ceil((end - start) / stepHours)); // 6 states: 00,01,02,03,04,05.
-    const slot = clamp(Math.floor((hour - start) / stepHours), 0, slots - 1); // Changes only on whole-hour step.
-    const progressStep = slots <= 1 ? 0 : Math.round((slot / (slots - 1)) * (routeChunks - 1)); // Maps 6 hours across every route-axis chunk endpoint-to-endpoint.
-    const routeIndex = route.direction >= 0 ? progressStep : routeChunks - 1 - progressStep; // Reverses south/west routes.
-    const crossFraction = clamp(Number(config?.routeLane?.crossAxisFraction ?? 0.5), 0, 1); // Fixed perpendicular lane.
-    const crossIndex = clamp(Math.round(crossFraction * (crossChunks - 1)), 0, crossChunks - 1); // Lane fraction → chunk.
-    return {
-      active: true,
-      day,
-      hour,
-      route,
-      zoneId: route.zoneId,
-      routeChunks,
-      crossChunks,
-      routeStep: progressStep,
-      cx: route.axis === 'x' ? routeIndex : crossIndex,
-      cz: route.axis === 'z' ? routeIndex : crossIndex,
-      slot,
-      slots,
-      coarseKey: `${day}:${route.zoneId}:${slot}:${routeIndex}:${crossIndex}`,
-    };
-  }
-
-  function hourlyState() {
-    const day = civilDay(); // Part of cache key so a new civil day can rotate zone at midnight.
-    const hour = gameHour(); // Full precision -- coarseStateFor buckets this into its own stepHours-sized slot.
-    // Bucketing by whole game-hours regardless of the configured coarseStepHours
-    // used to mean the offscreen chunk only ever advanced once per game hour no
-    // matter how fine activeHours.coarseStepHours was set -- with routeChunks
-    // (~13, one whole zone's width) spread across only the resulting 6 once-an-
-    // hour jumps, the coarse position leapt 2-3 chunks at a time and skipped
-    // most chunks along the route outright, so a player chasing the beacon
-    // almost never landed in the same chunk before the next jump moved it 32-48
-    // tiles away again. Bucketing by the configured step instead lets a smaller
-    // coarseStepHours (see config/harlyao-night-march.json) actually produce
-    // smaller, chunk-by-chunk advances a player on foot can keep up with.
-    const stepHours = Math.max(0.25, Number(cfg?.activeHours?.coarseStepHours) || 1);
-    const bucket = Math.floor(hour / stepHours);
-    const key = `${day}:${bucket}`; // Sole key permitted to trigger offscreen chunk calculation.
-    if (key !== scheduleKey) {
-      scheduleKey = key;
-      scheduled = coarseStateFor(day, hour);
-    }
-    return scheduled;
-  }
-
-  function effectiveChunk(s) {
-    if (!s?.active) return null;
-    const step = clamp(Math.max(s.routeStep, state.observedStep || 0), 0, s.routeChunks - 1); // Never moves an observed army backward when hidden again.
-    const routeIndex = s.route.direction >= 0 ? step : s.routeChunks - 1 - step; // Progress → physical route coordinate.
-    return s.route.axis === 'x' ? { cx: routeIndex, cz: s.cz, routeStep: step } : { cx: s.cx, cz: routeIndex, routeStep: step };
-  }
-
-  function playerChunk() {
-    if (!deps?.player || !deps?.TILE) return null;
-    return {
-      cx: Math.floor((deps.player.x / deps.TILE) / chunkTiles()),
-      cz: Math.floor((deps.player.y / deps.TILE) / chunkTiles()),
-    }; // Player pixels → WildernessChunks 16×16 coordinate.
-  }
-
-  function routeStepFromChunk(chunk, s) {
-    const physical = s.route.axis === 'x' ? chunk.cx : chunk.cz; // Coordinate that advances along this route.
-    return s.route.direction >= 0 ? physical : s.routeChunks - 1 - physical;
-  }
-
-  function chunkCenter(chunk, dims) {
-    const size = chunkTiles(); // Canonical wilderness chunk tile span.
-    const col0 = clamp(chunk.cx * size, 0, dims.cols - 1); // West edge tile.
-    const row0 = clamp(chunk.cz * size, 0, dims.rows - 1); // North edge tile.
-    const col1 = Math.min(dims.cols, (chunk.cx + 1) * size); // Exclusive east edge.
-    const row1 = Math.min(dims.rows, (chunk.cz + 1) * size); // Exclusive south edge.
-    return { col: (col0 + col1 - 1) * 0.5, row: (row0 + row1 - 1) * 0.5 };
-  }
-
-  function nextChunkCenter(chunk, s, dims) {
-    const next = { cx: chunk.cx, cz: chunk.cz }; // One adjacent chunk in current route direction.
-    if (s.route.axis === 'x') next.cx += s.route.direction;
-    else next.cz += s.route.direction;
-    const maxCx = chunkCount(dims.cols) - 1; // Last valid X chunk.
-    const maxCz = chunkCount(dims.rows) - 1; // Last valid Z chunk.
-    if (next.cx >= 0 && next.cx <= maxCx && next.cz >= 0 && next.cz <= maxCz) return chunkCenter(next, dims);
-
-    const pad = Math.max(0.5, Number(cfg?.routeLane?.edgePaddingTiles ?? 2)); // Final visible target just inside route exit edge.
-    const target = chunkCenter(chunk, dims); // Keeps cross-axis coordinate on the same lane.
-    if (s.route.axis === 'x') target.col = s.route.direction > 0 ? dims.cols - pad : pad;
-    else target.row = s.route.direction > 0 ? dims.rows - pad : pad;
-    return target;
   }
 
   function formationOffset(index, config = cfg) {
@@ -213,7 +82,7 @@
     const gender = 'male'; // Army remains male-only until matching female Harlyao head art exists.
     const cosmetics = [...(cfg?.equipment?.forcedCosmetics || ['rugged_poncho'])]; // Every marcher wears the rugged poncho.
     return {
-      name: `Harlyao Marcher ${index + 1}`,
+      name: index === 0 ? 'Harlyao Commander' : `Harlyao Marcher ${index + 1}`,
       appearance: { speciesId: SPECIES_ID, gender, cosmetics: {} },
       equippedCosmetics: cosmetics,
       appliedDyes: {},
@@ -232,17 +101,6 @@
       weaponKey: deps?.craftedToolItemKey?.(shapeKey, metalKey) || shapeKey,
       attackTag: shape.dmgType || 'sharp',
     };
-  }
-
-  function neutral(c) {
-    if (!c || c.health <= 0) return;
-    c._harlyaoAggroRangePx ??= Number(c.def?.aggroRangePx) || deps.TILE * 6; // Restored when provoked.
-    if (c.def) c.def.aggroRangePx = 0;
-    c.state = cfg?.behavior?.neutralState || 'harlyaoMarch';
-    c.wanderTarget = null;
-    c.wanderT = 0;
-    c.vx = 0;
-    c.vy = 0;
   }
 
   function ghostify(c) {
@@ -300,8 +158,23 @@
     if (Number.isFinite(liveRows) && liveRows > 0) c.areaRows = liveRows;
   }
 
+  function openPlacement(c, tile) {
+    if (!deps?.creatureCanEnterTile || deps.creatureCanEnterTile(c.def, tile.col * deps.TILE, tile.row * deps.TILE)) return tile;
+    const col = Math.floor(tile.col), row = Math.floor(tile.row); // Search nearby tile centers using the same collision authority as native travel.
+    for (let radius = 1; radius <= 8; radius++) {
+      for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+        const candidate = { col: col + dx + 0.5, row: row + dy + 0.5 }; // Only allocation during a blocked spawn/wake, never per frame.
+        if (deps.creatureCanEnterTile(c.def, candidate.col * deps.TILE, candidate.row * deps.TILE)) return candidate;
+      }
+    }
+    return null;
+  }
+
   function place(c, tile, zoneId) {
     refreshMemberArea(c, zoneId);
+    tile = openPlacement(c, tile);
+    if (!tile) { hide(c); return false; } // Keep the actor abstract if this neighborhood has no valid emergence tile.
     setMemberVisualAttachment(c, true); // Reattaches a parked cached rig only when this member is genuinely returning to the live army chunk.
     c.x = tile.col * deps.TILE;
     c.y = tile.row * deps.TILE;
@@ -323,208 +196,272 @@
     }
     if (c._banditToolHolder) c._banditToolHolder.visible = true;
     c._harlyaoPlacement = { col: tile.col, row: tile.row, surfaceY: surface, sampleCol: col, sampleRow: row }; // Mobile diagnostics verify rendered feet against sampled terrain.
+    return true;
   }
 
-  async function loadGangConfig() {
-    if (!gangCfg) gangCfg = await window.BanditCombat?.loadGangConfig?.(); // Existing humanoid combat balance source.
-    return gangCfg;
+
+  function routeState(day = civilDay(), hour = gameHour(), config = cfg) {
+    const route = routeForDay(day, config); // Daily rotation still owns which zone hosts the march.
+    return { active: !!route && hour >= num(config?.activeHours?.start, 0) && hour < num(config?.activeHours?.end, 6), day, hour, route, zoneId: route?.zoneId || null };
   }
 
-  function armyBanditConfig(base) {
-    return { ...(base || {}), speciesWeights: { [SPECIES_ID]: 1 }, rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 } }; // Harlyao-only melee grunts.
+  function routeEndpoints(s, dims) {
+    const pad = clamp(num(cfg?.routeLane?.edgePaddingTiles, 2), 0.5, Math.min(dims.cols, dims.rows) * 0.5); // Safe start/end inset.
+    const fraction = clamp(num(cfg?.routeLane?.crossAxisFraction, 0.5), 0, 1); // Authored cross-axis lane.
+    const start = { col: pad + fraction * Math.max(0, dims.cols - 2 * pad), row: pad + fraction * Math.max(0, dims.rows - 2 * pad) }; // Entry point.
+    const end = { ...start }; // Route exit; reaching it is optional before dawn.
+    const key = s.route.axis === 'x' ? 'col' : 'row'; // Moving coordinate.
+    const extent = key === 'col' ? dims.cols : dims.rows; // Full generated map extent.
+    start[key] = s.route.direction > 0 ? pad : extent - pad;
+    end[key] = s.route.direction > 0 ? extent - pad : pad;
+    return { start, end };
   }
 
-  const yieldFrame = () => typeof window.requestAnimationFrame === 'function'
-    ? new Promise(resolve => window.requestAnimationFrame(resolve))
-    : Promise.resolve();
-
-  async function buildMember(index, s, chunk, dims, generation) {
-    const base = await loadGangConfig(); // Existing stats/ability table.
-    if (!base || generation !== buildGeneration) return null;
-    const w = weapon(index); // Forced dagger-sword/hatchet/fishing-spear definition.
-    const tile = memberTile(chunkCenter(chunk, dims), formationOffset(index), s, dims); // Initial formation slot inside shared chunk.
-    const c = await window.BanditCombat.makeEntity(armyBanditConfig(base), 'grunt', 0, tile.col * deps.TILE, tile.row * deps.TILE, {
-      zoneId: s.zoneId,
-      rosterOverride: roster(index),
-      defOverride: {
-        label: 'Harlyao Marcher',
-        weaponKey: w.weaponKey,
-        weaponShapeKey: w.shapeKey,
-        weaponMetalKey: w.metalKey,
-        attackTag: w.attackTag,
-        rangedWeaponKey: null,
-      },
-      extra: { isHarlyaoArmyMember: true, harlyaoArmyIndex: index, harlyaoWeaponShape: w.shapeKey },
-    });
-    if (!c || generation !== buildGeneration) {
-      c?.avatarRef?.dispose?.();
-      return null;
-    }
-    neutral(c);
-    ghostify(c);
-    hide(c); // A partially built army must never wake/march before all async portrait builds finish.
-    deps.hostileObjects.push(c);
-    return c;
-  }
-
-  function teardown(reason) {
-    buildGeneration++;
-    for (const c of state.members) {
-      if (!c) continue;
-      const index = deps?.hostileObjects?.indexOf?.(c); // Removes only this army member from shared hostile storage.
-      if (index >= 0) deps.hostileObjects.splice(index, 1);
-      if (c.health > 0) {
-        window.Ghostify?.restore?.(c.avatarRef?.group);
-        window.Ghostify?.restore?.(c._banditToolHolder);
-        c.avatarRef?.group?.parent?.remove?.(c.avatarRef.group);
-        c.groundShadow?.parent?.remove?.(c.groundShadow);
-        c._banditToolHolder?.parent?.remove?.(c._banditToolHolder);
-        c._banditRangedToolHolder?.parent?.remove?.(c._banditRangedToolHolder);
-        c.avatarRef?.dispose?.();
-        c.groundShadow?.geometry?.dispose?.();
-        c.groundShadow?.material?.dispose?.();
-      }
-    }
-    state.members.length = 0;
-    state.visible = false;
-    state.liveChunk = null;
-    state.reason = reason;
-  }
-
-  function wake(s, chunk) {
-    const dims = zoneDims(s.zoneId); // Shared dimensions for cached placement.
-    const center = chunkCenter(chunk, dims); // Cached formation center in hourly chunk.
-    state.liveChunk = { cx: chunk.cx, cz: chunk.cz };
-    state.observedStep = Math.max(state.observedStep, chunk.routeStep ?? s.routeStep);
-    let slot = 0; // Compacts surviving members into formation after any deaths.
-    for (const c of state.members) {
-      if (!c || c.health <= 0) continue;
-      place(c, memberTile(center, formationOffset(slot++), s, dims), s.zoneId);
-      if (state.provoked) {
-        if (c.def && Number.isFinite(c._harlyaoAggroRangePx)) c.def.aggroRangePx = c._harlyaoAggroRangePx;
-        c.state = 'chase';
-      } else neutral(c);
-    }
-    state.visible = slot > 0;
-    state.wakes++;
-    state.reason = `wake:${chunk.cx},${chunk.cz}`;
-  }
-
-  async function materialize(s, chunk) {
-    if (buildPromise || deps.getCurrentArea?.() !== s.zoneId) return buildPromise;
-    const generation = ++buildGeneration; // Assigned only after any prior nightly teardown, so it cannot invalidate itself.
-    const targetChunk = { cx: chunk.cx, cz: chunk.cz, routeStep: chunk.routeStep ?? s.routeStep }; // Immutable build anchor prevents a partially visible leader from moving the abort gate.
+  function resetForRoute(s) {
+    if (state.day === s.day && state.zoneId === s.zoneId && state.agents.length) return;
+    teardown('new-daily-route');
     state.day = s.day;
     state.zoneId = s.zoneId;
-    state.liveChunk = { cx: targetChunk.cx, cz: targetChunk.cz };
-    state.observedStep = Math.max(state.observedStep, targetChunk.routeStep);
-    state.builds++;
-    state.reason = `building:${state.members.length}/${expectedMemberCount()}@${targetChunk.cx},${targetChunk.cz}`;
-
-    buildPromise = (async () => {
-      const dims = zoneDims(s.zoneId); // Shared dimensions for all 20 slots.
-      const count = expectedMemberCount(); // Authored army size.
-      for (let i = state.members.length; i < count; i++) {
-        if (generation !== buildGeneration || deps.getCurrentArea?.() !== s.zoneId || !sameChunk(playerChunk(), targetChunk)) break;
-        const c = await buildMember(i, s, targetChunk, dims, generation); // One fully rigged but still dormant bandit-style Harlyao.
-        if (c) state.members.push(c);
-        state.reason = `building:${state.members.length}/${count}@${targetChunk.cx},${targetChunk.cz}`;
-        if ((i + 1) % MATERIALIZE_BATCH === 0) await yieldFrame();
-      }
-      if (generation !== buildGeneration) return state.members;
-      const stillHere = deps.getCurrentArea?.() === s.zoneId && sameChunk(playerChunk(), targetChunk);
-      if (state.members.length >= count && stillHere) {
-        wake(s, targetChunk); // First visibility uses the exact same terrain-aware placement path as every later wake.
-        state.reason = `visible:${state.members.length}`;
-      } else {
-        state.visible = false;
-        state.liveChunk = { cx: targetChunk.cx, cz: targetChunk.cz };
-        state.reason = `build-paused:${state.members.length}/${count}@${targetChunk.cx},${targetChunk.cz}`;
-      }
-      return state.members;
-    })().finally(() => { buildPromise = null; });
-    return buildPromise;
+    state.provoked = false;
+    state.commanderIndex = 0;
+    state.regrouping = false;
+    coarseAccum = 0;
+    const dims = zoneDims(s.zoneId); // Actual generated dimensions.
+    const { start } = routeEndpoints(s, dims); // New nights start at the entry, never at a clock-derived chunk.
+    for (let index = 0; index < expectedMemberCount(); index++) {
+      const offset = formationOffset(index); // Loose trailing ranks behind the commander.
+      offset.longitudinal = index === 0 ? 0 : -Math.ceil(index / Math.max(1, num(cfg?.formation?.columns, 4))) * num(cfg?.formation?.longitudinalSpacingTiles, 1.2);
+      if (index === 0) offset.lateral = 0;
+      const tile = memberTile(start, offset, s, dims); // Clamped data-only spawn.
+      state.agents.push({ id: `harlyao:${s.day}:${index}`, index, x: tile.col, y: tile.row, offset, entity: null, dead: false, target: tile, dormantSeconds: 0 });
+    }
+    state.reason = 'simulating';
   }
 
-  function sleep(reason) {
-    if (!state.visible) return;
-    for (const c of state.members) if (c?.health > 0) hide(c);
-    state.visible = false;
-    state.sleeps++;
-    state.reason = reason;
+  function commander() {
+    const current = state.agents[state.commanderIndex]; // Stable commander identity, independent of visible order.
+    if (current && !current.dead) return current;
+    const replacement = state.agents.find(agent => !agent.dead); // Surviving officer succeeds a slain commander.
+    if (!replacement) return null;
+    state.commanderIndex = replacement.index;
+    return replacement;
+  }
+
+  function syncAgents() {
+    for (const agent of state.agents) {
+      const c = agent.entity; // Existing visible rig is authoritative until parked.
+      if (!c) continue;
+      if (c.health <= 0) { agent.dead = true; continue; }
+      if (c.areaId === state.zoneId) { agent.x = c.x / deps.TILE; agent.y = c.y / deps.TILE; }
+    }
+  }
+
+  function planFormation(s) {
+    const leader = commander(); // Every follower targets this specific actor.
+    if (!leader) return;
+    let spread = 0; // Farthest follower controls regrouping, with hysteresis.
+    for (const agent of state.agents) if (!agent.dead) spread = Math.max(spread, Math.hypot(agent.x - leader.x, agent.y - leader.y));
+    const stop = Math.max(2, num(cfg?.formation?.regroupDistanceTiles, 9)); // Pause distance.
+    const resume = clamp(num(cfg?.formation?.resumeDistanceTiles, 5), 1, stop); // Resume distance.
+    state.regrouping = state.regrouping ? spread > resume : spread > stop;
+    const dims = zoneDims(s.zoneId); // Bounds for trail slots and route endpoint.
+    leader.target = state.regrouping ? { col: leader.x, row: leader.y } : routeEndpoints(s, dims).end;
+    for (const agent of state.agents) {
+      if (agent.dead || agent === leader) continue;
+      // Once strung out, converge on the commander rather than an unreachable
+      // rigid slot. Otherwise aim for a loose, trailing rank.
+      agent.target = state.regrouping ? { col: leader.x, row: leader.y } : memberTile({ col: leader.x, row: leader.y }, agent.offset, s, dims);
+    }
+  }
+
+  function speedFor(agent) {
+    const speed = Math.max(0.1, num(cfg?.formation?.marchSpeedTilesPerSecond, 1.15)); // Shared detailed/abstract speed.
+    return agent.index === state.commanderIndex ? speed : speed * Math.max(1, num(cfg?.formation?.followerCatchUpMultiplier, 1.2));
+  }
+
+  function advanceAbstract(agent, dt) {
+    const dx = agent.target.col - agent.x, dy = agent.target.row - agent.y; // Target delta in tiles.
+    const distance = Math.hypot(dx, dy); // Prevent zero-distance division.
+    if (distance <= 0.15) return;
+    const step = Math.min(distance, speedFor(agent) * dt); // No deadline-driven speed or clock snap.
+    agent.x += dx / distance * step;
+    agent.y += dy / distance * step;
+  }
+
+  function neutral(c, agent) {
+    if (!c || c.health <= 0) return;
+    c._harlyaoAggroRangePx ??= num(c.def?.aggroRangePx, deps.TILE * 6);
+    c._harlyaoBaseMoveSpeed ??= num(c.def?.moveSpeed, 118);
+    c.def.aggroRangePx = 0;
+    c.def.moveSpeed = speedFor(agent) * deps.TILE;
+    c.homeX = agent.target.col * deps.TILE;
+    c.homeY = agent.target.row * deps.TILE;
+    c.state = 'return'; // Shared travelCreatureToward owns pathing, facing, feet and animation.
+    c.wanderTarget ??= { x: c.x, y: c.y };
+    c.wanderTarget.x = c.x;
+    c.wanderTarget.y = c.y;
+    c.wanderT = 9999;
+  }
+
+  function simulationDistance(agent) {
+    if (deps?.getCurrentArea?.() !== state.zoneId || !deps?.player || !(deps.TILE > 0)) return Infinity;
+    return Math.hypot(agent.x - deps.player.x / deps.TILE, agent.y - deps.player.y / deps.TILE);
+  }
+
+  function shouldRender(agent) {
+    const radius = Math.max(1, num(cfg?.behavior?.fullSimulationRadiusTiles, 18)); // Same bubble as Porakaneki.
+    const release = Math.max(radius, num(cfg?.behavior?.fullSimulationReleaseRadiusTiles, 24)); // Prevent boundary flicker.
+    return !agent.dead && simulationDistance(agent) <= (agent.entity?.areaId === state.zoneId ? release : radius);
+  }
+
+  function setHostile(c) {
+    if (c._harlyaoProvoked) return;
+    c._harlyaoProvoked = true; // Native combat/search owns the actor after the first provocation.
+    c.homeX = c.x;
+    c.homeY = c.y; // A distant route endpoint must not leash a newly provoked commander out of combat.
+    c.def.aggroRangePx = c._harlyaoAggroRangePx || deps.TILE * 6;
+    c.def.moveSpeed = c._harlyaoBaseMoveSpeed || c.def.moveSpeed;
+    if (c.state !== 'chase') c.state = 'chase';
   }
 
   function provoke(reason) {
     if (state.provoked) return;
     state.provoked = true;
     state.reason = `provoked:${reason}`;
-    for (const c of state.members) {
-      if (!c || c.health <= 0) continue;
-      if (c.def && Number.isFinite(c._harlyaoAggroRangePx)) c.def.aggroRangePx = c._harlyaoAggroRangePx;
-      c.state = 'chase';
-    }
-    window.__farmLog?.('[harlyao-march] Army provoked; all surviving marchers are hostile.', 'warn', 'wildlife');
+    for (const c of state.members) if (c?.health > 0) setHostile(c);
+    window.__farmLog?.('[harlyao-march] Army provoked; surviving marchers defend their commander.', 'warn', 'wildlife');
   }
 
-  function detectHit() {
-    if (state.provoked) return;
-    for (const c of state.members) {
-      if (c && (Number(c.health) < Number(c.maxHealth) || Number(c.hitFlashT) > 0)) return provoke(c.id || 'member-hit');
-    }
+  function releaseEntity(agent) {
+    const c = agent.entity; // Cached rig being retired; data-only identity/position survives.
+    if (!c) return;
+    deps?.hostileObjects?.delete?.(c);
+    window.BanditCombat?.discardEntity?.(c);
+    const index = state.members.indexOf(c); // Keep compatibility diagnostics limited to retained entities.
+    if (index >= 0) state.members.splice(index, 1);
+    agent.entity = null;
   }
 
-  function marchVisible(dt, s) {
-    const living = state.members.filter(c => c && c.health > 0 && c.areaId === s.zoneId); // Only visible live members receive path/movement work.
-    if (!living.length) return;
-    const leader = living[0]; // Leader defines actual chunk/progress while observed.
-    const leaderChunk = {
-      cx: Math.floor((leader.x / deps.TILE) / chunkTiles()),
-      cz: Math.floor((leader.y / deps.TILE) / chunkTiles()),
-    }; // Physical leader chunk from movement, not the hourly schedule.
-    state.liveChunk = leaderChunk;
-    state.observedStep = Math.max(state.observedStep, routeStepFromChunk(leaderChunk, s));
-
-    const dims = zoneDims(s.zoneId); // Needed for next-chunk target and clamping.
-    const next = nextChunkCenter(leaderChunk, s, dims); // Visible formation paths toward adjacent route chunk.
-    const speedTiles = Math.max(MIN_MARCH_SPEED_TILES_S, Number(cfg?.formation?.marchSpeedTilesPerSecond) || 1.15); // Authored visual speed.
-    const speedPx = speedTiles * deps.TILE; // moveCreatureToward uses pixels/sec.
-    for (let i = 0; i < living.length; i++) {
-      const c = living[i];
-      neutral(c);
-      const target = memberTile(next, formationOffset(i), s, dims); // Preserves 4×5 slot during translation.
-      const tx = target.col * deps.TILE; // Pixel-space movement target X.
-      const ty = target.row * deps.TILE; // Pixel-space movement target row/Z.
-      c.homeX = tx;
-      c.homeY = ty;
-      c.facing = Math.atan2(ty - c.y, tx - c.x);
-      deps.moveCreatureToward?.(c, tx, ty, speedPx, Math.max(0, Number(dt) || 0));
-    }
+  function teardown(reason) {
+    buildGeneration++;
+    for (const agent of state.agents) releaseEntity(agent);
+    state.agents.length = 0;
+    state.members.length = 0;
+    state.visible = false;
+    state.liveChunk = null;
+    state.reason = reason;
   }
 
-  function liveAnchor() {
-    if (!state.visible || !deps?.TILE) return null;
-    let x = 0; // Sum of visible member world X in tile units.
-    let z = 0; // Sum of visible member world Z in tile units.
-    let surfaceY = 0; // Sum of visible members' rendered feet heights.
-    let n = 0; // Visible member count for centroid.
-    for (const c of state.members) {
-      if (!c || c.health <= 0 || c.areaId !== state.zoneId || !c.avatarRef?.group?.visible) continue;
-      x += c.x / deps.TILE;
-      z += c.y / deps.TILE;
-      surfaceY += (Number(c.avatarRef.group.position.y) || 0) - (Number(c.halfHeight) || 0);
-      n++;
-    }
-    if (!n) return null;
-    const cx = x / n;
-    const cz = z / n;
-    return { x: cx, z: cz, col: Math.floor(cx), row: Math.floor(cz), surfaceY: surfaceY / n, members: n };
+  const yieldFrame = () => typeof window.requestAnimationFrame === 'function'
+    ? new Promise(resolve => window.requestAnimationFrame(resolve))
+    : Promise.resolve(); // One-shot portrait-build yield; never owns a frame loop.
+
+  async function materialize(agent, s) {
+    if (buildPromise || !shouldRender(agent)) return;
+    const generation = buildGeneration; // Captured across asynchronous avatar construction.
+    state.builds++;
+    buildPromise = (async () => {
+      gangCfg ||= await window.BanditCombat?.loadGangConfig?.();
+      if (!gangCfg || generation !== buildGeneration || !shouldRender(agent)) return;
+      const w = weapon(agent.index); // Existing melee equipment pool.
+      const c = await window.BanditCombat.makeEntity({ ...gangCfg, speciesWeights: { [SPECIES_ID]: 1 }, rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 } }, 'grunt', 0, agent.x * deps.TILE, agent.y * deps.TILE, {
+        zoneId: s.zoneId,
+        rosterOverride: roster(agent.index),
+        defOverride: { label: agent.index === state.commanderIndex ? 'Harlyao Commander' : 'Harlyao Marcher', weaponKey: w.weaponKey, weaponShapeKey: w.shapeKey, weaponMetalKey: w.metalKey, attackTag: w.attackTag, rangedWeaponKey: null },
+        extra: { isHarlyaoArmyMember: true, harlyaoArmyIndex: agent.index, harlyaoCommanderId: state.agents[state.commanderIndex]?.id, harlyaoWeaponShape: w.shapeKey },
+      });
+      if (!c) return;
+      if (generation !== buildGeneration || !routeState().active || !shouldRender(agent)) { window.BanditCombat.discardEntity?.(c); return; }
+      agent.entity = c;
+      state.members.push(c);
+      ghostify(c);
+      if (!place(c, { col: agent.x, row: agent.y }, s.zoneId)) { releaseEntity(agent); return; }
+      agent.x = c.x / deps.TILE;
+      agent.y = c.y / deps.TILE;
+      neutral(c, agent);
+      if (state.provoked) setHostile(c);
+      deps.hostileObjects.add(c);
+      state.reason = 'member-materialized';
+      await yieldFrame();
+    })().catch(error => {
+      state.reason = `build-error:${error.message}`;
+      window.__farmLog?.(`[harlyao-march] ${state.reason}`, 'warn', 'wildlife');
+    }).finally(() => { buildPromise = null; });
+    return buildPromise;
   }
 
+  function update(dt) {
+    if (deps?.isPaused?.()) return;
+    tickAccum += clamp(num(dt), 0, 0.5); // Browser stalls never become map-length teleports.
+    if (tickAccum < TICK_INTERVAL_S) return;
+    const step = tickAccum; // Real elapsed time, independent of game-clock deadlines.
+    tickAccum = 0;
+    state.updateTicks++;
+    state.lastUpdateAt = num(globalThis.performance?.now?.(), Date.now());
+    if (!deps || !cfg) return;
+    const s = routeState(); // Clock only decides presence and daily zone.
+    if (!s.active) {
+      if (state.agents.length) teardown('daylight');
+      return;
+    }
+    resetForRoute(s);
+    syncAgents();
+    if (!state.provoked) for (const c of state.members) {
+      if (c.health < c.maxHealth || c.hitFlashT > 0) { provoke(c.id); break; }
+    }
+    planFormation(s);
+    coarseAccum += step;
+    const interval = Math.max(0.2, num(cfg?.behavior?.offChunkTickSeconds, 1)); // Cheap abstract steering cadence.
+    const coarseStep = coarseAccum >= interval ? coarseAccum : 0; // One shared batch for offscreen agents.
+    if (coarseStep) { coarseAccum = 0; state.coarseTicks++; }
+    state.visible = false;
+    for (const agent of state.agents) {
+      if (agent.dead) continue;
+      const c = agent.entity; // Optional nearby detailed representation.
+      if (shouldRender(agent)) {
+        agent.dormantSeconds = 0;
+        if (!c) {
+          if (coarseStep) advanceAbstract(agent, coarseStep); // Travel continues while a portrait waits in the build queue.
+          materialize(agent, s);
+          continue;
+        }
+        if (c.areaId !== s.zoneId) {
+          if (!place(c, { col: agent.x, row: agent.y }, s.zoneId)) {
+            if (coarseStep) advanceAbstract(agent, coarseStep);
+            continue;
+          }
+          agent.x = c.x / deps.TILE;
+          agent.y = c.y / deps.TILE;
+          state.wakes++;
+        }
+        if (state.provoked) setHostile(c); else neutral(c, agent);
+        c.harlyaoCommanderId = commander()?.id || null;
+        state.visible = true;
+      } else {
+        if (c?.areaId === s.zoneId) { hide(c); state.sleeps++; }
+        agent.dormantSeconds += step;
+        if (c && agent.dormantSeconds >= Math.max(1, num(cfg?.behavior?.dormantEntityReleaseSeconds, 3))) releaseEntity(agent);
+        if (coarseStep) advanceAbstract(agent, coarseStep);
+      }
+    }
+    const leader = commander(); // Also updates music's compatibility chunk to the real simulated position.
+    state.liveChunk = leader ? { cx: Math.floor(leader.x / chunkTiles()), cz: Math.floor(leader.y / chunkTiles()) } : null;
+  }
+
+  function commanderTarget() {
+    const leader = commander(); // Cheap target accessor used by the beacon, without allocating a whole debug snapshot.
+    if (!leader || !routeState().active) return null;
+    const c = leader.entity; // Native movement may have advanced since the last planner tick.
+    const live = c?.health > 0 && c.areaId === state.zoneId;
+    const x = live ? c.x / deps.TILE : leader.x, z = live ? c.y / deps.TILE : leader.y; // Target always points at this actor.
+    return { id: leader.id, index: leader.index, zoneId: state.zoneId, x, z, col: Math.floor(x), row: Math.floor(z), surfaceY: live ? num(c.avatarRef?.group?.position?.y) - num(c.halfHeight) : undefined, simulated: !live };
+  }
   function placementDebug() {
     const c = state.members.find(member => member && member.health > 0 && member.areaId === state.zoneId && member.avatarRef?.group?.visible);
     if (!c?.avatarRef?.group || !deps?.TILE) return null;
     const feetY = Number(c.avatarRef.group.position.y) - (Number(c.halfHeight) || 0); // Rendered feet should equal sampled surface exactly.
-    const surfaceY = Number(c._harlyaoPlacement?.surfaceY);
+    const tile = c.areaGrid?.[Math.floor(c.y / deps.TILE)]?.[Math.floor(c.x / deps.TILE)]; // Sample current feet rather than the old spawn tile.
+    const surfaceY = tile ? Number(deps.tileSurfaceYInArea?.(tile, state.zoneId)) : NaN;
     return {
       member: c.harlyaoArmyIndex ?? 0,
       simX: c.x / deps.TILE,
@@ -561,64 +498,11 @@
     };
   }
 
-  function resetForRoute(s) {
-    if (state.day === s.day && state.zoneId === s.zoneId) return;
-    if (state.members.length) teardown('new-daily-route');
-    state.day = s.day;
-    state.zoneId = s.zoneId;
-    state.provoked = false;
-    state.observedStep = 0;
-    state.lastLogKey = null;
-  }
-
-  function logHourly(s, chunk) {
-    if (s.coarseKey === state.lastLogKey) return;
-    state.lastLogKey = s.coarseKey;
-    window.__farmLog?.(`[harlyao-march] ${s.zoneId} ${s.route.directionLabel} hour=${s.hour} chunk=${chunk.cx},${chunk.cz} live=${state.visible}`, 'info', 'wildlife');
-  }
-
-  function update(dt) {
-    state.updateTicks++;
-    state.lastUpdateAt = Number(globalThis.performance?.now?.()) || Date.now(); // Mobile diagnostics distinguish a spawn bug from a dead update seam.
-    if (!deps || !cfg) return;
-    const s = hourlyState(); // Hidden route calculation changes only on day/whole-hour cache key.
-    if (!s?.active) {
-      if (state.members.length) teardown('daylight');
-      state.day = civilDay();
-      state.zoneId = routeForDay(state.day)?.zoneId || null;
-      state.provoked = false;
-      state.observedStep = 0;
-      return;
-    }
-
-    resetForRoute(s);
-    const chunk = effectiveChunk(s); // Hourly coarse chunk, never behind an already-observed live step.
-    logHourly(s, chunk);
-    if (deps.getCurrentArea?.() !== s.zoneId) return sleep('different-zone');
-
-    if (state.visible) {
-      detectHit();
-      if (!state.provoked) marchVisible(dt, s);
-      if (!sameChunk(playerChunk(), state.liveChunk || chunk)) sleep('left-army-chunk');
-      return;
-    }
-
-    // Performance-critical offscreen path: after the cached hourly chunk lookup,
-    // only this chunk equality runs. No 20-member loops, pathfinding, animation,
-    // combat AI, material work, or formation-light work occurs while hidden.
-    if (!sameChunk(playerChunk(), chunk)) return;
-    if (buildPromise) return; // Critical: never wake a partially built async formation on the next frame.
-    if (state.members.length >= expectedMemberCount()) wake(s, chunk);
-    else materialize(s, chunk);
-  }
-
   async function loadConfig() {
     try {
       const response = await fetch(CONFIG_URL); // One-time route/equipment configuration load.
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       cfg = await response.json();
-      scheduleKey = null;
-      scheduled = null;
       state.reason = 'config-ready';
       return cfg;
     } catch (error) {
@@ -645,7 +529,7 @@
     if (api.updateCampBanners.__harlyaoMarchWrapped) return true;
     const original = api.updateCampBanners.bind(api); // Existing cheap pre-updateHostiles seam used by wilderness bandit LOD too.
     const wrapped = function harlyaoMarchTick(dt) {
-      update(dt);
+      if (state.tickOwner !== 'RuntimeFrameScheduler') update(dt);
       return original(dt);
     };
     wrapped.__harlyaoMarchWrapped = true;
@@ -657,6 +541,14 @@
     if (installer(window[name])) return;
     const descriptor = Object.getOwnPropertyDescriptor(window, name); // Leaves non-configurable host/test globals alone.
     if (descriptor && !descriptor.configurable) return;
+    if (typeof descriptor?.set === 'function') {
+      Object.defineProperty(window, name, {
+        configurable: true, enumerable: descriptor.enumerable ?? true,
+        get() { return descriptor.get?.call(window); },
+        set(value) { descriptor.set.call(window, value); installer(descriptor.get ? descriptor.get.call(window) : value); },
+      });
+      return;
+    }
     let assigned = descriptor?.value; // Holds future parser-time namespace assignment until installer can wrap it.
     Object.defineProperty(window, name, {
       configurable: true,
@@ -714,56 +606,49 @@
     };
   }
 
+
+  function installRuntimeTick() {
+    if (!window.RuntimeFrameScheduler?.register) return false;
+    window.RuntimeFrameScheduler.register(SCHEDULER_ID, frame => update(num(frame?.deltaMs) / 1000), {
+      phase: 'pre-game', owner: 'HarlyaoNightMarch',
+      description: 'Steers the commander-led spectral army and promotes nearby simulated marchers before native hostile travel.',
+    });
+    state.tickOwner = 'RuntimeFrameScheduler';
+    return true;
+  }
+
   function debugSnapshot() {
-    const s = cfg ? hourlyState() : null; // Same cached hourly schedule used by runtime.
-    const chunk = s?.active ? effectiveChunk(s) : null; // Scheduled/effective chunk for mobile verification.
+    const s = cfg ? routeState() : null; // Same lifecycle authority as update.
+    const target = commanderTarget(); // Stable exact moving target for diagnostics and music.
     return {
-      configReady: !!cfg,
-      depsReady: !!deps,
-      day: state.day,
-      zoneId: state.zoneId,
-      scheduled: s?.active ? { zoneId: s.zoneId, direction: s.route.directionLabel, hour: s.hour, chunk } : null,
-      playerChunk: playerChunk(),
-      liveChunk: state.liveChunk ? { ...state.liveChunk } : null,
-      liveAnchor: liveAnchor(),
-      placement: placementDebug(),
-      expectedMembers: expectedMemberCount(),
-      building: !!buildPromise,
-      membersCached: state.members.length,
-      membersAlive: state.members.filter(c => c?.health > 0).length,
-      visible: state.visible,
-      provoked: state.provoked,
-      observedStep: state.observedStep,
-      builds: state.builds,
-      wakes: state.wakes,
-      sleeps: state.sleeps,
-      updateTicks: state.updateTicks,
-      lastUpdateAt: state.lastUpdateAt,
-      reason: state.reason,
+      configReady: !!cfg, depsReady: !!deps, day: state.day, zoneId: state.zoneId,
+      scheduled: s?.active ? { zoneId: s.zoneId, direction: s.route.directionLabel, hour: s.hour, chunk: state.liveChunk } : null,
+      playerChunk: deps?.player ? { cx: Math.floor(deps.player.x / deps.TILE / chunkTiles()), cz: Math.floor(deps.player.y / deps.TILE / chunkTiles()) } : null,
+      liveChunk: state.liveChunk, liveAnchor: target, commander: target,
+      placement: placementDebug(), expectedMembers: expectedMemberCount(),
+      building: !!buildPromise, membersCached: state.members.length,
+      membersAlive: state.agents.filter(agent => !agent.dead).length,
+      detailedMembers: state.members.filter(c => c.health > 0 && c.areaId === state.zoneId).length,
+      visible: state.visible, provoked: state.provoked, regrouping: state.regrouping,
+      builds: state.builds, wakes: state.wakes, sleeps: state.sleeps,
+      coarseTicks: state.coarseTicks, updateTicks: state.updateTicks,
+      lastUpdateAt: state.lastUpdateAt, tickOwner: state.tickOwner, reason: state.reason,
+      latestChange: 'Commander-led persistent simulation; loose regrouping, individual distance LOD, native travel and moving 3D beacon.',
+      agents: state.agents.map(agent => ({ id: agent.id, index: agent.index, x: agent.x, y: agent.y, dead: agent.dead, target: agent.target })),
     };
   }
 
   window.HarlyaoNightMarch = Object.freeze({
-    update,
-    loadConfig,
-    provoke: () => provoke('debug'),
-    debugSnapshot,
-    visualComplexitySnapshot,
+    update, loadConfig, commanderTarget, visualComplexitySnapshot,
+    provoke: () => provoke('debug'), debugSnapshot,
     formatDebug: () => {
-      const d = debugSnapshot();
-      const sched = d.scheduled ? `${d.scheduled.zoneId}/${d.scheduled.direction}@${d.scheduled.chunk.cx},${d.scheduled.chunk.cz}` : 'inactive';
-      const player = d.playerChunk ? `${d.playerChunk.cx},${d.playerChunk.cz}` : 'none';
-      const live = d.liveChunk ? `${d.liveChunk.cx},${d.liveChunk.cz}` : 'none';
-      const anchor = d.liveAnchor ? `${d.liveAnchor.x.toFixed(2)},${d.liveAnchor.z.toFixed(2)}` : 'none';
-      const ground = Number.isFinite(d.placement?.groundErrorY) ? d.placement.groundErrorY.toFixed(3) : '-';
-      return `Harlyao march: cfg=${d.configReady} deps=${d.depsReady} scheduled=${sched} player=${player} live=${live} anchor=${anchor} members=${d.membersAlive}/${d.membersCached}/${d.expectedMembers} building=${d.building} visible=${d.visible} groundErr=${ground} ticks=${d.updateTicks} provoked=${d.provoked} reason=${d.reason}`;
+      const d = debugSnapshot(); // Copyable mobile report uses the existing Pixel Probe surface.
+      return `Harlyao march: ${d.latestChange} commander=${d.commander?.id || '-'} position=${d.commander ? `${d.commander.x.toFixed(2)},${d.commander.z.toFixed(2)}` : '-'} alive=${d.membersAlive} detailed=${d.detailedMembers} regrouping=${d.regrouping} ticks=${d.updateTicks}/${d.coarseTicks} owner=${d.tickOwner} reason=${d.reason}`;
     },
-    __test: Object.freeze({ routeForDay, coarseStateFor, chunkCount, formationOffset }),
+    __test: Object.freeze({ routeForDay, routeState, chunkCount, formationOffset }),
   });
-
   watchNamespace('BanditCombat', installBanditCombat);
-  watchNamespace('BanditCamps', installCampTick);
+  if (!installRuntimeTick()) watchNamespace('BanditCamps', installCampTick);
   loadConfig();
-  unregisterGlow?.();
-  unregisterGlow = window.Ghostify?.registerGlowSource?.(glowSource) || null;
+  window.Ghostify?.registerGlowSource?.(glowSource);
 })();
