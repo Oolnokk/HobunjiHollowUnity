@@ -77,7 +77,30 @@
     root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings 15:00–01:00`;
     const content = root.querySelector('#festivalContent');
     let html = '';
-    if (type === 'welcome') {
+    if (type === 'feast') {
+      const dishes = api.feastMenu(); // Same persisted seven-pot lineup that the furniture service serves.
+      const chosen = api.feastDishDetails(feastInspectIndex);
+      const describeEffects = effects => Object.entries(effects || {}).filter(([,amount])=>Number(amount)>0)
+        .map(([effect,amount])=>window.CookingSystem?.formatEffectStrength?.(effect,amount) || `${effect} (+${amount})`);
+      html = '<p class="festival-note">Contest points are for judging; the actual eating buffs depend on the ingredients’ star quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
+      html += `<h3>Compare dishes · day ${api.contestStandings()?.day || 1} of 7</h3><div class="festival-dish-picker">${dishes.map((meal,index)=>
+        button(`${index+1}. ${meal.label} · ${meal.id==='reserved'?'Not yet entered':meal.score+' points'}\n${describeEffects(meal.foodEffects).slice(0,3).join(', ') || 'No food buffs recorded'}`,
+          'inspect-pot', meal.id==='reserved', `data-pot-index="${index}" aria-pressed="${index===feastInspectIndex}"`)
+      ).join('')}</div>`;
+      if (chosen && chosen.id !== 'reserved') {
+        html += `<section class="festival-dish-info"><h3>${esc(chosen.label)}</h3>`;
+        html += `<p class="festival-dish-total"><strong>${chosen.score} contest points</strong> · ${chosen.ingredientDetails.length} ingredients</p>`;
+        if (chosen.estimatedQuality) html += '<p class="festival-note">This older dish predates ingredient-quality records. Ingredient stars are estimated from finished-food quality; the saved contest score and eating buffs remain authoritative.</p>';
+        html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
+        html += chosen.ingredientDetails.map(item=>{
+          const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
+          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${item.stars} × ${item.multiplier} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
+        }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
+        html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
+        html += describeEffects(chosen.foodEffects).map(value=>`<div>${esc(value)}</div>`).join('') || 'No recorded food buffs';
+        html += '</div><p class="festival-note">Each seated bite gives five minutes of these buffs, up to fifty minutes total. Fullness still applies. To eat this dish, close the list and aim at its pot with a bowl to use Fill bowl.</p></section>';
+      }
+    } else if (type === 'welcome') {
       html = `<p>${esc(f.description)}</p><p class="festival-note">All roads, building entrances, and town exits remain open. Rewards are once per festival unless stated otherwise.</p><ul>${api.activityProps().filter(p => p.activity.type !== 'welcome').map(p => `<li>${esc(p.activity.label || window.FestivalCalendar.activityLabels[p.activity.type])} — town tile ${p.col}, ${p.row}</li>`).join('')}</ul>`;
     } else if (type === 'potluck' || type === 'offering') {
       const done = api.claimed(type);
@@ -124,7 +147,13 @@
       catch { const output = document.createElement('textarea'); output.value = report; output.style.cssText = 'width:100%;height:180px'; root.querySelector('#festivalContent').append(output); output.select(); status('Select and copy the diagnostics below.'); }
       return;
     }
-    if (!prop || busy) return;
+    if ((!prop && feastInspectIndex === null) || busy) return;
+    if (action === 'inspect-pot') {
+      const index = Number(target.dataset.potIndex);
+      const meal = system().feastDishDetails?.(index);
+      if (meal && meal.id !== 'reserved') { feastInspectIndex=index; render(); }
+      return;
+    }
     if (['take-bowl','fill-bowl','eat-bowl'].includes(action)) {
       const result=action==='take-bowl'?system().takeFestivalBowl():
         action==='fill-bowl'?system().fillFestivalBowl(Number(target.dataset.potIndex)):
@@ -141,6 +170,12 @@
     } catch (error) { status(`Activity could not complete: ${error.message}`); }
     finally { busy = false; }
   }
-  function update() { if (prop && (!system().atProp(prop) || eventId !== `${system().year()}:${system().festival()?.id}`)) close(); }
-  window.FestivalUI = { open, close, update, isOpen: () => !!prop };
+  function update() {
+    if (feastInspectIndex !== null) {
+      if (eventId !== `${system().year()}:${system().festival()?.id}` || !system().festivalHours?.()) close();
+      return;
+    }
+    if (prop && (!system().atProp(prop) || eventId !== `${system().year()}:${system().festival()?.id}`)) close();
+  }
+  window.FestivalUI = { open, openFeast, close, update, isOpen: () => !!prop || feastInspectIndex !== null };
 })();
