@@ -34,7 +34,8 @@ W.NpcGifting={evaluateHeldGift:rec=>({tier:rec.id==='friend'?'disliked':'liked',
 W.DialogueContent={getNpcDlgState:id=>({favor:favors.get(id)||0}),adjustNpcFavor:(id,amount,reason)=>{awarded.push({id,amount,reason});favors.set(id,(favors.get(id)||0)+amount);}};
 W.NpcRapport={get:()=>250};
 W.SocialActionWheel={startDance:()=>true,stopDance(){},getDebug:()=>({dancing:true})};
-W.FestivalUI={close(){},update(){}};
+let inspectedPot = null; // Records which surface opened the festival inspection; should not consume a serving.
+W.FestivalUI={close(){},update(){},openFeast(index){inspectedPot=index;return true;}};
 W.AmbientDialogue={showAlcoholOfferResponse(){}};
 W.HobunjiActivityEvents={emit(){}};
 W.SCRATCHBONES_CONFIG={game:{romance:{likes:{sloomi:['favorite']}}}};
@@ -105,8 +106,44 @@ hour=17;assert.equal(api.feastMenu().length,7,'six rotating NPC dishes and the r
 assert.equal(api.feastMenu()[6].id,'reserved','player pot stays empty before donation');
 assert.equal(api.takeFestivalBowl().ok,true);
 assert.equal(aimSurface('meal').provider.buttons(aimSurface('meal'))[0].action,'obj_fill_bowl','the actual pot offers Fill');
+const inspected = aimSurface('meal',2);
+assert(inspected.provider.buttons(inspected).some(button=>button.action==='obj_inspect_meal' && button.allowed),'a dish can be inspected independently of filling the bowl');
+const servingsBefore = api.festivalBowl().uses;
+assert.equal(inspected.provider.onAction('obj_inspect_meal',inspected).ok,true,'inspect action is wired to the existing furniture service');
+assert.equal(inspectedPot,2,'the inspector opens the pot that the player aimed at');
+assert.equal(api.festivalBowl().uses,servingsBefore,'inspecting never consumes a bowl serving');
+assert.equal(api.feastDishDetails(2).score,api.feastDishDetails(2).ingredientDetails.reduce((sum,item)=>sum+item.points,0),'visible ingredient points explain the contest score');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(api.feastDishDetails(2).foodEffects)),
+  JSON.parse(JSON.stringify(W.FestivalPotluckContest.mealEffects(api.feastDishDetails(2).ingredients,itemDefs))),
+  'dish preview displays exactly the effects that festival eating applies'
+);
+
 assert.equal(api.fillFestivalBowl(0).ok,true);
 assert.equal(api.festivalBowl().uses,10);
+// Open the real festival inspection UI without a mouse, console, or browser devtools.
+const fakeNodes = Object.fromEntries(['#festivalTitle','#festivalSubtitle','#festivalContent','#festivalStatus']
+  .map(id=>[id,{textContent:'',innerHTML:'',hidden:false}]));
+const modal = {style:{display:'',setProperty(){}},setAttribute(){},addEventListener(){},
+  querySelector(key){return fakeNodes[key] || (key==='button:not(:disabled)'?{focus(){}}:null);}};
+context.document.createElement=tag=>tag==='section'?modal:{textContent:'',append(){}};
+context.document.head={append(){}};
+context.document.body={append(){}};
+context.document.activeElement={focus(){}};
+context.document.exitPointerLock=()=>{};
+W.CalendarSystem.formatCalendarDate=()=> 'Highheat 8';
+load('festival-ui');
+const surfaceForDetails=aimSurface('meal',0);
+assert.equal(surfaceForDetails.provider.onAction('obj_inspect_meal',surfaceForDetails).ok,true,'real modal opens via the actual furniture service');
+assert.equal(W.FestivalUI.isOpen(),true,'inspection uses the shared accessible modal');
+assert.match(fakeNodes['#festivalContent'].innerHTML,/Ingredient quality and contribution/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/Effects when eaten/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/contest points/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/data-festival-action="inspect-pot"/);
+assert.match(fakeNodes['#festivalContent'].innerHTML,/★/);
+W.FestivalUI.close();
+assert.equal(W.FestivalUI.isOpen(),false,'closing the inspector restores ordinary interactions');
+
 assert.equal(api.eatFestivalBowl().ok,true);
 assert.equal(api.festivalFoodStacks('speed'),1,'festival meal contributes to the live cooking stat');
 assert.equal(api.festivalBowl().uses,9);
