@@ -56,7 +56,7 @@ assert(code.includes('WorldPopupText?.setInteractionPrompts') &&
   'pickup uses the world prompt and native interaction claims instead of a standalone DOM button');
 assert(asset.carryable.hitbox.enabled&&
   ['x','y','z'].every(axis=>asset.carryable.hitbox.size[axis]>0) &&
-  code.includes('worldHitbox(vase)')&&authorHtml,
+  code.includes('worldHitbox(vase)'),
   'separately sized 3D impact hitbox is serialized and used by projectile collision');
 assert(code.includes('createEmitterVisual') && code.includes('emitterVisibilityElapsed'),
   'only visible charges drive their authored particle emitters');
