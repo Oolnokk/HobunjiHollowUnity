@@ -613,6 +613,28 @@
     }
   }
 
+  async function spawnDevArenaShattercask() {
+    const button=document.getElementById('devSpawnShattercaskBtn');
+    const status=document.getElementById('devShattercaskSpawnStatus');
+    if(button?.disabled)return;
+    if(button){button.disabled=true;button.textContent='Spawning Shattercask…';}
+    if(status)status.textContent='Choosing a walkable tile…';
+    try {
+      if(deps.getCurrentArea()!==DEV_ARENA_ZONE_ID)throw new Error('Enter the Testing Arena first.');
+      if(!window.Shattercasks?.spawnRandomInDevArena)throw new Error('Shattercask system is not loaded.');
+      const result=await window.Shattercasks.spawnRandomInDevArena();
+      const message='Spawned Shattercask at tile '+result.col+', '+result.row+'.';
+      if(status)status.textContent=message;
+      deps.showToast(message,true);
+    }catch(error) {
+      const message='Shattercask spawn failed: '+(error?.message||error);
+      if(status)status.textContent=message;
+      deps.showToast(message,false);
+      window.__farmLog?.('[dev-arena] '+message,'error');
+    }finally{
+      if(button){button.disabled=false;button.textContent='💥 Spawn Random Shattercask';}
+    }
+  }
   function _bindListeners() {
     document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
     document.getElementById('devTeleportWildernessLabBtn')?.addEventListener('click', teleportToWildernessLab);
@@ -641,6 +663,7 @@
       spawnDevArenaFoliage(devSpawnFoliageSelectedKey);
     });
     document.getElementById('devClearFoliageBtn')?.addEventListener('click', devArenaClearFoliage);
+    document.getElementById('devSpawnShattercaskBtn')?.addEventListener('click', spawnDevArenaShattercask);
     document.getElementById('devArenaWeatherGrid')?.addEventListener('click', (e) => {
       const button = e.target.closest('[data-weather]');
       if (button) setArenaWeather(button.dataset.weather);

@@ -17,6 +17,20 @@
   const PROJECTILE_MIN_TRAVEL_S = 0.42; // Near throws remain responsive.
   const PROJECTILE_MAX_TRAVEL_S = 0.9; // Distant throws remain readable without feeling sluggish.
   const RELEASE_DELAY_S = 0.28; // Authored windup→strike release point.
+  // Shared physical flask and carryable-object ballistic contract.
+  function flightDuration(distanceTiles){
+    return Math.min(PROJECTILE_MAX_TRAVEL_S,Math.max(PROJECTILE_MIN_TRAVEL_S,
+      PROJECTILE_MIN_TRAVEL_S+Math.max(0,Number(distanceTiles)||0)*.034));
+  }
+  function flightPosition(origin,target,ratio,distanceTiles,out){
+    const t=Math.max(0,Math.min(1,Number(ratio)||0));
+    const arc=Math.sin(Math.PI*t)*Math.min(1.65,.72+Math.max(0,Number(distanceTiles)||0)*.065);
+    const x=origin.x+(target.x-origin.x)*t;
+    const y=origin.y+(target.y-origin.y)*t+arc;
+    const z=origin.z+(target.z-origin.z)*t;
+    if(out?.set){out.set(x,y,z);return out;}
+    return {x,y,z};
+  }
   const LANDING_SHADOW_TERRAIN_STEPS = 8; // The shadow re-drapes over the terrain this many times per flight rather than every frame.
   const LANDING_SHADOW_MIN_OPACITY = 0.75; // The shared character-shadow opacity (~0.28) is too faint for a telegraph the player must read mid-fight.
   const LANDING_SHADOW_FADE_IN_S = 0.12; // Ground cue appears almost immediately at release, independent of flight length.
@@ -280,7 +294,7 @@
     const tile = deps.TILE || 64; // Target conversion.
     const target = { x: state.targetX / tile, y: deps.getGroundYAtWorld?.(state.targetX / tile, state.targetY / tile) ?? deps.getGroundY?.(state.targetX, state.targetY) ?? 0.05, z: state.targetY / tile }; // Terrain-aware landing point.
     const distanceTiles = Math.hypot(target.x - origin.x, target.z - origin.z); // Scales flight time/arc for the extended shoulder range.
-    const durationS = Math.min(PROJECTILE_MAX_TRAVEL_S, Math.max(PROJECTILE_MIN_TRAVEL_S, PROJECTILE_MIN_TRAVEL_S + distanceTiles * 0.034)); // Readable distance-scaled travel time.
+    const durationS = flightDuration(distanceTiles); // Readable distance-scaled travel time.
     projectiles.push(makeProjectile({ itemKey: state.itemKey, payload: state.payload, definition: state.definition, area: deps.getCurrentArea?.(), t: 0, durationS, distanceTiles, trailAccumulator:0, origin: { x: origin.x, y: origin.y, z: origin.z }, target }));
     emitSfx('release', { itemKey: state.itemKey, recipeId: state.definition.id, x: origin.x, y: origin.y, z: origin.z });
     aimState = null;
@@ -314,7 +328,7 @@
       z: landingY / tile,
     }; // Same terrain-aware landing representation as player throws.
     const distanceTiles = Math.hypot(target.x - origin.x, target.z - origin.z); // Used to share the player's readable flight-time curve.
-    const durationS = Math.min(PROJECTILE_MAX_TRAVEL_S, Math.max(PROJECTILE_MIN_TRAVEL_S, PROJECTILE_MIN_TRAVEL_S + distanceTiles * 0.034)); // Same deterministic travel timing as player flasks.
+    const durationS = flightDuration(distanceTiles); // Same deterministic travel timing as player flasks.
     const safeTier = Math.max(0, Math.min(4, Math.floor(Number(potencyTier) || 0))); // Used to keep enemy potency inside the stored potion-tier range.
     projectiles.push(makeProjectile({
       itemKey: `npc_flask_${recipeId}_p${safeTier}`,
@@ -449,8 +463,7 @@
       if (deps.getCurrentArea?.() !== projectile.area) { disposeProjectile(projectile); projectiles.splice(index, 1); continue; } // Never render an old-area splash in the new scene.
       projectile.t += Math.max(0, dt);
       const ratio = Math.min(1, projectile.t / projectile.durationS); // Authoritative destination progress.
-      const arc = Math.sin(Math.PI * ratio) * Math.min(1.65, 0.72 + projectile.distanceTiles * 0.065); // Taller arc for distant shoulder throws.
-      projectile.mesh?.position.set(projectile.origin.x + (projectile.target.x - projectile.origin.x) * ratio, projectile.origin.y + (projectile.target.y - projectile.origin.y) * ratio + arc, projectile.origin.z + (projectile.target.z - projectile.origin.z) * ratio);
+      if(projectile.mesh)flightPosition(projectile.origin,projectile.target,ratio,projectile.distanceTiles,projectile.mesh.position); // Shared with physical carried throws.
       projectile.mesh?.rotation.set(projectile.t * 8, 0, projectile.t * 5);
       updateLandingShadow(projectile, ratio);
       projectile.trailAccumulator += Math.max(0, dt);
@@ -508,7 +521,7 @@
 
   addEventListener('blur', cancelAim); // Losing input focus cancels without consuming a flask.
 
-  window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, throwFromEntity, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
+  window.AlchemyFlasks = { flightDuration,flightPosition,init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, throwFromEntity, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
 
 // The shared selector presentation and contextual Potion Select adapter both

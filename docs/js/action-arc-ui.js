@@ -412,7 +412,14 @@
   function _bindListeners() {
     _itemBtn = document.getElementById('itemBtn');
     window._desktopSelectionArc = {
-      openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
+      openTool() {
+        // Tool Select is claimed outright by the faced Shattercask, even for
+        // a held/long controller press. Do not open the selector over Pick Up.
+        if(window.Shattercasks?.toolArchAction?.()==='pickup'){
+          window.Shattercasks.toolArchTap();return;
+        }
+        if (_arcOpen !== 'tool') _openToolArc();
+      },
       openItem() { if (_arcOpen !== 'item') _openItemArc(); },
       openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
       openPotions() { _openPotionRoot(); },
@@ -505,10 +512,11 @@
       else if (_arcOpen?.startsWith('entries:potion-items-')) _openPotionItems(_arcOpen.slice('entries:potion-items-'.length));
     }); // Refresh the open hierarchy only when its thresholded context changes.
 
-    let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
+    let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false, _tShatterPickup = false;
     deps.toolBtn.addEventListener('pointerdown', ev => {
       if (_tPtId !== null) return;
       _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
+      _tShatterPickup = window.Shattercasks?.toolArchAction?.()==='pickup';
       _tDx = ev.clientX; _tDy = ev.clientY;
       // See handleJoystickPointerDown's comment: an uncaught throw here
       // (possible for a touch starting before the browser considers the
@@ -516,7 +524,7 @@
       // leave _tPtId stuck non-null, permanently blocking this button via
       // the pointerdown guard above.
       try { deps.toolBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-      _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
+      if(!_tShatterPickup)_tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
       ev.preventDefault();
     });
     deps.toolBtn.addEventListener('pointermove', ev => {
@@ -528,22 +536,26 @@
       if (ev.pointerId !== _tPtId) return;
       _tPtId = null;
       if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-      if (_arcOpen === 'tool') _arcUp();
+      if (_tShatterPickup){
+        window.Shattercasks?.toolArchTap?.();
+      }else if (_arcOpen === 'tool') _arcUp();
       else if (!_tHeld && !_tMoved) {
         // A Tool Select tap recalls the last valid held tool — unless a
         // tool is already out, in which case the same tap now dequips
         // instead (replacing the removed dedicated put-away button; see
         // its matching case in itemBtn's own pointerup below).
-        if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
-        else window._desktopSelectionArc.recallLastTool();
+        if (!window.Shattercasks?.toolArchTap?.()) {
+          if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
+          else window._desktopSelectionArc.recallLastTool();
+        }
       }
-      _tHeld = false; _tMoved = false;
+      _tHeld = false; _tMoved = false; _tShatterPickup = false;
     });
     deps.toolBtn.addEventListener('pointercancel', ev => {
       if (ev.pointerId !== _tPtId) return;
       _tPtId = null;
       if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-      _clearArc(); _tHeld = false; _tMoved = false;
+      _clearArc(); _tHeld = false; _tMoved = false; _tShatterPickup = false;
     });
 
     if (_itemBtn) {
@@ -631,5 +643,9 @@
 
   window.ActionArcUI = {
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
+    // Allow nearby world objects to expose contextual Tool Select behavior
+    // without retaining or mutating the selector's private equipment state.
+    heldMode: () => deps?.getHeldMode?.() ?? null,
+    stowForCarry: () => deps?.putAwayHeldEquipment?.(),
   };
 })();

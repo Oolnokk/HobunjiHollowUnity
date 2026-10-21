@@ -245,6 +245,74 @@
       mesh.userData.glbReady = true;
     }).catch(error => { mesh.userData.glbError = String(error); window.__farmLog?.('Furniture GLB: ' + error.message, 'error'); });
   }
+
+  // Same central barrel shoulder and hollow cup interior as the Furniture Author.
+  // Generic tapered cylinders made authored Shattercask necks look capped and
+  // collapsed the rounded barrel body to a straight cone.
+  function createAuthoredVesselGeometry(part) {
+    const t=part.transform,segments=Math.max(3,Math.min(64,Math.round(part.segments||20)));
+    const sx=Math.max(.001,t.sx),sy=Math.max(.001,t.sy),sz=Math.max(.001,t.sz);
+    const at=(x,y,z)=>part.taperAxis==='x'?new THREE.Vector3(y*sx,x*sy,z*sz)
+      :part.taperAxis==='z'?new THREE.Vector3(x*sx,z*sy,y*sz):new THREE.Vector3(x*sx,y*sy,z*sz);
+    const topX=part.topScaleX??1,topZ=part.topScaleZ??1,botX=part.bottomScaleX??1,botZ=part.bottomScaleZ??1;
+    const skewX=part.topSkewX||0,skewZ=part.topSkewZ||0;
+    const pos=[],uv=[],origin=new THREE.Vector3(),tile=part.textureTileSize||1;
+    const face=(vertices,reference=origin)=>{
+      const c=new THREE.Vector3();
+      for(const v of vertices)c.add(v);
+      c.multiplyScalar(1/vertices.length).sub(reference);
+      const n=new THREE.Vector3().subVectors(vertices[1],vertices[0])
+        .cross(new THREE.Vector3().subVectors(vertices[2],vertices[0]));
+      return n.dot(c)<0?[vertices[0],...vertices.slice(1).reverse()]:vertices;
+    };
+    const quad=(a,b,c,d,reference=origin)=>{
+      const v=face([a,b,c,d],reference);
+      const u=v[0].distanceTo(v[1])/tile,w=v[0].distanceTo(v[3])/tile;
+      for(const k of [0,1,2,0,2,3])pos.push(v[k].x,v[k].y,v[k].z);
+      uv.push(0,0,u,0,u,w,0,0,u,w,0,w);
+    };
+    const tri=(a,b,c,reference=origin)=>{
+      const v=face([a,b,c],reference),u=v[0].distanceTo(v[1])/tile,w=v[0].distanceTo(v[2])/tile;
+      for(const p of v)pos.push(p.x,p.y,p.z);
+      uv.push(0,0,u,0,0,w);
+    };
+    const bottom=[],top=[],middle=[],innerFloor=[],innerTop=[];
+    const isCup=part.kind==='cup',inner=Math.max(.05,Math.min(.95,Number(part.innerScale)||.78));
+    const basin=Math.max(.03,Math.min(.8,Number(part.basinDepth??.18)));
+    for(let i=0;i<segments;i++){
+      const angle=i/segments*Math.PI*2,c=Math.cos(angle)*.5,z=Math.sin(angle)*.5;
+      bottom.push(at(c*botX,-.5,z*botZ));
+      top.push(at(c*topX+skewX,.5,z*topZ+skewZ));
+      if(isCup){
+        innerFloor.push(at(c*(botX+(topX-botX)*basin)*inner+skewX*basin,-.5+basin,z*(botZ+(topZ-botZ)*basin)*inner+skewZ*basin));
+        innerTop.push(at(c*topX*inner+skewX,.5,z*topZ*inner+skewZ));
+      }else middle.push(at(c,0,z));
+    }
+    const bottomCenter=at(0,-.5,0),topCenter=at(skewX,.5,skewZ);
+    const below=at(0,-2,0),above=at(0,2,0),floor=at(skewX*basin,-.5+basin,skewZ*basin);
+    for(let i=0;i<segments;i++){
+      const n=(i+1)%segments;
+      if(isCup){
+        quad(bottom[i],bottom[n],top[n],top[i]);
+        const innerRef=innerFloor[i].clone().add(innerFloor[n]).add(innerTop[n]).add(innerTop[i]).multiplyScalar(.5);
+        quad(innerFloor[n],innerFloor[i],innerTop[i],innerTop[n],innerRef);
+        quad(top[i],top[n],innerTop[n],innerTop[i],below);
+        tri(floor,innerFloor[i],innerFloor[n],below);
+        tri(bottomCenter,bottom[n],bottom[i],above);
+      }else{
+        quad(bottom[i],bottom[n],middle[n],middle[i]);
+        quad(middle[i],middle[n],top[n],top[i]);
+        tri(bottomCenter,bottom[i],bottom[n]);
+        tri(topCenter,top[n],top[i]);
+      }
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
@@ -259,7 +327,9 @@
       geo = new THREE.SphereGeometry(0.5 * Math.max(t.sx, t.sy, t.sz), 16, 10);
     } else if (part.kind === 'hoop') {
       geo = createHoopGeometry(part);
-    } else if (part.kind === 'legRound' || part.kind === 'cylinder' || part.kind === 'disc' || part.kind === 'barrel' || part.kind === 'cup' || part.kind === 'liquidSurface') {
+    } else if (part.kind === 'barrel' || part.kind === 'cup') {
+      geo = createAuthoredVesselGeometry(part);
+    } else if (part.kind === 'legRound' || part.kind === 'cylinder' || part.kind === 'disc' || part.kind === 'liquidSurface') {
       geo = createTaperedCylinderGeometry(part);
     } else {
       geo = createTaperedBoxGeometry(part);

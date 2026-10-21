@@ -170,8 +170,15 @@ assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cach
 assert(cacheMap.caveCache && cacheMap.caveTraps.length >= 1, 'cache has functional runtime plan plus at least one trap');
 const wall = cacheMap.caveSitePlan.separatorRock;
 assert(wall && wall.cells.length === cacheMap.oreRocks.filter(rock => rock.caveSeparator).length, 'hidden cache is sealed behind a wall of mineable ore rocks');
+assert(wall.cells.some(cell => cell.layer === 5), 'sealed chamber uses five successive mineable strata');
+assert(cacheMap.oreRocks.filter(rock=>rock.caveSeparator).every(rock=>Number.isInteger(rock.caveSeparatorLayer)), 'each wall rock records its layer for diagnostics');
+assert(cacheMap.caveShattercasks.some(charge=>charge.guaranteed), 'every mineable cave separator guarantees an entrance-side Shattercask');
 const plan = Cave.__test.plansByMapId.get('map_i_test_cache');
 assert(plan.separator.farKeys.includes(`${cacheMap.caveCache.col},${cacheMap.caveCache.row}`), 'cache sits behind the wall');
+assert(cacheMap.caveShattercasks.filter(charge=>charge.guaranteed).every(charge =>
+  plan.separator.nearKeys.includes(charge.col+','+charge.row)
+  && !wall.cells.some(cell=>cell.col===charge.col&&cell.row===charge.row)
+), 'guaranteed charge stays on the accessible side and never inside the wall');
 assert(cacheMap.caveBanditSpawns.length >= 2 && cacheMap.caveBanditSpawns.every(s => plan.separator.nearKeys.includes(`${s.col},${s.row}`)), 'bandit inhabitants stay on the entrance side of the wall');
 
 const mushroomMap = decorate(profile('map_i_test_mushroom', 'mushroom_cave'));
@@ -187,7 +194,7 @@ assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('ma
 function assertSpaced(map) {
   const features = [...map.oreRocks, ...(map.caveProps || []).filter(prop => !prop.embedded), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
   for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
-    if (features[i].caveSeparator && features[j].caveSeparator) continue; // A single mineable wall deliberately uses touching rocks.
+    if (features[i].caveSeparator && features[j].caveSeparator) continue; // Five mineable wall strata deliberately touch each other.
     assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
   }
 }

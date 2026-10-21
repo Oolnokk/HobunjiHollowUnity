@@ -199,6 +199,8 @@
       if (!root || horizontalSize(root) > MAX_INTERACTABLE_SIZE_TILES) continue;
       consider(root, 'interact');
     }
+    for (const root of window.CavernOreRocks?.senseTargets?.(scene) || []) consider(root, 'interact'); // The wall stays unlit; only its matte crack geometry highlights in Sense Mode.
+    for (const root of window.Shattercasks?.senseTargets?.(scene) || []) consider(root, 'interact'); // Intact blast vases read as interactable objects.
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }

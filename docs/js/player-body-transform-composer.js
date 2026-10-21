@@ -580,6 +580,7 @@
     resolvedYawDeltaRad,
     getHeadMaxYawDeg: () => PLAYER_HEAD_MAX_YAW_DEG, // Shared physical yaw cap lets NPC greeting neck turns match the player's head limit without duplicating the number.
     getPlayerMesh: () => playerMesh,
+    getPosteriorY: () => playerPosteriorY, // Exact live player-local posterior pivot shared by holding/camera/composed body transforms.
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),
     getDebug() {
