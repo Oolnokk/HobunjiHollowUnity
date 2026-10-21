@@ -23,6 +23,9 @@
   const pileHistory = new Map(); // Area -> Map(pile id -> unlooted debris), restores one-input collectible piles.
   const lastEquipment = { weapon:null, tool:null, item:null }; // Pickup-time equipment snapshot used to drop carried vases on selection changes.
   let held = null; // The one intact vase held in front of the local player.
+  let aimingThrow=null,flight=null,throwRing=null;
+  const THROW_RELEASE_DELAY=.28,MAX_THROW_RADIUS=14;
+  const throwPoses=()=>window.HeldActionAnimations?.throwFlask?.poses||null;
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
   let promptRoot = null; // Same WorldPopupText prompts as other world interactions.
@@ -221,6 +224,33 @@
     for(const fx of vase.emitters||[])fx.dispose?.();
     vase.emitters=null;
   }
+  const backXray=new Map(),heldRenderOrders=new Map();
+  function setHeldRearXray(cask) {
+    if(!cask) {
+      for(const [mesh,v] of backXray){
+        mesh.renderOrder=v.order;
+        if(mesh.material===v.material){
+          v.material.depthTest=v.depthTest;v.material.depthWrite=v.depthWrite;v.material.needsUpdate=true;
+        }
+      }
+      backXray.clear();
+      for(const [mesh,order] of heldRenderOrders)mesh.renderOrder=order;
+      heldRenderOrders.clear();
+      return;
+    }
+    for(const mesh of cask.meshColliders||[]){
+      if(!heldRenderOrders.has(mesh))heldRenderOrders.set(mesh,mesh.renderOrder);
+      mesh.renderOrder=3;
+    }
+    carryDeps()?.playerMesh?.traverse?.(mesh=>{
+      if(!mesh?.isMesh||mesh.name!=='npc_avatar_back_plane')return;
+      const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
+      if(!material)return;
+      if(!backXray.has(mesh))backXray.set(mesh,{
+        material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
+      mesh.renderOrder=4;material.depthTest=false;material.depthWrite=false;material.needsUpdate=true;
+    });
+  }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
   function heldItemHolder(){
     const d=carryDeps();
@@ -267,6 +297,16 @@
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
+    if(aimingThrow?.vase===vase){
+      const poses=throwPoses(),neutral=poses?.neutral,pose=aimingThrow.phase==='releasing'?poses?.strike:poses?.windup;
+      const blend=Math.min(1,aimingThrow.elapsed/(aimingThrow.phase==='releasing'?THROW_RELEASE_DELAY:.34));
+      if(neutral&&pose){
+        // Only flask pose Y/Z translations: never the attack animator's hand
+        // ownership, billboard rotation, or character-local X translation.
+        vase.group.position.y+=(Number(pose.y)-Number(neutral.y))*blend;
+        vase.group.position.z+=(Number(pose.z)-Number(neutral.z))*blend;
+      }
+    }
     return true;
   }
   function heldHandTarget(){
@@ -399,15 +439,18 @@
       deps()?.showToast?.('Put away your tool or item before picking up a Shattercask.',false);
       return false;
     }
+    window.ActionArcUI?.stowForCarry?.();
     held=cask;cask.carried=true;
     alignHeldVase(cask);
+    setHeldRearXray(cask);
     Object.assign(lastEquipment,switchEquipment());
     lastEvent='picked up '+cask.id;
-    deps()?.showToast?.('Carrying Shattercask — interact to set it down.',false);
+    deps()?.showToast?.('Carrying Shattercask — Item Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
   function drop() {
     if(!held)return false;
+    cancelShatterAim();setHeldRearXray(null);
     const cask=held,p=playerPosition(),g=grid();
     const origin=p?nearestOpen(g,Math.round(p.x-.5),Math.round(p.z-.5),2):null;
     if(origin){cask.col=origin.col;cask.row=origin.row;}
@@ -465,22 +508,16 @@
     if(target?.type==='pile')return collectPile(target.obj);
     return false;
   }
-  // The usual Tool Select button also doubles as a native pickup/set-down control,
-  // but only when the character's hands are free and an intact Shattercask is close.
-  // Holding/dragging the button continues to open the normal tool wheel.
+  // Tool Select itself becomes Pick Up when the player faces a nearby vase.
   function toolArchAction() {
-    if(held)return 'drop';
-    if(window.ActionArcUI?.heldMode?.()!=='none')return null;
-    return nearInteraction()?.type==='vase'?'pickup':null;
+    if(held)return null;
+    const target=nearInteraction(),p=playerPosition();
+    if(target?.type!=='vase'||!p)return null;
+    const dx=target.obj.col+.5-p.x,dz=target.obj.row+.5-p.z,dist=Math.hypot(dx,dz);
+    return dist<.3||Math.cos(p.angle)*dx/dist+Math.sin(p.angle)*dz/dist>.25?'pickup':null;
   }
   function toolArchTap() {
-    const action=toolArchAction();
-    if(action==='drop')return drop();
-    if(action==='pickup'){
-      const target=nearInteraction();
-      return target?.type==='vase'?pickUp(target.obj):false;
-    }
-    return false;
+    return toolArchAction()==='pickup'&&pickUp(nearInteraction()?.obj);
   }
   let lastToolArchAction=null;
   function syncToolArchPickup() {
@@ -492,9 +529,9 @@
     lastToolArchAction=action;
     btn.classList?.toggle?.('shattercask-context',!!action);
     if(action){
-      btn.dataset.shattercaskIcon=action==='pickup'?'✋':'⬇️';
-      btn.setAttribute?.('aria-label',action==='pickup'?'Pick up Shattercask (hold for tools)':'Set down Shattercask (hold for tools)');
-      btn.title=action==='pickup'?'Pick up Shattercask — hold for tools':'Set down Shattercask — hold for tools';
+      btn.dataset.shattercaskIcon='✋';
+      btn.setAttribute?.('aria-label','Pick up Shattercask');
+      btn.title='Pick up Shattercask';
     }else{
       btn.removeAttribute?.('data-shattercask-icon');
       btn.setAttribute?.('aria-label','Select tool, or dequip if a tool is already out');
@@ -505,11 +542,9 @@
     // Native action-claim input + world-space interaction prompt. No extra
     // button or direct keyboard event that bypasses rebinds and controllers.
     const target=held?{type:'held',obj:held}:nearInteraction();
-    const handsBusy=target?.type==='vase'&&['tool','item'].includes(window.ActionArcUI?.heldMode?.());
-    const label=target?.type==='held'?'Set down Shattercask':target?.type==='pile'
-      ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble')
-      :handsBusy?'Put away tools to pick up':'Pick up Shattercask';
-    const claim=target?target.type+':'+(target.obj?.id||'')+':'+(handsBusy?'busy':'ready'):'';
+    const label=target?.type==='held'?'Action 1: Throw / Action 2: Drop':target?.type==='pile'
+      ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
+    const claim=target?target.type+':'+(target.obj?.id||''):'';
     if(claim!==promptClaim){
       if(target)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label,priority:410,onPress:interact}]);
@@ -726,10 +761,11 @@
   function detonate(cask,cause='weapon') {
     if(!cask||cask.exploded)return false;
     cask.exploded=true;
-    if(held===cask)held=null;
+    if(held===cask){held=null;aimingThrow=null;setHeldRearXray(null);}
+    if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);
     const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
-    if(cask.carried&&cask.group.getWorldPosition&&carriedWorldPosition){
+    if((cask.carried||cask.flying)&&cask.group.getWorldPosition&&carriedWorldPosition){
       const world=cask.group.getWorldPosition(carriedWorldPosition);
       impact.x=world.x;impact.y=world.y;impact.z=world.z;
     }
@@ -738,7 +774,7 @@
     rec?.vases.delete(cask.id);
     saveConsumed(cask.mapId+':'+cask.id);
     const x=impact.x,z=impact.z;
-    const y=cask.carried?impact.y:baseHeight(cask.col,cask.row)+.30; // A charge shot out of someone's hands explodes where it is actually held.
+    const y=(cask.carried||cask.flying)?impact.y:baseHeight(cask.col,cask.row)+.30; // A charge shot out of someone's hands explodes where it is actually held.
     shatterVisual(rec?.scene||scene(),x,z,y);
     applyBlast(cask.mapId,x,z);
     const cleared=destroyTerrain(cask.mapId,rec,x,z);
@@ -786,7 +822,7 @@
     let result=null;
     meshRaycastQueries++;
     for(const vase of rec.vases.values()){
-      if(vase.exploded || !vase.meshColliders?.length)continue;
+      if(vase.exploded || vase.flying || !vase.meshColliders?.length)continue;
       if(vase.carried)refreshMeshBounds(vase);
       else vase.group.updateWorldMatrix?.(true,true);
       if(vase.meshBounds && shatterRayBox && shatterRayBoxPoint) {
@@ -860,6 +896,7 @@
   function tick(dt=0) {
     const mapId=area();
     if(held && held.mapId!==mapId)drop();
+    updateShatterThrow(dt);
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
     if(held&&!alignHeldVase(held)) {
@@ -949,7 +986,7 @@
       const id=event.target?.closest?.('button')?.id||'';
       // Tool Select is the context-sensitive Set Down button. Do not drop on
       // pointerdown and accidentally also recall a tool on pointerup.
-      if(id==='toolBtn')return;
+      if(id==='toolBtn'||id==='btnItemAction1'||id==='btnItemAction2')return;
       if(/(?:weapon|tool|item|dequip|swap)/i.test(id))drop();
     },true);
   }
