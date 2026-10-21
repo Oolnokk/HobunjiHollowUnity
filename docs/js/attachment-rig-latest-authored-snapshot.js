@@ -14,7 +14,7 @@
     new URL('mammakhbuur-species-runtime.js?v=20261004mammakhhair1', base).href,
     new URL('nuhongan-species-runtime.js?v=20261017h6e503fa', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
-    new URL('omgurku-connector-rig.js?v=20261021h086544d', base).href,
+    new URL('omgurku-connector-rig.js?v=20261021hbdbae69', base).href,
     new URL('omgurku-species-runtime.js?v=20261021h1762453', base).href,
     new URL('skeleton-species-runtime.js?v=20261010skelbridge1', base).href,
     new URL('harlyao-skeleton-species-runtime.js?v=20261010h93464d4', base).href,

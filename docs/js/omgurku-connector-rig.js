@@ -17,7 +17,8 @@ const FALLBACK_BELT=[{x:.325,y:1},{x:.405,y:.99},{x:.485,y:.985},
 const NECK=[.20,.25,.30,.35,.40].map((x,i)=>({x,y:[.32,.295,.28,.295,.32][i]}));
 const DEFAULT={
  schema:ID, enabled:false, assetPath:'assets/portraitsprites/omgurku-connector.png',
- sourceTop:TOP, sourceBottom:BOTTOM, animalNeck:NECK, opacity:1
+ sourceTop:TOP, sourceBottom:BOTTOM, animalNeck:NECK, riderWaist:null, opacity:1,
+ shrinkwrapDirections:{sourceTop:90,sourceBottom:270,riderWaist:270,animalNeck:90}
 };
 const clone=o=>JSON.parse(JSON.stringify(o));
 const clamp=(n,min=0,max=1)=>Math.max(min,Math.min(max,Number(n)||0));
@@ -32,6 +33,11 @@ function normalize(raw){
     !raw.assetPath.includes('..')) out.assetPath=raw.assetPath;
  for(const field of ['sourceTop','sourceBottom','animalNeck']){
    if(valid(raw[field]))out[field]=raw[field].map(p=>({x:clamp(p.x),y:clamp(p.y)}));
+ }
+ if(valid(raw.riderWaist))out.riderWaist=raw.riderWaist.map(p=>({x:clamp(p.x),y:clamp(p.y)}));
+ for(const field of Object.keys(out.shrinkwrapDirections)){
+   const angle=raw.shrinkwrapDirections?.[field]; // Direction arrows travel with saved/exported rigs.
+   if(angle!=null && Number.isFinite(Number(angle)))out.shrinkwrapDirections[field]=((Number(angle)%360)+360)%360;
  }
  if(Number.isFinite(Number(raw.opacity)))out.opacity=clamp(raw.opacity);
  // An uploaded PNG never enters a committed species JSON by accident.
@@ -61,6 +67,7 @@ function sample3(points,t,target){
  return target;
 }
 function findPortraitPlane(group){
+ if(group.userData?.neckRig?.skinnedPlane)return group.userData.neckRig.skinnedPlane;
  let found=null;group.traverse?.(obj=>{
    if(!found && obj.name==='npc_avatar_front_plane')found=obj;
  });
@@ -76,6 +83,7 @@ function create(THREE,root){
  const upperPlane=findPortraitPlane(c.upper),lowerPlane=findLower(root);
  if(!upperPlane||!lowerPlane)return null;
  const columns=24,rows=12,count=(columns+1)*(rows+1);
+ const attachmentRows=2,collar=attachmentRows/rows,middleSpan=1-2*collar; // Both contact sections lie exactly in their attached sprite planes.
  const geometry=new THREE.BufferGeometry(),positions=new Float32Array(count*3);
  const uv=new Float32Array(count*2),indices=[];
  for(let row=0;row<=rows;row++)for(let col=0;col<=columns;col++){
@@ -92,7 +100,8 @@ function create(THREE,root){
    .setUsage(THREE.DynamicDrawUsage));
  geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));
  const material=global.HobunjiSpritePngSurface.makeMaterial(THREE,null,
-   'omgurku_connector_material',{side:THREE.DoubleSide,opacity:settings.opacity}); // Shared PNG depth and cutout rules.
+   'omgurku_connector_material',{side:THREE.DoubleSide,opacity:settings.opacity,
+     polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}); // Shared PNG depth and cutout rules.
  const mesh=new THREE.Mesh(geometry,material);
  mesh.name='Omgurku_WaistToNeckConnector';
  mesh.renderOrder=2.5;
@@ -100,6 +109,9 @@ function create(THREE,root){
  root.add(mesh);
  const vec=()=>new THREE.Vector3();
  const targetsTop=Array.from({length:5},vec),targetsBottom=Array.from({length:5},vec);
+ const tangentTop=vec(),tangentBottom=vec(),curveTop=vec(),curveBottom=vec(); // Cached Hermite bridge endpoints and planar end tangents.
+ const normalTop=vec(),normalBottom=vec(); // Surface normals in this avatar's local frame.
+ const topNormalMatrix=new THREE.Matrix3(),bottomNormalMatrix=new THREE.Matrix3(); // Correct normals under nonuniform scaling.
  const tempTop=vec(),tempBottom=vec(); // Reused interpolation endpoints.
  const local=vec(),lastState={rev:-1}; // Last mesh-space transforms avoid per-frame string construction.
  const upperMatrix=new THREE.Matrix4(),lowerMatrix=new THREE.Matrix4(); // Geometry depends on relative transforms only.
@@ -153,21 +165,37 @@ function create(THREE,root){
       && previousLower.equals(lowerMatrix))return false;
    previousUpper.copy(upperMatrix);previousLower.copy(lowerMatrix);
    lastState.rev=revision;
-   const b=belt();
+   const b=settings.riderWaist||belt();
+   normalTop.set(0,0,1).applyNormalMatrix(topNormalMatrix.getNormalMatrix(upperMatrix));
+   normalBottom.set(0,0,1).applyNormalMatrix(bottomNormalMatrix.getNormalMatrix(lowerMatrix));
    for(let i=0;i<5;i++){
-     localPoint(upperPlane,b[i],targetsTop[i],.012,false);
-     localPoint(lowerPlane,settings.animalNeck[i],targetsBottom[i],.012,true);
+     localPoint(upperPlane,b[i],targetsTop[i],0,false);
+     localPoint(lowerPlane,settings.animalNeck[i],targetsBottom[i],0,true);
    }
    let offset=0,tex=geometry.attributes.uv.array;
    for(let i=0;i<=columns;i++){
        const x=i/columns;
        sample3(targetsTop,x,tempTop);
        sample3(targetsBottom,x,tempBottom);
+       tangentTop.copy(tempBottom).sub(tempTop);
+       tangentBottom.copy(tangentTop);
+       tangentTop.addScaledVector(normalTop,-tangentTop.dot(normalTop));
+       tangentBottom.addScaledVector(normalBottom,-tangentBottom.dot(normalBottom));
+       curveTop.copy(tempTop).addScaledVector(tangentTop,collar);
+       curveBottom.copy(tempBottom).addScaledVector(tangentBottom,-collar);
        splineAt(settings.sourceTop,x,sourceTop);
        splineAt(settings.sourceBottom,x,sourceBottom);
        for(let j=0;j<=rows;j++){
        const t=j/rows; // Interpolate every row between this column's fixed seams.
-       local.copy(tempTop).lerp(tempBottom,t);
+       if(j<=attachmentRows)local.copy(tempTop).addScaledVector(tangentTop,t);
+       else if(j>=rows-attachmentRows)local.copy(tempBottom).addScaledVector(tangentBottom,t-1);
+       else{
+         const u=(t-collar)/middleSpan,u2=u*u,u3=u2*u; // Smoothly join the two flat contact sections.
+         local.copy(curveTop).multiplyScalar(2*u3-3*u2+1)
+           .addScaledVector(tangentTop,(u3-2*u2+u)*middleSpan)
+           .addScaledVector(curveBottom,-2*u3+3*u2)
+           .addScaledVector(tangentBottom,(u3-u2)*middleSpan);
+       }
        offset=(j*(columns+1)+i)*3;
        positions[offset++]=local.x;positions[offset++]=local.y;positions[offset++]=local.z;
        const index=(j*(columns+1)+i)*2;
@@ -186,7 +214,7 @@ function create(THREE,root){
    disposed=true;loadEpoch++;live.delete(handle);
    mesh.parent?.remove(mesh);geometry.dispose();material.dispose();texture?.dispose();
  }
- const handle={root,mesh,update,dispose,applyImage,targetsTop,targetsBottom};
+ const handle={root,mesh,update,dispose,applyImage,targetsTop,targetsBottom,attachmentRows};
  live.add(handle);applyImage();
  return handle;
 }

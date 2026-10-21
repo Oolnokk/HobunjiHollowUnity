@@ -80,4 +80,50 @@ mod.set({...uploaded,opacity:.7});
 assert.equal(serializedImages.length,serializedBefore,'live rig edits and snapshots never serialize PNG bytes');
 assert(!mod.reset().enabled,'reset disables optional connector and frees no-NPC preview');
 assert.equal(mem.has(mod.storageKey),false,'reset clears local override');
+// Execute the shared authoring math against synthetic alpha grids in every direction.
+const mathWorld = {}; // Isolated shared-core instance, without a browser or renderer.
+vm.runInNewContext(coreSrc, mathWorld);
+const core = mathWorld.HobunjiPantsRig; // Public math used by the actual toolbar buttons.
+const line = [.3,.4,.5,.6,.7].map(x => ({x,y:.05})); // Starts above a known opaque rectangle.
+const pixels = {width:40,height:20,data:new Uint8ClampedArray(40*20*4)}; // Pixel-perfect test silhouette.
+for(let y=5;y<15;y++)for(let x=10;x<30;x++)pixels.data[(y*40+x)*4+3]=255;
+for(const [angle,points,axis,expected] of [
+ [90,line,'y',.25],[270,line.map(p=>({...p,y:.95})),'y',.75],
+ [0,line.map(p=>({x:.05,y:p.x})),'x',.25],[180,line.map(p=>({x:.95,y:p.x})),'x',.75],
+]){
+ const result=core.shrinkwrapSplineToAlpha(points,pixels,angle); // First incoming solid pixels for each cardinal direction.
+ assert.equal(result.hits,5);
+ for(const point of result.points){
+  assert(Math.abs(point[axis]-expected)<1e-6,'lands on the incoming silhouette edge');
+  assert(pixels.data[(Math.floor(point.y*20)*40+Math.floor(point.x*40))*4+3]>=128,
+   'landed coordinate is actually inside an opaque pixel');
+ }
+}
+const inner=line.map(p=>({...p,y:.5})); // Nodes already on solid artwork must never move against the chosen direction.
+const settled=core.shrinkwrapSplineToAlpha(inner,pixels,90);
+assert.equal(JSON.stringify(settled.points),JSON.stringify(inner),'already-solid nodes stay in place');
+const repeated=core.shrinkwrapSplineToAlpha(settled.points,pixels,90);
+assert(repeated.points.every((p,i)=>Math.abs(p.y-settled.points[i].y)<1e-10),'repeated shrinkwrap is stable');
+const missed=core.shrinkwrapSplineToAlpha(line.map(p=>({...p,x:0})),pixels,90);
+assert.equal(missed.hits,0);
+assert(missed.points.every(p=>p.x===0&&p.y===.05),'misses keep their original positions');
+const diagonal={width:20,height:20,data:new Uint8ClampedArray(20*20*4)}; // A single pixel tests diagonal traversal without step-skipping.
+diagonal.data[(10*20+10)*4+3]=255;
+const angled=core.shrinkwrapSplineToAlpha(line.map(()=>({x:.1,y:.1})),diagonal,45);
+assert.equal(angled.hits,5);
+assert(angled.points.every(p=>Math.abs(p.x-p.y)<1e-12&&Math.abs(p.x-.5)<1e-6),'diagonal hits remain on the requested ray');
+const before=JSON.stringify(line); // Transforms return new points and preserve original editor history.
+const shifted=core.transformSpline(line,{dx:-.9});
+assert.equal(shifted[0].x,0);
+assert(Math.abs(shifted[4].x-shifted[0].x-.4)<1e-12,'edge clamping moves the group without squashing it');
+assert.equal(JSON.stringify(line),before);
+const rotated=core.transformSpline([.4,.45,.5,.55,.6].map(x=>({x,y:.5})),{rotateDeg:90},{width:200,height:100});
+assert(rotated.every(p=>Math.abs(p.x-.5)<1e-12));
+assert(Math.abs(rotated[0].y-.3)<1e-12&&Math.abs(rotated[4].y-.7)<1e-12,'rotation respects non-square image pixels');
+assert.throws(()=>core.transformSpline(line,{scaleX:100}),/exceed/,'oversized transforms do not destroy the spline');
+assert.throws(()=>core.shrinkwrapSplineToAlpha(line,{width:1,height:1,data:[]},90),/Readable/);
+const edited=mod.normalize({...cfg.connector,riderWaist:line,shrinkwrapDirections:{sourceTop:-90,animalNeck:450}});
+assert.equal(edited.shrinkwrapDirections.sourceTop,270);
+assert.equal(edited.shrinkwrapDirections.animalNeck,90);
+assert.equal(edited.riderWaist[0].x,.3);
 console.log('Omgurku two-spline connector rig authoring contract passed');

@@ -33,6 +33,7 @@ button:disabled{opacity:.4}select,input[type=text]{width:100%}
 #spriteWrap{position:relative;border-radius:9px;background:#08111d;overflow:hidden;border:1px solid var(--edge)}
 #spriteCanvas{display:block;width:100%;height:160px;image-rendering:pixelated;touch-action:none;cursor:crosshair}
 .connectorRigCanvas{display:block;width:100%;height:auto;max-height:260px;border:1px solid #314b65;border-radius:9px;background:#080f19;image-rendering:pixelated;touch-action:none;cursor:crosshair;margin:7px 0}
+.splineTools{border:1px solid var(--edge);border-radius:8px;padding:8px;margin:6px 0 14px}.splineTools button{min-height:44px;padding:6px 9px;touch-action:manipulation}.splineTools .row{gap:5px;margin:5px 0}.splineTools input[type=range]{width:100%;touch-action:pan-y}.splineTools select{width:auto;max-width:100%}.splineTools label{margin-top:6px}
 #omgurkuConnectorSection input[type=file]{color:var(--muted);border:1px solid var(--edge);border-radius:8px;padding:5px}
 #portrait{height:84px;width:84px;background:#06111c;image-rendering:pixelated;border:1px solid var(--edge);border-radius:10px;object-fit:contain}
 pre{font:11px/1.42 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
@@ -43,7 +44,7 @@ input[type=file]{display:none}
 <script src="../../config/attachment-rig-profiles.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../config/pants-rigs.js?v=20261020connector1"></script>
-<script src="../../js/pants-rig-core.js?v=20261020connector1"></script>
+<script src="../../js/pants-rig-core.js?v=20261021h75b5bd3"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/portrait-utils.js?v=20261020omgurkuBack1"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
@@ -52,7 +53,7 @@ input[type=file]{display:none}
 <script src="../../js/voorg-ass-registration.js?v=20261015h47a3826"></script>
 <script src="../../js/creature-genetics-render.js?v=20261019omgurkuTint1"></script>
 <script src="../../js/runtime-frame-scheduler.js"></script>
-<script src="../../js/held-action-animations.js?v=20261021hba0c1f9"></script>
+<script src="../../js/held-action-animations.js?v=20261021h08cda3f"></script>
 </head>
 <body>
 <div id="app">
@@ -88,13 +89,18 @@ input[type=file]{display:none}
 <button id="connectorSourceBottomBtn">Edit lower PNG seam</button>
 </div>
 <canvas id="connectorSourceCanvas" width="480" height="260" class="connectorRigCanvas" aria-label="PNG connector with two draggable five-point seams"></canvas>
-<small>Tap or drag the lime (upper) and orange (lower) nodes. The five points follow the Pants Rig Author's normalized-spline convention.</small>
+<small>Drag nodes to shape either seam. Drag each arrow tip to aim its shrinkwrap direction.</small>
+<div id="connectorSourceTools" class="splineTools"></div>
 <h2 style="margin-top:14px">Rider waist target</h2>
-<canvas id="connectorRiderCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Read-only five-point Engh-Sho waistband fit"></canvas>
-<small>The lime spline is the canonical Engh-Sho male portraitBeltSpline from the Pants Rig Author—not a separately guessed waistband.</small>
+<canvas id="connectorRiderCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Editable five-point rider waistband fit"></canvas>
+<small>Starts from the Engh-Sho pants waistband. Adjust or shrinkwrap it onto the visible rider pixels.</small>
+<div id="connectorRiderTools" class="splineTools"></div>
 <h2 style="margin-top:14px">Animal neck target</h2>
 <canvas id="connectorAnimalCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Animal sprite with editable five-point neck spline"></canvas>
-<small>Drag orange nodes to where the connector should meet the animal's neck. This edge follows the quadruped's own deadzone and gait.</small>
+<small>Fit the lower edge to the animal's neck. Both connector ends always lie flat against their attached sprite planes.</small>
+<div id="connectorAnimalTools" class="splineTools"></div>
+<button id="connectorUndo" disabled>Undo last spline edit</button>
+<p id="connectorLatestChange">Latest change: whole-spline transforms, directional pixel shrinkwrap, and flat connector ends.</p>
 <label for="connectorOpacity">Connector opacity <output id="connectorOpacityValue">100%</output></label>
 <input id="connectorOpacity" type="range" min=".1" max="1" step=".025" value="1" style="width:100%">
 <div class="row" style="margin-top:8px">
@@ -135,6 +141,6 @@ input[type=file]{display:none}
 </div>
 </div>
 <script src="./calibration.js?v=20261021h3246c23"></script>
-<script src="./connector-author.js?v=20261021hdd88d5a"></script>
+<script src="./connector-author.js?v=20261021hcc6966a"></script>
 </body>
 </html>

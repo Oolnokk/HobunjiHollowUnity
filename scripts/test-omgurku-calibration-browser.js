@@ -148,7 +148,7 @@ const server=http.createServer((req,res)=>{
       const image=handle.mesh.material.map;
       const next=window.HobunjiOmgurkuConnector.snapshot({includeImage:true});
       next.sourceTop[2].y+=.02;
-      window.HobunjiOmgurkuConnector.set(next);
+      window.HobunjiOmgurkuConnectorAuthor.importConfig(next);
       return {rebuilt,stable,sameTexture:handle.mesh.material.map===image,
         depthTest:handle.mesh.material.depthTest,depthWrite:handle.mesh.material.depthWrite};
     });
@@ -157,6 +157,48 @@ const server=http.createServer((req,res)=>{
     assert.equal(performanceCheck.sameTexture,true,'rigging edits reuse the decoded PNG');
     assert.equal(performanceCheck.depthTest,true,'scenery occludes the connector');
     assert.equal(performanceCheck.depthWrite,true,'connector uses ordinary PNG cutout depth');
+    // Exercise the actual mobile controls, including pointer rotation of the on-spline arrow.
+    await page.setViewportSize({width:390,height:844});
+    const beforeTransform=await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot());
+    await page.locator('#connectorSourceTools [data-action=left]').click();
+    const movedSpline=await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot());
+    assert(movedSpline.sourceTop.every((p,i)=>Math.abs(p.x-beforeTransform.sourceTop[i].x+.004)<1e-10),
+      'whole-spline buttons move all five nodes together');
+    assert.deepEqual(movedSpline.sourceBottom,beforeTransform.sourceBottom,'the other source seam remains independent');
+    await page.locator('#connectorUndo').click();
+    assert.deepEqual(await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot().sourceTop),beforeTransform.sourceTop);
+    await page.locator('#connectorRiderTools [data-action=left]').click();
+    assert.equal((await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot().riderWaist)).length,5,
+      'rider target is editable and saved with this connector only');
+    await page.locator('#connectorUndo').click();
+    await page.evaluate(()=>{
+      const next=window.HobunjiOmgurkuConnector.snapshot();
+      next.sourceTop=next.sourceTop.map(p=>({...p,y:0}));
+      next.shrinkwrapDirections.sourceTop=90;
+      window.HobunjiOmgurkuConnectorAuthor.importConfig(next);
+    });
+    await page.locator('#connectorSourceCanvas').scrollIntoViewIfNeeded();
+    const arrow=await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().arrows.sourceTop);
+    const canvasBox=await page.locator('#connectorSourceCanvas').boundingBox();
+    const px=x=>canvasBox.x+x*canvasBox.width/480;
+    const py=y=>canvasBox.y+y*canvasBox.height/260;
+    await page.mouse.move(px(arrow.tx),py(arrow.ty));await page.mouse.down();
+    await page.mouse.move(px(arrow.cx+36),py(arrow.cy),{steps:5});await page.mouse.up();
+    const arrowAngle=await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().directions.sourceTop);
+    assert(Math.min(arrowAngle,360-arrowAngle)<3,'dragging the arrow rotates its projection direction');
+    await page.locator('#connectorSourceTools input[type=range]').evaluate(input=>{
+      input.value='90';input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    await page.locator('#connectorSourceTools [data-action=shrinkwrap]').click();
+    const shrinkwrapped=await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot());
+    assert(shrinkwrapped.sourceTop.every(p=>Math.abs(p.y-7/120)<1e-5),
+      'mobile shrinkwrap button projects onto clean PNG pixels, not opaque editor guides');
+    assert(shrinkwrapped.shrinkwrapDirections.sourceBottom===270,'other arrows retain their own angles');
+    if(process.env.HOBUNJI_QA_SCREENSHOT){
+      await page.locator('#connectorSourceCanvas').scrollIntoViewIfNeeded();
+      await page.screenshot({path:process.env.HOBUNJI_QA_SCREENSHOT});
+    }
+    await page.setViewportSize({width:1200,height:800});
     await page.locator('#headingRange').evaluate(input=>{
       input.value='90';input.dispatchEvent(new Event('input',{bubbles:true}));
     });
@@ -166,6 +208,34 @@ const server=http.createServer((req,res)=>{
       h.update(true);return [h.targetsBottom[0].x,h.targetsBottom[0].y,h.targetsBottom[0].z];
     });
     assert(afterTurn.every(Number.isFinite),'bottom neck spline remains finite while animal turns');
+    const contact=await page.evaluate(()=>{
+      const handle=[...window.HobunjiOmgurkuConnector.live][0];
+      const model=window.HobunjiOmgurkuCalibration.context().model;
+      const c=model.userData.omgurkuComposite,THREE=window.THREE;
+      let upper=c.upper.userData?.neckRig?.skinnedPlane;
+      c.upper.traverse(node=>{if(node.name==='npc_avatar_front_plane')upper=node;});
+      const lower=c.lowerRefs[0].frontPlane;
+      model.updateMatrixWorld(true);handle.update(true);
+      const positions=handle.mesh.geometry.attributes.position.array,point=new THREE.Vector3();
+      let topError=0,bottomError=0;
+      for(let row=0;row<=12;row++)for(let col=0;col<=24;col++){
+        if(row>handle.attachmentRows&&row<12-handle.attachmentRows)continue;
+        const offset=(row*25+col)*3;
+        point.fromArray(positions,offset);model.localToWorld(point);
+        if(row<=handle.attachmentRows){upper.worldToLocal(point);topError=Math.max(topError,Math.abs(point.z));}
+        else{lower.worldToLocal(point);bottomError=Math.max(bottomError,Math.abs(point.z));}
+      }
+      const extra=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,c.upper.userData.sourceCanvas,{
+        backCanvas:c.upper.userData.backCanvas,speciesId:'omgurku',gender:'male',neckRig:true});
+      const skinned=extra.userData.omgurkuComposite.upper.userData.neckRig.available;
+      const hasConnector=!!extra.userData.omgurkuComposite.connector;
+      window.PNGPlaneAvatar.disposeAvatarModel(extra);
+      return {topError,bottomError,skinned,hasConnector};
+    });
+    assert(contact.topError<1e-6&&contact.bottomError<1e-6,
+      'both end strips remain exactly coplanar with their independently rotated sprite planes');
+    assert.equal(contact.skinned,true,'the additional avatar uses the gameplay neck/skinned portrait path');
+    assert.equal(contact.hasConnector,true,'gameplay skinned portraits also get their connector');
     await page.locator('#connectorSave').click();
     const savedConnector=await page.evaluate(()=>{
       const k=window.HobunjiOmgurkuConnector.storageKey;
@@ -175,6 +245,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(savedConnector.sourceTop.length,5);
     assert.equal(savedConnector.sourceBottom.length,5);
     assert.equal(savedConnector.animalNeck.length,5);
+    assert.equal(savedConnector.shrinkwrapDirections.sourceTop,90,'arrow directions survive local save');
     assert(savedConnector.imageDataUrl.startsWith('data:image/png;base64,'));
     const exported=await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.exportConfig());
     assert(!exported.imageDataUrl,'species export references PNG asset, not inline megabytes');
@@ -182,6 +253,8 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>window.HobunjiOmgurkuCalibration?.snapshot().hasComposite
       && [...(window.HobunjiOmgurkuConnector?.live||[])][0]?.mesh.visible,
       null,{timeout:55000});
+    assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().directions.sourceTop),90,
+      'saved arrow directions restore after reload');
     assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().uploaded),true,
       'saved PNG is restored into the author after reload');
     const imported=JSON.parse(fs.readFileSync(path.join(root,'docs/config/species/omgurku.json'),'utf8'));
