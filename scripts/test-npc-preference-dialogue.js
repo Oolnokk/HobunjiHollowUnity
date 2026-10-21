@@ -12,6 +12,7 @@ const read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'); // Shared s
 const database = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // The authored NPC dialogue surface under test.
 const context = { window: { SCRATCHBONES_CONFIG: { game: {} } } }; // Minimal browser-global stub used to load the real romance configuration.
 vm.runInNewContext(read('docs/config/romance-config.js'), context, { filename: 'romance-config.js' });
+vm.runInNewContext(read('docs/js/npc-interaction-policy.js'), context, { filename: 'npc-interaction-policy.js' });
 vm.runInNewContext(read('docs/js/condition-registry.js'), context, { filename: 'condition-registry.js' });
 const likes = context.window.HobunjiRomanceConfig.likes; // Actual scored date activities; placeholders must stay aligned.
 const selectPool = (npc, kind) => npc.phrasePools?.find(pool => pool.id === `pool_${npc.id}_${kind}_hints`); // Avoids name matching when NPC display names change.
@@ -19,10 +20,17 @@ const selectPool = (npc, kind) => npc.phrasePools?.find(pool => pool.id === `poo
 let gifts = 0, dates = 0, giftLines = 0, dateLines = 0; // Used only for the test's final audit report.
 for (const npc of database.npcs) {
   assert(npc.gifts, `${npc.id} must retain its mechanical gift preferences`);
-  if (npc.id === 'banubu') continue; // His authored quest script supplants the starter record.
+  const excluded = context.window.NpcInteractionPolicy.isPassiveGreatFey(npc); // Great Fey use authored quest/ordinary lines, not gift hints.
+  if (npc.id === 'banubu') { assert(!selectPool(npc, 'gift')); continue; } // His authored quest script supplants the starter record.
   const fallback = npc.dialogueTrees.find(tree => tree.id === `tree_${npc.id}_fallback`);
   assert(fallback, `${npc.id} has no general conversation tree`);
   const start = fallback.nodes.find(node => node.id === fallback.entryNode);
+  if (excluded) {
+    assert.equal(start?.type, 'text', `${npc.id} must retain its original no-gift conversation`);
+    assert(!selectPool(npc, 'gift'), `${npc.id} must have no misleading gift-hint pool`);
+    assert(!fallback.nodes.some(node => node.id.includes('gift_hint')), `${npc.id} must have no hidden gift-hint nodes`);
+    continue;
+  }
   assert.equal(start?.type, 'choice', `${npc.id} needs selectable hint topics`);
   assert.match(start.text, /^{{pool:.+ Greetings}}$/, `${npc.id} must retain its ordinary greeting`);
   assert.equal(start.choices.at(-1)?.next, null, `${npc.id} needs a Goodbye exit`);
@@ -56,11 +64,11 @@ for (const npc of database.npcs) {
   if (!configured.length) assert.match(date.entries[0].text, /TODO.*romance\.likes/);
   dates++; dateLines += date.entries.length;
 }
-assert.equal(gifts, database.npcs.length - 1);
+assert.equal(gifts, database.npcs.length - 4);
 assert.equal(dates, database.npcs.filter(npc => npc.relationship?.canDate).length);
-const banubuContent = read('docs/js/banubu-quest-content.js'); // Quest-owned alternative gift hint source.
-assert(banubuContent.includes('<Something that indicates that I like receiving fish as gifts.>'));
+const banubuContent = read('docs/js/banubu-quest-content.js'); // Banubu's original quest dialogue must remain untouched by gift hint generation.
+assert(!banubuContent.includes('<Something that indicates that I like receiving fish as gifts.>'));
 assert.match(banubuContent, /banubu_intro_8/);
 assert.match(banubuContent, /banubu_q1_active_1/);
 assert.match(banubuContent, /banubu_blocked_1/);
-console.log(`NPC hint dialogue verified: ${gifts + 1} gift NPCs (${giftLines} regular hints + Banubu), ${dates} date NPCs (${dateLines} activity hints).`);
+console.log(`NPC hint dialogue verified: ${gifts} giftable NPCs (${giftLines} gift hints), ${dates} date NPCs (${dateLines} activity hints); four Great Fey excluded.`);
