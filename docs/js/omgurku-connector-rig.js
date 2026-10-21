@@ -5,6 +5,10 @@
 if(global.HobunjiOmgurkuConnector) return;
 const ID='hobunji.omgurku-connector.v1';
 const KEY='hobunji.omgurku.connector.v1';
+const DOCS_ROOT=(() => {
+ try { return new URL('../',document.currentScript?.src||new URL('js/',location.href)).href; }
+ catch (_) { return new URL('../../',location.href).href; }
+})();
 const MAX_IMAGE_CHARS=2400000;
 const TOP=[.32,.41,.50,.59,.68].map(x=>({x,y:.10}));
 const BOTTOM=[.28,.39,.50,.61,.72].map(x=>({x,y:.90}));
@@ -101,7 +105,7 @@ function create(THREE,root){
    const current=++loadEpoch;
    if(texture){material.map=null;material.needsUpdate=true;texture.dispose();texture=null;}
    const src=settings.imageDataUrl || (settings.enabled?
-     new URL(settings.assetPath,new URL('../',document.currentScript?.src||location.href)).href:null);
+     new URL(settings.assetPath,DOCS_ROOT).href:null);
    if(!settings.enabled||!src){mesh.visible=false;return;}
    const loader=new THREE.TextureLoader();
    imageUrl=src;
