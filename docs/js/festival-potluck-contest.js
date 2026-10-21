@@ -66,9 +66,9 @@
       { name:'Island Fish Roast', keys:['riverFish','garlink','travelSpice'] },
     ],
     'engh-sho': [
-      { name:'Spiced Nelk and Eggs', keys:['nelkMeat','nelkEggs','starpepper','puktukMilk'] },
-      { name:'Nelk Roast with Imported Spices', keys:['nelkMeat','smokedMeat','nightCardamom','nelkEggs'] },
-      { name:'Creamy Highland Meat Pot', keys:['nelkMeat','voorgAssMilk','cloudSaffron','nelkEggs'] },
+      { name:'Spiced Nelk and Eggs', keys:['nelkMeat','nelkEggs','starpepper','puktukMilk','nelkMayonnaise'] },
+      { name:'Nelk Roast with Imported Spices', keys:['nelkMeat','smokedMeat','nightCardamom','nelkEggs','nelkMayonnaise'] },
+      { name:'Creamy Highland Meat Pot', keys:['nelkMeat','voorgAssMilk','cloudSaffron','nelkEggs','smokedMeat'] },
     ],
     'highland': [
       { name:'Cold-Plain Root and Meat Stew', keys:['heftroot','puktukMeat','puktukMilk','garlink'] },
@@ -86,9 +86,9 @@
       { name:'Overworked Victory Stew', keys:['smokedMeat','nelkMayonnaise','fishSauce','heftrootFlour'] },
     ],
     'innkeeper': [
-      { name:'Hreesh’s Hearth Special', keys:['smokedMeat','heftroot','nelkEggs','garlink'] },
-      { name:'Innkeeper’s Finest Chowder', keys:['nelkMeat','puktukMilk','needlegrain','travelSpice'] },
-      { name:'Hreesh’s Slow-Cooked Stew', keys:['smokedMeat','heftroot','ongyums','puktukMilk'] },
+      { name:'Hreesh’s Hearth Special', keys:['smokedMeat','heftroot','nelkEggs','garlink','nelkMayonnaise'] },
+      { name:'Innkeeper’s Finest Chowder', keys:['nelkMeat','puktukMilk','needlegrain','travelSpice','smokedMeat'] },
+      { name:'Hreesh’s Slow-Cooked Stew', keys:['smokedMeat','heftroot','ongyums','puktukMilk','fishSauce'] },
     ],
     'town': [
       { name:'Shared Hearth Supper', keys:['heftroot','nelkMeat','garlink','nelkEggs'] },
@@ -116,14 +116,15 @@
     const allowed = selection.keys.filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]);
     const keys = allowed.length ? allowed : selection.keys; // Name/ingredients remain inspectable in test contexts without the full catalog.
     const limits = bounds(rec);
-    let best = null; // Closest candidate within the authored quality range, bounded to avoid endless rejection loops.
-    for (let attempt = 0; attempt < 64; attempt++) {
+    const target = limits.min + Math.floor(rng() * (limits.max - limits.min + 1)); // One rolled strength target per dish; experienced cooks have higher floors.
+    let best = null; // Closest *achievable* ingredient sum, never a fabricated clamped rating.
+    for (let attempt = 0; attempt < 160; attempt++) {
       const ingredients = keys.map(key => ({ key, stars:1 + Math.floor(rng() * 5) }));
       const score = scoreIngredients(ingredients, defs);
       const inBounds = score >= limits.min && score <= limits.max;
-      const distance = inBounds ? 0 : Math.max(limits.min - score, score - limits.max, 0);
+      const distance = inBounds ? Math.abs(score - target) : 1000 + Math.max(limits.min - score, score - limits.max, 0);
       if (!best || distance < best.distance || (distance === best.distance && rng() < .3)) best = { ingredients, score, distance };
-      if (inBounds && rng() > .38) break;
+      if (inBounds && score === target) break;
     }
     // Never display an invented rating different from the constituent ingredient arithmetic.
     const actual = best || { ingredients:[], score:0 };
