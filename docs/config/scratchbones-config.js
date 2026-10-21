@@ -92,7 +92,7 @@ window.SCRATCHBONES_CONFIG = {
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra",
         "nelkCrate": "nelk", "nazgrakuCrate": "nazgraku"
       },
-      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82, "nelk": 1.9, "nazgraku": 2.2 },
+      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82, "nelk": 0.89, "nazgraku": 1.21 },
       // Daytime roaming cycle: choose a genuinely distant station, travel
       // there without changing targets, then remain there before repeating.
       "wander": {

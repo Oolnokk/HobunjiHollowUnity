@@ -1289,8 +1289,8 @@
           attackDamage: 8, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.05,
           attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
-          canClimb: true, canSwim: false, modelWidth: 1.9, spriteAspect: 600 / 1375, tint: 0xffffff,
-          defaultSizeClass: 'medium', mountSpeed: 340,
+          canClimb: true, canSwim: false, modelWidth: 0.89, spriteAspect: 525 / 800, tint: 0xffffff, // Width/aspect from the real 800x525 sprite: Large Nelk's opaque width is ~90% of a Large Voorg-Ass.
+          defaultSizeClass: 'large', mountSpeed: 340, // Wild specimens roll the species default Size, so Nelk spawn Large.
           sprites: { idle: 'assets/creaturesprites/nelk_idle.png', run: ['assets/creaturesprites/nelk_run1.png', 'assets/creaturesprites/nelk_run2.png'] },
         },
         nazgraku: {
@@ -1300,7 +1300,7 @@
           attackDamage: 10, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 1.05,
           attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
-          canClimb: false, canSwim: true, modelWidth: 2.2, spriteAspect: 600 / 1375, tint: 0xffffff,
+          canClimb: false, canSwim: true, modelWidth: 1.21, spriteAspect: 378 / 900, tint: 0xffffff, // From the real 900x378 sprite: Large Nazgraku's opaque height is ~110% of a Large Voorg-Ass.
           defaultSizeClass: 'large', mountSpeed: 340,
           // Mounted animals deliberately use the regular whiskered sprites until rein deformation is designed.
           sprites: { idle: 'assets/creaturesprites/nazgraku_idle.png', run: ['assets/creaturesprites/nazgraku_run1.png', 'assets/creaturesprites/nazgraku_run2.png'] },

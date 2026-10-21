@@ -12816,8 +12816,8 @@
         "pounce"
       ],
       "attackTag": "blunt",
-      "modelWidth": 1.9,
-      "spriteAspect": 0.43636363636363634,
+      "modelWidth": 0.89,
+      "spriteAspect": 0.65625,
       "tint": "#ffffff",
       "sprites": {
         "idle": "assets/creaturesprites/nelk_idle.png",
@@ -13648,8 +13648,8 @@
         "pounce"
       ],
       "attackTag": "blunt",
-      "modelWidth": 2.2,
-      "spriteAspect": 0.43636363636363634,
+      "modelWidth": 1.21,
+      "spriteAspect": 0.42,
       "tint": "#ffffff",
       "sprites": {
         "idle": "assets/creaturesprites/nazgraku_idle.png",
