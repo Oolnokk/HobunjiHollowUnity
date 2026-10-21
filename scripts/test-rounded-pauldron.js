@@ -203,3 +203,50 @@ assert(pixelProbe.includes('MetalArmorSystem?.diagnosticsText?.()'), 'Pixel Prob
 console.log('OK: Metal armor is item/blueprint-driven across clothing slots; Rounded Pauldrons are the first smith recipe with cosmetic Temper, shared treatments, and density-derived weight.');
 
 assert(/js\/npc-avatar-preview-utils\.js\?v=[A-Za-z0-9_.-]+/.test(index), 'live avatar profile builder cache is bumped with the pauldron integration');
+
+const hybrid = ps.ARMOR_BLUEPRINTS.replica_bzabag_helm; // Regression contract for Hreesh's split-cloth-and-metal prize.
+assert.equal(hybrid.slot,'hat');
+assert.deepEqual(Array.from(hybrid.clothLayerRoles),['base']);
+assert.deepEqual(Array.from(hybrid.metalLayerRoles),['trim']);
+assert(hybrid.allowDuplicates && hybrid.strictAppearance,'smith duplicates do not require additional species art');
+assert(ps.isMetalArmor({cosmeticId:hybrid.id,slot:'hat'}),'previously granted plain festival helmets are recognized as metal armor');
+assert(!ps.isMetalPortraitLayer({materialKind:'cloth'},{blueprintId:hybrid.id}),'loom cap never gains a metal tint');
+assert(ps.isMetalPortraitLayer({materialKind:'metal'},{blueprintId:hybrid.id}),'faceguard participates in metal tint');
+const lw = ps.weightForBlueprintMetal(hybrid.id,'tinBronze','light'); // Both wool variants have identical faceguard weight.
+const hw = ps.weightForBlueprintMetal(hybrid.id,'tinBronze','heavy');
+assert.equal(Math.round((hw.weightUnits-lw.weightUnits)*100),90,'heavy cap is 0.9 weight units heavier');
+assert.equal(ps.spriteForBlueprintAppearance(hybrid.id,{speciesId:'mashtzarr',gender:'female'}),null,'unillustrated players never borrow incompatible sprites');
+const article = ps.__test.makeCraftedItem(hybrid.id,'tinBronze','heavy'); // Article saves one smith alloy and one independent wool class.
+article.weaving={layers:{base:{pattern:{motifScale:1}}}};
+const savedDye=article.colorA, savedPattern=article.weaving;
+assert.equal(ps.normalizeItem(article),false,'normalization preserves a forged hybrid article');
+assert.equal(article.colorA,savedDye);
+assert.equal(article.weaving,savedPattern);
+assert.equal(ps.visualOptions({blueprintId:hybrid.id,metalKey:'tinBronze',temperXp:300}).oxidationAmount,1,'Temper fully oxidizes the faceguard');
+assert.equal(ps.visualOptions({blueprintId:hybrid.id,metalKey:'tinBronze',temperXp:300,smithTreatment:{mode:'cosmetic',metalKey:'gold'}}).oxidationAmount,0,'plating suppresses the original patina');
+const prizeConfig=json('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json');
+assert.equal(prizeConfig.speciesVariants.mao_ao_male?.parts?.head?.layers?.back?.materialKind, undefined); // Legacy typo key must not shadow the official mao-ao variant.
+assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.back.materialKind,'cloth');
+assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.front.materialKind,'metal');
+assert(weaving.includes('metalItem: hybrid ? item : null'),'icon compositor uses exact plated/patinated faceguard state');
+assert(weaving.includes('isReweavableClothComponent(item)'),'loom can reweave the cloth cap without adding a smith blueprint to craftables');
+assert(portrait.includes('isMetalPortraitLayer?.(entry.layer, entry.metalState) === false'),'portrait skips metal bake on cloth cap');
+
+const prizeInventory={gold:150,bar_tinBronze:20,lightWool:2,puktukWool:3}; // Tracks exact resource spending across both smith-only wool recipes.
+const prizeGear={clothingItems:[],clothing:{}}; // Stores unique instances despite identical cosmetic+metal keys.
+ps.init({getGearInventory:()=>prizeGear,getPackClothing:()=>[],saveGearInventory:()=>{},saveMemberWorldData:()=>{},
+ getPlayerData:()=>({appearance:{speciesId:'mao-ao',gender:'male'}}),inventory:prizeInventory,
+ VERDIGRIS_METAL_KEYS:['tinBronze'],metalBarItemKey:key=>'bar_'+key,
+ clampInventoryStack:key=>{if(prizeInventory[key] <= 0)delete prizeInventory[key];},showToast:()=>{}});
+ps.learnBlueprints([{cosmeticId:hybrid.id,slot:'hat'}]);
+assert(ps.__test.craft(hybrid.id,'tinBronze','light'),'light-wool helmet is smithed');
+assert.equal(prizeInventory.lightWool,undefined,'light recipe consumes two light wool');
+assert.equal(prizeInventory.puktukWool,3,'light recipe does not consume heavy wool');
+assert(ps.__test.craft(hybrid.id,'tinBronze','heavy'),'heavy-wool duplicate is smithed');
+assert.equal(prizeInventory.puktukWool,1,'heavy recipe consumes exactly two heavy wool');
+assert.equal(prizeGear.clothingItems.length,2,'smith keeps distinct owned helmets');
+assert.notEqual(prizeGear.clothingItems[0].uid,prizeGear.clothingItems[1].uid);
+assert.equal(ps.__test.craft(hybrid.id,'tinBronze','unrecognized'),false,'invalid wool class is rejected');
+assert.equal(ps.__test.craft(hybrid.id,'tinBronze','light'),false,'insufficient wool is rejected without charging');
+assert.equal(prizeGear.clothingItems.length,2);
+
