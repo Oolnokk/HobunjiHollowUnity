@@ -49,6 +49,16 @@ assert.equal(relationWrites, 0, 'rejected gifts must not alter social relationsh
 assert.equal(saveWrites, 0, 'rejected gifts must not modify saves');
 assert(window.NpcGifting.getNpcGiftOfferAction({ rec: { id: 'sloomi', name: 'Sloomi', gifts: {} } }), 'regular NPC still offers gifts');
 
+let emittedSocialReactions = 0; // Counts actual reaction bubbles shown by the live NPC reaction runtime.
+window.AmbientDialogue = { show: () => { emittedSocialReactions++; return { startedAt: 0, durationMs: 1000 }; } };
+vm.runInContext(read('docs/js/npc-silliness-reaction-runtime.js'), context, { filename: 'npc-silliness-reaction-runtime.js' });
+for (const id of excluded) {
+  assert.equal(window.NpcSillinessReactions.react({ rec: { id }, root: { position: { x: 0, z: 0 } } }), false, `${id} cannot react to the player`);
+}
+assert.equal(emittedSocialReactions, 0, 'excluded NPCs generated no social chatheads');
+assert.equal(window.NpcSillinessReactions.react({ rec: { id: 'sloomi' }, root: { position: { x: 0, z: 0 } } }), true, 'other NPCs still react');
+assert.equal(emittedSocialReactions, 1, 'normal NPC reactions still show');
+
 const greeting = read('docs/js/ambient-dialogue.js'); // Player/NPC proximity greeting and pending greeting priority checks.
 const social = read('docs/js/npc-silliness-reaction-runtime.js'); // Social stimuli and direct pet reactions.
 const stable = read('docs/js/stable-animal-progression.js'); // Auto pet greetings and one-off pet recognition conversations.
