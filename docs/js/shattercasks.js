@@ -189,12 +189,24 @@
     return meshes.filter(mesh => mesh?.isMesh && mesh.visible !== false
       && mesh.material?.visible !== false && mesh.geometry?.attributes?.position?.count > 0);
   }
+  const authoredHitboxWorld = THREE.Box3 && new THREE.Box3();
+  const hitboxMin = THREE.Vector3 && new THREE.Vector3(), hitboxMax = THREE.Vector3 && new THREE.Vector3();
+  function worldHitbox(vase) {
+    const h=vase?.data?.carryable?.hitbox;
+    if(!h?.enabled || !authoredHitboxWorld || !hitboxMin || !hitboxMax)return null;
+    const c=h.center||{},size=h.size||{};
+    const cx=Number(c.x)||0,cy=Number(c.y)||0,cz=Number(c.z)||0;
+    const hx=Math.max(.005,Number(size.x)||.43)/2,hy=Math.max(.005,Number(size.y)||.49)/2,hz=Math.max(.005,Number(size.z)||.31)/2;
+    vase.group.updateWorldMatrix?.(true,true);
+    return authoredHitboxWorld.set(hitboxMin.set(cx-hx,cy-hy,cz-hz),
+      hitboxMax.set(cx+hx,cy+hy,cz+hz)).applyMatrix4(vase.group.matrixWorld);
+  }
   function refreshMeshBounds(vase) {
     if(!vase?.meshBounds || !vase.meshColliders?.length)return;
     vase.group.updateWorldMatrix?.(true,true);
     vase.meshBounds.makeEmpty();
-    // setFromObject uses geometry bounds, and is called once at spawn/drop.
-    // Only the single carried charge requires refreshing during aim/flight.
+    // Bounds are refreshed once at spawn/drop, or for an actively moving charge.
+    // The visible authored hitbox can supersede mesh triangles for impacts.
     for(const mesh of vase.meshColliders){
       if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox?.();
       if(mesh.geometry.boundingBox) {
@@ -202,6 +214,8 @@
         vase.meshBounds.union(shatterRayBox.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld));
       }
     }
+    const hitbox=worldHitbox(vase);
+    if(hitbox)vase.meshBounds.union(hitbox);
   }
   function disposeEmitters(vase) {
     for(const fx of vase.emitters||[])fx.dispose?.();
@@ -782,6 +796,21 @@
         if(!broadHit || shatterRayStart.distanceTo(broadHit)>maxDistance+pad) {
           meshRaycastBroadphaseRejects++;continue;
         }
+      }
+      // Explicit authored collision is decisive when enabled; the old exact
+      // triangle raycast remains available for legacy furniture without a box.
+      const hitbox=worldHitbox(vase);
+      if(hitbox && shatterRayBoxPoint){
+        for(const [sx,sy] of (pad>0?RAY_SAMPLES:[RAY_SAMPLES[0]])){
+          shatterRayOffset.copy(shatterRayAcross).multiplyScalar(sx*pad).addScaledVector(shatterRayUp,sy*pad);
+          shatterRaycaster.ray.origin.copy(shatterRayStart).add(shatterRayOffset);
+          const hit=shatterRaycaster.ray.intersectBox(hitbox,shatterRayBoxPoint);
+          if(hit){
+            const d=shatterRaycaster.ray.origin.distanceTo(hit);
+            if(d<=maxDistance && (!result||d<result.t*length))result={t:d/length,vase};
+          }
+        }
+        continue;
       }
       for(const [sx,sy] of (pad>0?RAY_SAMPLES:[RAY_SAMPLES[0]])) {
         shatterRayOffset.copy(shatterRayAcross).multiplyScalar(sx*pad)
