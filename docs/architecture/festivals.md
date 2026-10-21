@@ -5,7 +5,7 @@ All five festivals last seven civil days, starting and ending at midnight. Decor
 | Festival | Dates | Working activities |
 | --- | --- | --- |
 | Hachutukara | Firstrise 22–28 | Permanent animal-mask gift, temporary resident costumes, a sweet from each resident, Hunundi's story through ordinary dialogue, dance, supervised live sparring with Oddclaw |
-| Gorkunash | Highheat 8–14 | Movable bandstand (Foroji/Kaboku alternating Kurraya sets), dance floor, outdoor dining and six-pot feast with one contributed meal; 200 Festival Fun converts to one heart overnight |
+| Gorkunash | Highheat 8–14 | Movable bandstand (Foroji/Kaboku alternating Kurraya sets), dance floor, outdoor dining and seven-pot ingredient-quality contest with one player contribution; 200 Festival Fun converts to one heart overnight |
 | Tzizkhanash | Firstfall 22–28 | Wooden ancestor shrines, remembrance text, quality-based offering and choice of a 336-day blessing |
 | Feast of the Five Blossoms | Thirdfall 15–21 | Five Blossom Dance, music, five-petal decorations and gathering court |
 | Mountaindawn | Shallowfrost 1–7 | Double gift Favor and gift Rapport; a high-potency restorative gift from every available NPC with at least three hearts, including friends outside town |
@@ -18,7 +18,7 @@ The seasonal dates use the existing regional calendar, not an invented month-to-
 
 The Gorkunash festival guide board has been retired. Its dining, dancing, and music attractions are relocatable locale roots whose furnishings and NPC activity destinations follow them in the festival Map Editor. The other festival layouts still have their individual activity prompts. Most active courts are on the southern lawn beyond the shop road; Hunundi's Hachutukara storytelling circle and a secondary ancestor shrine sit beside the temple. Other festivals retain their activity signs and action-bar entries. Gorkunash uses ordinary chair and surface-object interactions; dancing and instruments use the existing social wheel anywhere in town. The menus support touch, keyboard, and the existing controller UI. Every festival menu includes **Copy diagnostics**.
 
-- Gorkunash's single potluck donation consumes one selected-quality cooked meal and awards each eligible resident ten times their normal positive gift Favor; villagers who dislike or hate it receive no Favor. Five dishes change daily, and the contributed sixth pot is replaced by another daily meal from the following day onward. A festival-only bowl carries ten portions, each adding five minutes of a separate food buff up to a fifty-minute cap. Fullness lasts eighteen game hours starting at the first portion and blocks further meals at ten stacks.
+- Gorkunash's single potluck donation consumes one selected-quality cooked meal and awards each eligible resident ten times their normal positive gift Favor; villagers who dislike or hate it receive no Favor. Six named NPC dishes rotate over seven days, and the player's seventh pot persists through the week. Each ingredient's quality counts toward its total, while processed ingredients score double at every processing step. NPCs have capped, seeded scores; mothers, Hreesh and grandmothers have increasingly high minimums. Ties for the top score qualify the player for Hreesh's next-day prize visit. A festival-only bowl carries ten portions, each adding five minutes of a separate food buff up to a fifty-minute cap. Fullness lasts eighteen game hours starting at the first portion and blocks further meals at ten stacks.
 - Offerings consume exactly one chosen quality of a physical giftable item. Quality is the blessing level, 1–5. Choose movement speed (+2% per level), stamina regeneration (+4%), or positive Favor (+5%). The blessing replaces the prior ancestor blessing and expires after 336 civil days, including sleep and reloads.
 - Mountaindawn gifts and Hachutukara sweets can be received directly from nearby friends or collected from the communal table. Both routes share the same annual claim. Three hearts means 120 Favor points.
 - Dance participation uses the existing social dance animation for 20 seconds and earns +2 Favor with residents once per festival. Dodge or the leave-dance action cancels. Further dancing is allowed without repeat rewards.
@@ -57,7 +57,7 @@ Festival tests execute shipped rules and layout selection, exact-quality consump
 
 Visual browser playtesting remains necessary before merging: inspect each layout in the editor and game, navigate every exit, and try activity menus on a phone. The real serving assets have been rendered and their surface transforms checked in a browser; automated validation is not a claim of a completed saved-game playthrough.
 
-## Gorkunash implementation note (draft)
+## Gorkunash implementation note (seven-day contest)
 
 The Gorkunash Map Editor uses `festivalLocale` metadata on the decor root to define nested `parts` and `slots`. `MapLayoutSystem.getEffectiveMapData` expands them after the active layout resolves; moving or rotating the root automatically moves both ordinary rendered furniture and NPC pathfinding destinations. The base town is not modified. Festival dancing and meals accumulate independent Festival Fun; at each midnight 200 Festival Fun becomes 40 Favor (one heart). A mobile-readable `FestivalSystem.diagnostics()` snapshot reports the selected locale, bowl, fullness, food effects and claims.
 
@@ -146,3 +146,11 @@ NPCs at zero or more hearts accept (negative hearts refuse with an ambient reply
 - Everywhere else the planner re-resolves their target each frame, and `NpcSocialSeating` now treats any chair that `FurnitureTableSystem.isSeatTaken` reports (the player's, or another live reservation) as occupied before it scores the free seats. An NPC with a single fixed chair and no alternative simply waits beside it until the player stands.
 
 Tests: `node scripts/run-tests.js npc-seat-request npc-social-seating npc-shared-meals`.
+
+### Potluck contest data and visual fallback
+
+- `festival-potluck-contest.js` owns the named NPC menus, deterministic seven-day rival scores, regional cuisines and Hreesh's shared `DoorstepVisits` provider. `festival-system.js` persists a complete annual roster and the player's scored entry in `potluckContests`; neither roll generation nor ingredient scanning is added to the frame loop.
+- Newly cooked items save their exact selected ingredient star tiers and contest score in `cooking-system.js`. Legacy cooked dishes without provenance use their existing ingredient keys and finished-food stars as a fallback. Donating consumes one meal, preserves tenfold positive gift Favor and displays the entry in the seventh pot until the festival ends.
+- Engh-sho meals use Nelk eggs/meat, milk or local animal substitutes and imported spices (no indigenous vegetables). Kenkari always include fish, Ginju emphasize many vegetables, Sloomi and Mashtzarr favor cold-country staples, Jubmir mixes regions, and the surveyor flaunts expensive processed foods. Slagothim caravans stock three newly authored imported spices.
+- The prize is an ordinary, wearable `replica_bzabag_helm` cosmetic. Only its male Mao'ao cap/faceguard exists currently. The explicit `onlyExactSpeciesVariant` portrait rule renders no helm layer for unillustrated species/genders rather than borrowing Mao'ao art; future sprite variants can be added to the same cosmetic JSON.
+- Focused regression: `node scripts/test-festival-potluck-contest.js`. Existing `test-festivals.js` and `test-gorkunash-locales.js` check saved claims, the serving table and the seventh player pot.
