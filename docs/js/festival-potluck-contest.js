@@ -61,6 +61,7 @@
   function mealEffects(ingredients, defs) {
     const effects = {}; // Used both by meal previews and actual festival buffs after the first bite.
     for (const entry of ingredients || []) {
+      if (entry.contributesEffects === false) continue; // Recipe-specific structural ingredients count for judging but never grant a cooking buff.
       for (const [effect, amount] of Object.entries(ingredientEffects(entry.key,entry.stars,defs)))
         effects[effect] = (effects[effect] || 0) + amount;
     }
@@ -72,7 +73,9 @@
       const stars = Math.max(1,Math.min(5,Math.round(Number(entry.stars) || 1)));
       const multiplier = 2 ** processingDepth(entry.key,defs);
       return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,
-        points:ingredientPoints(entry.key,stars,defs),effects:ingredientEffects(entry.key,stars,defs)};
+        points:ingredientPoints(entry.key,stars,defs),
+        contributesEffects:entry.contributesEffects !== false,
+        effects:entry.contributesEffects === false ? {} : ingredientEffects(entry.key,stars,defs)};
     });
   }
   function profileFor(rec) {
