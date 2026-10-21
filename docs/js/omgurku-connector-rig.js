@@ -125,9 +125,13 @@ function create(THREE,root){
    texture=next;
    mesh.visible=false; // Only render after successful image decode.
  }
- function localPoint(plane,p,result,depth){
+ function localPoint(plane,p,result,depth,lower=false){
    const dims=plane.geometry?.parameters||{};
-   const w=Number(dims.width)||1,h=Number(dims.height)||1;
+   // Weighted/skinned PNGPlaneAvatar geometry can lose PlaneGeometry
+   // .parameters; resolve native dimensions from the authoritative avatar
+   // metadata instead of silently degrading to an incorrect 1x1 plane.
+   const w=Number(dims.width)||Number(lower?c.builtLowerWidth:c.upper.userData?.portraitModelWidth)||1;
+   const h=Number(dims.height)||Number(lower?c.builtLowerHeight:c.upper.userData?.portraitModelHeight)||1;
    result.set((p.x-.5)*w,(.5-p.y)*h,depth);
    plane.localToWorld(result);
    root.worldToLocal(result);
@@ -150,8 +154,8 @@ function create(THREE,root){
    lastState.key=key;lastState.rev=revision;
    const b=belt();
    for(let i=0;i<5;i++){
-     localPoint(upperPlane,b[i],targetsTop[i],.012);
-     localPoint(lowerPlane,settings.animalNeck[i],targetsBottom[i],.012);
+     localPoint(upperPlane,b[i],targetsTop[i],.012,false);
+     localPoint(lowerPlane,settings.animalNeck[i],targetsBottom[i],.012,true);
    }
    let offset=0,tex=geometry.attributes.uv.array;
    for(let j=0;j<=rows;j++){
