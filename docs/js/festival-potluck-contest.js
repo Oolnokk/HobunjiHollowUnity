@@ -38,6 +38,43 @@
       : (def.ingredientKeys || []).map(key => ({ key, stars }));
     return entries.length ? scoreIngredients(entries, defs) : Math.max(1, Math.min(5, Number(stars) || 1));
   }
+  function ingredientDefinition(key, defs) {
+    const authored = window.HobunjiCookingData?.items?.[key] || {}; // Cooking's prototype source remains available before registerIngredientItems runs.
+    const runtime = defs?.[key] || {}; // Live cooking rules override authored defaults when equipment/processing updates an ingredient.
+    return { ...runtime, label:runtime.label || authored.name || key, icon:runtime.icon || '🥕',
+      cookingPrimaryEffect:runtime.cookingPrimaryEffect || authored.primaryEffect,
+      cookingBaseBoost:runtime.cookingBaseBoost ?? authored.baseBoost ?? 1,
+      cookingProcessingTier:runtime.cookingProcessingTier || authored.processingTier || 'raw',
+      cookingDefaultStars:runtime.cookingDefaultStars || 3 };
+  }
+  function ingredientEffects(key, stars, defs) {
+    const def = ingredientDefinition(key, defs); // Exactly the definition the cooking UI uses for its ingredient contribution.
+    const canonical = window.CookingSystem?.ingredientEffectTotals?.(def, stars);
+    if (canonical) return canonical; // No separate balancing math when cooking is initialized.
+    if (def.foodEffects && Object.keys(def.foodEffects).length) return { ...def.foodEffects };
+    if (!def.cookingPrimaryEffect) return {};
+    const data = window.HobunjiCookingData;
+    const tier = data?.processingTiers?.[def.cookingProcessingTier] || data?.processingTiers?.raw || { multiplier:1 };
+    const quality = Math.max(1,Math.min(5,Math.round(Number(stars) || Number(def.cookingDefaultStars) || 3)));
+    return { [def.cookingPrimaryEffect]:Math.max(1,Math.ceil(def.cookingBaseBoost * (1+(quality-1)/2) * (tier.multiplier || 1))) };
+  }
+  function mealEffects(ingredients, defs) {
+    const effects = {}; // Used both by meal previews and actual festival buffs after the first bite.
+    for (const entry of ingredients || []) {
+      for (const [effect, amount] of Object.entries(ingredientEffects(entry.key,entry.stars,defs)))
+        effects[effect] = (effects[effect] || 0) + amount;
+    }
+    return effects;
+  }
+  function ingredientBreakdown(ingredients, defs) {
+    return (ingredients || []).map(entry => {
+      const def = ingredientDefinition(entry.key,defs);
+      const stars = Math.max(1,Math.min(5,Math.round(Number(entry.stars) || 1)));
+      const multiplier = 2 ** processingDepth(entry.key,defs);
+      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,
+        points:ingredientPoints(entry.key,stars,defs),effects:ingredientEffects(entry.key,stars,defs)};
+    });
+  }
   function profileFor(rec) {
     const id = String(rec?.id || '').toLowerCase();
     const species = String(rec?.speciesId || rec?.species || '').toLowerCase();
@@ -129,12 +166,7 @@
     }
     // Never display an invented rating different from the constituent ingredient arithmetic.
     const actual = best || { ingredients:[], score:0 };
-    const effects = {};
-    for (const entry of actual.ingredients) {
-      const info = window.HobunjiCookingData?.items?.[entry.key] || {};
-      const effect = info.primaryEffect || defs?.[entry.key]?.cookingPrimaryEffect;
-      if (effect) effects[effect] = (effects[effect] || 0) + 1;
-    }
+    const effects = mealEffects(actual.ingredients,defs); // Actual eating benefits scale with quality and processing, independent of contest ranking.
     return { id:'npc:' + seed, npcId:rec.id, owner:npcName(rec), dish:selection.name,
       label:npcName(rec) + "'s " + selection.name, icon:'🍲', ingredients:actual.ingredients,
       score:actual.score, cap:limits.max, minimum:limits.min, foodEffects:effects };
@@ -191,5 +223,5 @@
     });
   }
   window.FestivalPotluckContest = Object.freeze({ HELM_ID, DAYS, SPICES, profileFor, bounds, processingDepth,
-    ingredientPoints, scoreIngredients, scoreCooked, buildDays, winner, registerRewardVisit });
+    ingredientPoints, scoreIngredients, scoreCooked, ingredientEffects, mealEffects, ingredientBreakdown, buildDays, winner, registerRewardVisit });
 })();
