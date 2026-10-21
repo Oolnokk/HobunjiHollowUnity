@@ -187,6 +187,25 @@ assert(state.feastBuffs[0].remainingS>0,'meal remaining duration is portable');
 api.restore(state);
 assert.equal(api.currentFullness(),2,'fullness survives save/load after real drink-strike servings');
 assert.equal(api.festivalFoodStacks('speed'),api.feastDishDetails(0).foodEffects.speed || 0,'festival food buff survives save/load');
+const originalContest = Object.keys(state.potluckContests)[0]; // Upgrade a prize-entry record written by the initial potluck implementation.
+const legacyState = JSON.parse(JSON.stringify(state));
+const legacyEntry = legacyState.potluckContests[originalContest].entry;
+const previousScore = legacyEntry.score;
+delete legacyEntry.ingredients;
+delete legacyEntry.foodEffects;
+delete legacyEntry.estimatedQuality;
+W.HobunjiCookingData.recipes.push({id:'tea_test',slots:[{id:'main',contributesEffects:true},{id:'milk',contributesEffects:false}]});
+itemDefs.meal.recipeId = 'tea_test';
+itemDefs.meal.festivalIngredientQuality = [{key:'a',stars:5},{key:'b',stars:3}]; // Old quality snapshots had no slot contribution flags.
+api.restore(legacyState);
+const upgraded = api.feastDishDetails(6);
+assert.equal(upgraded.score,previousScore,'migrating previous saves never rerolls the donated meal score');
+assert.equal(upgraded.ingredientDetails[0].stars,5,'legacy input quality is retained');
+assert.equal(upgraded.ingredientDetails[1].points,3,'structural ingredients continue to count in judging');
+assert.deepEqual(upgraded.ingredientDetails[1].effects,{},'legacy no-buff slots do not advertise eating effects');
+assert.deepEqual(upgraded.foodEffects,{vigor:2},'legacy donated meal retains the original cooked eating buff total');
+assert.equal(api.serialize().potluckContests[originalContest].entry.ingredients[1].contributesEffects,false,'migration persists reconstructed slot provenance');
+
 civilDay++;
 assert.equal(api.feastMenu().length,7,'the seven-pot layout persists next day');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','the player contribution remains on display for the full festival');
