@@ -273,6 +273,7 @@
     // Update before rendering, so the rider follows in the same frame.
     followLowerSaddleYaw(record);
     c.upper.updateMatrixWorld?.(true);
+    c.connector?.update?.();
     status.facingUpdates++;
   }
 
@@ -340,6 +341,7 @@
     }
     record.root.userData.omgurkuJoin = { x: 0, y: joinY, z: joinZ, lowerCenterY: centerY };
     followLowerSaddleYaw(record);
+    c.connector?.update?.(true);
   }
 
   function setFrame(record, frame) {
@@ -408,6 +410,10 @@
         root.userData.omgurkuComposite = c;
         const record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
         live.add(record);
+        // Optional garment bridge; no mesh or GPU work until an authored/uploaded
+        // PNG is enabled. Parent is this SAME NPC root, not a second actor.
+        if (window.HobunjiOmgurkuConnector?.snapshot()?.enabled)
+          c.connector = window.HobunjiOmgurkuConnector.create(THREE,root);
         applyPlacement(record);
         installFacingCallbacks(record);
         record.coatInitialized = prepareLowerCoat(THREE, record);
@@ -431,6 +437,7 @@
         const c = root?.userData?.omgurkuComposite;
         if (!c) return dispose.call(this, root);
         for (const record of live) if (record.root === root) { live.delete(record); break; }
+        c.connector?.dispose?.();
         for (const ref of c.lowerRefs) ref?.dispose?.();
         // Do not call the generic recursive disposal on the combined root:
         // animal texture maps are refcounted by buildAnimalPlaneAvatarModel.
@@ -457,6 +464,20 @@
     }
     for (const record of live) applyPlacement(record);
     return { ...placement };
+  }
+
+  function setConnector(config, options = {}) {
+    const bridge = window.HobunjiOmgurkuConnector;
+    if (!bridge)return null;
+    const next = bridge.set(config,options);
+    for(const record of live){
+      const c=record.root.userData.omgurkuComposite;
+      if(!c)continue;
+      if(next.enabled && !c.connector)c.connector=bridge.create(record.THREE,record.root);
+      if(!next.enabled && c.connector){c.connector.dispose();c.connector=null;}
+      c.connector?.update(true);
+    }
+    return next;
   }
 
   function readLocalPlacement() {
@@ -492,6 +513,12 @@
       const latestLocal = readLocalPlacement();
       if (latestLocal) { setPlacement(latestLocal); status.placementSource = 'local override'; return; }
       if (cfg.hybridPlacement) { setPlacement(cfg.hybridPlacement); status.placementSource = 'authored species config'; }
+      // A user's uploaded local connector always wins. Authored config is
+      // optional; older builds continue working without a connector asset.
+      const bridge=window.HobunjiOmgurkuConnector;
+      let hasLocal=false;
+      try{hasLocal=!!localStorage.getItem(bridge?.storageKey);}catch(_){}
+      if(bridge && !hasLocal && cfg.connector) setConnector(cfg.connector);
     } catch (error) { status.placementSource = 'built-in fallback'; status.placementLoadError = String(error?.message || error); }
   }
 
@@ -510,6 +537,8 @@
           rawNpcYaw: c?.rawNpcYaw ?? null,
           requestedPreviewYaw: root.userData.omgurkuPreviewRawYaw ?? null,
           coatColor: c?.tintColor ?? null,
+          connector: c?.connector ? {enabled:c.connector.mesh.visible,
+            triangles: c.connector.mesh.geometry.index?.count / 3} : null,
         };
       }),
     };
@@ -554,7 +583,7 @@
 
   window.HobunjiOmgurkuSpecies = Object.freeze({
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
-    install, setPlacement, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setConnector, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();
