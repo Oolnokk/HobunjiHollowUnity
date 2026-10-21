@@ -294,7 +294,7 @@
                               "nodes": [
                                     {
                                           "id": "n_garanki_gabu_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -303,8 +303,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_garanki_gabu_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_garanki_gabu_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_garanki_gabu_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -694,6 +699,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_garanki_gabu_gift_hints",
+                          "name": "Garanki Gabu Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_garanki_gabu_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving herbs and potion reagents as gifts.>"
+                            },
+                            {
+                              "id": "pe_garanki_gabu_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in blue, orange, yellow colors.>"
+                            },
+                            {
+                              "id": "pe_garanki_gabu_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -871,7 +894,7 @@
                               "nodes": [
                                     {
                                           "id": "n_gorobi_ginju_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -880,8 +903,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_gorobi_ginju_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_gorobi_ginju_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_gorobi_ginju_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -1257,6 +1285,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_gorobi_ginju_gift_hints",
+                          "name": "Gorobi Ginju Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_gorobi_ginju_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving crops as gifts.>"
+                            },
+                            {
+                              "id": "pe_gorobi_ginju_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in orange, yellow colors.>"
+                            },
+                            {
+                              "id": "pe_gorobi_ginju_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -1432,7 +1478,7 @@
                               "nodes": [
                                     {
                                           "id": "n_gikali_ginju_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -1441,8 +1487,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_gikali_ginju_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_gikali_ginju_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_gikali_ginju_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -1800,6 +1851,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_gikali_ginju_gift_hints",
+                          "name": "Gikali Ginju Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_gikali_ginju_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving crops as gifts.>"
+                            },
+                            {
+                              "id": "pe_gikali_ginju_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue colors.>"
+                            },
+                            {
+                              "id": "pe_gikali_ginju_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -1969,7 +2038,7 @@
                               "nodes": [
                                     {
                                           "id": "n_aliri_ginju_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -1979,8 +2048,15 @@
                                           "expression": "smile",
                                           "expressionHold": 2,
                                           "revealSpeed": "normal",
-                                          "tags": []
-                                    }
+                                          "tags": [],
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_aliri_ginju_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_aliri_ginju_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_aliri_ginju_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_aliri_ginju_gift_hints}}","next":null},
+                                    {"id":"n_aliri_ginju_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_aliri_ginju_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -2318,6 +2394,54 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_aliri_ginju_gift_hints",
+                          "name": "Aliri Ginju Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_aliri_ginju_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving crops as gifts.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in yellow colors.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_aliri_ginju_date_hints",
+                          "name": "Aliri Ginju Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_aliri_ginju_date_hint_1",
+                              "text": "<Something that indicates that I like dancing on dates.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_date_hint_2",
+                              "text": "<Something that indicates that I like harvesting crops on dates.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_date_hint_3",
+                              "text": "<Something that indicates that I like petting farm animals on dates.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_date_hint_4",
+                              "text": "<Something that indicates that I like harvesting products from livestock on dates.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_date_hint_5",
+                              "text": "<Something that indicates that I like gathering herbs on dates.>"
+                            },
+                            {
+                              "id": "pe_aliri_ginju_date_hint_6",
+                              "text": "<Something that indicates that I like cooking meals on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -2487,7 +2611,7 @@
                               "nodes": [
                                     {
                                           "id": "n_gantami_ginju_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -2496,8 +2620,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_gantami_ginju_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_gantami_ginju_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_gantami_ginju_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -2786,6 +2915,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_gantami_ginju_gift_hints",
+                          "name": "Gantami Ginju Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_gantami_ginju_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving sweets as gifts.>"
+                            },
+                            {
+                              "id": "pe_gantami_ginju_gift_hint_2",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -2982,7 +3125,7 @@
                               "nodes": [
                                     {
                                           "id": "n_leaf_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -2991,8 +3134,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_leaf_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_leaf_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_leaf_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -3323,6 +3471,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_leaf_gift_hints",
+                          "name": "Leaf Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_leaf_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_leaf_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in orange, yellow colors.>"
+                            },
+                            {
+                              "id": "pe_leaf_gift_hint_3",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -3517,7 +3683,7 @@
                               "nodes": [
                                     {
                                           "id": "n_pahu_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -3526,8 +3692,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_pahu_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_pahu_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_pahu_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -3868,6 +4039,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_pahu_gift_hints",
+                          "name": "Pahu Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_pahu_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_pahu_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in yellow, green, blue colors.>"
+                            },
+                            {
+                              "id": "pe_pahu_gift_hint_3",
+                              "text": "<Something that indicates that I like alcoholic drinks as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -4242,7 +4431,7 @@
                               "nodes": [
                                     {
                                           "id": "n_furunji_funji_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -4251,8 +4440,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_furunji_funji_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_furunji_funji_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_furunji_funji_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -4617,6 +4811,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_furunji_funji_gift_hints",
+                          "name": "Furunji Funji Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_furunji_funji_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_furunji_funji_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in red, orange colors.>"
+                            },
+                            {
+                              "id": "pe_furunji_funji_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -4992,7 +5204,7 @@
                               "nodes": [
                                     {
                                           "id": "n_foroji_funji_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -5001,8 +5213,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_foroji_funji_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_foroji_funji_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_foroji_funji_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_foroji_funji_gift_hints}}","next":null},
+                                    {"id":"n_foroji_funji_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_foroji_funji_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -5325,6 +5544,54 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_foroji_funji_gift_hints",
+                          "name": "Foroji Funji Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_foroji_funji_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue colors.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_foroji_funji_date_hints",
+                          "name": "Foroji Funji Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_foroji_funji_date_hint_1",
+                              "text": "<Something that indicates that I like being offered drinks on dates.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_date_hint_2",
+                              "text": "<Something that indicates that I like playing the kurraya on dates.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_date_hint_3",
+                              "text": "<Something that indicates that I like gathering herbs on dates.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_date_hint_4",
+                              "text": "<Something that indicates that I like petting farm animals on dates.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_date_hint_5",
+                              "text": "<Something that indicates that I like harvesting products from livestock on dates.>"
+                            },
+                            {
+                              "id": "pe_foroji_funji_date_hint_6",
+                              "text": "<Something that indicates that I like harvesting crops on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -5498,7 +5765,7 @@
                               "nodes": [
                                     {
                                           "id": "n_kzubug_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -5507,8 +5774,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_kzubug_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_kzubug_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_kzubug_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -5850,6 +6122,16 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_kzubug_gift_hints",
+                          "name": "Kzubug Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_kzubug_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving minerals and ores as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -6023,7 +6305,7 @@
                               "nodes": [
                                     {
                                           "id": "n_sloomi_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -6032,8 +6314,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_sloomi_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_sloomi_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_sloomi_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_sloomi_gift_hints}}","next":null},
+                                    {"id":"n_sloomi_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_sloomi_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -6388,6 +6677,32 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_sloomi_gift_hints",
+                          "name": "Sloomi Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_sloomi_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving minerals and ores as gifts.>"
+                            },
+                            {
+                              "id": "pe_sloomi_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in indigo, yellow colors.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_sloomi_date_hints",
+                          "name": "Sloomi Date Hints",
+                          "entries": [
+                                    {"id":"pe_sloomi_date_hint_1","text":"<Something that indicates that I like mining ore on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_2","text":"<Something that indicates that I like chopping down trees on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_3","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_4","text":"<Something that indicates that I like opening treasure chests on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_5","text":"<Something that indicates that I like cooking meals on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_6","text":"<Something that indicates that I like brewing potions on dates.>"}
+                              ]
                         }
                   ]
             },
@@ -6563,7 +6878,7 @@
                               "nodes": [
                                     {
                                           "id": "n_hreesh_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -6572,8 +6887,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_hreesh_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_hreesh_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_hreesh_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -6911,6 +7231,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_hreesh_gift_hints",
+                          "name": "Hreesh Nakheez Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_hreesh_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_hreesh_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in orange, yellow colors.>"
+                            },
+                            {
+                              "id": "pe_hreesh_gift_hint_3",
+                              "text": "<Something that indicates that I like alcoholic drinks as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -7094,7 +7432,7 @@
                               "nodes": [
                                     {
                                           "id": "n_jubmir_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -7103,8 +7441,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_jubmir_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_jubmir_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_jubmir_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_jubmir_gift_hints}}","next":null},
+                                    {"id":"n_jubmir_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_jubmir_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -7368,6 +7713,31 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_jubmir_gift_hints",
+                          "name": "Jubmir Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_jubmir_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_jubmir_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue, orange, yellow colors.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_jubmir_date_hints",
+                          "name": "Jubmir Date Hints",
+                          "entries": [
+                                    {"id":"pe_jubmir_date_hint_1","text":"<Something that indicates that I like being offered drinks on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_2","text":"<Something that indicates that I like petting animals on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_3","text":"<Something that indicates that I like harvesting products from livestock on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_4","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_5","text":"<Something that indicates that I like cooking meals on dates.>"}
+                              ]
                         }
                   ]
             },
@@ -7568,7 +7938,7 @@
                               "nodes": [
                                     {
                                           "id": "n_father_hunundi_hodu_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -7577,8 +7947,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_father_hunundi_hodu_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_father_hunundi_hodu_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_father_hunundi_hodu_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -7988,6 +8363,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_father_hunundi_hodu_gift_hints",
+                          "name": "Father Hunundi Hodu Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_father_hunundi_hodu_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving medicines as gifts.>"
+                            },
+                            {
+                              "id": "pe_father_hunundi_hodu_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in yellow, green, orange colors.>"
+                            },
+                            {
+                              "id": "pe_father_hunundi_hodu_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -8154,7 +8547,7 @@
                               "nodes": [
                                     {
                                           "id": "n_namui_u_hakaru_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -8163,8 +8556,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_namui_u_hakaru_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_namui_u_hakaru_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_namui_u_hakaru_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_namui_u_hakaru_gift_hints}}","next":null},
+                                    {"id":"n_namui_u_hakaru_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_namui_u_hakaru_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -8554,6 +8954,54 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_namui_u_hakaru_gift_hints",
+                          "name": "Namu’i u Hakaru Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_namui_u_hakaru_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in orange, yellow, blue colors.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_namui_u_hakaru_date_hints",
+                          "name": "Namu’i u Hakaru Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_namui_u_hakaru_date_hint_1",
+                              "text": "<Something that indicates that I like hunting creatures that are not barbarians on dates.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_date_hint_2",
+                              "text": "<Something that indicates that I like fishing on dates.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_date_hint_3",
+                              "text": "<Something that indicates that I like opening treasure chests on dates.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_date_hint_4",
+                              "text": "<Something that indicates that I like cooking meals on dates.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_date_hint_5",
+                              "text": "<Something that indicates that I like being offered drinks on dates.>"
+                            },
+                            {
+                              "id": "pe_namui_u_hakaru_date_hint_6",
+                              "text": "<Something that indicates that I like dancing on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -8728,7 +9176,7 @@
                               "nodes": [
                                     {
                                           "id": "n_takua_ao_hakaru_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -8737,8 +9185,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_takua_ao_hakaru_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_takua_ao_hakaru_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_takua_ao_hakaru_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_takua_ao_hakaru_gift_hints}}","next":null},
+                                    {"id":"n_takua_ao_hakaru_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_takua_ao_hakaru_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -9096,6 +9551,46 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_takua_ao_hakaru_gift_hints",
+                          "name": "Taku’a ao Hakaru Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_takua_ao_hakaru_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_takua_ao_hakaru_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue colors.>"
+                            },
+                            {
+                              "id": "pe_takua_ao_hakaru_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_takua_ao_hakaru_date_hints",
+                          "name": "Taku’a ao Hakaru Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_takua_ao_hakaru_date_hint_1",
+                              "text": "<Something that indicates that I like hunting creatures that are not barbarians on dates.>"
+                            },
+                            {
+                              "id": "pe_takua_ao_hakaru_date_hint_2",
+                              "text": "<Something that indicates that I like fishing on dates.>"
+                            },
+                            {
+                              "id": "pe_takua_ao_hakaru_date_hint_3",
+                              "text": "<Something that indicates that I like opening treasure chests on dates.>"
+                            },
+                            {
+                              "id": "pe_takua_ao_hakaru_date_hint_4",
+                              "text": "<Something that indicates that I like being offered drinks on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -9267,7 +9762,7 @@
                               "nodes": [
                                     {
                                           "id": "n_kaboku_kunji_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -9276,8 +9771,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_kaboku_kunji_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_kaboku_kunji_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_kaboku_kunji_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -9726,6 +10226,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_kaboku_kunji_gift_hints",
+                          "name": "Kaboku Kunji Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_kaboku_kunji_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving herbs and potion reagents as gifts.>"
+                            },
+                            {
+                              "id": "pe_kaboku_kunji_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in yellow, green colors.>"
+                            },
+                            {
+                              "id": "pe_kaboku_kunji_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -9901,7 +10419,7 @@
                               "nodes": [
                                     {
                                           "id": "n_kinami_kunji_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -9910,8 +10428,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_kinami_kunji_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_kinami_kunji_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_kinami_kunji_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -10384,6 +10907,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_kinami_kunji_gift_hints",
+                          "name": "Kinami Kunji Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_kinami_kunji_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving herbs and potion reagents as gifts.>"
+                            },
+                            {
+                              "id": "pe_kinami_kunji_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in indigo, violet colors.>"
+                            },
+                            {
+                              "id": "pe_kinami_kunji_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -10555,7 +11096,7 @@
                               "nodes": [
                                     {
                                           "id": "n_dzibim_khibu_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -10564,8 +11105,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_dzibim_khibu_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_dzibim_khibu_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_dzibim_khibu_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -10949,6 +11495,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_dzibim_khibu_gift_hints",
+                          "name": "Dzibim Khibu Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_dzibim_khibu_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving wooden goods as gifts.>"
+                            },
+                            {
+                              "id": "pe_dzibim_khibu_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in blue, indigo, yellow, green colors.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -11112,7 +11672,7 @@
                               "nodes": [
                                     {
                                           "id": "n_dzahiri_khibu_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -11121,8 +11681,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_dzahiri_khibu_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_dzahiri_khibu_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_dzahiri_khibu_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -11472,6 +12037,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_dzahiri_khibu_gift_hints",
+                          "name": "Dzahiri Khibu Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_dzahiri_khibu_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving wooden goods as gifts.>"
+                            },
+                            {
+                              "id": "pe_dzahiri_khibu_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in blue, yellow colors.>"
+                            },
+                            {
+                              "id": "pe_dzahiri_khibu_gift_hint_3",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -11631,7 +12214,7 @@
                               "nodes": [
                                     {
                                           "id": "n_nashka_khibu_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -11640,8 +12223,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_nashka_khibu_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_nashka_khibu_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_nashka_khibu_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_nashka_khibu_gift_hints}}","next":null},
+                                    {"id":"n_nashka_khibu_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_nashka_khibu_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -11961,6 +12551,42 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_nashka_khibu_gift_hints",
+                          "name": "Nashka Khibu Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_nashka_khibu_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving wooden goods as gifts.>"
+                            },
+                            {
+                              "id": "pe_nashka_khibu_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in indigo colors.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_nashka_khibu_date_hints",
+                          "name": "Nashka Khibu Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_nashka_khibu_date_hint_1",
+                              "text": "<Something that indicates that I like chopping down trees on dates.>"
+                            },
+                            {
+                              "id": "pe_nashka_khibu_date_hint_2",
+                              "text": "<Something that indicates that I like breaking rocks on dates.>"
+                            },
+                            {
+                              "id": "pe_nashka_khibu_date_hint_3",
+                              "text": "<Something that indicates that I like opening treasure chests on dates.>"
+                            },
+                            {
+                              "id": "pe_nashka_khibu_date_hint_4",
+                              "text": "<Something that indicates that I like defeating bandits or predators on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -12147,7 +12773,7 @@
                               "nodes": [
                                     {
                                           "id": "n_teacup_unumanuk_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -12156,8 +12782,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_teacup_unumanuk_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_teacup_unumanuk_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_teacup_unumanuk_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -12498,6 +13129,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_teacup_unumanuk_gift_hints",
+                          "name": "Eldress Teacup Unumanuk Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_teacup_unumanuk_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving medicines as gifts.>"
+                            },
+                            {
+                              "id": "pe_teacup_unumanuk_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue colors.>"
+                            },
+                            {
+                              "id": "pe_teacup_unumanuk_gift_hint_3",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -12675,7 +13324,7 @@
                               "nodes": [
                                     {
                                           "id": "n_binding_hatayap_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -12685,8 +13334,13 @@
                                           "expression": "neutral",
                                           "expressionHold": 2,
                                           "revealSpeed": "normal",
-                                          "tags": []
-                                    }
+                                          "tags": [],
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_binding_hatayap_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_binding_hatayap_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_binding_hatayap_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -13026,6 +13680,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_binding_hatayap_gift_hints",
+                          "name": "Binding Hatayap Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_binding_hatayap_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving crops as gifts.>"
+                            },
+                            {
+                              "id": "pe_binding_hatayap_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in blue, green colors.>"
+                            },
+                            {
+                              "id": "pe_binding_hatayap_gift_hint_3",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -13205,7 +13877,7 @@
                               "nodes": [
                                     {
                                           "id": "n_spearhead_unumanuk_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -13214,8 +13886,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_spearhead_unumanuk_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_spearhead_unumanuk_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_spearhead_unumanuk_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -13606,6 +14283,24 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_spearhead_unumanuk_gift_hints",
+                          "name": "Spearhead Unumanuk Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_spearhead_unumanuk_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_spearhead_unumanuk_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in orange, yellow colors.>"
+                            },
+                            {
+                              "id": "pe_spearhead_unumanuk_gift_hint_3",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -13789,7 +14484,7 @@
                               "nodes": [
                                     {
                                           "id": "n_oddclaw_unumanuk_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -13798,8 +14493,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_oddclaw_unumanuk_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_oddclaw_unumanuk_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_oddclaw_unumanuk_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_oddclaw_unumanuk_gift_hints}}","next":null},
+                                    {"id":"n_oddclaw_unumanuk_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_oddclaw_unumanuk_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -14191,6 +14893,50 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_oddclaw_unumanuk_gift_hints",
+                          "name": "Oddclaw Unumanuk Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_oddclaw_unumanuk_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_oddclaw_unumanuk_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, yellow, blue colors.>"
+                            },
+                            {
+                              "id": "pe_oddclaw_unumanuk_gift_hint_3",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_oddclaw_unumanuk_date_hints",
+                          "name": "Oddclaw Unumanuk Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_oddclaw_unumanuk_date_hint_1",
+                              "text": "<Something that indicates that I like fighting bandits on dates.>"
+                            },
+                            {
+                              "id": "pe_oddclaw_unumanuk_date_hint_2",
+                              "text": "<Something that indicates that I like taking eggs from nests on dates.>"
+                            },
+                            {
+                              "id": "pe_oddclaw_unumanuk_date_hint_3",
+                              "text": "<Something that indicates that I like petting farm animals on dates.>"
+                            },
+                            {
+                              "id": "pe_oddclaw_unumanuk_date_hint_4",
+                              "text": "<Something that indicates that I like harvesting products from livestock on dates.>"
+                            },
+                            {
+                              "id": "pe_oddclaw_unumanuk_date_hint_5",
+                              "text": "<Something that indicates that I like digging up buried treasure on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -14368,7 +15114,7 @@
                               "nodes": [
                                     {
                                           "id": "n_tooth_hatayap_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -14377,8 +15123,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_tooth_hatayap_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_tooth_hatayap_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_tooth_hatayap_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_tooth_hatayap_gift_hints}}","next":null},
+                                    {"id":"n_tooth_hatayap_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_tooth_hatayap_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -14769,6 +15522,50 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_tooth_hatayap_gift_hints",
+                          "name": "Tooth Hatayap Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_tooth_hatayap_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving food as gifts.>"
+                            },
+                            {
+                              "id": "pe_tooth_hatayap_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue, violet, indigo colors.>"
+                            },
+                            {
+                              "id": "pe_tooth_hatayap_gift_hint_3",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            },
+                            {
+                              "id": "pe_tooth_hatayap_gift_hint_4",
+                              "text": "<Something that indicates that I like alcoholic drinks as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_tooth_hatayap_date_hints",
+                          "name": "Tooth Hatayap Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_tooth_hatayap_date_hint_1",
+                              "text": "<Something that indicates that I like fishing on dates.>"
+                            },
+                            {
+                              "id": "pe_tooth_hatayap_date_hint_2",
+                              "text": "<Something that indicates that I like being offered drinks on dates.>"
+                            },
+                            {
+                              "id": "pe_tooth_hatayap_date_hint_3",
+                              "text": "<Something that indicates that I like dancing on dates.>"
+                            },
+                            {
+                              "id": "pe_tooth_hatayap_date_hint_4",
+                              "text": "<Something that indicates that I like hunting creatures that are not barbarians on dates.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -14918,7 +15715,7 @@
                               "nodes": [
                                     {
                                           "id": "n_hammerhead_tuhupnuk_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -14927,8 +15724,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_hammerhead_tuhupnuk_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_hammerhead_tuhupnuk_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_hammerhead_tuhupnuk_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -15219,6 +16021,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_hammerhead_tuhupnuk_gift_hints",
+                          "name": "Hammerhead Tuhupnuk Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_hammerhead_tuhupnuk_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving minerals and ores as gifts.>"
+                            },
+                            {
+                              "id": "pe_hammerhead_tuhupnuk_gift_hint_2",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -15368,7 +16184,7 @@
                               "nodes": [
                                     {
                                           "id": "n_talisman_hatayap_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -15377,8 +16193,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_talisman_hatayap_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_talisman_hatayap_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_talisman_hatayap_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -15666,6 +16487,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_talisman_hatayap_gift_hints",
+                          "name": "Talisman Hatayap Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_talisman_hatayap_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving herbs and potion reagents as gifts.>"
+                            },
+                            {
+                              "id": "pe_talisman_hatayap_gift_hint_2",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -15815,7 +16650,7 @@
                               "nodes": [
                                     {
                                           "id": "n_bowstring_hatayap_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -15824,8 +16659,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_bowstring_hatayap_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_bowstring_hatayap_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_bowstring_hatayap_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -16113,6 +16953,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_bowstring_hatayap_gift_hints",
+                          "name": "Bowstring Hatayap Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_bowstring_hatayap_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_bowstring_hatayap_gift_hint_2",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -16258,7 +17112,7 @@
                               "nodes": [
                                     {
                                           "id": "n_bird_bone_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -16267,8 +17121,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_bird_bone_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_bird_bone_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_bird_bone_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_bird_bone_gift_hints}}","next":null},
+                                    {"id":"n_bird_bone_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_bird_bone_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -16574,6 +17435,30 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_bird_bone_gift_hints",
+                          "name": "Bird Bone Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_bird_bone_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving animal products as gifts.>"
+                            },
+                            {
+                              "id": "pe_bird_bone_gift_hint_2",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_bird_bone_date_hints",
+                          "name": "Bird Bone Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_bird_bone_date_hint_1",
+                              "text": "<TODO: Configure my liked date activities in romance.likes, then write a dialogue hint.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -16719,7 +17604,7 @@
                               "nodes": [
                                     {
                                           "id": "n_khazud_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -16728,8 +17613,15 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_khazud_gift_hint"},
+                                                {"label":"What do you enjoy on dates?","next":"n_khazud_date_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_khazud_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_khazud_gift_hints}}","next":null},
+                                    {"id":"n_khazud_date_hint","type":"text","pos":{"x":360,"y":210},"text":"{{pool:pool_khazud_date_hints}}","next":null}
                               ]
                         }
                   ],
@@ -17022,6 +17914,26 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_khazud_gift_hints",
+                          "name": "Khazud Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_khazud_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving wooden goods as gifts.>"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pool_khazud_date_hints",
+                          "name": "Khazud Date Hints",
+                          "entries": [
+                            {
+                              "id": "pe_khazud_date_hint_1",
+                              "text": "<TODO: Configure my liked date activities in romance.likes, then write a dialogue hint.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -18659,7 +19571,7 @@
                               "nodes": [
                                     {
                                           "id": "n_baruhi_chief_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -18668,8 +19580,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_baruhi_chief_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_baruhi_chief_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_baruhi_chief_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -18967,6 +19884,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_baruhi_chief_gift_hints",
+                          "name": "<suggestion: name — the Baruhi war leader's name isn't given in the design doc> Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_baruhi_chief_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_baruhi_chief_gift_hint_2",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -19112,7 +20043,7 @@
                               "nodes": [
                                     {
                                           "id": "n_porakaneki_chief_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -19121,8 +20052,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_porakaneki_chief_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_porakaneki_chief_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_porakaneki_chief_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -19420,6 +20356,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_porakaneki_chief_gift_hints",
+                          "name": "Chief Nakaraka of the Pakapohi Porakaneki Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_porakaneki_chief_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_porakaneki_chief_gift_hint_2",
+                              "text": "<Something that indicates that I like meat dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             },
@@ -19758,7 +20708,7 @@
                               "nodes": [
                                     {
                                           "id": "n_khannibarri_agent_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -19767,8 +20717,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_khannibarri_agent_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_khannibarri_agent_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_khannibarri_agent_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -20069,6 +21024,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_khannibarri_agent_gift_hints",
+                          "name": "Surveyor Harkhanash Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_khannibarri_agent_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_khannibarri_agent_gift_hint_2",
+                              "text": "<Something that indicates that I like gifts in green, blue, orange, yellow colors.>"
+                            }
+                          ]
                         }
                   ],
                   "restingExpression": "frown",
@@ -20353,7 +21322,7 @@
                               "nodes": [
                                     {
                                           "id": "n_village_elder_fallback_1",
-                                          "type": "text",
+                                          "type": "choice",
                                           "pos": {
                                                 "x": 60,
                                                 "y": 80
@@ -20362,8 +21331,13 @@
                                           "next": null,
                                           "expression": "neutral",
                                           "expressionHold": 2,
-                                          "revealSpeed": "normal"
-                                    }
+                                          "revealSpeed": "normal",
+                                          "choices": [
+                                                {"label":"What kinds of gifts do you like?","next":"n_village_elder_gift_hint"},
+                                                {"label":"Goodbye.","next":null}
+                                          ]
+                                    },
+                                    {"id":"n_village_elder_gift_hint","type":"text","pos":{"x":360,"y":80},"text":"{{pool:pool_village_elder_gift_hints}}","next":null}
                               ]
                         }
                   ],
@@ -20661,6 +21635,20 @@
                                           }
                                     }
                               ]
+                        },
+                        {
+                          "id": "pool_village_elder_gift_hints",
+                          "name": "<suggestion: name — the unnamed civic leader who tips off the Mining Company about the old mine isn't named in the design doc> Gift Hints",
+                          "entries": [
+                            {
+                              "id": "pe_village_elder_gift_hint_1",
+                              "text": "<Something that indicates that I love receiving valuable treasures as gifts.>"
+                            },
+                            {
+                              "id": "pe_village_elder_gift_hint_2",
+                              "text": "<Something that indicates that I like fish dishes as gifts.>"
+                            }
+                          ]
                         }
                   ]
             }

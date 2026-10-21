@@ -644,7 +644,7 @@
   }
 
   function show(root, text, options = {}) {
-    if (String(options.speakerId || '') === 'banubu') return null; // Banubu speaks only through his authored, player-initiated quest dialogue.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const message = String(text || '').trim();
@@ -822,7 +822,7 @@
 
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
-    if (speakerId === 'banubu') return false; // Avoid greeting policy, portrait composition, and ledger work for the sleeping Fey.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId)) return false; // Great Fey use scripted conversations, not proximity greetings (player or NPC).
     if (walker?.rec?.ambientGreetings === false) return false; // Runtime-spawned records (e.g. babies/toddlers from js/romance-family.js) can opt out entirely.
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
@@ -878,7 +878,7 @@
 
   function playerGreetingWaitMsForWalker(walker, now = performance.now()) {
     const speakerId = String(walker?.rec?.id || ''); // Speaker whose pet reaction is deciding whether an ordinary player greeting still has priority.
-    if (!speakerId || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0;
+    if (!speakerId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId) || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0; // No deferred greeting priority for excluded Great Fey.
     if (state.deps.isDialogueOpen?.() || state.deps.isPaused?.() || window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return 0;
     const player = state.deps.getPlayerPosition?.();
     if (!player) return 0;

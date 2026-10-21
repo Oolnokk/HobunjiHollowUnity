@@ -376,7 +376,7 @@
 
   function getNpcGiftOfferAction(walker) {
     const npcId = walker?.rec?.id;
-    if (!npcId) return null;
+    if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker.rec)) return null; // Great Fey never advertise the ordinary gift action.
     const held = deps.getHeldGiftItem();
     if (!isItemGiftable(held)) return null;
     const prefRec = preferenceRecord(walker); // Reused by both armor-specific and ordinary warning calculations.
@@ -398,7 +398,7 @@
   function offerGift(walker) {
     const npcId = relationshipId(walker);
     const held = deps?.getHeldGiftItem?.();
-    if (!npcId || !isItemGiftable(held)) return false;
+    if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker?.rec) || !isItemGiftable(held)) return false; // Guard the direct action too: no inventory, Favor, Rapport, or wardrobe changes.
 
     const evaluation = evaluateHeldGift(preferenceRecord(walker), held); // Uses the same combined trait + food preference evaluator exposed to diagnostics/tests.
     const tier = evaluation.tier;

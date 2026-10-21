@@ -530,7 +530,7 @@
     const walkers = (ambientDeps.getNpcWalkers?.() || []).filter(walker => walker?.area === area && walker?.root);
     for (const walker of walkers) {
       const npcId = walker.rec?.id;
-      if (!npcId) continue;
+      if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) continue; // Great Fey never acknowledge nearby companions, mounts, or shoulder pets.
       const distance = Math.hypot(walker.root.position.x - player.x, walker.root.position.z - player.z);
       if (distance > 3.3) continue;
       const animal = animals[Math.abs(hashCode(`${npcId}:${day}`)) % animals.length];
@@ -554,7 +554,7 @@
   }
 
   function recognitionCandidate(rec) {
-    if (!rec?.id) return null;
+    if (!rec?.id || window.NpcInteractionPolicy?.isPassiveGreatFey?.(rec)) return null; // Keep the Great Fey's authored Talk/quest tree instead of an animal-recognition interruption.
     const state = window.DialogueContent?.getNpcDlgState?.(rec.id);
     if ((Number(state?.favor) || 0) < FRIEND_FAVOR_MIN) return null;
     for (const animal of presentAnimals()) {
