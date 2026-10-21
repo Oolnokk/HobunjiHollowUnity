@@ -249,6 +249,9 @@
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
   <script src="js/temporary-locales.js?v=20261013h806e004"></script>
+  <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
+       Load once before all NPC interaction modules, including lazy runtimes. -->
+  <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Banubu's quest dialogue defaults load before LocalDBOverrides so the
        editor/runtime database composition can replace his generic chatter. -->
   <script src="js/banubu-quest-content.js?v=20260925banubuvisual2"></script>
