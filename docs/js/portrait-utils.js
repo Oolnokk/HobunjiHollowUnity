@@ -2031,6 +2031,8 @@ function portraitVariantKeysForFighter(fighter, option) {
 
 function resolveOptionLayers(option, fighter) {
   if (!option) return [];
+  // Prize cosmetics with partial art must never inherit the nearest species' portrait layers.
+  if (option.onlyExactSpeciesVariant) return (fighter && option.variantLayers?.[fighter.speciesId + '_' + fighter.gender]) || [];
   const vl = option.variantLayers;
   if (vl && fighter) {
     for (const key of portraitVariantKeysForFighter(fighter, option)) {
@@ -2085,10 +2087,11 @@ function portraitOptionFromJson(entry, json) {
                          : tintSlot);
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
+  const onlyExactSpeciesVariant = json.onlyExactSpeciesVariant === true; // Used by incomplete-variant equipment such as Bzabag's prize helm.
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
