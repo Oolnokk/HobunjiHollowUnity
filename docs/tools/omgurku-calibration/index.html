@@ -57,7 +57,7 @@ input[type=file]{display:none}
 <script src="../../js/combat/attack-pose-templates.js?v=1"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=1"></script>
 <script src="../../js/species-pose-scaling.js?v=1"></script>
-<script src="../../js/held-action-animations.js?v=20261021h76c2b88"></script>
+<script src="../../js/held-action-animations.js?v=20261021hd3373bb"></script>
 </head>
 <body>
 <div id="app">
@@ -80,7 +80,7 @@ input[type=file]{display:none}
 <div class="row" style="margin-top:7px"><button id="refreshPreviewBtn">Rebuild preview</button><span id="frameBadge">idle</span></div>
 <label for="headingRange">NPC facing / animal heading <output id="headingValue">0°</output></label>
 <input id="headingRange" type="range" min="-180" max="180" value="0" step="1" style="width:100%;accent-color:#65adff">
-<p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses the side-view creature deadzone (including its moving snap). Orbit the camera to examine both.</p>
+<p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses its own adjustable side-view deadzone (including its moving snap). Orbit the camera to examine both.</p>
 </section>
 <section>
 <h2>Hands, weapon stances &amp; attacks</h2>
@@ -117,7 +117,7 @@ input[type=file]{display:none}
 <small>Fit the lower edge to the animal's neck. Both connector ends always lie flat against their attached sprite planes.</small>
 <div id="connectorAnimalTools" class="splineTools"></div>
 <button id="connectorUndo" disabled>Undo last spline edit</button>
-<p id="connectorLatestChange">Latest change: fixed upper body, lower-body saddle pivot, adjustable deformation influence, and live weapon previews.</p>
+<p id="connectorLatestChange">Latest change: a separate lower-half deadzone and corrected mounted-rider hand/weapon height.</p>
 <label for="connectorUpperInfluence">Upper body deformation influence <output id="connectorUpperInfluenceValue">65%</output></label>
 <input id="connectorUpperInfluence" type="range" min="0" max="1" step=".01" value=".65" style="width:100%">
 <small>Lower values let the animal lead more of the connector. Higher values let the upper body lead more. Both attachment ends stay flat.</small>
@@ -160,8 +160,8 @@ input[type=file]{display:none}
 </aside>
 </div>
 </div>
-<script src="./weapon-preview.js?v=1"></script>
-<script src="./calibration.js?v=20261021h83cdb27"></script>
+<script src="./weapon-preview.js?v=20261021hc5a5c84"></script>
+<script src="./calibration.js?v=20261021ha477081"></script>
 <script src="./connector-author.js?v=20261021hdf27aab"></script>
 </body>
 </html>

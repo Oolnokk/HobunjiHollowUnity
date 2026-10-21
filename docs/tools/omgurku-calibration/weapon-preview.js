@@ -40,7 +40,7 @@
       plane.rotation.x=-Math.PI/2;plane.renderOrder=9;
       const mesh=new THREE.Group(); // Same fixed PNG basis and grip metadata used by the attack editor.
       mesh.userData.toolPlane=plane;mesh.add(plane);
-      mesh.scale.setScalar(window.HobunjiHandToolGrips.effectiveToolScaleForTool(state.toolKey,'omgurku','male'));
+      mesh.scale.setScalar(window.HobunjiHandToolGrips.effectiveToolScaleForTool(state.toolKey,'engh-sho','male'));
       disposeMesh(state.mesh);state.mesh=mesh;state.holder.add(mesh);state.error=null;
     } catch(error) {
       if(ticket!==state.epoch)return;
@@ -88,12 +88,13 @@
     state.THREE=THREE;state.model=model;
     state.holder=new THREE.Group();state.holder.name='Omgurku_Preview_WeaponHolder';
     const upper=model.userData.omgurkuComposite.upper; // Tool and hands share the authoritative humanoid frame.
-    upper.add(state.holder);
+    model.userData.omgurkuComposite.riderFrame.add(state.holder);
     model.userData.proceduralHandToolHolder=state.holder;
     model.userData.proceduralHandGripContext='melee';
     state.sample=window.SharedAttackPose.createSample();state.posePoint=new THREE.Vector3();
+    // The portrait already owns its anatomy scale; apply donor pose proportions once in the mounted floor frame.
     state.poseOptions={cx:0,cz:0,floorY:0,baseY:upper.userData.handAttachY||0,
-      speciesId:'omgurku',gender:'male',modelHeight:upper.userData.portraitModelHeight,
+      speciesId:'engh-sho',gender:'male',rigScaleY:1,modelHeight:upper.userData.portraitModelHeight,
       armLength:upper.userData.armLength,poseOrbitScale:upper.userData.poseOrbitScale};
     prepare();loadWeapon();
   }

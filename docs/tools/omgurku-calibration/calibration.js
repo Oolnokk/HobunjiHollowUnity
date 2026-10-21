@@ -10,6 +10,7 @@
     { key:'riderScale', label:'Upper-body scale', min:.5, max:1.5, step:.005, group:'upperFields' },
     { key:'joinDepth', label:'Join depth', min:-.35, max:.35, step:.005, group:'upperFields' },
     { key:'lowerWidth', label:'Lower body width', min:.4, max:5, step:.01, group:'lowerFields' },
+    { key:'lowerDeadzoneDegrees', label:'Lower-half deadzone (degrees)', min:0, max:89, step:.5, group:'lowerFields' },
     { key:'lowerHeight', label:'Lower body height', min:.2, max:3, step:.005, group:'lowerFields' },
     { key:'visibleFloorCorrection', label:'Visible floor correction', min:-.75, max:1.5, step:.005, group:'lowerFields' },
     ...['upper','lower'].flatMap(half => ['X','Y','Z'].map(axis => ({
@@ -286,7 +287,7 @@
       runtime:window.HobunjiOmgurkuSpecies?.debugSnapshot?.()||null,
       facing:{mode:window.PerpRotation?.CREATURE_PLANE_ROT_MODE,
         npcDeadzoneDegrees:(window.PerpRotation?.PERP_DEAD_RAD||0)*180/Math.PI,
-        animalDeadzoneDegrees:(window.PerpRotation?.CREATURE_PERP_DEAD_RAD||0)*180/Math.PI,
+        animalDeadzoneDegrees:state.placement?.lowerDeadzoneDegrees,
         requestedHeadingDegrees:Number($('headingRange').value)},
       placement:state.placement,
     });

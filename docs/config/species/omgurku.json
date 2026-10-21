@@ -146,19 +146,20 @@
     ]
   },
   "hybridPlacement": {
-    "lowerWidth": 1.94,
-    "lowerHeight": 0.916356,
-    "visibleFloorCorrection": 0.151758205,
-    "saddleU": 0.2751161581999556,
-    "saddleV": 0.26826246967617995,
-    "joinDepth": 0.01,
-    "riderScale": 1,
+    "lowerWidth": 1.77,
+    "lowerHeight": 0.74,
+    "visibleFloorCorrection": 0.245,
+    "saddleU": 0.24,
+    "saddleV": 0.249,
+    "joinDepth": -0.06,
+    "riderScale": 0.885,
     "upperOffsetX": 0,
     "upperOffsetY": 0,
     "upperOffsetZ": 0,
     "lowerOffsetX": 0,
     "lowerOffsetY": 0,
-    "lowerOffsetZ": 0
+    "lowerOffsetZ": 0,
+    "lowerDeadzoneDegrees": 27.5
   },
   "connector": {
     "schema": "hobunji.omgurku-connector.v1",
@@ -231,7 +232,7 @@
       }
     ],
     "opacity": 1,
-    "upperInfluence": 0.65,
+    "upperInfluence": 1,
     "riderWaist": [
       {
         "x": 0.3886363280904258,

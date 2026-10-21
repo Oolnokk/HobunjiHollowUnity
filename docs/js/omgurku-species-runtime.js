@@ -10,9 +10,9 @@
   const FRAMES = Object.freeze(['idle', 'run1', 'run2']); // Authored lower PNGs, decoded by the shared animal-plane texture cache.
   const SPRITES = Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/omgurku-lower_${frame}.png`])));
   const DEFAULT_PLACEMENT = Object.freeze({
-    lowerWidth: 1.94, lowerHeight: 0.916356, visibleFloorCorrection: 0.151758205,
-    saddleU: 0.2751161581999556, saddleV: 0.26826246967617995,
-    joinDepth: 0.01, riderScale: 1,
+    lowerWidth: 1.77, lowerHeight: 0.74, visibleFloorCorrection: 0.245,
+    saddleU: 0.24, saddleV: 0.249, lowerDeadzoneDegrees: 27.5,
+    joinDepth: -0.06, riderScale: 0.885,
     upperOffsetX: 0, upperOffsetY: 0, upperOffsetZ: 0,
     lowerOffsetX: 0, lowerOffsetY: 0, lowerOffsetZ: 0,
   }); // Latest user calibration; authored overrides live in config/species/omgurku.json.
@@ -248,7 +248,7 @@
     }
     // Real NPC walkers already clamp the portrait root; never re-clamp game NPCs.
     let target = rawYaw, snap = false;
-    const dead = perp.CREATURE_PERP_DEAD_RAD;
+    const dead = placement.lowerDeadzoneDegrees * Math.PI / 180; // Independent authored lower-half exclusion angle.
     if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
       const result = perp.creatureSnapSwayTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
       target = result.target; snap = result.snap;
@@ -326,10 +326,10 @@
       ref.group.position.set(placement.lowerOffsetX, centerY, placement.lowerOffsetZ);
       ref.group.scale.set(lowerScaleX, lowerScaleY, lowerScaleX);
     }
-    // The hand driver sees the outer NPC root as its avatar identity but uses
-    // proceduralHandParent=upper. Its hand coordinates must therefore remain
-    // in the ORIGINAL upper portrait's local frame. The upper's translation,
-    // yaw and scale now carry the hand sockets, just like the visible torso.
+    // Canonical hand anchors are floor-relative, while the portrait is centered.
+    // Mount the rider floor beneath its portrait; saddle translation, yaw and
+    // scale then carry the existing idle hands and attack poses together.
+    c.riderFrame.position.y = -(Number(c.upper.userData.portraitModelHeight) || 0) / 2;
     for (const key of ['handAttachX','handAttachY','portraitModelHeight','portraitModelWidth','armLength','scaledArmLength','armLengthBySide']) {
       if (c.upper.userData?.[key] !== undefined) record.root.userData[key] = c.upper.userData[key];
     }
@@ -388,15 +388,16 @@
         }
         const root = new THREE.Group(); // Sole NPC avatar group: collisions, dialogue, held items and movement remain under this parent.
         root.name = options.name || 'Omgurku_NPC_Hybrid';
+        const riderFrame = new THREE.Group(); // Floor-relative humanoid pose frame, mounted under the centered upper portrait.
+        riderFrame.name = 'Omgurku_Mounted_Rider_Floor';
+        upper.add(riderFrame);
         root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true,
-          // ProceduralHandFrameDriver attaches pending hands directly beneath
-          // this lifted, scaled, NPC-deadzone portrait half — never the animal.
-          proceduralHandParent: upper };
-        upper.userData.proceduralHandParent = upper;
+          proceduralHandParent: riderFrame };
+        upper.userData.proceduralHandParent = riderFrame;
         root.add(upper);
         for (const ref of lowerRefs) root.add(ref.group);
         const c = {
-          upper, lowerRefs, frame: null, builtLowerWidth: placement.lowerWidth, builtLowerHeight: placement.lowerHeight,
+          upper, riderFrame, lowerRefs, frame: null, builtLowerWidth: placement.lowerWidth, builtLowerHeight: placement.lowerHeight,
           positionScratch: new THREE.Vector3(), lastPosition: null,
           cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(), cameraWorld: { x: 0, z: 0 },
           rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
@@ -461,6 +462,7 @@
       const n = Number(values[key]);
       if (!Object.prototype.hasOwnProperty.call(values, key) || !Number.isFinite(n)) continue;
       if (key === 'saddleU' || key === 'saddleV') placement[key] = Math.max(0, Math.min(1, n));
+      else if (key === 'lowerDeadzoneDegrees') placement[key] = Math.max(0, Math.min(89, n));
       else if (key === 'riderScale') placement[key] = Math.max(0.5, Math.min(1.5, n));
       else if (key === 'lowerWidth') placement[key] = Math.max(0.4, Math.min(5, n));
       else if (key === 'lowerHeight') placement[key] = Math.max(0.2, Math.min(3, n));
@@ -537,7 +539,9 @@
         return {
           name: root.name, frame: c?.frame, join: root.userData.omgurkuJoin,
           parented: !!root.parent,
-          handParentIsUpper: root.userData.proceduralHandParent === c?.upper,
+          handParentIsRider: root.userData.proceduralHandParent === c?.riderFrame,
+          riderFloorY: c?.riderFrame?.position.y ?? null,
+          lowerDeadzoneDegrees: placement.lowerDeadzoneDegrees,
           handRigAttached: !!root.userData.proceduralHandRig,
           upperYaw: c?.upper?.rotation?.y ?? null,
           lowerYaw: c?.lowerRefs?.[0]?.group?.rotation?.y ?? null,

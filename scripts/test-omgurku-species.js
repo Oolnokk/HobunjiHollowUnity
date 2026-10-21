@@ -27,7 +27,7 @@ assert(portraitSource.includes('behindHeadUrLayers'), 'species rear overlays rea
 assert(index.entries.some(entry => entry.speciesId === 'omgurku' && entry.path === './omgurku.json'));
 assert.equal(species.parentSpecies, 'engh-sho');
 assert(species.hybridPlacement && typeof species.hybridPlacement === 'object');
-for (const key of ['lowerWidth','lowerHeight','visibleFloorCorrection','saddleU','saddleV','joinDepth','riderScale',
+for (const key of ['lowerWidth','lowerHeight','lowerDeadzoneDegrees','visibleFloorCorrection','saddleU','saddleV','joinDepth','riderScale',
   'upperOffsetX','upperOffsetY','upperOffsetZ','lowerOffsetX','lowerOffsetY','lowerOffsetZ']) {
   assert(Number.isFinite(species.hybridPlacement[key]), 'authored placement: '+key);
 }
@@ -137,7 +137,7 @@ async function main() {
   assert.equal(humanoidBuilds, 1);
   assert.equal(root.userData.omgurkuNpc, true);
   assert.equal(root.children.length, 4);
-  assert.equal(root.userData.proceduralHandParent.parent, root, 'hand parent must remain in same NPC hierarchy');
+  assert.equal(root.userData.proceduralHandParent.parent, root.userData.omgurkuComposite.upper, 'hand parent must remain in same NPC hierarchy');
   assert.equal(lowerBuilds.length, 3);
   for (const [i, frame] of ['idle', 'run1', 'run2'].entries()) {
     assert(lowerBuilds[i].url.endsWith(`/docs/assets/creaturesprites/omgurku-lower_${frame}.png`));
@@ -146,8 +146,15 @@ async function main() {
   }
   assert.equal(root.userData.handAttachY, root.userData.omgurkuComposite.upper.userData.handAttachY,
     'hand coordinates stay local to the portrait instead of being displaced by the animal join');
-  assert.equal(root.userData.proceduralHandParent, root.userData.omgurkuComposite.upper,
+  assert.equal(root.userData.proceduralHandParent, root.userData.omgurkuComposite.riderFrame,
     'direct hand driver must parent the free/tool hands under the same upper portrait half');
+  assert.equal(root.userData.proceduralHandParent.position.y, -.5, 'floor frame offsets the centered portrait by exactly half its height');
+  const handY = root.userData.proceduralHandParent.position.y + root.userData.handAttachY;
+  assert(Math.abs(handY-.1)<1e-8, 'floor-relative .6 hand anchor lands at .1 in portrait coordinates');
+  assert.equal(window.HobunjiOmgurkuSpecies.setPlacement({lowerDeadzoneDegrees:60}).lowerDeadzoneDegrees,60);
+  assert.equal(window.HobunjiOmgurkuSpecies.setPlacement({lowerDeadzoneDegrees:200}).lowerDeadzoneDegrees,89);
+  assert.equal(window.HobunjiOmgurkuSpecies.setPlacement({lowerDeadzoneDegrees:-2}).lowerDeadzoneDegrees,0);
+  window.HobunjiOmgurkuSpecies.setPlacement({lowerDeadzoneDegrees:27.5});
   new Group().add(root);
   gaitTick(); // Initial stationary state stays on the idle frame.
   assert.equal(walker.applyFacingDeadzone,facing,'hybrid facing never wraps the NPC update method');

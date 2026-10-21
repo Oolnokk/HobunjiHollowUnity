@@ -67,7 +67,7 @@ const server=http.createServer((req,res)=>{
     await page.locator('#frontBtn').click();
     await page.waitForFunction(()=>{
       const snap=window.HobunjiOmgurkuSpecies.debugSnapshot();
-      return snap.facingUpdates>3 && snap.liveFrames[0]?.handParentIsUpper === true;
+      return snap.facingUpdates>3 && snap.liveFrames[0]?.handParentIsRider === true;
     },null,{timeout:6000});
     await page.waitForFunction(()=>{
       const frame=window.HobunjiOmgurkuSpecies.debugSnapshot().liveFrames[0];
@@ -86,11 +86,42 @@ const server=http.createServer((req,res)=>{
       const rig=window.HobunjiOmgurkuCalibration.context().model.userData.proceduralHandRig;
       return JSON.stringify(rig.group.children.map(child=>[...child.position.toArray(),...child.quaternion.toArray()]))!==previous;
     },idleSignature,{timeout:5000});
+    await page.locator('#number_lowerDeadzoneDegrees').fill('58');
+    await page.locator('#number_lowerDeadzoneDegrees').dispatchEvent('change');
+    assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().placement.lowerDeadzoneDegrees),58);
+    assert.equal(await page.evaluate(()=>window.PerpRotation.CREATURE_PERP_DEAD_RAD),rigIntegrity.animalDeadzone,'global animal deadzone is unchanged');
+    await page.evaluate(()=>{
+      const perp=window.PerpRotation;
+      window.__omgurkuDeadzoneSamples=[];
+      window.__omgurkuOriginalFacing={};
+      for(const key of ['creatureSnapSwayTarget','creatureDeadzoneTarget','perpClamp']){
+        const original=perp[key];
+        if(!original)continue;
+        window.__omgurkuOriginalFacing[key]=original;
+        perp[key]=function(...args){window.__omgurkuDeadzoneSamples.push(args[3]);return original.apply(this,args);};
+      }
+    });
+    await page.waitForFunction(()=>window.__omgurkuDeadzoneSamples.some(value=>Math.abs(value-58*Math.PI/180)<1e-8));
+    await page.evaluate(()=>Object.assign(window.PerpRotation,window.__omgurkuOriginalFacing));
+
     await page.locator('#weaponPreviewMode').selectOption('stance');
     await page.waitForFunction(()=>window.HobunjiOmgurkuWeaponPreview.snapshot().weaponLoaded
       && window.HobunjiOmgurkuWeaponPreview.snapshot().holderVisible);
     await page.locator('#weaponPreviewStance').selectOption('lightWeapon');
     await page.waitForFunction(()=>Math.abs(window.HobunjiOmgurkuWeaponPreview.snapshot().sample.bodyYawRad+40*Math.PI/180)<1e-7);
+    const mounted=await page.evaluate(()=>{
+      const root=window.HobunjiOmgurkuCalibration.context().model,c=root.userData.omgurkuComposite;
+      const p=window.HobunjiOmgurkuWeaponPreview.snapshot().sample;
+      const expected=new window.THREE.Vector3(c.upper.userData.handAttachX*p.mirrorBlend+p.x,c.upper.userData.handAttachY+p.y,p.z);
+      window.HobunjiSpeciesPoseScale.transformPosePoint(expected,{cx:0,cz:0,floorY:0,baseY:c.upper.userData.handAttachY,
+        speciesId:'engh-sho',gender:'male',rigScaleY:1,modelHeight:c.upper.userData.portraitModelHeight,
+        armLength:c.upper.userData.armLength,poseOrbitScale:c.upper.userData.poseOrbitScale});
+      return {offset:c.riderFrame.position.y,height:c.upper.userData.portraitModelHeight,
+        error:expected.distanceTo(root.userData.proceduralHandToolHolder.position),
+        hands:root.userData.proceduralHandRig.parent===c.riderFrame};
+    });
+    assert.equal(mounted.offset,-mounted.height/2,'mounted rider floor compensates portrait center');
+    assert(mounted.error<1e-8 && mounted.hands,'Engh-sho weapon poses and idle hands share mounted floor coordinates');
     if(process.env.HOBUNJI_WEAPON_QA_SCREENSHOT){
       await page.locator('#angleBtn').click();
       await page.waitForTimeout(300);
@@ -102,7 +133,7 @@ const server=http.createServer((req,res)=>{
     const armed=await page.evaluate(()=>{
       const model=window.HobunjiOmgurkuCalibration.context().model;
       return {state:window.HobunjiOmgurkuWeaponPreview.snapshot(),
-        parent:model.userData.proceduralHandToolHolder.parent===model.userData.omgurkuComposite.upper,
+        parent:model.userData.proceduralHandToolHolder.parent===model.userData.omgurkuComposite.riderFrame,
         grip:!!model.userData.proceduralHandAnimationGrip,
         driver:window.RuntimeFrameScheduler.getDebug()};
     });
@@ -137,6 +168,7 @@ const server=http.createServer((req,res)=>{
       return JSON.parse(localStorage.getItem(window.HobunjiOmgurkuSpecies.localPlacementKey));
     });
     assert.equal(saved.hybridPlacement.saddleU,.421,'browser saved placement');
+    assert.equal(saved.hybridPlacement.lowerDeadzoneDegrees,58,'unique lower deadzone exports with species');
     await page.locator('#resetBtn').click();
     const cleared=await page.evaluate(()=>localStorage.getItem(window.HobunjiOmgurkuSpecies.localPlacementKey));
     assert.equal(cleared,null,'clear local override');
@@ -300,6 +332,9 @@ const server=http.createServer((req,res)=>{
       'both end strips remain exactly coplanar with their independently rotated sprite planes');
     assert.equal(contact.skinned,true,'the additional avatar uses the gameplay neck/skinned portrait path');
     assert.equal(contact.hasConnector,true,'gameplay skinned portraits also get their connector');
+    await page.locator('#number_lowerDeadzoneDegrees').fill('58');
+    await page.locator('#number_lowerDeadzoneDegrees').dispatchEvent('change');
+    await page.locator('#saveLocalBtn').click();
     await page.locator('#connectorSave').click();
     const savedConnector=await page.evaluate(()=>{
       const k=window.HobunjiOmgurkuConnector.storageKey;
@@ -321,6 +356,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().directions.sourceTop),90,
       'saved arrow directions restore after reload');
     assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnector.snapshot().upperInfluence),.9,'deformation influence restores after reload');
+    assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuSpecies.debugSnapshot().placement.lowerDeadzoneDegrees),58,'lower deadzone restores after reload');
     assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnectorAuthor.snapshot().uploaded),true,
       'saved PNG is restored into the author after reload');
     const imported=JSON.parse(fs.readFileSync(path.join(root,'docs/config/species/omgurku.json'),'utf8'));
