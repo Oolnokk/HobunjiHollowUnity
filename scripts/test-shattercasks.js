@@ -83,12 +83,20 @@ assert(author.includes('id="carrySelectHitbox"') &&
   author.includes('carry_hitbox_wireframe') &&
   author.includes('carryHitboxSX')&&author.includes('carryHitboxSY')&&author.includes('carryHitboxSZ'),
   'furniture editor can display, select, translate and resize the authored hitbox');
-assert(code.includes("mesh.name!=='npc_avatar_back_plane'") &&
-  code.includes('mesh.renderOrder=2.5') &&
+assert(code.includes("mesh.name==='npc_avatar_back_plane'") &&
+  code.includes("mesh.material[1]?.name!=='npc_avatar_skinned_back_material'") &&
+  code.includes('new THREE.SkinnedMesh(mesh.geometry,[hiddenFront,rearMaterial])') &&
+  code.includes('overlay.bind(mesh.skeleton,mesh.bindMatrix)') &&
+  code.includes('backMaterial.visible=false') &&
+  code.includes('rearMaterial.depthTest=true') &&
   code.includes('mesh.renderOrder=1.5') &&
-  code.includes('material.depthTest=true') &&
-  code.includes('setHeldRearXray(null)'),
-  'held rear portrait draws over Shattercask without losing ordinary environment depth, with reversible materials');
+  code.includes('setHeldRearXray(null)') &&
+  code.includes('setHeldRearXray(held); // Recheck'),
+  'carrying uses one back-only skinned draw (or legacy rigid back) above the vase, while respecting world depth and restoring normal portrait state');
+const png=fs.readFileSync(path.join(root,'docs/js/png-plane-avatar.js'),'utf8');
+assert(png.includes("skinnedPlane.name = config.name || 'npc_avatar_skinned_plane_assembly'") &&
+  png.includes('new THREE.SkinnedMesh(geometry, [frontMaterial, backMaterial])'),
+  'regression covers the real player neck-rig layout, not just a rigid rear mesh');
 assert(code.includes('updateShatterThrow(dt)') &&
   code.includes('Math.sin(Math.PI*ratio)') &&
   code.includes("['btnItemAction1','Throw Shattercask'") &&
@@ -191,7 +199,15 @@ class Mesh extends Node {constructor(geometry,material){super();this.geometry=ge
 class InstancedMesh extends Mesh {constructor(geometry,material){super(geometry,material);this.instanceMatrix={};}setMatrixAt(){}}
 class Object3D extends Node {updateMatrix(){this.matrix={};}}
 class Geometry {dispose(){}}
-class Material {constructor(options){Object.assign(this,options);}dispose(){}}
+class Material {
+  constructor(options){Object.assign(this,options);}
+  clone(){return new Material({...this});}
+  dispose(){}
+}
+class SkinnedMesh extends Mesh {
+  constructor(geometry,materials){super(geometry,materials);this.isSkinnedMesh=true;this.matrix={copy(){}};this.matrixWorld={copy(){}};}
+  bind(skeleton,bindMatrix){this.skeleton=skeleton;this.bindMatrix=bindMatrix;}
+}
 // This mock casts a ray against a small authored silhouette, not the full
 // bounding volume. Production uses THREE.Mesh.raycast triangles directly.
 class Raycaster {
@@ -221,7 +237,7 @@ function authoredGroup() {
   group.userData.meshById=new Map([['silhouette',mesh]]);
   return group;
 }
-const THREE = {Group:Node,Mesh,InstancedMesh,Object3D,Vector3,Raycaster,
+const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Raycaster,
   TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
@@ -347,13 +363,54 @@ async function arenaScenario() {
   let heldMode='tool';
   game.ActionArcUI={heldMode:()=>heldMode};
   assert.equal(game.Shattercasks.toolArchAction(),'pickup','faced Shattercask claims Tool Select with tool equipped');
+  // This game mode renders the player as ONE skinned avatar with two material
+  // groups, not a separate npc_avatar_back_plane. A carry effect must isolate
+  // the rear group without hiding the front or drawing through world geometry.
+  const body=new Node(),portrait=new SkinnedMesh({groups:[{materialIndex:0},{materialIndex:1}]},[
+    new Material({name:'npc_avatar_skinned_front_material',visible:true,depthWrite:true}),
+    new Material({name:'npc_avatar_skinned_back_material',visible:true,depthTest:true,depthWrite:true})
+  ]);
+  portrait.name='player_skinned_plane_assembly';
+  portrait.bind({bones:[]},{});
+  body.add(portrait);
+  game.ProceduralHandAttachments={gameDeps:{playerMesh:body}};
   assert(game.Shattercasks.toolArchTap(),'contextual tool tap picks up and stows gear');
+  let rearState=game.Shattercasks.debugSnapshot().rearPortraitXray;
+  assert.equal(rearState.skinnedBackOnlyPasses,1,'one skinned rear-only x-ray is generated while carrying');
+  assert.equal(portrait.material[0].visible,true,'front portrait stays unchanged');
+  assert.equal(portrait.material[1].visible,false,'original rear pass is suppressed, preventing double blending');
+  const rearOverlay=body.children.find(node=>node.userData?.shattercaskRearOverlay);
+  assert(rearOverlay && rearOverlay.material[0].visible===false && rearOverlay.material[1].visible===true,
+    'x-ray overlay draws the back PNG only, not the opposite face');
+  assert.equal(rearOverlay.material[1].depthTest,true,'rear x-ray cannot pass through world terrain');
+  assert.equal(rearOverlay.material[1].depthWrite,true,'rear x-ray still occludes objects behind the carrier');
+  assert.equal(rearOverlay.skeleton,portrait.skeleton,'rear overlay reuses existing bones rather than a second rig');
+  assert.equal(rearState.heldPartsWithoutDepthWrite,1,'only held cask mesh stops writing depth');
+  // A late portrait rebuild must replace the overlay and restore the old
+  // material before attaching the new skinned back on the next poll.
+  const rebuilt=new SkinnedMesh(portrait.geometry,[
+    new Material({name:'npc_avatar_skinned_front_material',visible:true,depthWrite:true}),
+    new Material({name:'npc_avatar_skinned_back_material',visible:true,depthTest:true,depthWrite:true})
+  ]);
+  rebuilt.name='player_rebuilt_skinned_plane_assembly';
+  rebuilt.bind(portrait.skeleton,portrait.bindMatrix);
+  body.remove(portrait);body.add(rebuilt);
+  game.Combat.update(.18);
+  rearState=game.Shattercasks.debugSnapshot().rearPortraitXray;
+  assert.equal(rearState.skinnedBackOnlyPasses,1,'avatar rebuild replaces, not duplicates, the rear x-ray');
+  assert.equal(portrait.material[1].visible,true,'replaced avatar rear material is restored');
+  assert.equal(rebuilt.material[1].visible,false,'new rear group owns the overlay');
   assert.equal(game.Shattercasks.toolArchAction(),null,'while carrying, Tool Select is no longer the Drop action');
   assert(game.Shattercasks.startShatterAim(),'Item Action 1 starts hold-to-aim for the physically carried object');
   assert(game.Shattercasks.releaseShatterAim(),'releasing Item Action 1 starts the throw stage');
   game.Shattercasks.cancelShatterAim();
   assert(game.Shattercasks.drop(),'Item Action 2 drops held Shattercask');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
+  assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');
+  assert.equal(body.children.filter(node=>node.userData?.shattercaskRearOverlay).length,0,
+    'drop disposes the back-only overlay and detaches its render pass');
+  assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.skinnedBackOnlyPasses,0,
+    'post-drop diagnostics confirm there is no leftover overlay');
   const before=game.Shattercasks.debugSnapshot().vases.length;
   currentArea='town';
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/Testing Arena/);
