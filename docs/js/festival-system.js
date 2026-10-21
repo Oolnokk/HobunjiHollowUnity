@@ -181,7 +181,7 @@
   function fillFestivalBowl(index) {
     if (festival()?.id!=='gorkunash'||!festivalHours()||!heldBowl||potIndexAtAim()!==index) return fail('Hold a festival bowl beside the feast table.');
     const meal=feastMenu()[index];
-    if (!meal) return fail('That pot is waiting for a contributed meal.');
+    if (!meal || meal.id === 'reserved') return fail('That pot is waiting for your contest entry.');
     const selectedItemKey=heldBowl.selectedItemKey;
     heldBowl={meal,uses:MAX_FOOD_PORTIONS,capacity:MAX_FOOD_PORTIONS,selectedItemKey};
     return commit(`Filled the bowl with ${meal.label} (10/10 portions).`);
@@ -402,7 +402,7 @@
     }
     if (saved?.potluckContests && typeof saved.potluckContests === 'object') {
       for (const [key,value] of Object.entries(saved.potluckContests)) {
-        if (!/^\\d+:gorkunash$/.test(key) || !Array.isArray(value?.days) || value.days.length !== 7) continue;
+        if (!/^\d+:gorkunash$/.test(key) || !Array.isArray(value?.days) || value.days.length !== 7) continue;
         state.potluckContests[key] = {days:value.days.map(d=>Array.isArray(d)?d.slice(0,6):[]),
           entry:value.entry || null,rewarded:!!value.rewarded};
       }
