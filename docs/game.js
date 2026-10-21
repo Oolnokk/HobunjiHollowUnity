@@ -8518,6 +8518,7 @@
           member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
           member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
           member.romanceState = window.RomanceSystem?.serialize?.() || null;
+          member.npcFarmPlotState = window.NpcFarmPlots?.serialize?.() || null;
           // Only ever consumed on the next boot if it lands in a wilderness
           // zone with a still-active campfire there (see spawnPlayerAvatar) —
           // saved unconditionally anyway since it's cheap and harmless
@@ -13017,6 +13018,7 @@
                 continue;
               }
               let type = t.type || 'grass';
+              if (!offsetC && !offsetR && (type === 'tilled' || type === 'trench') && window.NpcFarmPlots?.isManagedTile(m.id, c, r)) type = 'grass'; // Worked by NPCs instead.
               // Decorative (non-plateau) rock tiles are always-solid in the engine
               // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
               // them across the walkable ground — turn the un-tagged ones back to
@@ -13088,6 +13090,7 @@
             if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
+            window.NpcFarmPlots?.registerMap(zoneMapId, zm.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
             mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
             window.MapBoundaryGuard?.markMergedTiles?.(zm, outTiles); // Border escarpments stay unclimbable/unwalkable (js/map-boundary-guard.js).
@@ -13138,10 +13141,11 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
+          window.NpcFarmPlots?.registerMap(townM.id, townM.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
           const layout = { id: townM.id, version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
-            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+            if (t) layout.tiles.push({ c, r, type: window.NpcFarmPlots?.isManagedTile(townM.id, c, r) && (t.type === 'tilled' || t.type === 'trench') ? 'grass' : (t.type || 'grass') });
           }
           layout.routes = [];
           (townM.routes || townM.npcPaths || []).forEach(p => {
@@ -24890,6 +24894,7 @@
         calendar.day += 1;
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
+        window.NpcFarmPlots?.onNewDay?.();
         // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
@@ -28866,6 +28871,17 @@
         },
         saveMemberWorldData,
       });
+      window.NpcFarmPlots?.init?.({
+        findWalker: npcId => findNpcWalker(npcId),
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        cropData,
+        isRaining: () => !!calendar.isRaining,
+        surfaceY: (areaId, c, r) => npcSurfaceY(areaId, c, r),
+        getAreaScene: areaId => areaId === 'town' ? townScene : areaId === 'farm' ? scene : (_isZoneArea(areaId) ? (_zoneScenes.get(areaId)?.scene || null) : null),
+        buildCropMesh: (crop, growth, ready, c, r) => window.VegetationCropRendering?.buildStandaloneCropMesh?.(crop, growth, ready, c, r) || null,
+        saveMemberWorldData,
+      });
       window.DateCompanion?.init?.({
         getCurrentArea: () => currentArea,
         normalizeNpcArea,
@@ -30575,6 +30591,7 @@
         questProgress = { ...(playerData.questProgress || {}) };
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
         window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
+        window.NpcFarmPlots?.restore?.(playerData.npcFarmPlotState); // NPC-tended field/trench state (js/npc-farm-plots.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
