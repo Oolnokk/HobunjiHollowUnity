@@ -96,10 +96,12 @@
   function contestStandings() {
     const record = contestData();
     if (!record) return null;
-    const rivals = record.days.flat();
+    const visibleDay = Math.min(7,Math.max(1,day()-(year()*336+4*28+8-1)+1)); // Current scoreboard cannot reveal future festival entries.
+    const rivals = record.days.slice(0,visibleDay).flat();
     const champion = rivals.reduce((best,entry)=>entry.score > (best?.score ?? -1) ? entry : best,null);
-    return { entry:record.entry, strongest:champion, winning:window.FestivalPotluckContest.winner(record.entry,record.days),
-      rewarded:record.rewarded, day:Math.min(7,Math.max(1,day()-(year()*336+4*28+8-1)+1)) };
+    return { entry:record.entry, strongest:champion,
+      winning:record.entry ? record.entry.score >= (champion?.score || 0) : false,
+      rewarded:record.rewarded, day:visibleDay };
   }
   function currentFullness() {
     const full = state.fullness || {stacks:0,expiresHour:0};
