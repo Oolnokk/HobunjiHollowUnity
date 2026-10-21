@@ -46,14 +46,18 @@ const actionArcCode=fs.readFileSync(path.join(root,'docs/js/action-arc-ui.js'),'
 const arcCss=fs.readFileSync(path.join(root,'docs/style.css'),'utf8');
 assert(actionArcCode.includes('window.Shattercasks?.toolArchTap?.()') &&
   actionArcCode.includes('heldMode: () => deps?.getHeldMode?.() ?? null') &&
-  code.includes("window.ActionArcUI?.heldMode?.()!=='none'") &&
+  code.includes('toolArchAction()') &&
   code.includes('syncToolArchPickup();') &&
   arcCss.includes('#toolBtn.shattercask-context'),
-  'hands-free mobile tool control exposes pickup and set-down, but retains long-hold tool selection');
+  'Tool Select directly picks up a facing-nearby Shattercask regardless of active equipment');
 assert(code.includes('WorldPopupText?.setInteractionPrompts') &&
   code.includes("WorldActionInputClaims?.setClaims") &&
   !code.includes("document.createElement('button')"),
   'pickup uses the world prompt and native interaction claims instead of a standalone DOM button');
+assert(asset.carryable.hitbox.enabled&&
+  ['x','y','z'].every(axis=>asset.carryable.hitbox.size[axis]>0) &&
+  code.includes('worldHitbox(vase)')&&authorHtml,
+  'separately sized 3D impact hitbox is serialized and used by projectile collision');
 assert(code.includes('createEmitterVisual') && code.includes('emitterVisibilityElapsed'),
   'only visible charges drive their authored particle emitters');
 assert(/src="js\/procedural-furniture\.js\?v=[A-Za-z0-9_-]+"/.test(html),
@@ -75,6 +79,19 @@ const authorHtml=fs.readFileSync(path.join(root,'docs/tools/furniture-avatar-aut
 assert(authorHtml.includes('carryable-objects.js?v=') && author.includes('billboardAnchor') &&
   author.includes('handTargets') && author.includes('exportData=function'),
   'furniture author exports invisible held-item plane anchor and both editable grip points');
+assert(author.includes('id="carrySelectHitbox"') &&
+  author.includes('carry_hitbox_wireframe') &&
+  author.includes('carryHitboxSX')&&author.includes('carryHitboxSY')&&author.includes('carryHitboxSZ'),
+  'furniture editor can display, select, translate and resize the authored hitbox');
+assert(code.includes("mesh.name!=='npc_avatar_back_plane'") &&
+  code.includes('mesh.renderOrder=4')&&code.includes('setHeldRearXray(null)'),
+  'only the player rear portrait x-rays over held furniture and the render changes are reverted on release');
+assert(code.includes('updateShatterThrow(dt)') &&
+  code.includes('Math.sin(Math.PI*ratio)') &&
+  code.includes("['btnItemAction1','Throw Shattercask'") &&
+  code.includes("['btnItemAction2','Set Down Shattercask'") &&
+  code.includes('pointThrowFromDrag('),
+  'hold-release action 1 has terrain projection and flask arc; item action 2 drops');
 assert(author.includes('id="carryShowAvatar"') && author.includes('id="carryFrameHoldingPose"'),
   'Carryable mode provides visible avatar toggle and framing controls');
 assert(author.includes("renderSeatPortrait('mao-ao','male')") &&
@@ -320,19 +337,19 @@ async function arenaScenario() {
     assert.equal(activeScene.children.length,i+1,'real authored meshes appear in scene');
   }
   assert.equal(modelBuilds,4,'each explicit spawn creates one authored Shattercask');
-  // Touch Tool Select must remain a tool selector when a weapon is equipped,
-  // and switch to Pick Up only for an empty-handed player standing near a charge.
+  // Tool Select is a pickup input even with equipment out; holding the
+  // physical object remaps Item Action 1/2 to charged Throw/Drop.
   const first=game.Shattercasks.debugSnapshot().vases[0];
   player.x=(first.col+.5)*64;player.y=(first.row+.5)*64;
   let heldMode='tool';
   game.ActionArcUI={heldMode:()=>heldMode};
-  assert.equal(game.Shattercasks.toolArchAction(),null,'wielded tools retain Tool Select');
-  assert.equal(game.Shattercasks.toolArchTap(),false,'wielded tool tap cannot steal pickup');
-  heldMode='none';
-  assert.equal(game.Shattercasks.toolArchAction(),'pickup','empty hands at charge expose Pick Up');
-  assert(game.Shattercasks.toolArchTap(),'a contextual tool tap picks up nearby Shattercask');
-  assert.equal(game.Shattercasks.toolArchAction(),'drop','held charge exposes Set Down');
-  assert(game.Shattercasks.toolArchTap(),'second contextual tap drops held Shattercask');
+  assert.equal(game.Shattercasks.toolArchAction(),'pickup','faced Shattercask claims Tool Select with tool equipped');
+  assert(game.Shattercasks.toolArchTap(),'contextual tool tap picks up and stows gear');
+  assert.equal(game.Shattercasks.toolArchAction(),null,'while carrying, Tool Select is no longer the Drop action');
+  assert(game.Shattercasks.startShatterAim(),'Item Action 1 starts hold-to-aim for the physically carried object');
+  assert(game.Shattercasks.releaseShatterAim(),'releasing Item Action 1 starts the throw stage');
+  game.Shattercasks.cancelShatterAim();
+  assert(game.Shattercasks.drop(),'Item Action 2 drops held Shattercask');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   const before=game.Shattercasks.debugSnapshot().vases.length;
   currentArea='town';
