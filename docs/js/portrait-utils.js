@@ -1515,7 +1515,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ];
     for (const layerList of cosmeticLayerLists) {
       for (const entry of layerList) {
-        if (!entry?.metalState || !entry?.layer?.url) continue;
+        if (!entry?.metalState || !entry?.layer?.url || window.MetalArmorSystem?.isMetalPortraitLayer?.(entry.layer, entry.metalState) === false) continue; // Dyeable textile panels must never be baked into a metal tint or stripped of their cloth tint.
         try {
           const prepared = await window.MetalArmorSystem.preparePortraitLayers([entry.layer], entry.metalState);
           if (prepared?.[0]) entry.layer = prepared[0];
@@ -1866,6 +1866,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
             sy:  xf.scaleY ?? 1,
             pos: layerName === 'back' ? 'back' : 'front',
             paletteColorKey,
+            materialKind: layer.materialKind || null, // Per-layer hybrid material survives cosmetic portrait layer extraction.
             xformPreset: 'B',
           });
         }
@@ -1910,6 +1911,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
           sy:  xf.scaleY ?? xf.scaleMulY ?? 1,
           pos: layerName === 'back' ? 'back' : 'front',
           paletteColorKey,
+          materialKind: layer.materialKind || null, // Future torso/arm hybrid articles use the same layer-specific material override.
           xformPreset: 'B',
         });
       }
