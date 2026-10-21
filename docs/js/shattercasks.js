@@ -226,30 +226,105 @@
     vase.emitters=null;
   }
   const backXray=new Map(),heldRenderOrders=new Map();
+  const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
+  const CARRIED_REAR_RENDER_ORDER=2.4; // After carried vessel parts (1.5), before existing hat x-ray (2.5).
+  function removeSkinnedRearOverlay(source) {
+    const record=skinnedRearOverlays.get(source);
+    if(!record)return;
+    record.overlay.parent?.remove(record.overlay);
+    for(const material of record.overlay.material)material?.dispose?.();
+    // Only restore the material we disabled; a rebuilt avatar can replace its
+    // material array without having an old overlay overwrite new state.
+    if(source.material?.[1]===record.backMaterial)
+      record.backMaterial.visible=record.wasVisible;
+    skinnedRearOverlays.delete(source);
+  }
+  function syncCarrierRearPortrait(body) {
+    // PNGPlaneAvatar has TWO layouts: rigid front/back Mesh planes, or ONE
+    // SkinnedMesh with separate front/back material groups. The latter has no
+    // npc_avatar_back_plane at all, so a rigid-only x-ray silently did nothing
+    // on the normal player neck rig.
+    const rigidSeen=new Set(),skinnedSeen=new Set();
+    body?.traverse?.(mesh=>{
+      if(!mesh?.isMesh||mesh.userData?.shattercaskRearOverlay)return;
+      if(mesh.name==='npc_avatar_back_plane') {
+        rigidSeen.add(mesh);
+        const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
+        if(!material)return;
+        if(!backXray.has(mesh))backXray.set(mesh,{
+          material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
+        mesh.renderOrder=CARRIED_REAR_RENDER_ORDER;
+        // Depth test stays ON: only the held vessel is transparent to the
+        // rear portrait, not the walls/terrain between the camera and player.
+        material.depthTest=true;
+        return;
+      }
+      if(!mesh.isSkinnedMesh||!Array.isArray(mesh.material)
+        ||mesh.material[1]?.name!=='npc_avatar_skinned_back_material'||!mesh.parent)return;
+      skinnedSeen.add(mesh);
+      if(skinnedRearOverlays.has(mesh))return;
+      const backMaterial=mesh.material[1];
+      const hiddenFront=new THREE.MeshBasicMaterial({visible:false}); // Back-only overlay: never re-render the opposite face.
+      const rearMaterial=backMaterial.clone(); // Same PNG, alpha test, and skinning; independent depth/layer state.
+      rearMaterial.visible=true;
+      rearMaterial.depthTest=true;
+      rearMaterial.depthWrite=true; // Preserve world occlusion and subsequent portrait depth behavior.
+      rearMaterial.needsUpdate=true;
+      const overlay=new THREE.SkinnedMesh(mesh.geometry,[hiddenFront,rearMaterial]);
+      overlay.name='shattercask_carrier_rear_only_xray';
+      overlay.userData.shattercaskRearOverlay=true;
+      overlay.frustumCulled=false;
+      overlay.renderOrder=CARRIED_REAR_RENDER_ORDER;
+      overlay.bindMode=mesh.bindMode;
+      overlay.bind(mesh.skeleton,mesh.bindMatrix); // Share animated bones: no new skinning rig or geometry.
+      overlay.matrixAutoUpdate=false;
+      overlay.onBeforeRender=()=>{
+        overlay.matrix.copy(mesh.matrix);
+        overlay.matrixWorld.copy(mesh.matrixWorld); // Follow live body/neck motion, not a frozen pickup pose.
+      };
+      mesh.parent.add(overlay);
+      skinnedRearOverlays.set(mesh,{overlay,backMaterial,wasVisible:backMaterial.visible});
+      backMaterial.visible=false; // Original rear pass must not double-blend under the overlaid rear.
+    });
+    // The player can rebuild its portrait asynchronously while carrying.
+    // Prune stale references and attach the newly generated rear every poll.
+    for(const mesh of [...backXray.keys()])if(!rigidSeen.has(mesh)){
+      const snapshot=backXray.get(mesh);
+      mesh.renderOrder=snapshot.order;
+      if(mesh.material===snapshot.material){
+        snapshot.material.depthTest=snapshot.depthTest;
+        snapshot.material.depthWrite=snapshot.depthWrite;
+      }
+      backXray.delete(mesh);
+    }
+    for(const source of [...skinnedRearOverlays.keys()])
+      if(!skinnedSeen.has(source))removeSkinnedRearOverlay(source);
+  }
   function setHeldRearXray(cask) {
     if(!cask) {
-      for(const [mesh,v] of backXray){
+      for(const [mesh,v] of backXray) {
         mesh.renderOrder=v.order;
-        if(mesh.material===v.material){
+        if(mesh.material===v.material) {
           v.material.depthTest=v.depthTest;
           v.material.depthWrite=v.depthWrite;
           v.material.needsUpdate=true;
         }
       }
       backXray.clear();
-      for(const [mesh,snap] of heldRenderOrders){
+      for(const source of [...skinnedRearOverlays.keys()])removeSkinnedRearOverlay(source);
+      for(const [mesh,snap] of heldRenderOrders) {
         mesh.renderOrder=snap.order;
         for(const [material,depthWrite] of snap.materials){
-          material.depthWrite=depthWrite;material.needsUpdate=true;
+          material.depthWrite=depthWrite;
+          material.needsUpdate=true;
         }
       }
       heldRenderOrders.clear();
       return;
     }
-    // The cask does not write into the depth buffer *while held*.
-    // The rear portrait is drawn AFTER it, but retains depth testing
-    // against walls, terrain, and all other regular occluders.
-    for(const mesh of cask.meshColliders||[]){
+    // The held furniture is still fully visible and depth-tested against the
+    // world; it simply stops writing depth over the character's rear PNG.
+    for(const mesh of cask.meshColliders||[]) {
       if(!heldRenderOrders.has(mesh))heldRenderOrders.set(mesh,{
         order:mesh.renderOrder,
         materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material])
@@ -258,18 +333,11 @@
       mesh.renderOrder=1.5;
       for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
         if(material&&material.depthWrite!==false){
-          material.depthWrite=false;material.needsUpdate=true;
+          material.depthWrite=false;
+          material.needsUpdate=true;
         }
     }
-    carryDeps()?.playerMesh?.traverse?.(mesh=>{
-      if(!mesh?.isMesh||mesh.name!=='npc_avatar_back_plane')return;
-      const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
-      if(!material)return;
-      if(!backXray.has(mesh))backXray.set(mesh,{
-        material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
-      mesh.renderOrder=2.5;
-      material.depthTest=true;material.needsUpdate=true;
-    });
+    syncCarrierRearPortrait(carryDeps()?.playerMesh);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
   function heldItemHolder(){
@@ -1099,7 +1167,7 @@
     }
     if(targetScene)ensureArea(mapId,targetScene,grid());
     if(held) {
-      if(!backXray.size)setHeldRearXray(held); // Late-loading portrait: retry only on 140ms poll.
+      setHeldRearXray(held); // Recheck both rigid/skinned rear portraits after async avatar rebuilds (7 Hz).
       const p=playerPosition(),equipment=switchEquipment();
       if(equipment.weapon!==lastEquipment.weapon||equipment.tool!==lastEquipment.tool||equipment.item!==lastEquipment.item)drop();
       // The held visual already follows the player at full frame rate above.
@@ -1259,6 +1327,9 @@
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
+      rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
+        heldPartsWithoutDepthWrite:heldRenderOrders.size,
+        skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
       performance:{ruinSnapshotReads,textureBatchesCreated,
         meshRaycastQueries,meshRaycastBroadphaseRejects,meshRaycastTriangleQueries,
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
