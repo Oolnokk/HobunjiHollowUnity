@@ -1,148 +1,53 @@
 'use strict';
-
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-
-const root = path.resolve(__dirname, '..');
-const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
-
-const config = JSON.parse(read('docs/config/harlyao-night-march.json'));
-const beaconSource = read('docs/js/harlyao-night-march-beacon.js');
-const runtimeSource = read('docs/js/harlyao-night-march-runtime.js');
-const ghostSource = read('docs/js/ghostify.js');
-const atmosphereSource = read('docs/js/harlyao-night-march-atmosphere.js');
-const cloudFogSource = read('docs/js/cloud-forest-fog.js');
-const banditCampsSource = read('docs/js/bandit-camps.js');
-const loaderSource = read('docs/js/house-pieces.js');
-const rootTotemConfigSource = read('docs/config/root-totem-config.js');
-
-function rgb(hex) {
-  const value = Number.parseInt(String(hex).replace('#', ''), 16);
-  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+const assert = require('node:assert/strict'); // Executes the world-space beacon instead of pinning its source.
+const fs = require('node:fs'); // Loads the shipped module and config.
+const vm = require('node:vm'); // Minimal browser-shaped context.
+const source = fs.readFileSync('docs/js/harlyao-night-march-beacon.js', 'utf8'); // Module under test.
+const config = JSON.parse(fs.readFileSync('docs/config/harlyao-night-march.json', 'utf8')); // Authored spectral tuning.
+class Group {
+  constructor() { this.children = []; this.userData = {}; this.position = { set(x, y, z) { Object.assign(this, { x, y, z }); } }; }
+  add(child) { this.children.push(child); child.parent = this; }
+  remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; }
 }
-
-assert(config.visuals.beaconGlowRadiusTiles >= 20, 'army locator keeps a substantial world-space radius nearby');
-assert(config.visuals.beaconGlowRadiusTiles > config.visuals.formationGlowRadiusTiles, 'distant beacon radius must exceed the close formation halo');
-assert(config.visuals.beaconGlowIntensity >= 0.9 && config.visuals.beaconGlowIntensity <= 1, 'locator is deliberately strong enough to find');
-assert.equal(config.visuals.beaconShape, 'serpentine', 'army locator uses the requested irregular snake-like silhouette');
-assert(config.visuals.beaconMinScreenRadiusPx >= 96, 'distance cannot shrink the locator below a large, clearly visible on-screen footprint');
-assert(config.visuals.beaconMaxScreenRadiusPx >= 200, 'nearby locator may grow large enough to remain unmistakable without becoming unbounded');
-assert(config.visuals.beaconMaxScreenRadiusPx >= config.visuals.beaconMinScreenRadiusPx, 'screen locator radius clamp remains valid');
-assert(config.visuals.beaconEdgeMarginPx >= 24, 'off-screen locator stays visibly inset from the viewport edge');
-assert.equal(config.visuals.beaconGlowColor.toLowerCase(), '#b0f0ff', 'army locator uses the authored pale icy-aqua Harlyao ghost shade');
-
-const rootColorMatch = rootTotemConfigSource.match(/colors:\s*\{\s*liquid:\s*'([^']+)'/);
-assert(rootColorMatch, 'Root Totem liquid/glow color should remain authored in root-totem-config');
-const rootColor = rgb(rootColorMatch[1]);
-const beaconColor = rgb(config.visuals.beaconGlowColor);
-const bodyColor = rgb(config.visuals.color);
-const rootDistance = Math.hypot(beaconColor.r - rootColor.r, beaconColor.g - rootColor.g, beaconColor.b - rootColor.b);
-const bodyDistance = Math.hypot(beaconColor.r - bodyColor.r, beaconColor.g - bodyColor.g, beaconColor.b - bodyColor.b);
-assert(rootDistance >= 70, 'Harlyao locator shade must remain visually distinct from Root Totem mint-blue-green');
-assert(bodyDistance <= 140, 'locator should remain in the same broad spectral family as the Harlyao ghost body rather than becoming an unrelated color');
-assert(beaconColor.g >= 230 && beaconColor.b >= 245 && beaconColor.b > beaconColor.g, 'locator stays a pale icy aqua/cyan rather than Root Totem green-mint');
-assert.notEqual(config.visuals.beaconGlowColor.toLowerCase(), config.visuals.color.toLowerCase(), 'locator gets a unique colder ghost shade while ordinary Harlyao ghosts keep their authored teal');
-
-assert.match(beaconSource, /window\.HarlyaoNightMarch\?\.debugSnapshot/, 'beacon reads existing hourly/live route state instead of simulating a second army');
-assert.match(beaconSource, /march\?\.visible && march\?\.liveChunk \? march\.liveChunk : scheduled\?\.chunk/, 'visible locator follows the physical army while hidden locator follows its scheduled effective chunk');
-assert.match(beaconSource, /currentArea === zoneId/, 'locator only renders in the army\'s active wilderness zone');
-assert.match(beaconSource, /SNAKE_LOBES/, 'locator is assembled from multiple irregular overlapping lobes instead of a circular light');
-assert.match(beaconSource, /beaconMinScreenRadiusPx/, 'locator has an authored fixed minimum apparent radius');
-assert.match(beaconSource, /clampOffscreenPoint/, 'off-screen army location is clamped to a visible viewport-edge cue');
-assert.match(beaconSource, /projected\?\.visible/, 'on-screen world projection is preserved when the army is actually in view');
-assert.match(beaconSource, /globalCompositeOperation = 'screen'/, 'serpentine locator paints a visible spectral bloom above the darkness overlay');
-assert.match(beaconSource, /globalCompositeOperation = 'destination-out'/, 'serpentine locator also punches through darkness like a supernatural light source');
-assert.match(beaconSource, /redrawn = true/, 'locator draws only after a real lighting-overlay redraw instead of accumulating every game frame');
-assert.match(beaconSource, /LOCATOR_REFRESH_MS = 100/, 'locator work stays on the low-frequency lighting cadence');
-assert.doesNotMatch(beaconSource, /registerGlowSource/, 'all-distance locator no longer depends on Ghostify world-light frustum visibility');
-assert.doesNotMatch(beaconSource, /new THREE\.PointLight/, 'locator must not create a real Three.js light');
-assert.doesNotMatch(beaconSource, /makeEntity\(/, 'beacon module itself must never materialize soldier entities');
-assert.doesNotMatch(beaconSource, /moveCreatureToward/, 'beacon module itself has no pathfinding or movement simulation');
-assert.match(runtimeSource, /if \(!sameChunk\(playerChunk\(\), chunk\)\) return;/, 'actual army entities remain absent until the player enters the same chunk as the locator');
-assert.match(runtimeSource, /else materialize\(s, chunk\)/, 'crossing into the locator chunk still triggers normal army materialization');
-
-assert.match(cloudFogSource, /window\.WeatherFX\.drawLightingOverlay = drawUnifiedLightingOverlay/, 'CloudForestFog remains the later full-day lighting authority that motivated this regression');
-assert.match(atmosphereSource, /__harlyaoNightMarchAtmosphereWrapped/, 'Harlyao atmosphere marks the current draw-chain wrapper so it can detect replacement');
-assert.doesNotMatch(atmosphereSource, /if \(installed\) return true/, 'atmosphere no longer permanently trusts a stale install flag after a later renderer replacement');
-assert.match(ghostSource, /HarlyaoNightMarchAtmosphere\?\.install\?\.\(api\)/, 'Ghostify repair pass reinstalls Harlyao darkness beneath the spectral glow');
-assert.match(ghostSource, /Object\.assign\(wrappedDraw, priorDraw\)/, 'Ghostify carries lower lighting-chain identity markers through its wrapper');
-assert.match(ghostSource, /HarlyaoNightMarchBeacon\?\.ensureWeatherBridge\?\.\(\)/, 'Ghostify repair pass restores the all-distance locator as the outermost Harlyao layer');
-assert.match(beaconSource, /api\.drawLightingOverlay\.__harlyaoBeaconLocatorWrapped/, 'beacon tests the current renderer chain instead of a historical install state');
-assert.doesNotMatch(beaconSource, /if \(weatherInstalled\) return true/, 'beacon can reattach after CloudForestFog replaces its earlier wrapper');
-assert.match(beaconSource, /Object\.assign\(wrappedDraw, priorDraw\)/, 'beacon preserves atmosphere/Ghostify markers while becoming the outermost draw layer');
-
-assert.doesNotMatch(ghostSource, /LOCAL_LIGHT_VIEW_MAX_TILES|localFurnitureLightSources/, 'Ghostify does not globally nerf unrelated furniture lights');
-assert.match(rootTotemConfigSource, /intensity:0\.85, distance:1\.8, decay:1\.7/, 'Root Totem bottle light range is reduced to 1.8 tiles');
-assert.match(rootTotemConfigSource, /intensity:1\.25,distance:2\.4,decay:1\.7/, 'Root Totem basin light range is reduced to 2.4 tiles');
-assert.match(banditCampsSource, /new THREE\.PointLight\(0xff7722, 1\.4, 3\.5\)/, 'bandit campfire real PointLight range is halved to 3.5 tiles');
-
-assert.match(loaderSource, /\['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon\.js\?v=[^']+'\]/, 'persistent locator adapter loads in gameplay');
-assert(loaderSource.indexOf("['Ghostify'") < loaderSource.indexOf("['HarlyaoNightMarchBeacon'"), 'Ghostify/lighting bridge exists before the locator adapter');
-assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchBeacon'"), 'march route state exists before the locator reads it');
-
-new vm.Script(beaconSource, { filename: 'harlyao-night-march-beacon.js' });
-new vm.Script(ghostSource, { filename: 'ghostify.js' });
-new vm.Script(atmosphereSource, { filename: 'harlyao-night-march-atmosphere.js' });
-new vm.Script(banditCampsSource, { filename: 'bandit-camps.js' });
-
-const chainContext = {
-  console,
-  performance: { now: () => 0 },
-  fetch: async () => ({ ok: true, json: async () => config }),
-  window: {
-    WeatherFX: { init() {}, drawLightingOverlay() {} },
-    BanditCombat: { init() {} },
-    HarlyaoNightMarch: { debugSnapshot: () => null },
-    setInterval: () => 0,
-    clearInterval: () => {},
-    __farmLog: () => {},
-  },
-};
-vm.runInNewContext(atmosphereSource, chainContext, { filename: 'harlyao-night-march-atmosphere.js' });
-vm.runInNewContext(ghostSource, chainContext, { filename: 'ghostify.js' });
-vm.runInNewContext(beaconSource, chainContext, { filename: 'harlyao-night-march-beacon.js' });
-let chainDraw = chainContext.window.WeatherFX.drawLightingOverlay;
-assert(chainDraw.__harlyaoNightMarchAtmosphereWrapped, 'initial lighting chain contains the Harlyao darkness layer');
-assert(chainDraw.__hobunjiGhostifyWrapped, 'initial lighting chain contains the Ghostify glow layer');
-assert(chainDraw.__harlyaoBeaconLocatorWrapped, 'initial lighting chain contains the locator as the outer layer');
-chainContext.window.WeatherFX.drawLightingOverlay = function simulatedCloudForestReplacement() {};
-chainContext.window.Ghostify.installWeatherBridge(chainContext.window.WeatherFX);
-chainDraw = chainContext.window.WeatherFX.drawLightingOverlay;
-assert(chainDraw.__harlyaoNightMarchAtmosphereWrapped, 'repair reinstalls Harlyao darkness after a later renderer replacement');
-assert(chainDraw.__hobunjiGhostifyWrapped, 'repair reinstalls Ghostify after a later renderer replacement');
-assert(chainDraw.__harlyaoBeaconLocatorWrapped, 'repair reinstalls the all-distance locator after a later renderer replacement');
-
-const context = {
-  console,
-  performance: { now: () => 0 },
-  fetch: async () => ({ ok: true, json: async () => config }),
-  window: {
-    WildernessChunks: { constants: { CHUNK_TILES: 16 } },
-    BanditCombat: { init() {} },
-    HarlyaoNightMarch: { debugSnapshot: () => null },
-    setInterval: () => 0,
-    clearInterval: () => {},
-    __farmLog: () => {},
-  },
-};
-vm.runInNewContext(beaconSource, context, { filename: 'harlyao-night-march-beacon.js' });
-const testApi = context.window.HarlyaoNightMarchBeacon?.__test;
-assert(testApi, 'beacon exposes pure geometry helpers for regression coverage');
-assert.deepEqual(
-  JSON.parse(JSON.stringify(testApi.chunkCenter({ cx: 0, cz: 0 }, 'map_northern_cliffs'))),
-  { x: 7.5, z: 7.5, col: 7, row: 7 },
-  'first chunk locator is centered on the exact 16x16 chunk the army materializes into',
-);
-assert.deepEqual(
-  JSON.parse(JSON.stringify(testApi.chunkCenter({ cx: 12, cz: 12 }, 'map_northern_cliffs'))),
-  { x: 195.5, z: 195.5, col: 195, row: 195 },
-  'partial final wilderness chunk clamps its locator to the real 200x200 map',
-);
-const edge = testApi.clampOffscreenPoint({ x: 900, y: 250, visible: false }, { width: 400, height: 300 }, 96);
-assert(edge.edge, 'off-screen projected location is explicitly marked as an edge locator');
-assert(edge.x < 400 && edge.x > 200, 'right-side off-screen army produces a visible right-edge cue');
-assert(edge.y > 0 && edge.y < 300, 'edge locator stays within viewport height');
-
-console.log('Harlyao night march beacon regression passed.');
+class Mesh extends Group { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
+class CylinderGeometry { constructor(...args) { this.args = args; } }
+class MeshBasicMaterial { constructor(options) { Object.assign(this, options); } }
+(async () => {
+  const subscriptions = new Map(); // Scheduler wiring is part of the tested production path.
+  const glow = []; // Darkness-mask source providers.
+  let target = { id: 'commander-0', zoneId: 'map_northern_cliffs', x: 180, z: 100 }; // Moving simulated actor.
+  let area = target.zoneId; // Leaving the zone must remove the marker.
+  let scene = new Group(); // Scene replacement must reattach the existing marker.
+  const player = { x: 100 * 64, y: 100 * 64 }; // Player at map center.
+  const combat = { init() {} }; // Captures real dependency injection.
+  const window = { THREE: { Group, Mesh, CylinderGeometry, MeshBasicMaterial, DoubleSide: 2 }, BanditCombat: combat, HarlyaoNightMarch: { commanderTarget: () => target }, RuntimeFrameScheduler: { register(id, callback, options) { subscriptions.set(id, { callback, options }); } }, Ghostify: { registerGlowSource(provider) { glow.push(provider); } } }; // Rendering host.
+  vm.runInNewContext(source, { window, fetch: async () => ({ ok: true, json: async () => config }) });
+  await new Promise(resolve => setImmediate(resolve));
+  combat.init({ TILE: 64, player, getCurrentArea: () => area, getActiveScene: () => scene, getActiveGrid: () => Array.from({ length: 200 }, () => Array.from({ length: 200 }, () => ({ height: 12 }))), tileSurfaceYInArea: tile => tile.height });
+  const api = window.HarlyaoNightMarchBeacon; // Public mobile/debug API.
+  const subscription = subscriptions.get('harlyao-commander-beacon'); // Runs after native movement.
+  assert.equal(subscription.options.phase, 'pre-render'); subscription.callback();
+  assert.equal(scene.children.length, 1);
+  const marker = scene.children[0]; // Actual 3D group with volume geometry.
+  assert.equal(marker.children.length, 3); assert.equal(marker.position.x, 118); assert.equal(marker.position.z, 100); assert.equal(marker.position.y, 12.15);
+  for (const shell of marker.children) { assert(shell.geometry instanceof CylinderGeometry); assert.equal(shell.material.depthTest, false); assert.equal(shell.material.depthWrite, false); assert.equal(shell.material.fog, false); }
+  assert.equal(api.debugSnapshot().marker.commanderId, 'commander-0');
+  assert.equal(api.debugSnapshot().marker.directional, true);
+  assert.equal(glow[0]().x, 118, 'darkness mask follows the 3D marker');
+  target = { ...target, x: 100, z: 20 }; subscription.callback();
+  assert.equal(marker.position.x, 100); assert.equal(marker.position.z, 82, 'bearing rotates with moving commander');
+  target = { ...target, x: 105, z: 103 }; subscription.callback();
+  assert.equal(marker.position.x, target.x); assert.equal(marker.position.z, target.z);
+  assert.equal(api.debugSnapshot().marker.directional, false, 'nearby beacon sits on commander');
+  target = { ...target, id: 'commander-1', x: 100, z: 100 }; subscription.callback();
+  assert.equal(marker.position.x, 100); assert.equal(marker.position.z, 100); assert.equal(api.debugSnapshot().marker.commanderId, 'commander-1');
+  const oldScene = scene; scene = new Group(); subscription.callback(); // Re-entry/regeneration replaces the active scene.
+  assert.equal(oldScene.children.length, 0); assert.equal(scene.children[0], marker);
+  area = 'town'; subscription.callback(); assert.equal(scene.children.length, 0); assert.equal(glow[0](), null);
+  area = target.zoneId; subscription.callback(); assert.equal(scene.children[0], marker, 'reuse marker and materials on re-entry');
+  target = null; subscription.callback(); assert.equal(scene.children.length, 0); assert.equal(api.debugSnapshot().active, false);
+  const zero = api.__test.markerPosition({ x: 4, z: 4 }, { x: 4, z: 4 }, 18); // Zero distance cannot produce NaN.
+  assert.equal(zero.x, 4); assert.equal(zero.z, 4);
+  assert.match(api.formatDebug(), /space=3D/);
+  console.log('3D commander beacon: bearings, nearby target, terrain, succession, scene changes and teardown passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

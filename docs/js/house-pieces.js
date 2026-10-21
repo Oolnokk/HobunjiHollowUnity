@@ -38,9 +38,9 @@
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20260909b'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
-    ['Ghostify', 'ghostify.js?v=20260909a'],
-    // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
-    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
+    ['Ghostify', 'ghostify.js?v=20261021h79140c0'],
+    // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
+    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261021h701b0ca'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
@@ -49,8 +49,8 @@
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261012h76657f9'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
     ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261012h601b36f'],
-    // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
-    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
+    // A world-space spectral column follows the exact commander's bearing, settling onto the actor as the player approaches.
+    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20261021h93b0ca3'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
     ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260919combatbgm2'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
@@ -58,7 +58,7 @@
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
     ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909b'],
     // Appends route/chunk/build/placement/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
-    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260911a'],
+    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20261021h381bf6c'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
     // post-composite pass disabled depth testing and could wash mist over the player
     // and nearby world geometry even when every cylinder surface was behind them.
