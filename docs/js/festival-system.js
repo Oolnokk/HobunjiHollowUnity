@@ -6,6 +6,7 @@
   let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let heldBowl = null; // Temporary ten-portion festival bowl: never added to real inventory or character saves.
+  let heldCup = null; // Temporary keg cup ({swigs,capacity}): like the bowl it is never in the inventory, cannot be gifted, and refills free from the keg.
   let socialParticipationS = 0; // Counts played wheel dance/music seconds, independent of marked festival activity regions.
   let seatedMeal = null; // Runs one existing drink animation every few seconds while seated at the feast.
   let feastCache = null; // Avoid regenerating and scanning the cooking recipe list in the 60-fps action-bar path.
@@ -15,6 +16,7 @@
   let residentCacheAt = -Infinity; // Millisecond stamp for the resident cache.
   const costumeState = new WeakMap(); // Each walker redraws only when its event costume changes.
   let lastCostumeTick = -Infinity; // Rare costume refreshes share the existing game-loop tick.
+  let lastSipSave = -Infinity; // Throttles world saves caused by NPCs sipping from the keg.
   let lastError = ''; // Copied by the mobile diagnostics panel.
   const handlers = new Map(); // Extensible activity handler registry; no second action dispatcher in the UI.
   const HOME_IDS = new Set(['ginju_farmstead', 'little_swamp_house', 'general_store', 'smithy', 'inn', 'temple', 'potion_shop', 'carpenters', 'unumanuk_household']); // Existing resident households invited to town festivities.
@@ -41,6 +43,8 @@
     return { ok: true, message };
   }
   function fail(message) { lastError = message; deps?.toast?.(message, false); return { ok: false, message }; }
+  const CUP_KEY = 'festival_cup', CUP_SWIGS = 4, CUP_FUN_PER_SWIG = 20;
+  const CUP_DEF = Object.freeze({ key:CUP_KEY, icon:'🍺', label:'Festival Airag', tags:Object.freeze(['Alcohol','Airag']), swigsPerBottle:CUP_SWIGS, spriteIcon:'festival-cup.png', noGift:true }); // Airag is the mildest authored spirit tier; the same strength table as bottled drink applies.
   const FOOD_PORTION_SECONDS = 300; // Each festival bite adds one normal cooking-buff duration.
   const MAX_FOOD_PORTIONS = 10; // Bowl capacity, independent meal-duration cap, and fullness stack limit.
   const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',clarity:'🧠',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
@@ -108,12 +112,23 @@
     return (state.feastBuffs||[]).filter(entry=>entry.expiresAt>now).reduce((total,entry)=>total+(Number(entry.foodEffects?.[effectKey])||0),0);
   }
   function festivalBowl() { return heldBowl ? { ...heldBowl } : null; }
+  function festivalCup() { return heldCup ? { ...heldCup } : null; }
+  // The one temporary vessel currently shown in the player's hand (cup or bowl), in the held-item shape game.js renders.
+  function heldVessel() {
+    if (heldCup) return { key:CUP_KEY, icon:CUP_DEF.icon, label:CUP_DEF.label, spriteIcon:CUP_DEF.spriteIcon };
+    if (heldBowl) return { key:'festival_bowl', icon:'🥣', label:heldBowl.meal?.label || 'Festival Bowl', spriteIcon:'festival-bowl.png' };
+    return null;
+  }
+  function vesselDef(key) {
+    if (key === CUP_KEY) return { key, icon:CUP_DEF.icon, label:CUP_DEF.label, spriteIcon:CUP_DEF.spriteIcon };
+    return key === 'festival_bowl' ? { key, icon:'🥣', label:'Meal Bowl', spriteIcon:'festival-bowl.png' } : null;
+  }
   function discardFestivalBowl(reason = 'equipment-changed') {
-    if(!heldBowl && !seatedMeal)return false;
-    heldBowl=null; seatedMeal=null;
+    if(!heldBowl && !seatedMeal && !heldCup)return false;
+    heldBowl=null; heldCup=null; seatedMeal=null;
     deps?.cancelFestivalDrink?.(); // Removes the short-lived serving sprite immediately when drawing equipment.
     deps?.refresh?.();
-    window.__farmLog?.(`[festival] Temporary bowl put away: ${reason}`, 'items');
+    window.__farmLog?.(`[festival] Temporary bowl/cup put away: ${reason}`, 'items');
     return true;
   }
   function aimedServingObject() {
@@ -134,6 +149,15 @@
     if(currentFullness()>=MAX_FOOD_PORTIONS)return fail('You are already full.');
     seatedMeal={nextAt:0,animating:false}; // The existing drink pose animation commits each individual bite, not the action-button tap.
     return commit('Eating from the bowl.');
+  }
+  // The keg hands out a free, already-filled cup whenever asked; a held cup is simply topped up again.
+  function takeOrRefillCup() {
+    if (festival()?.id!=='gorkunash'||!festivalHours()) return fail('The keg is closed.');
+    if (heldBowl||seatedMeal) discardFestivalBowl('took-a-cup'); // One vessel in hand at a time.
+    const refill = !!heldCup;
+    heldCup = { swigs:CUP_SWIGS, capacity:CUP_SWIGS, selectedItemKey:heldCup?.selectedItemKey ?? (deps?.getActiveItemKey?.()||'') };
+    deps?.equipFestivalBowl?.();
+    return commit(refill ? `Topped up your cup (${CUP_SWIGS}/${CUP_SWIGS}). The keg is free.` : `Took a cup of ${CUP_DEF.label} (${CUP_SWIGS}/${CUP_SWIGS}). Refill whenever you like; offer swigs to share the fun.`);
   }
   function bowlPileInReach() { return aimedServingObject()?.placement.service.kind === 'bowls'; }
   function takeFestivalBowl() {
@@ -492,8 +516,9 @@
   function update() {
     const now = performance.now(); // Called by gameLoop; no independent animation loop.
     settleFestivalFun();
-    if (heldBowl && (festival()?.id!=='gorkunash'||deps?.getArea?.()!=='town'||(deps?.getHeldMode?.() && deps.getHeldMode()!=='item')
-      ||(deps?.getActiveItemKey?.() && deps.getActiveItemKey()!==heldBowl.selectedItemKey)))discardFestivalBowl('left-festival-or-changed-equipment');
+    const vessel = heldCup || heldBowl;
+    if (vessel && (festival()?.id!=='gorkunash'||deps?.getArea?.()!=='town'||(deps?.getHeldMode?.() && deps.getHeldMode()!=='item')
+      ||(deps?.getActiveItemKey?.() && deps.getActiveItemKey()!==vessel.selectedItemKey)))discardFestivalBowl('left-festival-or-changed-equipment');
     if(seatedMeal && (!heldBowl?.meal || !heldBowl?.uses || deps?.isPlayerSeated?.()===false || !festivalHours()))
       seatedMeal=null;
     if(seatedMeal && !seatedMeal.animating && now>=seatedMeal.nextAt && !document.hidden){
@@ -565,7 +590,7 @@
   function diagnostics() {
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
-      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
+      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>m.label),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
@@ -605,11 +630,36 @@
       carryBowl: (walker,id) => window.NpcDrinkInteraction?.setAmbientCarry?.({ownerId:`meal:${id}`,root:walker.root,avatarGroup:walker.avatarGroup,itemKey:'festival_bowl'}),
       clearCarry: (id,walker) => { window.NpcDrinkInteraction?.clearAmbientCarry?.(`meal:${id}`); if(walker)window.NpcDrinkInteraction?.stopAutonomous?.(walker); },
       playEat: walker => window.NpcDrinkInteraction?.playAutonomous?.(walker,'festival_bowl'),
+      // Keg cups: NPCs draw the same free cup, carry it, and their sips change real sobriety (blackouts included).
+      drunkFraction: id => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(id),
+      isBlackedOut: id => window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(id) || false,
+      drinkNpc: (rec,count,footing) => {
+        const result = window.HobunjiDrunkGameplayBridge?.addNpcDrunkenness?.(rec.id,footing,CUP_KEY);
+        const stamp = performance.now();
+        if (stamp - lastSipSave > 20000) { lastSipSave = stamp; deps.save?.(); } // Alcohol state is saved with the world; batch the writes.
+        if (result?.blackout) window.__farmLog?.(`[festival] ${rec.id} passed out after ${count} swigs of keg airag`,'social');
+        return result;
+      },
+      carryCup: (walker,id) => window.NpcDrinkInteraction?.setAmbientCarry?.({ownerId:`cup:${id}`,root:walker.root,avatarGroup:walker.avatarGroup,itemKey:CUP_KEY}),
+      clearCup: id => window.NpcDrinkInteraction?.clearAmbientCarry?.(`cup:${id}`),
+      playSip: (walker,apply) => window.NpcDrinkInteraction?.playAutonomous?.(walker,CUP_KEY,apply),
+    });
+    window.HobunjiDrunkGameplayBridge?.registerVirtualDrink?.({ // The cup rides the ordinary hold-to-drink, swig-offer, drunkenness and blackout pipeline.
+      current: () => heldCup ? { key:CUP_KEY, def:CUP_DEF, remaining:heldCup.swigs, total:heldCup.capacity, stars:3 } : null,
+      consumeSwig: () => { if (!heldCup || heldCup.swigs < 1) return { ok:false }; heldCup.swigs--; return { ok:true, remaining:heldCup.swigs, total:heldCup.capacity, stars:3 }; },
+      drinkSwig: () => {
+        if (!heldCup || heldCup.swigs < 1) return { ok:false, message:'Your cup is empty. Refill it free at the keg.' };
+        const drink = window.HobunjiAlcohol?.drinkDef?.(CUP_DEF,3,CUP_KEY);
+        if (!drink?.ok) return drink || { ok:false, message:'Nothing to drink.' };
+        heldCup.swigs--;
+        return { ok:true, message:`${drink.message} ${heldCup.swigs}/${heldCup.capacity} swigs left; the keg refills you free.` };
+      },
+      onNpcSwig: id => { addFestivalFun(id,CUP_FUN_PER_SWIG); deps?.save?.(); },
     });
     window.FurnitureTableSystem?.registerService?.('gorkunash-drinks', {
       enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
-      buttons: () => claimed('liquor') ? [] : [{icon:'🍷',label:'Take a bottle',action:'obj_take_bottle',style:'primary',allowed:!deps?.isBlocked?.()}],
-      onAction: action => action === 'obj_take_bottle' && festival()?.id === 'gorkunash' && festivalHours() && !deps?.isBlocked?.() ? handlers.get('liquor')() : fail('This bottle is unavailable.'),
+      buttons: () => [{icon:'🍺',label:heldCup ? `Refill cup (${heldCup.swigs}/${heldCup.capacity})` : 'Take a cup',action:'obj_take_cup',style:'primary',allowed:!deps?.isBlocked?.()}],
+      onAction: action => action === 'obj_take_cup' && festival()?.id === 'gorkunash' && festivalHours() && !deps?.isBlocked?.() ? takeOrRefillCup() : fail('The keg is unavailable.'),
     });
     window.FurnitureTableSystem?.registerService?.('gorkunash-feast', {
       enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
@@ -719,13 +769,7 @@
     return { ok: true };
   });
   registerActivity('music', () => { window.FestivalUI.close(); window.MusicMinigame?.beginPlayerSession(); return { ok: true }; });
-  registerActivity('liquor', () => {
-    if (claimed('liquor')) return fail('You have already received your festival bottle.');
-    const key = Object.keys(deps.getItemDefs()).find(key => window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(deps.getItemDefs()[key]));
-    if (!key || !grantItem(key, 1, 4)) return fail('No festival liquor is available, or your inventory is full.');
-    mark('liquor');
-    return commit(`A bottle of ${deps.getItemDefs()[key].label}. Hold it to drink or offer a swig through the existing item actions.`);
-  });
+  registerActivity('liquor', () => takeOrRefillCup()); // The festival keg: a free temporary cup, not a bottle for the bag.
   registerActivity('duel', (payload, prop) => {
     const walker = deps.getWalkers().find(w => w.rec?.id === 'spearhead_unumanuk' && w.area === 'town');
     if (!walker) return fail('Spearhead supervises the friendly duels here between 10:00 and 22:00.');
@@ -737,6 +781,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, festivalBowl, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();

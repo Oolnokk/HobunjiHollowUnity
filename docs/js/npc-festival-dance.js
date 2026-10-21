@@ -107,7 +107,8 @@
     if (total <= 0) return null;
     let roll = random() * total;
     for (let i = 0; i < items.length; i++) { roll -= weights[i]; if (roll < 0) return items[i]; }
-    return items[items.length - 1];
+    for (let i = items.length - 1; i >= 0; i--) if (weights[i] > 0) return items[i]; // Rounding fallback never returns a zero-weight option.
+    return null;
   }
   // Groups the dance floor's authored standing spots into facing pairs (nearest first); the rest remain solo/waiting spots.
   function pairSlots(stations, maxDistance = 1.35) {
@@ -125,6 +126,28 @@
     }
     return { slots, leftovers: stations.filter(s => !used.has(s.stationId)) };
   }
+  // ── Drinking ──────────────────────────────────────────────────────────
+  // Everything here keys off the character's *base* inhibition (a stable trait), not the drink-lowered effective value,
+  // so a restrained guest nurses a cup all night instead of spiralling. Sobriety is 100; the keg's mild airag costs
+  // KEG_FOOTING per swig (HobunjiAlcohol's 'mild' tier) and blackout happens when it reaches zero.
+  const KEG_FOOTING = 16;
+  function drinkProfile(rec) {
+    const base = traits(rec).inhibition;
+    // How drunk (0..1) this character is willing to get. At or below 15 there is no limit, so they drink until they pass out;
+    // above 35 it falls towards a single sip (a teetotaller's single polite swig at ~84+).
+    const fStop = base <= 15 ? 1.25 : base <= 35 ? 1.25 - (base - 15) * .0325 : Math.max(.08, .6 - (base - 35) * .0096);
+    return {
+      eligible: ageGroup(rec) !== 'child',
+      fStop,
+      // Mean game minutes between swigs. 66 min for the least inhibited means seven swigs (112 > 100 sobriety) land roughly
+      // eight hours after the first cup, i.e. around 23:30-00:00 for a 15:00 gathering; quieter characters sip more slowly still.
+      intervalMin: 66 + .9 * (base - 12),
+      thirst: .3 + 2.2 * Math.pow(1 - base / 100, 2), // The uninhibited head for the keg early and often.
+    };
+  }
+  function drinkTaper(rec, drunk) { return clamp((drinkProfile(rec).fStop - drunk) / .25, 0, 1); } // Willingness fades over the last quarter before their limit.
+  function nextSipDelay(rec, random = Math.random) { return drinkProfile(rec).intervalMin * (.7 + .6 * random()); } // +/-30% jitter keeps blackouts spread but near the target hour.
+  function willSip(rec, drunk, random = Math.random) { return random() < drinkTaper(rec, drunk); }
   // After a meal or a song: pick the next thing from character-weighted options instead of a fixed sequence.
   function decide(rec, ctx, random = Math.random) {
     const t = traits(rec), k = kind(rec), drive = danceDrive(rec);
@@ -141,6 +164,8 @@
       else if (t.inhibition < 36) { dance = 1.1 * drive * tired; solo = true; } // Only the genuinely uninhibited dance alone.
     }
     options.push({ action: 'dance', weight: dance, solo });
+    const dp = drinkProfile(rec); // Going to the keg for a (refilled) cup: nobody with a cup in hand, no children, nobody past their limit.
+    options.push({ action: 'drink', weight: dp.eligible && ctx.kegOpen && !(ctx.cupSwigs > 0) ? dp.thirst * drinkTaper(rec, ctx.drunk || 0) * (1 + clamp((ctx.minutesSinceDrink || 0) / 90, 0, 3)) * (ctx.cupEmptied ? 3.5 : 1) : 0 }); // Thirst builds the longer they go without a cup. // An emptied cup is the cue to head back to the keg.
     options.push({ action: 'other', weight: .45 + .5 * t.sociability + (ctx.justDanced ? .3 : 0) + (t.age === 'old' ? .4 : 0) });
     const picked = pickWeighted(options, o => o.weight, random) || options[options.length - 1];
     return { ...picked, options };
@@ -154,5 +179,5 @@
     return random() < clamp(p, .05, .95);
   }
   function songMinutes(random = Math.random) { return 16 + random() * 12; } // ~7-13 real seconds at 672 s per game day.
-  window.NpcFestivalDance = Object.freeze({ init, kind, isMarried, spouseIds, bond, traits, danceDrive, pairWeight, pickWeighted, pairSlots, decide, wantsAnotherSong, songMinutes, ageGroup });
+  window.NpcFestivalDance = Object.freeze({ init, KEG_FOOTING, drinkProfile, drinkTaper, nextSipDelay, willSip, kind, isMarried, spouseIds, bond, traits, danceDrive, pairWeight, pickWeighted, pairSlots, decide, wantsAnotherSong, songMinutes, ageGroup });
 })();

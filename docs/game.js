@@ -16186,6 +16186,7 @@
       // the player is currently offering up") should call — resolves the
       // manual hold first, falling back to the ordinary wheel selection.
       function getHeldGiftItem() {
+        if (window.FestivalSystem?.festivalCup?.()) return null; // The keg cup is temporary and can be shared as a swig, never gifted.
         if (manualHeldItem?.kind === 'clothing') {
           const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
           if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
@@ -22503,7 +22504,7 @@
         getActiveTool: () => activeTool,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
-        getItemDef: itemKey => itemKey === 'festival_bowl' ? { key:itemKey, icon:'🥣', label:'Meal Bowl', spriteIcon:'festival-bowl.png' } : ITEM_DEFS[itemKey],
+        getItemDef: itemKey => window.FestivalSystem?.vesselDef?.(itemKey) || ITEM_DEFS[itemKey], // Temporary festival bowl/cup vessels have no inventory entry.
         poseAt: heldActionPoseAt,
         makeBottlePlane: makeHeldItemPlaneMesh,
         disposeBottlePlane: disposeHeldItemPlaneMesh,
@@ -22515,9 +22516,9 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
-        const bowl = heldMode === 'item' ? window.FestivalSystem?.festivalBowl?.() : null; // Display the festival serving as a genuine held sprite while item mode is selected.
+        const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || (bowl ? { key:'festival_bowl', icon:'🥣', label:bowl.meal?.label || 'Festival Bowl', spriteIcon:'festival-bowl.png' } : getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
+          || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -29141,7 +29142,7 @@
         isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active', // Any ordinary chair can be used; explicit table links determine company.
         getPlayerSeatedSeat: () => sitInteraction?.phase === 'active' ? sitInteraction : null, // Matches the player chair against nearby dining stations instead of every NPC in the feast locale.
         cancelFestivalDrink: () => {
-          if(_heldItemKey!=='festival_bowl')return;
+          if(_heldItemKey!=='festival_bowl'&&_heldItemKey!=='festival_cup')return;
           _heldDrinkPhase=null;_heldDrinkApply=null;_heldDrinkApplied=false; // Prevent a delayed bite after switching to a weapon or leaving the feast.
           disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
           _heldItemPlane=null;_heldItemKey=null;heldItemHolder.visible=false;

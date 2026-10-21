@@ -270,7 +270,7 @@
     return Math.max(0, Math.max(0, num(config.drinkAcceptedCooldownMinutes, DEFAULTS.drinkAcceptedCooldownMinutes)) - Math.max(0, absoluteGameMinute() - last));
   }
   function bottleSignature(bridge) {
-    try { return JSON.stringify(bridge?.serializeBottleSwigs?.() || null); } catch (_) { return ''; }
+    try { return JSON.stringify([bridge?.serializeBottleSwigs?.() || null, bridge?.virtualSwigSerial?.() || 0]); } catch (_) { return ''; }
   }
   function refuseDrink(walker, reason) {
     const text = reason === 'cooldown' ? `${walker?.rec?.name || 'They'} has had enough for the moment.` : `${walker?.rec?.name || 'They'} declines the drink.`;

@@ -5,7 +5,7 @@
   let deps = null; // Gathering owner supplies hours, authored destinations, social bonds and presentation adapters.
   let pendingStations = false; // Retry destinations while an asynchronously built map is registering its stations.
   let layout = null; // Cached destination source, rebuilt only when the editor/calendar changes its map object.
-  let seats = [], bowls = [], pots = [], queues = [], alternatives = [], musicians = [], slots = [], leftovers = []; // Authored station targets grouped once per layout.
+  let seats = [], bowls = [], pots = [], kegs = [], queues = [], alternatives = [], musicians = [], slots = [], leftovers = []; // Authored station targets grouped once per layout.
   let audience = null; // Centre of the dance floor; mingling and solo dancers face the stage from around it.
   let commons = null; // Centre of the serving table: guests gather here while they wait for a bowl, a pot or a chair.
   let musicOn = true; // Refreshed once per gathering tick: nobody dances (or keeps dancing) without a musician actually playing.
@@ -18,14 +18,15 @@
     window.FurnitureTableSystem?.setSeatTarget?.(state.id, null);
     deps?.clearCarry?.(state.id, byWalker.get(state.id));
   }
-  function clear() { for (const state of states.values()) release(state); states.clear(); byWalker.clear(); layout = null; }
+  function drop(state) { release(state); deps?.clearCup?.(state.id); } // Removing a guest also puts their cup down.
+  function clear() { for (const state of states.values()) drop(state); states.clear(); byWalker.clear(); layout = null; }
   function init(injected) { clear(); deps = injected; musicOn = true; }
   function refreshLayout() {
     const next = deps?.getLayout?.(); // The effective map retains identity until a layout/editor change.
     if (next === layout && !pendingStations) return;
     if (next !== layout) { clear(); layout = next; }
     pendingStations = false;
-    seats = []; bowls = []; pots = []; queues = []; alternatives = []; musicians = []; slots = []; leftovers = []; audience = null; commons = null;
+    seats = []; bowls = []; pots = []; kegs = []; queues = []; alternatives = []; musicians = []; slots = []; leftovers = []; audience = null; commons = null;
     for (const station of next?.npcStations || []) {
       if (!station.mealRole && station.festivalRole !== 'musician' && station.festivalLocaleKind !== 'dance' && !(station.pose === 'sit' && station.tableId)) continue;
       const target = window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
@@ -33,6 +34,7 @@
       const choice = { ...target, stationId:station.id, mealRole:station.mealRole, festivalNpcId:station.festivalNpcId }; // Resolved once, including physical furniture/table IDs.
       if (station.mealRole === 'bowls') bowls.push(choice);
       else if (station.mealRole === 'fill') pots.push(choice);
+      else if (station.mealRole === 'drinks') kegs.push(choice);
       else if (station.mealRole === 'queue') queues.push(choice);
       else if (station.festivalRole === 'musician') musicians.push(choice);
       else if (station.pose === 'sit' && station.tableId) seats.push(choice);
@@ -118,7 +120,7 @@
       const wait = walker?.root ? {area:walker.area,c:walker.root.position.x-.5,r:walker.root.position.z-.5,pose:'stand'} : fallback;
       if (!wait) return null;
       state = {id:rec.id,rec,phase:'new',target:null,wait,bonds:deps.companions?.(rec)||new Map(),hasBowl:false,hasMeal:false,bites:0,nextBite:0,
-        helpings:0,songs:0,readyAt:null,lastMealAt:deps.minutes(),partnerId:null,lastPartnerId:null,pairUntil:0,solo:false,spouseWasWaiting:false};
+        helpings:0,songs:0,readyAt:null,cupSwigs:0,nextSip:0,drinks:0,thirstSince:deps.minutes(),lastMealAt:deps.minutes(),partnerId:null,lastPartnerId:null,pairUntil:0,solo:false,spouseWasWaiting:false};
       states.set(rec.id,state);
       next(state,deps.minutes(),{arriving:true}); // Arriving guests are hungry, but a lively character may head straight for the floor.
     }
@@ -144,10 +146,29 @@
     const decision = NFD ? NFD.decide(state.rec,{
       helpings:state.helpings, songs:state.songs, minutesSinceMeal:now-state.lastMealAt, musicOn, floorOpen:floorOpen(state),
       spouseAvailable, spouseWaiting:!!spouse && spouse.phase === 'dance-wait', partnerCount:eligiblePartners(state), ...extra,
+      drunk:deps.drunkFraction?.(state.id)||0, cupSwigs:state.cupSwigs, cupEmptied:state.drinks>0 && state.cupSwigs===0, minutesSinceDrink:now-state.thirstSince, kegOpen:kegs.some(target => !occupied(target,state.id)),
     },random) : { action:'seconds' };
+    if (decision.action === 'drink') return goKeg(state,now);
     if (decision.action === 'dance') return startDancing(state,now,decision.solo);
     if (decision.action === 'other') return goOther(state,now);
     return goBuffet(state,now);
+  }
+  function goKeg(state, now) { // The same keg and free cup the player uses; the tap spots are authored with the keg.
+    state.hasBowl = false; state.hasMeal = false; release(state);
+    const target = choose(kegs,state);
+    if (!target) return goOther(state,now);
+    setPhase(state,'walk-keg',target,now);
+  }
+  function sip(state, walker, now) { // Pacing is the character's: willingness fades towards their own limit, and cadence follows inhibition.
+    const NFD = dancing(), drunk = deps.drunkFraction?.(state.id) || 0;
+    if (!NFD.willSip(state.rec,drunk,random)) { state.nextSip = now + NFD.drinkProfile(state.rec).intervalMin*.35; return; }
+    state.cupSwigs--; state.drinks++; state.thirstSince = now;
+    if (!state.cupSwigs && state.phase === 'other') state.until = now; // An emptied cup is a reason to leave the mingle for the keg.
+    state.nextSip = now + NFD.nextSipDelay(state.rec,random);
+    const apply = () => deps.drinkNpc?.(state.rec,state.drinks,NFD.KEG_FOOTING);
+    const handFree = ['other','queue','dance-wait'].includes(state.phase) && deps.visible?.(walker); // Never fights the bowl or a dance for the hand.
+    const ms = handFree ? deps.playSip?.(walker,apply) : 0;
+    if (!(ms > 0)) apply();
   }
   function startDancing(state, now, solo, stay = false) {
     release(state); state.hasBowl = false; state.hasMeal = false; state.solo = !!solo;
@@ -266,14 +287,30 @@
     const now = deps.minutes(); // Game time pauses and midnight remain owned by the existing calendar.
     for (const state of [...states.values()]) {
       const walker = byWalker.get(state.id);
-      if (state.rec.dead || state.rec.deceased) { release(state); states.delete(state.id); continue; }
+      if (state.rec.dead || state.rec.deceased) { drop(state); states.delete(state.id); continue; }
       if (walker?.currentScheduleTarget?.overrideOwner && walker.currentScheduleTarget.overrideOwner !== deps.owner) {
-        release(state); states.delete(state.id); continue; // Follow, dates and emergencies retain ownership.
+        drop(state); states.delete(state.id); continue; // Follow, dates and emergencies retain ownership.
       }
+      if (deps.isBlackedOut?.(state.id)) { // Out cold where they stand: no seat, no cup, no pair, until they wake.
+        if (state.phase !== 'blackout') {
+          drop(state); dissolve(state); state.cupSwigs = 0; state.hasBowl = false; state.hasMeal = false;
+          const here = walker?.root ? { area:walker.area, c:walker.root.position.x-.5, r:walker.root.position.z-.5, pose:'stand' } : state.wait;
+          setPhase(state,'blackout',here,now);
+        }
+        continue;
+      }
+      if (state.phase === 'blackout') { state.lastMealAt = now; next(state,now,{ justDanced:true }); } // Groggy: free to choose again (the drink taper keeps the hungover from over-drinking).
       if (state.target?.pose === 'sit') window.FurnitureTableSystem?.setSeatTarget?.(state.id,state.target); // Renew leases at the shared gathering rate.
       const musician = musicians.find(target => target.festivalNpcId === state.id && deps.isMusician?.(state.rec));
       if (musician) { if (state.phase !== 'musician') { release(state); dissolve(state); setPhase(state,'musician',musician,now); } continue; }
       if (state.phase === 'musician') { state.lastMealAt = now; next(state,now,{ arriving:true }); }
+      if (state.cupSwigs > 0 && now >= state.nextSip) sip(state,walker,now);
+      if (state.cupSwigs > 0 && !state.hasBowl && state.phase !== 'dancing' && deps.visible?.(walker)) deps.carryCup?.(walker,state.id); else deps.clearCup?.(state.id);
+      if (state.phase === 'walk-keg' && arrived(walker,state.target)) setPhase(state,'draw-cup',state.target,now,1);
+      if (state.phase === 'draw-cup') {
+        if (now >= state.until) { state.cupSwigs = 4; state.thirstSince = now; state.nextSip = now + dancing().nextSipDelay(state.rec,random); next(state,now,{ justDrank:true }); }
+        continue;
+      }
       if (state.phase === 'other') { if (now >= state.until) next(state,now); continue; }
       if (state.phase === 'dance-wait' || state.phase === 'dance-walk' || state.phase === 'dancing') { danceTick(state,walker,now); continue; }
       if (state.phase === 'queue') {
@@ -314,11 +351,11 @@
     }
     if (musicOn) matchmake(now);
   }
-  function interrupt(id) { const state=states.get(id); if(!state)return; release(state); states.delete(id); } // An accepted social invitation releases its meal/seat before approaching; a dance partner notices on the next tick.
+  function interrupt(id) { const state=states.get(id); if(!state)return; drop(state); states.delete(id); } // An accepted social invitation releases its meal/seat before approaching; a dance partner notices on the next tick.
   function diagnostics() {
     return { latestChange:'NPCs queue, take/fill bowls, sit with spouses/family/friends, eat 10-20 minutes, then choose seconds, a facing-pair dance (spouses together; unmarried romanceable guests swap partners) or mingling, and only dance while a musician plays.',
-      pendingStations,seats:seats.length,bowlSpots:bowls.length,servingSpots:pots.length,queueSpots:queues.length,danceSpots:alternatives.length,pairSlots:slots.length,musicOn,
-      actors:[...states.values()].map(s=>({id:s.id,phase:s.phase,station:s.target?.stationId,tableId:s.target?.tableId||null,hasBowl:s.hasBowl,hasMeal:s.hasMeal,bites:s.bites,helpings:s.helpings,songs:s.songs,partner:s.partnerId||null})) };
+      pendingStations,seats:seats.length,bowlSpots:bowls.length,servingSpots:pots.length,kegSpots:kegs.length,queueSpots:queues.length,danceSpots:alternatives.length,pairSlots:slots.length,musicOn,
+      actors:[...states.values()].map(s=>({id:s.id,phase:s.phase,station:s.target?.stationId,tableId:s.target?.tableId||null,hasBowl:s.hasBowl,hasMeal:s.hasMeal,bites:s.bites,helpings:s.helpings,songs:s.songs,partner:s.partnerId||null,cupSwigs:s.cupSwigs,drinks:s.drinks,drunk:deps?.drunkFraction?.(s.id)??0})) };
   }
   window.NpcSharedMeals = { init,targetFor,update,clear,interrupt,diagnostics };
 })();

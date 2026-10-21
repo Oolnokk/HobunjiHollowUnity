@@ -38,6 +38,8 @@
   let consumeLockUntil = 0;
   let bottleSwigs = {}; // Persisted by game.js; stores { remaining, total, stars } for each stack's currently open bottle.
   let npcAlcoholState = {}; // Persisted by game.js; stores NPC sobriety and no-teleport blackout deadlines.
+  let virtualDrink = null; // Optional temporary held drink with no inventory entry (the Gorkunash keg cup); see registerVirtualDrink.
+  let virtualSwigs = 0; // Bumped whenever a virtual swig is served, so wrappers that watch bottle state notice it.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -142,6 +144,15 @@
       });
     }
     return serializeBottleSwigs();
+  }
+
+  // A temporary drink owner (the festival keg cup) supplies { current() -> {key,def,remaining,total,stars}|null,
+  // consumeSwig() -> {ok,remaining,total,stars}, drinkSwig() -> {ok,message}, onNpcSwig(npcId) }. Everything else
+  // (hold-to-drink animation, swig offers, drunkenness, blackouts) is the ordinary alcohol pipeline.
+  function registerVirtualDrink(provider) { virtualDrink = provider || null; }
+  function virtualHeld() {
+    const current = virtualDrink?.current?.();
+    return current?.def && current.key ? current : null;
   }
 
   function absoluteGameMinute() {
@@ -559,6 +570,8 @@
     const heldMode = itemDeps?.getHeldMode?.();
     if (heldMode != null ? heldMode !== 'item' : !window.PlayerBodyTransformComposer?.hasVisibleHeldItem?.()) return false;
 
+    const virtual = virtualHeld(); // A temporary festival cup is displayed instead of the selected inventory item.
+    if (virtual) return { key: virtual.key, def: virtual.def, inventory: null, kind: 'drink', virtual };
     const active = itemDeps?.getActiveInventoryItem?.();
     const key = active?.key;
     const canonicalDef = key ? itemDeps?.ITEM_DEFS?.[key] : null; // Used when the caller exposes canonical metadata in addition to the lightweight selectable entry.
@@ -583,9 +596,10 @@
     const held = getHeldConsumable();
     if (!held) return null;
     // The action arch uses this fraction to mirror the selected-item badge.
-    const swigs = held.kind === 'drink' && isAlcoholDef(held.def)
-      ? getBottleSwigStatus(held.key, held.def, held.inventory)
-      : null;
+    const swigs = held.virtual ? held.virtual
+      : held.kind === 'drink' && isAlcoholDef(held.def)
+        ? getBottleSwigStatus(held.key, held.def, held.inventory)
+        : null;
     return {
       icon: held.def.icon || (held.kind === 'drink' ? '🥤' : '🍽️'),
       label: `${held.kind === 'drink' ? 'Drink' : held.kind === 'recipe' ? 'Read' : 'Eat'} ${held.def.label || held.key}`,
@@ -622,8 +636,8 @@
   function getNpcSwigOfferAction(walker) {
     const held = getHeldAlcohol();
     if (!held || !walker?.rec?.id || isNpcBlackedOut(walker.rec.id)) return null;
-    const status = getBottleSwigStatus(held.key, held.def, held.inventory);
-    if (!status) return null;
+    const status = held.virtual || getBottleSwigStatus(held.key, held.def, held.inventory);
+    if (!status || !(status.remaining > 0)) return null;
     return {
       icon: held.def.icon || '🍷',
       label: `Offer ${walker.rec.name || walker.rec.displayName || 'them'} a swig (${status.remaining}/${status.total})`,
@@ -647,15 +661,17 @@
       return true;
     }
     if (!itemDeps?.canPlayNpcDrinkInteraction?.(walker, held.key)) return false;
-    const profile = window.HobunjiAlcohol?.profileForItem?.(held.key);
+    const profile = held.virtual ? window.HobunjiAlcohol?.profileForDef?.(held.def) : window.HobunjiAlcohol?.profileForItem?.(held.key);
     if (!profile) return false;
     window.AmbientDialogue?.showAlcoholOfferResponse?.(walker, response);
-    const serving = consumeBottleSwig(held.key, held.def, held.inventory);
-    if (!serving.ok) return false;
+    const serving = held.virtual ? virtualDrink.consumeSwig() : consumeBottleSwig(held.key, held.def, held.inventory);
+    if (!serving?.ok) return false;
+    if (held.virtual) virtualSwigs++;
     let result = null; // Filled at the drink animation's strike frame and used by the mobile-visible alcohol log.
     const applyNpcSwig = () => {
       if (result) return result;
       result = addNpcDrunkenness(npcId, profile.footing, held.key);
+      if (held.virtual) virtualDrink?.onNpcSwig?.(npcId); // The festival rewards sharing a round.
       itemDeps?.saveMemberWorldData?.();
       window.__farmLog?.(`[alcohol] NPC swig: npc=${npcId} item=${held.key} sobriety=${result.sobriety.toFixed(2)} blackout=${result.blackout ? `${result.blackoutMinutes}m` : 'no'}`, 'items');
       return result;
@@ -685,6 +701,15 @@
     const { key, def, inventory } = held;
 
     if (held.kind === 'drink') {
+      if (held.virtual) {
+        const result = virtualDrink.drinkSwig();
+        if (result?.ok) virtualSwigs++;
+        itemDeps?.showToast?.(result?.message || 'Nothing to drink.', result?.ok !== false);
+        itemDeps?.refreshItemScroll?.();
+        itemDeps?.refreshActionBar?.();
+        itemDeps?.saveMemberWorldData?.();
+        return result;
+      }
       const result = window.AlchemySystem?.drinkPotion?.(key);
       if (!result) return null;
       itemDeps.showToast?.(result.message, result.ok !== false);
@@ -849,6 +874,9 @@
     npcDrunkFraction,
     npcSpeedMultiplier,
     isNpcBlackedOut,
+    addNpcDrunkenness, // Autonomous festival drinking applies the same sobriety/blackout math as an offered swig.
+    registerVirtualDrink,
+    virtualSwigSerial: () => virtualSwigs,
     serializeBottleSwigs,
     restoreBottleSwigs,
     serializeNpcAlcoholState,

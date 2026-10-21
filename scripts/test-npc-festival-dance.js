@@ -116,8 +116,9 @@ inspect(true); assert.equal(silentDancers,0,'nobody dances without music');
 for (let i = 0; i < 60; i++) { step(.5); inspect(true); }
 assert.equal(silentDancers,0,'nobody starts a dance while the band is silent');
 music = true;
-for (let i = 0; i < 400; i++) { step(.5); inspect(false); }
-assert(meals.diagnostics().actors.some(a => a.phase === 'dancing'),'dancing resumes once the music does');
+let resumed = false;
+for (let i = 0; i < 400; i++) { step(.5); inspect(false); resumed ||= meals.diagnostics().actors.some(a => a.phase === 'dancing'); }
+assert(resumed,'dancing resumes once the music does');
 
 // A plate lasts 10-20 game minutes, then a diner chooses what to do next.
 const eaters = new Map(); let lengths = [];

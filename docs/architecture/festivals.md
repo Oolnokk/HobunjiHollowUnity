@@ -23,7 +23,7 @@ The Gorkunash festival guide board has been retired. Its dining, dancing, and mu
 - Mountaindawn gifts and Hachutukara sweets can be received directly from nearby friends or collected from the communal table. Both routes share the same annual claim. Three hearts means 120 Favor points.
 - Dance participation uses the existing social dance animation for 20 seconds and earns +2 Favor with residents once per festival. Dodge or the leave-dance action cancels. Further dancing is allowed without repeat rewards.
 - Friendly duels reuse combat training, borrowed weapons, the shared Oddclaw renderer/AI, and equipment/resource restoration. Three verified hits finish the exercise; completion gives +6 Favor with Spearhead and Oddclaw once per year. Leaving the ring, leaving town, or ending the festival cancels and restores temporary state.
-- Other grants are once per year: one animal mask, one liquor bottle, one potluck, and one offering. Capacity is checked before item claims are marked.
+- Other grants are once per year: one animal mask, one potluck, and one offering. Capacity is checked before item claims are marked.
 
 Balance values, narrative prose, props, and costumes are intentionally a playable foundation for later bespoke art and choreography.
 
@@ -124,3 +124,14 @@ Tests: `node scripts/run-tests.js npc-festival-dance npc-shared-meals`.
 **Buffet flow.** Guests first walk to a real queue spot (or a clear tile by the serving table) and reserve the bowl point only when they are at the front, so one guest's long walk from a house never blocks the line. The authored `buffet_queue_*` slots sit on the west side of the bowl stack (before the bowls, with the pots further east) so the line moves with the flow of service.
 
 **Stage reliability.** `FestivalSystem` watches whichever musician is due on the bandstand. If their route fails for 20 game minutes, or they have not arrived after 90, they are relieved for that day and the other musician takes the stage (`stageDuty`/`watchStage`). Known content issue found while testing: in `map_i_general_store` Foroji's "Checking Shelves" spot (2,6) is a dead-end aisle sealed by the stool at (4,6), so a direct route from the aisle to the town fails; Kaboku covers the whole gathering in that case.
+
+
+## The Gorkunash keg (replaces the festival bottle)
+
+The old once-per-festival liquor bottle is gone. A **keg** (`gorkunash_keg`, a surface item on the small table north of the dance floor) pours a **temporary Festival Airag cup** that comes already filled (4 swigs). Like the bowl it is never in the inventory, is discarded when you pick another item or leave, and is never giftable (`getHeldGiftItem` returns nothing while it is held). Refills are free whenever you aim at the keg (a held cup is simply topped up). Only one vessel (bowl or cup) is in hand at a time.
+
+The cup rides the ordinary alcohol pipeline instead of a parallel one: `HobunjiDrunkGameplayBridge.registerVirtualDrink` lets `FestivalSystem` supply the held drink, so hold-to-drink, the n/4 swig badge, `Offer … a swig`, drunkenness, blackouts and the social-bridge Rapport/cooldown rules are all the existing code. Offering a swig also gives the NPC 20 Festival Fun. Strength comes from `HobunjiAlcohol.profileForDef`: airag is the mildest authored tier (16 footing per swig of 100 sobriety), so the keg never needs a stronger drink.
+
+**NPCs drink from the same keg.** Three authored `drinks` tap spots sit beside it. A guest chooses "go to the keg" among their free-time options (`NpcFestivalDance.decide`); thirst grows the longer they have gone without a cup and jumps when a cup empties. Sips change real sobriety through `addNpcDrunkenness`, so drunkenness feeds back into dance willingness, speed and blackouts like any offered swig. Pacing comes from **base** inhibition (a stable trait): characters at or below 15 have no limit; the limit falls to about a fifth of sobriety by the mid-60s and to a single polite cup by the mid-80s (`drinkProfile.fStop`, with willingness fading over the last quarter before the limit). Sip cadence is `66 + 0.9 × (inhibition − 12)` game minutes ±30%, which puts the seventh swig (112 > 100 sobriety) of the least inhibited guest around 23:30–00:00; this is a tuning guideline verified by simulation, not a scripted time. Children never drink. A blacked-out guest drops their cup, seat and dance partner and lies where they are until they wake.
+
+Tests: `node scripts/run-tests.js festival-keg`.
