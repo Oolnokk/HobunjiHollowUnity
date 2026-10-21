@@ -9,7 +9,7 @@
   function normalized(value) {
     const obj=value&&typeof value==='object'?value:{};
     const anchor=obj.billboardAnchor||{},pos=anchor.position||{},rot=anchor.rotation||{};
-    const hand=obj.handTargets||{};
+    const hand=obj.handTargets||{},hitbox=obj.hitbox||{};
     const vector=(v,fallback)=>Object.fromEntries(['x','y','z']
       .map(key=>[key,Number.isFinite(Number(v?.[key]))?Number(v[key]):fallback[key]]));
     const grip=(v,p)=>({...vector(v,p),rotation:vector(v?.rotation,{x:0,y:0,z:0})});
@@ -22,6 +22,10 @@
         posteriorOffset:vector(anchor.posteriorOffset,{x:0,y:0,z:0}),
         size:Math.max(.1,Number(anchor.size)||1)
       },
+      hitbox:{enabled:hitbox.enabled!==false,
+        center:vector(hitbox.center,{x:0.025,y:.25,z:0}),
+        size:Object.fromEntries(['x','y','z'].map(axis=>
+          [axis,Math.max(.01,Math.abs(Number(hitbox.size?.[axis])||({x:.43,y:.49,z:.31})[axis]))]))},
       handTargets:{
         left:grip(hand.left,{x:-.3,y:.46,z:.08}),
         right:grip(hand.right,{x:.3,y:.46,z:.08})
@@ -46,6 +50,15 @@
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
     '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Billboard anchor</button><button type="button" id="carrySelectLeft">◉ Left hand grip</button></div>',
     '<button type="button" id="carrySelectRight">◉ Right hand grip</button>',
+    '<div class="section"><h2>Projectile / impact hitbox</h2>',
+    '<label class="row"><input id="carryHitboxEnabled" type="checkbox" checked> Use authored hitbox</label>',
+    '<button type="button" id="carrySelectHitbox">▧ Edit hitbox in viewport</button>',
+    '<p class="muted">Purple wireframe is the collision box; translate with the gizmo and resize with the half-extents fields. This box affects projectile hits without changing the visible furniture or the carried avatar.</p>',
+    '<div class="g3">',
+    '<label>Width X<input id="carryHitboxSX" type="number" min="0.01" step="0.01"></label>',
+    '<label>Height Y<input id="carryHitboxSY" type="number" min="0.01" step="0.01"></label>',
+    '<label>Depth Z<input id="carryHitboxSZ" type="number" min="0.01" step="0.01"></label>',
+    '</div></div>',
     '<label>Selected guide <strong id="carryGuideLabel">Billboard anchor</strong></label>',
     '<div class="g3">',
     '<label>X<input id="carryX" type="number" step="0.01"></label>',
@@ -208,19 +221,25 @@
 
   function positionGuide(id) {
     const c=state.carryable;
-    return id==='anchor'?c.billboardAnchor.position:c.handTargets[id];
+    return id==='anchor'?c.billboardAnchor.position:id==='hitbox'?c.hitbox.center:c.handTargets[id];
   }
   function renderControls() {
     const c=state.carryable,id=state.selectedType==='carry'?state.selectedId:'anchor';
     const pos=positionGuide(id)||c.billboardAnchor.position;
     el('carryEnabled').checked=!!c.enabled;
-    el('carryGuideLabel').textContent=id==='anchor'?'Billboard anchor':id==='left'?'Left hand grip':'Right hand grip';
+    el('carryGuideLabel').textContent=id==='anchor'?'Billboard anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
     for(const axis of ['X','Y','Z']) {
       const input=el('carry'+axis);
       if(document.activeElement!==input)input.value=Number(pos[axis.toLowerCase()]||0).toFixed(3);
     }
     const r=id==='anchor'?c.billboardAnchor.rotation:c.handTargets[id]?.rotation||{};
     el('carryRotationLabel').textContent=id==='anchor'?'Anchor orientation (degrees)':'Hand socket rotation relative to its calibrated GLB (degrees)';
+    el('carryAnchorRotation').hidden=id==='hitbox';
+    el('carryHitboxEnabled').checked=c.hitbox.enabled;
+    for(const axis of ['X','Y','Z']) {
+      const field=el('carryHitboxS'+axis);
+      if(document.activeElement!==field)field.value=Number(c.hitbox.size[axis.toLowerCase()]).toFixed(3);
+    }
     el('carrySizeRow').hidden=id!=='anchor';
     for(const axis of ['X','Y','Z']){
       const input=el('carryR'+axis);
@@ -232,7 +251,7 @@
     el('carrySummary').textContent=c.enabled
       ?'Authoring enabled: billboard anchor and both hand positions will be exported.'
       :'Carrying disabled: configure the anchors here and enable when ready.';
-    for(const key of ['anchor','left','right']){
+    for(const key of ['anchor','left','right','hitbox']){
       const idKey='carrySelect'+key[0].toUpperCase()+key.slice(1);
       el(idKey)?.classList.toggle('active',id===key);
     }
@@ -242,11 +261,18 @@
       guideRoot.remove(item);
       item.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.();});
     }
-    for(const id of ['anchor','left','right']){
+    for(const id of ['anchor','left','right','hitbox']){
       const marker=new THREE.Group();
       marker.name='carry_author_'+id;
       marker.userData.carryGuide=id;
-      if(id==='anchor'){
+      if(id==='hitbox'){
+        const hitWire=new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1)),
+          new THREE.LineBasicMaterial({color:0xc98aff,depthTest:false,depthWrite:false}));
+        hitWire.name='carry_hitbox_wireframe';
+        hitWire.renderOrder=97;
+        marker.add(hitWire);
+      }else if(id==='anchor'){
         const plane=new THREE.Mesh(new THREE.PlaneGeometry(1,1),
           new THREE.MeshBasicMaterial({color:0xffb75d,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false,depthTest:false}));
         marker.add(plane);
@@ -274,7 +300,10 @@
       const marker=guides[id],pos=positionGuide(id);
       if(!marker||!pos)continue;
       marker.position.set(pos.x,pos.y,pos.z);
-      if(id==='anchor'){
+      if(id==='hitbox'){
+        marker.visible=c.hitbox.enabled;
+        marker.children[0]?.scale.set(c.hitbox.size.x,c.hitbox.size.y,c.hitbox.size.z);
+      }else if(id==='anchor'){
         const r=c.billboardAnchor.rotation;
         marker.rotation.set(r.x*DEG,r.y*DEG,r.z*DEG,'XYZ');
         for(const child of marker.children)child.scale.setScalar(c.billboardAnchor.size);
@@ -305,10 +334,14 @@
       const n=Number(el('carry'+axis).value);
       if(Number.isFinite(n))point[axis.toLowerCase()]=n;
     }
-    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:state.carryable.handTargets[id].rotation;
-    for(const axis of ['X','Y','Z']){
+    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:state.carryable.handTargets[id]?.rotation;
+    if(rotations)for(const axis of ['X','Y','Z']){
       const n=Number(el('carryR'+axis).value);
       if(Number.isFinite(n))rotations[axis.toLowerCase()]=n;
+    }
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryHitboxS'+axis).value);
+      if(Number.isFinite(n))state.carryable.hitbox.size[axis.toLowerCase()]=Math.max(.01,Math.abs(n));
     }
     if(id==='anchor')state.carryable.billboardAnchor.size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
     for(const axis of ['X','Y','Z']){
@@ -328,7 +361,7 @@
     if(id==='anchor'){
       for(const axis of ['x','y','z'])
         state.carryable.billboardAnchor.rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
-    }else{
+    }else if(id==='left'||id==='right'){
       // A hand's gizmo rotates in canonical side-hand space, so recover the
       // authored local correction instead of baking the ±90° wrist basis.
       handInverse.copy(handTurn[id]).invert();
@@ -343,12 +376,17 @@
   el('carrySelectAnchor').onclick=()=>select('anchor');
   el('carrySelectLeft').onclick=()=>select('left');
   el('carrySelectRight').onclick=()=>select('right');
+  el('carrySelectHitbox').onclick=()=>select('hitbox');
+  el('carryHitboxEnabled').onchange=e=>{
+    state.carryable.hitbox.enabled=!!e.target.checked;
+    refreshGuides();renderControls();queueUndoHistory('carryable hitbox toggle');
+  };
   el('carryEnabled').onchange=event=>{
     state.carryable.enabled=!!event.target.checked;
     queueUndoHistory('carryable toggle');
     renderControls();
   };
-  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ'])
+  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
     el(id).addEventListener('change',fromInputs);
   transform.addEventListener?.('objectChange',fromGizmo);
 
