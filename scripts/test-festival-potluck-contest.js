@@ -47,6 +47,14 @@ assert.equal(ingredientDetails.reduce((total,item)=>total+item.points,0),
   rules.scoreIngredients([{key:'nelkMeat',stars:5},{key:'nelkMayonnaise',stars:3}],defs),
   'visible ingredient points match real contest judging');
 assert(ingredientDetails.every(item=>Object.keys(item.effects).length),'ingredient detail includes actual effects alongside stars');
+const structural = [{key:'nelkMeat',stars:5,contributesEffects:true},{key:'nelkEggs',stars:5,contributesEffects:false}];
+assert.equal(rules.scoreIngredients(structural,defs),
+  rules.ingredientPoints('nelkMeat',5,defs)+rules.ingredientPoints('nelkEggs',5,defs),
+  'structural recipe ingredients still contribute contest points');
+assert.deepEqual(rules.mealEffects(structural,defs),rules.ingredientEffects('nelkMeat',5,defs),
+  'no-buff structural slots are excluded from actual cooked meal effects');
+assert.deepEqual(rules.ingredientBreakdown(structural,defs)[1].effects,{},
+  'ingredient inspector never promises an eating buff for a structural cooking slot');
 window.CookingSystem = { ingredientEffectTotals:(_def,stars)=>({cooking:Number(stars)*7}) };
 assert.equal(rules.ingredientEffects('nelkMeat',4,defs).cooking,28,'the inspector delegates to the initialized cooking system');
 delete window.CookingSystem;
