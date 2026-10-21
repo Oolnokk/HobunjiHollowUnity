@@ -152,6 +152,7 @@
   }
   // The keg hands out a free, already-filled cup whenever asked; a held cup is simply topped up again.
   function takeOrRefillCup() {
+    registerCupProvider();
     if (festival()?.id!=='gorkunash'||!festivalHours()) return fail('The keg is closed.');
     if (heldBowl||seatedMeal) discardFestivalBowl('took-a-cup'); // One vessel in hand at a time.
     const refill = !!heldCup;
@@ -535,6 +536,7 @@
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
     updateDanceInvitation(elapsed);
+    registerCupProvider();
     watchStage();
     window.NpcSharedMeals?.update?.(); // Existing low-frequency gathering tick owns meal decisions; no extra frame loop.
     const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
@@ -596,6 +598,27 @@
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       latestChange:'Whole-PR review: paired dance stops at closing, blocked buffet recovery, transient save-state cleanup, selected donation quality, scaled collision heights and editor texture paths.' };
   }
+  // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
+  let cupProviderRegistered = false;
+  const cupProvider = { // The cup rides the ordinary hold-to-drink, swig-offer, drunkenness and blackout pipeline.
+    current: () => heldCup ? { key:CUP_KEY, def:CUP_DEF, remaining:heldCup.swigs, total:heldCup.capacity, stars:3 } : null,
+    consumeSwig: () => { if (!heldCup || heldCup.swigs < 1) return { ok:false }; heldCup.swigs--; return { ok:true, remaining:heldCup.swigs, total:heldCup.capacity, stars:3 }; },
+    drinkSwig: () => {
+      if (!heldCup || heldCup.swigs < 1) return { ok:false, message:'Your cup is empty. Refill it free at the keg.' };
+      const drink = window.HobunjiAlcohol?.drinkDef?.(CUP_DEF,3,CUP_KEY);
+      if (!drink?.ok) return drink || { ok:false, message:'Nothing to drink.' };
+      heldCup.swigs--;
+      return { ok:true, message:`${drink.message} ${heldCup.swigs}/${heldCup.capacity} swigs left; the keg refills you free.` };
+    },
+    onNpcSwig: id => { addFestivalFun(id,CUP_FUN_PER_SWIG); deps?.save?.(); },
+  };
+  function registerCupProvider() {
+    if (cupProviderRegistered) return;
+    const bridge = window.HobunjiDrunkGameplayBridge;
+    if (!bridge?.registerVirtualDrink) return;
+    bridge.registerVirtualDrink(cupProvider);
+    cupProviderRegistered = true;
+  }
   function init(injected) {
     deps = injected;
     residentCacheAt = -Infinity;
@@ -644,18 +667,7 @@
       clearCup: id => window.NpcDrinkInteraction?.clearAmbientCarry?.(`cup:${id}`),
       playSip: (walker,apply) => window.NpcDrinkInteraction?.playAutonomous?.(walker,CUP_KEY,apply),
     });
-    window.HobunjiDrunkGameplayBridge?.registerVirtualDrink?.({ // The cup rides the ordinary hold-to-drink, swig-offer, drunkenness and blackout pipeline.
-      current: () => heldCup ? { key:CUP_KEY, def:CUP_DEF, remaining:heldCup.swigs, total:heldCup.capacity, stars:3 } : null,
-      consumeSwig: () => { if (!heldCup || heldCup.swigs < 1) return { ok:false }; heldCup.swigs--; return { ok:true, remaining:heldCup.swigs, total:heldCup.capacity, stars:3 }; },
-      drinkSwig: () => {
-        if (!heldCup || heldCup.swigs < 1) return { ok:false, message:'Your cup is empty. Refill it free at the keg.' };
-        const drink = window.HobunjiAlcohol?.drinkDef?.(CUP_DEF,3,CUP_KEY);
-        if (!drink?.ok) return drink || { ok:false, message:'Nothing to drink.' };
-        heldCup.swigs--;
-        return { ok:true, message:`${drink.message} ${heldCup.swigs}/${heldCup.capacity} swigs left; the keg refills you free.` };
-      },
-      onNpcSwig: id => { addFestivalFun(id,CUP_FUN_PER_SWIG); deps?.save?.(); },
-    });
+    registerCupProvider();
     window.FurnitureTableSystem?.registerService?.('gorkunash-drinks', {
       enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
       buttons: () => [{icon:'🍺',label:heldCup ? `Refill cup (${heldCup.swigs}/${heldCup.capacity})` : 'Take a cup',action:'obj_take_cup',style:'primary',allowed:!deps?.isBlocked?.()}],
