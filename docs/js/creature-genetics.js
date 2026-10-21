@@ -40,7 +40,7 @@
     const widths = livestockCfg.animalWidths || (livestockCfg.animalWidths = {}); // Used by farm-animals.js and nursery/incubator previews.
     widths[PUKTUK_KIND] = Number(widths['gar-wolf']) || 1.9;
     const diets = livestockCfg.diet || (livestockCfg.diet = {}); // Used by barn trough feeding rules.
-    diets[PUKTUK_KIND] = 'predator';
+    diets[PUKTUK_KIND] = 'prey'; // Barn fodder remains plant-based; field ecology separately lists buried small-animal food.
     const resources = livestockCfg.resources || (livestockCfg.resources = {}); // Used by the generic livestock collection/cooldown path.
     resources[PUKTUK_KIND] = { itemKey: 'puktukWool', cooldownDays: 1, verb: 'Shear' };
     return true;
@@ -700,6 +700,7 @@
           ...existing,
           label: 'Puktuk',
           hostile: false,
+          diet: 'herbivore', // Ecology's selective protein forage is not general carnivore aggression.
           defaultSizeClass: 'medium',
           modelWidth: 2.1,
           spriteAspect: 0.43636,
@@ -721,14 +722,21 @@
           legacyDrenkirraRemoved++;
         }
       }
+      if (Array.isArray(herbivores) && !herbivores.includes(PUKTUK_KIND)) herbivores.push(PUKTUK_KIND); // Defensive group diggers occupy the grazing pool.
       const packs = westernZone
         ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
-        : null; // General predator ecology; Puktuk remains available outside its explicit den assignment.
-      if (Array.isArray(packs) && !packs.includes(PUKTUK_KIND)) packs.push(PUKTUK_KIND);
+        : null;
+      if (Array.isArray(packs)) {
+        for (let i = packs.length - 1; i >= 0; i--) if (packs[i] === PUKTUK_KIND) packs.splice(i, 1);
+        if (creatureDb?.nelk && !packs.includes('nelk')) packs.push('nelk');
+      }
       const denSpecies = westernZone
         ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
         : null; // Explicit den-only occupants. Future Western Slope den species can be authored here without changing pack/herd ecology.
-      if (Array.isArray(denSpecies) && !denSpecies.includes(PUKTUK_KIND)) denSpecies.push(PUKTUK_KIND);
+      if (Array.isArray(denSpecies)) {
+        if (!denSpecies.includes(PUKTUK_KIND)) denSpecies.push(PUKTUK_KIND);
+        if (creatureDb?.nelk && !denSpecies.includes('nelk')) denSpecies.push('nelk');
+      }
 
       const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator filters den species through this table before it will assign a Den-Mother.
       if (denMotherDefs) {
@@ -739,7 +747,8 @@
           nestItemKey: existingMother.nestItemKey ?? null,
         };
       }
-      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=puktuk belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && Array.isArray(packs) && packs.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
+      if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Nelk joins West dens without inventing collectible hatchlings.
+      window.__farmLog?.(`[puktuk] registered defensive forager species: default=medium sizeProfile=puktuk belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=prey; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && herbivores?.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };
     wildlifeApi.__puktukBootstrapInstalled = true;

@@ -33,7 +33,7 @@ if (typeof document !== 'undefined' && document.readyState === 'loading') {
     };
   }
 
-  const _state = new WeakMap(); // entity -> { nextBlinkAt, shutUntil }
+  const _state = new WeakMap(); // entity -> { nextBlinkAt, shutUntil, eyeVariant } shared by both eye behaviors.
 
   function isShut(entity, nowMs) {
     if (!entity) return false;
@@ -43,16 +43,25 @@ if (typeof document !== 'undefined' && document.readyState === 'loading') {
       const cfg = config();
       // Staggers each creature's very first blink across its own initial
       // window instead of every freshly-spawned creature blinking at once.
-      state = { nextBlinkAt: now + cfg.minIntervalMs + Math.random() * (cfg.maxIntervalMs - cfg.minIntervalMs), shutUntil: 0 };
+      state = { nextBlinkAt: now + cfg.minIntervalMs + Math.random() * (cfg.maxIntervalMs - cfg.minIntervalMs), shutUntil: 0, eyeVariant: 0 };
       _state.set(entity, state);
     }
     if (now >= state.nextBlinkAt) {
       const cfg = config();
       state.shutUntil = now + cfg.durationMs;
+      state.eyeVariant = (state.eyeVariant + 1 + Math.floor(Math.random() * 3)) % 4; // A new direction on every blink event, never identical to the previous one.
       state.nextBlinkAt = state.shutUntil + cfg.minIntervalMs + Math.random() * (cfg.maxIntervalMs - cfg.minIntervalMs);
     }
     return now < state.shutUntil;
   }
 
-  window.CreatureBlink = { isShut };
+  function getVisualState(entity, kind, nowMs) {
+    const shut = isShut(entity, nowMs); // Existing timer remains the single per-instance timing authority.
+    const species = window.CreatureGenetics?.SPECIES_ALIAS?.[kind] || kind;
+    if (window.CreatureGeneticsRender?.SPECIES?.[species]?.eyes?.mode !== 'cycle') return shut;
+    const variant = _state.get(entity)?.eyeVariant ?? 0; // Chameleon eye poses persist between the same timed events as ordinary blinks.
+    return 'ABCD'[variant];
+  }
+
+  window.CreatureBlink = { isShut, getVisualState };
 })();

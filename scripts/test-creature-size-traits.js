@@ -67,7 +67,8 @@ const uumTraits = context.CreatureGenetics.genotypeTraits('uumkaoii', { // Exerc
   fur: { color: '#7a6a58', copies: 2, inheritance: 'dominant' },
   plates: { color: '#c2a56e', copies: 2, inheritance: 'dominant' },
 });
-assert.deepEqual(Array.from(uumTraits.colors, trait => trait.label), ['Fur', 'Plates']);
+assert.deepEqual(Array.from(uumTraits.colors, trait => trait.label), ['Base coat']);
+assert.deepEqual(Array.from(uumTraits.patterns, trait => [trait.label, trait.enabled]), [['Shell', true]]);
 
 const originalRandom = context.Math.random; // Restored after forcing one endpoint mutation through public breeding.
 const rolls = [0.9, 0.9, 0.1, 0.01, 0.1]; // No color mutations; parent A; Size mutates; old endpoint logic would incorrectly stay small.
