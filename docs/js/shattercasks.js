@@ -434,11 +434,7 @@
   }
   function pickUp(cask) {
     if(!cask||cask.exploded||held||cask.mapId!==area())return false;
-    const equipmentMode=window.ActionArcUI?.heldMode?.();
-    if(equipmentMode==='tool'||equipmentMode==='item'){
-      deps()?.showToast?.('Put away your tool or item before picking up a Shattercask.',false);
-      return false;
-    }
+    // The contextual Tool Select press stows whatever is held automatically.
     window.ActionArcUI?.stowForCarry?.();
     held=cask;cask.carried=true;
     alignHeldVase(cask);
