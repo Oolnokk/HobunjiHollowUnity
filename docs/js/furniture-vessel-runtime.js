@@ -383,7 +383,7 @@
   function loadInteriorFireFloorCompanions() {
     if (typeof document === 'undefined') return;
     const currentSrc = document.currentScript?.src || ''; // Resolves sibling scripts correctly in both docs/index.html and the nested Interior Editor bridge.
-    const coreSrc = currentSrc ? new URL('interior-fire-floor-runtime.js?v=20261013he2f7e06', currentSrc).href : 'js/interior-fire-floor-runtime.js?v=20261013he2f7e06';
+    const coreSrc = currentSrc ? new URL('interior-fire-floor-runtime.js?v=20261019h5b64caa', currentSrc).href : 'js/interior-fire-floor-runtime.js?v=20261019h5b64caa';
     const integrationSrc = currentSrc ? new URL('interior-fire-floor-integration.js?v=20261015h8118b82', currentSrc).href : 'js/interior-fire-floor-integration.js?v=20261015h8118b82';
     const hasScript = fileName => [...document.scripts].some(script => script.src && script.src.includes('/' + fileName)); // Avoids duplicate requests if another dev surface explicitly loaded the companions.
     if (document.readyState === 'loading') {

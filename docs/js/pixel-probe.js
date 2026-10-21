@@ -1350,6 +1350,28 @@
         lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
       }
     });
+    // Diagnose the exact failure case from the flooding report: raycast
+    // finds opaque raised grass BEFORE the flood mesh. That geometry cannot
+    // legitimately receive ordinary water-surface color while depthTest=true.
+    // Do not infer pixel ownership from material UV sampling alone; a
+    // postprocess spatial filter can bleed neighboring flood colors across
+    // this depth discontinuity even while the world pass is correct.
+    const firstOpaqueDepthHit = hits.find(hit => hit.object?.visible !== false
+      && (Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material])
+        .some(mat => mat && mat.depthTest !== false && mat.depthWrite !== false
+          && mat.transparent !== true && mat.opacity >= 1));
+    const firstWaterDepthHit = hits.find(hit => hit.object?.visible !== false
+      && (hit.object?.userData?.waterSurfaceRole || hit.object?.userData?.mergedWaterStatKey));
+    if (firstOpaqueDepthHit && firstWaterDepthHit) {
+      const waterBehind = firstWaterDepthHit.distance > firstOpaqueDepthHit.distance + 0.001;
+      lines.push('Water depth at probed pixel: '
+        + (waterBehind ? 'BEHIND OPAQUE SURFACE' : 'in front of or coincident with opaque surface')
+        + ' opaque=' + (firstOpaqueDepthHit.object.name || '(unnamed)')
+        + '@' + firstOpaqueDepthHit.distance.toFixed(3)
+        + ' water=' + (firstWaterDepthHit.object.name || '(unnamed)')
+        + '@' + firstWaterDepthHit.distance.toFixed(3)
+        + (waterBehind ? ' — any remaining flood-colored blotch is not the ordinary depth-tested water fragment; check postprocessing/compositing.' : ''));
+    }
     if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
 
     // Only when this probe actually landed on the player's own avatar

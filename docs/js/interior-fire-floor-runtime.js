@@ -239,7 +239,7 @@
           icon: definition.icon,
           label: definition.name,
           cat: 'furniture',
-          sellPrice: 0,
+          sellPrice: 20 * definition.fw, // Spare placeable fire furniture can be shipped or sold.
           tags: ['Furniture'],
           desc: definition.desc,
         };

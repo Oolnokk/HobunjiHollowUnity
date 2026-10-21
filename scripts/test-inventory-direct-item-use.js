@@ -14,6 +14,7 @@ const inventory = {
   apple: 1,
   combatManualBlinkDodge: 1,
   techniqueScrollTier1: 1,
+  masteryTablet: 1,
   mysteryDyeRed: 1,
   venomFlask: 1,
   breedingGigantism: 1,
@@ -27,6 +28,7 @@ const ITEM_DEFS = {
   apple: { icon: '🍎', label: 'Apple', cat: 'food', healthRestore: 5 },
   combatManualBlinkDodge: { icon: '📕', label: 'Blink Dodge Combat Manual', combatManualAbilityId: 'blinkDodge' },
   techniqueScrollTier1: { icon: '📜', label: 'Tier 1 Technique Scroll', techniqueScrollTier: 1 },
+  masteryTablet: { icon: '🪨', label: 'Test Mastery Tablet', masteryUnlock: { type: 'sharp', rank: 1, effectId: 'test' } },
   mysteryDyeRed: { icon: '🔴', label: 'Red Mystery Dye', mysteryDyePoolId: 'red' },
   venomFlask: { icon: '☠️', label: 'Venom Flask', useMode: 'throw' },
   breedingGigantism: { icon: '🐘', label: 'Breeding Potion of Gigantism', useMode: 'livestock' },
@@ -43,6 +45,7 @@ let reagentEats = 0; // Used to prove raw reagents retain their authored alchemy
 let cookedEats = 0; // Used to prove cooked meals delegate to CookingSystem.
 let manualReads = 0; // Used to prove combat manuals delegate to TechniqueScrolls.
 let scrollReads = 0; // Used to prove technique scrolls delegate to TechniqueScrolls.
+let detailClears = 0; // Used to prove the direct-use panel clears only when its last copy is consumed.
 let dyeUses = 0; // Used to prove mystery dyes delegate to DyeSystem's one mutation path.
 const player = { health: 50, maxHealth: 100, stamina: 60, maxStamina: 100 }; // Used to verify generic food direct-use mirrors held-food restoration.
 
@@ -101,6 +104,7 @@ const windowStub = {
     isPotionOrDrink(key, def) { return def?.useMode === 'drink'; },
     isFood(def) { return def?.cat === 'food'; },
   },
+  CombatProgression: { hasEffectUnlock: () => false, readMasteryItem(key) { if (!(inventory[key] > 0)) return false; inventory[key]--; return true; } },
   TechniqueScrolls: {
     SCROLLS: { 1: { key: 'techniqueScrollTier1' } },
     isUnlocked() { return false; },
@@ -141,7 +145,7 @@ windowStub.EquipmentPanel.init({
   inventory,
   getManualHeldItem: () => manualHeldItem,
   setManualHeldItem: value => { manualHeldItem = value; },
-  clearInventoryDetail: noop,
+  clearInventoryDetail: () => { detailClears++; },
 });
 const itemDeps = {
   inventory,
@@ -165,6 +169,7 @@ assert.equal(api.getInventoryUseAction('cookedStew')?.kind, 'cookedFood', 'cooke
 assert.equal(api.getInventoryUseAction('apple')?.kind, 'food', 'ordinary food exposes direct Eat');
 assert.equal(api.getInventoryUseAction('combatManualBlinkDodge')?.kind, 'combatManual', 'combat manuals expose direct Read');
 assert.equal(api.getInventoryUseAction('techniqueScrollTier1')?.kind, 'techniqueScroll', 'technique scrolls expose direct Read');
+assert.equal(api.getInventoryUseAction('masteryTablet')?.kind, 'masteryUnlock', 'mastery tablets expose direct Read');
 assert.equal(api.getInventoryUseAction('mysteryDyeRed')?.kind, 'mysteryDye', 'mystery dyes expose direct Use');
 assert.equal(api.getInventoryUseAction('venomFlask'), null, 'throwing flasks remain Hold/aim only');
 assert.equal(api.getInventoryUseAction('breedingGigantism'), null, 'livestock potions remain Hold/target only');
@@ -213,6 +218,13 @@ assert.deepEqual(manualHeldItem, { kind: 'bagItem', key: 'redberrySeeds' }, 'dir
 assert.equal(api.useInventoryItem('techniqueScrollTier1'), true);
 assert.equal(scrollReads, 1);
 assert.deepEqual(manualHeldItem, { kind: 'bagItem', key: 'redberrySeeds' }, 'direct scroll reading also preserves the previous Hold state');
+const priorDetailClears = detailClears; // Used to verify the final mastery tablet does not leave a stale selected item.
+assert.equal(api.useInventoryItem('masteryTablet'), true);
+assert.equal(inventory.masteryTablet, 0, 'direct mastery reading consumes its last copy');
+assert.equal(detailClears, priorDetailClears + 1, 'a successful final-copy mastery read clears stale Inventory detail');
+manualHeldItem = { kind: 'bagItem', key: 'masteryTablet' };
+assert.equal(api.clearExhaustedBagHold('masteryTablet'), true, 'exhausted manual Hold can be cleared explicitly');
+assert.equal(manualHeldItem, null, 'the empty held stack is no longer selected');
 assert.equal(api.useInventoryItem('mysteryDyeRed'), true);
 assert.equal(dyeUses, 1);
 

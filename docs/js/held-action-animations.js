@@ -217,7 +217,7 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261017h4231af4', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261019h6344309', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261019h8ec8350', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261020hf492753', docsBase).href,
@@ -233,7 +233,7 @@
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20261005hce195f1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20261001c0bd7bbe', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20261019h611c43d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
   } else if (!isAnimationAuthor) {

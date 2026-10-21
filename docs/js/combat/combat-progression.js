@@ -297,7 +297,7 @@
     for (const effect of effectCatalog.values()) for (const type of effect.types) for (let rank = 1; rank <= 5; rank++) for (const form of ['tablet', 'scroll']) {
       const key = itemKey(type, rank, effect.id, form); // Deterministic item key lets ordinary inventory/world saves retain the precise lesson.
       const label = `${effect.label} — ${type === 'blunt' ? 'Blunt' : 'Sharp'} Mastery ${rank} ${form === 'scroll' ? 'Scroll' : 'Tablet'}`; // Used by loot toasts and inventory details.
-      deps.ITEM_DEFS[key] = { ...deps.ITEM_DEFS[key], icon: form === 'scroll' ? '📜' : '🪨', label, cat: 'material', sellPrice: 25 * rank, tags: ['Mastery', 'Combat', 'Reusable'], masteryUnlock: { type, rank, effectId: effect.id }, desc: `${effect.desc} Read to permanently unlock this bonus at Mastery ${rank} for all ${type} melee weapons. Reusable; applying it to weapons does not consume this item or the unlock.` };
+      deps.ITEM_DEFS[key] = { ...deps.ITEM_DEFS[key], icon: form === 'scroll' ? '📜' : '🪨', label, cat: 'material', sellPrice: 75 + 65 * rank, tags: ['Mastery', 'Combat', 'Consumable'], masteryUnlock: { type, rank, effectId: effect.id }, desc: `${effect.desc} Read to permanently unlock this bonus at Mastery ${rank} for all ${type} melee weapons. Reading consumes one copy; the learned bonus is permanent and works on all matching weapons.` };
       if (!known.has(key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon, label: label.toUpperCase(), max: 99 });
     }
   }
@@ -306,9 +306,20 @@
     const lesson = itemDeps?.ITEM_DEFS?.[key]?.masteryUnlock; // Only an actual owned registered item can teach an unlock.
     if (!lesson || !(Number(itemDeps?.inventory?.[key]) > 0) || !validUnlock(lesson.type, lesson.rank, lesson.effectId) || hasEffectUnlock(lesson.type, lesson.rank, lesson.effectId)) return false;
     effectUnlocks.add(unlockKey(lesson.type, lesson.rank, lesson.effectId));
-    lastUnlockEvent = { kind: 'learned', ...lesson, key };
+    itemDeps.inventory[key] = Math.max(0, Number(itemDeps.inventory[key]) - 1); // Consume exactly one successful mastery read, never a known or invalid lesson.
+    itemDeps.clampInventoryStack?.(key);
+    if (!(itemDeps.inventory[key] > 0)) {
+      const cleared = window.InventoryHeldOverride?.clearExhaustedBagHold?.(key); // The Hold owner also restores the previous wheel selection on last-copy reads.
+      if (!cleared) {
+        const manualHeld = itemDeps.getManualHeldItem?.(); // Compatibility fallback before the Hold owner is installed.
+        if (manualHeld?.kind === 'bagItem' && manualHeld.key === key) itemDeps.setManualHeldItem?.(null);
+      }
+    }
+    lastUnlockEvent = { kind: 'learned', ...lesson, key, consumed: 1, remaining: Number(itemDeps.inventory[key]) || 0 };
     persist();
     itemDeps.showToast?.(`Learned ${itemDeps.ITEM_DEFS[key].label}. Available on all ${lesson.type} melee weapons.`, true);
+    itemDeps.buildInventoryGrid?.();
+    itemDeps.refreshItemScroll?.();
     itemDeps.saveMemberWorldData?.();
     itemDeps.refreshActionBar?.();
     window.InventoryHeldOverride?.refreshInventoryUseButton?.();

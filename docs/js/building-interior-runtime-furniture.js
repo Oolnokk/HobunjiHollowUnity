@@ -3,8 +3,8 @@
 
   if (window.BuildingInteriorRuntimeFurniture) return;
 
-  const AUTHORED_RUNTIME_URL = '../../js/authored-furniture-runtime.js?v=20261019h0a80a02'; // Used to load the same authored furniture group builder as gameplay.
-  const VESSEL_RUNTIME_URL = '../../js/furniture-vessel-runtime.js?v=20261019h8231811'; // Used to install gameplay's live procedural-to-authored furniture upgrade wrapper.
+  const AUTHORED_RUNTIME_URL = '../../js/authored-furniture-runtime.js?v=20261013h8710218'; // Used to load the same authored furniture group builder as gameplay.
+  const VESSEL_RUNTIME_URL = '../../js/furniture-vessel-runtime.js?v=20261019h2608b08'; // Used to install gameplay's live procedural-to-authored furniture upgrade wrapper.
   const AUTHORED_CONFIG_BASE = '../../config/furniture-authored/'; // Used to resolve authored furniture JSON correctly from this nested editor page.
   const RUNTIME_TEXTURE_PREFIX = 'assets/textures/'; // Used to recognize game-root-relative furniture texture requests emitted by ProceduralFurniture.
   const EDITOR_TEXTURE_PREFIX = '../../assets/textures/'; // Used to redirect those texture requests to docs/assets/textures from the nested editor.

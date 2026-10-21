@@ -223,7 +223,7 @@
     if (authored) return { key, pose: authored };
     return choice?.idleClass === 'heavy'
       ? { key, pose: { x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 } }
-      : { key, pose: { x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 } };
+      : { key, pose: { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 } };
   }
 
   function applyPoseQuaternion(THREE, object, pose) {

@@ -426,7 +426,8 @@
         }
       `,
       transparent: true,
-      depthWrite: false,
+      depthTest: true, // Floodwater physically behind raised grass MUST fail the opaque ground depth test.
+      depthWrite: false, // Keep translucent water over objects that are genuinely below the surface.
       side: THREE.FrontSide,
     });
 

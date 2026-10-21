@@ -23,6 +23,7 @@ const offscreenX = new Set(); // Anchor x positions the stub frustum reports as 
 
 function buildContext() {
   const registered = new Map();
+  const clock = { now: 1000 }; // Controls hit and animation timestamps for impact lifecycle checks.
   const context = {
     console, Math, Number, String, Object, Array, Set, WeakMap, JSON, URLSearchParams,
     window: null,
@@ -37,7 +38,7 @@ function buildContext() {
       },
       body: null,
     },
-    performance: { now: () => 1000 },
+    performance: { now: () => clock.now },
     location: { search: '' },
     THREE: {
       Vector3: class Vector3 { set() { return this; } copy(v) { this.x = v?.x; return this; } applyQuaternion() { return this; } addScaledVector() { return this; } },
@@ -47,13 +48,13 @@ function buildContext() {
       Sprite: class Sprite {
         constructor(material) {
           this.material = material;
-          this.scale = { set() {} };
+          this.scale = { set(x, y) { this.x = x; this.y = y; } };
           this.position = { copy() {}, lerp() {} };
           this.userData = {};
           this.parent = null;
         }
       },
-      SpriteMaterial: class SpriteMaterial { constructor(opts) { Object.assign(this, opts); this.color = { setRGB() {} }; } },
+      SpriteMaterial: class SpriteMaterial { constructor(opts) { Object.assign(this, opts); this.color = { setRGB(...rgb) { this.rgb = rgb; }, setHex(hex) { this.hex = hex; } }; } },
       CanvasTexture: class CanvasTexture {},
       TextureLoader: class TextureLoader { load() {} },
       LinearFilter: 1,
@@ -78,11 +79,12 @@ function buildContext() {
   context.WorldPopupText = { avatarCentroidWorld: () => ({ x: 0, y: 1, z: 0 }) };
 
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync('docs/js/combat/combat-attack-events.js', 'utf8'), context);
   vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator.js' });
-  return { context, registered };
+  return { context, registered, clock };
 }
 
-const { context, registered } = buildContext();
+const { context, registered, clock } = buildContext();
 
 const entry = registered.get('quick-attack-bonus-indicator');
 assert(entry, 'registers with the scheduler under a stable id');
@@ -92,7 +94,7 @@ assert.equal(entry.options.owner, 'QuickAttackBonusIndicator');
 // The scheduled callback still drives the full readiness/reticle pipeline.
 const scheduledFrame = entry.fn;
 const deps = context.Combat.deps; // Mutated dependency fixture.
-const scene = { isScene: true, add() {} }; // One live scene every test hostile is shown in.
+const scene = { isScene: true, children: new Set(), add(sprite) { this.children.add(sprite); sprite.parent = this; }, remove(sprite) { this.children.delete(sprite); sprite.parent = null; } }; // Track attached layers through pooling and pop cleanup.
 function hostile(id, x, extra = {}) {
   return {
     id, x, y: 0, health: 10, areaId: 'test',
@@ -191,6 +193,47 @@ assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, 'di
 deps.isDialogueOpen = () => false;
 scheduledFrame({ timestamp: 1144 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'cue recovers after suppression ends');
+
+// Use the real event bus: only an authoritative bonus proc can pop a cue.
+context.ResourceRings = { AFFLICTION_COLORS: { bleeding: 0xe02030, venom: 0x40cc20 } }; // Matches the runtime's packed-hex palette.
+context.CombatProgression = { getEffects: () => ({ quickBonusAfflictions: { bleeding: 1, venom: 1 } }) };
+deps.currentWeaponKey = () => 'test-weapon';
+clock.now = 2000;
+scheduledFrame({ timestamp: clock.now });
+const glowLayers = [...scene.children].filter(sprite => sprite.name.includes('_glow_')); // Inspect actual material colors and animation rather than source text.
+assert.equal(glowLayers[0].material.color.hex, 0xe02030, 'first readiness glow uses the canonical affliction color');
+assert.equal(glowLayers[1].material.color.hex, 0x40cc20, 'second readiness glow uses the next applied affliction color');
+assert.ok(glowLayers[0].material.opacity > 0.5, 'readiness glow is visibly brighter');
+const event = { attackCategory: 'quickAttack', target: near, quickConditionalBonus: true, quickBonusEffectProc: false, afflictionBonuses: { venom: 1 } }; // A condition alone is insufficient during cooldown.
+context.CombatAttackEvents.hit(event);
+assert.equal(context.QuickAttackBonusIndicator.snapshot().poppingTargetIds.length, 0, 'condition without a proc never bursts');
+context.CombatAttackEvents.hit({ ...event, attackCategory: 'combo', quickBonusEffectProc: true });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().poppingTargetIds.length, 0, 'other attack categories never burst');
+context.CombatAttackEvents.hit({ ...event, quickBonusEffectProc: true });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().poppingTargetIds], ['near'], 'confirmed quick bonus starts its impact');
+assert.equal(glowLayers[0].material.color.hex, 0x40cc20, 'impact layers use the actual hit afflictions');
+assert.equal(glowLayers[0].material.opacity, 1, 'impact flashes brightly on the hit frame');
+const initialPopSize = glowLayers[0].scale.x; // Later frames must expand beyond the initial inward snap.
+near.health = 0;
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 2;
+clock.now += 120;
+scheduledFrame({ timestamp: clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'killing blow and cooldown preserve the burst');
+assert.ok(glowLayers[0].scale.x > initialPopSize * 2, 'impact expands dramatically');
+assert.ok(glowLayers[0].material.opacity < 1, 'impact fades as it expands');
+clock.now += 400;
+scheduledFrame({ timestamp: clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'expired burst releases all layers');
+assert.equal(scene.children.size, 0, 'expired layers detach from the scene');
+near.health = 10;
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 0;
+scheduledFrame({ timestamp: ++clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().poppingTargetIds.length, 0, 'pooled sights reset impact state');
+context.CombatAttackEvents.hit({ ...event, quickBonusEffectProc: true });
+deps.isDialogueOpen = () => true;
+scheduledFrame({ timestamp: ++clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'dialogue immediately suppresses an active impact');
+deps.isDialogueOpen = () => false;
 
 // A throwing readiness/render pass must still detach the reticle and record
 // its own error snapshot, exactly like the old try/catch inside frame().

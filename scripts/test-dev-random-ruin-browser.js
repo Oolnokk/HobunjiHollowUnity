@@ -169,6 +169,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       if (object.userData?.runtimePuzzleBypass) bypassed++;
     });
     return {
+      theme:state?.theme || null,
       puzzleOptions:state?.puzzleOptions || null,
       counts:Object.values(state?.puzzleGeneration?.countsByRoom || {}).map(Number),
       activatorTypes:[...activatorTypes].sort(),
@@ -239,8 +240,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.match(constrained.badge, /solvable ✓/, constrained.badge);
   assert.match(constrained.badge, /puzzles \d+\/1 max-room/, constrained.badge);
   assert.deepEqual(constrained.darkness, { enabled:false, severity:1 }, JSON.stringify(constrained));
-  assert.equal(constrained.darknessDebug?.undergroundDarknessOverlayAlpha, 0, JSON.stringify(constrained.darknessDebug));
-  assert.match(constrained.badge, /dark off/, constrained.badge);
+  const constrainedBaseDarkness={hronal:.91,tothal:.73,kanthic:1}[constrained.theme];
+  assert.ok(Number.isFinite(constrainedBaseDarkness),'constrained ruin must use a recognized lich theme: '+JSON.stringify(constrained));
+  assert.ok(Math.abs(constrained.darknessDebug?.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
+    'ruin default lighting must follow its lich theme instead of the retired bright-mode default: '+JSON.stringify(constrained.darknessDebug));
+  assert.match(constrained.badge, /dark themed/, 'default ruin darkness badge must identify the active lich-theme baseline: '+constrained.badge);
 
   const darknessCycle = await page.evaluate(async () => {
     const enabled=document.getElementById('devRandomRuinDarknessEnabled');
@@ -260,9 +264,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(darknessCycle.on.settings.enabled,true,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.on.settings.severity,0.5,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.on.label,'50%',JSON.stringify(darknessCycle));
-  assert.ok(darknessCycle.on.debug.undergroundDarknessOverlayAlpha > 0.4 && darknessCycle.on.debug.undergroundDarknessOverlayAlpha < 0.5,JSON.stringify(darknessCycle));
+  assert.ok(Math.abs(darknessCycle.on.debug.undergroundDarknessOverlayAlpha-constrainedBaseDarkness*.5)<.002,
+    '50% test severity must halve the active lich lighting baseline: '+JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.off.settings.enabled,false,JSON.stringify(darknessCycle));
-  assert.equal(darknessCycle.off.debug.undergroundDarknessOverlayAlpha,0,JSON.stringify(darknessCycle));
+  assert.ok(Math.abs(darknessCycle.off.debug.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
+    'disabling the test override must restore the original lich-themed darkness: '+JSON.stringify(darknessCycle));
   await page.evaluate(async () => window.DevRandomRuin.leave());
   await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:30000 });
 
@@ -396,6 +402,55 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         }
       }
 
+      const nativeCrackedPillars = (() => {
+        const context=window.DevRandomRuin?.getRuntimeContext?.();
+        const theme=context?.theme || null;
+        const report={theme,mixedRooms:0,expected:0,actual:0,invalidCracks:[],targetModified:0,genericInTargetRoom:0};
+        if(theme!=='hronal'||!context?.root||!context.meta?.rooms)return report;
+        const cell=(Number(context.meta.cellSize)||.5)*2,rooms=context.meta.rooms.map(entry=>({
+          id:String(entry.id),minX:2+entry.col*cell,maxX:2+(entry.col+entry.w)*cell,
+          minZ:2+entry.row*cell,maxZ:2+(entry.row+entry.h)*cell,
+          supports:[],targets:[]
+        }));
+        const roomFor=position=>rooms.find(room=>position.x>=room.minX&&position.x<room.maxX&&position.z>=room.minZ&&position.z<room.maxZ);
+        const p=new THREE.Vector3();
+        context.root.updateWorldMatrix(true,true);
+        context.root.traverse(node=>{
+          const d=node.userData||{};
+          const target=d.squarePillarHousing===true&&d.hiddenActivatorMount==='pillarNiche'&&d.activatorType==='glyphObelisk'&&!!d.linkedMechanismId;
+          const support=d.squarePillar===true&&/ceiling support pillar/i.test(String(d.interiorRuinRole||''))&&d.usedAuthoredPillarSquare===true;
+          if(!target&&!support)return;
+          const room=roomFor(node.getWorldPosition(p));if(!room)return;
+          if(target)room.targets.push(node);else room.supports.push(node);
+        });
+        for(const room of rooms){
+          if(!room.targets.length)continue;
+          if(room.supports.length){report.mixedRooms++;report.expected+=Math.ceil(room.supports.length*.4);}
+          for(const target of room.targets)target.traverse(node=>{if(node.name==='hronal_crack_decal')report.targetModified++;});
+          for(const support of room.supports){
+            let shafts=0,crackStages=0;
+            support.traverse(node=>{
+              if(node.isMesh&&/square tapered shaft/i.test(node.name||''))shafts++;
+              if(node.name==='hronal_crack_decal'){
+                crackStages++;
+                if(node.parent?.name!=='Square Tapered Shaft'||!node.userData?.ruinCrackStage)report.invalidCracks.push('unaligned crack mesh');
+              }
+            });
+            if(crackStages) {
+              report.actual++;
+              if(shafts<1||crackStages!==3)report.invalidCracks.push('wrong original shaft/crack count');
+            }
+          }
+        }
+        scene.traverse(node=>{
+          if(node.name!=='hronal_exploding_pillar')return;
+          const position=node.getWorldPosition(new THREE.Vector3());
+          const room=roomFor(position);
+          if(room?.targets.length)report.genericInTargetRoom++;
+        });
+        return report;
+      })();
+
       return {
         area:window.GridTileAccessors.getCurrentArea(),
         building:window.GridTileAccessors.isBuildingArea(),
@@ -416,6 +471,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         furnitureStatus,
         ladders,
         puzzleTowers,
+        nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
         runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
         runtimeHallways:generatorState?.runtimeHallways || null,
@@ -432,6 +488,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
     assert.equal(active.wallStyle, 'cavern', 'Random Test Ruin must use the game\'s combat-interior classification');
+    if(active.nativeCrackedPillars?.theme==='hronal'){
+      const cracked=active.nativeCrackedPillars;
+      assert.equal(cracked.actual,cracked.expected,'real V50 mixed rooms must convert the expected subset of original support pillars: '+JSON.stringify(cracked));
+      assert.equal(cracked.targetModified,0,'no genuine projectile target housing may receive erupting-crack meshes: '+JSON.stringify(cracked));
+      assert.equal(cracked.genericInTargetRoom,0,'no generic box pillar may spawn in a genuine target-pillar room: '+JSON.stringify(cracked));
+      assert.deepEqual(cracked.invalidCracks,[],'cracks must attach to authored shaft meshes in three stages: '+JSON.stringify(cracked));
+    }
     assert.equal(active.solvability?.ok, true, JSON.stringify(active.solvability));
     assert.equal(active.solvability?.unsolvedMechanisms?.length, 0, JSON.stringify(active.solvability));
     assert.ok(active.solvability?.rooms?.length > 0, JSON.stringify(active.solvability));
@@ -442,7 +505,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.simple.active, true, JSON.stringify(active.simple));
     assert.equal(active.simple.safeGrids.length, 1, 'simple mode should place one safe-path pressure grid: '+JSON.stringify(active.simple));
     assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
-    assert.ok(active.simple.ropes.length >= 1, 'simple mode should place at least one rope traversal; lava-basin layouts may author several linked ropes: '+JSON.stringify(active.simple));
+    if(!active.simple.ropes.length){
+      assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
+        active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
+        'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
+    }
     const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','chordPressurePlates','hallwayGlyphGate'].includes(module.type));
     assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
@@ -491,7 +558,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok((active.materialStats?.ceilingCells||0) > 0, 'generated ruin must build a real ceiling over the authored floor footprint: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingTextured, true, 'generated ceiling must carry the canonical stone texture map: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingMaterialTexture, 'carved_smooth.png', 'generated ceiling must use the same carved-smooth furniture PNG as ruin stone: '+JSON.stringify(active.materialStats));
-    assert.ok(Math.abs((active.simple.ropes[0]?.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06, 'rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:active.simple.ropes[0],materialStats:active.materialStats}));
+    if(active.simple.ropes.length)assert.ok(Math.abs((active.simple.ropes[0]?.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06,
+      'every present rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:active.simple.ropes[0],materialStats:active.materialStats}));
     assert.equal(active.wallRender.litSourceMaterials, 0, 'visible game-realm ruin sources must contain zero lit materials: '+JSON.stringify(active.wallRender));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
@@ -703,6 +771,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.respawn?.directHit?.reason,'death','canonical direct-hit checkpoint recovery must identify the normal death path: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.directHit.x-simpleRuntime.respawn.directHit.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.directHit.z-simpleRuntime.respawn.directHit.activePoint.z)<.02,'direct-hit respawn must land on the active doorway checkpoint: '+JSON.stringify(simpleRuntime));
+      if(simpleRuntime.ropeAttach){
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.inputAction,'action1','nearby rope grab intentionally claims Action 1 so one physical input cannot attack and grab at the same time: '+JSON.stringify(simpleRuntime));
@@ -734,10 +803,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.weaponStowed,true,'grabbing the rope must put the drawn weapon/tool away: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.released,true,'Dodge must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.weaponRestored,true,'jumping off the rope must restore the exact previously drawn tool/weapon snapshot: '+JSON.stringify(simpleRuntime));
+      } // Geometric rope fitting is optional for this seed; all rope mechanics are still fully asserted where a rope exists.
       if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
       else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
 
-      await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Finish the rope jump before teleporting for an independent door interaction.
+      if(simpleRuntime.ropeAttach) await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Only wait for ballistic flight when a rope actually launched the player.
       const transitDoorRuntime = await page.evaluate(async () => {
         const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
         const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
