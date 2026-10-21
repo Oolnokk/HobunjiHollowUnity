@@ -642,17 +642,32 @@
     if(target?.type==='pile')return collectPile(target.obj);
     return false;
   }
-  // Tool Select itself becomes Pick Up when the player faces a nearby vase.
-  function toolArchAction() {
-    if(held)return null;
-    const target=nearInteraction(),p=playerPosition();
-    if(target?.type!=='vase'||!p)return null;
-    const dx=target.obj.col+.5-p.x,dz=target.obj.row+.5-p.z,dist=Math.hypot(dx,dz);
-    return dist<.3||Math.cos(p.angle)*dx/dist+Math.sin(p.angle)*dz/dist>.25?'pickup':null;
+  // Choose a live physical Shattercask in the look cone; closer rubble
+  // must not steal the context action from the object under the reticle.
+  function facedShattercask() {
+    const p=playerPosition(),rec=records.get(area());
+    if(!p||!rec)return null;
+    const ray=deps()?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.();
+    const forward=ray?.direction
+      ?{x:Number(ray.direction.x)||0,z:Number(ray.direction.z)||0}
+      :{x:Math.cos(p.angle),z:Math.sin(p.angle)};
+    const origin=ray?.origin||{x:p.x,z:p.z};
+    const mag=Math.hypot(forward.x,forward.z)||1;
+    let result=null,closest=1.65;
+    for(const cask of rec.vases.values()){
+      if(cask.exploded||cask.carried||cask.flying)continue;
+      const dx=cask.col+.5-p.x,dz=cask.row+.5-p.z,d=Math.hypot(dx,dz);
+      if(d>=closest)continue;
+      const vx=cask.col+.5-origin.x,vz=cask.row+.5-origin.z;
+      const toward=Math.hypot(vx,vz)||1;
+      const cosine=(forward.x*vx+forward.z*vz)/(mag*toward);
+      if(d>.3&&cosine<(ray?.direction?.x!=null?.75:.25))continue;
+      result=cask;closest=d;
+    }
+    return result;
   }
-  function toolArchTap() {
-    return toolArchAction()==='pickup'&&pickUp(nearInteraction()?.obj);
-  }
+  function toolArchAction(){return !held&&facedShattercask()?'pickup':null;}
+  function toolArchTap(){return toolArchAction()==='pickup'&&pickUp(facedShattercask());}
   let lastToolArchAction=null;
   function syncToolArchPickup() {
     if(typeof document==='undefined')return;
