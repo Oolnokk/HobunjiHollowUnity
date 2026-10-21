@@ -899,7 +899,7 @@
       return false;
     }
     const reweaveItems = allReweaveItems.filter(item => advanced || !weavingHasOverpass(item.weaving)); // Simple Loom never offers a garment whose second saved pattern it cannot edit.
-    const reweaveItem = reweaveUid ? reweaveItems.find(item => item.uid === reweaveUid) || null : null;
+    const reweaveItem = reweaveUid ? reweaveItems.find(item => item.uid === reweaveUid) || null : (!blueprints.length ? reweaveItems[0] || null : null); // A player with only the prize can still edit its cloth cap by opening the loom.
     const isReweave = !!reweaveItem;
     if (!isReweave && !blueprints.length && !reweaveItems.length) {
       equipmentDeps?.showToast?.('Obtain a cloth garment before using it as a loom template.', false);
@@ -1416,10 +1416,10 @@
       return false;
     }
 
+    if (isReweavableClothComponent(item) && !primaryDye) { equipmentDeps?.showToast?.('Choose a cap dye first.', false); return false; }
     inventory[material.itemKey] -= cost;
     equipmentDeps?.clampInventoryStack?.(material.itemKey);
     if (isReweavableClothComponent(item)) {
-      if (!primaryDye) { equipmentDeps?.showToast?.('Choose a cap dye first.', false); return false; }
       item.colorA = window.DyeSystem.toClothingColor(primaryDye); // Faceguard has no dye channel; this changes only the cap's palette A.
     }
     item.weaving = weavingHasAnyDecoration(weaving) ? clone(weaving) : null;
@@ -1795,6 +1795,7 @@
       colorB: clothingColorHex(item?.colorB, clothingColorHex(item?.colorA)),
       colorC: clothingColorHex(item?.colorC),
       weaving: weaving?.layers ? { layers: resolvedLayers, trim: weaving?.trim || null } : { pattern: weaving?.pattern || null, patterns: weaving?.patterns || null, trim: weaving?.trim || null },
+      metalState: isReweavableClothComponent(item) ? window.MetalArmorSystem?.portraitStateForItem?.(item) : null, // Composite-icon cache differentiates alloy, Temper and plating.
     }; // Resolves library-backed motifs into the key so editing a saved pattern invalidates its icon without touching every garment instance.
     return JSON.stringify(visual);
   }
@@ -1805,7 +1806,8 @@
   // rebuilds only reuse a data URL and never composite patterns every frame.
   async function iconSpriteForCosmetic(item, fallbackSprite = null) {
     const id = baseCosmeticId(item);
-    if (id && weavingHasAnyDecoration(item?.weaving)) {
+    const hybrid = isReweavableClothComponent(item); // Mixed material requires full final icon composition even without a woven pattern.
+    if (id && (weavingHasAnyDecoration(item?.weaving) || hybrid)) {
       const cacheKey = wovenIconVisualKey(item);
       if (!wovenIconDataUrlPromises.has(cacheKey)) {
         wovenIconDataUrlPromises.set(cacheKey, renderClothingLayers(id, {
@@ -1814,6 +1816,7 @@
           patternHex: clothingColorHex(item?.colorC),
           weaving: item.weaving,
           view: 'front',
+          metalItem: hybrid ? item : null, // Metal finish is sourced from the actual helmet, never a generic alloy default.
         }).then(({ canvas }) => {
           if (!canvas) return null;
           try { return canvas.toDataURL('image/png'); } catch (_) { return null; }

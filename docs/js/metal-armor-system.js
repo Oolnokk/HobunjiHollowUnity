@@ -899,6 +899,7 @@
       processedVisualCacheSize: processedLayerUrlPromises.size,
       portraitAssetResolverReady: typeof window.resolvePortraitAssetUrl === 'function', // Pixel Probe exposes whether metal source art can resolve through the portrait asset root.
       portraitResolution: Object.fromEntries(portraitResolutionDebug),
+      hybridHelmRules: { id: HELM_BLUEPRINT_ID, woolCost: HELM_WOOL_COST, woolVariants: HELM_WOOL_VARIANTS, townEligibleMetal: (deps?.VERDIGRIS_METAL_KEYS || []).filter(key => DENSITY_G_CM3[key] && (window.TownMine?.filterMetalKeysForTownValue?.(deps.VERDIGRIS_METAL_KEYS, window.TownMine?.getTownValue?.()) || deps.VERDIGRIS_METAL_KEYS).includes(key)) }, // Pixel Probe/mobile debugging reveals smith recipes and chest-eligible alloys.
       worn: worn.map(item => ({
         uid: item.uid,
         blueprintId: baseCosmeticId(item),
