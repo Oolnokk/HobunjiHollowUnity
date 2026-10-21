@@ -202,8 +202,9 @@ const upgraded = api.feastDishDetails(6);
 assert.equal(upgraded.score,previousScore,'migrating previous saves never rerolls the donated meal score');
 assert.equal(upgraded.ingredientDetails[0].stars,5,'legacy input quality is retained');
 assert.equal(upgraded.ingredientDetails[1].points,3,'structural ingredients continue to count in judging');
-assert.deepEqual(upgraded.ingredientDetails[1].effects,{},'legacy no-buff slots do not advertise eating effects');
-assert.deepEqual(upgraded.foodEffects,{vigor:2},'legacy donated meal retains the original cooked eating buff total');
+assert.equal(Object.keys(upgraded.ingredientDetails[1].effects).length,0,'legacy no-buff slots do not advertise eating effects');
+assert.equal(upgraded.foodEffects.vigor,2,'legacy donated meal retains the original cooked eating buff total');
+assert.equal(Object.keys(upgraded.foodEffects).length,1,'legacy eating buff has no extra effects');
 assert.equal(api.serialize().potluckContests[originalContest].entry.ingredients[1].contributesEffects,false,'migration persists reconstructed slot provenance');
 
 civilDay++;
