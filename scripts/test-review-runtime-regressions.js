@@ -109,6 +109,7 @@ async function testLoomInitialization() {
       equipmentDeps: { inventory: { wool: 10 } },
       injectStyles() {}, currentBlueprints: () => [{ baseCosmeticId: 'tunic', slot: 'torso' }],
       gearInventory: () => ({ clothingItems: [item] }), isCraftableCloth: () => true,
+      isReweavableClothComponent: () => false, // Isolated ordinary-tunic fixture still exposes the shared loom's new hybrid-cap predicate.
       ownedGlobalDyes: () => [dye], baseCosmeticId: () => 'tunic', articleLabel: () => 'Tunic',
       materialForReweaveItem: () => ({ id: 'light', itemKey: 'wool', label: 'Light Wool' }),
       dyeOptionHtml: () => '', patternLibraryEntries: () => [],
