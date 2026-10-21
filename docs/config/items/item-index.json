@@ -1438,5 +1438,23 @@
     "label": "Replica Helm of Bzabag",
     "icon": "🪖",
     "cat": "clothing"
+  },
+  "cloudSaffron": {
+    "key": "cloudSaffron",
+    "label": "Cloud Saffron",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "starpepper": {
+    "key": "starpepper",
+    "label": "Starpepper",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "nightCardamom": {
+    "key": "nightCardamom",
+    "label": "Night Cardamom",
+    "icon": "🌶️",
+    "cat": "ingredient"
   }
 }
