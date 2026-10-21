@@ -58,10 +58,18 @@
       || (window.SCRATCHBONES_CONFIG?.game?.romance?.likes?.[rec.id] || []).length > 0);
   }
   function contestIngredients(definition, stars) {
-    if (Array.isArray(definition?.festivalIngredientQuality) && definition.festivalIngredientQuality.length)
-      return { ingredients:definition.festivalIngredientQuality.map(item=>({key:item.key,stars:item.stars})), estimated:false };
-    // Meals cooked before the ingredient-quality snapshot existed can show only estimated tiers.
-    return { ingredients:(definition?.ingredientKeys || []).map(key=>({key,stars})), estimated:true };
+    const exact = Array.isArray(definition?.festivalIngredientQuality) && definition.festivalIngredientQuality.length;
+    const entries = exact ? definition.festivalIngredientQuality : (definition?.ingredientKeys || []).map(key=>({key,stars})); // Legacy dishes know their ingredient keys but not their input tiers.
+    const recipe = window.HobunjiCookingData?.recipes?.find(item=>item.id === definition?.recipeId); // Restore structural/no-buff slot rules for old cooked item definitions.
+    const orderedSlots = recipe?.slots?.length === entries.length ? recipe.slots : null;
+    const ingredients = entries.map((item,index) => {
+      const slot = recipe?.slots?.find(candidate => candidate.id === item.slotId) || orderedSlots?.[index];
+      return {key:item.key,stars:item.stars,slotId:item.slotId || slot?.id,
+        contributesEffects:typeof item.contributesEffects === 'boolean' ? item.contributesEffects : slot?.contributesEffects !== false};
+    }); // True input-star data is preserved, and the original cooking recipe decides whether each ingredient grants a buff.
+    return {ingredients,estimated:!exact,
+      estimatedEffects:ingredients.some((item,index)=>entries[index]?.contributesEffects === undefined &&
+        !(entries[index]?.slotId || orderedSlots))}; // Warn when the original slot's behavior cannot be reconstructed.
   }
   function contestData() {
     const key = year() + ':gorkunash'; // Stable seven-day result is member/world-owned and survives all sleeps and reloads.
@@ -84,7 +92,21 @@
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
         score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,deps.getItemDefs()),
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
-        foodEffects:{...(definition.foodEffects||{})} };
+        estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition.foodEffects||{})} };
+      deps?.save?.();
+    }
+    if (contest?.entry && (!Array.isArray(contest.entry.ingredients) ||
+        contest.entry.ingredients.some(item=>typeof item.contributesEffects !== 'boolean') ||
+        contest.entry.foodEffects === undefined)) {
+      const entry = contest.entry; // Upgrade entries saved by earlier versions of this PR without rerolling their contest totals.
+      const definition = deps?.getItemDefs?.()?.[entry.key] || {};
+      const source = Array.isArray(entry.ingredients) && entry.ingredients.length
+        ? {...definition,festivalIngredientQuality:entry.ingredients} : definition;
+      const snapshot = contestIngredients(source,entry.stars);
+      entry.ingredients = snapshot.ingredients;
+      entry.estimatedQuality = entry.estimatedQuality ?? snapshot.estimated;
+      entry.estimatedEffects = snapshot.estimatedEffects;
+      entry.foodEffects ||= {...(definition.foodEffects || {})}; // An older saved contest entry may not have persisted its exact buff payload.
       deps?.save?.();
     }
     const offset = Math.max(0,Math.min(6,day() - (year()*336 + 4*28 + 8 - 1)));
@@ -101,7 +123,7 @@
     dishes.push(entry ? { id:'player:' + entry.key,label:"Your " + entry.label,owner:'You',dish:entry.label,
       icon:definition?.icon || '🍲',score:entry.score,
       ingredients:entry.ingredients || definition?.festivalIngredientQuality || [],
-      estimatedQuality:!!entry.estimatedQuality,
+      estimatedQuality:!!entry.estimatedQuality,estimatedEffects:!!entry.estimatedEffects,
       foodEffects:{...(entry.foodEffects || definition?.foodEffects || {})} }
       : { id:'reserved',label:'Your contest entry (empty)',owner:'You',dish:'Awaiting entry',
         icon:'🍲',score:0,foodEffects:{},ingredients:[] });
@@ -783,7 +805,7 @@
       contest.entry = {key:payload.key,stars:payload.stars,label:definition?.label||payload.key,
         score:window.FestivalPotluckContest.scoreCooked(definition,payload.stars,deps.getItemDefs()),
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
-        foodEffects:{...(definition?.foodEffects || {})}};
+        estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition?.foodEffects || {})}};
     }
     mark('potluck',{key:payload.key,stars:payload.stars,day:day()});
     feastCache = null; // The seventh physical serving pot becomes available immediately.
