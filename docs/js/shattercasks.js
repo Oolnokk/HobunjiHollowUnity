@@ -775,6 +775,7 @@
   function releaseShatterAim(){
     if(!held||aimingThrow?.phase!=='aim')return false;
     aimingThrow.target=throwTarget()||aimingThrow.target;
+    showThrowRing(aimingThrow.target); // Release can land between the 75ms aim samples.
     if(aimingThrow.sharedPose)releaseSharedThrowVisual();
     aimingThrow.phase='releasing';aimingThrow.elapsed=0;
     return true;
@@ -1160,7 +1161,7 @@
   function detonate(cask,cause='weapon') {
     if(!cask||cask.exploded)return false;
     cask.exploded=true;
-    if(held===cask){held=null;aimingThrow=null;setHeldRearXray(null);}
+    if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);}
     if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);
     const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
@@ -1479,7 +1480,7 @@
     RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Terrain-projected filled throw preview; physical cask excluded from weapon PNG replay.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Throw preview refreshes on release and clears when a held charge detonates; cask stays out of weapon PNG replay.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,

@@ -466,7 +466,10 @@ async function arenaScenario() {
   assert(Math.abs(ring.geometry.heights[2]-.1)<1e-6,'ground rotation uses the correct Z sign');
   assert(ring.geometry.boundsUpdated,'terrain changes refresh culling bounds');
   assert.equal(game.Shattercasks.debugSnapshot().throwPreview.terrainProjected,true,'mobile diagnostics report projection');
+  deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64,y:1,z:player.y/64},direction:{x:1,y:-.1,z:0}});
   assert(game.Shattercasks.releaseShatterAim(),'releasing Item Action 1 starts the throw stage');
+  assert.equal(ring.position.x,game.Shattercasks.debugSnapshot().throwAim.target.x,
+    'release preview uses the final aim point rather than the preceding polling sample');
   assert.equal(ring.visible,true,'preview remains visible through release windup');
   game.Shattercasks.cancelShatterAim();
   assert.equal(ring.visible,false,'cancel hides the preview');
@@ -485,6 +488,21 @@ async function arenaScenario() {
   assert.equal(game.Shattercasks.debugSnapshot().vases.length,0,'out-of-area spawn does not create a charge');
   currentArea='map_dev_arena';
   assert.equal(before,4);
+  let cancelledThrows=0; // Counts cancellation of the shared held throw pose after an incoming hit.
+  game.HeldActionAnimations={throwFlask:{poses:{}}};
+  game.RangedWeapons={triggerPlayerVisual(){},cancelPlayerHold(){cancelledThrows++;}};
+  assert(game.Shattercasks.toolArchTap(),'dropped charge can be picked up again');
+  assert(game.Shattercasks.startShatterAim(),'aim can restart with the same preview');
+  assert.equal(groundProjectionBinds,1,'repeated aiming reuses the same projected mesh');
+  const carried=game.Shattercasks.debugSnapshot().vases.find(vase=>vase.carried); // Locates the actual held charge through the public diagnostics.
+  const impact=game.Shattercasks.projectileHit({x:carried.col-.5,y:.4,z:carried.row+.5},
+    {x:carried.col+1.5,y:.4,z:carried.row+.5},0,1,currentArea); // Uses the real incoming projectile path.
+  assert(impact,'a projectile can hit a charge during aiming');
+  assert(game.Shattercasks.hitProjectile(impact),'incoming projectile detonates the held charge');
+  assert.equal(ring.visible,false,'a charge destroyed while aiming cannot leave its preview behind');
+  assert.equal(cancelledThrows,1,'incoming hit also cancels the shared held throw pose');
+  assert.equal(game.Shattercasks.debugSnapshot().throwAim,null,'detonation clears aim');
+  assert.equal(rebuilt.material[1].visible,true,'detonation restores the rear portrait');
   for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
   assert.equal(modelBuilds,4,'no art created for rejected requests');
