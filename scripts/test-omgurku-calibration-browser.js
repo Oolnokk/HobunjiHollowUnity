@@ -182,8 +182,11 @@ const server=http.createServer((req,res)=>{
       'the authored connector remains hidden while its PNG is unavailable');
     await page.evaluate(()=>{
       const canvas=document.createElement('canvas');canvas.width=80;canvas.height=120;
-      const g=canvas.getContext('2d');g.fillStyle='#caa05d';g.beginPath();
+      const g=canvas.getContext('2d');g.fillStyle='#99bf99';g.beginPath();
       g.moveTo(13,7);g.lineTo(68,7);g.lineTo(70,117);g.lineTo(7,117);g.fill();
+      g.fillStyle='#eeeeee';g.fillRect(38,38,5,5);
+      g.fillStyle='#c04040';g.fillRect(48,38,5,5);
+      g.fillStyle='#4d604d';g.fillRect(28,58,5,5);
       const binary=atob(canvas.toDataURL('image/png').split(',')[1]);
       const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
       const file=new File([bytes],'waist-to-neck.png',{type:'image/png'});
@@ -196,6 +199,33 @@ const server=http.createServer((req,res)=>{
       return c?.live?.size===1 && [...c.live][0].mesh.visible
         && [...c.live][0].mesh.geometry.attributes.position.version>0;
     },null,{timeout:12000});
+    const tint=await page.evaluate(()=>{
+      const h=[...window.HobunjiOmgurkuConnector.live][0];
+      const canvas=h.mesh.material.map.image,ctx=canvas.getContext('2d');
+      const pixel=(x,y)=>Array.from(ctx.getImageData(x,y,1,1).data);
+      return {key:pixel(25,40),gray:pixel(40,40),red:pixel(50,40),shade:pixel(30,60),alpha:pixel(0,0),
+        color:window.CreatureGeneticsRender.hexToRgb(h.root.userData.omgurkuComposite.tintColor),status:h.tintStatus};
+    });
+    assert.deepEqual(tint.key,[...tint.color,255],'connector base color maps to this NPC body A');
+    assert.deepEqual(tint.gray,[238,238,238,255],'unkeyed highlights stay authored');
+    assert.deepEqual(tint.red,[192,64,64,255],'unrelated color details stay authored');
+    assert.equal(tint.alpha[3],0,'PNG transparency survives the tint pass');
+    assert(tint.shade[0]<tint.key[0]&&tint.shade[1]<tint.key[1],'source shading survives tinting');
+    assert.equal(tint.status.ready,true,'mobile diagnostics report completed coat tint');
+    await page.evaluate(()=>{
+      const model=window.HobunjiOmgurkuCalibration.context().model,c=model.userData.omgurkuComposite;
+      window.__connectorTintActor=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(window.THREE,c.upper.userData.sourceCanvas,{
+        backCanvas:c.upper.userData.backCanvas,speciesId:'omgurku',gender:'male',bodyColors:{A:{hex:'#d04070'}}});
+    });
+    await page.waitForFunction(()=>window.__connectorTintActor.userData.omgurkuComposite.connector.tintStatus.ready);
+    const other=await page.evaluate(()=>{
+      const actor=window.__connectorTintActor,h=actor.userData.omgurkuComposite.connector;
+      const pixel=Array.from(h.mesh.material.map.image.getContext('2d').getImageData(25,40,1,1).data);
+      window.PNGPlaneAvatar.disposeAvatarModel(actor);delete window.__connectorTintActor;
+      return pixel;
+    });
+    assert.deepEqual(other,[208,64,112,255],'simultaneous NPCs tint the same connector independently');
+    assert.equal(await page.evaluate(()=>window.HobunjiOmgurkuConnector.live.size),1,'second actor releases its own connector');
     const bridgeBefore=await page.evaluate(()=>{
       const c=window.HobunjiOmgurkuConnector,handle=[...c.live][0],
         mesh=handle.mesh,geometry=mesh.geometry;

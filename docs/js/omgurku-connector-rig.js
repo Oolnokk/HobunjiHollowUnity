@@ -123,25 +123,45 @@ function create(THREE,root){
  const sourceTop={x:0,y:0},sourceBottom={x:0,y:0}; // Reuse source spline samples during deformation.
  const previousUpper=new THREE.Matrix4(),previousLower=new THREE.Matrix4(); // Compare without serializing matrices.
  let texture=null,disposed=false,loadEpoch=0; // Own pending and decoded PNG lifetimes.
+ const tintStatus={color:c.tintColor,ready:false,error:null}; // Mobile diagnostics for this actor's decoded/tinted connector.
  function applyImage(){
-   const current=++loadEpoch;
+   const current=++loadEpoch; // Ignore PNG decodes completed after replacement or disposal.
    if(texture){material.map=null;material.needsUpdate=true;texture.dispose();texture=null;}
+   mesh.visible=false;tintStatus.ready=false;tintStatus.error=null;
    const src=settings.imageDataUrl || (settings.enabled?
      new URL(settings.assetPath,DOCS_ROOT).href:null);
-   if(!settings.enabled||!src){mesh.visible=false;return;}
-   const loader=new THREE.TextureLoader();
-   const next=loader.load(src,()=>{
-     if(disposed||current!==loadEpoch){next.dispose();return;}
-     global.HobunjiSpritePngSurface.configureTexture(THREE,next,'omgurku_connector_png');
-     material.map=next;material.needsUpdate=true;mesh.visible=true;
-     update(true); // Fit before the first visible render after decode.
-   },undefined,error=>{
+   if(!settings.enabled||!src)return;
+   const image=new Image(); // Decode CPU pixels once per image change, never during spline deformation.
+   image.crossOrigin='anonymous';
+   const fail=error=>{
      if(disposed||current!==loadEpoch)return;
-     mesh.visible=false;
+     mesh.visible=false;tintStatus.error=String(error?.message||error);
      console.warn('[omgurku-connector] PNG unavailable; connector stays hidden',error);
-   });
-   texture=next;
-   mesh.visible=false; // Only render after successful image decode.
+   };
+   image.onload=()=>{
+     if(disposed||current!==loadEpoch)return;
+     try{
+       const renderer=global.CreatureGeneticsRender; // The lower coat owns source-key selection and shade-fill math.
+       global.VoorgAssRegistration?.ensureRendererSpecies?.(renderer?.SPECIES);
+       const donor=renderer?.SPECIES?.['voorg-ass']; // Same authored base color contract as the lower half.
+       if(!donor||!renderer.recolorKeyedPixels)throw new Error('Connector coat tint renderer unavailable');
+       const canvas=document.createElement('canvas'); // Native-resolution surface preserves the uploaded PNG's alpha and detail.
+       canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+       const ctx=canvas.getContext('2d',{willReadFrequently:true}); // Pixel readback occurs only on image load.
+       ctx.drawImage(image,0,0);
+       const pixels=ctx.getImageData(0,0,canvas.width,canvas.height); // Classify the untouched source before recoloring.
+       renderer.recolorKeyedPixels(pixels.data,renderer.hexToRgb(c.tintColor),{
+         hex:donor.baseRecolorKeyHex,hueTolerance:donor.baseRecolorHueTolerance,
+         minSaturationRatio:donor.baseRecolorMinSaturationRatio,
+       },donor.baseShadeReferenceHex,'omgurku-connector:body-A');
+       ctx.putImageData(pixels,0,0);
+       texture=global.HobunjiSpritePngSurface.makeCanvasTexture(THREE,canvas,'omgurku_connector_png');
+       material.map=texture;material.needsUpdate=true;mesh.visible=true;tintStatus.ready=true;
+       update(true); // Fit before the first visible render after decode.
+     }catch(error){fail(error);}
+   };
+   image.onerror=()=>fail(new Error('Connector PNG failed to load'));
+   image.src=src;
  }
  function localPoint(plane,p,result,depth,lower=false){
    const dims=plane.geometry?.parameters||{};
@@ -219,7 +239,7 @@ function create(THREE,root){
    disposed=true;loadEpoch++;live.delete(handle);
    mesh.parent?.remove(mesh);geometry.dispose();material.dispose();texture?.dispose();
  }
- const handle={root,mesh,update,dispose,applyImage,targetsTop,targetsBottom,attachmentRows};
+ const handle={root,mesh,update,dispose,applyImage,tintStatus,targetsTop,targetsBottom,attachmentRows};
  live.add(handle);applyImage();
  return handle;
 }

@@ -159,7 +159,7 @@
     "lowerOffsetX": 0,
     "lowerOffsetY": 0,
     "lowerOffsetZ": 0,
-    "lowerDeadzoneDegrees": 27.5
+    "lowerDeadzoneDegrees": 13
   },
   "connector": {
     "schema": "hobunji.omgurku-connector.v1",

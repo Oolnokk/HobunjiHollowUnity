@@ -11,7 +11,7 @@
   const SPRITES = Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/omgurku-lower_${frame}.png`])));
   const DEFAULT_PLACEMENT = Object.freeze({
     lowerWidth: 1.77, lowerHeight: 0.74, visibleFloorCorrection: 0.245,
-    saddleU: 0.24, saddleV: 0.249, lowerDeadzoneDegrees: 27.5,
+    saddleU: 0.24, saddleV: 0.249, lowerDeadzoneDegrees: 13,
     joinDepth: -0.06, riderScale: 0.885,
     upperOffsetX: 0, upperOffsetY: 0, upperOffsetZ: 0,
     lowerOffsetX: 0, lowerOffsetY: 0, lowerOffsetZ: 0,
@@ -548,7 +548,7 @@
           rawNpcYaw: c?.rawNpcYaw ?? null,
           requestedPreviewYaw: root.userData.omgurkuPreviewRawYaw ?? null,
           coatColor: c?.tintColor ?? null,
-          connector: c?.connector ? {enabled:c.connector.mesh.visible,
+          connector: c?.connector ? {enabled:c.connector.mesh.visible,tint:{...c.connector.tintStatus},
             triangles: c.connector.mesh.geometry.index?.count / 3} : null,
         };
       }),
