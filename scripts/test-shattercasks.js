@@ -103,6 +103,28 @@ assert(code.includes('updateShatterThrow(dt)') &&
   code.includes("['btnItemAction2','Set Down Shattercask'") &&
   code.includes('pointThrowFromDrag('),
   'hold-release action 1 has terrain projection and flask arc; item action 2 drops');
+const flaskThrowCode=fs.readFileSync(path.join(root,'docs/js/alchemy-flasks.js'),'utf8');
+assert(flaskThrowCode.includes('function flightDuration(distanceTiles)') &&
+  flaskThrowCode.includes('function flightPosition(origin,target,ratio,distanceTiles,out)') &&
+  code.includes('window.AlchemyFlasks?.flightDuration?.(distanceTiles)') &&
+  code.includes('window.AlchemyFlasks.flightPosition('),
+  'Shattercask uses the authoritative flask projectile duration and 3D flight curve');
+assert(code.includes('beginSharedThrowVisual()') &&
+  code.includes('releaseSharedThrowVisual()') &&
+  code.includes('window.HeldActionAnimations?.throwFlask') &&
+  code.includes('currentThrowSocketPose()') &&
+  code.includes('vase.group.position.sub(base.position).applyQuaternion(delta).add(live.position)') &&
+  !code.includes('vase.group.position.x=0'),
+  'Shattercask follows the real animated held-item socket rather than hand-authored fake YZ-only sweep');
+assert(code.includes('right.x*dx-forward.x*dy') &&
+  code.includes('right.z*dx-forward.z*dy') &&
+  code.includes('deltaX*heading.x+deltaZ*heading.z<.4') &&
+  code.includes('dx*heading.x+dz*heading.z<.5'),
+  'camera-relative drag and short/steep target clamps prevent the projectile moving behind the player');
+assert(code.includes('rearHeadwearXray') &&
+  code.includes('CARRIED_REAR_HEAD_RENDER_ORDER') &&
+  code.includes('restoreRearHeadwear()'),
+  'rear headwear/head-xray has a distinct reversible render layer above the held vessel');
 assert(author.includes('id="carryShowAvatar"') && author.includes('id="carryFrameHoldingPose"'),
   'Carryable mode provides visible avatar toggle and framing controls');
 assert(author.includes("renderSeatPortrait('mao-ao','male')") &&
@@ -373,10 +395,17 @@ async function arenaScenario() {
   portrait.name='player_skinned_plane_assembly';
   portrait.bind({bones:[]},{});
   body.add(portrait);
+  const rearHeadwear=new Mesh({},new Material({depthTest:true,depthWrite:false,visible:true}));
+  rearHeadwear.name='player_avatar_back_hat_xray_plane';
+  rearHeadwear.renderOrder=2;
+  body.add(rearHeadwear);
   game.ProceduralHandAttachments={gameDeps:{playerMesh:body}};
   assert(game.Shattercasks.toolArchTap(),'contextual tool tap picks up and stows gear');
   let rearState=game.Shattercasks.debugSnapshot().rearPortraitXray;
   assert.equal(rearState.skinnedBackOnlyPasses,1,'one skinned rear-only x-ray is generated while carrying');
+  assert.equal(rearState.rearHeadwearOverlays,1,'the separately skinned back of the head is also included');
+  assert.equal(rearHeadwear.renderOrder,2.6,'rear head surfaces render after the carried Shattercask');
+  assert.equal(rearHeadwear.material.depthTest,true,'rear head retains normal world occlusion');
   assert.equal(portrait.material[0].visible,true,'front portrait stays unchanged');
   assert.equal(portrait.material[1].visible,false,'original rear pass is suppressed, preventing double blending');
   const rearOverlay=body.children.find(node=>node.userData?.shattercaskRearOverlay);
@@ -401,12 +430,18 @@ async function arenaScenario() {
   assert.equal(portrait.material[1].visible,true,'replaced avatar rear material is restored');
   assert.equal(rebuilt.material[1].visible,false,'new rear group owns the overlay');
   assert.equal(game.Shattercasks.toolArchAction(),null,'while carrying, Tool Select is no longer the Drop action');
+  deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64-2,y:1,z:player.y/64},direction:{x:1,y:-.5,z:0}});
   assert(game.Shattercasks.startShatterAim(),'Item Action 1 starts hold-to-aim for the physically carried object');
+  const aimSnapshot=game.Shattercasks.debugSnapshot().throwAim;
+  assert(aimSnapshot.target.x>player.x/64+1,
+    'low camera angle can hit ground behind the player, but the Shattercask reticle stays forward');
   assert(game.Shattercasks.releaseShatterAim(),'releasing Item Action 1 starts the throw stage');
   game.Shattercasks.cancelShatterAim();
   assert(game.Shattercasks.drop(),'Item Action 2 drops held Shattercask');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');
+  assert.equal(rearHeadwear.renderOrder,2,'drop restores the native rear head render order');
+  assert.equal(rearHeadwear.material.depthWrite,false,'drop restores the native headwear depth semantics');
   assert.equal(body.children.filter(node=>node.userData?.shattercaskRearOverlay).length,0,
     'drop disposes the back-only overlay and detaches its render pass');
   assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.skinnedBackOnlyPasses,0,
