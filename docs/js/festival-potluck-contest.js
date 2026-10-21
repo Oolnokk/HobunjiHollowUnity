@@ -56,9 +56,9 @@
   }
   const MENUS = Object.freeze({
     'ginju': [
-      { name:'Harvest Vegetable Medley', keys:['heftroot','garlink','ongyums','needlegrain'] },
-      { name:'Ginju Garden Scramble', keys:['heftroot','ongyums','garlink','nelkEggs'] },
-      { name:'Four-Vegetable Stew', keys:['heftroot','garlink','ongyums','redberries'] },
+      { name:'Harvest Vegetable Medley', keys:['heftroot','garlink','ongyums','greenMustard','needlegrain'] },
+      { name:'Ginju Garden Scramble', keys:['heftroot','ongyums','blackMustard','garlink','nelkEggs'] },
+      { name:'Four-Vegetable Stew', keys:['heftroot','garlink','ongyums','greenMustard','blackMustard'] },
     ],
     'kenkari': [
       { name:'Archipelago Fish Chowder', keys:['riverFish','fishSauce','puktukMilk','heftroot'] },
@@ -81,9 +81,9 @@
       { name:'Imported Spiced Noodles', keys:['needlegrainFlour','nelkMeat','travelSpice','cloudSaffron'] },
     ],
     'surveyor': [
-      { name:'Extravagantly Prepared Supper', keys:['smokedMeat','fishSauce','nelkMayonnaise','needlegrainFlour'] },
-      { name:'Company Banquet Deluxe', keys:['smokedMeat','fishSauce','redberryJam','nelkMayonnaise'] },
-      { name:'Overworked Victory Stew', keys:['smokedMeat','nelkMayonnaise','fishSauce','heftrootFlour'] },
+      { name:'Extravagantly Prepared Supper', keys:['smokedMeat','fishSauce','uumkaoiiCheese','nelkMayonnaise','needlegrainFlour'] },
+      { name:'Company Banquet Deluxe', keys:['smokedMeat','fishSauce','redberryJam','uumkaoiiCheese','nelkMayonnaise'] },
+      { name:'Overworked Victory Stew', keys:['smokedMeat','nelkMayonnaise','fishSauce','uumkaoiiCheese','heftrootFlour'] },
     ],
     'innkeeper': [
       { name:'Hreesh’s Hearth Special', keys:['smokedMeat','heftroot','nelkEggs','garlink','nelkMayonnaise'] },
