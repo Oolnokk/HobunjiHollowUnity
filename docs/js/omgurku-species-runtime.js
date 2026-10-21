@@ -504,15 +504,17 @@
 
   async function loadAuthoredPlacement() {
     const local = readLocalPlacement();
-    if (local) { setPlacement(local); status.placementSource = 'local override'; return; }
+    if (local) { setPlacement(local); status.placementSource = 'local override'; }
+    // Continue loading the species document for its independent connector,
+    // even when an unrelated local saddle calibration is present.
     try {
       const response = await fetch(new URL('config/species/omgurku.json', DOCS_ROOT));
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const cfg = await response.json();
       // A local setting saved while this request was in flight always wins.
       const latestLocal = readLocalPlacement();
-      if (latestLocal) { setPlacement(latestLocal); status.placementSource = 'local override'; return; }
-      if (cfg.hybridPlacement) { setPlacement(cfg.hybridPlacement); status.placementSource = 'authored species config'; }
+      if (latestLocal) { setPlacement(latestLocal); status.placementSource = 'local override'; }
+      else if (cfg.hybridPlacement) { setPlacement(cfg.hybridPlacement); status.placementSource = 'authored species config'; }
       // A user's uploaded local connector always wins. Authored config is
       // optional; older builds continue working without a connector asset.
       const bridge=window.HobunjiOmgurkuConnector;
