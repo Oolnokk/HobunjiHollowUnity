@@ -255,7 +255,20 @@
   }
   const backXray=new Map(),heldRenderOrders=new Map();
   const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
+  const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
   const CARRIED_REAR_RENDER_ORDER=2.4; // After carried vessel parts (1.5), before existing hat x-ray (2.5).
+  const CARRIED_REAR_HEAD_RENDER_ORDER=2.6; // Head's back-only hat/hair pass over the held vessel and hat-front pass.
+  function restoreRearHeadwear() {
+    for(const [mesh,stored] of rearHeadwearXray){
+      mesh.renderOrder=stored.order;
+      for(const [material,flags] of stored.materials)if(material){
+        material.depthTest=flags.depthTest;
+        material.depthWrite=flags.depthWrite;
+        material.needsUpdate=true;
+      }
+    }
+    rearHeadwearXray.clear();
+  }
   function removeSkinnedRearOverlay(source) {
     const record=skinnedRearOverlays.get(source);
     if(!record)return;
@@ -272,9 +285,23 @@
     // SkinnedMesh with separate front/back material groups. The latter has no
     // npc_avatar_back_plane at all, so a rigid-only x-ray silently did nothing
     // on the normal player neck rig.
-    const rigidSeen=new Set(),skinnedSeen=new Set();
+    const rigidSeen=new Set(),skinnedSeen=new Set(),headwearSeen=new Set();
     body?.traverse?.(mesh=>{
       if(!mesh?.isMesh||mesh.userData?.shattercaskRearOverlay)return;
+      // Skinned rear headwear is an independent surface. A skinned torso-only
+      // rear overlay never brings it forward through the held Shattercask.
+      if(/player_avatar_back_hat_xray_plane$/i.test(String(mesh.name||''))){
+        headwearSeen.add(mesh);
+        if(!rearHeadwearXray.has(mesh)){
+          const materials=(Array.isArray(mesh.material)?mesh.material:[mesh.material]).filter(Boolean);
+          rearHeadwearXray.set(mesh,{order:mesh.renderOrder,materials:materials.map(material=>
+            [material,{depthTest:material.depthTest,depthWrite:material.depthWrite}])});
+        }
+        mesh.renderOrder=CARRIED_REAR_HEAD_RENDER_ORDER;
+        for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
+          if(material){material.depthTest=true;material.depthWrite=true;}
+        return;
+      }
       if(mesh.name==='npc_avatar_back_plane') {
         rigidSeen.add(mesh);
         const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
@@ -327,6 +354,16 @@
     }
     for(const source of [...skinnedRearOverlays.keys()])
       if(!skinnedSeen.has(source))removeSkinnedRearOverlay(source);
+    // The avatar can also replace its head plane independently of the torso.
+    for(const [mesh,original] of [...rearHeadwearXray])
+      if(!headwearSeen.has(mesh)){
+        mesh.renderOrder=original.order;
+        for(const [material,flags] of original.materials)if(material){
+          material.depthTest=flags.depthTest;material.depthWrite=flags.depthWrite;
+          material.needsUpdate=true;
+        }
+        rearHeadwearXray.delete(mesh);
+      }
   }
   function setHeldRearXray(cask) {
     if(!cask) {
@@ -340,6 +377,7 @@
       }
       backXray.clear();
       for(const source of [...skinnedRearOverlays.keys()])removeSkinnedRearOverlay(source);
+      restoreRearHeadwear();
       for(const [mesh,snap] of heldRenderOrders) {
         mesh.renderOrder=snap.order;
         for(const [material,depthWrite] of snap.materials){
@@ -1394,6 +1432,7 @@
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
       rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
+        rearHeadwearOverlays:rearHeadwearXray.size,
         heldPartsWithoutDepthWrite:heldRenderOrders.size,
         skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
       performance:{ruinSnapshotReads,textureBatchesCreated,
