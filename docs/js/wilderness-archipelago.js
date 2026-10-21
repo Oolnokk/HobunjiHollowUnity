@@ -30,7 +30,7 @@
     return {
       archipelagoEnabled: value.archipelagoEnabled === true,
       islandCount: n('islandCount', 2, 32, true),
-      islandSize: n('islandSize', 3, 30),
+      islandSize: n('islandSize', 2, 30),
       islandSizeVariation: n('islandSizeVariation', 0, 1),
       islandHeight: n('islandHeight', 1, 20, true),
       islandSteepness: n('islandSteepness', 0.3, 3),
@@ -75,7 +75,7 @@
   function islandShape(cx, cy, radius, aspect, angle, seed, kind) {
     const c = Math.cos(angle), s = Math.sin(angle);
     return {
-      cx, cy, rx: radius * aspect, ry: radius / aspect, c, s,
+      cx, cy, radius, rx: radius * aspect, ry: radius / aspect, c, s,
       seed, kind,
       a: seed * 0.013, b: seed * 0.027, d: seed * 0.037,
     };
@@ -88,9 +88,16 @@
     const random = (lo, hi) => lo + (hi - lo) * rng();
     const minDim = Math.min(width, height);
     const scaledRadius = config.islandSize * Math.min(1, minDim / 90);
+    // Tiny island mode retains the requested *small* radius, including at
+    // the entrance, and enforces geographic channels between major islands.
+    // Previously the entrance always had radius >=6 and every major island
+    // >=3.2, so a 2- or 3-tile size slider could never actually make one.
+    const compactIslands = scaledRadius <= 6.5;
     const islands = [];
     const mainY = height * (0.48 + random(-0.04, 0.04));
-    const mainRadius = Math.max(6, scaledRadius * 1.35);
+    const mainRadius = compactIslands
+      ? Math.max(2.35, scaledRadius * 1.03)
+      : Math.max(6, scaledRadius * 1.35);
     // A broad natural west-coast island provides the town-facing entrance,
     // while the other map sides dissolve into open sea.
     islands.push(islandShape(
@@ -102,14 +109,14 @@
     const coastlineMargin = Math.max(3, minDim * 0.04);
     const shapeRadius = (i) => {
       const scale = 1 + (random(-1, 1) * config.islandSizeVariation * 0.58);
-      return Math.max(3.2, scaledRadius * scale);
+      return Math.max(1.9, scaledRadius * scale);
     };
     for (let i = 1; i < majorCount; i++) {
       let best = null;
       const t = i / Math.max(1, majorCount - 1);
       const r = shapeRadius(i);
       const aspect = random(0.95, 1.55);
-      for (let attempt = 0; attempt < 48; attempt++) {
+      for (let attempt = 0; attempt < (compactIslands ? 144 : 48); attempt++) {
         const spineX = width * (0.15 + 0.72 * t);
         const spineY = height * (0.47 + 0.19 * Math.sin(2.45 * Math.PI * t + 0.34));
         const drift = 1 - config.islandClustering;
@@ -124,13 +131,21 @@
         let nearest = Infinity;
         for (const other of islands) {
           const distance = Math.hypot(x - other.cx, y - other.cy);
-          const minRequired = (r + Math.min(other.rx, other.ry)) *
-            (0.66 + config.islandSpacing * 0.29);
+          const minRequired = compactIslands
+            // Conservative radius accounts for long aspect axes AND lobes.
+            // This produces separate islands and visible sea channels rather
+            // than 15 overlapping centers masquerading as 5 landmasses.
+            ? (r * Math.max(aspect, 1 / aspect)
+              + Math.max(other.rx, other.ry))
+              * (1 + 0.13 * config.islandIrregularity + 0.07 * config.islandCoastDetail)
+              + config.islandSpacing * 1.45
+            : (r + Math.min(other.rx, other.ry)) *
+              (0.66 + config.islandSpacing * 0.29);
           nearest = Math.min(nearest, distance - minRequired);
         }
         const candidate = { x, y, r, aspect, score: nearest - attempt * 0.0001 };
         if (!best || candidate.score > best.score) best = candidate;
-        if (nearest > config.islandSpacing * 0.8) break;
+        if (nearest > (compactIslands ? 0 : config.islandSpacing * 0.8)) break;
       }
       islands.push(islandShape(best.x, best.y, r, aspect,
         random(-1.35, 1.35), Math.floor(rng() * 1000000), 'major'));
@@ -194,11 +209,13 @@
     // gate that teleports through deep water. The main island already reaches
     // the west map edge; small entrance-adjacent straits can be rejoined.
     const gateY = Math.round(mainY);
-    for (let y = gateY - 3; y <= gateY + 3; y++) {
+    const gatewayHalfWidth = compactIslands ? 1 : 3;
+    const gatewayReach = compactIslands ? 4 : 7;
+    for (let y = gateY - gatewayHalfWidth; y <= gateY + gatewayHalfWidth; y++) {
       if (y < 0 || y >= height) continue;
-      for (let x = 0; x < Math.min(width, 7); x++) {
+      for (let x = 0; x < Math.min(width, gatewayReach); x++) {
         const dy = Math.abs(y - gateY);
-        if (dy > 2 + Math.max(0, 3 - x) * 0.2) continue;
+        if (!compactIslands && dy > 2 + Math.max(0, 3 - x) * 0.2) continue;
         const index = y * width + x;
         land[index] = 1;
         islandIndex[index] = 0;
@@ -238,16 +255,59 @@
       }
     }
 
+    // Normalize elevation against each island's own deepest inland point.
+    // A 3-tile island now really can be three tiers high, rather than
+    // silently flattening because it does not have a 9-tile inland radius.
+    // Higher steepness produces a quicker rise from beach to hilltop.
+    const peakInlandByIsland = new Int16Array(islands.length);
+    for (let index = 0; index < size; index++) {
+      const id = islandIndex[index];
+      if (id >= 0) peakInlandByIsland[id] = Math.max(peakInlandByIsland[id], shoreDistance[index]);
+    }
     const elevation = new Uint8Array(size);
+    const peakByIsland = new Uint8Array(islands.length);
+    const ascentExponent = 1.55 / config.islandSteepness;
     let maxTier = 0, heightTotal = 0;
     for (let index = 0; index < size; index++) {
       if (!land[index]) continue;
+      const id = islandIndex[index];
       const inland = shoreDistance[index];
-      const tier = clamp(Math.floor(Math.pow(Math.max(0, inland - 0.15)
-        * config.islandSteepness, 0.88) * 0.85), 0, config.islandHeight);
+      const available = Math.max(1, peakInlandByIsland[id]);
+      const inlandProgress = clamp(inland / available, 0, 1);
+      const tier = inland > 0 ? Math.round(config.islandHeight * Math.pow(inlandProgress, ascentExponent)) : 0;
       elevation[index] = tier;
+      peakByIsland[id] = Math.max(peakByIsland[id], tier);
       maxTier = Math.max(maxTier, tier);
       heightTotal += tier;
+    }
+
+    // Count actual separate landmasses, not merely the number of seeded
+    // centers, so presets reveal when islands have collided or merged.
+    const visited = new Uint8Array(size);
+    const landmassAreas = [];
+    const landmassPeaks = [];
+    const massQueue = new Int32Array(size);
+    for (let start = 0; start < size; start++) {
+      if (!land[start] || visited[start]) continue;
+      let front = 0, back = 0, peak = 0;
+      visited[start] = 1;
+      massQueue[back++] = start;
+      while (front < back) {
+        const index = massQueue[front++];
+        peak = Math.max(peak, elevation[index]);
+        const x = index % width, y = (index - x) / width;
+        const neighbors = [
+          x > 0 ? index - 1 : -1, x < width - 1 ? index + 1 : -1,
+          y > 0 ? index - width : -1, y < height - 1 ? index + width : -1,
+        ];
+        for (const other of neighbors) {
+          if (other < 0 || visited[other] || !land[other]) continue;
+          visited[other] = 1;
+          massQueue[back++] = other;
+        }
+      }
+      landmassAreas.push(back);
+      landmassPeaks.push(peak);
     }
 
     const result = {
@@ -258,6 +318,9 @@
         landTiles, waterTiles: size - landTiles, coastlineTiles: shoreTiles,
         landFraction: Number((landTiles / size).toFixed(4)),
         peakTier: maxTier, meanLandTier: Number((heightTotal / Math.max(1, landTiles)).toFixed(2)),
+        distinctLandmasses: landmassAreas.length,
+        substantialLandmasses: landmassAreas.filter(area => area >= 10).length,
+        raisedLandmasses: landmassPeaks.filter(tier => tier >= Math.min(2, config.islandHeight)).length,
         entrance: { col: 0, row: gateY, side:'west' },
         config,
         centers: islands.map(({cx,cy,rx,ry,kind}) => ({
