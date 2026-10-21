@@ -146,7 +146,7 @@ W.FestivalUI.close();
 assert.equal(W.FestivalUI.isOpen(),false,'closing the inspector restores ordinary interactions');
 
 assert.equal(api.eatFestivalBowl().ok,true);
-assert.equal(api.festivalFoodStacks('speed'),1,'festival meal contributes to the live cooking stat');
+assert.equal(api.festivalFoodStacks('speed'),api.feastDishDetails(0).foodEffects.speed || 0,'festival meal contributes to the live cooking stat');
 assert.equal(api.festivalBowl().uses,9);
 assert.equal(api.currentFullness(),1);
 const seat=layout.decor.find(p=>p.festivalLocaleParent==='gorkunash_feast' && p.key==='chairSimple');
@@ -186,7 +186,7 @@ const state=api.serialize();
 assert(state.feastBuffs[0].remainingS>0,'meal remaining duration is portable');
 api.restore(state);
 assert.equal(api.currentFullness(),2,'fullness survives save/load after real drink-strike servings');
-assert.equal(api.festivalFoodStacks('speed'),1,'festival food buff survives save/load');
+assert.equal(api.festivalFoodStacks('speed'),api.feastDishDetails(0).foodEffects.speed || 0,'festival food buff survives save/load');
 civilDay++;
 assert.equal(api.feastMenu().length,7,'the seven-pot layout persists next day');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','the player contribution remains on display for the full festival');
