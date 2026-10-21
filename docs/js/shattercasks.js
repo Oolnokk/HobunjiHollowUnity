@@ -24,7 +24,35 @@
   const lastEquipment = { weapon:null, tool:null, item:null }; // Pickup-time equipment snapshot used to drop carried vases on selection changes.
   let held = null; // The one intact vase held in front of the local player.
   let aimingThrow=null,flight=null,throwRing=null;
-  const THROW_RELEASE_DELAY=.28,MAX_THROW_RADIUS=14;
+  const MAX_THROW_RADIUS=14;
+  const SHATTER_RELEASE_FALLBACK=.28;
+  const throwAnimation=()=>window.HeldActionAnimations?.throwFlask||null;
+  function authoredReleaseDelay(){
+    const anim=throwAnimation();
+    const duration=Number(anim?.durationS)||1.04;
+    return Math.max(.01,duration*Math.max(0,(Number(anim?.strikeFrac)||.57)-(Number(anim?.windupFrac)||.49)));
+  }
+  function beginSharedThrowVisual(){
+    const anim=throwAnimation(),ranged=window.RangedWeapons;
+    if(!anim?.poses || !ranged?.triggerPlayerVisual)return false;
+    ranged.triggerPlayerVisual(Number(anim.durationS)||1.04,{
+      sequence:'attack',pose:anim.poses,gripMode:anim.gripMode||'palm-parallel',
+      held:true,alignToReticle:true,
+      windupFrac:anim.windupFrac,strikeFrac:anim.strikeFrac,holdFrac:anim.holdFrac,
+    });
+    return true;
+  }
+  function releaseSharedThrowVisual(){
+    const ranged=window.RangedWeapons;
+    if(!ranged?.releasePlayerHold)return false;
+    // The throw is physical furniture, not ammunition; resume the existing
+    // authored spin-throw pose without creating a fake weapon projectile.
+    ranged.releasePlayerHold({poseProgress:Math.max(.01,Number(ranged.playerWindupPoseProgress?.())||1)});
+    return true;
+  }
+  function cancelSharedThrowVisual(){
+    window.RangedWeapons?.cancelPlayerHold?.();
+  }
   const throwPoses=()=>window.HeldActionAnimations?.throwFlask?.poses||null;
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
@@ -385,18 +413,9 @@
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
-    if(aimingThrow?.vase===vase){
-      vase.group.position.x=0; // Throwing animation must not inherit flask's authored sideways sweep.
-      const poses=throwPoses(),neutral=aimingThrow.phase==='releasing'?poses?.windup:poses?.neutral,
-        pose=aimingThrow.phase==='releasing'?poses?.strike:poses?.windup;
-      const blend=Math.min(1,aimingThrow.elapsed/(aimingThrow.phase==='releasing'?THROW_RELEASE_DELAY:.34));
-      if(neutral&&pose){
-        // Only flask pose Y/Z translations: never the attack animator's hand
-        // ownership, billboard rotation, or character-local X translation.
-        vase.group.position.y+=(Number(pose.y)-Number(neutral.y))*blend;
-        vase.group.position.z+=(Number(pose.z)-Number(neutral.z))*blend;
-      }
-    }
+    // Use the actual shared ranged/held throw pose, not a second independent
+    // interpolation of only two pose axes. Carrying keeps the posterior frame
+    // stable in all three dimensions until the throw releases the physical mesh.
     return true;
   }
   function heldHandTarget(){
@@ -616,7 +635,11 @@
     throwRing.position.set(target.x,target.y+.04,target.z);
     throwRing.visible=true;
   }
-  function cancelShatterAim(){aimingThrow=null;if(throwRing)throwRing.visible=false;}
+  function cancelShatterAim(){
+    if(aimingThrow?.phase==='aim'&&aimingThrow.sharedPose)cancelSharedThrowVisual();
+    aimingThrow=null;
+    if(throwRing)throwRing.visible=false;
+  }
   function pointThrowFromDrag(dx,dy){
     if(aimingThrow?.phase!=='aim')return;
     const p=playerPosition(),mag=Math.hypot(dx,dy);
@@ -629,7 +652,8 @@
   }
   function startShatterAim(){
     if(!held||aimingThrow)return false;
-    aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0};
+    const sharedPose=beginSharedThrowVisual();
+    aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0,sharedPose};
     showThrowRing(aimingThrow.target);
     lastEvent='started Shattercask throw aim';
     return true;
@@ -637,6 +661,7 @@
   function releaseShatterAim(){
     if(!held||aimingThrow?.phase!=='aim')return false;
     aimingThrow.target=throwTarget()||aimingThrow.target;
+    if(aimingThrow.sharedPose)releaseSharedThrowVisual();
     aimingThrow.phase='releasing';aimingThrow.elapsed=0;
     return true;
   }
@@ -655,7 +680,8 @@
     c.carried=false;c.flying=true;held=null;cancelShatterAim();
     const distanceTiles=Math.hypot(target.x-origin.x,target.z-origin.z);
     flight={vase:c,origin,target,distanceTiles,
-      duration:Math.min(.9,Math.max(.42,.42+distanceTiles*.034)),t:0};
+      duration:window.AlchemyFlasks?.flightDuration?.(distanceTiles)
+        ??Math.min(.9,Math.max(.42,.42+distanceTiles*.034)),t:0};
     lastEvent='launched Shattercask '+c.id;
     return true;
   }
@@ -669,16 +695,20 @@
           aimingThrow.rayElapsed=0;aimingThrow.target=throwTarget()||aimingThrow.target;
           showThrowRing(aimingThrow.target);
         }
-      }else if(aimingThrow.elapsed>=THROW_RELEASE_DELAY)launchShattercask();
+      }else if(aimingThrow.elapsed>=(aimingThrow.sharedPose?authoredReleaseDelay():SHATTER_RELEASE_FALLBACK))launchShattercask();
     }
     if(flight){
       const f=flight,c=f.vase;
       f.t+=dt;
       const ratio=Math.min(1,f.t/f.duration);
-      const arc=Math.sin(Math.PI*ratio)*Math.min(1.65,.72+f.distanceTiles*.065);
-      c.group.position.set(f.origin.x+(f.target.x-f.origin.x)*ratio,
-        f.origin.y+(f.target.y-f.origin.y)*ratio+arc,
-        f.origin.z+(f.target.z-f.origin.z)*ratio);
+      if(window.AlchemyFlasks?.flightPosition)
+        window.AlchemyFlasks.flightPosition(f.origin,f.target,ratio,f.distanceTiles,c.group.position);
+      else{
+        const arc=Math.sin(Math.PI*ratio)*Math.min(1.65,.72+f.distanceTiles*.065);
+        c.group.position.set(f.origin.x+(f.target.x-f.origin.x)*ratio,
+          f.origin.y+(f.target.y-f.origin.y)*ratio+arc,
+          f.origin.z+(f.target.z-f.origin.z)*ratio);
+      }
       c.group.rotation.set(f.t*8,0,f.t*5);
       // There is no heldHandTarget after launch: hands stay on the player.
       if(ratio>=1){flight=null;detonate(c,'throw-impact');}
