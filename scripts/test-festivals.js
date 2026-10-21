@@ -101,7 +101,7 @@ assert.equal(perform(prop, { key: 'meal', stars: 1 }).ok, false);
 year++;
 assert.equal(perform(prop, { key: 'meal' }).ok, true);
 assert.equal(buckets.meal[3], 0, 'donation consumes the selected tier');
-assert.equal(api.feastMenu().length,7,'another year's festival retains the seven physical pots');
+assert.equal(api.feastMenu().length,7,"another year's festival retains the seven physical pots");
 assert.equal(buckets.meal[1], 1, 'unselected tier survives');
 // Offerings validate choice before consumption, persist exact quality, and expire after one full year.
 prop = visit('tzizkhanash', 'offering');
