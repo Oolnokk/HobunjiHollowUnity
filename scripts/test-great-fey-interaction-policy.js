@@ -111,6 +111,7 @@ for (const order of ['perks-first', 'reactions-first']) {
   const sim = vm.createContext({
     window: simWindow, document: { baseURI: 'https://example.test/docs/' },
     fetch: async () => ({ ok: false, status: 404 }), URL, console, performance: { now: () => 1000 },
+    setTimeout: () => 1, clearTimeout() {}, // Queues stay inspectable; no real timers run during this deterministic test.
   }); // Missing remote JSON deliberately selects the runtime's own built-in personality fallback.
   const layers = order === 'perks-first'
     ? ['docs/js/stable-animal-perk-adjustments.js', 'docs/js/npc-silliness-reaction-runtime.js']
