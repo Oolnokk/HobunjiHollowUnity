@@ -119,6 +119,7 @@ assert.deepEqual(
   'dish preview displays exactly the effects that festival eating applies'
 );
 
+aimSurface('meal',0); // Restore the physical reticle to pot zero after inspecting pot two.
 assert.equal(api.fillFestivalBowl(0).ok,true);
 assert.equal(api.festivalBowl().uses,10);
 // Open the real festival inspection UI without a mouse, console, or browser devtools.
