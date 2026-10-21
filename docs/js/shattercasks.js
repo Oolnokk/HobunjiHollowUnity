@@ -416,6 +416,23 @@
   // Solve in playerMesh-local coordinates: world placement of the dropped item
   // must never leak into X/Z while carrying. Both position and scale are
   // transformed before subtraction (old code omitted the scale).
+  // Capture the actual held-item animation socket in player portrait space.
+  // No hardcoded lateral/forward offsets or duplicated attack-pose samples:
+  // the animation driver is the sole owner of the throw sweep.
+  function currentThrowSocketPose(){
+    const body=carryDeps()?.playerMesh,holder=heldItemHolder();
+    if(!body?.worldToLocal||!holder?.getWorldPosition||!holder?.quaternion)return null;
+    let cursor=holder;
+    const chain=[];
+    while(cursor&&cursor!==body){chain.unshift(cursor);cursor=cursor.parent;}
+    if(cursor!==body)return null;
+    body.updateWorldMatrix?.(true,false);
+    holder.updateWorldMatrix?.(true,false);
+    const position=body.worldToLocal(holder.getWorldPosition(new THREE.Vector3()));
+    const quaternion=new THREE.Quaternion();
+    for(const part of chain)quaternion.multiply(part.quaternion);
+    return{holder,position,quaternion};
+  }
   function alignHeldVase(vase) {
     const body=carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
@@ -451,9 +468,18 @@
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
-    // Use the actual shared ranged/held throw pose, not a second independent
-    // interpolation of only two pose axes. Carrying keeps the posterior frame
-    // stable in all three dimensions until the throw releases the physical mesh.
+    const base=aimingThrow?.socketBase;
+    if(aimingThrow?.vase===vase&&base){
+      const live=currentThrowSocketPose();
+      if(live?.holder===base.holder){
+        // Rigidly carry the assembled furniture along the same animated tool
+        // socket used by thrown weapons. Both authored hand targets now follow
+        // the real windup/strike rotation right up to the projectile release.
+        const delta=live.quaternion.clone().multiply(base.quaternion.clone().invert());
+        vase.group.position.sub(base.position).applyQuaternion(delta).add(live.position);
+        vase.group.quaternion.premultiply(delta);
+      }
+    }
     return true;
   }
   function heldHandTarget(){
@@ -714,8 +740,10 @@
   }
   function startShatterAim(){
     if(!held||aimingThrow)return false;
+    const socketBase=currentThrowSocketPose(); // Capture before the shared pose starts moving the holder.
     const sharedPose=beginSharedThrowVisual();
-    aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0,sharedPose};
+    aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0,sharedPose,
+      socketBase:sharedPose?socketBase:null};
     showThrowRing(aimingThrow.target);
     lastEvent='started Shattercask throw aim';
     return true;
