@@ -170,7 +170,8 @@ function create(THREE,root){
    // metadata instead of silently degrading to an incorrect 1x1 plane.
    const w=Number(dims.width)||Number(lower?c.builtLowerWidth:c.upper.userData?.portraitModelWidth)||1;
    const h=Number(dims.height)||Number(lower?c.builtLowerHeight:c.upper.userData?.portraitModelHeight)||1;
-   result.set((p.x-.5)*w,(.5-p.y)*h,depth);
+   const u=!lower&&lastState.flipped?1-p.x:p.x; // Waist landmarks are authored against raw pixels, before portrait UV mirroring.
+   result.set((u-.5)*w,(.5-p.y)*h,depth);
    result.applyMatrix4(lower?lowerMatrix:upperMatrix);
    return result;
  }
@@ -186,15 +187,16 @@ function create(THREE,root){
    // One small 24×12 mesh, recomputed only when transforms or rigging change.
    relativeMatrix(upperPlane,upperMatrix);
    relativeMatrix(lowerPlane,lowerMatrix);
-   if(!force && lastState.rev===revision && previousUpper.equals(upperMatrix)
+   const flipped=global.PNGPlaneAvatar?.getPortraitsFlipped?.()===true; // Mirror changes affect seam positions even when all object transforms are unchanged.
+   if(!force && lastState.rev===revision && lastState.flipped===flipped && previousUpper.equals(upperMatrix)
       && previousLower.equals(lowerMatrix))return false;
    previousUpper.copy(upperMatrix);previousLower.copy(lowerMatrix);
-   lastState.rev=revision;
+   lastState.rev=revision;lastState.flipped=flipped;
    const b=settings.riderWaist||belt();
    normalTop.set(0,0,1).applyNormalMatrix(topNormalMatrix.getNormalMatrix(upperMatrix));
    normalBottom.set(0,0,1).applyNormalMatrix(bottomNormalMatrix.getNormalMatrix(lowerMatrix));
    for(let i=0;i<5;i++){
-     localPoint(upperPlane,b[i],targetsTop[i],0,false);
+     localPoint(upperPlane,b[flipped?4-i:i],targetsTop[i],0,false); // Reverse mirrored traversal so the upper/lower strips retain matching winding.
      localPoint(lowerPlane,settings.animalNeck[i],targetsBottom[i],0,true);
    }
    let offset=0,tex=geometry.attributes.uv.array;

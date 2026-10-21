@@ -332,6 +332,10 @@
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait',
       },
     );
+    if (portrait.userData?.omgurkuComposite) {
+      window.PNGPlaneAvatar.disposeAvatarModel(portrait); // Enemy conversion extracts two rigid planes; release a compound avatar before rejecting that unsupported path.
+      throw new Error('Omgurku hybrid enemies require a compound combat avatar; spawn this species through the NPC walker instead.');
+    }
     const assembly = portrait.children[0];
     const frontMesh = assembly?.children?.[0];
     const backMesh = assembly?.children?.[1];

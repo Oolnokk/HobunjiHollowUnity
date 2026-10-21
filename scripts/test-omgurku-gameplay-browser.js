@@ -95,6 +95,21 @@ const server=http.createServer((req,res)=>{
       return {moved,transferred,joinFinite:Object.values(join).every(Number.isFinite)};
     });
     assert(movement.moved&&movement.transferred&&movement.joinFinite,'hybrid moves and transfers through the ordinary NPC walker without invalid transforms');
+    const chair=await page.evaluate(async()=>{
+      await window.AuthoredFurniture.load('chairSimple');
+      const deps=window.RomanceSystem.helpers.deps(),walker=window.__omgurkuGameWalker;
+      const target={area:walker.area,c:Math.floor(walker.root.position.x),r:Math.floor(walker.root.position.z),pose:'sit',furnitureKey:'chairSimple'};
+      const seat=deps.seatTransformForTarget(target);
+      if(!seat)return {available:false};
+      window.NpcScheduling.registerTargetOverride('omgurku-chair-qa',rec=>rec.id===walker.rec.id?target:null);
+      walker.root.position.set(seat.x,0,seat.z);walker.state='idle';
+      for(let i=0;i<60;i++)walker.update(1/60);
+      const y=walker.root.position.y,station=walker._seatedStationKey;
+      window.NpcScheduling.registerTargetOverride('omgurku-chair-qa',null);
+      return {available:true,y,station};
+    });
+    assert(chair.available,'chair fixture uses a real authored seat anchor');
+    assert(Math.abs(chair.y)<.02,'a resting hybrid never sinks its quadruped body below the floor to fit a humanoid chair');
     const legacy=await page.evaluate(async()=>{
       const deps=window.RomanceSystem.helpers.deps(),walker=window.__omgurkuGameWalker;
       const old=await deps.spawnNpcRecord({id:'omgurku-legacy-qa',name:'Legacy Hybrid',species:'Omgurku',gender:'female'},

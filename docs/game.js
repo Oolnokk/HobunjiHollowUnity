@@ -12427,7 +12427,8 @@
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
                 const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
-                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
+                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY
+                  : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {

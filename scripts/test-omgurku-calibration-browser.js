@@ -199,6 +199,26 @@ const server=http.createServer((req,res)=>{
       return c?.live?.size===1 && [...c.live][0].mesh.visible
         && [...c.live][0].mesh.geometry.attributes.position.version>0;
     },null,{timeout:12000});
+    const mirror=await page.evaluate(()=>{
+      const api=window.PNGPlaneAvatar,handle=[...window.HobunjiOmgurkuConnector.live][0];
+      const root=handle.root,upper=root.userData.omgurkuComposite.upper;
+      const plane=upper.userData.neckRig?.skinnedPlane||upper.getObjectByName('npc_avatar_front_plane');
+      const waist=window.HobunjiOmgurkuConnector.snapshot().riderWaist||window.HobunjiOmgurkuConnector.belt();
+      const expected=(point,flip)=>root.worldToLocal(plane.localToWorld(new window.THREE.Vector3(
+        (flip?.5-point.x:point.x-.5)*upper.userData.portraitModelWidth,
+        (.5-point.y)*upper.userData.portraitModelHeight,0)));
+      root.updateMatrixWorld(true);
+      api.setPortraitsFlipped(false,{persist:false});handle.update(false);
+      const unflipped=handle.targetsTop[0].distanceTo(expected(waist[0],false));
+      const bottom=handle.targetsBottom.map(point=>point.clone()),map=handle.mesh.material.map;
+      const version=handle.mesh.geometry.attributes.position.version;
+      api.setPortraitsFlipped(true,{persist:false});const updated=handle.update(false);
+      return {unflipped,flipped:handle.targetsTop[0].distanceTo(expected(waist[4],true)),updated,
+        revisionChanged:handle.mesh.geometry.attributes.position.version>version,
+        bottomFixed:bottom.every((point,i)=>point.distanceTo(handle.targetsBottom[i])<1e-8),sameTexture:map===handle.mesh.material.map};
+    });
+    assert(mirror.unflipped<1e-7&&mirror.flipped<1e-7,'connector waist follows raw portrait pixels in both mirror settings without crossing its endpoints');
+    assert(mirror.updated&&mirror.revisionChanged&&mirror.bottomFixed&&mirror.sameTexture,'mirror toggles invalidate only upper seam geometry, preserving the lower attachment and tinted texture');
     const tint=await page.evaluate(()=>{
       const h=[...window.HobunjiOmgurkuConnector.live][0];
       const canvas=h.mesh.material.map.image,ctx=canvas.getContext('2d');
