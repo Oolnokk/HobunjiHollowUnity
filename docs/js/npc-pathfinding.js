@@ -35,12 +35,14 @@
       const bg = deps.npcGridForArea(area);
       return !!bg?.[r]?.[c] && (!deps.isSolid(bg[r][c].type) || bg[r][c].npcFurnitureCollider === true);
     }
-    const g = area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid();
+    // Every area (especially a wilderness zone) must validate against its own terrain grid, not the farm's.
+    const g = typeof deps.npcGridForArea === 'function' ? deps.npcGridForArea(area) : (area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid());
     const tile = g?.[r]?.[c];
     if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
     if (area === 'town' && deps.isTownBuildingCollisionTile(c, r)) return false;
-    if (deps.isZoneArea(area) && deps.isTownBuildingCollisionTile(c, r, area)) return false;
+    // skipFloor means the mesa's continuous lid owns the floor, NOT an absent walkable surface.
+    if (deps.isZoneArea(area) && (tile.mapBoundary || deps.isTownBuildingCollisionTile(c, r, area))) return false; // Keep true escarpment walls blocked without stranding NPCs on plateau lids.
     return true;
   }
 
@@ -86,8 +88,10 @@
   // Only a tile that is structurally blocked is moved, so seats and beds (furniture)
   // keep their authored arrival tile. Maps that are not loaded yet are left alone.
   function nearestWalkableTile(area, c, r, maxRadius = 6) {
-    if (!deps || !deps.isBuildingArea(area) || !deps.npcGridForArea(area)) return { c, r };
-    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5)) return { c, r };
+    // Wilderness entries need the same safe-arrival search as building doors; unloaded areas cannot be probed yet.
+    if (!deps || (!deps.isBuildingArea(area) && !deps.isZoneArea(area)) || !deps.npcGridForArea(area)) return { c, r };
+    // Building seats intentionally preserve their furniture-overlapped station tile; wilderness spawns must not emerge inside a blocking prop.
+    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5) && (!deps.isZoneArea(area) || isNpcTileWalkable(area, c, r))) return { c, r };
     let fallback = null; // Structurally clear but furniture-blocked tile, used only when no free tile is in range.
     for (let radius = 1; radius <= maxRadius; radius++) {
       let best = null, bestDist = Infinity;
@@ -574,7 +578,7 @@
     return {
       ...debugStats,
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'NPC detour A* uses the shared priority queue and octile heuristic; overnight scheduling now carries across weekdays.',
+      latestChange: 'Wilderness NPC paths read zone terrain, preserve walkable skipFloor mesa lids, reject map-boundary cliffs and revalidate deferred zone entry spawns.',
     };
   }
 
