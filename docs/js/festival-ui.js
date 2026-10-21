@@ -3,6 +3,7 @@
   'use strict';
   let root = null; // Lazily built so the game and standalone rule tests share the same module.
   let prop = null; // Authored activity anchor currently being inspected.
+  let feastInspectIndex = null; // Indexed serving pot currently previewed in the reused festival modal.
   let eventId = ''; // Prevents stale menus surviving a festival/date change.
   let lock = null; // Existing character-action authority owns movement/tool blocking while the menu is open.
   let previousFocus = null; // Restored on dismissal for keyboard and controller users.
@@ -15,6 +16,7 @@
     if (root) return;
     const style = document.createElement('style'); // Scoped styles support phone portrait/landscape and the existing game palette.
     style.textContent = '#festivalDialog{position:fixed;inset:0;z-index:1100;background:#071318bb;display:none;align-items:center;justify-content:center;padding:12px;box-sizing:border-box}#festivalDialog .festival-card{width:min(620px,100%);max-height:85dvh;overflow:auto;background:#162622;color:#f3ebd8;border:2px solid var(--festival-color,#dbc296);border-radius:14px;padding:18px;box-sizing:border-box;box-shadow:0 15px 65px #0009}#festivalDialog h2{margin:0 0 6px;color:var(--festival-color)}#festivalDialog p{line-height:1.5}#festivalDialog button{min-height:44px;padding:9px 12px;margin:4px;border:1px solid #b5c4ac;border-radius:7px;background:#30483d;color:#fff;font:inherit}#festivalDialog button:disabled{opacity:.45}#festivalDialog .festival-options{display:flex;flex-wrap:wrap;gap:4px}#festivalDialog [aria-pressed=true]{background:#51652d;border:2px solid #ffe08a}#festivalDialog .festival-note{font-size:13px;color:#b8c8b9}#festivalDialog pre{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;font-size:12px}#festivalDialog .festival-status{padding:8px;background:#0c1916;border-radius:6px}';
+    style.textContent += '#festivalDialog .festival-dish-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:5px}#festivalDialog .festival-dish-picker button{margin:0;text-align:left;white-space:pre-line;overflow-wrap:anywhere}#festivalDialog .festival-dish-picker button[aria-pressed=true]{border-color:#ffe08a;background:#465b36}#festivalDialog .festival-dish-info{margin-top:14px;border-top:1px solid #68775f;padding-top:10px}#festivalDialog .festival-ingredient-list{list-style:none;padding:0;margin:8px 0}#festivalDialog .festival-ingredient-list li{padding:9px 4px;border-bottom:1px solid #56665a}#festivalDialog .festival-ingredient-list small{display:block;color:#b8c8b9;margin-top:3px}#festivalDialog .festival-dish-total{padding:7px 10px;background:#253a31;border-radius:6px}';
     document.head.append(style);
     root = document.createElement('section');
     root.id = 'festivalDialog'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'festivalTitle'); root.setAttribute('data-ctrl-panel', '');
@@ -37,9 +39,27 @@
     root.querySelector('button:not(:disabled)')?.focus();
     return true;
   }
+  function openFeast(index = 0) {
+    const api = system();
+    if (api?.festival?.()?.id !== 'gorkunash' || !api.festivalHours?.()) return false;
+    const meal = api.feastDishDetails?.(index);
+    if (!meal || meal.id === 'reserved') return false;
+    ensure();
+    close();
+    feastInspectIndex = index; // Open directly on the pot that was inspected in the world.
+    eventId = `${api.year()}:${api.festival().id}`;
+    previousFocus = document.activeElement;
+    root.style.display = 'flex';
+    root.style.setProperty('--festival-color', api.festival().color);
+    document.exitPointerLock?.();
+    lock = window.CharacterActionLocks?.acquire?.({owner:'festival-menu',reason:'Inspect festival dishes',participants:[{id:'player',channels:['movement','tools','actions']}]});
+    render();
+    root.querySelector('button:not(:disabled)')?.focus();
+    return true;
+  }
   function close() {
     if (root) root.style.display = 'none';
-    lock?.release?.(); lock = null; prop = null; eventId = '';
+    lock?.release?.(); lock = null; prop = null; feastInspectIndex = null; eventId = '';
     previousFocus?.focus?.(); previousFocus = null;
   }
   function status(message) {
@@ -48,11 +68,12 @@
     output.hidden = !message; output.textContent = message || '';
   }
   function render() {
-    if (!prop) return;
+    if (!prop && feastInspectIndex === null) return;
     const api = system(); // One rule authority for disabled state, preview, and commit.
     const f = api.festival();
-    const type = prop.activity.type;
-    root.querySelector('#festivalTitle').textContent = `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
+    const type = feastInspectIndex !== null ? 'feast' : prop.activity.type;
+    root.querySelector('#festivalTitle').textContent = type === 'feast' ? '🍲 Gorkunash potluck dishes'
+      : `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
     root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings 15:00–01:00`;
     const content = root.querySelector('#festivalContent');
     let html = '';
