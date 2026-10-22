@@ -6372,7 +6372,11 @@
                ((c.denKey || c.herdKey) && window.Music?.isNightTime?.()))) {
             window.WildlifeFoodWeb?.cancelForage?.(c);
           }
-          const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          // A tribe-camp ecology fight (js/porakaneki-camps-runtime.js) assigns a
+          // humanoid a live actor target and zeroes its player aggro; chase,
+          // leash and sight below must follow that actor, not the player.
+          const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
+          const targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -6436,7 +6440,7 @@
           }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
             c.state = 'return';
-          } else if (c.state === 'chase' && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
+          } else if (c.state === 'chase' && !chunkCombatTarget && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
