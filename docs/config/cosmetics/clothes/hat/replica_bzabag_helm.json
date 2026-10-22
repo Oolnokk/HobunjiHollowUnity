@@ -41,7 +41,10 @@
                 }
               },
               "layerRole": "base",
-              "materialKind": "cloth"
+              "materialKind": "cloth",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/replica_bzabag's_helm-cap_m.png"
+              }
             },
             "front": {
               "image": {
@@ -61,7 +64,10 @@
                 }
               },
               "layerRole": "trim",
-              "materialKind": "metal"
+              "materialKind": "metal",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband.png"
+              }
             }
           }
         }
