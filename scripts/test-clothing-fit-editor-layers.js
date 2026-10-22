@@ -251,9 +251,9 @@ async function main() {
   await exportFn();
   assert.equal(exported.length,1,'One downloadable ZIP is produced');
   const entryNames=exported[0].entries.map(entry=>entry.name);
-  assert.deepEqual(entryNames.slice(0,3),plan.files.map(file=>file.outputName).slice(0,3).length===3
-    ?archiveApi.buildFittedLayerArchivePlan(helm._layers,selection).files.map(file=>file.outputName)
-    :[], 'The downloaded PNG entry names match the install plan');
+  assert.deepEqual(entryNames.slice(0,3),
+    archiveApi.buildFittedLayerArchivePlan(helm._layers,selection).files.map(file=>file.outputName),
+    'The downloaded PNG entry names match the install plan');
   assert(entryNames.includes('config/cosmetics/clothes/hat/replica_bzabag_helm.json'),
     'When a target variant is missing its complete cosmetic JSON ships with the PNGs');
   assert(entryNames.includes('fitted-layers-manifest.json'));
