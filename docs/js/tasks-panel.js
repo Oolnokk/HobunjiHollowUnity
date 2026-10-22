@@ -352,20 +352,37 @@
               <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">${ready ? `Ready — return to ${deps.esc(giver)}.` : `In progress — return to ${deps.esc(giver)} when the objective is complete.`}</div>
             </div>
           `;
+        } else if (task.commission) {
+          const ready = !!window.NpcCraftingCommissionDelivery?.isReady?.(task); // Authoritative validation of the actual newly crafted deliverable.
+          const requirement = window.NpcCraftingCommissionDelivery?.requirementText?.(task) || 'Craft the requested piece.'; // Same recipe/matching text used at turn-in.
+          const quote = window.NpcCraftingCommissionGenerator?.rewardQuote?.(task); // Gold, Favor points, and Motes all come from one payout quote.
+          const gold = quote?.gold ?? task.rewardGold ?? 0; // Saved legacy commissions use the live minimum payout.
+          const favor = quote?.favor ?? task.rewardFriendship ?? 0; // Player-facing Favor points, not heart units.
+          const motes = quote?.motes ?? task.rewardMotes ?? 0; // World crafting currency shown alongside ordinary money.
+          row.innerHTML = `
+            <div class="sh-icon">🛠️</div>
+            <div class="sh-info">
+              <div class="sh-name">${deps.esc(task.npcName || 'A neighbor')}'s crafting commission</div>
+              <div class="sh-desc">${deps.esc(requirement)}</div>
+              <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">Reward: ${gold}g + ${favor} Favor + ${motes} Motes of Craft. ${ready ? `Ready — return to ${deps.esc(task.npcName || 'the requester')}.` : 'Craft the requested piece, then return it.'}</div>
+            </div>`;
         } else {
           const itemList = (task.items || []).map(it => `${deps.esc(deps.ITEM_DEFS[it.itemKey]?.label || it.itemKey)} ×${it.qty} (have ${deps.inventory[it.itemKey] || 0})`).join(', ') || 'No delivery items recorded'; // Used to keep one malformed legacy task from aborting every quest row.
           const npcName = task.npcName || 'Unknown quest giver'; // Used by legacy/incomplete task rows that lack the newer npcName field.
           const source = task.kind === 'request' ? `${deps.esc(npcName)}'s request` : `${deps.esc(npcName)}'s favor`;
+          const preview = window.ProceduralTasks?.rewardPreview?.(task); // The task owner calculates the exact gold/Favor paid, including saved legacy jobs.
+          const shownGold = preview?.gold ?? task.rewardGold; // Current payout, not the smaller base amount hidden behind a timely multiplier.
+          const shownFavor = preview?.favor ?? task.rewardFriendship; // Stored Favor points rather than whole relationship hearts.
           const bonusNote = task.deadlineDay != null
-            ? ((deps.calendar?.day || 0) <= task.deadlineDay
-              ? ` Deliver by day ${task.deadlineDay} for ${task.rewardGold * (task.bonusMultiplier || 1)}g instead of ${task.rewardGold}g.`
-              : ' The bonus window has passed — still worth the base price.')
+            ? (preview?.onTime
+              ? ` Includes on-time bonus (base: ${preview.baseGold}g; through day ${task.deadlineDay}).`
+              : ` Deadline passed — current payout: ${shownGold}g (no on-time bonus).`)
             : '';
           row.innerHTML = `
             <div class="sh-icon">${task.kind === 'request' ? '❗' : '💌'}</div>
             <div class="sh-info">
               <div class="sh-name">${source} — ${itemList}</div>
-              <div class="sh-desc">Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${deps.esc(npcName)}.${bonusNote}</div>
+              <div class="sh-desc">Reward: ${shownGold}g + ${shownFavor} Favor. Turn in to ${deps.esc(npcName)}.${bonusNote}</div>
             </div>
           `;
         }
