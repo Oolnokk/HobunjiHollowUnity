@@ -80,7 +80,8 @@ async function loadRepositoryData(){
       const cfg=x.cfg,variants=cfg?.speciesVariants||{};
       if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
          (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
-        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg});
+        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg,
+          configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\.\//,'')}`}); // Ready-to-install ZIPs can include updated target config when needed.
       }
     }
     R.garments.sort((a,b)=>a.label.localeCompare(b.label));
