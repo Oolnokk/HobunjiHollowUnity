@@ -49,13 +49,29 @@
   const MAX_FOOD_PORTIONS = 10; // Bowl capacity, independent meal-duration cap, and fullness stack limit.
   const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',clarity:'🧠',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
   function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the eighteen-hour fullness window.
+  function validGatheringHours(start, end) {
+    return Number.isFinite(start) && start >= 0 && start < 24
+      && Number.isFinite(end) && end >= 0 && end <= 24 && start !== end;
+  }
   function festivalHours() {
     const current = festival(); // A gathering window never closes shops on an ordinary day.
     if (!current) return false;
     const hour = Number(window.CalendarSystem?.getHour?.()); // Civil time shared by attendance and shop access.
-    const start = current.gatheringHours?.start ?? 15; // Optional per-festival hours, inclusive at opening.
-    const end = current.gatheringHours?.end ?? 1; // Exclusive end releases the normal shopkeeper schedule immediately.
-    return Number.isFinite(hour) && (start < end ? hour >= start && hour < end : hour >= start || hour < end);
+    const start = Number(current.gatheringHours?.start ?? 15); // Optional per-festival civil hours, inclusive at opening.
+    const end = Number(current.gatheringHours?.end ?? 1); // Exclusive end releases the normal shopkeeper schedule immediately.
+    if (!Number.isFinite(hour) || hour < 0 || hour >= 24 || !validGatheringHours(start, end)) return false;
+    return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  }
+  function gatheringHoursLabel() {
+    const current = festival(); // UI and diagnostics show the same configured window that controls shop access.
+    if (!current) return 'No gathering scheduled';
+    const start = Number(current.gatheringHours?.start ?? 15), end = Number(current.gatheringHours?.end ?? 1); // Display-only civil-hour boundaries.
+    if (!validGatheringHours(start, end)) return 'No gathering scheduled';
+    const format = value => { // Formatting is used only in menus and copied diagnostics, outside the frame loop.
+      const minutes = Math.round(value * 60); // Preserve authored half-hour and minute boundaries.
+      return `${String(Math.floor(minutes / 60)).padStart(2,'0')}:${String(minutes % 60).padStart(2,'0')}`;
+    };
+    return `${format(start)}–${format(end)}`;
   }
   function shopsClosedFor(rec) {
     return !!rec && HOME_IDS.has(rec.homeId) && !rec.visitorPresence
@@ -669,7 +685,7 @@
       dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
-      gatheringActive:festivalHours(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
+      gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
       latestChange:'Shops pause only during active festival hours and resume their normal schedules afterward.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
@@ -885,6 +901,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    socialOptionsFor, festivalHours, shopsClosedFor, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, gatheringHoursLabel, shopsClosedFor, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
