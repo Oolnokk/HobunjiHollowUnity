@@ -65,6 +65,15 @@ const barrier=root(0,-1); // An unrelated tall solid between the camera and buff
 tables.registerPlacement('raised-view-test',{id:'unrelated-barrier',key:'block',col:0,row:-1},barrier,{fw:1,fd:1}).height=3;
 ray.origin=new Vector(0,2.35,-3);ray.direction=new Vector(0,-.38,1);frame++;
 assert.equal(tables.focusedTarget('raised-view-test')?.entry?.id,'unrelated-barrier','foreign geometry still blocks surface interactions');
+barrier.parent=null;frame++; // Remove the external barrier, then put one inside the buffet's broad parent box.
+const insetBarrier=root(0,1.1); // Its world hit lies ahead of the pot but behind the parent's oversized bounding face.
+tables.registerPlacement('raised-view-test',{id:'inset-barrier',key:'bookcase',col:0,row:1.1},insetBarrier,{fw:.2,fd:.2}).height=2;
+ray.origin=new Vector(0,2.35,-3);ray.direction=new Vector(0,-1.7/4.27,1);frame++;
+assert.notEqual(tables.focusedTarget('raised-view-test')?.kind,'service',
+  'an intervening solid inside the serving table bounding box must not let the pot show a prompt through it');
+insetBarrier.parent=null;frame++;
+assert.equal(tables.focusedTarget('raised-view-test')?.placement?.id,'pot-1',
+  'removing the internal obstruction restores the actual pot without requiring an extra game tick');
 
 // Pin the camera-ray contract: interaction rays originate at the lifted camera,
 // not at an independently stored or hard-coded original character eye height.
