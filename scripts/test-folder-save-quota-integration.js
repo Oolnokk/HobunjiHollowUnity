@@ -34,8 +34,12 @@ function directory(name, disk) {
               pending = value;
               const onWrite = disk.onWrite; // One-shot gameplay edit while the captured snapshot is being committed.
               disk.onWrite = null;
-              onWrite?.();
-            }, async close() { text = pending; } };
+              await onWrite?.();
+            }, async close() {
+              text = pending;
+              if (name === 'worlds' && disk.worldCommits) disk.worldCommits.push(JSON.parse(pending).members?.farmer?.nonGearInventory?.cookedPie);
+              if (key === 'manifest.json') disk.afterManifest?.();
+            } };
           },
         });
       }
@@ -68,6 +72,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
     removeItem: key => sessionData.delete(key),
   };
   const frames = []; // Queued UI work lets tests bind the real Settings handlers without a browser.
+  const navigator = {}; // Tests can enable Web Locks after exercising the fallback queue.
   const actions = { reloads: 0, suppressed: [], alerts: [] }; // Records real reload/error decisions made by production modules.
   const indexedDB = { // Minimal async IndexedDB adapter for the folder core's handle bookkeeping.
     open() {
@@ -97,7 +102,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
     __hobunjiPlayerProfile: { characterId: 'farmer', worldId: 'hollow' },
   };
   const context = vm.createContext({ // Timers are inert so each test explicitly chooses when to save.
-    window, localStorage: storage, sessionStorage, indexedDB, document, console, navigator: {},
+    window, localStorage: storage, sessionStorage, indexedDB, document, console, navigator,
     MutationObserver: class { observe() {} }, requestAnimationFrame: fn => frames.push(fn),
     setInterval: () => 1, clearInterval() {}, setTimeout: (fn, delay) => { if (delay === 0) fn(); return 1; }, clearTimeout() {},
     location: { reload() { actions.reloads++; } }, confirm: () => true, alert: message => actions.alerts.push(message),
@@ -108,7 +113,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   await new Promise(resolve => setImmediate(resolve));
   await window.LocalSaveFolder.chooseFolder();
   return {
-    window, storage, sessionStorage, actions, nativeAttempts,
+    window, storage, sessionStorage, actions, nativeAttempts, navigator,
     installLiveMember(inventory) {
       window.AlchemySystem = { serializeKnownEffects: () => [], serializeKnownRecipes: () => [], serializeActiveEffects: () => [] };
       window.ReagentPlants = { serializeZoneReagentState: () => ({}) };
@@ -259,6 +264,53 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   assert.equal(first.actions.reloads, 1);
   assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 7);
   assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.characters[0].nickname, 'Changed during save', 'the next direct snapshot includes the concurrent character edit');
+
+  disk.worldCommits = [];
+  let releaseWrite; // Releases an autosave only after two newer explicit snapshots are queued behind it.
+  const pendingWrite = new Promise(resolve => { releaseWrite = resolve; }); // Real asynchronous file I/O pause for save ordering coverage.
+  disk.onWrite = () => pendingWrite;
+  inventory.cookedPie = 8;
+  const busyAuto = first.window.LocalSaveFolder.syncNow({ automatic: true }); // Hold the first canonical file write open.
+  await new Promise(resolve => setImmediate(resolve));
+  inventory.cookedPie = 9;
+  const queuedFirst = first.window.LocalSaveFolder.syncSnapshot(first.window.HobunjiRuntimeSave.captureSnapshot().snapshot);
+  inventory.cookedPie = 10;
+  const queuedSecond = first.window.LocalSaveFolder.syncSnapshot(first.window.HobunjiRuntimeSave.captureSnapshot().snapshot);
+  releaseWrite();
+  await Promise.all([busyAuto, queuedFirst, queuedSecond]);
+  assert.deepEqual(disk.worldCommits, [8, 9, 10], 'every explicit snapshot must reach disk rather than share another request\'s success');
+
+  let releaseSettings; // Allows Settings Save to queue behind a deliberately stalled ordinary autosave.
+  const pendingSettings = new Promise(resolve => { releaseSettings = resolve; });
+  disk.onWrite = () => pendingSettings;
+  inventory.cookedPie = 11;
+  const autoBeforeSettings = first.window.LocalSaveFolder.syncNow({ automatic: true });
+  await new Promise(resolve => setImmediate(resolve));
+  inventory.cookedPie = 12;
+  const settingsSave = first.window.LocalSaveFolder.syncNow(); // Settings must recapture current state after the pending autosave completes.
+  releaseSettings();
+  await Promise.all([autoBeforeSettings, settingsSave]);
+  assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 12);
+
+  inventory.cookedPie = 13;
+  const originalGetItem = first.storage.getItem.bind(first.storage); // Simulate browser bookkeeping failing only after the manifest is durably closed.
+  disk.afterManifest = () => {
+    disk.afterManifest = null;
+    first.storage.getItem = () => { throw new Error('browser read failed after disk commit'); };
+  };
+  const postCommitBrowserFailure = await first.window.HobunjiSaveCheckpoints.saveManual();
+  first.storage.getItem = originalGetItem;
+  assert.equal(postCommitBrowserFailure.ok, true, JSON.stringify(postCommitBrowserFailure));
+  assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 13);
+
+  const lockRequests = []; // Both pinned snapshots and Settings saves must use the same cross-tab exclusive lock exactly once.
+  first.navigator.locks = { request(name, options, operation) { lockRequests.push({ name, mode: options.mode }); return operation(); } };
+  await first.window.LocalSaveFolder.syncSnapshot(first.window.HobunjiRuntimeSave.captureSnapshot().snapshot);
+  await first.window.LocalSaveFolder.syncNow();
+  assert.deepEqual(lockRequests, [
+    { name: 'hobunji-primary-folder-save', mode: 'exclusive' },
+    { name: 'hobunji-primary-folder-save', mode: 'exclusive' },
+  ], 'manual/restore snapshots cannot bypass the shared folder write lock');
 
   const beforeBadCapture = (await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot; // A serialization failure must not replace a good folder save with stale browser state.
   first.window.CookingSystem.serialize = () => { throw new Error('cooking capture failed'); };

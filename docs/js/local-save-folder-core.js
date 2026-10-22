@@ -231,11 +231,12 @@
     if (_autoTimer) clearInterval(_autoTimer);
     if (_changePollTimer) clearInterval(_changePollTimer);
     _autoSyncArmed = true;
-    _lastObservedFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
+    _lastObservedFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
     _autoTimer = setInterval(() => { syncNow({ automatic: true, reason: 'folder-timer' }); }, AUTO_SYNC_MS);
     _changePollTimer = setInterval(() => {
       if (_state !== 'ready' || !_autoSyncArmed) return;
-      const nextFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
+      const nextFingerprint = observeBrowserFingerprint(_folderSupportsFarmLayouts);
+      if (nextFingerprint === null) return; // Failed optional polling must not throw or disable the independent 30-second folder timer.
       if (nextFingerprint === _lastObservedFingerprint) return;
       _lastObservedFingerprint = nextFingerprint;
       syncNow({ automatic: true, reason: 'folder-change' });
@@ -416,6 +417,14 @@
       parts.push(world.id, localStorage.getItem(farmLayoutKey(world.id)) || '');
     }
     return parts.join('\u001f');
+  }
+
+  function observeBrowserFingerprint(includeFarmLayouts) {
+    try { return browserFingerprint(includeFarmLayouts); }
+    catch (error) {
+      _lastBrowserMirrorWarning = `Browser cache bookkeeping failed: ${String(error?.message || error)}`;
+      return null;
+    }
   }
 
   function snapshotFromBrowser() {
@@ -674,7 +683,7 @@
         _lastBrowserMirrorWarning = `Primary folder saved; browser cache could not be updated: ${String(mirrorError?.message || mirrorError)}`;
       }
       delete saveSnapshot.browserBaselineFingerprint; // Do not retain another whole-save fingerprint in every recovery slot.
-      _lastObservedFingerprint = browserFingerprint(true);
+      _lastObservedFingerprint = observeBrowserFingerprint(true); // Optional browser bookkeeping cannot change the success of the completed disk commit.
 
       const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
       if (typeof checkpointWriter === 'function') {
@@ -695,13 +704,13 @@
   }
 
   async function syncNow(options = {}) {
-    if (_syncPromise) return _syncPromise;
+    if (_syncPromise && options.automatic === true && !options.snapshot) return _syncPromise;
+    while (_syncPromise) await _syncPromise; // Explicit saves and pinned travel/restore snapshots must each commit after every older writer, including another waiter.
     _syncPromise = _syncNowImpl(options).finally(() => { _syncPromise = null; });
     return _syncPromise;
   }
 
   async function syncSnapshot(snapshot, options = {}) {
-    if (_syncPromise) await _syncPromise; // Manual/restore snapshots must not be discarded behind an already-running autosync.
     return syncNow({ ...options, snapshot });
   }
 
