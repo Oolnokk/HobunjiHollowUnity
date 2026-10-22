@@ -10,6 +10,10 @@ const DOCS_ROOT=(() => {
  catch (_) { return new URL('../../',location.href).href; }
 })();
 const MAX_IMAGE_CHARS=2400000;
+// The connector splines were authored against the basic pants sprite, so it
+// stands in whenever the dedicated connector PNG is not shipped yet.
+const FALLBACK_ASSET_PATH='assets/cosmetics/clothes/legs/pants_basic.png';
+const missingAssets=new Set(); // Asset paths that already failed this session; later NPCs skip straight to the fallback.
 const TOP=[.32,.41,.50,.59,.68].map(x=>({x,y:.10}));
 const BOTTOM=[.28,.39,.50,.61,.72].map(x=>({x,y:.90}));
 const FALLBACK_BELT=[{x:.325,y:1},{x:.405,y:.99},{x:.485,y:.985},
@@ -128,9 +132,11 @@ function create(THREE,root){
    const current=++loadEpoch; // Ignore PNG decodes completed after replacement or disposal.
    if(texture){material.map=null;material.needsUpdate=true;texture.dispose();texture=null;}
    mesh.visible=false;tintStatus.ready=false;tintStatus.error=null;
+   const assetPath=missingAssets.has(settings.assetPath)?FALLBACK_ASSET_PATH:settings.assetPath;
    const src=settings.imageDataUrl || (settings.enabled?
-     new URL(settings.assetPath,DOCS_ROOT).href:null);
+     new URL(assetPath,DOCS_ROOT).href:null);
    if(!settings.enabled||!src)return;
+   tintStatus.source=settings.imageDataUrl?'uploaded':assetPath; // Mobile diagnostics show which PNG the connector is using.
    const image=new Image(); // Decode CPU pixels once per image change, never during spline deformation.
    image.crossOrigin='anonymous';
    const fail=error=>{
@@ -160,7 +166,14 @@ function create(THREE,root){
        update(true); // Fit before the first visible render after decode.
      }catch(error){fail(error);}
    };
-   image.onerror=()=>fail(new Error('Connector PNG failed to load'));
+   image.onerror=()=>{
+     if(!settings.imageDataUrl && assetPath!==FALLBACK_ASSET_PATH && !disposed && current===loadEpoch){
+       missingAssets.add(assetPath);
+       applyImage(); // Retry once with the basic pants sprite the splines were authored on.
+       return;
+     }
+     fail(new Error('Connector PNG failed to load'));
+   };
    image.src=src;
  }
  function localPoint(plane,p,result,depth,lower=false){
@@ -271,7 +284,7 @@ function reset(){
 }
 function updateAll(){for(const h of live)h.update();}
 global.HobunjiOmgurkuConnector={
- schema:ID,storageKey:KEY,defaults:clone(DEFAULT),
+ schema:ID,storageKey:KEY,defaults:clone(DEFAULT),fallbackAssetPath:FALLBACK_ASSET_PATH,
  validateFivePointSpline:valid,normalize,belt,splineAt,deformationFraction,
  create,set,snapshot,reset,updateAll,live,
 };

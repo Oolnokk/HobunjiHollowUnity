@@ -219,7 +219,7 @@ async function png(file){
  await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('PNG decode failed'));image.src=url;});
  if(!image.naturalWidth||!image.naturalHeight)throw Error('Empty connector image');
  if(!bridge().normalize({imageDataUrl:url}).imageDataUrl)throw Error('PNG exceeds the browser storage budget.');
- state.image=image;state.dataUrl=url;state.settings.enabled=true;
+ state.image=image;state.imageUrl=url;state.dataUrl=url;state.settings.enabled=true;
  apply();tell('Connector uploaded. Drag the two source seams and the animal-neck spline.');
 }
 function download(name,data,mime){
@@ -255,14 +255,20 @@ function previewReady(){
    delete state.settings.imageDataUrl; // Artwork is held separately, so dragging clones only small rig settings.
    state.dataUrl=current.imageDataUrl||null;
    const url=state.dataUrl || (current.enabled?new URL('../../'+current.assetPath,location.href).href:null); // Preview saved and authored artwork too.
-   if(url && state.image?.src!==url){
+   if(url && state.imageUrl!==url){
+     state.imageUrl=url; // Requested URL, so a fallback-loaded image is not re-requested on every rebuild.
      const img=new Image(); // Do not let an older PNG load overwrite a later import/reset.
      img.crossOrigin='anonymous';
      state.image=img;
      img.onload=()=>{if(state.image===img)refresh();};
-     img.onerror=()=>{if(state.image===img){state.image=null;refresh();tell('Connector PNG could not load.',true);}};
+     const fallback=new URL('../../'+bridge().fallbackAssetPath,location.href).href; // Splines were authored on the basic pants sprite.
+     img.onerror=()=>{
+       if(state.image!==img)return;
+       if(!state.dataUrl && img.src!==fallback){img.src=fallback;return;} // Same fallback gameplay uses until the connector PNG ships.
+       state.image=null;refresh();tell('Connector PNG could not load.',true);
+     };
      img.src=url;
-   }else if(!url)state.image=null;
+   }else if(!url){state.image=null;state.imageUrl=null;}
  }
  refresh();
 }
@@ -306,7 +312,7 @@ function hook(){
  });
  $('connectorClear').addEventListener('click',()=>{
    bridge().reset();
-   state.settings=defaults();state.image=null;state.dataUrl=null;state.history=[];
+   state.settings=defaults();state.image=null;state.imageUrl=null;state.dataUrl=null;state.history=[];
    species().setConnector(state.settings);
    state.dirty=false;refresh();
    tell('Connector hidden; local connector override cleared.');
