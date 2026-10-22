@@ -43,12 +43,19 @@ context.window.ItemProcessing.isWheelEligible = (key, index, list) => {
   return key === 'material';
 };
 assert.deepEqual(keys(), ['material'], 'provider replacement is visible immediately');
-context.manualHeldItem = { kind: 'item', key: 'food' };
+context.manualHeldItem = { kind: 'bagItem', key: 'food' };
 const beforeHold = wheel(); // Manual hold identity changes must invalidate wrapped eligibility.
 context.manualHeldItem = null;
 assert.notEqual(wheel(), beforeHold);
+const beforeFrame = wheel(); // A new frame must reclassify recipes even when ownership and catalog identities are unchanged.
 context.gameFrameSerial++;
-assert.deepEqual(keys(), ['material'], 'eligibility is refreshed on the next game frame');
+assert.deepEqual(keys(), ['material']);
+assert.notEqual(wheel(), beforeFrame, 'eligibility is refreshed on the next game frame');
+context.window.ItemProcessing.isWheelEligible = key => !!defs[key].isCookedFood;
+assert.deepEqual(keys(), []);
+defs.newFood.isCookedFood = true;
+context.gameFrameSerial++;
+assert.deepEqual(keys(), ['newFood'], 'in-place recipe registration becomes eligible on the next frame');
 
 const lyre = fs.readFileSync('docs/assets/minigames/lyre-performance.html', 'utf8'); // Shared visible and ambient performance owner.
 function functionSource(name) {
@@ -79,9 +86,12 @@ const ambient = vm.createContext({
   scheduleSuccessfulPreviewContinuation() { continuations++; }, reportGameplayJudgment() {},
   setTimeout() { throw new Error('ambient scoring scheduled an invisible element removal'); },
 }); // Any unexpected layout, DOM access, or visual timer fails this test.
-for (const name of ['restartCssAnimation', 'updateHarmonyVisual', 'updateArpeggioUI', 'flashTarget', 'scoreGameEvent', 'feedback', 'updateHUD', 'updateDebugState', 'updateGameFrame']) {
+for (const name of ['restartCssAnimation', 'updateHarmonyVisual', 'updateArpeggioUI', 'flashTarget', 'scoreGameEvent', 'feedback', 'updateHUD', 'updateDebugState', 'updateGameFrame', 'pollGamepad']) {
   vm.runInContext(functionSource(name), ambient);
 }
+vm.runInContext('pollGamepad()', ambient);
+assert.equal(frames, 1, 'ambient input polling keeps its continuation without touching the hidden status labels');
+frames = 0;
 // Use the real preview event owner with a guarded visual target access, just as the production frame does.
 vm.runInContext(functionSource('performSuccessfulPreviewEvent'), ambient);
 vm.runInContext('updateGameFrame()', ambient);

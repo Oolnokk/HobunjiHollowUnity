@@ -4581,7 +4581,12 @@
   }
 
   function pollGamepad() {
-    const pads = state.ambientOnly ? [] : (navigator.getGamepads?.() || []);
+    if (state.ambientOnly) {
+      // Keep the existing loop ready for a later visible session without mutating hidden status labels every frame.
+      requestAnimationFrame(pollGamepad);
+      return;
+    }
+    const pads = navigator.getGamepads?.() || [];
     let gamepad = state.gamepadIndex != null ? pads[state.gamepadIndex] : null;
     if (!gamepad) {
       gamepad = [...pads].find(Boolean);
