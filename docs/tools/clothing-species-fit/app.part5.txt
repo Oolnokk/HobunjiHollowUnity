@@ -100,6 +100,14 @@ function assetReferencedByOtherTargetLayer(assetPath,variant,layerPath){
   return references.some(path=>JSON.stringify(path)!==JSON.stringify(ownerPath));
 } // Avoid clobbering unexported or differently authored layers within the target variant.
 
+function archiveAssetUsedByAnyGarment(path){
+  return R.garments.some(garment=>
+    Object.values(garment.cfg?.speciesVariants||{}).some(variant=>
+      assetReferencedByOtherTargetLayer(path,variant,[]))||
+    assetReferencedByOtherTargetLayer(path,{parts:garment.cfg?.parts||{}},[])
+  );
+} // Even suggested new filenames cannot overwrite another already-authored sprite URL.
+
 function buildFittedLayerArchivePlan(layers,selection){
   const garment=garmentRecord(),cfg=garment?.cfg;
   if(!cfg||!garment.configPath)throw new Error('This garment has no repository cosmetic config path for a ready-to-install export.');
@@ -126,11 +134,13 @@ function buildFittedLayerArchivePlan(layers,selection){
       assetReferencedByOtherTargetLayer(existing,{parts:cfg.parts||{}},[])
     );
     let outputName=existing&&!shared?existing:fittedFallbackAssetPath(layer,selection);
-    if(used.has(outputName.toLowerCase())){
+    const collides=name=>used.has(name.toLowerCase())||
+      (name!==existing&&archiveAssetUsedByAnyGarment(name));
+    if(collides(outputName)){
       const suffix=safeName(layer.path.join('_'));
       const base=outputName.replace(/\.png$/i,'');
       outputName=base+'__'+suffix+'.png';
-      for(let index=2;used.has(outputName.toLowerCase());index++)outputName=base+'__'+suffix+'_'+index+'.png';
+      for(let index=2;collides(outputName);index++)outputName=base+'__'+suffix+'_'+index+'.png';
     }
     used.add(outputName.toLowerCase());
     const changedUrl=!existing||outputName!==existing;
