@@ -140,7 +140,13 @@ E.file.onchange=async()=>{const f=E.file.files?.[0];if(!f)return;try{await impor
 E.importDiagnostics.onclick=importPastedDiagnostics;
 E.copyDebug.onclick=async()=>{try{await navigator.clipboard.writeText(E.debug.textContent);log('Diagnostics copied.')}catch(error){log('Clipboard unavailable: '+error.message)}};
 
-if(A.settings?.repo)E.repo.value=A.settings.repo;
+// Commit-pinned raw.githack previews must also load cosmetic JSON and game runtime from that commit,
+// not silently fall back to the main-branch repository value saved by an older visit.
+const pinnedPreviewSha=location.pathname.match(/^\\/Oolnokk\\/HobunjiHollowUnity\\/([a-f0-9]{40})\\/docs\\/tools\\/clothing-species-fit\\/index\\.html$/i)?.[1]||null;
+const savedRepo=String(A.settings?.repo||'');
+if(pinnedPreviewSha&&(!savedRepo||/^https:\\/\\/raw\\.githubusercontent\\.com\\/Oolnokk\\/HobunjiHollowUnity\\/(?:main|[a-f0-9]{40})\\/docs\\/?$/i.test(savedRepo))){
+  E.repo.value=`https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/${pinnedPreviewSha}/docs/`;
+}else if(savedRepo)E.repo.value=savedRepo;
 if(A.settings?.gender)E.gender.value=A.settings.gender;
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
 document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
