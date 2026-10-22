@@ -1,0 +1,95 @@
+{
+  "schema": "hobunji_tribe_camp.v3",
+  "wildernessZones": [
+    "map_northern_cliffs",
+    "map_southern_cloud_forest",
+    "map_western_slope",
+    "map_eastern_mire"
+  ],
+  "smallCamps": {
+    "localeId": "locale_porakaneki_camp_small",
+    "minPerZone": 2,
+    "maxPerZone": 4,
+    "minResidents": 2,
+    "maxResidents": 4,
+    "notes": "Each wilderness generation rolls 2-4 persistent little Omgurku camps on every wilderness map, placed after (and never in the same stream chunk as) the Porakaneki camps. Procedural Omgurku only; they do not migrate with the chief."
+  },
+  "chiefCamp": {
+    "localeId": "locale_porakaneki_camp_chief",
+    "generatedResidents": 6,
+    "notes": "Exactly one large Omgurku chief camp is active worldwide. It migrates each regional season, always to a different map than the Porakaneki chief camp that season.",
+    "seasonZoneMap": {
+      "Stormtide": "map_eastern_mire",
+      "Deadgrass": "map_northern_cliffs",
+      "Longpour": "map_southern_cloud_forest",
+      "Coldmuck": "map_western_slope"
+    }
+  },
+  "schedule": {
+    "sleepStartHour": 22,
+    "wakeHour": 6
+  },
+  "equipment": {
+    "weaponShapes": [
+      "fishingspear",
+      "hatchet",
+      "dagger"
+    ],
+    "weaponMetalKey": "nativeCopper"
+  },
+  "behavior": {
+    "fullSimulationChunkTiles": 10,
+    "fullSimulationRadiusTiles": 18,
+    "fullSimulationReleaseRadiusTiles": 24,
+    "offChunkTickSeconds": 4,
+    "decisionMinSeconds": 4,
+    "decisionMaxSeconds": 11,
+    "travelSpeedTilesPerSecond": 1.05,
+    "localWanderRadiusTiles": 7,
+    "campSocialRadiusTiles": 8,
+    "stimulusInterestRadiusTiles": 12,
+    "activityWeights": {
+      "wander": 0.24,
+      "socialize": 0.16,
+      "camp": 0.08
+    },
+    "denHuntGroupMin": 2,
+    "denHuntGroupMax": 3,
+    "denHuntFormationRadiusTiles": 1.15,
+    "denHuntArrivalRadiusTiles": 2.5,
+    "denHuntDwellMinSeconds": 4,
+    "denHuntDwellMaxSeconds": 8
+  },
+  "reputation": {
+    "npcId": "omgurku_chief",
+    "initialFavor": -3,
+    "minimumFavor": -5,
+    "maximumFavor": 10,
+    "attackOnSightFavor": -5,
+    "greetingFavorThreshold": 1,
+    "greetingRadiusTiles": 3,
+    "greetingLines": [
+      "Rider-friend. Sit by our fire.",
+      "Omgurku remember you. Welcome.",
+      "You ride safe with us."
+    ],
+    "killPenalty": 0,
+    "selfDefenseKillPenalty": -1,
+    "murderKillPenalty": -3,
+    "rivalNpcId": "porakaneki_chief",
+    "rivalKillFavor": 1,
+    "damageAttributionRadiusTiles": 14,
+    "initializationMemoryEvent": "omgurku_faction_initialized",
+    "warningRadiusTiles": 10,
+    "warningStaySeconds": 10,
+    "initialWarnings": [
+      "Hooves here are ours. Turn back.",
+      "Omgurku ground. You not welcome.",
+      "Go. Before we ride at you."
+    ],
+    "escalationWarnings": [
+      "Last warning. We charge!",
+      "You stay, you trampled!"
+    ]
+  }
+}

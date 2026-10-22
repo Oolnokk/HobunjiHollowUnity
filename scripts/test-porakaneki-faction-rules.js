@@ -76,9 +76,9 @@ const sandbox = {
   WeakSet,
   JSON,
   Promise,
-  fetch: async () => ({
+  fetch: async url => ({
     ok: true,
-    json: async () => ({ reputation: { killPenalty: 0, selfDefenseKillPenalty: -1, murderKillPenalty: -3, rivalNpcId: 'omgurku_chief', rivalKillFavor: 1 } }),
+    json: async () => ({ reputation: { killPenalty: 0, selfDefenseKillPenalty: -1, murderKillPenalty: -3, rivalNpcId: String(url).includes('omgurku') ? 'porakaneki_chief' : 'omgurku_chief', rivalKillFavor: 1 } }),
   }),
   setInterval(fn) { return { unref() {} }; },
   clearInterval() {},
@@ -161,6 +161,23 @@ window._duringTick = () => { window.Combat.deps.damageCreature(e, 10, player.x, 
 window.BanditCamps.updateCampBanners();
 assert(relationMap.get('porakaneki_chief').favor === -3, `murder favor ${relationMap.get('porakaneki_chief').favor}`);
 assert(relationMap.get('omgurku_chief').favor === 1, `murder rival favor ${relationMap.get('omgurku_chief').favor}`);
+
+// Symmetric rivalry: murdering a neutral Omgurku costs Omgurku Favor and earns Porakaneki Favor.
+const omg = { ...hunter('omg', 'omgurku_camp'), isPorakanekiHunter: false, isTribeHunter: true, tribeId: 'omgurku' };
+hostileObjects.delete(e);
+hostileObjects.add(omg);
+resetFavor();
+rules.syncNow();
+assert(omg.def.hostile === false, 'neutral Omgurku is not a companion target');
+assert(window.Combat.meleeHit({ isCompanion: true }, omg, {}) === false, 'neutral Omgurku companion melee blocked');
+window._duringTick = () => { window.Combat.deps.damageCreature(omg, 10, player.x, player.y, 0, { tag: 'sharp' }); };
+window.BanditCamps.updateCampBanners();
+assert(relationMap.get('omgurku_chief').favor === -3, `Omgurku murder favor ${relationMap.get('omgurku_chief').favor}`);
+assert(relationMap.get('porakaneki_chief').favor === 1, `Omgurku murder rival favor ${relationMap.get('porakaneki_chief').favor}`);
+assert(popups.some(([, text]) => text === '+1 Porakaneki Favor'), 'rival reward is labelled with the Porakaneki tribe');
+hostileObjects.delete(omg);
+hostileObjects.add(e);
+window._duringTick = null;
 
 // Shared-enemy crossfire: a player hit/kill while a bandit or predator is in
 // the same observed chunk is forgiven rather than becoming murder/self-defense.

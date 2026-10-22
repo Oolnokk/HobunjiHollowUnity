@@ -16,22 +16,266 @@
   // radius provides hysteresis so crossing an arbitrary tile/chunk boundary can
   // never make a nearby resident disappear. Everywhere else the character is an
   // abstract position/activity updated every few seconds.
-  const CONFIG_URL = 'config/porakaneki-camp.json'; // Network/population/LOD/reputation tuning loaded once at startup.
-  const SMALL_LOCALE_URL = 'config/locales/locale_porakaneki_camp_small.json'; // Little procedural-only camp footprint.
-  const CHIEF_LOCALE_URL = 'config/locales/locale_porakaneki_camp_chief.json'; // Large seasonal named-chief camp footprint.
-  const TENT_PIECE_URL = 'config/pieces/porakaneki-hunting-tent.json'; // Dedicated half-height 2x2 hunting tent used only by the wilderness camps.
   const BENCHLOG_KEY = 'benchlog'; // Used by camp log rendering and the shared NPC seating stations.
   const BONFIRE_KEY = 'bonfire'; // Used to select the shared 2x2 large-fire furniture instead of the old one-tile campfire.
-  const SPECIES_ID = 'porakaneki'; // Forced species for every generated camp resident.
-  const DORMANT_AREA_PREFIX = '__porakaneki_dormant__:'; // Removes hidden/off-radius residents from the normal hostile loop.
   const TICK_INTERVAL_S = 0.20; // Neutral planner/LOD cadence; actual entity movement/render/combat stays in the normal hostile loop.
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
   const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-radius/sleeping hunter's real entity is torn down.
-  const MIN_HUNTING_CAMPS_PER_ZONE = 1; // Hard ecology floor: every wilderness zone keeps at least one ordinary Porakaneki hunting camp.
-  const SCHEDULER_ID = 'porakaneki-camps-runtime'; // Stable shared-frame owner; production no longer depends on the obsolete BanditCamps banner tick being called.
+  const MIN_HUNTING_CAMPS_PER_ZONE = 1; // Hard ecology floor: every wilderness zone keeps at least one ordinary hunting camp per tribe.
 
-  let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects.
-  let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walker.
+  let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects. Shared by every tribe.
+  let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walkers. Shared by every tribe.
+  const tribeRuntimes = []; // Every created tribe, in creation order; later tribes place their camps around earlier tribes' sites.
+
+  const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+  function markOutline(root) {
+    root?.traverse?.(child => {
+      if (!child?.isMesh || child.userData?.noOutline === true) return;
+      child.layers?.enable?.(1);
+    });
+  }
+  const nowMs = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  const rand = () => {
+    const value = combatDeps?.rnd?.();
+    return Number.isFinite(value) ? value : Math.random();
+  };
+  function currentArea() { return combatDeps?.getCurrentArea?.() || null; }
+  function gameHour() {
+    const value = Number(window.CalendarSystem?.getHour?.());
+    return Number.isFinite(value) ? ((value % 24) + 24) % 24 : 12;
+  }
+  function gameDay() {
+    const raw = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay);
+    if (Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
+    return Math.max(0, Math.floor(Number(combatDeps?.calendar?.day ?? 0) || 0));
+  }
+  function generationYear() {
+    const year = Number(window.CalendarSystem?.tothalCycle?.());
+    return Number.isFinite(year) ? Math.max(1, Math.floor(year)) : 1;
+  }
+  function currentSeasonName() {
+    try { return String(window.CalendarSystem?.currentSeason?.()?.name || 'Stormtide'); }
+    catch { return 'Stormtide'; }
+  }
+  function hashSeed(text) {
+    let h = 2166136261 >>> 0;
+    for (const ch of String(text || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function seededRng(text) {
+    let a = hashSeed(text) || 0x9e3779b9;
+    return () => {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function integerRoll(rng, min, max) {
+    const lo = Math.floor(Math.min(min, max)), hi = Math.floor(Math.max(min, max));
+    return lo + Math.floor(rng() * (hi - lo + 1));
+  }
+  function disposeObject3D(root) {
+    if (!root) return;
+    root.parent?.remove?.(root);
+    root.traverse?.(object => {
+      object.geometry?.dispose?.();
+      if (Array.isArray(object.material)) object.material.forEach(material => material?.dispose?.());
+      else object.material?.dispose?.();
+    });
+  }
+  function streamChunkSizeTiles() {
+    return Math.max(1, Math.floor(num(window.WildernessChunks?.constants?.CHUNK_TILES, 16)));
+  } // Canonical streamed wilderness chunk span used by camp exclusion and local ecology.
+  function streamChunkKeysForSite(site) {
+    if (!site) return [];
+    const size = streamChunkSizeTiles();
+    const minCx = Math.floor(num(site.x, 0) / size);
+    const maxCx = Math.floor((num(site.x, 0) + Math.max(1, num(site.w, 1)) - 1) / size);
+    const minCz = Math.floor(num(site.y, 0) / size);
+    const maxCz = Math.floor((num(site.y, 0) + Math.max(1, num(site.h, 1)) - 1) / size);
+    const keys = [];
+    for (let cz = minCz; cz <= maxCz; cz++) for (let cx = minCx; cx <= maxCx; cx++) keys.push(`${cx},${cz}`);
+    return keys;
+  } // Expands a whole padded camp footprint rather than only checking its center chunk.
+  function playerTilePosition() {
+    if (!combatDeps?.player || !combatDeps?.TILE) return null;
+    return { col: combatDeps.player.x / combatDeps.TILE, row: combatDeps.player.y / combatDeps.TILE };
+  }
+  function streamChunkOfTile(col, row) {
+    const size = streamChunkSizeTiles();
+    return { x: Math.floor(num(col, 0) / size), y: Math.floor(num(row, 0) / size) };
+  } // Actual WildernessChunks coordinate, distinct from the old config-era 10-tile debug chunk.
+  function sameStreamChunk(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y; }
+  function playerStreamChunk() {
+    const player = playerTilePosition();
+    return player ? streamChunkOfTile(player.col, player.row) : null;
+  }
+  function entityStreamChunk(entity) {
+    if (!entity || !combatDeps?.TILE) return null;
+    return streamChunkOfTile(entity.x / combatDeps.TILE, entity.y / combatDeps.TILE);
+  }
+  function entitySharesPlayerStreamChunk(entity) {
+    if (!entity || entity.areaId !== currentArea()) return false;
+    return sameStreamChunk(entityStreamChunk(entity), playerStreamChunk());
+  }
+  function normalizedEcologySpeciesKey(entity) {
+    return String(entity?.creatureKey || '')
+      .replace(/-herd-mother$/, '')
+      .replace(/-den-mother$/, '')
+      .replace(/-nestmother$/, '')
+      .replace(/-alpha$/, '');
+  } // Used only as a fallback for older spawned wildlife without an explicit wildlifeRole.
+  // Tribe camp hunters carry isTribeHunter + tribeId; older Porakaneki-only
+  // spawns (dev arena, saved test fixtures) set just isPorakanekiHunter.
+  function tribeOf(entity) {
+    if (entity?.isTribeHunter) return String(entity.tribeId || '');
+    return entity?.isPorakanekiHunter ? 'porakaneki' : '';
+  }
+  function ecologyRole(entity) {
+    if (!entity || entity.health <= 0 || entity.isCompanion) return null;
+    if (tribeOf(entity)) return 'tribe';
+    if (entity.isBandit || entity.banditCompanion) return 'bandit';
+    if (entity.wildlifeRole === 'predator' || entity.wildlifeRole === 'prey') return entity.wildlifeRole;
+    const zdef = combatDeps?.EXTERIOR_ZONES?.[currentArea()] || {};
+    const key = normalizedEcologySpeciesKey(entity);
+    if ((zdef.packSpecies || []).some(species => species === key || species === entity.creatureKey)) return 'predator';
+    if ([...(zdef.herbivoreSpecies || []), ...(zdef.roamingHerdSpecies || [])].some(species => species === key || species === entity.creatureKey)) return 'prey';
+    const diet = String(entity.def?.diet || '').toLowerCase();
+    if (diet === 'predator' || diet === 'carnivore') return 'predator';
+    if (diet === 'prey' || diet === 'herbivore') return 'prey';
+    return null;
+  }
+  // Bandits, predators and every other tribe's hunters are a tribe hunter's
+  // shared enemies: fights with them never count against the player.
+  function isSharedEnemyOf(entity, other) {
+    const role = ecologyRole(other);
+    if (role === 'bandit' || role === 'predator') return true;
+    return role === 'tribe' && !!tribeOf(entity) && tribeOf(other) !== tribeOf(entity);
+  }
+  function nearestEcologyTarget(source, candidates) {
+    let best = null, bestD = Infinity;
+    for (const target of candidates) {
+      if (!target || target === source || target.health <= 0) continue;
+      const d = Math.hypot(target.x - source.x, target.y - source.y);
+      if (d < bestD) { best = target; bestD = d; }
+    }
+    return best;
+  }
+  function validChunkCombatTarget(entity, target) {
+    return !!entity && !!target && target.health > 0
+      && entity.areaId === currentArea() && target.areaId === currentArea()
+      && entitySharesPlayerStreamChunk(entity) && entitySharesPlayerStreamChunk(target);
+  }
+  function setHumanoidEcologyTarget(entity, target) {
+    if (!entity) return;
+    entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
+    if (!target) return;
+    if (tribeOf(entity)) {
+      entity._porakanekiPlannerControlled = true; // Ecology combat must not make neutral hunters hostile/targetable to the player.
+      entity._porakanekiActivity = 'ecology-combat';
+      if (entity.def) entity.def.aggroRangePx = 0;
+      if (isSharedEnemyOf(entity, target)) entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500; // Preserves crossfire forgiveness through a same-frame enemy death.
+    }
+    entity.state = 'chase';
+  }
+  function setPredatorEcologyTarget(entity, target) {
+    if (!entity) return;
+    const prior = entity._chunkFactionEcologyTarget;
+    entity._chunkFactionEcologyTarget = target || null; // Tracks ownership so clearing this encounter never erases unrelated wildlife targets.
+    if (target) {
+      entity.targetCreature = target;
+      entity.state = 'patrol-chase'; // Reuses the existing visible predator-vs-creature pursuit/attack path in game.js.
+    } else if (prior && entity.targetCreature === prior) {
+      entity.targetCreature = null;
+      if (entity.state === 'patrol-chase') entity.state = 'idle';
+    }
+  }
+  function activePlayerChunkEcology() {
+    const groups = { tribe: [], bandit: [], predator: [], prey: [] };
+    for (const entity of combatDeps?.hostileObjects || []) {
+      if (!entitySharesPlayerStreamChunk(entity) || entity.health <= 0) continue;
+      const role = ecologyRole(entity);
+      if (role && groups[role]) groups[role].push(entity);
+    }
+    return groups;
+  }
+  function hasSharedEnemyNearby(entity) {
+    if (!entitySharesPlayerStreamChunk(entity)) return false;
+    for (const other of combatDeps?.hostileObjects || []) {
+      if (other === entity || !entitySharesPlayerStreamChunk(other) || other.health <= 0) continue;
+      if (isSharedEnemyOf(entity, other)) {
+        if (tribeOf(entity)) entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500;
+        return true;
+      }
+    }
+    return !!tribeOf(entity) && nowMs() < num(entity._porakanekiSharedEnemyUntilMs, 0);
+  } // "Nearby" intentionally means the observed 16x16 player chunk, with a 1.5s grace so simultaneous crossfire deaths stay forgiven.
+  let ecologyState = { chunk: null, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0 }; // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
+  function updateChunkEcology() {
+    const observedChunk = playerStreamChunk(); // Used both as the hard simulation gate and the mobile-visible debug identity.
+    if (!combatDeps?.hostileObjects || !observedChunk) return;
+    const groups = activePlayerChunkEcology();
+    const active = new Set([...groups.tribe, ...groups.bandit, ...groups.predator, ...groups.prey]);
+    let humanoidTargets = 0; // Counted below for Pixel-Probe/debugSnapshot verification without inspecting entity internals.
+    let predatorTargets = 0; // Counted below for the same mobile-visible ecology summary.
+
+    // Clear only targets this system previously owned once either participant
+    // leaves the player's chunk. No actor-vs-actor simulation continues offscreen.
+    for (const entity of combatDeps.hostileObjects) {
+      if (active.has(entity)) continue;
+      if (entity._chunkCombatTarget) entity._chunkCombatTarget = null;
+      if (entity._chunkFactionEcologyTarget) setPredatorEcologyTarget(entity, null);
+    }
+
+    for (const bandit of groups.bandit) {
+      const target = nearestEcologyTarget(bandit, [...groups.tribe, ...groups.predator]);
+      setHumanoidEcologyTarget(bandit, target);
+      if (target) humanoidTargets++;
+    }
+    for (const hunter of groups.tribe) {
+      const rivals = groups.tribe.filter(other => tribeOf(other) !== tribeOf(hunter)); // Rival tribes fight on sight inside the observed chunk.
+      const threat = nearestEcologyTarget(hunter, [...groups.bandit, ...groups.predator, ...rivals]);
+      const prey = threat ? null : nearestEcologyTarget(hunter, groups.prey);
+      const target = threat || prey;
+      setHumanoidEcologyTarget(hunter, target);
+      if (target) humanoidTargets++;
+    }
+    for (const predator of groups.predator) {
+      const target = nearestEcologyTarget(predator, [...groups.tribe, ...groups.bandit]);
+      setPredatorEcologyTarget(predator, target);
+      if (target) predatorTargets++;
+    }
+    const tribeCounts = {}; // One count per registered tribe, keyed by tribe id (porakaneki, omgurku).
+    for (const runtime of tribeRuntimes) tribeCounts[runtime.tribeId] = 0;
+    for (const hunter of groups.tribe) tribeCounts[tribeOf(hunter)] = (tribeCounts[tribeOf(hunter)] || 0) + 1;
+    ecologyState = {
+      chunk: `${observedChunk.x},${observedChunk.y}`,
+      ...tribeCounts,
+      bandits: groups.bandit.length,
+      predators: groups.predator.length,
+      prey: groups.prey.length,
+      humanoidTargets,
+      predatorTargets,
+    };
+  }
+
+  // One independent camp network per tribe (Porakaneki, Omgurku). The factory
+  // body keeps this module's original two-space indentation so the shared
+  // planner code reads exactly as it did when it served a single tribe.
+  function createTribeCamps(tribe) {
+  const KEY = tribe.id; // Lowercase tribe key used in camp/station/agenda ids and seeds (unchanged 'porakaneki' keeps existing worlds stable).
+  const LABEL = tribe.label; // Player-facing tribe name.
+  const CONFIG_URL = tribe.configUrl; // Network/population/LOD/reputation tuning loaded once at startup.
+  const SMALL_LOCALE_URL = tribe.smallLocaleUrl; // Little procedural-only camp footprint.
+  const CHIEF_LOCALE_URL = tribe.chiefLocaleUrl; // Large seasonal named-chief camp footprint.
+  const TENT_PIECE_URL = tribe.tentPieceUrl; // Dedicated 2x2 hunting tent used only by the wilderness camps.
+  const TENT_HEIGHT_SCALE = tribe.tentHeightScale ?? 1; // Per-tribe vertical stretch of the shared hunting tent.
+  const SPECIES_ID = tribe.speciesId; // Forced species for every generated camp resident.
+  const CHIEF_ID = tribe.chiefNpcId; // Default named chief / Favor owner when the config omits reputation.npcId.
+  const DORMANT_AREA_PREFIX = `__${KEY}_dormant__:`; // Removes hidden/off-radius residents from the normal hostile loop.
+  const SCHEDULER_ID = `${KEY}-camps-runtime`; // Stable shared-frame owner; production no longer depends on the obsolete BanditCamps banner tick being called.
   let cfg = null; // Parsed porakaneki-camp.json.
   let smallLocaleDef = null; // Parsed small-camp locale.
   let chiefLocaleDef = null; // Parsed large chief-camp locale.
@@ -53,43 +297,11 @@
     coarseTicks: 0, // Low-frequency abstract simulation ticks.
     greetings: 0, // Friendly Porakaneki greetings shown this session.
     kills: 0, // Player-attributed Porakaneki deaths charged to tribe Favor.
-    ecology: { chunk: null, porakaneki: 0, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0 }, // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
     updateTicks: 0, // Counts actual 5 Hz planner updates so a dead runtime cadence is visible in snapshots.
     tickOwner: 'uninstalled', // 'RuntimeFrameScheduler' in shipped gameplay, legacy BanditCamps wrapper only in isolated tests/tools.
   };
 
-  const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-  const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
-  function markOutline(root) {
-    root?.traverse?.(child => {
-      if (!child?.isMesh || child.userData?.noOutline === true) return;
-      child.layers?.enable?.(1);
-    });
-  }
-  const nowMs = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-  const rand = () => {
-    const value = combatDeps?.rnd?.();
-    return Number.isFinite(value) ? value : Math.random();
-  };
 
-  function currentArea() { return combatDeps?.getCurrentArea?.() || null; }
-  function gameHour() {
-    const value = Number(window.CalendarSystem?.getHour?.());
-    return Number.isFinite(value) ? ((value % 24) + 24) % 24 : 12;
-  }
-  function gameDay() {
-    const raw = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay);
-    if (Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
-    return Math.max(0, Math.floor(Number(combatDeps?.calendar?.day ?? 0) || 0));
-  }
-  function generationYear() {
-    const year = Number(window.CalendarSystem?.tothalCycle?.());
-    return Number.isFinite(year) ? Math.max(1, Math.floor(year)) : 1;
-  }
-  function currentSeasonName() {
-    try { return String(window.CalendarSystem?.currentSeason?.()?.name || 'Stormtide'); }
-    catch { return 'Stormtide'; }
-  }
   function desiredChiefZone(seasonName = currentSeasonName()) {
     const map = cfg?.chiefCamp?.seasonZoneMap || {};
     return map[seasonName] || cfg?.wildernessZones?.[0] || null;
@@ -100,24 +312,6 @@
     return start > wake ? (hour >= start || hour < wake) : (hour >= start && hour < wake);
   }
 
-  function hashSeed(text) {
-    let h = 2166136261 >>> 0;
-    for (const ch of String(text || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-  }
-  function seededRng(text) {
-    let a = hashSeed(text) || 0x9e3779b9;
-    return () => {
-      a |= 0; a = a + 0x6D2B79F5 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  function integerRoll(rng, min, max) {
-    const lo = Math.floor(Math.min(min, max)), hi = Math.floor(Math.max(min, max));
-    return lo + Math.floor(rng() * (hi - lo + 1));
-  }
 
   function buildZoneView(zoneId, layout) {
     if (!layout?.cols || !layout?.rows || !combatDeps) return null;
@@ -137,7 +331,7 @@
       };
       tiles[source.r][source.c] = tile;
       if (source.type === combatDeps.TileType?.SHRUB || source.type === combatDeps.TileType?.ROCK) {
-        const id = `porakaneki_clutter_${source.c}_${source.r}`;
+        const id = `${KEY}_clutter_${source.c}_${source.r}`;
         tile.occupiedBy = id;
         objects.push({ id, type: 'unique', x: source.c, y: source.r, w: 1, h: 1, localeMeta: true });
       }
@@ -146,7 +340,7 @@
     let blockerSeq = 0;
     const blockRect = (col, row, w = 1, h = 1) => {
       if (!Number.isFinite(col) || !Number.isFinite(row)) return;
-      const id = `porakaneki_blocker_${blockerSeq++}`;
+      const id = `${KEY}_blocker_${blockerSeq++}`;
       objects.push({ id, type: 'unique', x: col, y: row, w, h, localeMeta: true });
       for (let r = row; r < row + h; r++) for (let c = col; c < col + w; c++) if (tiles[r]?.[c]) tiles[r][c].occupiedBy = id;
     };
@@ -233,15 +427,6 @@
     window.BanditCombat.discardEntity(entity); // Canonical disposal also releases shadow, weapon-holder, ring, and trail resources.
     hunter.entity = null;
   }
-  function disposeObject3D(root) {
-    if (!root) return;
-    root.parent?.remove?.(root);
-    root.traverse?.(object => {
-      object.geometry?.dispose?.();
-      if (Array.isArray(object.material)) object.material.forEach(material => material?.dispose?.());
-      else object.material?.dispose?.();
-    });
-  }
   function clearCampMeshes(camp) {
     for (const entry of camp?.propMeshes?.values?.() || []) {
       if (entry.light) entry.light.parent?.remove?.(entry.light);
@@ -266,36 +451,26 @@
 
   function smallCampCountForZone(zoneId) {
     const small = cfg?.smallCamps || {};
-    const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-count`);
+    const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-count`);
     return Math.max(MIN_HUNTING_CAMPS_PER_ZONE, integerRoll(rng, num(small.minPerZone, 2), num(small.maxPerZone, 4)));
   }
   function smallResidentCount(zoneId, campIndex) {
     const small = cfg?.smallCamps || {};
-    const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-${campIndex}:population`);
+    const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-${campIndex}:population`);
     return integerRoll(rng, num(small.minResidents, 2), num(small.maxResidents, 4));
   }
 
-  function streamChunkSizeTiles() {
-    return Math.max(1, Math.floor(num(window.WildernessChunks?.constants?.CHUNK_TILES, 16)));
-  } // Canonical streamed wilderness chunk span used by camp exclusion and local ecology.
-  function streamChunkKeysForSite(site) {
-    if (!site) return [];
-    const size = streamChunkSizeTiles();
-    const minCx = Math.floor(num(site.x, 0) / size);
-    const maxCx = Math.floor((num(site.x, 0) + Math.max(1, num(site.w, 1)) - 1) / size);
-    const minCz = Math.floor(num(site.y, 0) / size);
-    const maxCz = Math.floor((num(site.y, 0) + Math.max(1, num(site.h, 1)) - 1) / size);
-    const keys = [];
-    for (let cz = minCz; cz <= maxCz; cz++) for (let cx = minCx; cx <= maxCx; cx++) keys.push(`${cx},${cz}`);
-    return keys;
-  } // Expands a whole padded camp footprint rather than only checking its center chunk.
+  function earlierTribes() {
+    const index = tribeRuntimes.indexOf(api);
+    return index < 0 ? [...tribeRuntimes] : tribeRuntimes.slice(0, index);
+  } // Tribes created before this one already own their camp chunks in every zone.
   function banditCampAvoidChunks(zoneId) {
     const recs = window.BanditCamps?.campInstances?.get?.(zoneId);
-    if (!recs?.length) return [];
     const keys = new Set();
-    for (const rec of recs) for (const key of streamChunkKeysForSite(rec?.instance?.site)) keys.add(key);
+    for (const rec of (recs || [])) for (const key of streamChunkKeysForSite(rec?.instance?.site)) keys.add(key);
+    for (const rival of earlierTribes()) for (const key of rival.reservedCampChunks(zoneId)) keys.add(key);
     return [...keys];
-  } // Prevents Porakaneki reservations/hunting camps from touching any chunk already occupied by a bandit camp.
+  } // Prevents this tribe's reservations/hunting camps from touching any chunk already occupied by a bandit camp or an earlier tribe's camp.
   function reservedCampChunks(zoneId) {
     const zoneState = state.zones.get(zoneId);
     if (!zoneState) return [];
@@ -311,26 +486,24 @@
     teardownCamp(camp);
     window.TemporaryLocales?.release?.(zoneState.view, camp.instance);
     state.lastReason = `hunting-camp-reduced-for-bandits:${zoneId}:${camp.id}`;
-    window.__farmLog?.(`[porakaneki] removed hunting camp ${camp.id} so a bandit camp can keep its required chunk separation.`, 'wildlife');
+    window.__farmLog?.(`[${KEY}] removed hunting camp ${camp.id} so a bandit camp can keep its required chunk separation.`, 'wildlife');
     return camp.id;
   }
 
   function banditCampAvoidPoints(zoneId, minDistance) {
     if (!(minDistance > 0)) return [];
     const recs = window.BanditCamps?.campInstances?.get?.(zoneId);
-    if (!recs?.length) return [];
-    return recs.map(rec => {
-      const site = rec?.instance?.site;
-      return site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null;
-    }).filter(Boolean);
+    const sites = (recs || []).map(rec => rec?.instance?.site);
+    for (const rival of earlierTribes()) sites.push(...rival.occupiedSites(zoneId), ...rival.reservedSites(zoneId)); // Rival tribes keep the same spacing a bandit camp gets.
+    return sites.map(site => site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null).filter(Boolean);
   }
   function stampHuntingCamp(zoneState, zoneId, campIndex, minimumFallback = false) {
     if (!zoneState?.view || !smallLocaleDef) return null;
     const instanceId = minimumFallback
-      ? `porakaneki_small_${zoneId}_minimum`
-      : `porakaneki_small_${zoneId}_${campIndex}`; // Distinct fallback id makes the one-camp guarantee visible in diagnostics/tests.
+      ? `${KEY}_small_${zoneId}_minimum`
+      : `${KEY}_small_${zoneId}_${campIndex}`; // Distinct fallback id makes the one-camp guarantee visible in diagnostics/tests.
     const instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, {
-      rng: seededRng(`${generationYear()}:${zoneId}:porakaneki-small-site:${minimumFallback ? 'minimum' : campIndex}`),
+      rng: seededRng(`${generationYear()}:${zoneId}:${KEY}-small-site:${minimumFallback ? 'minimum' : campIndex}`),
       clearableTypes: new Set(),
       minimumCampRequired: minimumFallback,
       clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
@@ -361,7 +534,7 @@
     };
 
     zoneState.chiefReservation = window.TemporaryLocales.stamp(view, chiefLocaleDef, {
-      rng: seededRng(`${generationYear()}:${zoneId}:porakaneki-chief-site`),
+      rng: seededRng(`${generationYear()}:${zoneId}:${KEY}-chief-site`),
       clearableTypes: new Set(),
       clearanceTiles: chiefLocaleDef.placement?.clearanceTiles ?? 3,
       requiresFlatGround: chiefLocaleDef.placement?.requiresFlatGround !== false,
@@ -369,7 +542,7 @@
       avoidPoints: banditCampAvoidPoints(zoneId, chiefLocaleDef.placement?.minDistanceFromBanditCamp ?? 16),
       avoidChunks: banditCampAvoidChunks(zoneId),
       chunkSizeTiles: streamChunkSizeTiles(),
-      instanceId: `porakaneki_chief_reservation_${zoneId}`,
+      instanceId: `${KEY}_chief_reservation_${zoneId}`,
     });
     if (zoneState.chiefReservation) state.stamps += 1;
 
@@ -380,7 +553,7 @@
     }
     if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE) {
       state.lastReason = `hunting-camp-minimum-placement-failed:${zoneId}`;
-      window.__farmLog?.(`[porakaneki] ERROR: zone "${zoneId}" has no legal hunting-camp site even after the minimum fallback.`, 'warn');
+      window.__farmLog?.(`[${KEY}] ERROR: zone "${zoneId}" has no legal hunting-camp site even after the minimum fallback.`, 'warn');
     }
     state.zones.set(zoneId, zoneState);
     return zoneState;
@@ -391,6 +564,7 @@
     if (!layout || !window.TemporaryLocales || !smallLocaleDef || !chiefLocaleDef) return null;
     const prior = state.zones.get(zoneId);
     if (prior?.layoutRef === layout) return prior;
+    if (earlierTribes().some(rival => !rival.ensureZoneState(zoneId))) return null; // Earlier tribes place first so this tribe can avoid their camps.
     if (prior) teardownZone(prior);
     state.zones.delete(zoneId);
     return buildZoneCamps(zoneId, layout);
@@ -435,6 +609,11 @@
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
+  function reservedSites(zoneId) {
+    const zoneState = state.zones.get(zoneId);
+    if (!zoneState) return [];
+    return [zoneState.chiefReservation, ...zoneState.smallCamps.map(camp => camp.instance)].map(instance => instance?.site).filter(Boolean);
+  } // Every stamped footprint, including the inactive chief reservation.
   function occupiedSites(zoneId) {
     const zoneState = state.zones.get(zoneId);
     return activeCamps(zoneState).map(camp => {
@@ -452,7 +631,7 @@
         texture.needsUpdate = true;
       },
       undefined,
-      () => window.__farmLog?.('[porakaneki] canvas.png failed to load; tents are using the canvas-color fallback.', 'warn', 'wildlife'),
+      () => window.__farmLog?.(`[${KEY}] canvas.png failed to load; tents are using the canvas-color fallback.`, 'warn', 'wildlife'),
     );
     tentCanvasTextureCache.wrapS = tentCanvasTextureCache.wrapT = THREE.ClampToEdgeWrapping;
     if ('colorSpace' in tentCanvasTextureCache && THREE.SRGBColorSpace) tentCanvasTextureCache.colorSpace = THREE.SRGBColorSpace;
@@ -471,9 +650,10 @@
     authored.position.set(-centerCol, -elevationY, -centerRow);
     const group = new THREE.Group();
     group.add(authored);
-    group.userData.projectileCoverHeightTiles = 1.275;
+    group.scale.y = TENT_HEIGHT_SCALE; // Group origin is the ground under the tent center, so only the roof height changes.
+    group.userData.projectileCoverHeightTiles = 1.275 * TENT_HEIGHT_SCALE;
     group.userData.projectileCoverRadiusTiles = 1.0;
-    group.userData.projectileCoverKind = 'porakaneki-tent';
+    group.userData.projectileCoverKind = `${KEY}-tent`;
     return group;
   }
   function crateMesh() {
@@ -526,14 +706,14 @@
       const record = benchRecordForProp(camp, prop); // Supplies the same placement center/yaw as the rendered wilderness log.
       for (let seatIndex = 0; seatIndex < 2; seatIndex++) {
         stations.push({
-          id: `porakaneki_bench_${camp.id}_${prop.id}_${seatIndex}`,
+          id: `${KEY}_bench_${camp.id}_${prop.id}_${seatIndex}`,
           label: camp.kind === 'chief' ? 'Council Sitting Log' : 'Hunting Camp Sitting Log',
           area: camp.zoneId,
           c: record.col,
           r: record.row,
           rotY: record.yawDeg,
           pose: 'sit',
-          roles: ['sit', 'porakaneki-camp-rest'],
+          roles: ['sit', `${KEY}-camp-rest`],
           furnitureKey: BENCHLOG_KEY,
           seatIndex,
         });
@@ -572,7 +752,7 @@
       entry.pending = false;
       entry.failures++;
       entry.retryAtMs = performance.now() + Math.min(60000, 2000 * 2 ** Math.min(5, entry.failures - 1));
-      window.__farmLog?.(`[porakaneki] bench log failed (${prop.id}): ${error?.message || error}`, 'warn', 'wildlife');
+      window.__farmLog?.(`[${KEY}] bench log failed (${prop.id}): ${error?.message || error}`, 'warn', 'wildlife');
     });
   }
 
@@ -627,7 +807,7 @@
   }
 
   function getNearbyGiftWalker(x, z, radius = 2) {
-    if (window.NpcRapport?.canGiftToday?.('porakaneki_chief') === false) return null;
+    if (window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false) return null;
     let closest = null; // Reuses cached hunter proxies so the action bar does not refresh every frame.
     let distance = radius; // The nearest named NPC already limits this search radius.
     for (const camp of activeCamps(currentZoneState())) for (const hunter of camp.hunters) {
@@ -636,7 +816,7 @@
       const nextDistance = Math.hypot(entity.x / combatDeps.TILE - x, entity.y / combatDeps.TILE - z); // Matches named NPC interaction distances.
       if (nextDistance >= distance) continue;
       distance = nextDistance;
-      entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: 'Porakaneki Hunter', species: 'porakaneki' }, isPorakanekiHunter: true }; // Cached interaction-only proxy shares the actual hunter root.
+      entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: `${LABEL} Hunter`, species: SPECIES_ID }, isTribeHunter: true, tribeId: KEY, isPorakanekiHunter: KEY === 'porakaneki' }; // Cached interaction-only proxy shares the actual hunter root.
       entity._porakanekiGiftWalker.root = entity.avatarRef.group;
       entity._porakanekiGiftWalker.area = entity.areaId;
       closest = entity._porakanekiGiftWalker;
@@ -645,7 +825,7 @@
   }
 
   function chiefWalker() {
-    const id = cfg?.reputation?.npcId || 'porakaneki_chief';
+    const id = cfg?.reputation?.npcId || CHIEF_ID;
     return schedulingDeps?.npcWalkers?.find?.(walker => walker?.rec?.id === id) || null;
   }
   function authorChiefBehavior() {
@@ -655,11 +835,11 @@
     const key = `${state.chiefSeason}:${camp.id}:${camp.center.col.toFixed(2)}:${camp.center.row.toFixed(2)}`;
     if (state.chiefBehaviorKey === key && walker.rec.scheduleHooks?.__porakanekiCampRuntime) return true;
 
-    const role = 'porakaneki-chief-sleep';
+    const role = `${KEY}-chief-sleep`;
     registerCampBenchStations(camp);
     window.NpcScheduling.registerNpcStations(tentCenters(camp).map((tent, index) => ({
-      id: `porakaneki_chief_sleep_${camp.zoneId}_${index}`,
-      label: 'Porakaneki Chief Camp Tent',
+      id: `${KEY}_chief_sleep_${camp.zoneId}_${index}`,
+      label: `${LABEL} Chief Camp Tent`,
       area: camp.zoneId,
       c: tent.col,
       r: tent.row,
@@ -678,16 +858,16 @@
       rules: [],
     };
     walker.rec.agenda = [
-      { id: 'porakaneki_sleep_late', activity: 'goToRole', obligation: 'plan', window: ['22:00', '23:59'], destinationRole: role, destinationArea: camp.zoneId, activityLabel: 'sleeping' },
-      { id: 'porakaneki_sleep_early', activity: 'goToRole', obligation: 'plan', window: ['00:00', '06:00'], destinationRole: role, destinationArea: camp.zoneId, activityLabel: 'sleeping' },
-      { id: 'porakaneki_day', activity: 'break', obligation: 'leisure', window: ['06:00', '22:00'], destinationArea: camp.zoneId, activityLabel: 'around the chief camp' },
+      { id: `${KEY}_sleep_late`, activity: 'goToRole', obligation: 'plan', window: ['22:00', '23:59'], destinationRole: role, destinationArea: camp.zoneId, activityLabel: 'sleeping' },
+      { id: `${KEY}_sleep_early`, activity: 'goToRole', obligation: 'plan', window: ['00:00', '06:00'], destinationRole: role, destinationArea: camp.zoneId, activityLabel: 'sleeping' },
+      { id: `${KEY}_day`, activity: 'break', obligation: 'leisure', window: ['06:00', '22:00'], destinationArea: camp.zoneId, activityLabel: 'around the chief camp' },
     ];
     state.chiefBehaviorKey = key;
     return true;
   }
 
   function relationshipState() {
-    const id = cfg?.reputation?.npcId || 'porakaneki_chief';
+    const id = cfg?.reputation?.npcId || CHIEF_ID;
     return window.DialogueContent?.getNpcDlgState?.(id) || window.DialogueContent?.npcDlgState?.get?.(id) || null;
   }
   function memoryHas(relation, event) { return !!relation?.memory?.some?.(entry => entry?.event === event || entry?.type === event); }
@@ -701,7 +881,7 @@
     const relation = relationshipState();
     if (!relation) return false;
     const rep = cfg?.reputation || {};
-    const marker = rep.initializationMemoryEvent || 'porakaneki_faction_initialized';
+    const marker = rep.initializationMemoryEvent || `${KEY}_faction_initialized`;
     if (memoryHas(relation, marker)) return true;
     const current = Number(relation.favor);
     if (!Number.isFinite(current) || current === 0) relation.favor = num(rep.initialFavor, -3);
@@ -712,7 +892,7 @@
   }
   function favor() { initializeReputation(); return num(relationshipState()?.favor, 0); }
   function peacefulRapport() {
-    return num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || 'porakaneki_chief'), 0) > 0;
+    return num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || CHIEF_ID), 0) > 0;
   }
   function adjustFavor(amount, reason) {
     const relation = relationshipState();
@@ -720,7 +900,7 @@
     const rep = cfg?.reputation || {};
     relation.favor = clamp(num(relation.favor, 0) + amount, num(rep.minimumFavor, -5), num(rep.maximumFavor, 10));
     pushMemory(relation, reason);
-    window.WorldPopupText?.queueReward?.('favor', `${amount > 0 ? '+' : '-'}${Math.abs(amount)} Porakaneki Favor`);
+    window.WorldPopupText?.queueReward?.('favor', `${amount > 0 ? '+' : '-'}${Math.abs(amount)} ${LABEL} Favor`);
     return relation.favor;
   }
 
@@ -731,7 +911,7 @@
   function speakOverheadFromWalker(walker, text, options = {}) {
     if (text && walker?.root && window.AmbientDialogue?.show) {
       const shown = window.AmbientDialogue.show(walker.root, text, {
-        speakerId: walker.rec?.id || 'porakaneki_chief',
+        speakerId: walker.rec?.id || CHIEF_ID,
         profile: walker.profile,
         mode: 'chathead',
         tone: options.tone || 'greeting',
@@ -818,11 +998,11 @@
     if (!walker?.root || walker.area !== currentArea() || !combatDeps?.player) return;
     const distance = Math.hypot(walker.root.position.x - combatDeps.player.x / combatDeps.TILE, walker.root.position.z - combatDeps.player.y / combatDeps.TILE);
     if (distance > num(cfg?.reputation?.greetingRadiusTiles, 3)) return;
-    const marker = `porakaneki_chief_greet_day_${gameDay()}`;
+    const marker = `${KEY}_chief_greet_day_${gameDay()}`;
     const relation = relationshipState();
     if (!relation || memoryHas(relation, marker)) return;
     pushMemory(relation, marker);
-    const text = chooseLine(cfg?.reputation?.greetingLines) || 'The Porakaneki chief greets you.';
+    const text = chooseLine(cfg?.reputation?.greetingLines) || `The ${LABEL} chief greets you.`;
     speakOverheadFromWalker(walker, text, { tone: 'greeting' });
     state.greetings += 1;
   }
@@ -833,10 +1013,6 @@
   function chunkOf(col, row) {
     const size = chunkSizeTiles();
     return { x: Math.floor(col / size), y: Math.floor(row / size) };
-  }
-  function playerTilePosition() {
-    if (!combatDeps?.player || !combatDeps?.TILE) return null;
-    return { col: combatDeps.player.x / combatDeps.TILE, row: combatDeps.player.y / combatDeps.TILE };
   }
   function fullSimulationRadiusTiles() {
     return Math.max(2, num(cfg?.behavior?.fullSimulationRadiusTiles, chunkSizeTiles() * 1.2));
@@ -855,23 +1031,6 @@
     if (!player) return Infinity;
     return Math.hypot(hunter.x - player.col, hunter.y - player.row);
   }
-  function streamChunkOfTile(col, row) {
-    const size = streamChunkSizeTiles();
-    return { x: Math.floor(num(col, 0) / size), y: Math.floor(num(row, 0) / size) };
-  } // Actual WildernessChunks coordinate, distinct from the old config-era 10-tile debug chunk.
-  function sameStreamChunk(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y; }
-  function playerStreamChunk() {
-    const player = playerTilePosition();
-    return player ? streamChunkOfTile(player.col, player.row) : null;
-  }
-  function entityStreamChunk(entity) {
-    if (!entity || !combatDeps?.TILE) return null;
-    return streamChunkOfTile(entity.x / combatDeps.TILE, entity.y / combatDeps.TILE);
-  }
-  function entitySharesPlayerStreamChunk(entity) {
-    if (!entity || entity.areaId !== currentArea()) return false;
-    return sameStreamChunk(entityStreamChunk(entity), playerStreamChunk());
-  }
 
   function sharesPlayerChunk(hunter) {
     const distance = simulationDistanceToPlayer(hunter);
@@ -885,130 +1044,6 @@
     return distance <= (detailedEntityActive(hunter) ? fullSimulationReleaseRadiusTiles() : fullSimulationRadiusTiles());
   }
 
-  function normalizedEcologySpeciesKey(entity) {
-    return String(entity?.creatureKey || '')
-      .replace(/-herd-mother$/, '')
-      .replace(/-den-mother$/, '')
-      .replace(/-nestmother$/, '')
-      .replace(/-alpha$/, '');
-  } // Used only as a fallback for older spawned wildlife without an explicit wildlifeRole.
-  function ecologyRole(entity) {
-    if (!entity || entity.health <= 0 || entity.isCompanion) return null;
-    if (entity.isPorakanekiHunter) return 'porakaneki';
-    if ((entity.isBandit && !entity.isPorakanekiHunter) || entity.banditCompanion) return 'bandit';
-    if (entity.wildlifeRole === 'predator' || entity.wildlifeRole === 'prey') return entity.wildlifeRole;
-    const zdef = combatDeps?.EXTERIOR_ZONES?.[currentArea()] || {};
-    const key = normalizedEcologySpeciesKey(entity);
-    if ((zdef.packSpecies || []).some(species => species === key || species === entity.creatureKey)) return 'predator';
-    if ([...(zdef.herbivoreSpecies || []), ...(zdef.roamingHerdSpecies || [])].some(species => species === key || species === entity.creatureKey)) return 'prey';
-    const diet = String(entity.def?.diet || '').toLowerCase();
-    if (diet === 'predator' || diet === 'carnivore') return 'predator';
-    if (diet === 'prey' || diet === 'herbivore') return 'prey';
-    return null;
-  }
-  function nearestEcologyTarget(source, candidates) {
-    let best = null, bestD = Infinity;
-    for (const target of candidates) {
-      if (!target || target === source || target.health <= 0) continue;
-      const d = Math.hypot(target.x - source.x, target.y - source.y);
-      if (d < bestD) { best = target; bestD = d; }
-    }
-    return best;
-  }
-  function validChunkCombatTarget(entity, target) {
-    return !!entity && !!target && target.health > 0
-      && entity.areaId === currentArea() && target.areaId === currentArea()
-      && entitySharesPlayerStreamChunk(entity) && entitySharesPlayerStreamChunk(target);
-  }
-  function setHumanoidEcologyTarget(entity, target) {
-    if (!entity) return;
-    entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
-    if (!target) return;
-    if (entity.isPorakanekiHunter) {
-      entity._porakanekiPlannerControlled = true; // Ecology combat must not make neutral hunters hostile/targetable to the player.
-      entity._porakanekiActivity = 'ecology-combat';
-      if (entity.def) entity.def.aggroRangePx = 0;
-      const role = ecologyRole(target); // Used to preserve crossfire forgiveness through a same-frame enemy death.
-      if (role === 'bandit' || role === 'predator') entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500;
-    }
-    entity.state = 'chase';
-  }
-  function setPredatorEcologyTarget(entity, target) {
-    if (!entity) return;
-    const prior = entity._chunkFactionEcologyTarget;
-    entity._chunkFactionEcologyTarget = target || null; // Tracks ownership so clearing this encounter never erases unrelated wildlife targets.
-    if (target) {
-      entity.targetCreature = target;
-      entity.state = 'patrol-chase'; // Reuses the existing visible predator-vs-creature pursuit/attack path in game.js.
-    } else if (prior && entity.targetCreature === prior) {
-      entity.targetCreature = null;
-      if (entity.state === 'patrol-chase') entity.state = 'idle';
-    }
-  }
-  function activePlayerChunkEcology() {
-    const groups = { porakaneki: [], bandit: [], predator: [], prey: [] };
-    for (const entity of combatDeps?.hostileObjects || []) {
-      if (!entitySharesPlayerStreamChunk(entity) || entity.health <= 0) continue;
-      const role = ecologyRole(entity);
-      if (role && groups[role]) groups[role].push(entity);
-    }
-    return groups;
-  }
-  function hasSharedEnemyNearby(entity) {
-    if (!entitySharesPlayerStreamChunk(entity)) return false;
-    for (const other of combatDeps?.hostileObjects || []) {
-      if (other === entity || !entitySharesPlayerStreamChunk(other) || other.health <= 0) continue;
-      const role = ecologyRole(other);
-      if (role === 'bandit' || role === 'predator') {
-        if (entity?.isPorakanekiHunter) entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500;
-        return true;
-      }
-    }
-    return entity?.isPorakanekiHunter === true && nowMs() < num(entity._porakanekiSharedEnemyUntilMs, 0);
-  } // "Nearby" intentionally means the observed 16x16 player chunk, with a 1.5s grace so simultaneous crossfire deaths stay forgiven.
-  function updateChunkEcology() {
-    const observedChunk = playerStreamChunk(); // Used both as the hard simulation gate and the mobile-visible debug identity.
-    if (!combatDeps?.hostileObjects || !observedChunk) return;
-    const groups = activePlayerChunkEcology();
-    const active = new Set([...groups.porakaneki, ...groups.bandit, ...groups.predator, ...groups.prey]);
-    let humanoidTargets = 0; // Counted below for Pixel-Probe/debugSnapshot verification without inspecting entity internals.
-    let predatorTargets = 0; // Counted below for the same mobile-visible ecology summary.
-
-    // Clear only targets this system previously owned once either participant
-    // leaves the player's chunk. No actor-vs-actor simulation continues offscreen.
-    for (const entity of combatDeps.hostileObjects) {
-      if (active.has(entity)) continue;
-      if (entity._chunkCombatTarget) entity._chunkCombatTarget = null;
-      if (entity._chunkFactionEcologyTarget) setPredatorEcologyTarget(entity, null);
-    }
-
-    for (const bandit of groups.bandit) {
-      const target = nearestEcologyTarget(bandit, [...groups.porakaneki, ...groups.predator]);
-      setHumanoidEcologyTarget(bandit, target);
-      if (target) humanoidTargets++;
-    }
-    for (const hunter of groups.porakaneki) {
-      const threat = nearestEcologyTarget(hunter, [...groups.bandit, ...groups.predator]);
-      const prey = threat ? null : nearestEcologyTarget(hunter, groups.prey);
-      const target = threat || prey;
-      setHumanoidEcologyTarget(hunter, target);
-      if (target) humanoidTargets++;
-    }
-    for (const predator of groups.predator) {
-      const target = nearestEcologyTarget(predator, [...groups.porakaneki, ...groups.bandit]);
-      setPredatorEcologyTarget(predator, target);
-      if (target) predatorTargets++;
-    }
-    state.ecology = {
-      chunk: `${observedChunk.x},${observedChunk.y}`,
-      porakaneki: groups.porakaneki.length,
-      bandits: groups.bandit.length,
-      predators: groups.predator.length,
-      prey: groups.prey.length,
-      humanoidTargets,
-      predatorTargets,
-    };
-  }
 
   function weaponRoll(rng = rand) {
     const shapes = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger'];
@@ -1345,10 +1380,10 @@
         rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
       }, 'grunt', 0, hunter.x * combatDeps.TILE, hunter.y * combatDeps.TILE, {
         zoneId: camp.zoneId,
-        nameOverride: 'Porakaneki Hunter',
-        bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null,
+        nameOverride: `${LABEL} Hunter`,
+        bodyColorsOverride: tribe.bodyColorsForSeed?.(hunter.id) || null,
         defOverride: {
-          label: 'Porakaneki Hunter',
+          label: `${LABEL} Hunter`,
           weaponKey: weapon.weaponKey,
           weaponShapeKey: weapon.shapeKey,
           weaponMetalKey: weapon.metalKey,
@@ -1356,7 +1391,9 @@
           rangedWeaponKey: weapon.ranged ? weapon.weaponKey : null,
         },
         extra: {
-          isPorakanekiHunter: true,
+          isTribeHunter: true, // Shared tribe-camp semantics (neutral planner, Favor, gifts, barbarian voice).
+          tribeId: KEY,
+          isPorakanekiHunter: KEY === 'porakaneki', // Porakaneki-only checks (older modules, Porakaneki species runtime).
           porakanekiHunterIndex: hunter.index,
           porakanekiCampId: camp.id,
           porakanekiCampKind: camp.kind,
@@ -1442,10 +1479,10 @@
       if (previous > 0 && health <= 0 && !hunter.killCounted && close) {
         hunter.killCounted = true;
         if (!sharedEnemy) {
-          adjustFavor(-Math.abs(num(cfg?.reputation?.killPenalty, -1)), `porakaneki_kill_${camp.id}_${hunter.index}`);
+          adjustFavor(-Math.abs(num(cfg?.reputation?.killPenalty, -1)), `${KEY}_kill_${camp.id}_${hunter.index}`);
           state.kills += 1;
         } else {
-          state.lastReason = `porakaneki-crossfire-forgiven:${camp.id}:${hunter.index}`;
+          state.lastReason = `${KEY}-crossfire-forgiven:${camp.id}:${hunter.index}`;
         }
       }
       hunter.lastHealth = health;
@@ -1456,7 +1493,7 @@
     if (hunter.greetingDay === gameDay() || favor() < num(cfg?.reputation?.greetingFavorThreshold, 1) || !sharesPlayerChunk(hunter)) return;
     const player = playerTilePosition();
     if (!player || Math.hypot(hunter.x - player.col, hunter.y - player.row) > num(cfg?.reputation?.greetingRadiusTiles, 3)) return;
-    const text = chooseLine(cfg?.reputation?.greetingLines) || 'A Porakaneki hunter greets you.';
+    const text = chooseLine(cfg?.reputation?.greetingLines) || `A ${LABEL} hunter greets you.`;
     if (speakOverheadFromHunter(hunter, text, { tone: 'greeting' })) {
       hunter.greetingDay = gameDay();
       state.greetings += 1;
@@ -1510,7 +1547,7 @@
       return;
     }
     hunter.dormantSinceMs = null;
-    if (!hunter.entity && !hunter.building) materializeHunter(hunter, generation).catch(error => window.__farmLog?.(`[porakaneki] materialize failed: ${error.message}`, 'warn'));
+    if (!hunter.entity && !hunter.building) materializeHunter(hunter, generation).catch(error => window.__farmLog?.(`[${KEY}] materialize failed: ${error.message}`, 'warn'));
     if (hunter.entity) { placeEntityIfDormant(hunter); updateDetailedHunter(hunter, dt); }
   }
   function updateCampHunters(camp, dt, coarseDt) {
@@ -1525,14 +1562,14 @@
     }
     for (const hunter of camp.hunters) {
       try { updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation); }
-      catch (error) { window.__farmLog?.(`[porakaneki] hunter tick failed (${hunter.id}): ${error?.message || error}`, 'warn'); }
+      catch (error) { window.__farmLog?.(`[${KEY}] hunter tick failed (${hunter.id}): ${error?.message || error}`, 'warn'); }
     }
   }
   function updateAllHunters(dt, coarseDt) {
     for (const zoneState of state.zones.values()) {
       for (const camp of activeCamps(zoneState)) {
         try { updateCampHunters(camp, dt, coarseDt); }
-        catch (error) { window.__farmLog?.(`[porakaneki] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
+        catch (error) { window.__farmLog?.(`[${KEY}] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
       }
     }
   }
@@ -1557,7 +1594,7 @@
       return cfg;
     } catch (error) {
       state.lastReason = `config-error:${error.message}`;
-      window.__farmLog?.(`[porakaneki] ${error.message}`, 'warn', 'wildlife');
+      window.__farmLog?.(`[${KEY}] ${error.message}`, 'warn', 'wildlife');
       return null;
     }
   }
@@ -1580,27 +1617,11 @@
     // portrait construction may still finish on a later tick, in which case the
     // warning remains pending rather than being consumed as a toast.
     updateAllHunters(step, coarseStep);
-    updateChunkEcology(); // Assigns only same-stream-chunk actor targets; movement/attacks remain in the existing per-frame combat loops.
+    if (tribeRuntimes[0] === api) updateChunkEcology(); // One shared pass for every tribe. Assigns only same-stream-chunk actor targets; movement/attacks remain in the existing per-frame combat loops.
     updateTerritoryWarnings();
     maybeChiefGreeting();
   }
 
-  function installBanditCombat(api = window.BanditCombat) {
-    if (!api || typeof api.init !== 'function') return false;
-    if (api.__porakanekiCampInitWrapped) return true;
-    const original = api.init.bind(api);
-    api.init = function porakanekiBanditInit(injected) { combatDeps = injected; return original(injected); };
-    api.__porakanekiCampInitWrapped = true;
-    return true;
-  }
-  function installScheduling(api = window.NpcScheduling) {
-    if (!api || typeof api.init !== 'function') return false;
-    if (api.__porakanekiCampInitWrapped) return true;
-    const original = api.init.bind(api);
-    api.init = function porakanekiSchedulingInit(injected) { schedulingDeps = injected; return original(injected); };
-    api.__porakanekiCampInitWrapped = true;
-    return true;
-  }
   function installTick(api = window.BanditCamps) {
     if (!api || typeof api.updateCampBanners !== 'function') return false;
     if (api.updateCampBanners.__porakanekiCampWrapped) return true;
@@ -1622,35 +1643,6 @@
     state.tickOwner = 'RuntimeFrameScheduler';
     return true;
   }
-  function watchNamespace(name, installer) {
-    if (installer(window[name])) return;
-    const descriptor = Object.getOwnPropertyDescriptor(window, name);
-    if (descriptor && !descriptor.configurable) return;
-    // Preserve earlier startup subscribers, including DoorstepVisits' NPC adapters.
-    if (typeof descriptor?.set === 'function') {
-      Object.defineProperty(window, name, {
-        configurable: true,
-        enumerable: descriptor.enumerable ?? true,
-        get() { return descriptor.get?.call(window); },
-        set(value) {
-          descriptor.set.call(window, value);
-          installer(descriptor.get ? descriptor.get.call(window) : value);
-        },
-      });
-      return;
-    }
-    let assigned = descriptor?.value;
-    Object.defineProperty(window, name, {
-      configurable: true, enumerable: true,
-      get: () => assigned,
-      set(value) {
-        assigned = value;
-        Object.defineProperty(window, name, { configurable: true, enumerable: true, writable: true, value });
-        installer(value);
-      },
-    });
-  }
-
   function campDebug(camp) {
     const player = playerTilePosition();
     return {
@@ -1745,7 +1737,7 @@
       season: currentSeasonName(),
       chiefZoneId: state.chiefZoneId,
       favor: relation ? num(relation.favor, 0) : null,
-      rapport: num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || 'porakaneki_chief'), 0),
+      rapport: num(window.NpcRapport?.get?.(cfg?.reputation?.npcId || CHIEF_ID), 0),
       attackOnSight: attackOnSight(relation),
       chunkSizeTiles: chunkSizeTiles(),
       fullSimulationRadiusTiles: fullSimulationRadiusTiles(),
@@ -1757,20 +1749,24 @@
       totalGeneratedResidents,
       updateTicks: state.updateTicks,
       tickOwner: state.tickOwner,
-      chiefPlannerAgenda: !!chiefWalker()?.rec?.agenda?.some?.(beat => beat.id === 'porakaneki_day'),
+      chiefPlannerAgenda: !!chiefWalker()?.rec?.agenda?.some?.(beat => beat.id === `${KEY}_day`),
       zones,
       stamps: state.stamps,
       materializations: state.materializations,
       coarseTicks: state.coarseTicks,
       greetings: state.greetings,
       kills: state.kills,
-      ecology: { ...state.ecology },
+      ecology: { ...ecologyState },
       lastReason: state.lastReason,
     };
   }
 
-  window.PorakanekiCamps = Object.freeze({
+  const api = Object.freeze({
     version: 8,
+    tribeId: KEY,
+    label: LABEL,
+    speciesId: SPECIES_ID,
+    ensureZoneState,
     getNearbyGiftWalker,
     update,
     ensureWorldCamps,
@@ -1780,6 +1776,7 @@
     reservedCampChunks,
     reduceHuntingCampsForBandit,
     occupiedSites,
+    reservedSites,
     hasSharedEnemyNearby,
     attackOnSight: () => attackOnSight(),
     campCenters,
@@ -1787,16 +1784,99 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
     __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
   });
 
-  watchNamespace('BanditCombat', installBanditCombat);
-  watchNamespace('NpcScheduling', installScheduling);
+  tribeRuntimes.push(api);
   if (!installRuntimeTick()) {
     state.tickOwner = 'BanditCamps-fallback';
     watchNamespace('BanditCamps', installTick);
   }
   loadConfig();
+  return api;
+  }
+
+  function installBanditCombat(api = window.BanditCombat) {
+    if (!api || typeof api.init !== 'function') return false;
+    if (api.__porakanekiCampInitWrapped) return true;
+    const original = api.init.bind(api);
+    api.init = function porakanekiBanditInit(injected) { combatDeps = injected; return original(injected); };
+    api.__porakanekiCampInitWrapped = true;
+    return true;
+  }
+  function installScheduling(api = window.NpcScheduling) {
+    if (!api || typeof api.init !== 'function') return false;
+    if (api.__porakanekiCampInitWrapped) return true;
+    const original = api.init.bind(api);
+    api.init = function porakanekiSchedulingInit(injected) { schedulingDeps = injected; return original(injected); };
+    api.__porakanekiCampInitWrapped = true;
+    return true;
+  }
+  function watchNamespace(name, installer) {
+    if (installer(window[name])) return;
+    const descriptor = Object.getOwnPropertyDescriptor(window, name);
+    if (descriptor && !descriptor.configurable) return;
+    // Preserve earlier startup subscribers, including DoorstepVisits' NPC adapters.
+    if (typeof descriptor?.set === 'function') {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: descriptor.enumerable ?? true,
+        get() { return descriptor.get?.call(window); },
+        set(value) {
+          descriptor.set.call(window, value);
+          installer(descriptor.get ? descriptor.get.call(window) : value);
+        },
+      });
+      return;
+    }
+    let assigned = descriptor?.value;
+    Object.defineProperty(window, name, {
+      configurable: true, enumerable: true,
+      get: () => assigned,
+      set(value) {
+        assigned = value;
+        Object.defineProperty(window, name, { configurable: true, enumerable: true, writable: true, value });
+        installer(value);
+      },
+    });
+  }
+
+  // Every tribe's live/reserved camp footprints. Bandit placement, wildlife
+  // spawning, traders and later tribes all avoid the union of these.
+  const TribeCamps = Object.freeze({
+    list: () => [...tribeRuntimes],
+    get: tribeId => tribeRuntimes.find(runtime => runtime.tribeId === tribeId) || null,
+    occupiedSites: zoneId => tribeRuntimes.flatMap(runtime => runtime.occupiedSites(zoneId)),
+    reservedCampChunks: zoneId => [...new Set(tribeRuntimes.flatMap(runtime => runtime.reservedCampChunks(zoneId)))],
+    reduceHuntingCampsForBandit(zoneId) { // Sacrifices from the tribe with the most surplus camps first.
+      const ordered = [...tribeRuntimes].sort((a, b) => (b.debugSnapshot().zones?.[zoneId]?.smallCampCount || 0) - (a.debugSnapshot().zones?.[zoneId]?.smallCampCount || 0));
+      for (const runtime of ordered) { const removed = runtime.reduceHuntingCampsForBandit(zoneId); if (removed) return removed; }
+      return null;
+    },
+    hasSharedEnemyNearby: entity => hasSharedEnemyNearby(entity),
+  });
+
+  watchNamespace('BanditCombat', installBanditCombat);
+  watchNamespace('NpcScheduling', installScheduling);
+  window.PorakanekiCamps = createTribeCamps({
+    id: 'porakaneki', label: 'Porakaneki', speciesId: 'porakaneki', chiefNpcId: 'porakaneki_chief',
+    configUrl: 'config/porakaneki-camp.json',
+    smallLocaleUrl: 'config/locales/locale_porakaneki_camp_small.json',
+    chiefLocaleUrl: 'config/locales/locale_porakaneki_camp_chief.json',
+    tentPieceUrl: 'config/pieces/porakaneki-hunting-tent.json',
+    tentHeightScale: 0.75, // Low hunting shelters, a quarter shorter than the authored tent.
+    bodyColorsForSeed: seed => window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(seed, 'male') || null,
+  });
+  window.OmgurkuCamps = createTribeCamps({
+    id: 'omgurku', label: 'Omgurku', speciesId: 'omgurku', chiefNpcId: 'omgurku_chief',
+    configUrl: 'config/omgurku-camp.json',
+    smallLocaleUrl: 'config/locales/locale_porakaneki_camp_small.json', // Same camp footprints; the tents differ in height.
+    chiefLocaleUrl: 'config/locales/locale_porakaneki_camp_chief.json',
+    tentPieceUrl: 'config/pieces/porakaneki-hunting-tent.json',
+    tentHeightScale: 1.25, // Tall tents for the larger hybrid riders.
+    bodyColorsForSeed: () => null, // Omgurku portraits roll their own body colors through the shared species palette.
+  });
+  window.TribeCamps = TribeCamps;
 })();

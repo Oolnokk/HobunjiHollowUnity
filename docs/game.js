@@ -4964,7 +4964,7 @@
         if (!c.isCompanion) {
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
-          const isBarbarian = c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
+          const isBarbarian = c.isTribeHunter === true || c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
           window.HobunjiActivityEvents?.emit('creature_killed', {
             creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
             isBandit: !!c.isBandit, isBarbarian,
@@ -12808,7 +12808,7 @@
         actorHitbox: walker => window.RangedWeapons?.actorHitbox?.(walker),
         frameId: () => window.RuntimeFrameScheduler?.frameId?.(),
         npcReach: () => npcMovementConfig().socialInteractionRadiusTiles ?? 6,
-        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) : null,
+        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? (window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) || window.OmgurkuCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2)) : null,
         getAim: () => { const aim = getReticleTile(); return { c:aim.probeX / TILE, r:aim.probeY / TILE }; },
         assignmentChanged: area => { if (area === 'farm' || area === 'interior') window.FarmEditor?.saveFarmLayout?.(); }, // Stable inventory chair/table links survive reloads.
         surfaceY: furnitureSurfaceYAtWorld,
@@ -25595,7 +25595,7 @@
             const tradeButton = window.SlagothimTraders.actionButtonFor(nearbyNpcWalker);
             return tradeButton ? [npcDialogueButton(), tradeButton] : [npcDialogueButton()];
           }
-          const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
+          const btns = (nearbyNpcWalker.isTribeHunter || nearbyNpcWalker.isPorakanekiHunter) ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
           if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());

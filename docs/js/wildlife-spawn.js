@@ -175,7 +175,7 @@
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
     if (target?.isNpcWalker) return window.WildlifeFoodWeb?.npcWalkerStrike?.(attacker, target) || false; // Named scheduling walkers lack Combat Health; defend/scare without inflicting fabricated damage.
-    const factionTarget = target?.isBandit === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
+    const factionTarget = target?.isBandit === true || target?.isTribeHunter === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
       // abstract non-lethal wildlife sparring model. They can kill either
@@ -596,7 +596,7 @@
       blockers.push({ x, y, w:Math.max(1, Number(site.w)||1), h:Math.max(1, Number(site.h)||1), margin });
     };
     for (const rec of (window.BanditCamps?.campInstances?.get?.(zoneId) || [])) add(rec?.instance?.site, 3);
-    for (const site of (window.PorakanekiCamps?.occupiedSites?.(zoneId) || [])) add(site, 3);
+    for (const site of (window.TribeCamps?.occupiedSites?.(zoneId) || window.PorakanekiCamps?.occupiedSites?.(zoneId) || [])) add(site, 3);
     const campfire = window.WildernessCampfire?.serialize?.();
     if (campfire?.mapId === zoneId) add({ x:Math.floor(Number(campfire.x)), y:Math.floor(Number(campfire.z)), w:1, h:1 }, 4);
     return blockers;

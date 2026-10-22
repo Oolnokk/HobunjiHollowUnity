@@ -154,7 +154,7 @@
   // ── Classification ───────────────────────────────────────────────────
   function creatureCategory(c) {
     if (c.isCompanion) return 'friendly';
-    if (c.isPorakanekiHunter) return c._porakanekiPlannerControlled === true ? 'neutral' : 'hostile';
+    if (c.isTribeHunter || c.isPorakanekiHunter) return c._porakanekiPlannerControlled === true ? 'neutral' : 'hostile';
     if (c.isBandit || c.banditCompanion) return 'hostile';
     const territorial = c._territorialBehavior?.phase;
     if (territorial === 'warning' || territorial === 'fight') return 'hostile';

@@ -851,12 +851,13 @@
   // either side draws the player into combat.
   function porakanekiAvoidPoints(zoneId, minDistance) {
     if (!(minDistance > 0)) return [];
-    const camps = window.PorakanekiCamps?.debugSnapshot?.()?.zones?.[zoneId]?.camps;
-    if (!camps?.length) return [];
+    const tribes = window.TribeCamps?.list?.() || (window.PorakanekiCamps ? [window.PorakanekiCamps] : []); // Porakaneki and Omgurku camps get the same spacing.
+    const camps = tribes.flatMap(tribe => tribe.campCenters?.()?.zones?.[zoneId]?.camps || []);
+    if (!camps.length) return [];
     return camps.filter(camp => camp?.center).map(camp => ({ col: camp.center.col, row: camp.center.row, minDistance }));
   }
   function porakanekiAvoidChunks(zoneId) {
-    return window.PorakanekiCamps?.reservedCampChunks?.(zoneId) || [];
+    return window.TribeCamps?.reservedCampChunks?.(zoneId) || window.PorakanekiCamps?.reservedCampChunks?.(zoneId) || [];
   } // Hard 16x16 stream-chunk reservation; includes the future chief-camp site.
   function wildernessChunkSizeTiles() {
     return Math.max(1, Math.floor(Number(window.WildernessChunks?.constants?.CHUNK_TILES) || 16));
@@ -896,7 +897,7 @@
     // floor per wilderness zone. The seasonal chief reservation is also never
     // sacrificed, so a constrained seed places fewer bandit camps rather than
     // erasing Porakaneki from the zone or violating the hard chunk rule.
-    while (!instance && window.PorakanekiCamps?.reduceHuntingCampsForBandit?.(zoneId)) {
+    while (!instance && (window.TribeCamps || window.PorakanekiCamps)?.reduceHuntingCampsForBandit?.(zoneId)) {
       avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
       avoidChunks = porakanekiAvoidChunks(zoneId);
       instance = tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks)

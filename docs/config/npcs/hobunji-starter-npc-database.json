@@ -18666,8 +18666,8 @@
                   "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
                   "name": "<suggestion: name — the Baruhi war leader's name isn't given in the design doc>",
                   "homeId": "<suggestion: location — needs a Baruhi camp/longhouse placed in the contested territory>",
-                  "species": "Engh-sho",
-                  "gender": "<suggestion: gender — not specified>",
+                  "species": "Omgurku",
+                  "gender": "male",
                   "ageBand": "adult",
                   "role": "tribal war leader",
                   "tags": [
@@ -18681,7 +18681,7 @@
                         "avatarKey": ""
                   },
                   "appearance": {
-                        "speciesId": "engh-sho",
+                        "speciesId": "omgurku",
                         "gender": "male",
                         "cosmetics": {},
                         "bodyColors": {
