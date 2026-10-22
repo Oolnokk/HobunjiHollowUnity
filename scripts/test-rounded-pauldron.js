@@ -319,4 +319,27 @@ for(let y=0;y<headerHelm.h;y++){
  lastRowHelm=row;
 }
 const topColorsHelm=[...histogramHelm].sort((a,b)=>b[1]-a[1]).slice(0,40);
-throw Error('HELM FACEGUARD SOURCE COLOR AUDIT '+JSON.stringify({header:headerHelm,uniqueColors:histogramHelm.size,topColors:topColorsHelm}));
+
+const faceguardOptions=ps.visualOptions({blueprintId:hybrid.id,metalKey:'nativeCopper',temperXp:0}); // Uses production blueprint tolerance, not hand-entered test constants.
+assert.equal(faceguardOptions.sourceHex,'#4F6F6C','faceguard detector matches its actual painted metal');
+function hsvForHelmHex(hex) {
+  const channels=[0,2,4].map(i=>parseInt(hex.replace('#','').slice(i,i+2),16)/255);
+  const top=Math.max(...channels),low=Math.min(...channels),spread=top-low;
+  let h=0;if(spread){if(top===channels[0])h=((channels[1]-channels[2])/spread)%6;
+    else if(top===channels[1])h=(channels[2]-channels[0])/spread+2;
+    else h=(channels[0]-channels[1])/spread+4;}
+  return {h:(h*60+360)%360,s:top?spread/top:0};
+}
+function selectedForHelmMetal(hex) {
+  const source=hsvForHelmHex(faceguardOptions.sourceHex),pixel=hsvForHelmHex(hex);
+  const d=Math.abs(source.h-pixel.h);
+  return Math.min(d,360-d)<=faceguardOptions.hueToleranceDeg
+    && Math.abs(source.s-pixel.s)<=faceguardOptions.saturationTolerance;
+}
+assert(histogramHelm.has('2B3E3C') && histogramHelm.has('4F6F6C'),'test uses the shipped faceguard art, not an invented raster');
+assert(selectedForHelmMetal('#2B3E3C') && selectedForHelmMetal('#4F6F6C'),'actual dark and highlighted metal shades are eligible for alloy tint/verdigris');
+assert(!selectedForHelmMetal('#000000') && !selectedForHelmMetal('#010101'),'black ink outlines must never enter the metal recolor/verdigris mask');
+assert(!selectedForHelmMetal('#020202'),'near-black ink is also excluded from oxidation and authored removal patterns');
+assert([...histogramHelm].filter(([hex])=>selectedForHelmMetal('#'+hex)).reduce((sum,[,n])=>sum+n,0)>300,'metal mask includes a meaningful number of authored metal pixels');
+console.log('Bzabag faceguard source-palette and black-outline preservation passed.');
+

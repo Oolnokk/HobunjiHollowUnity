@@ -87,7 +87,7 @@
       woolOptions: Object.freeze(['light', 'heavy']), woolCost: HELM_WOOL_COST,
       allowDuplicates: true, strictAppearance: true,
       clothLayerRoles: Object.freeze(['base']), metalLayerRoles: Object.freeze(['trim']),
-      sourceHex: '#7DC89A', hueToleranceDeg: 180, saturationTolerance: 1,
+      sourceHex: '#4F6F6C', hueToleranceDeg: 35, saturationTolerance: 0.22, // Sampled from the actual faceguard PNG. Excludes the separate black ink outlines from metal and verdigris masks.
       spriteByAppearance: Object.freeze({
         'mao-ao::male': "assets/cosmetics/clothes/hat/replica_bzabag's_helm-faceguard_m.png",
       }),
