@@ -203,3 +203,143 @@ assert(pixelProbe.includes('MetalArmorSystem?.diagnosticsText?.()'), 'Pixel Prob
 console.log('OK: Metal armor is item/blueprint-driven across clothing slots; Rounded Pauldrons are the first smith recipe with cosmetic Temper, shared treatments, and density-derived weight.');
 
 assert(/js\/npc-avatar-preview-utils\.js\?v=[A-Za-z0-9_.-]+/.test(index), 'live avatar profile builder cache is bumped with the pauldron integration');
+
+const hybrid = ps.ARMOR_BLUEPRINTS.replica_bzabag_helm; // Regression contract for Hreesh's split-cloth-and-metal prize.
+assert.equal(hybrid.slot,'hat');
+assert.deepEqual(Array.from(hybrid.clothLayerRoles),['base']);
+assert.deepEqual(Array.from(hybrid.metalLayerRoles),['trim']);
+assert(hybrid.allowDuplicates && hybrid.strictAppearance,'smith duplicates do not require additional species art');
+assert(ps.isMetalArmor({cosmeticId:hybrid.id,slot:'hat'}),'previously granted plain festival helmets are recognized as metal armor');
+assert(!ps.isMetalPortraitLayer({materialKind:'cloth'},{blueprintId:hybrid.id}),'loom cap never gains a metal tint');
+assert(ps.isMetalPortraitLayer({materialKind:'metal'},{blueprintId:hybrid.id}),'faceguard participates in metal tint');
+const lw = ps.weightForBlueprintMetal(hybrid.id,'tinBronze','light'); // Both wool variants have identical faceguard weight.
+const hw = ps.weightForBlueprintMetal(hybrid.id,'tinBronze','heavy');
+assert.equal(Math.round((hw.weightUnits-lw.weightUnits)*100),90,'heavy cap is 0.9 weight units heavier');
+assert.equal(ps.spriteForBlueprintAppearance(hybrid.id,{speciesId:'mashtzarr',gender:'female'}),null,'unillustrated players never borrow incompatible sprites');
+const article = ps.__test.makeCraftedItem(hybrid.id,'tinBronze','heavy'); // Article saves one smith alloy and one independent wool class.
+article.weaving={layers:{base:{pattern:{motifScale:1}}}};
+const savedDye=article.colorA, savedPattern=article.weaving;
+assert.equal(ps.normalizeItem(article),false,'normalization preserves a forged hybrid article');
+assert.equal(article.colorA,savedDye);
+assert.equal(article.weaving,savedPattern);
+assert.equal(ps.visualOptions({blueprintId:hybrid.id,metalKey:'tinBronze',temperXp:300}).oxidationAmount,1,'Temper fully oxidizes the faceguard');
+assert.equal(ps.visualOptions({blueprintId:hybrid.id,metalKey:'tinBronze',temperXp:300,smithTreatment:{mode:'cosmetic',metalKey:'gold'}}).oxidationAmount,0,'plating suppresses the original patina');
+const prizeConfig=json('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json');
+assert.equal(prizeConfig.speciesVariants.mao_ao_male?.parts?.head?.layers?.back?.materialKind, undefined); // Legacy typo key must not shadow the official mao-ao variant.
+assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.back.materialKind,'cloth');
+assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.front.materialKind,'metal');
+assert(weaving.includes('metalItem: hybrid ? item : null'),'icon compositor uses exact plated/patinated faceguard state');
+assert(weaving.includes('isReweavableClothComponent(item)'),'loom can reweave the cloth cap without adding a smith blueprint to craftables');
+assert(weaving.includes('cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)'),'unavailable helm variants cannot leak Mao-ao art into icons/loom previews');
+assert(portrait.includes('isMetalPortraitLayer?.(entry.layer, entry.metalState) === false'),'portrait skips metal bake on cloth cap');
+
+const prizeInventory={gold:150,bar_tinBronze:20,lightWool:2,puktukWool:3}; // Tracks exact resource spending across both smith-only wool recipes.
+const prizeGear={clothingItems:[],clothing:{}}; // Stores unique instances despite identical cosmetic+metal keys.
+ps.init({getGearInventory:()=>prizeGear,getPackClothing:()=>[],saveGearInventory:()=>{},saveMemberWorldData:()=>{},
+ getPlayerData:()=>({appearance:{speciesId:'mao-ao',gender:'male'}}),inventory:prizeInventory,
+ VERDIGRIS_METAL_KEYS:['tinBronze'],metalBarItemKey:key=>'bar_'+key,
+ clampInventoryStack:key=>{if(prizeInventory[key] <= 0)delete prizeInventory[key];},showToast:()=>{}});
+ps.learnBlueprints([{cosmeticId:hybrid.id,slot:'hat'}]);
+assert(ps.__test.craft(hybrid.id,'tinBronze','light'),'light-wool helmet is smithed');
+assert.equal(prizeInventory.lightWool,undefined,'light recipe consumes two light wool');
+assert.equal(prizeInventory.puktukWool,3,'light recipe does not consume heavy wool');
+assert(ps.__test.craft(hybrid.id,'tinBronze','heavy'),'heavy-wool duplicate is smithed');
+assert.equal(prizeInventory.puktukWool,1,'heavy recipe consumes exactly two heavy wool');
+assert.equal(prizeGear.clothingItems.length,2,'smith keeps distinct owned helmets');
+assert.notEqual(prizeGear.clothingItems[0].uid,prizeGear.clothingItems[1].uid);
+assert.equal(ps.__test.craft(hybrid.id,'tinBronze','unrecognized'),false,'invalid wool class is rejected');
+assert.equal(ps.__test.craft(hybrid.id,'tinBronze','light'),false,'insufficient wool is rejected without charging');
+assert.equal(prizeGear.clothingItems.length,2);
+
+
+// Real quality-aware smithing consumes one canonical item stack and its star-quality buckets.
+const trackedWoolInventory={gold:200,bar_tinBronze:12,lightWool:3,puktukWool:2}; // Shared with CookingSystem's quality consumer in this smith-only regression.
+const trackedGear={clothingItems:[],clothing:{}}; // Receives new helms only after atomic wool + alloy checks.
+const qualityConsumes=[]; // Confirms both wool variants use exactly the established lowest-quality consumption API.
+windowStub.CookingSystem={consumeQualityByPolicy(key,amount,policy) {
+  qualityConsumes.push({key,amount,policy});
+  if (trackedWoolInventory[key] < amount) return null;
+  trackedWoolInventory[key]-=amount;
+  return {stars:2,groups:[{stars:2,amount}]};
+}};
+ps.init({getGearInventory:()=>trackedGear,getPackClothing:()=>[],saveGearInventory:()=>{},saveMemberWorldData:()=>{},
+  getPlayerData:()=>({appearance:{speciesId:'mao-ao',gender:'male'}}),inventory:trackedWoolInventory,
+  VERDIGRIS_METAL_KEYS:['tinBronze'],metalBarItemKey:key=>'bar_'+key,
+  clampInventoryStack:()=>{},showToast:()=>{}});
+ps.learnBlueprints([{cosmeticId:hybrid.id,slot:'hat'}]);
+assert(ps.__test.craft(hybrid.id,'tinBronze','light'),'quality-tracked smithing succeeds');
+assert.equal(trackedWoolInventory.lightWool,1);
+assert.deepEqual(qualityConsumes[0],{key:'lightWool',amount:2,policy:'lowest'},'quality-aware smithy uses the same low-first policy as the loom');
+assert(ps.__test.craft(hybrid.id,'tinBronze','heavy'),'tracked heavy wool uses its own quality bucket');
+assert.deepEqual(qualityConsumes[1],{key:'puktukWool',amount:2,policy:'lowest'});
+assert.equal(trackedWoolInventory.puktukWool,0);
+windowStub.CookingSystem.consumeQualityByPolicy=()=>null; // Simulates an unreconciled/ineligible quality bucket despite an apparent wool count.
+const barsBeforeWoolFailure=trackedWoolInventory.bar_tinBronze;
+const goldBeforeWoolFailure=trackedWoolInventory.gold;
+assert.equal(ps.__test.craft(hybrid.id,'tinBronze','light'),false,'failed quality consumer cannot produce a free helmet');
+assert.equal(trackedWoolInventory.bar_tinBronze,barsBeforeWoolFailure,'failed wool debit charges no metal bars');
+assert.equal(trackedWoolInventory.gold,goldBeforeWoolFailure,'failed wool debit charges no labor');
+assert.equal(trackedGear.clothingItems.length,2,'failed debit adds no item');
+delete windowStub.CookingSystem;
+
+const zlibHelm=require('node:zlib'); // Decodes the authored PNG's raw paint palette for checking the source-keyed metal recolor.
+const helmBytes=fs.readFileSync(path.join(root,"docs/assets/cosmetics/clothes/hat/replica_bzabag's_helm-faceguard_m.png"));
+let posHelm=8,headerHelm=null,paletteHelm=null,alphaHelm=null;const idatHelm=[];
+while(posHelm+12<=helmBytes.length){
+ const size=helmBytes.readUInt32BE(posHelm),type=helmBytes.toString('ascii',posHelm+4,posHelm+8),buf=helmBytes.subarray(posHelm+8,posHelm+8+size);
+ if(type==='IHDR')headerHelm={w:buf.readUInt32BE(0),h:buf.readUInt32BE(4),depth:buf[8],color:buf[9],interlace:buf[12]};
+ if(type==='PLTE')paletteHelm=buf;
+ if(type==='tRNS')alphaHelm=buf;
+ if(type==='IDAT')idatHelm.push(buf);
+ posHelm+=size+12;if(type==='IEND')break;
+}
+assert(headerHelm,'helm PNG header found');
+const bytesPerPixelHelm=({0:1,2:3,3:1,4:2,6:4})[headerHelm.color],strideHelm=headerHelm.w*bytesPerPixelHelm;
+assert.equal(headerHelm.depth,8,'helm decoder supports 8-bit PNG');assert.equal(headerHelm.interlace,0,'helm decoder supports un-interlaced PNG');
+const dataHelm=zlibHelm.inflateSync(Buffer.concat(idatHelm));const histogramHelm=new Map();let offHelm=0,lastRowHelm=new Uint8Array(strideHelm);
+for(let y=0;y<headerHelm.h;y++){
+ const filter=dataHelm[offHelm++],row=new Uint8Array(strideHelm);for(let x=0;x<strideHelm;x++){
+   const src=dataHelm[offHelm++],a=x>=bytesPerPixelHelm?row[x-bytesPerPixelHelm]:0,b=lastRowHelm[x],c=x>=bytesPerPixelHelm?lastRowHelm[x-bytesPerPixelHelm]:0;
+   let value=src;
+   if(filter===1)value+=a;else if(filter===2)value+=b;else if(filter===3)value+=Math.floor((a+b)/2);
+   else if(filter===4){const p=a+b-c;value+=[a,b,c].sort((u,v)=>Math.abs(p-u)-Math.abs(p-v))[0];}
+   else assert.equal(filter,0,'PNG filter supported');
+   row[x]=value&255;
+ }
+ for(let x=0;x<headerHelm.w;x++){const k=x*bytesPerPixelHelm;let red,green,blue,alpha=255;
+ if(headerHelm.color===6){red=row[k];green=row[k+1];blue=row[k+2];alpha=row[k+3];}
+ else if(headerHelm.color===2){red=row[k];green=row[k+1];blue=row[k+2];}
+ else if(headerHelm.color===3){const idx=row[k];red=paletteHelm[idx*3];green=paletteHelm[idx*3+1];blue=paletteHelm[idx*3+2];alpha=alphaHelm?.[idx]??255;}
+ else if(headerHelm.color===0){red=green=blue=row[k];}
+ else if(headerHelm.color===4){red=green=blue=row[k];alpha=row[k+1];}
+ if(alpha<128)continue;
+ const hex=[red,green,blue].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
+ histogramHelm.set(hex,(histogramHelm.get(hex)||0)+1);
+ }
+ lastRowHelm=row;
+}
+const topColorsHelm=[...histogramHelm].sort((a,b)=>b[1]-a[1]).slice(0,40);
+
+const faceguardOptions=ps.visualOptions({blueprintId:hybrid.id,metalKey:'nativeCopper',temperXp:0}); // Uses production blueprint tolerance, not hand-entered test constants.
+assert.equal(faceguardOptions.sourceHex,'#4F6F6C','faceguard detector matches its actual painted metal');
+function hsvForHelmHex(hex) {
+  const channels=[0,2,4].map(i=>parseInt(hex.replace('#','').slice(i,i+2),16)/255);
+  const top=Math.max(...channels),low=Math.min(...channels),spread=top-low;
+  let h=0;if(spread){if(top===channels[0])h=((channels[1]-channels[2])/spread)%6;
+    else if(top===channels[1])h=(channels[2]-channels[0])/spread+2;
+    else h=(channels[0]-channels[1])/spread+4;}
+  return {h:(h*60+360)%360,s:top?spread/top:0};
+}
+function selectedForHelmMetal(hex) {
+  const source=hsvForHelmHex(faceguardOptions.sourceHex),pixel=hsvForHelmHex(hex);
+  const d=Math.abs(source.h-pixel.h);
+  return Math.min(d,360-d)<=faceguardOptions.hueToleranceDeg
+    && Math.abs(source.s-pixel.s)<=faceguardOptions.saturationTolerance;
+}
+assert(histogramHelm.has('2B3E3C') && histogramHelm.has('4F6F6C'),'test uses the shipped faceguard art, not an invented raster');
+assert(selectedForHelmMetal('#2B3E3C') && selectedForHelmMetal('#4F6F6C'),'actual dark and highlighted metal shades are eligible for alloy tint/verdigris');
+assert(!selectedForHelmMetal('#000000') && !selectedForHelmMetal('#010101'),'black ink outlines must never enter the metal recolor/verdigris mask');
+assert(!selectedForHelmMetal('#020202'),'near-black ink is also excluded from oxidation and authored removal patterns');
+assert([...histogramHelm].filter(([hex])=>selectedForHelmMetal('#'+hex)).reduce((sum,[,n])=>sum+n,0)>300,'metal mask includes a meaningful number of authored metal pixels');
+console.log('Bzabag faceguard source-palette and black-outline preservation passed.');
+

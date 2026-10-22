@@ -3,7 +3,7 @@
 
   if (Number(window.ClothingWeavingSystem?.version) >= 1) return;
 
-  const VERSION = 3;
+  const VERSION = 4;
   const LIGHT_WOOL_KEY = 'lightWool'; // Used by loom recipes for low-weight cloth variants.
   const HEAVY_WOOL_KEY = 'puktukWool'; // Existing save-compatible Puktuk item key; presented in-game as Heavy Wool.
   const COMBAT_GRACE_MS = 6000; // Matches the game's quiet-period notion closely enough to limit movement burden to active combat.
@@ -326,6 +326,10 @@
     const configured = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [])
       .find(entry => entry?.id === baseId)?.label;
     return String(item?.baseLabel || configured || item?.label || baseId || 'Clothing').replace(/^Light Wool\s+|^Heavy Wool\s+/i, '');
+  }
+
+  function isReweavableClothComponent(item) {
+    return !!item?.uid && !!window.MetalArmorSystem?.blueprintForItem?.(item)?.clothLayerRoles?.length; // A smith-only hybrid article may reweave its cap without becoming a loom-craftable helmet.
   }
 
   function isCraftableCloth(itemOrBlueprint) {
@@ -888,16 +892,16 @@
     injectStyles();
     closeLoom();
     const blueprints = currentBlueprints();
-    const allReweaveItems = (gearInventory()?.clothingItems || []).filter(item => item && isCraftableCloth(item)); // Permanent Gear garments are the only reweave targets; Pack clothing remains world-scoped and untouched.
+    const allReweaveItems = (gearInventory()?.clothingItems || []).filter(item => item && (isCraftableCloth(item) || isReweavableClothComponent(item))); // Permanent Gear garments are the only reweave targets; Pack clothing remains world-scoped and untouched.
     const requestedReweaveItem = reweaveUid ? allReweaveItems.find(item => item.uid === reweaveUid) || null : null; // Used to reject a direct attempt to edit an overpass garment on the Simple Loom without silently deleting slot 2.
     if (requestedReweaveItem && weavingHasOverpass(requestedReweaveItem.weaving) && !advanced) {
       equipmentDeps?.showToast?.('An Advanced Loom is required to reweave a garment with an overpass pattern.', false);
       return false;
     }
     const reweaveItems = allReweaveItems.filter(item => advanced || !weavingHasOverpass(item.weaving)); // Simple Loom never offers a garment whose second saved pattern it cannot edit.
-    const reweaveItem = reweaveUid ? reweaveItems.find(item => item.uid === reweaveUid) || null : null;
+    const reweaveItem = reweaveUid ? reweaveItems.find(item => item.uid === reweaveUid) || null : (!blueprints.length ? reweaveItems[0] || null : null); // A player with only the prize can still edit its cloth cap by opening the loom.
     const isReweave = !!reweaveItem;
-    if (!isReweave && !blueprints.length) {
+    if (!isReweave && !blueprints.length && !reweaveItems.length) {
       equipmentDeps?.showToast?.('Obtain a cloth garment before using it as a loom template.', false);
       return false;
     }
@@ -910,6 +914,7 @@
       ? { baseCosmeticId: baseCosmeticId(reweaveItem), slot: reweaveItem.slot, label: articleLabel(reweaveItem), baseLabel: articleLabel(reweaveItem), sprite: reweaveItem.sprite || null }
       : blueprints[0]; // Reweaving edits one literal Gear instance rather than creating a new garment.
     const reweaveMaterial = isReweave ? materialForReweaveItem(reweaveItem) : null;
+    const hybridCap = isReweave && isReweavableClothComponent(reweaveItem); // The loom's primary dye/pattern editor is limited to this article's textile role.
     const state = {
       blueprintId: initialBlueprint.baseCosmeticId, // Used by all loom controls to resolve the currently selected obtained article.
       materialId: reweaveMaterial?.id || 'light', // Crafting chooses weight; reweaving keeps the garment's existing material class.
@@ -1060,7 +1065,7 @@
     const patternRoles = () => patternRolesForLayers(state.layers); // Gives front/back sprites sharing one cloth role a single loom pattern control.
     const hasSecondary = () => layersUseSecondaryDye(state.layers); // Shows Trim only when this garment actually has a palette-B cloth layer.
     const dyeById = id => window.DyeSystem?.getById?.(id) || dyes.find(dye => dye.id === id) || dyes[0];
-    const selectedPrimaryHex = () => isReweave ? clothingColorHex(reweaveItem.colorA) : dyeById(state.dyeA)?.hex;
+    const selectedPrimaryHex = () => isReweave && !hybridCap ? clothingColorHex(reweaveItem.colorA) : dyeById(state.dyeA)?.hex;
     const selectedSecondaryHex = () => {
       const trimUsesB = state.trimEnabled && normalizeTrimDyeSlot(state.trimDyeSlot) === 'B'; // Lets a normally single-color garment preview a newly-added B-colored trim during reweave.
       return isReweave && !trimUsesB ? clothingColorHex(reweaveItem.colorB, selectedPrimaryHex()) : ((hasSecondary() || trimUsesB) ? dyeById(state.dyeB)?.hex : null);
@@ -1078,7 +1083,7 @@
         const currentLayer = base.layers?.[roleKey] || {}; // Used to retain Advanced Loom pattern stack slot 2 while previewing edits to slot 1.
         const currentStack = normalizePatternStack(currentLayer.patterns?.length ? currentLayer.patterns : currentLayer.pattern);
         const weaving = { layers: { ...base.layers, [roleKey]: { ...currentLayer, pattern: patternData, patterns: currentStack[1] ? [patternData, currentStack[1]] : [patternData], swapPatternColors: !!swapPatternColors } } };
-        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view }).then(r => r.canvas);
+        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view, metalItem: hybridCap ? reweaveItem : null }).then(r => r.canvas); // Cap pattern authoring must keep the real alloy/patina/plating on its faceguard.
       };
       const patternRoleCount = patternRoles().length; // UI wording follows logical weave roles rather than raw front/back raster count.
       window.PatternAuthoring?.openEditor?.({
@@ -1130,7 +1135,9 @@
         patternLayersEl.textContent = 'Garment layers are unavailable. Reweaving is disabled to preserve your saved pattern.';
         return;
       }
-      state.layers = layers.length ? layers : [{ url: bp.sprite || null, role: null }]; // Falls back to a single unlabeled slot so pattern authoring still works even if layer resolution comes up empty.
+      const clothRoles = hybridCap ? window.MetalArmorSystem.blueprintForItem(reweaveItem).clothLayerRoles : null; // Only cap roles are offered in the loom; faceguard remains exclusively smith-treatable.
+      state.layers = layers.length ? (clothRoles ? layers.filter(layer => clothRoles.includes(layer.role)) : layers) : [{ url: bp.sprite || null, role: null }];
+      if (!state.layers.length) { patternLayersEl.textContent = 'No cloth-cap art is mapped for this appearance.'; return; } // Falls back to a single unlabeled slot so pattern authoring still works even if layer resolution comes up empty.
       state.trimAvailable = !!authoredTrim || (isReweave && weavingHasOptionalTrim(reweaveItem?.weaving)); // Never silently drop a saved trim if its authored asset is temporarily unavailable.
       optionalTrimCard.style.display = state.trimAvailable ? '' : 'none';
       trimEnabledInput.checked = state.trimAvailable && !!state.trimEnabled;
@@ -1238,8 +1245,8 @@
       const hasPattern = weavingHasAnyPattern(weaving); // Reusable motifs still own normal pattern-dye semantics.
       const hasTrim = weavingHasOptionalTrim(weaving); // Fixed garment trim may independently require dye B or C.
       const trimDyeSlot = normalizeTrimDyeSlot(weaving?.trim?.dyeSlot);
-      overlay.querySelector('[data-primary-field]').style.display = isReweave ? 'none' : '';
-      overlay.querySelector('[data-trim-field]').style.display = ((!isReweave && hasSecondary()) || (hasTrim && trimDyeSlot === 'B')) ? '' : 'none';
+      overlay.querySelector('[data-primary-field]').style.display = isReweave && !hybridCap ? 'none' : '';
+      overlay.querySelector('[data-trim-field]').style.display = ((!isReweave && hasSecondary()) || (hasTrim && trimDyeSlot === 'B' && !hybridCap)) ? '' : 'none';
       overlay.querySelector('[data-pattern-dye-field]').style.display = (hasPattern || (hasTrim && trimDyeSlot === 'C')) ? '' : 'none';
       overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required${isReweave ? ' to reweave' : ''}${weavingHasOverpass(weaving) ? ' (2× for overpass)' : (isReweave ? ' (half craft cost, rounded up)' : '')}.`;
       overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}\nAdded trim: ${hasTrim ? 'Dye ' + trimDyeSlot : 'None'}`;
@@ -1262,6 +1269,7 @@
           patternHex,
           weaving,
           view: state.previewView,
+          metalItem: hybridCap ? reweaveItem : null, // Smith-facing preview retains real alloy/plating/verdigris on the nonwoven faceguard.
         });
         if (!loomOverlay || revision !== state.previewRevision || state.blueprintId !== blueprintId || !preview.isConnected) return;
         if (!canvas) { preview.innerHTML = '<span class="loomcraft-note">No sprite preview is mapped for this article.</span>'; return; }
@@ -1303,7 +1311,7 @@
     trimDyeSlotSelect.onchange = () => { state.trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotSelect.value); refreshPreview(); }; // Reuses A/B/C rather than inventing a fourth dye channel.
     overlay.querySelector('[data-act="craft"]').onclick = () => {
       if (loomOverlay !== overlay || !state.layersReady) return false;
-      if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState(), dyeById(state.dyeB), advanced);
+      if (isReweave) reweaveFromLoom(reweaveItem, selectedMaterial(), dyeById(state.dyeC), weavingFromState(), dyeById(state.dyeB), advanced, hybridCap ? dyeById(state.dyeA) : null);
       else craftFromLoom(state, selectedBlueprint(), selectedMaterial(), dyeById, hasSecondary(), weavingFromState(), advanced);
     };
     overlay.querySelector('.loomcraft-close').onclick = closeLoom;
@@ -1383,7 +1391,7 @@
     return true;
   }
 
-  function reweaveFromLoom(item, material, patternDye, weaving, secondaryDye = null, advanced = false) {
+  function reweaveFromLoom(item, material, patternDye, weaving, secondaryDye = null, advanced = false, primaryDye = null) {
     const gear = gearInventory();
     if (!gear || !item || !material) return false;
     const baseCost = reweaveMaterialCost(item); // Regular reweaving price before Advanced Loom's requested overpass multiplier.
@@ -1408,12 +1416,16 @@
       return false;
     }
 
+    if (isReweavableClothComponent(item) && !primaryDye) { equipmentDeps?.showToast?.('Choose a cap dye first.', false); return false; }
     inventory[material.itemKey] -= cost;
     equipmentDeps?.clampInventoryStack?.(material.itemKey);
+    if (isReweavableClothComponent(item)) {
+      item.colorA = window.DyeSystem.toClothingColor(primaryDye); // Faceguard has no dye channel; this changes only the cap's palette A.
+    }
     item.weaving = weavingHasAnyDecoration(weaving) ? clone(weaving) : null;
     if (needsDyeB) item.colorB = window.DyeSystem.toClothingColor(secondaryDye);
     item.colorC = needsDyeC ? window.DyeSystem.toClothingColor(patternDye) : null;
-    item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), needsDyeB ? secondaryDye?.id : null, needsDyeC ? patternDye?.id : null].filter(Boolean))];
+    item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), primaryDye?.id, needsDyeB ? secondaryDye?.id : null, needsDyeC ? patternDye?.id : null].filter(Boolean))];
 
     const baseLabel = articleLabel(item);
     const primaryLabel = clothingColorLabel(item.colorA);
@@ -1478,12 +1490,12 @@
   // for every layer, since the check ran one level too deep to ever see the
   // role that would have triggered it).
   function collectPatternImageUrls(value, into = new Map(), paletteLayerMap = null, inheritedRole = null) {
-    if (!value || typeof value !== 'object') return into;
+    if (!value || typeof value !== 'object' || value.materialKind === 'metal') return into; // A forged faceguard must never enter cloth-pattern lookup, even via old global weaving data.
     const localPaletteMap = value.paletteLayerMap && typeof value.paletteLayerMap === 'object' ? value.paletteLayerMap : paletteLayerMap; // Used to avoid weaving over authored skin/tusk bypass layers.
     const role = value.layerRole || inheritedRole;
     const mappedRole = role && localPaletteMap ? localPaletteMap[role] : null; // BODY/NONE are the portrait pipeline's explicit non-cloth tint routes.
     const skipImage = mappedRole === 'BODY' || mappedRole === 'NONE' || value.paletteColorKey === 'BODY' || value.paletteColorKey === 'NONE';
-    if (!skipImage && typeof value.url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(value.url)) into.set(normalizeAssetPath(value.url), role);
+    if (!skipImage && value.materialKind !== 'metal' && typeof value.url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(value.url)) into.set(normalizeAssetPath(value.url), role);
     if (Array.isArray(value)) value.forEach(child => collectPatternImageUrls(child, into, localPaletteMap, role));
     else for (const child of Object.values(value)) collectPatternImageUrls(child, into, localPaletteMap, role);
     return into;
@@ -1650,7 +1662,7 @@
         const paletteKey = mappedRole || layer?.paletteColorKey || null; // 'A'/'B' — which dye slot this layer recolors with (see renderClothingLayers).
         const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
         const url = layer?.image?.url;
-        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey, partName, layerName, imageLayout: layer?.image?.layout || null });
+        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey, materialKind: layer.materialKind || null, partName, layerName, imageLayout: layer?.image?.layout || null });
       }
     }
     return into;
@@ -1666,9 +1678,10 @@
   function resolveIconLayerUrls(cfg, speciesId, gender) {
     const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null;
     const slot = cfg?.slot || null; // Carries garment semantics into flat inventory/loom rendering without hard-coding a specific cosmetic id.
-    const variantKeys = typeof window.portraitVariantKeysForFighter === 'function'
-      ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot })
-      : speciesVariantKeyCandidates(speciesId, gender); // Matches the portrait's inherited and nearest supported garment variant.
+    const variantKeys = cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)
+      : typeof window.portraitVariantKeysForFighter === 'function'
+        ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot })
+        : speciesVariantKeyCandidates(speciesId, gender); // Partially illustrated prize helmets must not borrow a nearest species' headgear in icons, looms or editor previews. // Matches the portrait's inherited and nearest supported garment variant.
     for (const key of variantKeys) {
       const layers = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
       if (layers.length) return layers.map(layer => ({ ...layer, slot }));
@@ -1783,6 +1796,7 @@
       colorB: clothingColorHex(item?.colorB, clothingColorHex(item?.colorA)),
       colorC: clothingColorHex(item?.colorC),
       weaving: weaving?.layers ? { layers: resolvedLayers, trim: weaving?.trim || null } : { pattern: weaving?.pattern || null, patterns: weaving?.patterns || null, trim: weaving?.trim || null },
+      metalState: isReweavableClothComponent(item) ? window.MetalArmorSystem?.portraitStateForItem?.(item) : null, // Composite-icon cache differentiates alloy, Temper and plating.
     }; // Resolves library-backed motifs into the key so editing a saved pattern invalidates its icon without touching every garment instance.
     return JSON.stringify(visual);
   }
@@ -1793,7 +1807,8 @@
   // rebuilds only reuse a data URL and never composite patterns every frame.
   async function iconSpriteForCosmetic(item, fallbackSprite = null) {
     const id = baseCosmeticId(item);
-    if (id && weavingHasAnyDecoration(item?.weaving)) {
+    const hybrid = isReweavableClothComponent(item); // Mixed material requires full final icon composition even without a woven pattern.
+    if (id && (weavingHasAnyDecoration(item?.weaving) || hybrid)) {
       const cacheKey = wovenIconVisualKey(item);
       if (!wovenIconDataUrlPromises.has(cacheKey)) {
         wovenIconDataUrlPromises.set(cacheKey, renderClothingLayers(id, {
@@ -1802,6 +1817,7 @@
           patternHex: clothingColorHex(item?.colorC),
           weaving: item.weaving,
           view: 'front',
+          metalItem: hybrid ? item : null, // Metal finish is sourced from the actual helmet, never a generic alloy default.
         }).then(({ canvas }) => {
           if (!canvas) return null;
           try { return canvas.toDataURL('image/png'); } catch (_) { return null; }
@@ -1828,7 +1844,7 @@
   // one flat canvas. This is what actually lets a garment's base and trim
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
-  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined } = {}) {
+  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined, metalItem = null } = {}) {
     const playerVariant = playerSpeciesGender();
     const resolvedSpeciesId = speciesId || playerVariant.speciesId; // Pattern Editor passes an explicit species so authored trim can be positioned against every variant.
     const resolvedGender = gender || playerVariant.gender; // Pattern Editor passes an explicit gender alongside the species override.
@@ -1845,7 +1861,7 @@
     const trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotOverride !== undefined ? trimDyeSlotOverride : weaving?.trim?.dyeSlot); // Draft preview and saved garments share A/B/C coloring semantics.
     const trimColorHex = trimDyeSlot === 'A' ? primaryColorHex : (trimDyeSlot === 'C' ? patternHex : secondaryColorHex); // Fixed trim reuses an existing garment dye; no fourth color channel is introduced.
     const rendered = [];
-    for (const { url: frontUrl, role, paletteKey, imageLayout } of layers) {
+    for (const { url: frontUrl, role, paletteKey, materialKind, imageLayout } of layers) {
       // Some layers swap to a dedicated "-back" sprite for the rear view,
       // some are hidden entirely from the back (a hood's front-only face
       // trim), and others just reuse their front sprite — same three
@@ -1858,6 +1874,16 @@
       }
       let img = alignLayerImage(await loadImageUrl(url), imageLayout);
       if (!img) continue;
+      if (materialKind === 'metal') {
+        const metal = window.MetalArmorSystem; // The normal clothing compositor defers only explicitly forged pixels to the metal renderer.
+        const state = metalItem ? metal?.portraitStateForItem?.(metalItem) : metal?.defaultPortraitState?.(baseCosmeticIdValue);
+        if (metal?.visualOptions && window.ToolMetalRecolor?.getRecoloredCanvas && state) {
+          try { img = await window.ToolMetalRecolor.getRecoloredCanvas(standaloneAssetUrl(url), metal.visualOptions(state)); }
+          catch (error) { lastError = String(error?.message || error); }
+        }
+        rendered.push(img); // Never tint the faceguard with Dye A/B/C or stamp a woven textile motif over it.
+        continue;
+      }
       const shadingSource = img; // Original authored raster; pattern ink samples this light/shadow field even after the base dye is applied.
       const patterns = weavingPatternsForRole(weaving, role); // Determines the primary + optional overpass motifs for this exact base/trim layer.
       const pattern = patterns[0] || null; // Retained as the primary-pattern compatibility name used by color/swap code below.
@@ -2699,6 +2725,7 @@
       secondaryHex: item?.colorB?.hex,
       patternHex: resolvePatternHex(item?.colorC),
       weaving: item?.weaving,
+      metalItem: window.MetalArmorSystem?.isMetalArmor?.(item) ? item : null,
     });
     return canvas;
   }
@@ -2953,6 +2980,7 @@
       return !!await authoredTrimPatternForCosmetic(baseCosmeticIdValue, speciesId || playerVariant.speciesId, gender || playerVariant.gender, view);
     },
     isCraftableCloth,
+    isReweavableClothComponent,
     standardWeightFor,
     itemWeightUnits,
     totalEquippedWeight,
@@ -2975,7 +3003,7 @@
     hasAddedTrim: item => weavingHasOptionalTrim(item?.weaving),
     reweaveMaterialCost,
     debugSnapshot,
-    __test: Object.freeze({ clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
