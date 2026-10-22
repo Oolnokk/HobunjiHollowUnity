@@ -154,8 +154,15 @@ function headwearLayerRecords(garment,species,gender){
 async function buildHeadReferenceCanvas(species,gender,width,height){
   const cfg=R.speciesCfg.get(species)?.[gender],url=cfg?.headSprite;
   const canvas=Object.assign(document.createElement('canvas'),{width,height});
-  if(!url)throw new Error(`No head sprite for ${species} ${gender}.`);
-  const image=await loadImage(assetUrl(url));
+  if(!url){
+    log(`No head sprite configured for ${species} ${gender}; using a blank reference until a sprite is authored.`);
+    canvas._paths=[];return canvas;
+  }
+  let image;
+  try{image=await loadImage(assetUrl(url))}catch(error){
+    log(`Head reference not available for ${species} ${gender}: ${error.message}`);
+    canvas._paths=[url];return canvas;
+  }
   const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
   const sourceHead=window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49};
   const bodyXform=normalizedLayerXform(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers?.find(layer=>layer.id==='torso')?.xform||{ax:-.2,ay:0,sx:2.55,sy:2.55});
