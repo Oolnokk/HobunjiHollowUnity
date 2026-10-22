@@ -147,8 +147,8 @@ function drawBilinearCell(targetCtx,source,sTL,sTR,sBL,sBR,dTL,dTR,dBL,dBR,subdi
   }
 }
 function warpExtendedOverlay(source,targetNorm,outWidth,normalOutHeight){
-  if(!source||!R.maoBody)return null;
-  const sourceNormalHeight=R.maoBody.height;
+  if(!source||!R.sourceBody)return null;
+  const sourceNormalHeight=R.sourceBody.height;
   const sourceWidth=source.width;
   const sourceHeight=source.height;
 
