@@ -149,7 +149,8 @@ function headwearLayerRecords(garment,species,gender){
   const layers=parts?.head?.layers||{};
   return Object.entries(layers).filter(([,layer])=>layer?.image?.url&&
     !['exposed','exposedSkin'].includes(String(layer.layerRole||''))).map(([name,layer])=>({
-      name,layer,path:layer.image.url,isBack:/^(back|rear|behind)/i.test(name)
+      name,layer,path:layer.image.url,isBack:/^(back|rear|behind)/i.test(name),
+      behindPath:layer.behindImage?.url||null // A hat can use different back-view art without moving its front piece behind the skull.
     })); // A hood's rear cloth is not interchangeable with front cloth or exposed-species ear pixels.
 }
 async function buildHeadReferenceCanvas(species,gender,width,height){
@@ -183,20 +184,31 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       if(!records.length)return null;
       const front=Object.assign(document.createElement('canvas'),{width,height});
       const back=Object.assign(document.createElement('canvas'),{width,height});
-      let hasFront=false,hasBack=false; // Avoid wasting headwear warps and exports on unused orientations.
+      const behindView=Object.assign(document.createElement('canvas'),{width,height});
+      let hasFront=false,hasBack=false,hasBehindOverride=false; // Avoid wasting headwear warps and exports on unused orientations.
       for(const record of records){
         try{
           const image=await loadImage(assetUrl(record.path));
           const target=record.isBack?back:front;
           const ctx=target.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
           ctx.drawImage(image,0,0); // All authored headwear layers retain their source-pixel alignment.
-          if(record.isBack)hasBack=true;else hasFront=true;
+          if(record.isBack)hasBack=true;
+          else{
+            hasFront=true;
+            const rearImage=record.behindPath&&record.behindPath!==record.path
+              ?await loadImage(assetUrl(record.behindPath)):image;
+            const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
+            rearCtx.drawImage(rearImage,0,0); // Compose cap then metal band in the same author-specified layer order.
+            if(record.behindPath)hasBehindOverride=true;
+          }
         }catch(error){log(`Missing ${garment.label} layer ${record.path}: ${error.message}`)}
       }
       const canvas=Object.assign(document.createElement('canvas'),{width,height});
       const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
       x.drawImage(back,0,0);x.drawImage(front,0,0);
-      canvas._front=hasFront?front:null;canvas._back=hasBack?back:null;canvas._paths=records.map(record=>record.path);
+      canvas._front=hasFront?front:null;canvas._back=hasBack?back:null;
+      canvas._behindView=hasBehindOverride?behindView:null; // Dedicated rear view is distinct from cloth behind the skull.
+      canvas._paths=records.flatMap(record=>[record.path,...(record.behindPath&&record.behindPath!==record.path?[record.behindPath]:[])]);
       return canvas;
     }
     if(!variant)return null; // Missing authored target species/gender body art is normal.
