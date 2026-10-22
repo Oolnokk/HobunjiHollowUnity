@@ -133,7 +133,7 @@
     window.NpcScheduling?.registerPresenceProvider?.('father_hunundi_hodu', hunundiPresence);
   }
   function diagnostics() {
-    return { active: active(), hours: '15:00–01:00', oliphanti: [...OLIPHANTI],
+    return { active: active(), hours: window.FestivalSystem?.gatheringHoursLabel?.() || '15:00–01:00', oliphanti: [...OLIPHANTI],
       specialSpeakers: Object.keys(conversations), excludedGreetings: [...EXCLUDED], hunundi: hunundiPresence() };
   }
   window.DialogueContent?.registerContextProvider?.('festival-dialogue', { treeFor, greetingFor });

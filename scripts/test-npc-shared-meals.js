@@ -123,7 +123,9 @@ load('festival-system');
 Object.assign(window.CalendarSystem,{isInitialized:()=>true,monthNumber:()=>5,dayOfMonth:()=>8,aotYearNumber:()=>1155});
 window.FestivalSystem.init({getTownMap:()=>town,getNpcs:()=>records,getWalkers:()=>walkers});
 const foroji=records.find(r=>r.id==='foroji_funji'),kaboku=records.find(r=>r.id==='kaboku_kunji');
-minutes=14*60;assert.equal(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'kurraya','opening musician walks to the stage before 15:00');
+scheduling.registerNpcStations([{id:'station_k7m3q',col:2,row:6,label:'Shop shelves'}],'map_i_general_store');
+minutes=14*60;assert.equal(scheduling.resolveNpcScheduleTarget(foroji).area,'map_i_general_store','opening musician keeps normal shop hours until the gathering begins');
+minutes=15*60;assert.equal(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'kurraya','opening musician leaves for the stage at the gathering start');
 minutes=19.5*60;assert.equal(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'kurraya');
 const incomingTarget=scheduling.resolveNpcScheduleTarget(kaboku);assert.equal(incomingTarget.toolKey,'kurraya','relief starts walking early');
 minutes=20*60;assert.equal(scheduling.resolveNpcScheduleTarget(foroji).toolKey,'kurraya','outgoing host stays while relief is absent');
@@ -134,7 +136,7 @@ assert.equal(scheduling.resolveNpcScheduleTarget(kaboku).toolKey,'kurraya');
 {
   const stuck={rec:foroji,area:'map_i_general_store',root:{position:{x:2.5,z:6.5}},_npcPathFailKey:'x',_npcPathFailUntil:Date.now()+1e7};
   walkers.length=0;walkers.push(stuck,{rec:kaboku,area:'map_i_carpenters',root:{position:{x:12.5,z:8.5}}});
-  minutes=14.5*60;
+  minutes=15*60;
   window.FestivalSystem.update();minutes+=25;window.FestivalSystem.update();
   assert.equal(scheduling.resolveNpcScheduleTarget(kaboku).toolKey,'kurraya','a stage-bound musician with no route is replaced by the other');
   let relieved=null;try{relieved=scheduling.resolveNpcScheduleTarget(foroji);}catch(error){} // The ordinary schedule needs services this isolated fixture does not provide.
