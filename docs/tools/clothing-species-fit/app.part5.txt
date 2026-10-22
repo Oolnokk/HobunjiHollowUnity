@@ -65,12 +65,29 @@ function archiveVariantLeaf(variant,path,originalLeaf){
   }
   return{leaf:cursor,created};
 }
+function assetReferencedOutsideVariant(path,garmentId,targetVariantKey){
+  const matches=node=>{
+    if(!node||typeof node!=='object')return false;
+    if(archiveAssetPath(node.image?.url)===path||archiveAssetPath(node.behindImage?.url)===path)return true;
+    return Object.entries(node).some(([key,value])=>
+      key!=='image'&&key!=='behindImage'&&value&&typeof value==='object'&&matches(value));
+  };
+  for(const garment of R.garments){
+    for(const [variantKey,variant] of Object.entries(garment.cfg?.speciesVariants||{})){
+      if(garment.id===garmentId&&variantKey===targetVariantKey)continue;
+      if(matches(variant))return true;
+    }
+    if(garment.id!==garmentId&&matches(garment.cfg?.parts))return true;
+  }
+  return false; // Shared texture URLs must not overwrite an unrelated species or clothing item.
+}
+
 function buildFittedLayerArchivePlan(layers,selection){
   const garment=garmentRecord(),cfg=garment?.cfg;
   if(!cfg||!garment.configPath)throw new Error('This garment has no repository cosmetic config path for a ready-to-install export.');
   const sourceKey=selection.sourceSpecies+'_'+selection.sourceGender;
   const targetKey=selection.targetSpecies+'_'+selection.targetGender;
-  const sourceVariant=cfg.speciesVariants?.[sourceKey];
+  const sourceVariant=cfg.speciesVariants?.[sourceKey]||{parts:cfg.parts||{}};
   if(!sourceVariant&&!HEAD_SLOTS.has(garment.slot))throw new Error('Cannot resolve the selected source garment variant.');
   const config=JSON.parse(JSON.stringify(cfg));
   config.speciesVariants ||= {};
@@ -85,7 +102,8 @@ function buildFittedLayerArchivePlan(layers,selection){
     const behind=layer.path.at(-1)==='behindImage';
     const targetUrl=behind?originalTarget?.url:originalTarget?.image?.url;
     const existing=archiveAssetPath(targetUrl);
-    let outputName=existing||fittedFallbackAssetPath(layer,selection);
+    const shared=existing&&assetReferencedOutsideVariant(existing,garment.id,targetKey);
+    let outputName=existing&&!shared?existing:fittedFallbackAssetPath(layer,selection);
     if(used.has(outputName.toLowerCase())){
       const suffix=safeName(layer.path.join('_'));
       const base=outputName.replace(/\.png$/i,'');
@@ -111,6 +129,7 @@ function buildFittedLayerArchivePlan(layers,selection){
     files.push({
       outputName,originalLayerName:layer.name,sourceConfigPath:layer.path,sourceUrl:layer.url,
       targetUrl:'./'+outputName,existingTargetFilename:!!existing&&!changedUrl,
+      sharedTargetAssetAvoided:!!shared,
       layerRole:layer.role,view:layer.view,patched:layer.patched
     });
   }
