@@ -164,7 +164,10 @@
   // 'fleeing-low-health' once it's hurt enough, even if it was already
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
-    const factionTarget = target?.isBandit === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
+    // config/faction-conflicts.json can force a relation lethal/non-lethal
+    // (`lethal`); with no override, humanoid targets are lethal and the rest sparring.
+    const factionTarget = window.FactionConflicts?.lethalOverride(attacker, target)
+      ?? (target?.isBandit === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true);
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
       // abstract non-lethal wildlife sparring model. They can kill either

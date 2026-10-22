@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "about": "Wilderness faction conflict rules, read by js/faction-conflicts.js. Edit this file to add a faction or change who fights whom, when they flee, and whether they chase fleeing enemies. See docs/architecture/faction-conflicts.md for every field.",
+
+  "defaults": {
+    "attack": {
+      "priority": 50,
+      "pursueFleeing": false,
+      "maxRangeTiles": null,
+      "forgivesCrossfire": false,
+      "lethal": null
+    },
+    "flee": {
+      "conditions": [],
+      "destination": "home",
+      "awayTiles": 14,
+      "maxSeconds": 20,
+      "cooldownSeconds": 10,
+      "radiusTiles": 8,
+      "fleeOnHit": true
+    }
+  },
+
+  "factions": [
+    {
+      "id": "porakaneki",
+      "label": "Porakaneki hunters",
+      "match": [{ "flag": "isPorakanekiHunter" }],
+      "attacks": [
+        { "faction": "bandit", "priority": 100, "forgivesCrossfire": true, "pursueFleeing": true },
+        { "faction": "predator", "priority": 100, "forgivesCrossfire": true },
+        { "faction": "prey", "priority": 10, "pursueFleeing": true }
+      ],
+      "flee": {
+        "destination": "home",
+        "fleeOnHit": false,
+        "conditions": [
+          { "type": "healthBelow", "ratio": 0.25, "against": ["bandit", "predator"] },
+          { "type": "outnumbered", "ratio": 3, "against": ["bandit", "predator"], "radiusTiles": 10 }
+        ]
+      }
+    },
+    {
+      "id": "bandit",
+      "label": "Bandits and their beasts",
+      "match": [{ "flag": "isBandit" }, { "flag": "banditCompanion" }],
+      "attacks": [
+        { "faction": "porakaneki", "priority": 100, "pursueFleeing": true },
+        { "faction": "predator", "priority": 100 }
+      ],
+      "flee": {
+        "destination": "away",
+        "conditions": [
+          { "type": "healthBelow", "ratio": 0.2, "against": ["porakaneki", "predator"] }
+        ]
+      }
+    },
+    {
+      "id": "predator",
+      "label": "Wild predators",
+      "match": [
+        { "zoneSpecies": "packSpecies" },
+        { "diet": ["predator", "carnivore"] }
+      ],
+      "attacks": [
+        { "faction": "porakaneki", "priority": 100 },
+        { "faction": "bandit", "priority": 100 }
+      ],
+      "flee": {
+        "destination": "home",
+        "conditions": [
+          { "type": "healthBelow", "ratio": 0.2, "against": ["porakaneki", "bandit"] }
+        ]
+      }
+    },
+    {
+      "id": "prey",
+      "label": "Wild herbivores",
+      "match": [
+        { "zoneSpecies": ["herbivoreSpecies", "roamingHerdSpecies"] },
+        { "diet": ["prey", "herbivore"] }
+      ],
+      "attacks": [],
+      "flee": {
+        "destination": "home",
+        "fleeOnHit": true,
+        "conditions": []
+      }
+    }
+  ]
+}

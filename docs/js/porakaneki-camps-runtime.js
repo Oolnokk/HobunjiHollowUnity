@@ -28,6 +28,7 @@
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
   const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-radius/sleeping hunter's real entity is torn down.
   const MIN_HUNTING_CAMPS_PER_ZONE = 1; // Hard ecology floor: every wilderness zone keeps at least one ordinary Porakaneki hunting camp.
+  const FACTION_FIGHT_EDGE_PAD_TILES = 3; // An already-running faction fight survives this far past the player's chunk edge (see entityInFactionScope).
   const SCHEDULER_ID = 'porakaneki-camps-runtime'; // Stable shared-frame owner; production no longer depends on the obsolete BanditCamps banner tick being called.
 
   let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects.
@@ -53,7 +54,7 @@
     coarseTicks: 0, // Low-frequency abstract simulation ticks.
     greetings: 0, // Friendly Porakaneki greetings shown this session.
     kills: 0, // Player-attributed Porakaneki deaths charged to tribe Favor.
-    ecology: { chunk: null, porakaneki: 0, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0 }, // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
+    ecology: { chunk: null, porakaneki: 0, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0, fleeing: 0 }, // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
     updateTicks: 0, // Counts actual 5 Hz planner updates so a dead runtime cadence is visible in snapshots.
     tickOwner: 'uninstalled', // 'RuntimeFrameScheduler' in shipped gameplay, legacy BanditCamps wrapper only in isolated tests/tools.
   };
@@ -872,6 +873,21 @@
     if (!entity || entity.areaId !== currentArea()) return false;
     return sameStreamChunk(entityStreamChunk(entity), playerStreamChunk());
   }
+  // Faction fights are scoped to the player's chunk, but a fight that is already
+  // running keeps going while its actors sit within a few tiles of the chunk
+  // edge -- otherwise two fighters brawling across the border are released and
+  // re-engaged every 5 Hz tick, stuttering between 'chase' and 'return'.
+  function entityInFactionScope(entity) {
+    if (entitySharesPlayerStreamChunk(entity)) return true;
+    if (!entity || entity.areaId !== currentArea() || !combatDeps?.TILE) return false;
+    if (!(entity._chunkCombatTarget || entity._chunkFactionEcologyTarget || entity._factionFlee)) return false;
+    const chunk = playerStreamChunk();
+    if (!chunk) return false;
+    const size = streamChunkSizeTiles(), pad = FACTION_FIGHT_EDGE_PAD_TILES;
+    const col = entity.x / combatDeps.TILE, row = entity.y / combatDeps.TILE;
+    return col >= chunk.x * size - pad && col < (chunk.x + 1) * size + pad
+      && row >= chunk.y * size - pad && row < (chunk.y + 1) * size + pad;
+  }
 
   function sharesPlayerChunk(hunter) {
     const distance = simulationDistanceToPlayer(hunter);
@@ -885,51 +901,26 @@
     return distance <= (detailedEntityActive(hunter) ? fullSimulationReleaseRadiusTiles() : fullSimulationRadiusTiles());
   }
 
-  function normalizedEcologySpeciesKey(entity) {
-    return String(entity?.creatureKey || '')
-      .replace(/-herd-mother$/, '')
-      .replace(/-den-mother$/, '')
-      .replace(/-nestmother$/, '')
-      .replace(/-alpha$/, '');
-  } // Used only as a fallback for older spawned wildlife without an explicit wildlifeRole.
+  // Faction classification (porakaneki / bandit / predator / prey / anything
+  // added to config/faction-conflicts.json) now lives in js/faction-conflicts.js.
   function ecologyRole(entity) {
-    if (!entity || entity.health <= 0 || entity.isCompanion) return null;
-    if (entity.isPorakanekiHunter) return 'porakaneki';
-    if ((entity.isBandit && !entity.isPorakanekiHunter) || entity.banditCompanion) return 'bandit';
-    if (entity.wildlifeRole === 'predator' || entity.wildlifeRole === 'prey') return entity.wildlifeRole;
-    const zdef = combatDeps?.EXTERIOR_ZONES?.[currentArea()] || {};
-    const key = normalizedEcologySpeciesKey(entity);
-    if ((zdef.packSpecies || []).some(species => species === key || species === entity.creatureKey)) return 'predator';
-    if ([...(zdef.herbivoreSpecies || []), ...(zdef.roamingHerdSpecies || [])].some(species => species === key || species === entity.creatureKey)) return 'prey';
-    const diet = String(entity.def?.diet || '').toLowerCase();
-    if (diet === 'predator' || diet === 'carnivore') return 'predator';
-    if (diet === 'prey' || diet === 'herbivore') return 'prey';
-    return null;
-  }
-  function nearestEcologyTarget(source, candidates) {
-    let best = null, bestD = Infinity;
-    for (const target of candidates) {
-      if (!target || target === source || target.health <= 0) continue;
-      const d = Math.hypot(target.x - source.x, target.y - source.y);
-      if (d < bestD) { best = target; bestD = d; }
-    }
-    return best;
+    return window.FactionConflicts?.factionOf?.(entity) || null;
   }
   function validChunkCombatTarget(entity, target) {
     return !!entity && !!target && target.health > 0
       && entity.areaId === currentArea() && target.areaId === currentArea()
-      && entitySharesPlayerStreamChunk(entity) && entitySharesPlayerStreamChunk(target);
+      && entityInFactionScope(entity) && entityInFactionScope(target);
   }
   function setHumanoidEcologyTarget(entity, target) {
     if (!entity) return;
+    if (target && !entity._chunkCombatTarget) entity._factionPulledIntoChase = entity.state !== 'chase'; // Lets releaseEcologyTargets send an actor this fight woke up back home instead of on to the player.
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
     if (!target) return;
     if (entity.isPorakanekiHunter) {
       entity._porakanekiPlannerControlled = true; // Ecology combat must not make neutral hunters hostile/targetable to the player.
       entity._porakanekiActivity = 'ecology-combat';
       if (entity.def) entity.def.aggroRangePx = 0;
-      const role = ecologyRole(target); // Used to preserve crossfire forgiveness through a same-frame enemy death.
-      if (role === 'bandit' || role === 'predator') entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500;
+      if (window.FactionConflicts?.forgivesCrossfire?.(entity, target)) entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500; // Preserves crossfire forgiveness through a same-frame enemy death.
     }
     entity.state = 'chase';
   }
@@ -945,21 +936,26 @@
       if (entity.state === 'patrol-chase') entity.state = 'idle';
     }
   }
-  function activePlayerChunkEcology() {
-    const groups = { porakaneki: [], bandit: [], predator: [], prey: [] };
+  function activePlayerChunkEntities() {
+    const entities = [];
     for (const entity of combatDeps?.hostileObjects || []) {
-      if (!entitySharesPlayerStreamChunk(entity) || entity.health <= 0) continue;
-      const role = ecologyRole(entity);
-      if (role && groups[role]) groups[role].push(entity);
+      if (entityInFactionScope(entity) && entity.health > 0) entities.push(entity);
     }
-    return groups;
-  }
+    return entities;
+  } // Faction membership is decided by FactionConflicts; this only applies the exact-streamed-player-chunk scope.
+  function releaseEcologyTargets(entity) {
+    if (entity._chunkCombatTarget) {
+      entity._chunkCombatTarget = null;
+      if (entity._factionPulledIntoChase && entity.state === 'chase') entity.state = 'return'; // The fight woke it; with no target left it must not fall through to chasing the player.
+      entity._factionPulledIntoChase = false;
+    }
+    if (entity._chunkFactionEcologyTarget) setPredatorEcologyTarget(entity, null);
+  } // Clears only targets this system previously owned.
   function hasSharedEnemyNearby(entity) {
     if (!entitySharesPlayerStreamChunk(entity)) return false;
     for (const other of combatDeps?.hostileObjects || []) {
       if (other === entity || !entitySharesPlayerStreamChunk(other) || other.health <= 0) continue;
-      const role = ecologyRole(other);
-      if (role === 'bandit' || role === 'predator') {
+      if (window.FactionConflicts?.forgivesCrossfire?.(entity, other)) {
         if (entity?.isPorakanekiHunter) entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500;
         return true;
       }
@@ -968,45 +964,34 @@
   } // "Nearby" intentionally means the observed 16x16 player chunk, with a 1.5s grace so simultaneous crossfire deaths stay forgiven.
   function updateChunkEcology() {
     const observedChunk = playerStreamChunk(); // Used both as the hard simulation gate and the mobile-visible debug identity.
-    if (!combatDeps?.hostileObjects || !observedChunk) return;
-    const groups = activePlayerChunkEcology();
-    const active = new Set([...groups.porakaneki, ...groups.bandit, ...groups.predator, ...groups.prey]);
+    const conflicts = window.FactionConflicts;
+    if (!combatDeps?.hostileObjects || !observedChunk || !conflicts?.runPass) return;
     let humanoidTargets = 0; // Counted below for Pixel-Probe/debugSnapshot verification without inspecting entity internals.
     let predatorTargets = 0; // Counted below for the same mobile-visible ecology summary.
-
-    // Clear only targets this system previously owned once either participant
-    // leaves the player's chunk. No actor-vs-actor simulation continues offscreen.
-    for (const entity of combatDeps.hostileObjects) {
-      if (active.has(entity)) continue;
-      if (entity._chunkCombatTarget) entity._chunkCombatTarget = null;
-      if (entity._chunkFactionEcologyTarget) setPredatorEcologyTarget(entity, null);
-    }
-
-    for (const bandit of groups.bandit) {
-      const target = nearestEcologyTarget(bandit, [...groups.porakaneki, ...groups.predator]);
-      setHumanoidEcologyTarget(bandit, target);
-      if (target) humanoidTargets++;
-    }
-    for (const hunter of groups.porakaneki) {
-      const threat = nearestEcologyTarget(hunter, [...groups.bandit, ...groups.predator]);
-      const prey = threat ? null : nearestEcologyTarget(hunter, groups.prey);
-      const target = threat || prey;
-      setHumanoidEcologyTarget(hunter, target);
-      if (target) humanoidTargets++;
-    }
-    for (const predator of groups.predator) {
-      const target = nearestEcologyTarget(predator, [...groups.porakaneki, ...groups.bandit]);
-      setPredatorEcologyTarget(predator, target);
-      if (target) predatorTargets++;
-    }
+    // Who fights whom, who flees and who pursues is decided by
+    // config/faction-conflicts.json via FactionConflicts.runPass; this runtime
+    // only supplies the in-chunk actors and applies the chosen target. Actors
+    // that left the player's chunk have only the targets this system owned
+    // cleared -- no actor-vs-actor simulation continues offscreen.
+    const summary = conflicts.runPass({
+      active: activePlayerChunkEntities(),
+      all: combatDeps.hostileObjects,
+      assign(entity, target) {
+        if (entity.isBandit || entity.banditCompanion) { setHumanoidEcologyTarget(entity, target); humanoidTargets++; }
+        else { setPredatorEcologyTarget(entity, target); predatorTargets++; }
+      },
+      release: releaseEcologyTargets,
+    });
+    const by = summary.byFaction;
     state.ecology = {
       chunk: `${observedChunk.x},${observedChunk.y}`,
-      porakaneki: groups.porakaneki.length,
-      bandits: groups.bandit.length,
-      predators: groups.predator.length,
-      prey: groups.prey.length,
+      porakaneki: by.porakaneki || 0,
+      bandits: by.bandit || 0,
+      predators: by.predator || 0,
+      prey: by.prey || 0,
       humanoidTargets,
       predatorTargets,
+      fleeing: summary.fleeing,
     };
   }
 
@@ -1466,6 +1451,7 @@
     const entity = hunter.entity;
     if (!entity || entity.health <= 0) return;
     hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
+    if (entity._factionFlee) return; // Fleeing a faction fight (FactionConflicts): neither the planner nor hostility may redirect it until it settles.
     if ((!peacefulRapport() && favor() <= num(cfg?.reputation?.attackOnSightFavor, -5)) || campProvoked(hunter.camp)) {
       entity._chunkCombatTarget = null;
       makeHostile(entity);
@@ -1585,6 +1571,18 @@
     maybeChiefGreeting();
   }
 
+  function factionHomePoint(entity) {
+    if (!entity?.isPorakanekiHunter || !combatDeps?.TILE) return null;
+    const camp = activeCamps(state.zones.get(entity.areaId)).find(candidate => candidate.id === entity.porakanekiCampId);
+    return camp ? { x: camp.center.col * combatDeps.TILE, y: camp.center.row * combatDeps.TILE } : null;
+  } // Where a fleeing hunter runs: its own camp, not wherever the planner last sent it.
+  window.FactionConflicts?.init?.({
+    now: nowMs,
+    tileSize: () => combatDeps?.TILE,
+    zoneDef: () => combatDeps?.EXTERIOR_ZONES?.[currentArea()] || null,
+    homePointFor: factionHomePoint,
+    areaBounds: () => ({ cols: num(combatDeps?.getActiveCols?.(), 0), rows: num(combatDeps?.getActiveRows?.(), 0) }),
+  }); // Binds the data-driven faction rules (config/faction-conflicts.json) to this runtime's chunk scope and camps.
   function installBanditCombat(api = window.BanditCombat) {
     if (!api || typeof api.init !== 'function') return false;
     if (api.__porakanekiCampInitWrapped) return true;
@@ -1789,7 +1787,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `Porakaneki camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology.porakaneki}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
+    __test: Object.freeze({ MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, activePlayerChunkEntities, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
   });
 
   watchNamespace('BanditCombat', installBanditCombat);

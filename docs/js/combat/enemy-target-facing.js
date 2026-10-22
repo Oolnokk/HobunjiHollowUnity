@@ -39,14 +39,19 @@
     // Ranged weapons need exact projectile aim, and prone state is owned by the
     // later prone-exclusivity wrapper. The drag is specifically for melee
     // pursuit/attacks where circling behind the target must remain meaningful.
-    if (!entity || entity.prone || entity._rangedMode || !targetPlayer) return result;
-    const targetX = Number(targetPlayer.x);
-    const targetY = Number(targetPlayer.y);
+    // updateCombatAI substitutes a chunk-local faction target (js/faction-conflicts.js)
+    // for the player argument; the turn drag must follow the same target, or a
+    // bandit/Porakaneki fighting another faction is dragged to face the player
+    // and its attack cone never lines up with its real enemy.
+    const target = banditApi.resolveCombatTarget?.(entity, targetPlayer) || targetPlayer;
+    if (!entity || entity.prone || entity._rangedMode || !target) return result;
+    const targetX = Number(target.x);
+    const targetY = Number(target.y);
     const entityX = Number(entity.x);
     const entityY = Number(entity.y);
     if (![targetX, targetY, entityX, entityY].every(Number.isFinite)) return result;
 
-    const desired = Math.atan2(targetY - entityY, targetX - entityX); // True player bearing; only rotation toward it is rate-limited.
+    const desired = Math.atan2(targetY - entityY, targetX - entityX); // True bearing to the effective target; only rotation toward it is rate-limited.
     const after = turnToward(before, desired, dt);
     const deltaBefore = angleDiff(desired, before); // Used by mobile/headless diagnostics to show how much turn was requested.
     const rawAfter = Number(entity.facing); // BanditCombat's unbounded result retained only for diagnostics.

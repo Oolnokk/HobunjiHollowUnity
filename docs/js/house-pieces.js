@@ -43,8 +43,10 @@
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2'],
+    // Data-driven wilderness faction conflicts (config/faction-conflicts.json): who each faction attacks, what makes it flee, whether it pursues fleeing enemies. Must load before the Porakaneki camps runtime that drives its 5 Hz pass.
+    ['FactionConflicts', 'faction-conflicts.js?v=20261022fc1'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261017he50d55c'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261022h5652df1'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261012h76657f9'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
