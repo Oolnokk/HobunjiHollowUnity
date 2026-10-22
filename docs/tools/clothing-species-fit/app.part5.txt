@@ -39,6 +39,84 @@ function fittedLayerOutputs(fitState=captureFitState()){
   });
 } // Every layer uses one immutable fit snapshot; compositing is for preview only.
 
+function archiveAssetPath(url){
+  const path=String(url||'').replace(/^\.\//,'');
+  if(!/^assets\/.+\.png$/i.test(path)||/[\\?#:"<>|\x00-\x1f]/.test(path)||
+     path.split('/').some(segment=>!segment||segment==='.'||segment==='..'))return null;
+  return path;
+}
+function fittedFallbackAssetPath(layer,selection){
+  const source=archiveAssetPath(layer.url);
+  const directory=source?.slice(0,source.lastIndexOf('/')+1)||'assets/cosmetics/clothes/';
+  const original=(source?.split('/').pop()||safeName(layer.name)+'.png').replace(/\.png$/i,'');
+  const noSourceGender=original.replace(/[_-](male|female|m|f)$/i,'');
+  const suffix=selection.targetGender==='female'?'f':'m';
+  return directory+noSourceGender+'_'+safeName(selection.targetSpecies)+'_'+suffix+'.png';
+}
+function archiveVariantLeaf(variant,path,originalLeaf){
+  let cursor=variant,created=false;
+  for(let index=0;index<path.length;index++){
+    const key=path[index];
+    if(!cursor[key]||typeof cursor[key]!=='object'){
+      cursor[key]=index===path.length-1?JSON.parse(JSON.stringify(originalLeaf)):{};
+      created=true;
+    }
+    cursor=cursor[key];
+  }
+  return{leaf:cursor,created};
+}
+function buildFittedLayerArchivePlan(layers,selection){
+  const garment=garmentRecord(),cfg=garment?.cfg;
+  if(!cfg||!garment.configPath)throw new Error('This garment has no repository cosmetic config path for a ready-to-install export.');
+  const sourceKey=selection.sourceSpecies+'_'+selection.sourceGender;
+  const targetKey=selection.targetSpecies+'_'+selection.targetGender;
+  const sourceVariant=cfg.speciesVariants?.[sourceKey];
+  if(!sourceVariant&&!HEAD_SLOTS.has(garment.slot))throw new Error('Cannot resolve the selected source garment variant.');
+  const config=JSON.parse(JSON.stringify(cfg));
+  config.speciesVariants ||= {};
+  let modified=false;
+  if(!config.speciesVariants[targetKey]){config.speciesVariants[targetKey]={parts:{}};modified=true}
+  const draft=config.speciesVariants[targetKey];
+  const used=new Set(),files=[];
+  for(const layer of layers){
+    const sourceLeaf=patchNodeAtPath(sourceVariant,layer.path)||
+      (layer.path.at(-1)==='behindImage'?{url:layer.url}:{image:{url:layer.url},layerRole:layer.role||''});
+    const originalTarget=patchNodeAtPath(cfg.speciesVariants?.[targetKey],layer.path);
+    const behind=layer.path.at(-1)==='behindImage';
+    const targetUrl=behind?originalTarget?.url:originalTarget?.image?.url;
+    const existing=archiveAssetPath(targetUrl);
+    let outputName=existing||fittedFallbackAssetPath(layer,selection);
+    if(used.has(outputName.toLowerCase())){
+      const suffix=safeName(layer.path.join('_'));
+      const base=outputName.replace(/\.png$/i,'');
+      outputName=base+'__'+suffix+'.png';
+      for(let index=2;used.has(outputName.toLowerCase());index++)outputName=base+'__'+suffix+'_'+index+'.png';
+    }
+    used.add(outputName.toLowerCase());
+    const changedUrl=!existing||outputName!==existing;
+    const installed=archiveVariantLeaf(draft,layer.path,sourceLeaf);
+    if(installed.created)modified=true;
+    if(changedUrl){
+      if(behind)installed.leaf.url='./'+outputName;
+      else{
+        installed.leaf.image ||= {};
+        installed.leaf.image.url='./'+outputName;
+      }
+      modified=true;
+    }
+    if(installed.created&&!behind&&installed.leaf.behindImage?.url===layer.url){
+      installed.leaf.behindImage.url='./'+outputName;
+      modified=true;
+    }
+    files.push({
+      outputName,originalLayerName:layer.name,sourceConfigPath:layer.path,sourceUrl:layer.url,
+      targetUrl:'./'+outputName,existingTargetFilename:!!existing&&!changedUrl,
+      layerRole:layer.role,view:layer.view,patched:layer.patched
+    });
+  }
+  return{files,configPath:modified?garment.configPath:null,config:modified?config:null};
+}
+
 async function exportFittedGarment(){
   const fit=captureFitState();
   if(!R.cloth)return;
