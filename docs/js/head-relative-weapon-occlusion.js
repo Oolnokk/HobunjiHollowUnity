@@ -2,8 +2,7 @@
 // Shares stencil bit 0 with water by reserving only bit 1 for the rear mask.
 (() => {
   'use strict';
-  const MASK_LAYER = 24; // Temporary camera layer for the owner's rear PNG draw.
-  const WEAPON_LAYER = 25; // Temporary camera layer for just this owner's weapon.
+  const DRAW_LAYER = 24; // One private layer reused sequentially; layer 25 belongs to Perception Mode.
   const REAR_BIT = 2; // Kept separate from the compositor's water-tint bit (1).
   const FIELDS = ['visible', 'colorWrite', 'depthTest', 'depthWrite', 'stencilWrite', 'stencilWriteMask', 'stencilFunc', 'stencilRef', 'stencilFuncMask', 'stencilFail', 'stencilZFail', 'stencilZPass']; // Exact temporary material state restored even on render failure.
   let maskDraws = 0, weaponDraws = 0; // Mobile diagnostics count only actual masked overlay passes.
@@ -54,7 +53,7 @@
           renderer.state.buffers.stencil.setMask(REAR_BIT);
           renderer.clearStencil(); // Clears only bit 1; previously drawn water-tint coverage survives.
           layers.set(rear, rear.layers.mask);
-          rear.layers.set(MASK_LAYER);
+          rear.layers.set(DRAW_LAYER);
           const rearMaterials = materials(rear); // Skinned portraits use front/back material groups on one mesh.
           for (let i = 0; i < rearMaterials.length; i++) {
             const material = rearMaterials[i]; // Only the rear-facing material is eligible to stamp the silhouette.
@@ -71,14 +70,14 @@
             material.stencilFuncMask = REAR_BIT;
             material.stencilFail = material.stencilZFail = material.stencilZPass = THREE.ReplaceStencilOp;
           }
-          camera.layers.set(MASK_LAYER);
+          camera.layers.set(DRAW_LAYER);
           rawRender.call(renderer, scene, camera);
           maskDraws++;
           restore(states); states.clear();
-          rear.layers.mask = layers.get(rear);
+          rear.layers.mask = layers.get(rear) & ~(1 << DRAW_LAYER); // Exclude the mask source from the following weapon-color draw, even for enableAll() sources.
           for (const weapon of weapons) {
             layers.set(weapon, weapon.layers.mask);
-            weapon.layers.set(WEAPON_LAYER);
+            weapon.layers.set(DRAW_LAYER);
             for (const material of materials(weapon)) {
               if (!material) continue;
               save(states, material);
@@ -93,7 +92,7 @@
               if (tint) material.depthWrite = true;
             }
           }
-          camera.layers.set(WEAPON_LAYER);
+          camera.layers.set(DRAW_LAYER);
           rawRender.call(renderer, scene, camera);
           weaponDraws++;
         } finally {

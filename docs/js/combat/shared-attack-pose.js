@@ -323,12 +323,17 @@
   // Head-space offsets deliberately bypass the arm-length/orbit mapper.
   function headAnchor(out, avatar, localRoot = null) {
     const rig = avatar?.userData?.neckRig; // Live centroid and neck transform, shared by editor/player/NPCs.
-    if (rig?.available && rig.headCentroidLocal && rig.neckJoint) {
+    const pixelResolver = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition; // Canonical shader-parity path includes portrait flipping, head compensation and age offsets.
+    const head = rig?.available && rig.headCentroidPx && pixelResolver?.(avatar, rig.headCentroidPx, out); // Uses caller-owned output so head-relative animation stays allocation-free.
+    if (head) {
+      if (head !== out) out.copy(head); // Compatibility with an older resolver that returns a separate vector.
+    } else if (rig?.available && rig.headCentroidLocal && rig.neckLocal && rig.neckJoint) {
       out.set(rig.headCentroidLocal.x - rig.neckLocal.x,
         rig.headCentroidLocal.y - rig.neckLocal.y,
         (rig.headCentroidLocal.z || 0) - (rig.neckLocal.z || 0));
-      rig.neckJoint.updateWorldMatrix(true, false);
-      rig.neckJoint.localToWorld(out);
+      const headJoint = rig.headScaleJoint || rig.neckJoint; // Fallback rigs still include their separate head scale/offset transform when present.
+      headJoint.updateWorldMatrix(true, false);
+      headJoint.localToWorld(out);
     } else if (avatar?.localToWorld) {
       out.set(0, (Number(avatar.userData?.portraitModelHeight) || 0.9) * 0.3, 0);
       avatar.updateWorldMatrix(true, false);

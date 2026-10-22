@@ -13,6 +13,7 @@ const weapon = { isMesh:true,parent:owner,userData:{},layers:layers(),material:w
 const melee = { isMesh:true,parent:{userData:{}},userData:{},layers:layers(),material:material() }; // An unrelated melee weapon may not enter any head mask.
 const groups = api.collect([weapon,melee]); // Uses only the small existing held list.
 assert.equal(groups.length,1);assert.equal(groups[0].rear,rear);assert.equal(groups[0].weapons.length,1);
+rear.layers.mask = 0xffffffff; // Enable-all sources must still be isolated between the two private draws.
 const saved = JSON.stringify([front,back,weaponMaterial]); // Before-image for exception-safe restoration checks.
 const camera = {layers:layers()}, scene = {background:'sky',autoUpdate:true}; // Nested passes must restore world-render flags.
 let writeMask=255,stencilBits=1,pass=0; // Bit 0 represents an existing hand/water fragment that must survive rear-mask clearing.
@@ -26,7 +27,8 @@ function draw() {
     assert.equal(stencilBits,1,'owner mask clearing must preserve earlier water coverage');
     assert.equal(back.stencilWriteMask,2);stencilBits|=2;
   }else{
-    assert.equal(camera.layers.mask,1<<25);assert.equal(weaponMaterial.stencilFunc,T.EqualStencilFunc);
+    assert.equal(rear.layers.mask & (1<<24),0,'rear source is excluded from the weapon color pass');
+    assert.equal(camera.layers.mask,1<<24);assert.equal(weaponMaterial.stencilFunc,T.EqualStencilFunc);
     assert.equal(weaponMaterial.stencilRef & weaponMaterial.stencilFuncMask,0);
     assert.equal(weaponMaterial.stencilWriteMask,1,'visible head weapons stamp the existing water bit');
     assert.equal(weaponMaterial.depthTest,true);
@@ -34,10 +36,10 @@ function draw() {
 }
 api.draw(renderer,scene,camera,draw,groups,T,true);
 assert.equal(pass,2);assert.equal(JSON.stringify([front,back,weaponMaterial]),saved);
-assert.equal(rear.layers.mask,1);assert.equal(weapon.layers.mask,1);assert.equal(camera.layers.mask,1);
+assert.equal(rear.layers.mask,0xffffffff);assert.equal(weapon.layers.mask,1);assert.equal(camera.layers.mask,1);
 assert.equal(renderer.autoClear,true);assert.equal(scene.background,'sky');assert.equal(scene.autoUpdate,true);assert.equal(writeMask,255);
 assert.throws(()=>api.draw(renderer,scene,camera,()=>{throw new Error('draw failed');},groups,T),/draw failed/);
-assert.equal(JSON.stringify([front,back,weaponMaterial]),saved);assert.equal(camera.layers.mask,1);assert.equal(rear.layers.mask,1);
+assert.equal(JSON.stringify([front,back,weaponMaterial]),saved);assert.equal(camera.layers.mask,1);assert.equal(rear.layers.mask,0xffffffff);
 owner.userData.headRelativeBackPlane=null;
 assert.equal(api.collect([weapon,melee]).length,0,'switching to melee immediately removes rear masking');
 console.log('head-relative weapon owner masks, water bit, and state restoration PASS');

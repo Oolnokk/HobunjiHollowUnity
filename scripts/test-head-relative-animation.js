@@ -14,6 +14,13 @@ assert(Math.abs(point.x-0.1)<1e-9 && Math.abs(point.y-1.2)<1e-9 && point.z===0);
 neckJoint.localToWorld = p => { const x=p.x; p.x=10-p.z; p.y+=21; p.z=30+x; return p; }; // A turned head must carry the centroid with it.
 api.headAnchor(point,avatar,root);
 assert(Math.abs(point.x)<1e-9 && Math.abs(point.z-0.1)<1e-9);
+avatar.userData.neckRig.headScaleJoint = { updateWorldMatrix() {}, localToWorld(p) { p.x = 10 + p.x * 2; p.y = 21 + p.y * 1.5 - 0.1; p.z += 30; return p; } }; // Separate child-head scale and age/head offsets must move the anchor too.
+api.headAnchor(point,avatar,root);
+assert(Math.abs(point.x-0.2)<1e-9 && Math.abs(point.y-1.2)<1e-9);
+context.window.PNGPlaneAvatar = { resolveSkinnedPixelWorldPosition(node, pixel, out) { assert.equal(node,avatar); assert.equal(pixel,avatar.userData.neckRig.headCentroidPx); return out.set(10.3,21.4,30.2); } }; // The canonical CPU shader-parity resolver owns mirrored/weighted head placement.
+avatar.userData.neckRig.headCentroidPx = {x:20,y:10};
+api.headAnchor(point,avatar,root);
+assert(Math.abs(point.x-0.3)<1e-9 && Math.abs(point.y-1.4)<1e-9 && Math.abs(point.z-0.2)<1e-9);
 assert.equal(api.headAnchor(point,null),false);
 const fallback = { userData:{portraitModelHeight:2}, updateWorldMatrix(){}, localToWorld:p=>p }; // Missing sprite/rig falls back safely to the model's head region.
 api.headAnchor(point,fallback);

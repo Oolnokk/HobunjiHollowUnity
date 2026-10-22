@@ -293,7 +293,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20261017h64afb2a"></script>
+<script src="../../js/png-plane-avatar.js?v=20261022hea8b100"></script>
 <script src="../../js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
@@ -2224,8 +2224,8 @@ function animate() {
   if (anim.headRelative && rear && weapon && headOcclusion) {
     const wasVisible = weapon.visible; // Base world draw omits only the head-relative weapon, then the scoped helper draws it once.
     weapon.visible = false;
-    renderer.render(scene, camera);
-    weapon.visible = wasVisible;
+    try { renderer.render(scene, camera); }
+    finally { weapon.visible = wasVisible; } // Never leave the preview weapon hidden after a render failure.
     if (wasVisible) headOcclusion.draw(renderer, scene, camera, renderer.render, [{ rear, weapons: [weapon] }], THREE);
   } else renderer.render(scene, camera);
 }
