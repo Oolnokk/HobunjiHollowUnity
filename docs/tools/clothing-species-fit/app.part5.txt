@@ -29,6 +29,61 @@ function fittedClothingFilename(){
   if(R.patchWorkflow.active&&R.patchWorkflow.filename)return R.patchWorkflow.filename;
   return `${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}.png`;
 }
+function fittedLayerOutputs(fitState=captureFitState()){
+  if(!R.cloth||!R.body)return [];
+  const patchPath=R.patchWorkflow.descriptor?.layerPath||[];
+  const hasLayerPatch=routedPatchIsClothing()&&R.patchWorkflow.canvas;
+  const targetNorm=targetGridFromFitState(fitState);
+  return (R.cloth._layers||[]).map(layer=>{
+    const isPatched=hasLayerPatch&&JSON.stringify(layer.path)===JSON.stringify(patchPath);
+    const source=isPatched?R.patchWorkflow.canvas:layer.canvas; // The behind author replaces exactly its chosen leaf, not every garment material.
+    return {...layer,patched:!!isPatched,canvas:warpGarment(source,targetNorm,R.body.width,R.body.height)};
+  });
+} // Every layer uses one immutable fit snapshot; compositing is for preview only.
+
+async function exportFittedGarment(){
+  const fit=captureFitState();
+  if(!R.cloth)return;
+  const layers=fittedLayerOutputs(fit);
+  if(layers.length<=1||routedPatchIsBody()){
+    const output=clothOut(fit);
+    if(output)downloadCanvas(output,fittedClothingFilename());
+    log(`Exported single fitted PNG (${fit.key}).`);
+    return;
+  }
+  const zipTools=window.ClothingFitZip; // Reuses the behind-sprite author's existing dependency-free ZIP encoder.
+  if(!zipTools){log('ERROR ZIP export helper is not loaded; the editor cannot export layered sprites safely.');return}
+  const stem=`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}`;
+  const used=new Set(),files=[],entries=[];
+  E.clothPng.disabled=true;
+  try{
+    for(let index=0;index<layers.length;index++){
+      const layer=layers[index];
+      const basename=`${stem}_${safeName(layer.name)}.png`;
+      let name=basename,serial=2; // Distinct config paths cannot overwrite one another in the archive.
+      while(used.has(name.toLowerCase()))name=`${stem}_${safeName(layer.name)}_${serial++}.png`;
+      used.add(name.toLowerCase());
+      E.sourceLayerStatus.textContent=`Baking fitted source layer ${index+1}/${layers.length}: ${layer.name}`;
+      entries.push({name,bytes:await zipTools.canvasToPngBytes(layer.canvas)});
+      files.push({outputName:name,sourceConfigPath:layer.path,sourceUrl:layer.url,layerRole:layer.role,view:layer.view,patched:layer.patched});
+    }
+    const manifest={
+      format:'hobunji-clothing-fit-layered-v1',garmentId:E.garment.value,fitRegion:fitRegion(),
+      sourceSpecies:E.sourceSpecies.value,sourceGender:E.sourceGender.value,
+      targetSpecies:E.species.value,targetGender:E.gender.value,
+      fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets},
+      files
+    }; // Layer identity and exact warp settings accompany every fitted raster for later config wiring.
+    entries.push({name:'fitted-layers-manifest.json',bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
+    const archiveName=`${stem}_fitted_layers.zip`;
+    zipTools.downloadBlob(zipTools.buildStoredZip(entries),archiveName);
+    log(`Exported ${files.length} individually fitted layers in ${archiveName} from ${E.sourceSpecies.value} ${E.sourceGender.value}.`);
+    E.sourceLayerStatus.textContent=`Exported ${files.length} layers to ${archiveName}. Composite export remains available.`;
+  }catch(error){
+    log('ERROR Fitted layer ZIP export: '+error.message);
+    E.sourceLayerStatus.textContent='Layer export failed: '+error.message;
+  }finally{E.clothPng.disabled=false}
+}
 function overlayOut(){
   const clothing=clothOut();if(!R.body||!clothing)return null;
   const output=document.createElement('canvas');output.width=R.body.width;output.height=R.body.height;
