@@ -82,12 +82,22 @@ assert.equal(rules.ingredientPoints('sauce',4,processDefs),16,'multiple processi
 assert.equal(rules.scoreCooked({festivalIngredientQuality:[{key:'root',stars:5},{key:'sauce',stars:3}]},1,processDefs),17,'actual input quality beats the output meal star rating');
 assert(!rules.winner({score:0},days),'poor entry loses');
 assert(rules.winner({score:100},days),'excellent processed dish can win');
-let currentDay=1156*336 + 119 + 6, complete=false, granted=[], provider=null, saveCount=0, prepared=0;
-window.MetalArmorSystem={prepareFestivalHelmPrize:()=>{prepared++;return true;}}; // The doorstep reward converts the existing cosmetic prize to a metal faceguard and wool cap.
+let currentDay=1156*336 + 119 + 6, complete=false, granted=[], provider=null, saveCount=0;
+const awardedPack=[]; // Hreesh's actual costume grant deposits one generic prize into Pack before metal preparation.
+const smithGear={clothingItems:[],clothing:{}}; // Permanent learned smith blueprints survive the recipient's future sale of the prize.
+const smithSaves=[]; // Checks that faceguard metal and cap dye are persisted to the appropriate save ownership.
+window.TownMine={getTownValue:()=>1,filterMetalKeysForTownValue:(keys,value)=>keys.slice(0,value+1)}; // Same low-Town-Value alloy gate as treasure chests.
+vm.runInContext(fs.readFileSync('docs/js/metal-armor-system.js','utf8'),ctx,{filename:'metal-armor-system.js'});
+window.MetalArmorSystem.init({
+  getPackClothing:()=>awardedPack,getGearInventory:()=>smithGear,
+  getPlayerData:()=>({appearance:{speciesId:'mao-ao',gender:'male'}}),
+  VERDIGRIS_METAL_KEYS:['nativeCopper','lowTinBronze','tinBronze','highTinBronze','arsenicalBronze','leadedBronze'],
+  saveGearInventory:()=>smithSaves.push('gear'),saveMemberWorldData:()=>smithSaves.push('world')
+});
 window.DoorstepVisits={registerProvider:p=>{provider=p;},markDone(){}};
 const contests={'1156:gorkunash':{entry:{key:'meal',label:'Grand Feast',score:100},days,rewarded:false}};
 rules.registerRewardVisit({
- grantMask:id=>{granted.push(id);return true;},
+ grantMask:id=>{granted.push(id);awardedPack.push({uid:'potluck-prize',cosmeticId:id,slot:'hat'});return true;},
  save:()=>saveCount++
 },()=>contests,key=>{contests[key].rewarded=true;complete=true;},()=>currentDay);
 assert.equal(provider.next(),null,'no Hreesh visit on the seventh day');
@@ -97,7 +107,17 @@ assert.equal(visit.npcId,'hreesh','Hreesh delivers the prize');
 assert.match(visit.tree.nodes.at(-1).text,/Replica Helm of Bzabag/);
 assert.equal(granted.length,0,'dialogue beginning does not award item');
 assert(provider.onComplete(visit),'natural completion awards helm');
-assert(complete && saveCount>0 && granted[0]==='replica_bzabag_helm' && prepared===1,'prize normalized to mixed metal/cloth after award');
+assert(complete && saveCount>0 && granted[0]==='replica_bzabag_helm','Hreesh awards the expected cosmetic');
+const awardedHelm=awardedPack[0]; // Actual awarded item is now tested against the real MetalArmorSystem, not a stub.
+assert.equal(awardedHelm.materialKind,'metal','prize upgrades to smith metal armor');
+assert(['nativeCopper','lowTinBronze'].includes(awardedHelm.metalKey),'starting faceguard alloy obeys current chest Town Value eligibility');
+assert.equal(awardedHelm.weaveMaterial,'light','the unique festival prize uses the light-wool cap by default');
+assert(awardedHelm.colorA?.hex && awardedHelm.dyeable,'wool cap retains the garment dye channel');
+assert(awardedHelm.weightUnits>0 && smithGear.knownMetalArmorBlueprints.includes('replica_bzabag_helm'),'prize unlocks the smith blueprint and proper outfit burden');
+assert(smithSaves.includes('world') && smithSaves.includes('gear'),'prize and smith unlock persist in their respective save domains');
+const prizeMetal=awardedHelm.metalKey;
+assert(window.MetalArmorSystem.prepareFestivalHelmPrize(),'rechecking an already-upgraded prize is harmless');
+assert.equal(awardedHelm.metalKey,prizeMetal,'rechecking the reward never rerolls its already-owned alloy');
 assert.equal(provider.next(),null,'reward cannot recur');
 const cosmetic = JSON.parse(fs.readFileSync('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json','utf8'));
 const catalog = JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json','utf8'));

@@ -807,14 +807,18 @@
   }
 
   function prepareFestivalHelmPrize() {
-    const owned = [...(deps?.getPackClothing?.() || []), ...(deps?.getGearInventory?.()?.clothingItems || [])]; // Festival grantMask may deposit into either permanent Gear or world Pack.
-    const prize = owned.find(item => baseCosmeticId(item) === HELM_BLUEPRINT_ID && !item.metalKey);
+    const gear = deps?.getGearInventory?.();
+    const owned = [...(deps?.getPackClothing?.() || []), ...(gear?.clothingItems || []), ...Object.values(gear?.clothing || {})]; // Festival prizes can be held in Pack, owned Gear, or a directly equipped slot after a save migration.
+    const prize = owned.find(item => baseCosmeticId(item) === HELM_BLUEPRINT_ID && !item.metalKey)
+      || owned.find(item => baseCosmeticId(item) === HELM_BLUEPRINT_ID); // An already-upgraded prize still counts as successfully prepared.
     if (!prize) return false;
-    normalizeItem(prize);
+    const changed = normalizeItem(prize); // Roll chest-eligible starting metal only for an uninitialized reward, once per physical article.
     learnBlueprints([prize]);
-    deps?.saveGearInventory?.();
-    deps?.saveMemberWorldData?.();
-    refreshVisuals();
+    if (changed) {
+      deps?.saveGearInventory?.();
+      deps?.saveMemberWorldData?.();
+      refreshVisuals();
+    }
     return true;
   }
 
