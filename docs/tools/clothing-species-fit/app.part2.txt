@@ -195,8 +195,11 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
           if(record.isBack)hasBack=true;
           else{
             hasFront=true;
-            const rearImage=record.behindPath&&record.behindPath!==record.path
-              ?await loadImage(assetUrl(record.behindPath)):image;
+            let rearImage=image;
+            if(record.behindPath&&record.behindPath!==record.path){
+              try{rearImage=await loadImage(assetUrl(record.behindPath))}
+              catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
+            }
             const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
             rearCtx.drawImage(rearImage,0,0); // Compose cap then metal band in the same author-specified layer order.
             if(record.behindPath)hasBehindOverride=true;
