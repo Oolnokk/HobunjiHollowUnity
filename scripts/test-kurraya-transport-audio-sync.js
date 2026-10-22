@@ -127,19 +127,19 @@ assert.match(
 
 assert.match(
   source,
-  /function scheduleTransportAudioAhead\(\)[\s\S]*?findUpcomingTransportBoundary\(clock => clock\.transportAbsoluteBeat\)[\s\S]*?playMetronomeClick\(currentHarmonyBeatData\(beatBoundary\.clock\), false, beatBoundary\.atMs\)[\s\S]*?findUpcomingTransportBoundary\(clock => currentHarmonyStep\(clock\)\)[\s\S]*?syncRootPad\(false, chordBoundary\.atMs, chordBoundary\.clock\)/,
-  'one shared ahead-of-time scheduler must queue both beat and chord-root audio'
+  /function scheduleTransportAudioAhead\(\)[\s\S]*?findUpcomingTransportBoundary\(clock => clock\.transportAbsoluteBeat\)[\s\S]*?playMetronomeClick\(currentHarmonyBeatData\(beatBoundary\.clock\), false, beatBoundary\.atMs\)[\s\S]*?findUpcomingTransportBoundary\(rootPadAudioKey\)[\s\S]*?syncRootPad\(!state\.rootPadSampleBuffer, padBoundary\.atMs, padBoundary\.clock\)/,
+  'one shared ahead-of-time scheduler must queue both beat and measure/chord-root audio'
 );
 
 assert.match(
   source,
-  /function updateGameFrame\(\)[\s\S]*?scheduleTransportAudioAhead\(\);[\s\S]*?if \(state\.scheduledHarmonyStep !== harmonyStep\) syncRootPad\(\);[\s\S]*?if \(state\.scheduledMetronomeBeat !== beatData\.absoluteBeat\) playMetronomeClick\(beatData\)/,
+  /function updateGameFrame\(\)[\s\S]*?scheduleTransportAudioAhead\(\);[\s\S]*?if \(padKey !== state\.lastRootPadKey\)[\s\S]*?state\.scheduledRootPadKey !== padKey\) syncRootPad\(!state\.rootPadSampleBuffer\)[\s\S]*?if \(state\.scheduledMetronomeBeat !== beatData\.absoluteBeat\) playMetronomeClick\(beatData\)/,
   'render-frame boundary handling must remain fallback-only after ahead scheduling'
 );
 
 assert.match(
   source,
-  /transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS[\s\S]*?scheduledMetronomeBeat:[\s\S]*?scheduledHarmonyStep:/,
+  /transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS[\s\S]*?scheduledMetronomeBeat:[\s\S]*?scheduledRootPadKey:/,
   'mobile/host diagnostics must expose the transport scheduling state'
 );
 
@@ -206,7 +206,7 @@ assert.match(
 assert.match(
   source,
   /function kurrayaHarmonySegments\(steps, meterLabel, startChord = 0\)[\s\S]*?previous && previous\.step === step[\s\S]*?previous\.lengthBars \+= 1[\s\S]*?function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?authoredSongActive[\s\S]*?eventSerial:phase\.cycleIndex \* FIXED_HARMONY_CYCLE_CHORDS \+ segment\.startChord[\s\S]*?progressionStep:segment\.step[\s\S]*?spanMeasures:segment\.lengthBars[\s\S]*?spanBeats:segment\.lengthBars \* meterNumerator/,
-  'neighboring equal authored bars must collapse into one sustained harmony event instead of retriggering the pad on every bar'
+  'neighboring equal authored bars must remain one harmony section; the new plucked pad key independently retriggers each bar'
 );
 assert.match(
   source,
@@ -380,7 +380,7 @@ assert.match(
 
 assert.match(
   source,
-  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\(\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
+  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\(\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.ambientOnly \? randomNpcAutoPickPattern\(\) : state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
   'procedural ambient performance must compose another melody at every song-loop boundary instead of repeating one random result forever'
 );
 
