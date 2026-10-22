@@ -161,8 +161,9 @@
     const task = state?.progress;
     if (!task?.commission || state.status !== 'available' || !isReady(task)) return { ok: false, message: `The commission is not ready: ${requirementText(task)}` };
 
+    const quote = window.NpcCraftingCommissionGenerator?.rewardQuote?.(task); // Same reward values shown by the Quest Log, including repriced legacy jobs.
     const mastery = window.CraftingMasterySystem; // World-scoped Mote authority every successful crafting commission must use.
-    const moteReward = Math.max(1, Math.floor(finite(task.rewardMotes || task.commission.rewardMotes, 1)));
+    const moteReward = Math.max(1, Math.floor(finite(quote?.motes, task.rewardMotes || task.commission.rewardMotes || 1)));
     const masteryDebug = mastery?.debugSnapshot?.(); // Preflight world availability before touching the literal deliverable.
     if (!mastery?.awardMotes || !mastery?.saveState || !mastery?.getState || !masteryDebug?.worldId) {
       lastError = 'Crafting mastery world state unavailable during commission turn-in';
@@ -181,15 +182,18 @@
       return { ok: false, message: 'That crafted piece could not be turned in.' };
     }
 
-    const paidGold = Math.max(0, Math.round(finite(task.rewardGold, 0))); // Ordinary payment remains alongside crafting progression.
+    const paidGold = Math.max(0, Math.round(finite(quote?.gold, task.rewardGold))); // The quoted cost-plus-labor payment is credited only after physical delivery succeeds.
     taskDeps.inventory.gold = finite(taskDeps.inventory.gold, 0) + paidGold;
-    window.DialogueContent?.adjustNpcFavor?.(task.npcId, finite(task.rewardFriendship, 0), 'task_crafting_commission');
+    const favor = Math.max(0, finite(quote?.favor, task.rewardFriendship)); // Tasks pay Favor points; relationship-heart conversion happens downstream.
+    const appliedFavor = window.DialogueContent?.adjustNpcFavor?.(task.npcId, favor, 'task_crafting_commission');
+    const shownFavor = Math.round((Number.isFinite(appliedFavor) ? appliedFavor : favor) * 100) / 100; // Accurately reports positive-Favor multipliers when present.
     taskDeps.setQuestStatus(taskId, 'completed', {});
     taskDeps.buildInventoryGrid?.();
     taskDeps.saveMemberWorldData?.();
-    window.WorldPopupText?.queueReward?.('craft', `+${motes} Mote${motes === 1 ? '' : 's'} of Craft`); // Only announce after the literal delivery has committed.
-    taskDeps.showToast?.(`✅ Commission complete! +${paidGold}g, +${motes} Mote${motes === 1 ? '' : 's'} of Craft.`, true);
-    lastTurnIn = { taskId, motes, at: Date.now(), commission: clone(task.commission) };
+    window.WorldPopupText?.queueReward?.('masteryXp', `+${motes} Mote${motes === 1 ? '' : 's'} of Craft`); // Mastery is an actual supported centered reward-list category (unlike the old 'craft' key).
+    window.WorldPopupText?.queueReward?.('currency', `+${paidGold}g`); // The reward popup now includes the exact credited gold alongside Favor and Craft Motes.
+    taskDeps.showToast?.(`✅ Commission complete! +${paidGold}g, +${shownFavor} Favor, +${motes} Mote${motes === 1 ? '' : 's'} of Craft.`, true);
+    lastTurnIn = { taskId, gold: paidGold, favor: shownFavor, motes, at: Date.now(), commission: clone(task.commission) };
     return { ok: true, message: 'Commission turned in.' };
   }
 

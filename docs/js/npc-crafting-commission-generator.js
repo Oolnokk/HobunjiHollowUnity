@@ -65,16 +65,24 @@
     return [...new Set((recipient?.gifts?.liked || []).filter(trait => COLORS.has(trait)))]; // Canonical positive clothing-color traits the NPC gifting system already uses.
   }
 
+  function usableDyesFor(likedTraits) {
+    const liked = new Set(likedTraits || []); // NPC's authored preferences; used to prevent impossible commission colors.
+    window.DyeSystem?.ensureCollection?.(); // The loom initializes starter dyes this way before displaying a palette.
+    return (window.DyeSystem?.getCatalog?.() || [])
+      .filter(dye => window.DyeSystem?.owns?.(dye.id))
+      .map(dye => ({ dye, traits: window.ItemTraits?.colorTraitsForHsv?.(window.ItemTraits?.resolveHsv?.(dye)) || [] }))
+      .filter(entry => entry.traits.some(trait => HUES.includes(trait) && liked.has(trait))); // A craftable dye must satisfy at least one preferred hue.
+  }
+
   function colorRequirement(likedTraits) {
-    const liked = new Set(likedTraits || []); // Recipient color tastes available for one dye slot.
-    const hue = pick(HUES.filter(trait => liked.has(trait))); // Required hue category for this slot.
+    const liked = new Set(likedTraits || []); // Only the recipient's genuinely liked traits may become requirements.
+    const dye = pick(usableDyesFor(likedTraits)); // Choose a real unlocked swatch before specifying AND-ed hue/saturation/value requirements.
+    if (!dye) return null;
+    const hue = dye.traits.find(trait => HUES.includes(trait) && liked.has(trait));
     if (!hue) return null;
-    const traits = [hue];
-    const saturation = pick(SATURATION.filter(trait => liked.has(trait))); // Hot/muted requirement when the recipient has one authored as liked.
-    const value = pick(VALUE.filter(trait => liked.has(trait))); // Bright/dark requirement when the recipient has one authored as liked.
-    if (saturation) traits.push(saturation);
-    if (value) traits.push(value);
-    return traits;
+    const saturation = dye.traits.find(trait => SATURATION.includes(trait) && liked.has(trait));
+    const value = dye.traits.find(trait => VALUE.includes(trait) && liked.has(trait));
+    return [hue, ...(saturation ? [saturation] : []), ...(value ? [value] : [])]; // The selected dye itself witnesses that all requested traits are satisfiable.
   }
 
   async function refreshClothingProfiles() {
@@ -98,7 +106,7 @@
   function generateClothing(giver, tier) {
     const recipients = relatedRecipientIds(giver.id)
       .map(npcRecord)
-      .filter(recipient => likedColors(recipient).some(trait => HUES.includes(trait))); // Every candidate has a real positive hue preference to commission around.
+      .filter(recipient => usableDyesFor(likedColors(recipient)).length > 0); // Never offer a recipient whose liked colors cannot be woven from already unlocked dyes.
     const recipient = pick(recipients); // Random member of the giver's authored family/friend group.
     const article = pick(clothingProfiles); // Random learned loom article the player can actually make.
     if (!recipient || !article) return null;
@@ -122,7 +130,7 @@
   }
 
   function giverRoleText(giver) {
-    return [giver?.role, giver?.scheduleHooks?.workBuildingId, ...(giver?.tags || [])].filter(Boolean).join(' '); // Work location/tags fill gaps in terse authored role labels.
+    return [giver?.role, giver?.homeId, giver?.workBuildingId, giver?.scheduleHooks?.workBuildingId, ...(giver?.tags || [])].filter(Boolean).join(' '); // Work location/tags fill gaps in terse authored role labels.
   }
 
   function furnitureScore(giver, blueprint) {
@@ -137,6 +145,48 @@
     return score;
   }
 
+  function furnitureMaterialValue(craftCost) {
+    return Object.entries(craftCost || {}).reduce((sum, [key, amount]) => {
+      const definition = craftingDeps?.ITEM_DEFS?.[key]; // Reads the current economy price for each actual consumed resource.
+      const unitValue = key === 'wood' ? Math.max(3, finite(craftingDeps?.ITEM_DEFS?.pineLog?.sellPrice), finite(craftingDeps?.ITEM_DEFS?.shadewoodLog?.sellPrice))
+        : Math.max(3, finite(definition?.sellPrice)); // Missing catalog entries never make labor or metal effectively free.
+      return sum + Math.max(0, finite(amount)) * unitValue;
+    }, 0);
+  }
+
+  function rewardQuote(task) {
+    const commission = task?.commission; // Same saved commission record used by offers, quest log, and turn-in.
+    if (!commission) return null;
+    const tier = Math.max(0, Math.min(5, Math.floor(finite(task.tier, 0)))); // Difficulty/reputation bonus is bounded by the existing tier scale.
+    let goldFloor = 0; // Minimum payment covering materials, crafting labor, and special requests.
+    let favorFloor = 6; // Favor is measured in points: 40 points equal one complete heart.
+    let moteFloor = 2; // Crafting progression reward grows with the amount of work.
+    if (commission.type === 'furniture') {
+      const blueprint = (craftingDeps?.FURNITURE_BLUEPRINT_CATALOG || []).find(bp => bp.key === commission.blueprintKey); // Uses the actual recipe cost, not a guessed generic furniture tier.
+      const cost = blueprint?.craftCost || {};
+      const value = furnitureMaterialValue(cost); // Reuses the same wood/wool/bar pricing as new furniture commissions.
+      const ingredients = Object.entries(cost).filter(([, count]) => finite(count) > 0).length; // Handling several resource families takes additional work.
+      goldFloor = Math.round(105 + value * 1.65 + ingredients * 12 + tier * 9);
+      favorFloor += Math.min(4, Math.floor(value / 140)) + (ingredients >= 3 ? 1 : 0);
+      moteFloor += Math.min(3, Math.floor(value / 170)) + (ingredients >= 3 ? 1 : 0);
+    } else if (commission.type === 'clothing') {
+      const woolKey = commission.material === 'heavy' ? 'puktukWool' : 'lightWool'; // Same source material keys as the ordinary loom.
+      const units = window.ClothingWeavingSystem?.woolCostForSlot?.(commission.slot) || 1; // Actual authored garment coverage, including large overwear.
+      const woolPrice = Math.max(6, finite(craftingDeps?.ITEM_DEFS?.[woolKey]?.sellPrice)); // Defensive estimate if the inventory definitions are not initialized yet.
+      const dyeChannels = Math.max(1, commission.dyeSlots?.length || 1); // Each precisely matched dye channel adds selection and pattern labor.
+      const heavy = commission.material === 'heavy' ? 1 : 0; // Heavy yarn is harder to gather and process.
+      const patterned = commission.patterned ? 1 : 0; // Woven patterns take another authoring step.
+      goldFloor = Math.round(75 + 2 * units * woolPrice + 25 * dyeChannels + 12 * (units - 1) + 25 * heavy + 45 * patterned + tier * 10);
+      favorFloor += heavy + patterned * 2 + (dyeChannels > 1 ? 1 : 0);
+      moteFloor += heavy + patterned + (dyeChannels > 2 ? 1 : 0);
+    } else return null;
+    return {
+      gold: Math.max(Math.round(finite(task.rewardGold)), Math.round(finite(commission.rewardGold)), goldFloor),
+      favor: Math.max(finite(task.rewardFriendship), 6 + Math.floor(tier / 2), favorFloor + Math.floor(tier / 2)),
+      motes: Math.max(1, Math.floor(finite(task.rewardMotes)), Math.floor(finite(commission.rewardMotes)), moteFloor),
+    }; // Never reduces the promised rewards of old world saves.
+  }
+
   function generateFurniture(giver) {
     const catalog = (craftingDeps?.FURNITURE_BLUEPRINT_CATALOG || []).filter(entry => entry?.key && entry?.furnitureKey && entry?.name && entry?.craftCost && !entry?.moteOnly && !entry?.masteryUnlockId); // Only ordinary reusable blueprints can be granted free; Crafting Mastery/Mote unlocks such as Advanced Loom must keep their progression gate.
     if (!catalog.length) return null;
@@ -145,12 +195,7 @@
     const best = ranked[0].score;
     const blueprint = pick(ranked.filter(record => record.score >= best - 2))?.entry;
     if (!blueprint) return null;
-    const materialValue = Object.entries(blueprint.craftCost).reduce((sum, [key, amount]) => { // Includes the actual value of wool and metal instead of underpaying complex recipes.
-      const definition = craftingDeps?.ITEM_DEFS?.[key]; // Reads live economy values, including bronze's lore price floor.
-      const unitValue = key === 'wood' ? Math.max(3, finite(craftingDeps?.ITEM_DEFS?.pineLog?.sellPrice), finite(craftingDeps?.ITEM_DEFS?.shadewoodLog?.sellPrice))
-        : Math.max(3, finite(definition?.sellPrice)); // Missing definitions retain the previous common-material estimate.
-      return sum + Math.max(0, finite(amount)) * unitValue;
-    }, 0);
+    const materialValue = furnitureMaterialValue(blueprint.craftCost); // Canonical valuation shared with the payout quote.
     return { type: 'furniture', blueprintKey: blueprint.key, furnitureKey: blueprint.furnitureKey, furnitureLabel: blueprint.name, category: blueprint.category || 'furniture', rewardMotes: 2, rewardGold: 70 + Math.round(materialValue * 1.5) }; // Pays more than selling the authored materials it consumes.
   }
 
@@ -167,6 +212,12 @@
       rewardGold: commission.rewardGold, rewardFriendship: 1 + Math.min(3, tier) * 0.5,
       rewardMotes: commission.rewardMotes, tier, postedDay: taskDeps.calendar?.day, deadlineDay: null, bonusMultiplier: 1, commission,
     };
+    const reward = rewardQuote(task); // One authoritative quote for newly generated and preexisting saved commissions.
+    if (reward) {
+      task.rewardGold = reward.gold;
+      task.rewardFriendship = reward.favor;
+      task.rewardMotes = reward.motes;
+    }
     taskDeps.setQuestStatus(id, 'offered', task);
     lastGenerated = { id, ...clone(task) };
     return { id, ...task };
@@ -196,6 +247,7 @@
 
   window.NpcCraftingCommissionGenerator = Object.freeze({
     version: VERSION, setDeps, refreshClothingProfiles, relatedRecipientIds, likedColors,
-    generateTask, askLine, formatDyeSlots, furnitureScore, debugSnapshot,
+    generateTask, askLine, formatDyeSlots, furnitureScore, rewardQuote, debugSnapshot,
+    __test: Object.freeze({ colorRequirement, usableDyesFor }), // Regression hooks for proving every color constraint has a real unlocked swatch.
   });
 })();

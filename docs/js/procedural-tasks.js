@@ -77,7 +77,7 @@
   const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
   const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
   const FAVOR_REWARD_MULT          = 1.6;
-  const TASK_FRIENDSHIP_REWARD     = { favor: [1, 1.5, 2, 2.5, 3, 4], request: 1.5 };
+  const TASK_FRIENDSHIP_REWARD     = { favor: [5, 6, 7, 8, 9, 10], request: 9 }; // Favor is stored in points (40 points = 1 heart), not whole hearts.
 
   // role (free-text NPC job, e.g. "carpenter / roofing family
   // connection", "great fae / fishing solution") → which item pool their
@@ -197,9 +197,8 @@
     const domain = Math.random() < playerWeight ? playerDomain : npcDomain;
     const itemKey = pickTaskItem(domain, tier);
     if (!itemKey) return null;
-    const def = deps.ITEM_DEFS[itemKey];
     const qty = TASK_QTY_BY_TIER[tier] + (Math.random() < 0.4 ? 1 : 0);
-    const rewardGold = Math.max(1, Math.round(qty * (def?.sellPrice || 5) * FAVOR_REWARD_MULT));
+    const rewardGold = baseReward([{ itemKey, qty }], FAVOR_REWARD_MULT) + taskEffortBonus([{ itemKey, qty }], domain); // Material resale plus the work of finding and delivering it.
     const rewardFriendship = TASK_FRIENDSHIP_REWARD.favor[tier];
     const id = _makeTaskId();
     const task = {
@@ -256,6 +255,26 @@
   const REQUEST_BONUS_MULTIPLIER = 2;
   function baseReward(items, mult = 1) {
     return Math.max(1, Math.round(items.reduce((sum, it) => sum + it.qty * (deps.ITEM_DEFS[it.itemKey]?.sellPrice || 5), 0) * mult));
+  }
+
+  function taskEffortBonus(items, domain) {
+    const units = items.reduce((sum, item) => sum + Math.max(0, Number(item.qty) || 0), 0); // Each separately gathered item contributes time and inventory burden.
+    const distinct = new Set(items.map(item => item.itemKey)).size; // Multi-ingredient trips require extra preparation and travel.
+    const domainExtra = { farming: 4, fishing: 10, combat: 18, alchemy: 14, mixed: 16 }[domain] ?? 8; // Hazardous and dispersed sources generally take longer to gather.
+    return Math.round(18 + units * 7 + distinct * 14 + domainExtra);
+  }
+
+  function rewardPreview(task) {
+    if (!task || !['request', 'favor'].includes(task.kind) || !Array.isArray(task.items) || !task.items.length) return null;
+    const multiplier = task.kind === 'request' ? 1.25 : FAVOR_REWARD_MULT; // Request errands pay a materials premium even after their speed bonus expires.
+    const floor = baseReward(task.items, multiplier) + taskEffortBonus(task.items, task.domain);
+    const baseGold = Math.max(Math.round(Number(task.rewardGold) || 0), floor); // Old saved quests receive the new minimum without losing any promised payout.
+    const tier = Math.max(0, Math.min(5, Math.floor(Number(task.tier) || 0))); // Safely indexes the ordinary favor reward tiers.
+    const floorFavor = task.kind === 'request' ? TASK_FRIENDSHIP_REWARD.request : TASK_FRIENDSHIP_REWARD.favor[tier];
+    const favor = Math.max(Number(task.rewardFriendship) || 0, floorFavor);
+    const onTime = task.deadlineDay == null || Number(deps.calendar?.day) <= Number(task.deadlineDay);
+    const bonusMultiplier = onTime ? Math.max(1, Number(task.bonusMultiplier) || 1) : 1;
+    return { baseGold, gold: Math.round(baseGold * bonusMultiplier), favor, onTime, bonusMultiplier }; // Shared source for the quest log and the actual turn-in.
   }
 
   const REQUEST_GIVERS = {
@@ -344,7 +363,7 @@
     if (!rolled.items?.length) return false;
     setTaskStatus(_makeTaskId(), 'announced', {
       kind: 'request', npcId, npcName: npcRec.name || 'A neighbor', domain: 'mixed',
-      items: rolled.items, rewardGold: baseReward(rolled.items), rewardFriendship: TASK_FRIENDSHIP_REWARD.request,
+      items: rolled.items, rewardGold: baseReward(rolled.items, 1.25) + taskEffortBonus(rolled.items, 'mixed'), rewardFriendship: TASK_FRIENDSHIP_REWARD.request,
       bonusMultiplier: REQUEST_BONUS_MULTIPLIER, tier: 2, postedDay: day,
       timerDays: rolled.timerDays, deadlineDay: day + rolled.timerDays,
     });
@@ -564,13 +583,15 @@
       deps.inventory[it.itemKey] -= it.qty;
       deps.clampInventoryStack(it.itemKey);
     });
-    const onTime = task.deadlineDay == null || deps.calendar.day <= task.deadlineDay;
-    const paidGold = onTime ? Math.round(task.rewardGold * (task.bonusMultiplier || 1)) : task.rewardGold;
+    const preview = rewardPreview(task); // The same repricing and deadline rules that TasksPanel shows.
+    const paidGold = preview.gold;
     deps.inventory.gold = (deps.inventory.gold || 0) + paidGold;
-    window.DialogueContent?.adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+    const appliedFavor = window.DialogueContent?.adjustNpcFavor?.(task.npcId, preview.favor, 'task_' + task.kind);
+    const shownFavor = Math.round((Number.isFinite(appliedFavor) ? appliedFavor : preview.favor) * 100) / 100; // Shows actual Favor points when bonuses modify the award.
     setTaskStatus(taskId, 'completed', {});
-    const bonusNote = onTime && task.bonusMultiplier > 1 ? ' (on-time bonus!)' : '';
-    deps.showToast(`✅ Task complete! +${paidGold}g${bonusNote}, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
+    window.WorldPopupText?.queueReward?.('currency', `+${paidGold}g`); // The centered reward list shows the same money this task actually credits.
+    const bonusNote = preview.bonusMultiplier > 1 ? ' (on-time bonus!)' : '';
+    deps.showToast(`✅ Task complete! +${paidGold}g${bonusNote}, +${shownFavor} Favor with ${task.npcName}.`, true);
     return { ok: true, message: 'Task turned in.' };
   }
 
@@ -602,5 +623,6 @@
     invalidateCompassTargets,
     compassDebugSnapshot,
     turnInTask,
+    rewardPreview,
   };
 })();
