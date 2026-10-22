@@ -109,7 +109,8 @@ function rebuildGarmentSelector(){
   }
   if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
   if(!E.garment.value&&E.garment.options.length)E.garment.selectedIndex=0;
-  E.exportHeadwear.hidden=region!=='headwear';
+  E.exportHeadwearFront.hidden=region!=='headwear';
+  E.exportHeadwearBack.hidden=region!=='headwear';
   E.bodyPng.textContent=region==='headwear'?'Head reference PNG':'Body PNG';
   E.clothPng.textContent=region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG';
   E.showBody.parentElement.lastChild.textContent=region==='headwear'?' head':' body';
