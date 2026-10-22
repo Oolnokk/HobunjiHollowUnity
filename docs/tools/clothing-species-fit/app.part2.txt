@@ -21,8 +21,8 @@ function importedExtendedLayers(){
 function rebuildExtendedSource(){
   const layers=importedExtendedLayers();
   if(!layers.length){R.extendedSource=null;R.extendedWarped=null;updateExtendedStatus();return null}
-  const width=R.maoBody?.width||layers[0].width;
-  const normalHeight=R.maoBody?.height||0;
+  const width=R.sourceBody?.width||layers[0].width;
+  const normalHeight=R.sourceBody?.height||0;
   const height=Math.max(normalHeight,...layers.map(l=>l.height));
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
