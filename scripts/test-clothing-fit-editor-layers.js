@@ -93,7 +93,51 @@ async function main() {
   region = 'headwear';
   assert.equal(api.targetKey('kenkari', 'male'), 'from::kenkari_female::headwear::kenkari_male');
 
-  console.log('PASS clothing-fit multi-layer export sources, independent starting sprites, fit keys, and script syntax');
+  // A patch on one material must not suppress the garment's other materials in the preview.
+  const baseLayer = {path: ['parts', 'torso', 'layers', 'base'], canvas: makeCanvas()};
+  const trimLayer = {path: ['parts', 'torso', 'layers', 'trim'], canvas: makeCanvas()};
+  const rawPatch = makeCanvas();rawPatch.width = 45;rawPatch.height = 37;
+  R.cloth = {width: 128, height: 128, _layers: [baseLayer, trimLayer]};
+  R.patchWorkflow = {active: true, descriptor: {kind: 'clothing', layerPath: trimLayer.path}, canvas: rawPatch};
+  const patchHelpers = new Function('R', 'document', 'log',
+    sourceBetween('function layerMatchesRoutedClothingPatch(', 'function routedPatchIsBody()') +
+    '\\nreturn {mainClothSource, fittedSourceCanvasForLayer};')(
+    R, {createElement: makeCanvas}, () => {}
+  );
+  const composite = patchHelpers.mainClothSource();
+  assert.deepEqual(composite.draws.map(args => args[0]), [
+    baseLayer.canvas, R.patchWorkflow._patchedLayerCanvas
+  ], 'The unaffected base material remains visible below the patched trim');
+  assert.strictEqual(patchHelpers.mainClothSource(), composite,
+    'Redraws reuse their merged source canvas instead of re-compositing on every frame');
+  assert.equal(R.patchWorkflow._patchedLayerCanvas.width, 128);
+  assert.equal(R.patchWorkflow._patchedLayerCanvas.height, 128);
+  assert.strictEqual(R.patchWorkflow._patchedLayerCanvas.draws[0][0], rawPatch,
+    'Native patch pixels are placed in the full garment frame without stretching');
+  assert.deepEqual(R.patchWorkflow._patchedLayerCanvas.draws[0].slice(1), [0, 0]);
+  R.patchWorkflow = {active: true, descriptor: {kind: 'body'}, canvas: rawPatch};
+  assert.strictEqual(patchHelpers.mainClothSource(), rawPatch,
+    'Body-only patch routing must not accidentally add garment layers');
+
+  // A species without normal body portraits can still be a clothing source.
+  const sourceReference = new Function('R', 'document', 'HEAD_SLOTS', 'bodyLayers',
+    'buildBodyCanvas', 'headwearLayerRecords', 'collectPatchImageNodes', 'loadImage', 'assetUrl', 'log',
+    sourceBetween('async function buildSourceReferenceCanvas(', 'async function refreshAssets(') +
+    '\\nreturn buildSourceReferenceCanvas;')(
+    R, {createElement: makeCanvas}, new Set(['hat', 'hood']), () => [],
+    () => {throw new Error('Unexpected body raster request')}, () => [],
+    node => node?.parts?.torso?.layers?.back?.image?.url ?
+      [{url: node.parts.torso.layers.back.image.url}] : [],
+    () => Promise.resolve({naturalWidth: 190, naturalHeight: 210}), value => value, () => {}
+  );
+  const sourceRaster = await sourceReference('kenkari', 'female', 'tunic', {width: 100, height: 90});
+  assert.equal(sourceRaster.width, 190);
+  assert.equal(sourceRaster.height, 210);
+  const emptySource = await sourceReference('nuhongan', 'male', 'missing-garment', {width: 100, height: 90});
+  assert.equal(emptySource.width, 100);
+  assert.equal(emptySource.height, 90);
+
+  console.log('PASS clothing-fit source layers, patch composition, fallback rasters, fit keys and script syntax');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
