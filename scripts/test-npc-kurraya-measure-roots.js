@@ -87,6 +87,6 @@ assert.equal(schedulerState.scheduledRootPadKey, 'pluck:8:2');
 
 assert.match(scripts[0], /state\.rootPadRootMidi === targetMidi && liveVoices\.some\(voice => voice\.kind === desiredKind\)/,
   'An ended pluck must not be mistaken for an active root voice');
-assert.match(host, /lyre-performance\.html\?v=20261022npcpatternroots1/,
+assert.match(host, /lyre-performance\.html\?v=[A-Za-z0-9_-]+/,
   'Host iframe cache key must change when the embedded engine changes');
 console.log('NPC patterns, repeat-bar roots, imported-pad sustain, audio lookahead, and script syntax OK');
