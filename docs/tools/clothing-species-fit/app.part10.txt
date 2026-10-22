@@ -15,12 +15,14 @@ function refreshDebug(){
     `subdivisions per cell: ${CELL_SUBDIVISIONS}x${CELL_SUBDIVISIONS}`,
     `micro triangles: ${MICRO_TRIANGLE_COUNT}`,
     `mode: ${mode}`,
+    `fit region: ${fitRegion()}`, // Included in pasted diagnostics so body/headwear calibrations cannot be confused.
     `target grid: ${targetKey(E.species.value,E.gender.value)}`,
     `base transform: ${JSON.stringify(currentTransform())}`,
     `local offset points: ${currentOffsets().length}`,
     `garment: ${garmentRecord()?.id||'(none)'}`,
     `stage: ${E.stage.width}x${E.stage.height}`,
     `body sources: ${(R.body?._paths||[]).join(' | ')}`,
+    `head reference sources: ${(R.headReference?._paths||[]).join(' | ')}`,
     `garment sources: ${(R.cloth?._paths||[]).join(' | ')}`,
     `main workflow source: ${R.patchWorkflow.active?'PATCHED '+(R.patchWorkflow.descriptor?.label||R.patchWorkflow.descriptor?.sourceUrl||'source'):'repository garment'}`,
     `main workflow route semantics: ${routedPatchIsBody()?'selected-species body patch → Base Transform + 6×6 fit → isolated canonical body layer → rear base body → clothing':routedPatchIsClothing()?'clothing source + patch → Base Transform + 6×6 fit → garment plane':'repository garment'}`,
@@ -123,9 +125,9 @@ function wireMaskPair(slider,number,field){
 }
 
 function exportGrids(){
-  const payload={version:3,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
+  const payload={version:4,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='hobunji_6x6_species_clothing_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  a.href=url;a.download='hobunji_6x6_species_clothing_headwear_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 function parseDiagnostics(text){
