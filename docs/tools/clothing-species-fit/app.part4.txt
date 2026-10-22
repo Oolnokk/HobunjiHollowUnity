@@ -158,5 +158,34 @@ function drawGrid(ctx,points,color,active){
   ctx.restore();
 }
 function warpGridForMode(){return mode==='transform'?transformedSourceGrid():targetGrid()}
+function layerMatchesRoutedClothingPatch(layer){
+  const descriptor=R.patchWorkflow.descriptor;
+  return R.patchWorkflow.active&&descriptor?.kind==='clothing'&&
+    Array.isArray(descriptor.layerPath)&&JSON.stringify(layer?.path)===JSON.stringify(descriptor.layerPath);
+} // A corrective image belongs to one exact cosmetic config leaf, not the entire garment.
+
+function fittedSourceCanvasForLayer(layer){
+  if(!layerMatchesRoutedClothingPatch(layer)||!R.patchWorkflow.canvas)return layer.canvas;
+  if(R.patchWorkflow._patchedLayer===layer&&R.patchWorkflow._patchedLayerCanvas)return R.patchWorkflow._patchedLayerCanvas;
+  const canvas=document.createElement('canvas'); // Fits the patched native raster in the garment's shared source-pixel frame.
+  canvas.width=R.cloth.width;canvas.height=R.cloth.height;
+  const context=canvas.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  context.drawImage(R.patchWorkflow.canvas,0,0); // Do not stretch a smaller sprite to the full portrait.
+  R.patchWorkflow._patchedLayer=layer;R.patchWorkflow._patchedLayerCanvas=canvas;
+  return canvas;
+}
+
 function mainClothSource(){
-  return R.patchWorkflow.active&&R.patchWorkflow.canvas?R.patchWorkflow.canvas:R.cloth; // Generic deform source: clothing uses a composite, body routes only the positioned corrective patch.
+  if(!R.patchWorkflow.active||!R.patchWorkflow.canvas)return R.cloth;
+  if(R.patchWorkflow.descriptor?.kind!=='clothing'||!R.cloth?._layers?.length)return R.patchWorkflow.canvas; // Body patches remain patch-only.
+  if(R.patchWorkflow._compositeBase===R.cloth&&R.patchWorkflow._compositeCanvas)return R.patchWorkflow._compositeCanvas;
+  const layers=R.cloth._layers,matched=layers.some(layer=>layerMatchesRoutedClothingPatch(layer));
+  if(!matched){
+    if(!R.patchWorkflow._warnedMissingLayer){log('Patch source no longer matches a garment layer; using the unpatched garment.');R.patchWorkflow._warnedMissingLayer=true}
+    return R.cloth;
+  }
+  const canvas=document.createElement('canvas');canvas.width=R.cloth.width;canvas.height=R.cloth.height;
+  const context=canvas.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  for(const layer of layers)context.drawImage(fittedSourceCanvasForLayer(layer),0,0); // Keep every other material, in authored draw order.
+  R.patchWorkflow._compositeBase=R.cloth;R.patchWorkflow._compositeCanvas=canvas; // Reuse during frequent 2D and 3D redraws.
+  return canvas;
