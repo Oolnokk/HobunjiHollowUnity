@@ -340,6 +340,22 @@
     if (!result?.ok) throw new Error(result?.error || 'Could not flush the live farm state.');
   }
 
+  function explicitFolderAvailable() {
+    const status = folderApi()?.getStatus?.(); // An explicit save chooses the push direction even if autosync has not been armed yet.
+    return status?.state === 'ready' && Boolean(status.folderName) && typeof folderApi()?.syncSnapshot === 'function';
+  }
+
+  function captureLiveSnapshot(reason, useFolder) {
+    const runtime = runtimeSaveApi(); // Direct folder capture skips every browser write, including unrelated backup sidecars.
+    if (useFolder && typeof runtime?.captureSnapshot === 'function') {
+      const result = runtime.captureSnapshot({ reason }); // Serialization errors still block unsafe/stale folder writes.
+      if (!result?.ok || !result.snapshot) throw new Error(result?.error || 'Could not capture the live folder save.');
+      return result.snapshot;
+    }
+    flushLiveState(reason);
+    return snapshotApi()?.capture?.({ strict: true });
+  }
+
   function createRecord(kind, snapshot, reason, savedAt = Date.now()) {
     return {
       checkpointVersion: CHECKPOINT_VERSION,
@@ -524,8 +540,8 @@
   async function saveManual({ reason = 'menu-manual-save', force = false } = {}) {
     try {
       if (!isHydrated()) throw new Error('Manual save is unavailable until the farmer and farm finish loading.');
-      flushLiveState('manual-checkpoint');
-      const snapshot = snapshotApi()?.capture?.({ strict: true });
+      const useFolder = explicitFolderAvailable(); // Manual saves can target a connected folder before its first successful push.
+      const snapshot = captureLiveSnapshot('manual-checkpoint', useFolder);
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
 
       const risk = force ? '' : integrityRisk(baselineRecord(), snapshot);
@@ -535,7 +551,7 @@
         return { ok: false, skipped: true, reason: 'integrity', warning: risk, needsConfirmation: true };
       }
 
-      if (folderIsPrimary()) {
+      if (useFolder) {
         const status = await folderApi().syncSnapshot(snapshot, { automatic: false, recoveryKind: 'manual', force });
         if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
           lastError = status.lastError;
@@ -551,7 +567,7 @@
         const record = readSlot('manual') || createRecord('manual', snapshot, reason);
         lastError = status?.lastError || '';
         lastAction = status?.lastError ? 'manual-primary-saved-recovery-warning' : 'manual-saved-folder';
-        return { ok: true, record, folder: true, warning: status?.lastError || null };
+        return { ok: true, record, folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
       const record = createRecord('manual', snapshot, reason);
@@ -572,8 +588,8 @@
   async function saveCampfire({ reason = 'campfire-save', force = false } = {}) {
     try {
       if (!isHydrated()) throw new Error('Campfire save is unavailable until the farmer and farm finish loading.');
-      flushLiveState('campfire-checkpoint');
-      const snapshot = snapshotApi()?.capture?.({ strict: true });
+      const useFolder = explicitFolderAvailable(); // Campfire saves are explicit writes just like the pause-menu save.
+      const snapshot = captureLiveSnapshot('campfire-checkpoint', useFolder);
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
 
       const risk = force ? '' : integrityRisk(baselineRecord(), snapshot);
@@ -583,7 +599,7 @@
         return { ok: false, skipped: true, reason: 'integrity', warning: risk, needsConfirmation: true };
       }
 
-      if (folderIsPrimary()) {
+      if (useFolder) {
         const status = await folderApi().syncSnapshot(snapshot, { automatic: false, recoveryKind: 'campfire', force });
         if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
           lastError = status.lastError;
@@ -599,7 +615,7 @@
         const record = readSlot('campfire') || createRecord('campfire', snapshot, reason);
         lastError = status?.lastError || '';
         lastAction = status?.lastError ? 'campfire-primary-saved-recovery-warning' : 'campfire-saved-folder';
-        return { ok: true, record, folder: true, warning: status?.lastError || null };
+        return { ok: true, record, folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
       const record = createRecord('campfire', snapshot, reason);
@@ -641,9 +657,8 @@
     }
 
     try {
-      flushLiveState(`auto-checkpoint:${reason}`);
       const api = snapshotApi();
-      const snapshot = api?.capture?.({ strict: true });
+      const snapshot = captureLiveSnapshot(`auto-checkpoint:${reason}`, folderIsPrimary());
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
       const fingerprint = api.fingerprint(snapshot);
       if (!mapChange && !folderIsPrimary() && fingerprint === lastAutosaveFingerprint) {
@@ -669,7 +684,7 @@
           return { ok: false, error: lastError };
         }
         lastError = status?.lastError || '';
-        return { ok: true, record: readSlot(mapChange ? 'mapChange' : 'auto'), folder: true, warning: status?.lastError || null };
+        return { ok: true, record: readSlot(mapChange ? 'mapChange' : 'auto'), folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
       const record = mapChange ? createRecord('map-change', snapshot, reason)

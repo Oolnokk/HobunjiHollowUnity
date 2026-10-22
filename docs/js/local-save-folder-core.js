@@ -122,6 +122,7 @@
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   let _lastPatternMirror = null; // Most recent custom-motif portability result, surfaced through save diagnostics.
+  let _lastBrowserMirrorWarning = ''; // Browser cache failures are secondary after the primary folder has been written.
   let _recoveryHandleFresh = false; // True only after a current-session user gesture supplies a new directory handle specifically safe to probe for recovery.
   const _listeners = new Set();
 
@@ -139,6 +140,7 @@
       autoSyncArmed: _autoSyncArmed,
       dataLossRisk: _lastDataLossRisk,
       patternMirror: _lastPatternMirror,
+      browserMirrorWarning: _lastBrowserMirrorWarning || null,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
       recoveryHandleFresh: _recoveryHandleFresh,
     };
@@ -597,6 +599,12 @@
     }
 
     try {
+      const runtime = window.HobunjiRuntimeSave; // All ordinary folder writes, including timers and Settings, capture current gameplay without first writing browser storage.
+      if (!snapshot && window.__hobunjiGameStarted === true && runtime?.isReady?.() && typeof runtime.captureSnapshot === 'function') {
+        const captured = runtime.captureSnapshot({ reason: reason || 'folder-sync' }); // Restore/import snapshots remain exact and bypass live capture.
+        if (!captured?.ok || !captured.snapshot) throw new Error(captured?.error || 'Could not capture the live folder save.');
+        snapshot = captured.snapshot;
+      }
       const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.
       const meta = saveSnapshot.meta;
       const farmLayouts = saveSnapshot.farmLayouts;
@@ -653,6 +661,19 @@
       _lastSyncedAt = savedAt;
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       _lastError = '';
+      _lastBrowserMirrorWarning = '';
+      if (!automatic) startAutoSync();
+      try {
+        if (saveSnapshot.browserBaselineFingerprint !== undefined
+            && window.HobunjiSaveSnapshot.fingerprint() !== saveSnapshot.browserBaselineFingerprint) {
+          _lastBrowserMirrorWarning = 'Primary folder saved; newer browser changes made during the disk write were preserved.';
+        } else {
+          window.HobunjiSaveSnapshot?.apply?.(saveSnapshot, { folderBacked: true }); // Refresh only the canonical browser cache after the durable disk commit.
+        }
+      } catch (mirrorError) {
+        _lastBrowserMirrorWarning = `Primary folder saved; browser cache could not be updated: ${String(mirrorError?.message || mirrorError)}`;
+      }
+      delete saveSnapshot.browserBaselineFingerprint; // Do not retain another whole-save fingerprint in every recovery slot.
       _lastObservedFingerprint = browserFingerprint(true);
 
       const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
@@ -665,7 +686,6 @@
         }
       }
 
-      if (!automatic) startAutoSync();
     } catch (error) {
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';

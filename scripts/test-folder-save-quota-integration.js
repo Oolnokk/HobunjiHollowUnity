@@ -30,7 +30,12 @@ function directory(name, disk) {
           async createWritable() {
             if (disk.failWrites) throw new Error('Disk write failed');
             let pending = ''; // Uncommitted file data used to model createWritable/close.
-            return { async write(value) { pending = value; }, async close() { text = pending; } };
+            return { async write(value) {
+              pending = value;
+              const onWrite = disk.onWrite; // One-shot gameplay edit while the captured snapshot is being committed.
+              disk.onWrite = null;
+              onWrite?.();
+            }, async close() { text = pending; } };
           },
         });
       }
@@ -42,12 +47,14 @@ function directory(name, disk) {
 }
 
 async function boot(folder, nativeData, sessionData = new Map()) {
+  const nativeAttempts = []; // Proves direct capture does not attempt browser writes before the folder commit.
   class Storage { // Fresh prototype per browser session, with a quota shared by its native values.
     constructor() { this.limit = Infinity; }
     getItem(key) { return nativeData.get(String(key)) ?? null; }
     removeItem(key) { nativeData.delete(String(key)); }
     clear() { nativeData.clear(); }
     setItem(key, value) {
+      nativeAttempts.push(key);
       let size = String(key).length + String(value).length; // Native quota counts all persisted keys and values.
       for (const [otherKey, otherValue] of nativeData) if (otherKey !== key) size += otherKey.length + otherValue.length;
       if (size > this.limit) throw Object.assign(new Error('quota exceeded'), { name: 'QuotaExceededError' });
@@ -95,13 +102,33 @@ async function boot(folder, nativeData, sessionData = new Map()) {
     setInterval: () => 1, clearInterval() {}, setTimeout: (fn, delay) => { if (delay === 0) fn(); return 1; }, clearTimeout() {},
     location: { reload() { actions.reloads++; } }, confirm: () => true, alert: message => actions.alerts.push(message),
   });
-  for (const file of ['storage-quota-guard', 'save-snapshot-core', 'local-save-folder-core', 'folder-save-primary', 'folder-save-runtime-flush', 'save-checkpoint-manager']) {
+  for (const file of ['storage-quota-guard', 'save-snapshot-core', 'local-save-folder-core', 'folder-save-primary', 'farm-editor', 'folder-save-runtime-flush', 'save-checkpoint-manager', 'folder-save-quit-guard']) {
     vm.runInContext(fs.readFileSync(`docs/js/${file}.js`, 'utf8'), context, { filename: `${file}.js` });
   }
   await new Promise(resolve => setImmediate(resolve));
   await window.LocalSaveFolder.chooseFolder();
   return {
-    window, storage, sessionStorage, actions,
+    window, storage, sessionStorage, actions, nativeAttempts,
+    installLiveMember(inventory) {
+      window.AlchemySystem = { serializeKnownEffects: () => [], serializeKnownRecipes: () => [], serializeActiveEffects: () => [] };
+      window.ReagentPlants = { serializeZoneReagentState: () => ({}) };
+      window.CookingSystem = { serialize: () => ({ recipe: 'three-fish-pie', notes: 'x'.repeat(300) }) };
+      window.WildBerries = { serializeState: () => ({}) };
+      window.WildTreasure = { serializeState: () => ({}) };
+      Object.assign(context, {
+        inventory, packClothing: [], questProgress: {}, player: { x: 0, y: 0, angle: 0 }, currentArea: 'farm',
+        _playerData: window.__hobunjiPlayerProfile, _tothalWorldId: () => window.__hobunjiPlayerProfile.worldId,
+        defaultWorldMemberState: () => ({}), serializeWildernessChunkState: () => ({}),
+        serializeZoneFelledTreeState: () => ({}), serializeZoneMinedRockState: () => ({}),
+      });
+      const game = fs.readFileSync('docs/game.js', 'utf8'); // Execute the actual gameplay serializer rather than a miniature inventory-only substitute.
+      const start = game.indexOf('      function captureMemberWorldData('); // Shared production serializer and its browser writer are adjacent.
+      const end = game.indexOf('\n      // ── Owner/farmhand', start);
+      vm.runInContext(game.slice(start, end), context, { filename: 'game-save-serializers.js' });
+      window.FarmAnimals = { init() {} };
+      window.FarmAnimals.init({ inventory, saveMemberWorldData: context.saveMemberWorldData,
+        captureMemberWorldData: context.captureMemberWorldData, saveFarmLayout: window.FarmEditor.saveFarmLayout });
+    },
     async loadFromSettings() {
       let handler = null; // The actual click callback installed by FolderSavePrimary.bindSettings.
       const button = { textContent: 'Load Folder', dataset: {}, style: {}, addEventListener(type, callback) { if (type === 'click') handler = callback; } }; // Minimal Settings load button.
@@ -122,19 +149,23 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   const first = await boot(folder, nativeData); // First session starts with a small browser save and initializes its folder.
   assert.equal((await first.window.LocalSaveFolder.syncNow()).lastError, null);
   first.storage.limit = JSON.stringify(initial).length + 30;
-  first.window.FarmAnimals = { init() {} };
-  first.window.FarmAnimals.init({
-    inventory: { cookedPie: 1 },
-    saveMemberWorldData() {
-      const meta = JSON.parse(first.storage.getItem('hobunjiSaveMeta')); // Mirrors the gameplay read/modify/write that previously swallowed quota errors.
-      meta.worlds[0].members.farmer.nonGearInventory.cookedPie = 1;
-      meta.worlds[0].members.farmer.cookingState = { recipe: 'three-fish-pie', notes: 'x'.repeat(300) };
-      first.storage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-    },
-    saveFarmLayout() { first.storage.setItem('hobunji_farm_layout_v3:hollow', JSON.stringify({ tiles: [1, 2, 3] })); },
+  first.window.HousePieces = { getFixtureInventory: () => [] };
+  first.window.FarmEditor.init({
+    threeContainer: { addEventListener() {} }, getPlayerData: () => first.window.__hobunjiPlayerProfile,
+    COLS: 1, ROWS: 1, getGrid: () => [[{ type: 'grass' }]], createDayOneTile: () => ({ type: 'grass' }),
+    getShippingBoxObject: () => null, getSupplyBoxObject: () => null,
+    processingFurnitureObjects: new Set(), interiorFurnitureObjects: new Set([{ id: 'window', key: 'simpleWindow', area: 'farm', col: 0, row: 0 }]),
+    getHousePieces: () => [], getFarmBuildings: () => [], getWorldRoutes: () => [], getWorldNpcPaths: () => [], getWorldTransitions: () => [],
+    DECORATIVE_FURNITURE_DEFS: { simpleWindow: {} }, debugLog() {},
   });
-  const saved = await first.window.HobunjiSaveCheckpoints.saveManual(); // Real runtime flush → snapshot capture → folder write → recovery checkpoint.
-  assert.equal(saved.ok, true);
+  const inventory = { cookedPie: 1 }; // The real member serializer must capture the current live bag.
+  first.installLiveMember(inventory);
+  assert.equal(first.window.HobunjiRuntimeSave.flushNow().ok, false, 'the real linked-window browser backup still hits quota');
+  const beforeCapture = first.nativeAttempts.length; // Browser writes are forbidden during the replacement live capture path.
+  assert.equal(first.window.HobunjiRuntimeSave.captureSnapshot().ok, true);
+  assert.equal(first.nativeAttempts.length, beforeCapture, 'direct live capture makes zero browser write attempts');
+  const saved = await first.window.HobunjiSaveCheckpoints.saveManual(); // Real gameplay serializers → folder write → optional browser mirrors.
+  assert.equal(saved.ok, true, JSON.stringify(saved));
   assert.equal(saved.folder, true);
   assert.equal(JSON.parse(nativeData.get('hobunjiSaveMeta')).worlds[0].members.farmer.nonGearInventory.cookedPie, undefined);
   assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 1);
@@ -149,7 +180,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   assert.equal(second.sessionStorage.getItem('hobunjiFolderPrimarySkipOnce'), null, 'staged folder imports must not skip folder loading after reload');
   const reloaded = second.window.HobunjiSaveSnapshot.capture(); // Real snapshot adapter must now see the pie and farm layout from disk.
   assert.equal(reloaded.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 1);
-  assert.deepEqual(Array.from(reloaded.farmLayouts.hollow.tiles), [1, 2, 3]);
+  assert.equal(reloaded.farmLayouts.hollow.decor[0].key, 'simpleWindow', 'linked windows survive alongside the pie');
 
   const third = await boot(folder, nativeData, sessionData); // Real pre-onboarding owner must reread disk rather than trust the stale native copy.
   third.storage.limit = first.storage.limit;
@@ -189,7 +220,54 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   assert.equal(failedFlush.ok, false);
   assert.match(failedFlush.error, /Browser storage is full/);
 
+  inventory.cookedPie = 2;
+  await first.window.LocalSaveFolder.reconnect(); // A connected but unarmed folder is a valid explicit-save destination.
+  assert.equal(first.window.LocalSaveFolder.getStatus().autoSyncArmed, false);
+  assert.equal((await first.window.HobunjiSaveCheckpoints.saveManual()).ok, true, 'explicit save captures live data before the first armed sync');
+  assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 2);
+
+  inventory.cookedPie = 3;
+  const campfire = await first.window.HobunjiSaveCheckpoints.saveCampfire(); // Campfire checkpoints must use the same direct capture path.
+  assert.equal(campfire.ok, true);
+  assert.equal((await first.window.LocalSaveFolder.readRecoveryCheckpoint('campfire')).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 3);
+  inventory.cookedPie = 4;
+  const travel = await first.window.HobunjiSaveCheckpoints.saveMapChange({ fromArea: 'farm', toArea: 'town' }); // Map-change recovery also captures without flushing browser backups.
+  assert.equal(travel.ok, true);
+  assert.equal((await first.window.LocalSaveFolder.readRecoveryCheckpoint('mapChange')).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 4);
+
+  inventory.cookedPie = 5;
+  const originalApply = first.window.HobunjiSaveSnapshot.apply; // Force the optional post-disk browser mirror itself to fail.
+  first.window.HobunjiSaveSnapshot.apply = () => { throw new Error('browser mirror unavailable'); };
+  const mirrorFailure = await first.window.LocalSaveFolder.syncNow({ automatic: true, reason: 'folder-timer' }); // Real timer/Settings core path must capture live inventory and report a successful disk save.
+  assert.equal(mirrorFailure.lastError, null);
+  assert.match(mirrorFailure.browserMirrorWarning, /browser mirror unavailable/);
+  assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 5);
+  first.window.HobunjiSaveSnapshot.apply = originalApply;
+
+  inventory.cookedPie = 6;
+  disk.onWrite = () => {
+    const meta = JSON.parse(first.storage.getItem('hobunjiSaveMeta')); // Character changes made during folder I/O must survive its optional browser mirror.
+    meta.characters[0].nickname = 'Changed during save';
+    first.storage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+  };
+  const concurrentSave = await first.window.LocalSaveFolder.syncNow();
+  assert.equal(concurrentSave.lastError, null);
+  assert.match(concurrentSave.browserMirrorWarning, /newer browser changes/);
+  assert.equal(JSON.parse(first.storage.getItem('hobunjiSaveMeta')).characters[0].nickname, 'Changed during save');
+  inventory.cookedPie = 7;
+  await first.window.FolderSaveQuitGuard.guardedQuit({ textContent: 'Quit', dataset: {} }); // Real quit orchestration must commit the direct snapshot before navigation.
+  assert.equal(first.actions.reloads, 1);
+  assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 7);
+  assert.equal((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot.meta.characters[0].nickname, 'Changed during save', 'the next direct snapshot includes the concurrent character edit');
+
+  const beforeBadCapture = (await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot; // A serialization failure must not replace a good folder save with stale browser state.
+  first.window.CookingSystem.serialize = () => { throw new Error('cooking capture failed'); };
+  const badCapture = await first.window.HobunjiSaveCheckpoints.saveManual();
+  assert.equal(badCapture.ok, false);
+  assert.match(badCapture.error, /cooking capture failed/);
+  assert.equal(JSON.stringify((await first.window.LocalSaveFolder.readPrimarySnapshot()).snapshot), JSON.stringify(beforeBadCapture));
+
   disk.failWrites = true;
   assert.match((await second.window.LocalSaveFolder.syncNow()).lastError, /Disk write failed/, 'staging cannot hide a real folder write failure');
-  console.log('folder quota integration: manual save, Settings reload, startup, folder recovery, browser-only restore rejection, and disk failures verified');
+  console.log('folder quota integration: actual gameplay/farm serializers, linked-window quota failure, zero-write capture, manual/campfire/travel/autosync/quit, browser mirror errors, reloads, and real capture/disk errors verified');
 })().catch(error => { console.error(error); process.exitCode = 1; });
