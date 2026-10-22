@@ -327,6 +327,9 @@ assert.ok(context.debug().bodyLimited && context.debug().shoulderOffsetFactor ==
 assert.ok(Math.abs(camera.target.x) < 1e-8 && Math.abs(camera.position.x) < 1e-8,
   'recentered aim and camera position remain aligned behind the player');
 assert.ok(Math.abs(camera.position.z - .8) < 1e-8, 'the earlier cap holds the camera away from the avatar');
+assert.ok(Math.abs(context.debug().solvedDistance - Math.hypot(camera.position.x - camera.target.x,
+  camera.position.y - camera.target.y, camera.position.z - camera.target.z)) < 1e-8,
+  'mobile diagnostics measure the post-recentering camera-to-target distance');
 context._cameraOcclusionRaycaster.intersectObjects = () => [];
 for (let step = 0; step < 12; step++) { corridorClock += 100; context.updateCamera(); }
 assert.ok(context.debug().shoulderOffsetFactor === 1 && Math.abs(camera.target.x - .3) < 1e-8,

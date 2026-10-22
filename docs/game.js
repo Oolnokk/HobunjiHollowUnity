@@ -20988,9 +20988,9 @@
             corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
             radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,
-            solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
+            solvedDistance: Math.hypot(resultX - adjustedLookAtX, resultY - lookAtY, resultZ - adjustedLookAtZ), // Report the actual camera-to-aim distance after recentering.
             requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
-            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - lookAtX, resultZ - lookAtZ)) * 180 / Math.PI,
+            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - adjustedLookAtX, resultZ - adjustedLookAtZ)) * 180 / Math.PI, // Match the renderer's real final look target.
             directHitDistance: wallHitDistance,
             groundLimited: fraction < 1,
             floorClearance: clearance,
