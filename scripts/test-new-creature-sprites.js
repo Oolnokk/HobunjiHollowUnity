@@ -116,4 +116,19 @@ for (const channel of ['weightMap', 'compressibilityMap', 'stretchabilityMap']) 
     && (index % 2 === 0 ? value > 0 : value <= 256)), channel + ': invalid RLE values');
 }
 
+// All three Uumkao'ii frames really are 641x451; do not silently fall back to the 1375x600 legacy billboard ratio.
+const uumSize = { width: 641, height: 451 }; // Used to check native sprite headers and source/preview aspect consistency.
+for (const frame of ['idle','run1','run2']) {
+  const bytes = fs.readFileSync(`docs/assets/creaturesprites/uumkao'ii_${frame}.png`);
+  assert.equal(bytes.readUInt32BE(16),uumSize.width,`Uumkaoii ${frame} native width`);
+  assert.equal(bytes.readUInt32BE(20),uumSize.height,`Uumkaoii ${frame} native height`);
+}
+const nativeAspect = uumSize.height / uumSize.width; // Used by all three Uumkao'ii game definitions and the mirrored bestiary.
+const defs = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json')).creatures;
+assert(Math.abs(defs.find(entry=>entry.id==='uumkaoii').spriteAspect-nativeAspect)<1e-12,'tool bestiary must use the native Uumkaoii art ratio');
+assert.equal((game.match(/spriteAspect:\s*451\s*\/\s*641/g)||[]).length>=3,true,'game applies native Uumkaoii aspect to domestic, wild, and den-mother models');
+const farm = read('docs/js/farm-animals.js'); // Owned adults must use the corrected species aspect, not an independent old literal.
+assert.match(farm,/ANIMAL_H = ANIMAL_W \* \(deps\.CREATURE_DB\.uumkaoii\?\.spriteAspect/);
+const troughs = read('docs/js/farm-troughs.js'); // Sleep/barn models were already using the correct 451x641 source.
+assert.match(troughs,/kind === 'uumkaoii' \? modelWidth \* \(451 \/ 641\)/);
 console.log('creature new sprite integration: all regression checks passed');
