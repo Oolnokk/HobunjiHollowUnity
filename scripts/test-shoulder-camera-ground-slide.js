@@ -107,4 +107,109 @@ context.activeCameraMode = 'default';
 context.updateCamera();
 assert.equal(camera.near, 0.1, 'switching camera modes restores the normal near plane');
 
-console.log('Shoulder camera ground slide: short-character pitch sweeps, close walls, ramps, ridges, downhill ground, and seated compatibility passed.');
+// A fixed WORLD-space radial clearance ring must give the same camera distance
+// at 0, 3, 90 and 180 degrees, even with one nearby wall only to the EAST.
+context.currentArea = 'map_i_test_corridor';
+context._isBuildingArea = area => area === 'map_i_test_corridor';
+context.activeCameraMode = 'shoulderSurf';
+context.activeSurfaceYAtWorld = () => 0;
+context.camTargetY = 0;
+let corridorWallDistance = 0.7;
+let corridorClock = 2000;
+let ringRaycasts = 0;
+context.performance.now = () => corridorClock;
+context._cameraOcclusionDirVec.set = function(x, y, z) { Object.assign(this, {x, y, z}); return this; };
+context._cameraOcclusionRaycaster.set = function(origin, dir) { this.lastDir = {x: dir.x, y: dir.y, z: dir.z}; };
+context._cameraOcclusionRaycaster.intersectObjects = function() {
+  ringRaycasts++;
+  return corridorWallDistance != null && this.lastDir.x > 0.7 ? [{ distance: corridorWallDistance }] : [];
+};
+context.currentAreaOcclusionMeshes = () => [{}];
+function corridorAim(deg, targetX = 0) {
+  const az = deg * Math.PI / 180;
+  const targetY = 0.62;
+  const radius = 2.6 / 1.5;
+  const y = targetY + Math.sin(9 * Math.PI / 180) * radius;
+  context.camTargetX = targetX; context.camTargetZ = 0; // The true character center is the radial ring anchor, even when the shoulder offset turns.
+  const side = Number(context.s_shoulderSurfOffsetH_current) || 0;
+  const lookAtX = targetX + Math.cos(az) * side;
+  const lookAtZ = -Math.sin(az) * side;
+  return context.solve(lookAtX, targetY, lookAtZ,
+    lookAtX + Math.sin(az) * Math.cos(9 * Math.PI / 180) * radius,
+    y, lookAtZ + Math.cos(az) * Math.cos(9 * Math.PI / 180) * radius);
+}
+const requestedCorridorDist = 2.6 / 1.5;
+const corridorBefore = corridorAim(0);
+const measuredDistance = Math.hypot(corridorBefore.x, corridorBefore.y - .62, corridorBefore.z);
+assert.ok(Math.abs(measuredDistance - .35) < 1e-6, 'east wall sets a radial zoom limit even while the camera faces north');
+assert.equal(ringRaycasts, 16, 'the radial ring is sampled once with 16 fixed world-space spokes');
+assert.equal(context.debug().radialCamera.rays, 16, 'diagnostics report the sampled radial clearance');
+assert.ok(context.debug().corridorReframe, 'the game reports that its shared indoor radius is active');
+for (const yaw of [3, 90, 180, 270]) {
+  corridorClock += 16;
+  const turned = corridorAim(yaw);
+  assert.ok(Math.abs(Math.hypot(turned.x, turned.y - .62, turned.z) - measuredDistance) < 1e-6,
+    `turning to ${yaw} degrees cannot change the shared camera zoom`);
+  assert.ok(Math.abs(Math.atan2(turned.y - .62, Math.hypot(turned.x, turned.z)) - 9 * Math.PI / 180) < 1e-7,
+    'radial zoom preserves the authored 9-degree camera pitch');
+  assert.equal(ringRaycasts, 16, 'turning in place uses the cached radial measurement instead of raycasting again');
+}
+// After the wall leaves, the ring is resampled on its time budget and eases
+// OUTWARD. Turning alone must neither reset that recovery nor create a zoom.
+corridorWallDistance = null;
+corridorClock += 130;
+const recovering = corridorAim(0);
+const recoveryDistance = Math.hypot(recovering.x, recovering.y - .62, recovering.z);
+assert.ok(recoveryDistance > measuredDistance && recoveryDistance < requestedCorridorDist,
+  'the camera smoothly regains zoom distance after the obstruction clears');
+assert.equal(ringRaycasts, 32, 'the ring updates once after the 120ms sampling interval');
+corridorClock += 16;
+const recoveryTurn = corridorAim(180);
+assert.ok(Math.hypot(recoveryTurn.x, recoveryTurn.y - .62, recoveryTurn.z) >= recoveryDistance,
+  'yaw changes do not trigger an inward collision jump during radial recovery');
+assert.equal(ringRaycasts, 32, 'rotating during recovery requires no new wall probes');
+corridorWallDistance = 0.7;
+corridorClock += 130;
+const blockedAgain = corridorAim(90);
+assert.ok(Math.abs(Math.hypot(blockedAgain.x, blockedAgain.y - .62, blockedAgain.z) - measuredDistance) < 1e-6,
+  'the reappearing obstacle clamps all yaw directions immediately');
+assert.equal(ringRaycasts, 48, 'the ring samples again when the wall reappears');
+// A changed target position invalidates the ring even before the timer elapses.
+corridorClock += 16;
+corridorAim(90, 0.2);
+assert.equal(ringRaycasts, 64, 'player translation refreshes the radial measurement');
+// Rotating a nonzero shoulder-camera offset moves the look-at point in
+// world space; the radial clearance must STILL follow the character center.
+context.s_shoulderSurfOffsetH_current = 0.14;
+corridorClock += 130;
+const shifted0 = corridorAim(0, 0);
+const shiftedDist = Math.hypot(shifted0.x - 0.14, shifted0.y - .62, shifted0.z);
+const callsWithShift = ringRaycasts;
+for (const yaw of [45, 90, 180]) {
+  corridorClock += 16;
+  const a = yaw * Math.PI / 180;
+  const shifted = corridorAim(yaw);
+  const lookAtX = Math.cos(a) * .14, lookAtZ = -Math.sin(a) * .14;
+  assert.ok(Math.abs(Math.hypot(shifted.x - lookAtX, shifted.y - .62, shifted.z - lookAtZ) - shiftedDist) < 1e-6,
+    'rotating the shoulder offset cannot move the ring or change radial zoom');
+  assert.equal(ringRaycasts, callsWithShift, 'rotating the shoulder offset reuses the player-centered clearance ring');
+}
+context.s_shoulderSurfOffsetH_current = 0;
+context.currentArea = 'farm';
+context._isBuildingArea = () => false;
+context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 0.7 }]; // Outdoor safety remains direct-ray-based.
+corridorClock += 100;
+const outsideShortBoom = corridorAim(3);
+const originalCameraY = .62 + Math.sin(9 * Math.PI / 180) * requestedCorridorDist;
+assert.ok(outsideShortBoom.y < originalCameraY,
+  'outdoor shoulder collision retains its original direct-wall response');
+assert.equal(context.debug().radialCamera, null, 'non-interior shoulder gameplay does not use the radial ring');
+const outdoorDistance = 6;
+const outdoorAngle = 9 * Math.PI / 180;
+const outdoorHit = context.solve(0, .62, 0,
+  Math.sin(3 * Math.PI / 180) * Math.cos(outdoorAngle) * outdoorDistance,
+  .62 + Math.sin(outdoorAngle) * outdoorDistance,
+  Math.cos(3 * Math.PI / 180) * Math.cos(outdoorAngle) * outdoorDistance);
+assert.ok(outdoorHit.y < .62 + Math.sin(outdoorAngle) * outdoorDistance,
+  'the outdoor shoulder camera still retracts directly along its wall ray');
+console.log('Shoulder camera ground slide: terrain, wall collision, seated compatibility, direction-independent radial corridor zoom, cache, recovery, and outdoor isolation passed.');

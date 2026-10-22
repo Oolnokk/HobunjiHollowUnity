@@ -467,6 +467,7 @@
       orbitHeightMode: 'oppositeFaceArc', // Tilt endpoints to the player's/Jubmir's real face heights, and look toward the antipodal point.
       orbitDistanceTiles: 1.85, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1, // Keep the former smooth reset available in the Director.
       orbitInstantCut: true, // Jubmir's paragraphs hard-cut between camera positions rather than blending.
+      horizontalCameraCollision: true, // Only this inn-room conversation opts into the wall/furniture horizontal sweep.
       orbitDirection: 'clockwise', orbitDirectionSwitchEvery: 2, orbitDirectionalStartOffsetDeg: 30, // Jubmir CW, player CW, Jubmir CCW, player CCW; repeat.
     });
     return {
