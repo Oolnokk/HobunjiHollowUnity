@@ -23,7 +23,7 @@
       "parts": {
         "head": {
           "layers": {
-            "back": {
+            "front_cap": {
               "image": {
                 "url": "./assets/cosmetics/clothes/hat/replica_bzabag's_helm-cap_m.png"
               },
