@@ -339,6 +339,7 @@
     return focused;
   }
 
+  const SURFACE_FACING_COS = Math.cos(75*Math.PI/180); // Broad 150-degree camera-facing cone avoids requiring a precise surface ray hit.
   let surfacePoint = null, surfaceNormal = null; // Reused world-space probe vectors; furniture transforms remain live without scene traversal.
   const surfaceView = { active:false, furnitureId:null, surfaceId:null, height:null }; // Latest copyable camera probe, also returned without frame allocations.
   function highSurfaceAhead(area, x, z, cameraY, forwardX, forwardZ, retaining = false) {
@@ -348,7 +349,12 @@
     for (const entry of entries(area).values()) {
       if (!entry.root?.parent || entry.root.visible===false) continue;
       const f=placementFrame(entry); // Broad phase uses the existing placed furniture footprint and world transform.
-      if (Math.hypot(f.x-x,f.z-z)>3.5+Math.max(f.w,f.d)) continue;
+      const dxTile=f.x-(Math.floor(x)+.5), dzTile=f.z-(Math.floor(z)+.5); // The character tile and its eight neighbors form a world-aligned three-by-three square.
+      const axes=Math.abs(f.cos)+Math.abs(f.sin); // Projection of that square onto either rotated furniture axis.
+      const extentX=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, extentZ=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d; // Live rotated footprint bounds include every occupied tile of a long table.
+      if (Math.abs(dxTile)>=1.5+extentX || Math.abs(dzTile)>=1.5+extentZ
+        || Math.abs(dxTile*f.cos-dzTile*f.sin)>=f.w+1.5*axes
+        || Math.abs(dxTile*f.sin+dzTile*f.cos)>=f.d+1.5*axes) continue; // Separating-axis test rejects footprints outside the same/neighboring tiles, including corner gaps.
       const data=window.AuthoredFurniture?.peek?.(entry.record.key); // Cached authored data; camera probes never start loads.
       for (const surface of data?.recognizedSurfaces || []) {
         if (surface.role==='wallAttachment' || !surface.localCentroid || !surface.localNormal) continue;
@@ -359,11 +365,9 @@
         if (surfaceNormal.y<.7) continue;
         surfacePoint.fromArray(surface.localCentroid).applyMatrix4(mesh.matrixWorld);
         if (surfacePoint.y<=cameraY+(retaining ? -.06 : .03)) continue;
-        const dx=surfacePoint.x-x, dz=surfacePoint.z-z; // Project into the unassisted view direction so raising the camera cannot cancel its own trigger.
-        const forward=dx*forwardX+dz*forwardZ, lateral=Math.abs(dx*forwardZ-dz*forwardX);
-        const sideExtent=Math.abs(forwardZ*f.cos+forwardX*f.sin)*f.w+Math.abs(forwardZ*f.sin-forwardX*f.cos)*f.d; // Project the rotated footprint so long tables work at their edges.
-        const forwardExtent=Math.abs(forwardX*f.cos-forwardZ*f.sin)*f.w+Math.abs(forwardX*f.sin+forwardZ*f.cos)*f.d; // Limits approach distance from the nearest edge rather than the table center.
-        if (forward<.1 || forward>3.5+forwardExtent || lateral>sideExtent+(retaining ? .45 : .25)) continue;
+        const dx=surfacePoint.x-x, dz=surfacePoint.z-z; // Broad horizontal direction stays independent of assisted height and exact cursor aim.
+        const range=Math.hypot(dx,dz), forward=dx*forwardX+dz*forwardZ; // The same tile can contain the player directly under the surface center.
+        if (range>.05 && forward/range < (retaining ? Math.cos(80*Math.PI/180) : SURFACE_FACING_COS)) continue;
         surfaceView.active=true; surfaceView.furnitureId=entry.id; surfaceView.surfaceId=surface.id; surfaceView.height=surfacePoint.y;
         return surfaceView;
       }
@@ -372,7 +376,7 @@
   }
 
   function snapshot(area = deps?.getArea?.()) {
-    return { latestChange: 'Nearby authored upward surfaces above the normal camera trigger smooth Mashtzarr-sized viewing; surfaceCamera reports the selected top.',
+    return { latestChange: 'A broad camera turn toward a high surface in the same tile or any of eight neighboring tiles triggers Mashtzarr-sized viewing.',
       surfaceCamera:{...surfaceView}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
   }

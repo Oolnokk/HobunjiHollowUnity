@@ -217,7 +217,7 @@
       usedMeasuredHead: resolved.usedMeasuredHead,
       usedMeasuredNeck: resolved.usedMeasuredNeck,
       targetSource: resolved.targetSource,
-      latestChange: 'High furniture surfaces blend toward tall Mashtzarr-sized shoulder framing; turning away restores the normal species view.',
+      latestChange: 'Looking generally toward a high surface in the player tile or eight neighboring tiles blends toward tall Mashtzarr-sized framing.',
       referenceSpecies: resolved.referenceSpecies,
       distanceDeferredForRangedFocus: false,
       rangedFocusActive: focusActive,
@@ -298,7 +298,7 @@
     }
     const dt=surfaceTime==null ? 0 : Math.max(0,Math.min(.1,(now-surfaceTime)/1000)); // Frame-rate-independent easing also tolerates pause/resume.
     surfaceTime=now;
-    const probe=enabled && surfaceTargetLift>0 && window.FurnitureTableSystem?.highSurfaceAhead?.(area,x,z,normalCameraY,-Math.sin(azimuth),-Math.cos(azimuth),surfaceFrame.active); // Horizontal view remains independent of assisted height and pitch.
+    const probe=enabled && surfaceTargetLift>0 && window.FurnitureTableSystem?.highSurfaceAhead?.(area,x,z,normalCameraY,-Math.sin(azimuth),-Math.cos(azimuth),surfaceFrame.active); // Broad camera-facing direction requires no precise ray hit on the surface.
     surfaceFrame.active=!!probe?.active; surfaceFrame.furnitureId=probe?.furnitureId || null;
     surfaceFrame.blend+=(Number(surfaceFrame.active)-surfaceFrame.blend)*(1-Math.exp(-6*dt));
     if (surfaceFrame.blend<.0001) surfaceFrame.blend=0;

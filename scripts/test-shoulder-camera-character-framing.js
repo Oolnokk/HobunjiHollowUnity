@@ -135,3 +135,25 @@ assert(falling.lift>0 && falling.lift<before,'turning away smoothly restores nor
 assert.equal(api.updateSurfaceView('interior',0,0,.45,0,true,2200).lift,0,'map transition clears the previous lift');
 surfaceAhead=true;api.updateSurfaceView('interior',0,0,.45,0,true,2300);
 assert.equal(api.updateSurfaceView('interior',0,0,.45,0,false,2400).lift,0,'scripted/seated camera ownership immediately clears assistance');
+
+// Execute the actual game camera call with independently controlled player position and camera orbit.
+const gameSource = fs.readFileSync('docs/game.js','utf8'); // Real integration must test adjacency at the character, rather than at the smoothed camera target.
+const callStart = gameSource.indexOf('const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(');
+const callEnd = gameSource.indexOf('performance.now());',callStart)+'performance.now());'.length;
+const cameraCall = '{'+gameSource.slice(callStart,callEnd)+'}'; // Block scope permits repeatedly evaluating the real call as the camera turns.
+let captured = null; // Holds the real camera adapter arguments for independent orbit tests.
+const cameraContext = {window:{HobunjiShoulderCameraCharacterFraming:{updateSurfaceView(...args){captured=args;}}},
+  currentArea:'town',player:{x:120,y:80},TILE:40,facingAngle:-Math.PI/2,azimuth:0,tx:999,tz:999,
+  lookY:.3,angle:.1,distance:2,activeCameraMode:'shoulderSurf',SHOULDER_SURF_MODE:'shoulderSurf',
+  portraitAim:null,cutscenePreviewActive:false,dialogueZoomActive:()=>false,performance:{now:()=>2500}}; // Bindings used by the shipped updateCameraPosition integration.
+vm.runInNewContext(cameraCall,cameraContext);
+assert.equal(captured[1],3,'adjacency uses player X, not the smoothed camera target');
+assert.equal(captured[2],2,'adjacency uses player Z, not the smoothed camera target');
+assert.equal(captured[4],0,'normal view probes the camera direction');
+cameraContext.azimuth=Math.PI/3;
+vm.runInNewContext(cameraCall,cameraContext);
+assert.equal(captured[4],Math.PI/3,'camera turns update the general direction without an exact surface ray hit');
+let probeDirection=null; // Validates camera azimuth to world-direction conversion.
+windowObject.FurnitureTableSystem.highSurfaceAhead=(area,x,z,y,dx,dz)=>{probeDirection=[dx,dz];return {active:true};};
+api.updateSurfaceView('town',0,0,.45,0,true,2600);
+assert(Math.abs(probeDirection[0])<1e-9 && Math.abs(probeDirection[1]+1)<1e-9,'default camera probes north');

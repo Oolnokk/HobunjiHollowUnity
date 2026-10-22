@@ -21001,7 +21001,7 @@
           // camera position below that pivot could retain an upward sightline.
           if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
-        const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(currentArea, tx, tz,
+        const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(currentArea, player.x / TILE, player.y / TILE,
           lookY + Math.sin(angle) * distance, azimuth,
           activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
           performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.

@@ -83,7 +83,7 @@ class SurfaceVector {
 window.THREE={Vector3:SurfaceVector};
 const top={id:'top',partId:'slab',localCentroid:[0,.1,0],localNormal:[0,1,0],role:'workSurface'}; // Authored local face matches actual surface placement data.
 window.AuthoredFurniture={peek:()=>({recognizedSurfaces:[top]})};
-const elevated=root(0,-2), slab={visible:true,matrixWorld:{x:0,y:1,z:-2},updateWorldMatrix(){}}; // Movable part carries its own world transform.
+const elevated=root(0,-1.25), slab={visible:true,matrixWorld:{x:0,y:1,z:-1.25},updateWorldMatrix(){}}; // Movable part carries its own world transform.
 elevated.userData.meshById=new Map([['slab',slab]]);
 tables.registerPlacement('surface-test',{id:'elevated',key:'tableSmall',col:0,row:-2},elevated,{fw:2,fd:1});
 assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,true,'a high top ahead activates camera help');
@@ -97,3 +97,19 @@ slab.matrixWorld.x=0;top.localNormal=[0,-1,0];
 assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,false,'undersides cannot trigger a view lift');
 top.localNormal=[0,1,0];elevated.visible=false;
 assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,false,'hidden furniture cannot trigger');
+
+elevated.visible=true;
+assert.equal(tables.highSurfaceAhead('surface-test',0,1,.5,0,-1).active,false,'looking at a table outside neighboring tiles cannot trigger');
+const diagonal=root(1.5,1.5), diagonalPart={visible:true,matrixWorld:{x:1.5,y:1,z:1.5},updateWorldMatrix(){}}; // Occupies the diagonally adjacent tile to a player anywhere in tile zero.
+diagonal.userData.meshById=new Map([['slab',diagonalPart]]);
+tables.registerPlacement('diagonal-test',{id:'diagonal',key:'tableSmall',col:1,row:1},diagonal,{fw:1,fd:1});
+assert.equal(tables.highSurfaceAhead('diagonal-test',.01,.01,.5,1,0).active,true,'diagonally adjacent tile works with a broad camera direction even from the far corner');
+assert.equal(tables.highSurfaceAhead('diagonal-test',.01,.01,.5,-1,0).active,false,'looking away from a diagonally adjacent top releases assistance');
+assert.equal(tables.highSurfaceAhead('diagonal-test',-.01,.01,.5,1,0).active,false,'crossing into a tile two columns away ends adjacency');
+assert.equal(tables.highSurfaceAhead('diagonal-test',1.4,1.4,.5,1,0).active,true,'same-tile surfaces also work');
+for (const [tileX,tileZ] of [[0,0],[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) {
+ const centerX=tileX+.5,centerZ=tileZ+.5; // Each test moves the authored furniture into one of the nine allowed tiles.
+ diagonal.position.x=centerX;diagonal.position.z=centerZ;diagonalPart.matrixWorld.x=centerX;diagonalPart.matrixWorld.z=centerZ;
+ const distance=Math.hypot(tileX,tileZ); // Face the tile center; the same-tile case does not require a direction.
+ assert.equal(tables.highSurfaceAhead('diagonal-test',.5,.5,.5,distance?tileX/distance:1,distance?tileZ/distance:0).active,true,`same/neighbor tile ${tileX},${tileZ} activates`);
+}
