@@ -179,15 +179,37 @@ for (const [npcId, part] of [
 for (const npc of composed.npcs) {
   assert(!/<suggestion:|design doc|source material|no further details provided/i.test(npc.bio || ''), npc.id + ': editorial writing notes must not appear in the short bio');
 }
-const originalWeather = deps.calendar.weather; // Used to force a condition-ineligible chat tree without mutating other test setup.
-activeNPC = byId.get('gikali_ginju');
+const originalWeather = deps.calendar.weather; // Used to make a real dialogue tree ineligible and thereby exercise _npcDialogueLines.
+const gikali = byId.get('gikali_ginju');
+const weatherGated = {
+  ...gikali,
+  dialogueTrees: gikali.dialogueTrees.map(tree => ({
+    ...tree, conditions: { ...tree.conditions, weather: ['clear'] }, // Only this test clone is gated; source NPCs keep authored conditions.
+  })),
+};
+activeNPC = weatherGated;
 area = 'map_hobunji_town';
-deps.calendar.weather = 'storm';
+deps.calendar.weather = 'storm'; // The test tree requires clear weather, so the normal selector MUST return null.
 runtime.DialogueContent.resetDialogueState();
 runtime.DialogueContent.beginNpcConversation(activeNPC);
-assert.deepEqual(visibleChoices(), [], 'Storm fallback must not invent a special dialogue choice');
-const stormLine = element('npcDialogueText').textContent; // Used to verify fallback resolves real casual speech, never narrator prose.
-assert(stormLine.length > 0 && stormLine !== activeNPC.bio && !stormLine.includes('Gorobi\'s'), 'Condition-ineligible NPC must speak a regular greeting, not biography');
+assert.deepEqual(visibleChoices(), [], 'Condition-ineligible fallback must not invent a special dialogue choice');
+const stormLine = element('npcDialogueText').textContent; // Must be resolved casual speech, not lore or an unresolved pool token.
+assert(stormLine.length > 0 && !stormLine.includes('{{pool:') && stormLine !== gikali.bio && !stormLine.includes("Gorobi's"), 'A real dialogue-tree miss must display authored greeting speech, never a character biography');
+
+const lineFallback = {
+  id: 'test_line_node_fallback',
+  bio: 'Hidden character backstory',
+  loreBackground: 'More hidden lore',
+  dialogueTrees: [{
+    id: 'tree_test_line_node_fallback_fallback', entryNode: 'spoken', trigger: 'interact',
+    conditions: { weather: ['clear'] },
+    nodes: [{ id: 'spoken', type: 'line', text: 'Hello from a fallback line.' }],
+  }],
+};
+activeNPC = lineFallback;
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.equal(element('npcDialogueText').textContent, 'Hello from a fallback line.', 'Both supported spoken node types must work when a tree itself is ineligible');
 deps.calendar.weather = originalWeather;
 
 activeNPC = byId.get('banubu'); // Banubu has no generic starter tree; its quest system supplies authored dialogue.
