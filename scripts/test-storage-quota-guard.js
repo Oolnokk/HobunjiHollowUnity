@@ -12,6 +12,7 @@ function quotaError() { const e = new Error("Failed to execute 'setItem' on 'Sto
 function Storage() { this._data = new Map(); this._limit = 100; }
 Storage.prototype.getItem = function (k) { return this._data.has(k) ? this._data.get(k) : null; };
 Storage.prototype.removeItem = function (k) { this._data.delete(k); };
+Storage.prototype.clear = function () { this._data.clear(); };
 Storage.prototype.setItem = function (k, v) {
   let used = 0; for (const [key, val] of this._data) if (key !== k) used += key.length + val.length;
   if (used + k.length + String(v).length > this._limit) throw quotaError();
@@ -71,6 +72,17 @@ assert.equal(Q.debugSnapshot().stagedKeys.length, 0, 'a successful native write 
 Q.importFolderSnapshot(() => localStorage.setItem('hobunji_farm_layout_v3:test', fill(500)));
 localStorage.removeItem('hobunji_farm_layout_v3:test');
 assert.equal(localStorage.getItem('hobunji_farm_layout_v3:test'), null, 'deletion clears staged layouts');
+assert.throws(() => Q.requireBrowserPersistence(() => Q.importFolderSnapshot(() => localStorage.setItem('hobunjiSaveMeta', fill(600)))), /quota/, 'browser durability wins over a nested folder staging scope');
+Q.importFolderSnapshot(() => localStorage.setItem('hobunjiSaveMeta', fill(600)));
+assert.equal(Q.hasStagedValues(), true, 'failed browser-only writes release their staging prohibition');
+sessionStorage._limit = 1000;
+sessionStorage.setItem('hobunjiSaveMeta', 'session-only');
+assert.equal(sessionStorage.getItem('hobunjiSaveMeta'), 'session-only', 'sessionStorage reads never see local staging');
+sessionStorage.clear();
+assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(600), 'clearing sessionStorage does not clear local staging');
+localStorage.clear();
+assert.equal(localStorage.getItem('hobunjiSaveMeta'), null);
+assert.equal(Q.hasStagedValues(), false, 'clearing localStorage also clears its staged canonical values');
 
 const index = fs.readFileSync('docs/index.html', 'utf8');
 const guardAt = index.indexOf('js/storage-quota-guard.js');

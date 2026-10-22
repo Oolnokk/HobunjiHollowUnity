@@ -240,6 +240,15 @@
     return startupPromise;
   }
 
+  function markFolderAlreadyApplied(reason = 'applied') {
+    try {
+      // A transient mirror disappears on reload. Startup must read its durable
+      // folder again instead of trusting the stale native browser copy.
+      if (window.HobunjiStorageQuota?.hasStagedValues?.()) sessionStorage.removeItem(PRIMARY_SKIP_ONCE_KEY);
+      else sessionStorage.setItem(PRIMARY_SKIP_ONCE_KEY, reason);
+    } catch {}
+  }
+
   async function establishPrimaryFolder(mode) {
     const beforeMeta = localStorage.getItem(SAVE_META_KEY) || ''; // Compared after reconciliation to decide whether onboarding's private save model must be rebuilt.
     lastUiError = '';
@@ -569,7 +578,8 @@
       }
       lastUiAction = 'settings-load-folder';
       if (result.changed) {
-        try { sessionStorage.setItem(PRIMARY_SKIP_ONCE_KEY, 'folder-loaded-in-settings'); } catch {}
+        markFolderAlreadyApplied('folder-loaded-in-settings');
+        window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('settings-folder-load'); // The departing runtime still contains the old inventory.
         location.reload();
         return;
       }
@@ -647,9 +657,7 @@
     prepareBeforeOnboarding,
     establishPrimaryFolder,
     refreshUi: scheduleUiRefresh,
-    markFolderAlreadyApplied() {
-      try { sessionStorage.setItem(PRIMARY_SKIP_ONCE_KEY, 'applied'); } catch {}
-    },
+    markFolderAlreadyApplied,
   };
 
   window.__hobunjiFolderSavePrimaryDebug = {

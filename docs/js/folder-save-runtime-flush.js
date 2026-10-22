@@ -95,12 +95,16 @@
 
   function flushNow({ reason = 'manual' } = {}) {
     lastFlushReason = reason;
+    const failuresBefore = window.HobunjiStorageQuota?.getWriteFailureCount?.() || 0; // Some canonical gameplay writers catch storage errors internally.
     try {
       // saveMemberWorldData is the canonical write of the live general bag,
       // relationships, quest/world-member state, etc. The folder mirror must
       // never run first or it can faithfully copy an older localStorage image.
       if (typeof saveMemberWorldData === 'function') saveMemberWorldData();
       if (typeof saveFarmLayout === 'function') saveFarmLayout();
+      if ((window.HobunjiStorageQuota?.getWriteFailureCount?.() || 0) > failuresBefore) {
+        throw new Error('Browser storage is full and the live save could not be captured. The Primary Save Folder must be connected and armed to save without a browser copy.');
+      }
       lastInventoryFingerprint = inventoryFingerprint();
       flushCount++;
       lastError = '';

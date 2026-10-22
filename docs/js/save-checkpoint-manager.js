@@ -732,7 +732,7 @@
   }
 
   async function rollbackRestore(preRestore, restoreError) {
-    snapshotApi().apply(preRestore.snapshot); // Browser fallback returns to the pre-restore point regardless of folder rollback outcome.
+    snapshotApi().apply(preRestore.snapshot, { folderBacked: true }); // Keep rollback available when the folder-backed browser mirror exceeds quota.
     let rollbackError = '';
     try {
       const rollbackStatus = await folderApi().syncSnapshot(preRestore.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
@@ -802,7 +802,7 @@
 
       // Apply browser state only after the primary-folder replacement succeeds. This avoids
       // turning a failed folder recovery into a second, unrelated browser-state rollback problem.
-      snapshotApi().apply(restoredSnapshot);
+      snapshotApi().apply(restoredSnapshot, { folderBacked: folderRecoveryAvailable() });
       restoresApplied++;
       lastAction = `restored-${record.kind || 'checkpoint'}`;
       lastError = '';

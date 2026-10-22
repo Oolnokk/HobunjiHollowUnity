@@ -931,6 +931,7 @@
       return { ok: false, message: 'This folder was empty, so there was nothing to load.' };
     }
     return {
+      ...result,
       ok: true,
       message: result.changed ? result.message + ' Reload the page to apply it.' : result.message,
     };

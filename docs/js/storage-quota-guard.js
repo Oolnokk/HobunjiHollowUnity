@@ -31,8 +31,10 @@
   const stats = { quotaHits: 0, evicted: [], unresolved: 0, lastKey: '' };
   const folderStaging = new Map(); // Canonical values that no longer fit in the browser, read by the existing folder snapshot pipeline.
   let importingFolder = false; // Allows a validated folder import to stage before autosync is armed.
+  let browserPersistenceRequired = false; // Browser-only restores must not report transient folder staging as durable storage.
 
   function canStageForFolder(key) {
+    if (browserPersistenceRequired) return false;
     if (key !== 'hobunjiSaveMeta' && !key.startsWith('hobunji_farm_layout_v3:')) return false;
     const status = window.LocalSaveFolder?.getStatus?.(); // Only an explicitly armed primary folder permits a transient browser mirror.
     return importingFolder || (status?.state === 'ready' && status?.autoSyncArmed === true);
@@ -120,6 +122,13 @@
     install,
     isQuotaError,
     CHECKPOINT_EVICTION_ORDER,
+    hasStagedValues: () => folderStaging.size > 0,
+    getWriteFailureCount: () => stats.unresolved,
+    requireBrowserPersistence(callback) {
+      const previous = browserPersistenceRequired; // Nested synchronous writes retain the caller's durability requirement.
+      browserPersistenceRequired = true;
+      try { return callback(); } finally { browserPersistenceRequired = previous; }
+    },
     importFolderSnapshot(callback) {
       const previous = importingFolder; // Nested synchronous imports restore the previous staging scope.
       importingFolder = true;
