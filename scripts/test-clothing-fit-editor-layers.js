@@ -153,16 +153,26 @@ async function main() {
     '\nreturn buildSourceReferenceCanvas;')(
     R, {createElement: makeCanvas}, new Set(['hat', 'hood']), () => [],
     () => {throw new Error('Unexpected body raster request')}, () => [],
-    node => node?.parts?.torso?.layers?.back?.image?.url ?
-      [{url: node.parts.torso.layers.back.image.url}] : [],
-    () => Promise.resolve({naturalWidth: 190, naturalHeight: 210}), value => value, () => {}
+    node => Object.values(node?.parts?.torso?.layers||{}).filter(layer => layer.image?.url)
+      .map(layer => ({url: layer.image.url})),
+    url => Promise.resolve(url.includes('larger') ?
+      {naturalWidth: 240, naturalHeight: 260} : {naturalWidth: 190, naturalHeight: 210}),
+    value => value, () => {}
   );
   const sourceRaster = await sourceReference('kenkari', 'female', 'tunic', {width: 100, height: 90});
   assert.equal(sourceRaster.width, 190);
   assert.equal(sourceRaster.height, 210);
+  R.garments.push({id: 'layered-tunic', slot: 'torso', cfg: {
+    speciesVariants: {nuhongan_male: {parts: {torso: {layers: {
+      base: {image: {url: 'small.png'}}, trim: {image: {url: 'larger.png'}}
+    }}}}}
+  }});
   const emptySource = await sourceReference('nuhongan', 'male', 'missing-garment', {width: 100, height: 90});
   assert.equal(emptySource.width, 100);
   assert.equal(emptySource.height, 90);
+  const layeredSource = await sourceReference('nuhongan', 'male', 'layered-tunic', {width: 100, height: 90});
+  assert.equal(layeredSource.width, 240, 'Source frame spans the widest authored material');
+  assert.equal(layeredSource.height, 260, 'Source frame spans the tallest authored material');
 
   console.log('PASS clothing-fit source layers, patch composition, fallback rasters, fit keys and script syntax');
 }
