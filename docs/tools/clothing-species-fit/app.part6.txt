@@ -123,8 +123,10 @@ async function runtimePortraitSet(){
     if(fitRegion()==='headwear'){
       const isolatedFighter={...profile.fighter,
         id:`__clothing_fit_head_only_${safeName(E.species.value)}_${E.gender.value}`,
+        headUrl:profile.fighter?.headUrl?`${profile.fighter.headUrl}#clothing-fit-head-only`:null,
         bodyLayers:[],opacityMaskLayer:null,fixedPortraitSlots:null
-      }; // An unrecognized fighter id prevents the renderer from resolving this empty-body variant back to a full fighter.
+      }; // resolvePortraitFighter falls back by matching headUrl even when the ID is unique.
+         // A URL fragment keeps the actual sprite fetch identical but prevents accidental canonical full-body resolution.
       const headProfile={...profile,fighter:isolatedFighter};
       headOnlyFront=make();headOnlyBack=make();
       await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyFront,headProfile,{seatId:'clothing-fit-head-front',forceEyesOpen:true});
