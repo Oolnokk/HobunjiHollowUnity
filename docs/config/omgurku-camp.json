@@ -69,9 +69,9 @@
     "greetingFavorThreshold": 1,
     "greetingRadiusTiles": 3,
     "greetingLines": [
-      "Rider-friend. Sit by our fire.",
-      "Omgurku remember you. Welcome.",
-      "You ride safe with us."
+      "Good to see you, friend.",
+      "Welcome back to our camp.",
+      "You walk safe here."
     ],
     "killPenalty": 0,
     "selfDefenseKillPenalty": -1,
@@ -83,13 +83,13 @@
     "warningRadiusTiles": 10,
     "warningStaySeconds": 10,
     "initialWarnings": [
-      "Hooves here are ours. Turn back.",
-      "Omgurku ground. You not welcome.",
-      "Go. Before we ride at you."
+      "Go way. No want trouble",
+      "This our spot, not yours. Leave.",
+      "No want fight. Go way."
     ],
     "escalationWarnings": [
-      "Last warning. We charge!",
-      "You stay, you trampled!"
+      "Leave or we fight!",
+      "We said go way. Go way. Now!"
     ]
   }
 }

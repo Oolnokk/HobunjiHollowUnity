@@ -55,6 +55,7 @@
     if (!value || typeof value !== 'object' || seen.has(value)) return value;
     seen.add(value);
     if (value.id === PORAKANEKI_CHIEF_ID) value.name = 'Chief Nakaraka of the Pakapohi Porakaneki'; // Keeps locally saved NPC database overrides aligned with the authored chief name.
+    if (value.id === OMGURKU_CHIEF_ID || value.id === LEGACY_OMGURKU_CHIEF_ID) value.name = 'Chief Unek-tai of the Hrekemgi Omgurku'; // Same for the rival chief, including saves still keyed by the legacy id.
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) value[i] = canonicalizeNpcDatabaseInPlace(value[i], seen);
       return value;

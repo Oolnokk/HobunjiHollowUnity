@@ -18664,7 +18664,7 @@
             {
                   "id": "baruhi_chief",
                   "preferredDance": { "style": "loose-sway", "armStyle": "tpose-jiggle" },
-                  "name": "<suggestion: name — the Baruhi war leader's name isn't given in the design doc>",
+                  "name": "Chief Unek-tai of the Hrekemgi Omgurku",
                   "homeId": "<suggestion: location — needs a Baruhi camp/longhouse placed in the contested territory>",
                   "species": "Omgurku",
                   "gender": "male",
