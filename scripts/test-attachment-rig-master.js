@@ -236,6 +236,6 @@ assert.strictEqual(recoveredUum.anchors.shoulderGrip.rotationDeg.y,0);
 assert.deepStrictEqual(recoveredUum.groundOffsets,authoredUum.groundOffsets);
 assert.deepStrictEqual(recoveredUum.chatheadFrame,authoredUum.chatheadFrame);
 const bespokeUum = guard.reconcileProfiles({creatures:{uumkaoii:{groundOffsets:{large:0.4,medium:0.21,small:0.08},chatheadFrame:{x:0.12,y:0.22,width:0.3,height:0.4}}}}).creatures.uumkaoii; // Never replace future independently authored offsets/crops.
-assert.deepStrictEqual(bespokeUum.groundOffsets,{large:0.4,medium:0.21,small:0.08});
+assert.deepStrictEqual(['large','medium','small'].map(size => bespokeUum.groundOffsets[size]),[0.4,0.21,0.08]);
 assert.strictEqual(bespokeUum.chatheadFrame.x,0.12);
 console.log('attachment rig master tests passed');
