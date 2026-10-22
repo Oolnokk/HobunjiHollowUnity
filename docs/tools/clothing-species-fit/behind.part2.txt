@@ -24,7 +24,7 @@
   ui.sourcePreview.addEventListener('pointercancel',endPatchDrag);
 }
 
-function coreKey(info){return `${info.targetSpecies||''}::${info.gender||''}`} // One ZIP batch may only use one species+gender deformation grid.
+function coreKey(info){return `${info.sourceSpecies||''}::${info.sourceGender||''}::${info.targetSpecies||''}::${info.gender||''}::${info.fitRegion||''}`} // Clear queued sprites whenever their source or fitted target changes.
 
 function syncFromCore(){
   if(!api||!ui)return;
@@ -32,7 +32,7 @@ function syncFromCore(){
   const nextKey=coreKey(info);
   if(targetKey&&nextKey!==targetKey&&batch.length){
     batch=[]; // Prevents previously saved sprites from silently being deformed with a newly selected target grid.
-    renderJobs('Target species/gender changed; cleared the ZIP batch so old jobs cannot export with the wrong fit.');
+    renderJobs('Source/target selection changed; cleared the ZIP batch to prevent applying the wrong fit.');
   }
   if(nextKey!==targetKey){
     targetKey=nextKey;
