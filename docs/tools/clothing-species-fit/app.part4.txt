@@ -108,7 +108,9 @@ async function refreshAssets(){
       :null;
     if(generation!==R.assetGeneration)return; // Switching modes/species while images load cannot reinstall stale art.
     R.body=body;R.maoBody=maoBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
-    E.clothPng.disabled=!cloth;E.exportHeadwear.disabled=region!=='headwear'||!cloth;
+    E.clothPng.disabled=!cloth;
+    E.exportHeadwearFront.disabled=region!=='headwear'||!cloth?._front;
+    E.exportHeadwearBack.disabled=region!=='headwear'||!cloth?._back;
     E.authoredStatus.textContent=authored
       ?`Authored ${species}_${gender} variant available.`
       :'No authored target variant for this garment/species/gender.';
