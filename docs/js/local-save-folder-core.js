@@ -730,12 +730,16 @@
       const changed = metaChanged || layoutsChanged;
 
       _lastKnownFolderMeta = folder.meta;
-      localStorage.setItem(SAVE_META_KEY, JSON.stringify(folder.meta));
       const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
-      for (const [worldId, layout] of Object.entries(folder.farmLayouts || {})) {
-        if (!validWorldIds.has(worldId)) continue;
-        localStorage.setItem(farmLayoutKey(worldId), JSON.stringify(layout));
-      }
+      const importSnapshot = () => { // Disk-backed imports must remain loadable even when their browser mirror cannot fit.
+        localStorage.setItem(SAVE_META_KEY, JSON.stringify(folder.meta));
+        for (const [worldId, layout] of Object.entries(folder.farmLayouts || {})) {
+          if (!validWorldIds.has(worldId)) continue;
+          localStorage.setItem(farmLayoutKey(worldId), JSON.stringify(layout));
+        }
+      };
+      if (window.HobunjiStorageQuota?.importFolderSnapshot) window.HobunjiStorageQuota.importFolderSnapshot(importSnapshot);
+      else importSnapshot();
 
       _folderSupportsFarmLayouts = folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
       _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
@@ -927,6 +931,7 @@
       return { ok: false, message: 'This folder was empty, so there was nothing to load.' };
     }
     return {
+      ...result,
       ok: true,
       message: result.changed ? result.message + ' Reload the page to apply it.' : result.message,
     };

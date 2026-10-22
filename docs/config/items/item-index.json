@@ -1394,31 +1394,67 @@
   "cosmetic:tangedcirclet": {
     "key": "cosmetic:tangedcirclet",
     "label": "Tanged Circlet",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_gar-wolf": {
     "key": "cosmetic:festivalmask_gar-wolf",
     "label": "Festivalmask Gar-Wolf",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_grehlr": {
     "key": "cosmetic:festivalmask_grehlr",
     "label": "Festivalmask Grehlr",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_uumkao'ii": {
     "key": "cosmetic:festivalmask_uumkao'ii",
     "label": "Festivalmask Uumkao'Ii",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_voorg-ass": {
     "key": "cosmetic:festivalmask_voorg-ass",
     "label": "Festivalmask Voorg-Ass",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
+  },
+  "nelkCrate": {
+    "key": "nelkCrate",
+    "label": "Nelk Crate",
+    "icon": "🦎",
+    "cat": "livestock"
+  },
+  "nazgrakuCrate": {
+    "key": "nazgrakuCrate",
+    "label": "Nazgraku Crate",
+    "icon": "🐟",
+    "cat": "livestock"
+  },
+  "cosmetic:replica_bzabag_helm": {
+    "key": "cosmetic:replica_bzabag_helm",
+    "label": "Replica Helm of Bzabag",
+    "icon": "🪖",
+    "cat": "clothing"
+  },
+  "cloudSaffron": {
+    "key": "cloudSaffron",
+    "label": "Cloud Saffron",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "starpepper": {
+    "key": "starpepper",
+    "label": "Starpepper",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "nightCardamom": {
+    "key": "nightCardamom",
+    "label": "Night Cardamom",
+    "icon": "🌶️",
+    "cat": "ingredient"
   }
 }

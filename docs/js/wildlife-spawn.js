@@ -39,6 +39,7 @@
         ...existing,
         label: 'Puktuk',
         hostile: false,
+        diet: 'herbivore', // Puktuk digs for underground food; Nelk hunts Puktuk, not vice versa.
         defaultSizeClass: 'medium',
         modelWidth: 2.1,
         spriteAspect: 0.43636,
@@ -60,14 +61,21 @@
         legacyDrenkirraRemoved++;
       }
     }
+    if (Array.isArray(herbivores) && !herbivores.includes('puktuk')) herbivores.push('puktuk'); // Defensive diggers occupy grazer ecology rather than predator patrols.
     const packs = westernZone
       ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
       : null;
-    if (Array.isArray(packs) && !packs.includes('puktuk')) packs.push('puktuk');
+    if (Array.isArray(packs)) {
+      for (let i = packs.length - 1; i >= 0; i--) if (packs[i] === 'puktuk') packs.splice(i, 1); // Migrates any old pack config idempotently.
+      if (creatureDb?.nelk && !packs.includes('nelk')) packs.push('nelk');
+    }
     const denSpecies = westernZone
       ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
       : null;
-    if (Array.isArray(denSpecies) && !denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+    if (Array.isArray(denSpecies)) {
+      if (!denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+      if (creatureDb?.nelk && !denSpecies.includes('nelk')) denSpecies.push('nelk');
+    }
 
     const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS;
     if (denMotherDefs) {
@@ -79,9 +87,11 @@
       };
     }
 
+    if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Explicit den species participates in cavern ecology without inventing collectible eggs.
     const ready = !!creatureDb?.puktuk
       && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
-      && Array.isArray(packs) && packs.includes('puktuk');
+      && Array.isArray(herbivores) && herbivores.includes('puktuk')
+      && (!creatureDb?.nelk || (packs?.includes('nelk') && denSpecies.includes('nelk')));
     window.__farmLog?.(`[puktuk] WildlifeSpawn.init fallback: ready=${ready ? 1 : 0} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, ready ? 'wildlife' : 'warn');
     return ready;
   }
@@ -164,6 +174,7 @@
   // 'fleeing-low-health' once it's hurt enough, even if it was already
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
+    if (target?.isNpcWalker) return window.WildlifeFoodWeb?.npcWalkerStrike?.(attacker, target) || false; // Named scheduling walkers lack Combat Health; defend/scare without inflicting fabricated damage.
     const factionTarget = target?.isBandit === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
@@ -184,6 +195,8 @@
     if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
       target.state = 'fleeing-low-health';
       target.targetCreature = null;
+    } else {
+      window.WildlifeFoodWeb?.onSkirmishHit?.(attacker, target); // A Puktuk fights its Nelk hunter back unless genuinely wounded enough to flee.
     }
   }
 
@@ -1214,14 +1227,14 @@
     return visuals.length;
   }
 
-  function spawnRoamingHerd(zoneId, herdIndex, herdKey) {
+  function spawnRoamingHerd(zoneId, herdIndex, herdKey, speciesOverride = null, totalSlotsOverride = null) {
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
     const pool = zdef?.roamingHerdSpecies || [];
     if (!pool.length) return 0;
-    const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
-    const herdCount = Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1));
+    const speciesKey = speciesOverride || pool[Math.floor(deps.rnd() * pool.length)]; // Fixed species for the independent Nazgraku forager slot.
+    const herdCount = Math.max(1, Math.floor(Number(totalSlotsOverride ?? zdef.roamingHerdCount) || 1));
     const anchor = roamingHerdAnchor(zoneId, herdIndex, herdCount);
-    const count = ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1));
+    const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Nazgraku forage in modest groups, not 8–12 member Voorg herds.
     const zoneData = deps.zoneLayouts.get(zoneId);
     const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
     const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
@@ -1280,28 +1293,35 @@
   }
 
   function ensureCurrentZoneRoamingHerds() {
-    const zoneId = deps.getCurrentArea();
+    const zoneId = deps.getCurrentArea(); // Used to keep exterior roaming populations tied to the active zone.
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
-    if (!Array.isArray(zdef?.roamingHerdSpecies) || !zdef.roamingHerdSpecies.length) return;
-    const herdCount = Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1));
-    for (let index = 0; index < herdCount; index++) {
-      const key = roamingHerdKeyFor(zoneId, index);
-      const alive = isRoamingHerdAlive(key);
-      if (alive) { roamingHerdLastKnownAlive.set(key, true); continue; }
-
+    if (!zdef) return;
+    const normalSpecies = zdef.roamingHerdSpecies || []; // Existing Voorg-Ass slots remain unchanged.
+    const normalCount = normalSpecies.length ? Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1)) : 0;
+    const foragers = Array.isArray(zdef.roamingForagerSpecies) ? zdef.roamingForagerSpecies : []; // Separate authored slots so Nazgraku never crowds out Voorg-Ass.
+    const foragerCount = foragers.length ? Math.max(1, Math.floor(Number(zdef.roamingForagerCount) || 1)) : 0;
+    const totalSlots = normalCount + foragerCount;
+    function ensureSlot(key, index, species = null) {
+      const alive = isRoamingHerdAlive(key); // Existing day-scoped dead-herd handling applies equally to food gatherers.
+      if (alive) { roamingHerdLastKnownAlive.set(key, true); return; }
       if (!roamingHerdEverSpawned.has(key)) {
         roamingHerdEverSpawned.add(key);
         roamingHerdLastKnownAlive.set(key, false);
-        spawnRoamingHerd(zoneId, index, key);
-        continue;
+        spawnRoamingHerd(zoneId, index, key, species, totalSlots);
+        return;
       }
       if (roamingHerdLastKnownAlive.get(key) !== false) {
         roamingHerdLastKnownAlive.set(key, false);
         pendingRoamingHerdRespawn.add(key);
-        continue;
+        return;
       }
-      if (pendingRoamingHerdRespawn.has(key)) continue;
-      spawnRoamingHerd(zoneId, index, key);
+      if (pendingRoamingHerdRespawn.has(key)) return;
+      spawnRoamingHerd(zoneId, index, key, species, totalSlots);
+    }
+    for (let index = 0; index < normalCount; index++) ensureSlot(roamingHerdKeyFor(zoneId, index), index);
+    for (let index = 0; index < foragerCount; index++) {
+      const kind = foragers[index % foragers.length]; // Future species can use the same authored extra-slot system.
+      ensureSlot(`${zoneId}:roaming-forager:${kind}:${index}`, normalCount + index, kind);
     }
   }
 

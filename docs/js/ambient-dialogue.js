@@ -183,7 +183,10 @@
     const unresolved = [...source.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)]
       .map(match => match[1]).filter(key => !(key in values));
     if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
-    return source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
+    const standardGreeting = source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
+    return targetId === 'player' && options.walker?.rec
+      ? window.DialogueContent?.contextGreeting?.(options.walker.rec, { standardGreeting, targetName: values.targetName, day, omitTargetName: !!options.omitTargetName }) || standardGreeting
+      : standardGreeting;
   }
 
   function friendSetFor(npcId) {
@@ -641,7 +644,7 @@
   }
 
   function show(root, text, options = {}) {
-    if (String(options.speakerId || '') === 'banubu') return null; // Banubu speaks only through his authored, player-initiated quest dialogue.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const message = String(text || '').trim();
@@ -819,7 +822,7 @@
 
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
-    if (speakerId === 'banubu') return false; // Avoid greeting policy, portrait composition, and ledger work for the sleeping Fey.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId)) return false; // Great Fey use scripted conversations, not proximity greetings (player or NPC).
     if (walker?.rec?.ambientGreetings === false) return false; // Runtime-spawned records (e.g. babies/toddlers from js/romance-family.js) can opt out entirely.
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
@@ -856,7 +859,7 @@
     const omitTargetName = targetId === 'player' && !mayUseActualPlayerName && !lowFavorNickname; // Used to clean punctuation only when neither an actual name nor a nickname may be spoken.
     const line = override?.text
       ? (mayUseActualPlayerName ? override.text : rewriteResolvedGreetingTargetName(override.text, configuredPlayerGreetingName(), lowFavorNickname))
-      : templateLine(targetName, speakerId, targetId, day, { omitTargetName });
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName, walker });
     show(walker.root, line, {
       speakerId,
       profile: walker.profile,
@@ -875,7 +878,7 @@
 
   function playerGreetingWaitMsForWalker(walker, now = performance.now()) {
     const speakerId = String(walker?.rec?.id || ''); // Speaker whose pet reaction is deciding whether an ordinary player greeting still has priority.
-    if (!speakerId || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0;
+    if (!speakerId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId) || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0; // No deferred greeting priority for excluded Great Fey.
     if (state.deps.isDialogueOpen?.() || state.deps.isPaused?.() || window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return 0;
     const player = state.deps.getPlayerPosition?.();
     if (!player) return 0;
@@ -967,7 +970,7 @@
     };
   }
 
-  function showAlcoholOfferResponse(walker, response = resolveAlcoholOffer(walker)) {
+  function showSocialResponse(walker, response = resolveAlcoholOffer(walker)) {
     if (!walker?.root || !response?.text) return null;
     // Explicit interaction speech replaces that speaker's incidental greeting
     // so the accepted/refused line is never hidden under a second chathead.
@@ -1027,7 +1030,8 @@
     cheer: (root, options) => crowd(root, 'cheer', options),
     jeer: (root, options) => crowd(root, 'jeer', options),
     resolveAlcoholOffer,
-    showAlcoholOfferResponse,
+    showSocialResponse,
+    showAlcoholOfferResponse: showSocialResponse, // Existing drink callers share the same directed ambient response owner.
     // Runtime NPCs (children from js/romance-family.js) have no authored
     // ambient-dialogue.json entry; this registers their greeting pool.
     setNpcGreetings(npcId, greetings) {
@@ -1037,6 +1041,7 @@
       else delete state.settings.npcGreetings[id];
       return true;
     },
+    friendIdsFor: npcId => [...friendSetFor(npcId)], // Shared meal/group planning reuses authored friendship circles.
     playerGreetingWaitMsForWalker,
     clear,
     loadSettings,

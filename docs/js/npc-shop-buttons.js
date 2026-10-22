@@ -21,11 +21,12 @@
     const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : defaultIds;
     const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : defaultStationLabels;
     const npcId = walker?.rec?.id || '';
+    if (!ids.includes(npcId) || window.FestivalSystem?.shopsClosedFor?.(walker?.rec)) return false;
     const target = walker?.currentScheduleTarget || null;
     const stationLabel = normalizeStationLabel(target?.label);
     const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
       && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (deps?.npcMovementConfig?.().arrivalRadiusTiles ?? 0.18);
-    return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
+    return isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
   }
 
   function shopButton(cfg, fallbackIcon, fallbackLabel, action) {
@@ -44,7 +45,8 @@
   function isSmithyNpcInBronzeworks(walker) {
     const cfg = smithyButtonConfig();
     const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['kzubug', 'sloomi'];
-    return deps?.getCurrentArea?.() === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '');
+    return deps?.getCurrentArea?.() === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '')
+      && !window.FestivalSystem?.shopsClosedFor?.(walker?.rec);
   }
   function smithyButton() { return shopButton(window.TownMine?.hasImprovement?.('foundry') ? { ...smithyButtonConfig(), label: 'Foundry' } : smithyButtonConfig(), '🔨', 'Smithy', smithyAction()); }
 

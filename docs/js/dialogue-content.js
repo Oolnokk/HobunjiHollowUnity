@@ -45,6 +45,7 @@
   let _npcDialogueVisibleCharacters = 0; // Number of plain-text characters revealed by the existing cadence.
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
+  const _contextProviders = new Map(); // Event-owned content routed at conversation/greeting time, never per frame.
   const _dialogueTreeProviders = new Map(); // npcId → provider(rec), used by stateful systems that select an authored tree at interaction time.
   const _dialogueActionHandlers = new Map(); // action type → handler(action, context), used to extend choice actions without adding NPC-specific branches here.
   const _dialogueNodeEnterHandlers = new Map(); // npcId → handler(node, context), used by feature-owned world presentation when an authored node becomes current.
@@ -115,8 +116,13 @@
     if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
       return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
     }
-    if (rec.bio) return _paginateNpcDialogueText(rec.bio);
-    return _paginateNpcDialogueText('');
+    // Bio and loreBackground are third-person editor notes, never NPC speech.
+    // When no tree is eligible (for example, during a storm), reuse an authored
+    // ordinary line instead of reading the character's backstory aloud.
+    const fallback = (rec.dialogueTrees || []).find(tree => tree.id === `tree_${rec.id}_fallback`); // Used only when the normal tree selector found no eligible conversation.
+    const entry = (fallback?.nodes || []).find(node => node.id === fallback.entryNode); // Used to recover this NPC's existing casual speech pool.
+    const speech = (entry?.type === 'text' || entry?.type === 'line') && typeof entry.text === 'string' ? _resolveTokens(entry.text, rec) : ''; // Resolves authored dialogue in either supported spoken node format, without exposing character notes.
+    return _paginateNpcDialogueText(speech);
   }
 
   function getNpcDlgState(npcId) {
@@ -361,6 +367,23 @@
     return true;
   }
 
+  function registerContextProvider(id, provider) {
+    if (!id) return false;
+    if (provider) _contextProviders.set(String(id), provider);
+    else _contextProviders.delete(String(id));
+    return true;
+  }
+
+  function contextGreeting(rec, context) {
+    for (const [id, provider] of _contextProviders) {
+      try {
+        const line = provider.greetingFor?.(rec, context);
+        if (line) return line;
+      } catch (error) { console.warn('[npc-dialogue] context greeting failed', id, error); }
+    }
+    return context.standardGreeting;
+  }
+
   function registerActionHandler(type, handler) {
     if (!type || typeof handler !== 'function') return false;
     _dialogueActionHandlers.set(String(type), handler);
@@ -522,7 +545,8 @@
     queuedConversationTrees.set(npcId, tree);
     return true;
   }
-  function _pickDialogueTree(rec) {
+  function _pickDialogueTree(rec, options = {}) {
+    const chatOnly = options.chatOnly === true; // Used by Shop/Chat's Chat action to bypass generated shop menus for this conversation.
     if (queuedConversationTrees.has(rec?.id)) {
       const queued = queuedConversationTrees.get(rec.id); // Delete before playback so reopening cannot trap the player in a script.
       queuedConversationTrees.delete(rec.id);
@@ -544,11 +568,25 @@
     // it to the world's protagonist or to non-owner members respectively;
     // omitted/'any' (the default) is visible to everyone.
     const all = (rec?.dialogueTrees || [])
-      .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility));
-    if (!all.length) return null;
+      .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility)
+        && (!chatOnly || !t.generatedFromShopAccess));
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
-    const picked = _pickBestEntry(all, world, heard);
+    let picked = _pickBestEntry(all, world, heard);
+    // Keep eligible shops accessible even after their tree was heard and general chat was not:
+    // the shared unheard-first selector must not hide the merchant's Shop option.
+    if (!chatOnly && picked?.id === `tree_${rec?.id}_fallback`) {
+      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when a fallback would displace a merchant's Shop menu.
+      if (shops.length) picked = _pickBestEntry(shops, world, heard);
+    }
+    for (const [id, context] of _contextProviders) {
+      try {
+        const provided = context.treeFor?.(rec, { world, defaultTree: picked });
+        if (!provided) continue;
+        if (_traceActive()) _dlgTraceSelection = { mode: 'context', source: id, reason: 'Contextual content replaced the normal fallback', world, candidates: [] };
+        return provided;
+      } catch (error) { console.warn('[npc-dialogue] context tree failed', id, rec?.id, error); }
+    }
     if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection(all, world, heard, picked) };
     return picked;
   }
@@ -626,6 +664,11 @@
               window.NpcRapport?.adjust?.(_dlgNpcRec?.id, amount, `dialogue_choice:${_dlgTree?.id || 'synthetic'}:${node.id || i}`);
             }
           } else if (act.type === 'openShop') {
+            if (window.FestivalSystem?.shopsClosedFor?.(_dlgNpcRec)) {
+              deps.showToast('The shop is closed during the festival gathering.', false);
+              skipNav = true;
+              return;
+            }
             // `pool` names a WARES_POOLS entry; omitted defaults to the
             // General Store for backward compatibility with any tree
             // authored before pools existed (bare {type:'openShop'}).
@@ -634,6 +677,11 @@
             if (pool) { deps.closeNpcDialogue(); deps.openMenu(pool.menuId); }
             skipNav = true;
           } else if (act.type === 'openCraftMenu') {
+            if (window.FestivalSystem?.shopsClosedFor?.(_dlgNpcRec)) {
+              deps.showToast('The shop is closed during the festival gathering.', false);
+              skipNav = true;
+              return;
+            }
             // Sloomi/Kzubug's smithing counter — craft/plate/reinforce
             // verdigris tools from dug-up metal bars (see
             // renderMetalCraftShopPage). Both smiths offer the identical
@@ -641,7 +689,7 @@
             deps.closeNpcDialogue(); deps.openMenu('metalCraftShop');
             skipNav = true;
           } else if (act.type === 'startChat') {
-            _beginNpcConversation(_dlgNpcRec);
+            _beginNpcConversation(_dlgNpcRec, { chatOnly: true });
             skipNav = true;
           } else if (act.type === 'acceptFavor') {
             deps.setQuestStatus(act.taskId, 'available', {});
@@ -1099,14 +1147,14 @@
     _navigateDlgTo(next || null);
   }
 
-  // Starts the actual conversation content (dialogue tree, or the plain
-  // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
+  // Starts the actual conversation content (dialogue tree, or authored
+  // spoken-line fallback) — shared by plain NPCs and by the "Chat" branch
   // of the merchant shop/chat choice in game.js's openNpcDialogue.
-  function _beginNpcConversation(rec) {
+  function _beginNpcConversation(rec, options = {}) {
     if (rec?.id) _lastNpcRec = rec;
     _dlgTraceSelection = null;
     _dlgTracePools.length = 0;
-    const tree = _pickDialogueTree(rec);
+    const tree = _pickDialogueTree(rec, options);
     if (tree) {
       _markDialogueTreeHeard(rec, tree);
       _dlgTree    = tree;
@@ -1121,7 +1169,7 @@
       hideChoiceButtons();
       _dialogueLines   = _npcDialogueLines(rec);
       _dialogueLineIdx = 0;
-      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so the NPC record\'s plain bio/lines are shown.' } });
+      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so authored spoken lines (never bio/lore) are shown.' } });
       _setNpcDialogueText(_dialogueLines[0]);
       updateNpcDialoguePortrait(0);
     }
@@ -1210,7 +1258,10 @@
     npcBaseDispositions: _npcBaseDispositions,
     hasQueuedConversationTree: npcId => queuedConversationTrees.has(npcId),
     queueConversationTree,
+    relatedNpcBonds, // Household/workplace bonds shared with social gathering table preferences.
     registerTreeProvider,
+    registerContextProvider,
+    contextGreeting,
     registerActionHandler,
     registerNodeEnterHandler,
   };

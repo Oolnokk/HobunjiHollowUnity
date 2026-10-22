@@ -159,9 +159,13 @@
 
   // Bag items (potions, flasks, large carried objects) live on game.js's heldItemHolder, not
   // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
-  function playerHeldItemTarget(record) {
+  function heldItemTarget(record) {
     if (inAttackEditor() || record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
+    const npcTarget = global.NpcDrinkInteraction?.heldItemTarget?.(record.rig?.parent); // Meals and ambient bottles share the existing world-space held-item grip solve.
+    if (npcTarget) return npcTarget;
     if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
+    const carried = window.Shattercasks?.heldHandTarget?.();
+    if (carried?.holder?.parent) return carried;
     if (gameDeps.toolHolder?.visible) return null;
     const target = gameDeps.getHeldItemHandTarget?.();
     return target?.holder?.visible ? target : null;
@@ -176,6 +180,10 @@
   }
 
   function modelCalibrationForRecord(record) {
+    if (!inAttackEditor() && hands.modelCalibrationForSpecies) {
+      return hands.modelCalibrationForSpecies(record.speciesId, record.gender,
+        Number(record.avatarRoot?.userData?.portraitModelHeight) || .9);
+    }
     const modelKey = modelKeyForRecord(record); // Single authoritative editor/runtime model identity used for both rendered GLB and calibration.
     const raw = profiles.normalizeHandTransform?.(profiles.data?.models?.[modelKey]?.handFromTool)
       || profiles.data?.models?.[modelKey]?.handFromTool
@@ -534,11 +542,32 @@
     const place = (side, x, y, z, rotationName) => {
       const position = holder.localToWorld(scratch.position.set(x, y, z));
       const quaternion = scratch.quaternion.copy(holderQuat).multiply(scratch.rotations[rotationName]);
+      if (target.mode === 'authored-world') {
+        // Local XYZ grip rotation comes AFTER the shared canonical left/right
+        // hand orientation, matching the Furniture Editor's actual GLB preview.
+        // This runs per hand per frame: reuse scratch instead of allocating
+        // extra Euler/Quaternion objects during ordinary movement.
+        const r = target.handTargets?.[side]?.rotation || {};
+        scratch.authoredEuler ||= new record.THREE.Euler(0,0,0,'XYZ');
+        scratch.authoredQuaternion ||= new record.THREE.Quaternion();
+        scratch.authoredEuler.set(
+          (Number(r.x)||0)*Math.PI/180,
+          (Number(r.y)||0)*Math.PI/180,
+          (Number(r.z)||0)*Math.PI/180, 'XYZ');
+        quaternion.multiply(scratch.authoredQuaternion.setFromEuler(scratch.authoredEuler));
+      }
       const socket = handSocketAfterGripMode(record, { position, quaternion, visualBasis: null });
       record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
     };
     const owners = ensureFallbackState(record).owners;
-    if (target.mode === 'large') {
+    if (target.mode === 'authored-world') {
+      for (const side of ['right', 'left']) {
+        const p = target.handTargets?.[side] || {};
+        place(side, Number(p.x)||0, Number(p.y)||0, Number(p.z)||0, side);
+        owners[side]='authored-world-'+side;
+      }
+      record.secondaryActive=true;
+    } else if (target.mode === 'large') {
       const edge = target.width / 2 + HELD_LARGE_EDGE_MARGIN;
       place('right', edge, 0, 0, 'right');
       place('left', -edge, 0, 0, 'left');
@@ -693,10 +722,11 @@
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
+      if (record.rig.applyOwnedPose?.()) return; // A paired action retains its hand contacts through the final render-time sync too.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
-        const heldItem = playerHeldItemTarget(record);
+        const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
@@ -740,10 +770,11 @@
       }
       record._poseSyncSkipped = false;
       updateFallbackMotion(record);
+      if (record.rig.applyOwnedPose?.()) continue; // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
-        const heldItem = playerHeldItemTarget(record);
+        const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
@@ -781,6 +812,7 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
+        if(record.rig.applyOwnedPose?.()){results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
           results.push(syncCalibrationWorkspace(record, true));
         } else {

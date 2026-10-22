@@ -88,11 +88,18 @@ Object.assign(context,{
 vm.runInContext(game.slice(updateStart,game.indexOf('      updateCameraPosition();',updateStart))+'\nthis.update=updateCameraPosition;',context);
 for (const mode of ['snow','slush']) {
   if (mode === 'slush') { area='farm'; season='Coldmuck'; tick({timestamp:200}); }
+  context.cameraAngleOffsetDeg = -14;
+  context.update();
+  assert.ok(Math.abs(Math.atan2(camera.target.y-camera.position.y,Math.hypot(camera.position.x-camera.target.x,camera.position.z-camera.target.z))*180/Math.PI-5)<1e-7,
+    'cover collision preserves upward pitch when it has room behind the player');
+  context.cameraAngleOffsetDeg = -85;
   context.update();
   assert.ok(Math.abs(camera.target.y-.26)<1e-7, 'short-character pivot clears the rendered cap');
   assert.ok(camera.position.y >= api.cameraSurfaceYAt(camera.position.x,camera.position.z)+context.debug().floorClearance-1e-9);
   const pitch = Math.atan2(camera.target.y-camera.position.y,Math.hypot(camera.position.x-camera.target.x,camera.position.z-camera.target.z))*180/Math.PI; // Effective upward aim after cover collision.
-  assert.ok(Math.abs(pitch-76)<1e-7, 'cover collision preserves requested aim');
+  assert.ok(pitch > 0 && pitch < 76, 'cover limits impossible steep upward aim at the body setback');
+  assert.ok(Math.hypot(camera.position.x-camera.target.x,camera.position.z-camera.target.z) >= context.debug().minimumSetbackTiles-1e-9,
+    'snow and slush cannot push the camera inside the player');
   assert.equal(context.activeSurfaceYAtWorld(.5,.5),0, 'player ground is unchanged');
   context.activeCameraMode='seated';
   const seated = context.solve(.5,.5,.5,.5,0,.7); // A seated boom crossing the cap while its endpoint is below cover.

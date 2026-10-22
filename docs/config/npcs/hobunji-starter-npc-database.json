@@ -128,7 +128,7 @@
                         "researcher",
                         "villager"
                   ],
-                  "bio": "Mao'ao professor of Ikiology (anthropology) from the Tower of Learning in Kumapirra, drawn to the Highlands by its unstudied ruins and uncatalogued wildlife. Cheerful, a little oblivious to how remote he really is.",
+                  "bio": "Cheerful Mao'ao professor of Ikiology (anthropology), curious about the Highlands' unstudied ruins and wildlife, and a little oblivious to how remote the region is.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -414,7 +414,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>",
+                  "loreBackground": "Garanki came to the Highlands because the region has never been properly catalogued — too remote, too dangerous, and too unprofitable for most academics to bother with. He's effectively self-funding the expedition out of his Researcher's Tent and writes up every donation to mail back to the Tower. <suggestion: backstory — does he have a sponsor, a rival academic back home, or a reason this trip matters more than a normal sabbatical?>\n\nGaranki previously taught at the Tower of Learning in Kumapirra.",
                   "questHooks": [
                         "Accepts donations of Relics, Flora, Fish, and Minerals; each new donation raises the town's [Trade Value] as he mails findings back to the Tower of Learning.",
                         "<suggestion: quest design — define the donation tiers/milestones and what unlocks at each Trade Value threshold from his findings specifically>"
@@ -558,7 +558,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_garanki_gabu_gift_hint_1","text":"<Something that indicates that I love receiving herbs and potion reagents as gifts.>"},
+                                    {"id":"pe_garanki_gabu_gift_hint_2","text":"<Something that indicates that I like gifts in blue, orange, yellow colors.>"},
+                                    {"id":"pe_garanki_gabu_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -711,7 +714,7 @@
                         "farmer",
                         "villager"
                   ],
-                  "bio": "Patriarch of the Ginju farming family on the northeast edge of town — Hobunji's longest-running farm, and proud of it. Friendly to your face, but treats every good harvest you bring in as a personal challenge.",
+                  "bio": "Proud patriarch of the Ginju family, friendly but competitive about every harvest.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -981,7 +984,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "<suggestion: backstory — how Gorobi really feels about a new rival farmer arriving — does he warm up over time, and what's his own history with the land?>",
+                  "loreBackground": "<suggestion: backstory — how Gorobi really feels about a new rival farmer arriving — does he warm up over time, and what's his own history with the land?>\n\nThe Ginju family maintains Hobunji's longest-running farm on the northeast edge of town.",
                   "phrasePools": [
                         {
                               "id": "pool_gorobi_greetings",
@@ -1121,7 +1124,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_gorobi_ginju_gift_hint_1","text":"<Something that indicates that I love receiving crops as gifts.>"},
+                                    {"id":"pe_gorobi_ginju_gift_hint_2","text":"<Something that indicates that I like gifts in orange, yellow colors.>"},
+                                    {"id":"pe_gorobi_ginju_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -1274,7 +1280,7 @@
                         "farmer",
                         "villager"
                   ],
-                  "bio": "Gorobi's <suggestion: relationship — wife, sister, or business partner — the source material doesn't specify how Gikali relates to Gorobi>, kind-hearted but anxious, especially now that the farm has competition in town.",
+                  "bio": "Kind-hearted but anxious member of the Ginju farming household, especially now that the farm has new competition.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -1525,6 +1531,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
+                  "loreBackground": "<suggestion: relationship — wife, sister, or business partner — the source material doesn't specify how Gikali relates to Gorobi>",
                   "phrasePools": [
                         {
                               "id": "pool_gikali_greetings",
@@ -1664,7 +1671,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_gikali_ginju_gift_hint_1","text":"<Something that indicates that I love receiving crops as gifts.>"},
+                                    {"id":"pe_gikali_ginju_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue colors.>"},
+                                    {"id":"pe_gikali_ginju_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -2182,7 +2192,16 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_aliri_ginju_gift_hint_1","text":"<Something that indicates that I love receiving crops as gifts.>"},
+                                    {"id":"pe_aliri_ginju_gift_hint_2","text":"<Something that indicates that I like gifts in yellow colors.>"},
+                                    {"id":"pe_aliri_ginju_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"},
+                                    {"id":"pe_aliri_ginju_date_hint_1","text":"<Something that indicates that I like dancing on dates.>"},
+                                    {"id":"pe_aliri_ginju_date_hint_2","text":"<Something that indicates that I like harvesting crops on dates.>"},
+                                    {"id":"pe_aliri_ginju_date_hint_3","text":"<Something that indicates that I like petting farm animals on dates.>"},
+                                    {"id":"pe_aliri_ginju_date_hint_4","text":"<Something that indicates that I like harvesting products from livestock on dates.>"},
+                                    {"id":"pe_aliri_ginju_date_hint_5","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_aliri_ginju_date_hint_6","text":"<Something that indicates that I like cooking meals on dates.>"}
                               ]
                         },
                         {
@@ -2335,7 +2354,7 @@
                         "child",
                         "villager"
                   ],
-                  "bio": "The Ginju family's little brother — a rascal who's always getting into trouble somewhere in town. <suggestion: personality — his signature prank or running source of trouble>",
+                  "bio": "The Ginju family's mischievous little brother, always getting into trouble around town.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -2544,6 +2563,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
+                  "loreBackground": "<suggestion: personality — his signature prank or running source of trouble>",
                   "phrasePools": [
                         {
                               "id": "pool_gantami_greetings",
@@ -2650,7 +2670,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_gantami_ginju_gift_hint_1","text":"<Something that indicates that I love receiving sweets as gifts.>"},
+                                    {"id":"pe_gantami_ginju_gift_hint_2","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -2803,7 +2825,7 @@
                         "swamp resident",
                         "villager"
                   ],
-                  "bio": "Quiet, grumpy-but-restrained old Engh-sho fisherman living alone in the swamp house. <suggestion: widower status — the concept notes mark the swamp-house pair (Leaf and Pahu) as a widower and his late husband, but leave open which of the two actually died, with a note to 'swap' as needed — decide which one is deceased, or whether to keep them both alive as a couple instead>",
+                  "bio": "Quiet, grumpy-but-restrained old Engh-sho fisherman living in the swamp house.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -3187,7 +3209,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_leaf_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_leaf_gift_hint_2","text":"<Something that indicates that I like gifts in orange, yellow colors.>"},
+                                    {"id":"pe_leaf_gift_hint_3","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -3340,7 +3365,7 @@
                         "festival lover",
                         "villager"
                   ],
-                  "bio": "Old Kenkari man, silly and warm, who loves festivals and dragging Leaf out of his shell. <suggestion: widower status — see Leaf's entry — the concept notes mark one of this pair as the other's late husband; decide whether that applies to Pahu>",
+                  "bio": "Old Kenkari man, silly and warm, who loves festivals and dragging Leaf out of his shell.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -3593,6 +3618,7 @@
                               "activityLabel": "home"
                         }
                   ],
+                  "loreBackground": "<suggestion: widower status — see Leaf's entry; the source notes leave open which partner was widowed or whether both remain alive>",
                   "phrasePools": [
                         {
                               "id": "pool_pahu_greetings",
@@ -3732,7 +3758,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_pahu_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_pahu_gift_hint_2","text":"<Something that indicates that I like gifts in yellow, green, blue colors.>"},
+                                    {"id":"pe_pahu_gift_hint_3","text":"<Something that indicates that I like alcoholic drinks as gifts.>"}
                               ]
                         },
                         {
@@ -3885,7 +3914,7 @@
                         "shopkeep",
                         "villager"
                   ],
-                  "bio": "Widower running the general store almost single-handedly; warm but visibly worn down, especially since his only living family is a son who has no interest in inheriting the shop. <suggestion: backstory — how his wife died, and how long ago>",
+                  "bio": "Warm but visibly worn-down widower running the general store almost single-handedly; his son has little interest in inheriting the shop.",
                   "shopHours": "<suggestion: general store hours should be decided here>",
                   "portrait": {
                         "asset": "",
@@ -4335,7 +4364,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "Doesn't believe in Foroji's dream of being a bard — wants him to take over the store instead. <suggestion: backstory — what Furunji actually says when pressed about Foroji's music, and whether he's softening over time>",
+                  "loreBackground": "Doesn't believe in Foroji's dream of being a bard — wants him to take over the store instead. <suggestion: backstory — what Furunji actually says when pressed about Foroji's music, and whether he's softening over time>\n\n<suggestion: backstory — how Furunji's wife died, and how long ago>\n\nForoji is Furunji's only surviving family member.",
                   "phrasePools": [
                         {
                               "id": "pool_furunji_greetings",
@@ -4481,7 +4510,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_furunji_funji_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_furunji_funji_gift_hint_2","text":"<Something that indicates that I like gifts in red, orange colors.>"},
+                                    {"id":"pe_furunji_funji_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -4634,7 +4666,7 @@
                         "bard",
                         "romanceable"
                   ],
-                  "bio": "Furunji's son and heir to the general store — except he's a bard at heart with no interest in inheriting it. <suggestion: personality — his instrument/genre of choice, and what he actually dreams of beyond Hobunji>",
+                  "bio": "Furunji's son and expected heir to the general store, but a bard at heart with no interest in inheriting it.",
                   "relationship": {
                         "canBefriend": true,
                         "canDate": true,
@@ -5082,6 +5114,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
+                  "loreBackground": "<suggestion: personality — his instrument/genre of choice, and what he actually dreams of beyond Hobunji>",
                   "phrasePools": [
                         {
                               "id": "pool_foroji_greetings",
@@ -5189,7 +5222,16 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_foroji_funji_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_foroji_funji_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue colors.>"},
+                                    {"id":"pe_foroji_funji_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"},
+                                    {"id":"pe_foroji_funji_date_hint_1","text":"<Something that indicates that I like being offered drinks on dates.>"},
+                                    {"id":"pe_foroji_funji_date_hint_2","text":"<Something that indicates that I like playing the kurraya on dates.>"},
+                                    {"id":"pe_foroji_funji_date_hint_3","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_foroji_funji_date_hint_4","text":"<Something that indicates that I like petting farm animals on dates.>"},
+                                    {"id":"pe_foroji_funji_date_hint_5","text":"<Something that indicates that I like harvesting products from livestock on dates.>"},
+                                    {"id":"pe_foroji_funji_date_hint_6","text":"<Something that indicates that I like harvesting crops on dates.>"}
                               ]
                         },
                         {
@@ -5342,7 +5384,7 @@
                         "smith",
                         "villager"
                   ],
-                  "bio": "Late-middle-aged Mashtzarr smith, broad and gentle despite the trade. Fiercely protective of his adopted daughter Sloomi — losing his whole birth family to plague left him treating her like a second chance he refuses to risk losing.",
+                  "bio": "Late-middle-aged Mashtzarr smith, broad and gentle despite the trade. Fiercely protective of his adopted daughter Sloomi.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -5746,7 +5788,8 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_kzubug_gift_hint_1","text":"<Something that indicates that I love receiving minerals and ores as gifts.>"}
                               ]
                         },
                         {
@@ -6252,7 +6295,15 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_sloomi_gift_hint_1","text":"<Something that indicates that I love receiving minerals and ores as gifts.>"},
+                                    {"id":"pe_sloomi_gift_hint_2","text":"<Something that indicates that I like gifts in indigo, yellow colors.>"},
+                                    {"id":"pe_sloomi_date_hint_1","text":"<Something that indicates that I like mining ore on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_2","text":"<Something that indicates that I like chopping down trees on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_3","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_4","text":"<Something that indicates that I like opening treasure chests on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_5","text":"<Something that indicates that I like cooking meals on dates.>"},
+                                    {"id":"pe_sloomi_date_hint_6","text":"<Something that indicates that I like brewing potions on dates.>"}
                               ]
                         },
                         {
@@ -6405,7 +6456,7 @@
                         "innkeeper",
                         "villager"
                   ],
-                  "bio": "Mashtzarr barkeep and innkeeper — blunt to the point of rudeness, but never unkind underneath it. <suggestion: personality — a specific running bit or catchphrase that softens the bluntness>",
+                  "bio": "Mashtzarr barkeep and innkeeper, blunt to the point of rudeness but never unkind underneath it.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -6636,6 +6687,7 @@
                               "activityLabel": "resting"
                         }
                   ],
+                  "loreBackground": "<suggestion: personality — a specific running bit or catchphrase that softens the bluntness>",
                   "phrasePools": [
                         {
                               "id": "pool_hreesh_greetings",
@@ -6775,7 +6827,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_hreesh_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_hreesh_gift_hint_2","text":"<Something that indicates that I like gifts in orange, yellow colors.>"},
+                                    {"id":"pe_hreesh_gift_hint_3","text":"<Something that indicates that I like alcoholic drinks as gifts.>"}
                               ]
                         },
                         {
@@ -6928,7 +6983,7 @@
                         "visitor",
                         "romanceable"
                   ],
-                  "bio": "The only Slagothim trader who still bothers with Hobunji's bi-weekly sell, despite the route barely turning a profit — he keeps coming because he genuinely cares about the village. Secretly half-Slagothim nobility by blood, though almost no one here knows it.",
+                  "bio": "The only Slagothim trader still making the barely-profitable bi-weekly journey to Hobunji, because he genuinely cares about its people.",
                   "relationship": {
                         "canBefriend": true,
                         "canDate": true,
@@ -7151,7 +7206,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "Full secret backstory shared with Kzubug's entry: Jubmir is Sloomi's half-brother, son of the trader Slorik and a Doromabi he was chosen to mate with. After Slorik died eloping with Yanmira (Sloomi's mother), Jubmir carried infant Sloomi to safety, arranged for her to be raised by Kzubug, and returned alone to his Doro. Sloomi does not know this; Jubmir does, and it's the core reason he keeps risking the unprofitable trade route to Hobunji. He's also secretly protecting the Hakaru twins: he buys newspapers from other traders at an inflated price, resells them after removing any mention of the twins' bounty, and Father Hunundi quietly reimburses part of his losses out of his own temple salary. <suggestion: backstory — what Jubmir's life is like back among the Slagothim — does he have his own Doro/family obligations waiting, and does he resent them?>",
+                  "loreBackground": "Full secret backstory shared with Kzubug's entry: Jubmir is Sloomi's half-brother, son of the trader Slorik and a Doromabi he was chosen to mate with. After Slorik died eloping with Yanmira (Sloomi's mother), Jubmir carried infant Sloomi to safety, arranged for her to be raised by Kzubug, and returned alone to his Doro. Sloomi does not know this; Jubmir does, and it's the core reason he keeps risking the unprofitable trade route to Hobunji. He's also secretly protecting the Hakaru twins: he buys newspapers from other traders at an inflated price, resells them after removing any mention of the twins' bounty, and Father Hunundi quietly reimburses part of his losses out of his own temple salary. <suggestion: backstory — what Jubmir's life is like back among the Slagothim — does he have his own Doro/family obligations waiting, and does he resent them?>\n\nJubmir is secretly of half-Slagothim noble blood, although almost nobody in Hobunji knows it.",
                   "questHooks": [
                         "Currently the only trader willing to make the Hobunji run; stays only 2 days a week and sells on a bi-weekly cycle at game start.",
                         "His visit frequency and time spent in town scale up with the town's [Trade Value] — eventually attracting other Slagothim traders too.",
@@ -7264,7 +7319,14 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_jubmir_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_jubmir_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue, orange, yellow colors.>"},
+                                    {"id":"pe_jubmir_date_hint_1","text":"<Something that indicates that I like being offered drinks on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_2","text":"<Something that indicates that I like petting animals on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_3","text":"<Something that indicates that I like harvesting products from livestock on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_4","text":"<Something that indicates that I like gathering herbs on dates.>"},
+                                    {"id":"pe_jubmir_date_hint_5","text":"<Something that indicates that I like cooking meals on dates.>"}
                               ]
                         },
                         {
@@ -7385,7 +7447,7 @@
                         "priest",
                         "villager"
                   ],
-                  "bio": "Late middle-aged Life Priest who runs the village's morning service on <suggestion: schedule — the design notes literally leave this weekday blank — pick one>. Gentle and quietly protective of anyone in trouble, including the Hakaru twins.",
+                  "bio": "Late-middle-aged Life Priest who leads the village's morning service, gentle and quietly protective of people in trouble, including the Hakaru twins.",
                   "appearance": {
                         "speciesId": "mao-ao",
                         "gender": "male",
@@ -7709,7 +7771,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "Shelters the wanted Hakaru twins (Namu'i and Taku'a) at the temple and actively works with Jubmir to keep news of their bounty from reaching the villagers — Jubmir overpays for newspapers elsewhere and resells them with the bounty mentions removed, and Father Hunundi reimburses part of that loss out of his own salary. Also present (but not leading) during Eldress Teacup's nightly spirit communion services for the Engh-sho villagers, mostly to keep the other races at ease. <suggestion: backstory — how he first found the twins / decided to protect them, and how long this arrangement with Jubmir has been running>",
+                  "loreBackground": "Shelters the wanted Hakaru twins (Namu'i and Taku'a) at the temple and actively works with Jubmir to keep news of their bounty from reaching the villagers — Jubmir overpays for newspapers elsewhere and resells them with the bounty mentions removed, and Father Hunundi reimburses part of that loss out of his own salary. Also present (but not leading) during Eldress Teacup's nightly spirit communion services for the Engh-sho villagers, mostly to keep the other races at ease. <suggestion: backstory — how he first found the twins / decided to protect them, and how long this arrangement with Jubmir has been running>\n\n<suggestion: schedule — the design notes leave the weekday of his morning service blank; pick one>",
                   "questHooks": [
                         "<suggestion: quest design — does the player ever learn about the twins' bounty / the Jubmir arrangement through Father Hunundi specifically, or only through the twins themselves?>"
                   ],
@@ -7852,7 +7914,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_father_hunundi_hodu_gift_hint_1","text":"<Something that indicates that I love receiving medicines as gifts.>"},
+                                    {"id":"pe_father_hunundi_hodu_gift_hint_2","text":"<Something that indicates that I like gifts in yellow, green, orange colors.>"},
+                                    {"id":"pe_father_hunundi_hodu_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -8004,7 +8069,7 @@
                         "temple",
                         "romanceable"
                   ],
-                  "bio": "Long-orphaned Kenkari twin who came to Hobunji looking for a normal life. Wanted, with a sizable bounty on her head, but truly wants to live an honest life rather than run from it.",
+                  "bio": "Wanted Kenkari twin with a sizable bounty on her head who longs for an honest, ordinary life.",
                   "relationship": {
                         "canBefriend": true,
                         "canDate": true,
@@ -8243,7 +8308,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "Staying at the temple under Father Hunundi's protection alongside her brother Taku'a. Most villagers are wary rather than hateful — they just won't risk hiring a suspected criminal — except Kinami Kunji, who has it out for her specifically. <suggestion: backstory — what she and Taku'a actually did to earn the bounty, and how large it is>",
+                  "loreBackground": "Staying at the temple under Father Hunundi's protection alongside her brother Taku'a. Most villagers are wary rather than hateful — they just won't risk hiring a suspected criminal — except Kinami Kunji, who has it out for her specifically. <suggestion: backstory — what she and Taku'a actually did to earn the bounty, and how large it is>\n\nNamu'i and her twin brother Taku'a were orphaned long ago; she came to Hobunji looking for a normal life instead of remaining on the run.",
                   "questHooks": [
                         "<suggestion: quest design — what kind of work would let her start paying off her own bounty, and what happens once it's paid>"
                   ],
@@ -8386,7 +8451,16 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_namui_u_hakaru_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_namui_u_hakaru_gift_hint_2","text":"<Something that indicates that I like gifts in orange, yellow, blue colors.>"},
+                                    {"id":"pe_namui_u_hakaru_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"},
+                                    {"id":"pe_namui_u_hakaru_date_hint_1","text":"<Something that indicates that I like hunting creatures that are not barbarians on dates.>"},
+                                    {"id":"pe_namui_u_hakaru_date_hint_2","text":"<Something that indicates that I like fishing on dates.>"},
+                                    {"id":"pe_namui_u_hakaru_date_hint_3","text":"<Something that indicates that I like opening treasure chests on dates.>"},
+                                    {"id":"pe_namui_u_hakaru_date_hint_4","text":"<Something that indicates that I like cooking meals on dates.>"},
+                                    {"id":"pe_namui_u_hakaru_date_hint_5","text":"<Something that indicates that I like being offered drinks on dates.>"},
+                                    {"id":"pe_namui_u_hakaru_date_hint_6","text":"<Something that indicates that I like dancing on dates.>"}
                               ]
                         },
                         {
@@ -8570,7 +8644,7 @@
                         "temple",
                         "romanceable"
                   ],
-                  "bio": "Long-orphaned Kenkari twin, brother to Namu'i. Wanted alongside her, hoping to find honest work to pay off his own bounty. Becomes the village's miner once the Old Mine's first layer is cleared.",
+                  "bio": "Wanted Kenkari twin, brother to Namu'i, hoping to find honest work to pay off his bounty.",
                   "relationship": {
                         "canBefriend": true,
                         "canDate": true,
@@ -8817,7 +8891,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "<suggestion: backstory — what specifically drives Taku'a toward mining once given the chance, and how that differs from Namu'i's path>",
+                  "loreBackground": "<suggestion: backstory — what specifically drives Taku'a toward mining once given the chance, and how that differs from Namu'i's path>\n\nTaku'a and his twin sister Namu'i were orphaned long ago and came to Hobunji looking for a normal life. He becomes the village's miner once the Old Mine's first layer is cleared.",
                   "questHooks": [
                         "Becomes the village miner NPC after the Old Mine's layers 1–20 boss is cleared and the tunnel collapse opens the next layer."
                   ],
@@ -8960,7 +9034,14 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_takua_ao_hakaru_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_takua_ao_hakaru_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue colors.>"},
+                                    {"id":"pe_takua_ao_hakaru_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"},
+                                    {"id":"pe_takua_ao_hakaru_date_hint_1","text":"<Something that indicates that I like hunting creatures that are not barbarians on dates.>"},
+                                    {"id":"pe_takua_ao_hakaru_date_hint_2","text":"<Something that indicates that I like fishing on dates.>"},
+                                    {"id":"pe_takua_ao_hakaru_date_hint_3","text":"<Something that indicates that I like opening treasure chests on dates.>"},
+                                    {"id":"pe_takua_ao_hakaru_date_hint_4","text":"<Something that indicates that I like being offered drinks on dates.>"}
                               ]
                         },
                         {
@@ -9113,7 +9194,7 @@
                         "potion shop resident",
                         "villager"
                   ],
-                  "bio": "Old man at the Potion Shop; kind-hearted and giving by nature, and lets his wife Kinami boss him around without complaint. He and Kinami had a falling out a few years ago and now avoid sharing a room except at dinner and bedtime.",
+                  "bio": "Kind-hearted old Potion Shop resident, generous and uncomplaining even when his wife Kinami bosses him around.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -9441,7 +9522,7 @@
                               "activityLabel": "sleeping upstairs"
                         }
                   ],
-                  "loreBackground": "<suggestion: backstory — what the falling out was actually about, and whether his passivity is contentment, exhaustion, or something sadder>",
+                  "loreBackground": "<suggestion: backstory — what the falling out was actually about, and whether his passivity is contentment, exhaustion, or something sadder>\n\nKaboku and Kinami had a falling out a few years ago; now they avoid sharing a room except at dinner and bedtime.",
                   "phrasePools": [
                         {
                               "id": "pool_kaboku_greetings",
@@ -9590,7 +9671,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_kaboku_kunji_gift_hint_1","text":"<Something that indicates that I love receiving herbs and potion reagents as gifts.>"},
+                                    {"id":"pe_kaboku_kunji_gift_hint_2","text":"<Something that indicates that I like gifts in yellow, green colors.>"},
+                                    {"id":"pe_kaboku_kunji_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -9743,7 +9827,7 @@
                         "potion shop resident",
                         "villager"
                   ],
-                  "bio": "Potion Shop resident; spiteful, racist, and an inveterate gossip who bosses her husband Kaboku around. Has a particular vendetta against the Hakaru twins. She and Kaboku had a falling out a few years ago and now avoid sharing a room except at dinner and bedtime.",
+                  "bio": "Spiteful, racist Potion Shop resident and inveterate gossip who bosses around her husband Kaboku and has a particular vendetta against the Hakaru twins.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -10067,7 +10151,7 @@
                               "activityLabel": "sleeping upstairs"
                         }
                   ],
-                  "loreBackground": "The strongest voice of suspicion against Namu'i and Taku'a Hakaru — her instincts about them happen to be correct (they are wanted thieves), which only fuels her certainty about everyone else she distrusts. <suggestion: backstory — what specifically she says about other races/villagers, calibrated to be hateful without making her a cartoon — and whether anyone in town ever pushes back on her>",
+                  "loreBackground": "The strongest voice of suspicion against Namu'i and Taku'a Hakaru — her instincts about them happen to be correct (they are wanted thieves), which only fuels her certainty about everyone else she distrusts. <suggestion: backstory — what specifically she says about other races/villagers, calibrated to be hateful without making her a cartoon — and whether anyone in town ever pushes back on her>\n\nKinami and Kaboku had a falling out a few years ago; now they avoid sharing a room except at dinner and bedtime.",
                   "phrasePools": [
                         {
                               "id": "pool_kinami_greetings",
@@ -10212,7 +10296,10 @@
                                                       "max": 5
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_kinami_kunji_gift_hint_1","text":"<Something that indicates that I love receiving herbs and potion reagents as gifts.>"},
+                                    {"id":"pe_kinami_kunji_gift_hint_2","text":"<Something that indicates that I like gifts in indigo, violet colors.>"},
+                                    {"id":"pe_kinami_kunji_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -10401,7 +10488,7 @@
                         "carpenter",
                         "villager"
                   ],
-                  "bio": "Carpenter. Design doc gives house-building family history dialogue.",
+                  "bio": "Carpenter in Hobunji's Khibu household.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -10674,6 +10761,7 @@
                               "activityLabel": "sleeping upstairs"
                         }
                   ],
+                  "loreBackground": "The design document provides house-building family-history dialogue for Dzibim; preserve this as backstory until it can be written as spoken dialogue.",
                   "phrasePools": [
                         {
                               "id": "pool_dzibim_greetings",
@@ -10813,7 +10901,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_dzibim_khibu_gift_hint_1","text":"<Something that indicates that I love receiving wooden goods as gifts.>"},
+                                    {"id":"pe_dzibim_khibu_gift_hint_2","text":"<Something that indicates that I like gifts in blue, indigo, yellow, green colors.>"}
                               ]
                         },
                         {
@@ -10966,7 +11056,7 @@
                         "carpenter / roofing family connection",
                         "villager"
                   ],
-                  "bio": "Carpenter’s household. Connected to Dzibim and the old Manji roofing side by the provided Dzibim line.",
+                  "bio": "Member of Dzibim's carpentry household.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -11197,6 +11287,7 @@
                               "activityLabel": "sleeping upstairs"
                         }
                   ],
+                  "loreBackground": "Dzahiri is connected to Dzibim and the old Manji roofing side through an existing Dzibim dialogue line.",
                   "phrasePools": [
                         {
                               "id": "pool_dzahiri_greetings",
@@ -11336,7 +11427,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_dzahiri_khibu_gift_hint_1","text":"<Something that indicates that I love receiving wooden goods as gifts.>"},
+                                    {"id":"pe_dzahiri_khibu_gift_hint_2","text":"<Something that indicates that I like gifts in blue, yellow colors.>"},
+                                    {"id":"pe_dzahiri_khibu_gift_hint_3","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {
@@ -11489,7 +11583,7 @@
                         "carpenter household member",
                         "villager"
                   ],
-                  "bio": "Named under Carpenter’s; no further details provided.",
+                  "bio": "Member of the carpenter's household.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -11716,6 +11810,7 @@
                               "activityLabel": "sleeping upstairs"
                         }
                   ],
+                  "loreBackground": "Nashka is named under the Carpenter's household; no further details were provided in the design notes.",
                   "phrasePools": [
                         {
                               "id": "pool_nashka_greetings",
@@ -11857,7 +11952,13 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_nashka_khibu_gift_hint_1","text":"<Something that indicates that I love receiving wooden goods as gifts.>"},
+                                    {"id":"pe_nashka_khibu_gift_hint_2","text":"<Something that indicates that I like gifts in indigo colors.>"},
+                                    {"id":"pe_nashka_khibu_date_hint_1","text":"<Something that indicates that I like chopping down trees on dates.>"},
+                                    {"id":"pe_nashka_khibu_date_hint_2","text":"<Something that indicates that I like breaking rocks on dates.>"},
+                                    {"id":"pe_nashka_khibu_date_hint_3","text":"<Something that indicates that I like opening treasure chests on dates.>"},
+                                    {"id":"pe_nashka_khibu_date_hint_4","text":"<Something that indicates that I like defeating bandits or predators on dates.>"}
                               ]
                         },
                         {
@@ -12362,7 +12463,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_teacup_unumanuk_gift_hint_1","text":"<Something that indicates that I love receiving medicines as gifts.>"},
+                                    {"id":"pe_teacup_unumanuk_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue colors.>"},
+                                    {"id":"pe_teacup_unumanuk_gift_hint_3","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -12515,7 +12619,7 @@
                         "farm worker",
                         "villager"
                   ],
-                  "bio": "Single mother whose husband died fighting off the wyrm. Works on Ginju farm to support family and establish themselves as welcome residents.",
+                  "bio": "Single mother working on the Ginju farm to support her family and establish themselves as welcome residents.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -12751,6 +12855,7 @@
                               "activityLabel": "resting at home"
                         }
                   ],
+                  "loreBackground": "Binding's husband died fighting off the wyrm.",
                   "phrasePools": [
                         {
                               "id": "pool_binding_greetings",
@@ -12890,7 +12995,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_binding_hatayap_gift_hint_1","text":"<Something that indicates that I love receiving crops as gifts.>"},
+                                    {"id":"pe_binding_hatayap_gift_hint_2","text":"<Something that indicates that I like gifts in blue, green colors.>"},
+                                    {"id":"pe_binding_hatayap_gift_hint_3","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -13470,7 +13578,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_spearhead_unumanuk_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_spearhead_unumanuk_gift_hint_2","text":"<Something that indicates that I like gifts in orange, yellow colors.>"},
+                                    {"id":"pe_spearhead_unumanuk_gift_hint_3","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -13623,7 +13734,7 @@
                         "single member of the Watch",
                         "villager"
                   ],
-                  "bio": "Only Watch member. Thinks his name means more than being a fighter. Loves animals and wants to train them to protect town; father thinks that is stupid and dangerous. Found claw came from invasive Nazgraku, escaped mounts of the thwarted Cleaver’s Edge horde.",
+                  "bio": "Only member of the Watch under his father Spearhead; he loves animals and wants to train them to protect the town, which his father believes is dangerous. Believes his name means more than being a fighter.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -13915,7 +14026,7 @@
                               "activityLabel": "home"
                         }
                   ],
-                  "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.",
+                  "loreBackground": "The Unumanuk household is crammed well past what it was built for — three generations of Unumanuks plus <suggestion: household detail — which other displaced/immigrant families share the house, and why they ended up here> share the single building, with most of the floor given over to bedrolls rather than beds.\n\nOddclaw's found claw came from an invasive Nazgraku, one of the escaped mounts of the thwarted Cleaver's Edge horde.",
                   "phrasePools": [
                         {
                               "id": "pool_oddclaw_greetings",
@@ -14055,7 +14166,15 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_oddclaw_unumanuk_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_oddclaw_unumanuk_gift_hint_2","text":"<Something that indicates that I like gifts in green, yellow, blue colors.>"},
+                                    {"id":"pe_oddclaw_unumanuk_gift_hint_3","text":"<Something that indicates that I like meat dishes as gifts.>"},
+                                    {"id":"pe_oddclaw_unumanuk_date_hint_1","text":"<Something that indicates that I like fighting bandits on dates.>"},
+                                    {"id":"pe_oddclaw_unumanuk_date_hint_2","text":"<Something that indicates that I like taking eggs from nests on dates.>"},
+                                    {"id":"pe_oddclaw_unumanuk_date_hint_3","text":"<Something that indicates that I like petting farm animals on dates.>"},
+                                    {"id":"pe_oddclaw_unumanuk_date_hint_4","text":"<Something that indicates that I like harvesting products from livestock on dates.>"},
+                                    {"id":"pe_oddclaw_unumanuk_date_hint_5","text":"<Something that indicates that I like digging up buried treasure on dates.>"}
                               ]
                         },
                         {
@@ -14208,7 +14327,7 @@
                         "waitress",
                         "villager"
                   ],
-                  "bio": "Waitress. Binding’s husband’s sister’s daughter; Spearhead’s sister’s husband’s sister’s daughter; Oddclaw’s aunt’s husband’s sister’s daughter. Once held Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
+                  "bio": "Waitress in Hobunji's inn and member of the Hatayap family.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -14494,6 +14613,7 @@
                               "activityLabel": "resting at home"
                         }
                   ],
+                  "loreBackground": "Tooth is Binding's husband's sister's daughter, Spearhead's sister's husband's sister's daughter, and Oddclaw's aunt's husband's sister's daughter. She formerly bore the Tuhupnuk surname before Hammerhead murdered Sand and was banished.",
                   "phrasePools": [
                         {
                               "id": "pool_tooth_greetings",
@@ -14633,7 +14753,15 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_tooth_hatayap_gift_hint_1","text":"<Something that indicates that I love receiving food as gifts.>"},
+                                    {"id":"pe_tooth_hatayap_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue, violet, indigo colors.>"},
+                                    {"id":"pe_tooth_hatayap_gift_hint_3","text":"<Something that indicates that I like meat dishes as gifts.>"},
+                                    {"id":"pe_tooth_hatayap_gift_hint_4","text":"<Something that indicates that I like alcoholic drinks as gifts.>"},
+                                    {"id":"pe_tooth_hatayap_date_hint_1","text":"<Something that indicates that I like fishing on dates.>"},
+                                    {"id":"pe_tooth_hatayap_date_hint_2","text":"<Something that indicates that I like being offered drinks on dates.>"},
+                                    {"id":"pe_tooth_hatayap_date_hint_3","text":"<Something that indicates that I like dancing on dates.>"},
+                                    {"id":"pe_tooth_hatayap_date_hint_4","text":"<Something that indicates that I like hunting creatures that are not barbarians on dates.>"}
                               ]
                         },
                         {
@@ -14786,7 +14914,7 @@
                         "bonehewer / banished",
                         "villager"
                   ],
-                  "bio": "Bonehewer who murdered his brother Sand and was banished.",
+                  "bio": "Banished bonehewer.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -14944,6 +15072,7 @@
                               "r": 15
                         }
                   },
+                  "loreBackground": "Hammerhead murdered his brother Sand and was banished for it.",
                   "phrasePools": [
                         {
                               "id": "pool_hammerhead_greetings",
@@ -15083,7 +15212,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_hammerhead_tuhupnuk_gift_hint_1","text":"<Something that indicates that I love receiving minerals and ores as gifts.>"},
+                                    {"id":"pe_hammerhead_tuhupnuk_gift_hint_2","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -15236,7 +15367,7 @@
                         "deceased snow-watcher",
                         "villager"
                   ],
-                  "bio": "Binding’s husband. Village snow-watcher who sacrificed himself to distract the wyrm.",
+                  "bio": "Deceased village snow-watcher and Binding's husband.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -15391,6 +15522,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "No schedule authored yet — this NPC never spawns (resolveNpcScheduleTarget has nothing to resolve to)."
                   },
+                  "loreBackground": "Talisman sacrificed himself to distract the wyrm.",
                   "phrasePools": [
                         {
                               "id": "pool_talisman_greetings",
@@ -15530,7 +15662,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_talisman_hatayap_gift_hint_1","text":"<Something that indicates that I love receiving herbs and potion reagents as gifts.>"},
+                                    {"id":"pe_talisman_hatayap_gift_hint_2","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -15683,7 +15817,7 @@
                         "deceased bowyer",
                         "villager"
                   ],
-                  "bio": "A bowyer who helped her brother distract the Wyrm using one of her bows in her last moments.",
+                  "bio": "Deceased bowyer, sister of Talisman.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -15838,6 +15972,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "No schedule authored yet — this NPC never spawns (resolveNpcScheduleTarget has nothing to resolve to)."
                   },
+                  "loreBackground": "Bowstring helped her brother distract the wyrm with one of her bows in her last moments.",
                   "phrasePools": [
                         {
                               "id": "pool_bowstring_greetings",
@@ -15977,7 +16112,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_bowstring_hatayap_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_bowstring_hatayap_gift_hint_2","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -16130,7 +16267,7 @@
                         "romanceable",
                         "villager"
                   ],
-                  "bio": "Engh-sho hunter who supplies game, hides, and the rare animal parts Mother Rahayobi's potion recipes call for. <suggestion: personality — design doc only specifies 'marriageable' — needs a voice>",
+                  "bio": "Engh-sho hunter who supplies game, hides, and rare animal parts for Mother Rahayobi's potion recipes.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -16299,6 +16436,7 @@
                         "Sells rare animal parts directly (at a steep price) for Mother Rahayobi's multi-mixture potion quest.",
                         "<suggestion: shop design — his full price list, which parts he stocks vs. which the player must hunt personally>"
                   ],
+                  "loreBackground": "<suggestion: personality — design doc only specifies 'marriageable'; Bird Bone still needs a distinctive voice>",
                   "phrasePools": [
                         {
                               "id": "pool_bird_bone_greetings",
@@ -16438,7 +16576,10 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_bird_bone_gift_hint_1","text":"<Something that indicates that I love receiving animal products as gifts.>"},
+                                    {"id":"pe_bird_bone_gift_hint_2","text":"<Something that indicates that I like meat dishes as gifts.>"},
+                                    {"id":"pe_bird_bone_date_hint_1","text":"<TODO: Configure my liked date activities in romance.likes, then write a dialogue hint.>"}
                               ]
                         },
                         {
@@ -16591,7 +16732,7 @@
                         "romanceable",
                         "villager"
                   ],
-                  "bio": "Young Mashtzarr woodcutter. <suggestion: personality/voice — design doc only specifies 'younger, marriageable Mashtzarr' — needs a personality>",
+                  "bio": "Young Mashtzarr woodcutter.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -16747,6 +16888,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
                   },
+                  "loreBackground": "<suggestion: personality/voice — design doc only specifies 'younger, marriageable Mashtzarr'; Khazud needs a personality>",
                   "phrasePools": [
                         {
                               "id": "pool_khazud_greetings",
@@ -16886,7 +17028,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_khazud_gift_hint_1","text":"<Something that indicates that I love receiving wooden goods as gifts.>"},
+                                    {"id":"pe_khazud_date_hint_1","text":"<TODO: Configure my liked date activities in romance.likes, then write a dialogue hint.>"}
                               ]
                         },
                         {
@@ -17950,7 +18094,7 @@
                         "quest_giver",
                         "ghost_army"
                   ],
-                  "bio": "The Sleeping Grehlr — a Great Fey that formed in proximity to people and was shaped by their thoughts into a perpetually sleepy creature. Banubu's sleepiness is intrinsic to what he is, not a biological need; he has no ordinary waking routine or hunger cycle.",
+                  "bio": "The Sleeping Grehlr: a Great Fey that remains asleep in its northern-cliff cavern without an ordinary waking routine or hunger cycle.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -18053,7 +18197,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
                   },
-                  "loreBackground": "Fey generation is a natural phenomenon. Most fey form as mindless wisps, but those that generate near people can be shaped by nearby thoughts and ideas. Banubu became the Sleeping Grehlr and remains asleep indefinitely in his northern-cliff cavern. He teaches Three-Fish Pie first, then Nine Leaf Tea made from three Tea Blends and White Milk. Quests three through five are intentionally blocked until authored.",
+                  "loreBackground": "Fey generation is a natural phenomenon. Most fey form as mindless wisps, but those that generate near people can be shaped by nearby thoughts and ideas. Banubu became the Sleeping Grehlr and remains asleep indefinitely in his northern-cliff cavern. He teaches Three-Fish Pie first, then Nine Leaf Tea made from three Tea Blends and White Milk. Quests three through five are intentionally blocked until authored.\n\nBanubu's sleepiness is intrinsic to his nature rather than a biological need.",
                   "questHooks": [
                         "First conversation teaches the locked Three-Fish Pie template and requests exactly three craftable food buffs.",
                         "Quest 1 grants the character-scoped War-Paint Kit, the Nine Leaf Tea recipe, and Banubu's Tea Grinder.",
@@ -18531,7 +18675,7 @@
                         "tribal_war",
                         "quest_giver"
                   ],
-                  "bio": "Leader of the Baruhi, one of the two tribes locked in a long-running war over <suggestion: war cause — the design doc names the conflict but not the specific cause — land, a resource, an old grudge?>.",
+                  "bio": "Leader of the Baruhi, one of two tribes engaged in a long-running war.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -18687,7 +18831,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
                   },
-                  "loreBackground": "The Baruhi/Porakaneki war is a major subplot the player can get drawn into, possibly choosing a side or brokering peace. <suggestion: plot design — what triggers player involvement, whether peace is achievable, what each side wants, and how this ties (if at all) to the Company's Trade Shortage crisis or the Ghost Army>",
+                  "loreBackground": "The Baruhi/Porakaneki war is a major subplot the player can get drawn into, possibly choosing a side or brokering peace. <suggestion: plot design — what triggers player involvement, whether peace is achievable, what each side wants, and how this ties (if at all) to the Company's Trade Shortage crisis or the Ghost Army>\n\n<suggestion: war cause — the source material does not specify why the Baruhi and Porakaneki are at war: land, a resource, or an old grudge?>",
                   "questHooks": [
                         "<suggestion: quest design — an introductory quest where the player first encounters the Baruhi side of the conflict>",
                         "<suggestion: quest design — whether the player can ally with, betray, or make peace between the Baruhi and Porakaneki>"
@@ -18831,7 +18975,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_baruhi_chief_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_baruhi_chief_gift_hint_2","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -18984,7 +19130,7 @@
                         "tribal_war",
                         "quest_giver"
                   ],
-                  "bio": "Leader of the Porakaneki, the tribe opposing the Baruhi in a long-running war over <suggestion: war cause — the design doc names the conflict but not the specific cause>.",
+                  "bio": "Leader of the Porakaneki, opposed to the Baruhi in a long-running war.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -19140,7 +19286,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
                   },
-                  "loreBackground": "Mirror counterpart to the Baruhi chief. <suggestion: plot design — the Porakaneki's side of the grievance, whether it's morally one-sided or genuinely two-sided, and what resolution (victory/peace/mutual destruction) the design intends>",
+                  "loreBackground": "Mirror counterpart to the Baruhi chief. <suggestion: plot design — the Porakaneki's side of the grievance, whether it's morally one-sided or genuinely two-sided, and what resolution (victory/peace/mutual destruction) the design intends>\n\n<suggestion: war cause — the source material does not specify why the Porakaneki and Baruhi are at war>",
                   "questHooks": [
                         "<suggestion: quest design — an introductory quest where the player first encounters the Porakaneki side of the conflict>",
                         "<suggestion: quest design — whether siding with the Porakaneki forecloses the Baruhi questline or vice versa>"
@@ -19284,7 +19430,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_porakaneki_chief_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_porakaneki_chief_gift_hint_2","text":"<Something that indicates that I like meat dishes as gifts.>"}
                               ]
                         },
                         {
@@ -19438,7 +19586,7 @@
                         "jojamart_analog",
                         "trade_shortage"
                   ],
-                  "bio": "Surveyor Harkhanash is the Imperial Khanibarri Mining Company's local representative. He arrives while the injured player is being questioned in Father Hunundi's room, looking for whoever can speak for Hobunji Hollow. He argues that the ore beneath the settlement makes a company buyout sensible, and treats the village's isolation, the feared ghost army, bandit clans, and the barbarian war as leverage for persuading residents to sell.",
+                  "bio": "Surveyor Harkhanash, local representative of the Imperial Khanibarri Mining Company. Sees the ore beneath Hobunji as leverage for a company buyout.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -19788,7 +19936,7 @@
                         ],
                         "defaultStationId": "station_k7m3q"
                   },
-                  "loreBackground": "Surveyor Harkhanash represents the Imperial Khanibarri Mining Company, usually called the Company. The Khanibarri Empire is a separate entity. The Company's name carries royal approval obtained through dealings the king later regretted, while the Company conducts dubious business across the continent. Father Hunundi leaves the sale to the townsfolk and permits Harkhanash to make his case individually.",
+                  "loreBackground": "Surveyor Harkhanash represents the Imperial Khanibarri Mining Company, usually called the Company. The Khanibarri Empire is a separate entity. The Company's name carries royal approval obtained through dealings the king later regretted, while the Company conducts dubious business across the continent. Father Hunundi leaves the sale to the townsfolk and permits Harkhanash to make his case individually.\n\nHarkhanash arrives while the injured player is being questioned in Father Hunundi's room, seeking whoever can speak for Hobunji Hollow. He argues for selling to the Company, citing the settlement's isolation, the ghost army, bandit clans, and the barbarian war as leverage.",
                   "questHooks": [
                         "Opening story: Harkhanash presents the Company's offer to buy Hobunji Hollow after company surveys identify a major ore body beneath the settlement.",
                         "Father Hunundi permits Harkhanash to remain in town and try to persuade residents individually, making him the persistent local face of the company.",
@@ -19933,7 +20081,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_khannibarri_agent_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_khannibarri_agent_gift_hint_2","text":"<Something that indicates that I like gifts in green, blue, orange, yellow colors.>"}
                               ]
                         },
                         {
@@ -20225,7 +20375,7 @@
                         "trade_shortage",
                         "infested_mine"
                   ],
-                  "bio": "The village's civic leader. <suggestion: characterization — design doc only establishes that this person tells the Imperial Khanibarri Mining Company about the old mine — is this a betrayal, desperation during the Trade Shortage, naivety, or something more sympathetic?>",
+                  "bio": "Hobunji's civic leader.",
                   "portrait": {
                         "asset": "",
                         "avatarKey": ""
@@ -20381,7 +20531,7 @@
                         "contentIncomplete": true,
                         "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
                   },
-                  "loreBackground": "Pivotal to the Trade Shortage/Infested Old Mine crossover: this elder is the one who informs the Imperial Khanibarri Mining Company about the Infested Old Mine's existence, setting the company's sights on it. <suggestion: plot design — the elder's motive for telling them, whether the player can prevent/discover this beforehand, and the fallout once it's known>",
+                  "loreBackground": "Pivotal to the Trade Shortage/Infested Old Mine crossover: this elder is the one who informs the Imperial Khanibarri Mining Company about the Infested Old Mine's existence, setting the company's sights on it. <suggestion: plot design — the elder's motive for telling them, whether the player can prevent/discover this beforehand, and the fallout once it's known>\n\n<suggestion: characterization — the source material says this elder tells the Imperial Khanibarri Mining Company about the old mine but does not specify whether the motive is betrayal, desperation during the Trade Shortage, naivety, or something more sympathetic>",
                   "questHooks": [
                         "<suggestion: quest design — a quest or revelation where the player learns the elder tipped off the Mining Company>",
                         "<suggestion: quest design — whether the player can confront, forgive, or expose the elder, and what consequences follow>"
@@ -20525,7 +20675,9 @@
                                                       "max": null
                                                 }
                                           }
-                                    }
+                                    },
+                                    {"id":"pe_village_elder_gift_hint_1","text":"<Something that indicates that I love receiving valuable treasures as gifts.>"},
+                                    {"id":"pe_village_elder_gift_hint_2","text":"<Something that indicates that I like fish dishes as gifts.>"}
                               ]
                         },
                         {

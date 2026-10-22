@@ -8,6 +8,7 @@
 
   const HANDOFF_DURATION_S = 0.34;
   const activeInteractions = new Set(); // Advanced by update() and exposed through getDebug().
+  const heldTargets = new WeakMap(); // Root-keyed hand targets let the shared procedural hand driver follow NPC bowls/bottles without crowd scans.
   const ambientCarries = new Map(); // Reuses the drink-neutral bottle pose for persistent NPC-held bottles such as Tooth's nighttime carry.
   let deps = null; // Populated once by init() with game-owned rendering/state adapters.
 
@@ -50,6 +51,7 @@
 
   function disposeAmbientCarry(carry) {
     if (!carry) return;
+    if (heldTargets.get(carry.root)?.holder === carry.holder) heldTargets.delete(carry.root);
     carry.holder?.parent?.remove?.(carry.holder);
     deps?.disposeBottlePlane?.(carry.bottlePlane, carry.holder);
   }
@@ -119,7 +121,7 @@
     const { THREE } = deps;
     const holder = new THREE.Group(); // Persistent local-space bottle holder; posed once below against the hand anchor, which doesn't move while attached.
     holder.name = `npc_ambient_drink_holder_${key}`;
-    const bottlePlane = deps.makeBottlePlane?.({ key: itemKey, icon: itemDef.icon, label: itemDef.label });
+    const bottlePlane = deps.makeBottlePlane?.({ ...itemDef, key: itemKey });
     if (!bottlePlane) return false;
     holder.add(bottlePlane);
     (avatarGroup.userData?.proceduralHandParent || root).add(holder);
@@ -134,9 +136,22 @@
       poseQuaternion: makePoseQuaternion(THREE),
     };
     ambientCarries.set(key, carry);
+    publishHandTarget(root,holder,bottlePlane);
     applyHolderPose(carry, neutralPose);
     log(`NPC ambient bottle start: owner=${key} item=${itemKey}`);
     return true;
+  }
+
+  function publishHandTarget(root, holder, plane) {
+    heldTargets.set(root,{holder,plane,mode:'bottle',width:.2,height:.2,neckFraction:.2}); // Same grip contract used by player held-item animation.
+  }
+  function heldItemTarget(root) {
+    const target = root && heldTargets.get(root); // Called by the existing hand driver; no allocations or scene searches.
+    if (!target?.holder?.parent) return null;
+    const geometry = target.plane?.geometry?.parameters;
+    target.width = (geometry?.width||.2)*(target.plane?.scale.x||1);
+    target.height = (geometry?.height||.2)*(target.plane?.scale.y||1);
+    return target;
   }
 
   function applyDrinkEffect(interaction) {
@@ -154,12 +169,12 @@
     interaction.finished = true;
     if (reason === 'complete') applyDrinkEffect(interaction);
     interaction.walker.root.rotation.y = interaction.baseNpcFacing;
+    if (heldTargets.get(interaction.walker.root)?.holder === interaction.holder) heldTargets.delete(interaction.walker.root);
     interaction.holder.parent?.remove(interaction.holder);
     deps?.disposeBottlePlane?.(interaction.bottlePlane, interaction.holder);
     interaction.lockHandle?.release?.();
     activeInteractions.delete(interaction);
-    deps?.setPlayerHeldItemVisible?.(true);
-    deps?.refreshActionBar?.();
+    if (!interaction.autonomous) { deps?.setPlayerHeldItemVisible?.(true); deps?.refreshActionBar?.(); }
     log(`NPC drink ${reason}: npc=${interaction.walker.rec?.id || 'unknown'} item=${interaction.itemKey}`);
   }
 
@@ -191,7 +206,7 @@
     const { THREE } = deps;
     const holder = new THREE.Group(); // Lives in scene space during handoff, then under the NPC during playback.
     holder.name = `npc_drink_holder_${walker.rec?.id || 'npc'}`;
-    const bottlePlane = deps.makeBottlePlane?.({ key: itemKey, icon: itemDef.icon, label: itemDef.label });
+    const bottlePlane = deps.makeBottlePlane?.({ ...itemDef, key: itemKey });
     if (!bottlePlane) { lockHandle.release(); return 0; }
     holder.add(bottlePlane);
 
@@ -240,6 +255,28 @@
     return totalDurationMs;
   }
 
+  function playAutonomous(walker, itemKey, onDrink) {
+    const animation = deps?.getDrinkAnimation?.(), itemDef = deps?.getItemDef?.(itemKey); // Existing clip/held sprite also serve NPC meals.
+    if (!animation || !itemDef || !walker?.root?.parent || walker.area !== deps.getCurrentArea?.()
+        || hasActiveInteractionForRoot(walker.root) || deps.actionLocks?.isLocked?.(npcParticipantId(walker), 'actions')) return 0;
+    const lockHandle = deps.actionLocks?.acquire?.({ owner:'npc-autonomous-drink', reason:'eating a meal',
+      participants:[npcParticipantId(walker)], channels:['movement','tools','actions'] }); // Never locks or hides the player.
+    if (!lockHandle) return 0;
+    clearAmbientCarryForRoot(walker.root);
+    const holder = new deps.THREE.Group(), bottlePlane = deps.makeBottlePlane?.({ ...itemDef, key:itemKey }); // Private transient prop uses the normal PNG pipeline.
+    if (!bottlePlane) { lockHandle.release(); return 0; }
+    holder.add(bottlePlane); walker.root.add(holder);
+    const interaction = { walker,itemKey,holder,bottlePlane,lockHandle,onDrink,autonomous:true,
+      phase:'drink',elapsed:0,durationS:Math.max(.1,Number(animation.durationS)||.95),effectApplied:false,finished:false,
+      hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
+    applyHolderPose(interaction,deps.poseAt(animation,0)); activeInteractions.add(interaction);
+    publishHandTarget(walker.root,holder,bottlePlane);
+    return interaction.durationS*1000;
+  }
+  function stopAutonomous(walker) {
+    for (const interaction of activeInteractions) if (interaction.autonomous && interaction.walker === walker) finish(interaction,'cancelled');
+  }
+
   function update(dt) {
     if (!deps) return;
     const step = Math.max(0, Number(dt) || 0);
@@ -259,6 +296,7 @@
           interaction.holder.parent?.remove(interaction.holder);
           (interaction.walker.avatarGroup?.userData?.proceduralHandParent || interaction.walker.root).add(interaction.holder);
           interaction.phase = 'drink';
+          publishHandTarget(interaction.walker.root,interaction.holder,interaction.bottlePlane);
           interaction.elapsed = 0;
           applyHolderPose(interaction, deps.poseAt(deps.getDrinkAnimation(), 0));
         }
@@ -297,12 +335,13 @@
   }
 
   function init(injectedDeps) {
+    for (const interaction of activeInteractions) finish(interaction,'cancelled');
     for (const carry of ambientCarries.values()) disposeAmbientCarry(carry);
     ambientCarries.clear();
     deps = injectedDeps || null;
     return api;
   }
 
-  const api = Object.freeze({ init, canPlay, play, update, getDebug, setAmbientCarry, clearAmbientCarry, getAmbientDebug });
+  const api = Object.freeze({ init, canPlay, play, playAutonomous, stopAutonomous, heldItemTarget, update, getDebug, setAmbientCarry, clearAmbientCarry, getAmbientDebug });
   window.NpcDrinkInteraction = api;
 })();

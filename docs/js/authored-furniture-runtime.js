@@ -15,7 +15,8 @@
 (function () {
   'use strict';
 
-  const CONFIG_BASE = 'config/furniture-authored/';
+  const CONFIG_BASE = window.__hobunjiFurnitureConfigBase || 'config/furniture-authored/'; // Editor previews resolve the same repository assets from their own document root.
+  let surfaceBuildAncestors = []; // Scoped synchronous construction context survives existing two-argument furniture/VFX wrappers.
   const _cache = new Map(); // furnitureKey -> Promise<data|null>, .__value set once resolved
 
   // Synchronous accessor for already-resolved data — callers that build
@@ -43,9 +44,11 @@
   // mesh's authored (rest-pose) local matrix — applyWarp/resetWarp recompose
   // from this every frame instead of mutating position/rotation/scale in
   // place, so repeated warp playback never drifts from the authored pose.
-  function buildGroup(data, baseColor) {
+  function buildGroup(data, baseColor, ancestors = surfaceBuildAncestors) {
     const group = new THREE.Group();
     if (!data || !Array.isArray(data.parts)) return group;
+    if (ancestors.includes(data.key) || ancestors.length >= 8) return group; // Reject recursive furniture containment without affecting unrelated placements.
+    group.userData.surfaceAncestry = [...ancestors, data.key]; // Passed to nested authored furniture builds, including asynchronous loads.
     group.name = `authored_furniture_${data.key || 'unknown'}`;
     group.userData.authoredFurnitureKey = data.key || null; // Used by Pixel Probe/runtime diagnostics to identify authored furniture instances.
     if (data.puzzle) window.FurniturePuzzleProperties?.applyToObject3D?.(group, data.puzzle, data.key); // Authored activators/mechanisms carry the same metadata into gameplay that the editors wire per instance.
@@ -85,19 +88,19 @@
     const previous = group.userData.authoredItemPlacements; // Disposed only on donation/rebuild, never per frame.
     if (previous) {
       group.remove(previous);
-      previous.traverse(node => { node.geometry?.dispose?.(); node.material?.map?.dispose?.(); node.material?.dispose?.(); });
+      previous.traverse(node => { node.geometry?.dispose?.(); if (node.userData?.isSurfaceItemSprite) node.material?.map?.dispose?.(); node.material?.dispose?.(); });
     }
     const layer = new THREE.Group(); // Separate from authored parts so displays cannot alter their collision geometry.
     layer.name = 'authored_surface_items';
     group.userData.authoredItemPlacements = layer;
     group.add(layer);
     for (const record of records || []) {
-      if (!record.itemKey || record.visible === false) continue;
+      if ((!record.itemKey && !record.furnitureKey) || record.visible === false) continue;
       const surface = data.recognizedSurfaces?.find(entry => entry.id === record.surfaceId); // Same part-local face frame exported by Furniture Author.
       let partMesh = group.userData.meshById?.get?.(surface?.partId);
       if (!partMesh && surface) group.traverse(node => { if (node.userData?.authoredPartId === surface.partId) partMesh = node; });
       const png = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Shared appearance/CORS-safe canvas pipeline.
-      if (!surface || !partMesh || !png) continue;
+      if (!surface || !partMesh || (!record.furnitureKey && !png)) continue;
       group.updateWorldMatrix(true, true);
       const relative = new THREE.Matrix4().copy(group.matrixWorld).invert().multiply(partMesh.matrixWorld); // Resolve fallback-upgraded child parts into furniture-root space.
       const center = new THREE.Vector3().fromArray(surface.localCentroid).applyMatrix4(relative);
@@ -107,8 +110,14 @@
       const holder = new THREE.Group(); // Keeps normal/u/v placement separate from the item plane's alpha-bottom grounding.
       holder.position.copy(center).addScaledVector(u, Number(record.position?.u) || 0).addScaledVector(v, Number(record.position?.v) || 0).addScaledVector(normal, Number(record.position?.normal) || 0);
       const scale = Math.max(.001, Number(record.scale) || .25); // Authored sprite height in furniture-local units.
+      holder.userData.surfacePlacement = record; // Direct world actions target the actual attached object, not an activity radius.
       holder.scale.setScalar(scale);
       holder.rotation.set((record.rotation?.x || 0) * Math.PI / 180, (record.rotation?.y || 0) * Math.PI / 180, (record.rotation?.z || 0) * Math.PI / 180);
+      if (record.furnitureKey) {
+        layer.add(holder);
+        addFurniturePlacement(holder, record, group.userData.surfaceAncestry || [], () => group.userData.authoredItemPlacements === layer);
+        continue;
+      }
       const canvas = document.createElement('canvas'); // Icon placeholder remains readable until an authored imageUrl is supplied.
       canvas.width = canvas.height = 256;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -154,6 +163,27 @@
       }
     }
     return layer;
+  }
+
+  function addFurniturePlacement(holder, record, ancestors = [], isCurrent = () => true) {
+    const key = String(record.furnitureKey || ''); // Same authored furniture key used by ordinary placed furniture and editor exports.
+    if (!key || ancestors.includes(key) || ancestors.length >= 8) return Promise.resolve(null);
+    return load(key).then(data => {
+      if (!data || !isCurrent()) return null;
+      let child;
+      const previousAncestors = surfaceBuildAncestors;
+      surfaceBuildAncestors = ancestors; // load(key) has completed, so canonical construction is synchronous even through legacy VFX wrappers.
+      try {
+        child = window.FurnitureVesselRuntime?.installed
+          ? window.ProceduralFurniture.buildFurnitureGroup(key, record.color ?? 0x8b6540)
+          : buildGroup(data, record.color ?? 0x8b6540);
+      } finally { surfaceBuildAncestors = previousAncestors; }
+      child.userData.surfaceFurnitureKey = key;
+      if (record.liquidColor) child.traverse(node => { if (node.userData?.authoredPart?.kind === 'liquidSurface') node.material?.color?.set?.(record.liquidColor); });
+      holder.add(child);
+      window.FurnitureTableSystem?.refreshServices?.();
+      return child;
+    }).catch(error => { window.__farmLog?.(`[furniture surface] ${key}: ${error.message}`, 'warn'); return null; });
   }
 
   const _clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
@@ -547,6 +577,7 @@
     peek,
     buildGroup,
     setItemPlacements,
+    addFurniturePlacement,
     seatAnchorFor,
     seatCount,
     applyWarp,

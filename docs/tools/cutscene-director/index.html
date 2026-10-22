@@ -610,7 +610,7 @@
     .add-stage-grid { grid-template-columns: repeat(2,1fr); }
   }
 </style>
-<script src="../../js/panel-ui.js"></script>
+<script src="../../js/panel-ui.js?v=20261022h3f7fc32"></script>
 </head>
 <body>
 <dialog id="sceneExportDialog" aria-labelledby="sceneExportTitle" style="width:min(90vw,700px);max-height:85vh;overflow:auto;background:var(--panel);color:var(--text);border:2px solid var(--line)">
@@ -888,7 +888,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
-<script src="../../js/cinematic-camera-runtime.js?v=20261018orbit4"></script>
+<script src="../../js/cinematic-camera-runtime.js?v=20261022hcamopt2"></script>
 <script src="camera-author.js?v=20261018orbitpreview2"></script>
 <script src="../../js/GLTFLoader.js?v=20260712l"></script>
 <script src="../../js/WallBuilder.js?v=20261013hd467097"></script>
@@ -903,7 +903,7 @@
 <script src="../../js/interior-scene-builder.js?v=20261018h3d30302"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
-<script src="../../config/scratchbones-config.js?v=20261019h07b21e2"></script>
+<script src="../../config/scratchbones-config.js?v=20261021h6bf0448"></script>
 <script>
   // scratchbones-config.js's asset paths are authored repo-root-relative
   // (docs/assets/, docs/config/) for the top-level game page; this tool
@@ -917,14 +917,14 @@
 </script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
-<script src="../../js/metal-armor-system.js?v=20261008h99621ca"></script>
+<script src="../../js/metal-armor-system.js?v=20261022hauditfix"></script>
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/sprite-recolor.js?v=20261018resolve1099a"></script>
 <script src="../../js/repo-pattern-library.js?v=npcappearance1"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261015h5975e5b"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261022h62cf41f"></script>
 <script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
 <script src="../../js/npc-wardrobe.js?v=20261018h5a78853"></script>
-<script src="../../js/portrait-utils.js?v=20261020omgurkuBack1"></script>
+<script src="../../js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
 <script src="../../js/portrait-breathing.js?v=20260712l"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20261021hbc9a71f"></script>
 <script src="../../js/png-plane-avatar.js?v=20261017h64afb2a"></script>
@@ -3004,8 +3004,9 @@
       <label>Reverse direction every N visited orbit cards (0 = never)<input id="editOrbitDirectionSwitchEvery" type="number" min="0" max="20" step="1" value="${stage.orbitDirectionSwitchEvery ?? 0}"></label>
       <label>Start angle offset in the chosen direction, degrees<input id="editOrbitDirectionalStartOffset" type="number" min="0" max="180" step="5" value="${stage.orbitDirectionalStartOffsetDeg ?? 0}"></label>
       <label><input id="editOrbitInstantCut" type="checkbox" ${stage.orbitInstantCut === true ? 'checked' : ''}> Instant cut on orbit reset (no camera lerp)</label>
+      <label><input id="editHorizontalCameraCollision" type="checkbox" ${stage.horizontalCameraCollision === true ? 'checked' : ''}> Enable horizontal camera collision (walls and furniture; off by default)</label>
       <label>Reset blend, seconds (when instant cut is off)<input id="editOrbitBlend" type="number" min="0" max="8" step=".1" value="${stage.orbitBlendSeconds ?? 1}"></label>
-      <p class="tip">Each visited orbit card resets focus and angle. Direction can flip every N cards (2 = CW/CW/CCW/CCW), with a signed start offset matching its direction. Instant cut replaces the reset lerp; uncheck it to retain the authored blend duration. The tilted face-height mode follows both actors' live face elevations and looks across the diameter. The game camera's colliders can compress the intended radius. Use Preview in Game for wall and furniture collision.</p>` : ''; // Editable options share the existing cutscene stage format.
+      <p class="tip">Each visited orbit card resets focus and angle. Direction can flip every N cards (2 = CW/CW/CCW/CCW), with a signed start offset matching its direction. Instant cut replaces the reset lerp; uncheck it to retain the authored blend duration. The tilted face-height mode follows both actors' live face elevations and looks across the diameter. The opt-in horizontal collider can compress the intended radius in tight rooms; it is otherwise disabled. Use Preview in Game to test wall and furniture clearance.</p>` : ''; // Editable options share the existing cutscene stage format.
     const index = stageIndex(stage.id);
     els.stageEditor.innerHTML = `<div class="editor-fields">
       <div class="editor-title"><span class="round-icon">${stageIcon(stage.type)}</span><div><strong>${escapeHtml(stageLabel(stage,index))}</strong><div style="color:var(--muted)">${stageName(stage.type)} card</div></div></div>
@@ -3054,6 +3055,7 @@
     bindSelect('editOrbitHeightMode', 'orbitHeightMode');
     bindSelect('editOrbitDirection', 'orbitDirection');
     $('editOrbitInstantCut')?.addEventListener('change', event => { stage.orbitInstantCut = event.target.checked; changed('Orbit reset transition updated.'); });
+    $('editHorizontalCameraCollision')?.addEventListener('change', event => { stage.horizontalCameraCollision = event.target.checked; changed('Orbit collision option updated.'); });
     $('editOrbitAlternating')?.addEventListener('change', event => { stage.orbitAlternateFocus = event.target.checked; changed('Orbit focus alternation updated.'); });
 
     els.stageEditor.querySelectorAll('[data-transform-kind]').forEach(input => input.addEventListener('change', () => { stage.transform ||= {}; stage.transform[input.dataset.transformKind] ||= {}; stage.transform[input.dataset.transformKind][input.dataset.transformAxis] = Number(input.value) || 0; changed('Furniture transform updated.'); }));

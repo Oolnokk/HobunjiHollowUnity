@@ -114,3 +114,49 @@ const referenceFallback = api.resolveFraming({ speciesId: 'tletingan' }, { headH
 assert.equal(referenceFallback.targetYOffsetTiles, 0.62);
 
 console.log('Shoulder camera character framing tests passed.');
+
+scaleValues['mashtzarr::male']=1.255; // Canonical tall-species fixture controls the assisted framing target.
+api.refreshPlayerFraming(nuhonganRoot,{speciesId:'nuhongan',gender:'male'});
+let surfaceNearby=true, probePosition=null; // Deterministic authored surface probe records only character position; orientation and camera height are absent.
+windowObject.FurnitureTableSystem={nearbySurface(area,x,z){probePosition=[x,z];return {active:surfaceNearby,furnitureId:'serving-table'};}};
+const normalDistance=shoulderMode.distanceTiles, normalTarget=shoulderMode.targetYOffsetTiles; // Species settings must survive assisted framing unchanged.
+api.updateSurfaceView('town',0,0,true,0);
+const rising=api.updateSurfaceView('town',0,0,true,100);
+assert(rising.lift>0 && rising.distanceScale>1 && rising.blend<1,'camera eases upward and outward instead of snapping');
+assert.deepEqual(probePosition,[0,0],'probe receives only player position');
+for(let t=200;t<=2000;t+=100)api.updateSurfaceView('town',0,0,true,t);
+assert(Math.abs(api.snapshot().surfaceView.distanceScale-(1.255/.6375))<.001,'zoom approaches the authored Mashtzarr height ratio');
+assert.equal(shoulderMode.distanceTiles,normalDistance,'camera help never changes player zoom/species config');
+assert.equal(shoulderMode.targetYOffsetTiles,normalTarget,'camera help never changes the normal head target');
+surfaceNearby=false;
+const before=api.snapshot().surfaceView.lift;
+const falling=api.updateSurfaceView('town',0,0,true,2100);
+assert(falling.lift>0 && falling.lift<before,'walking away smoothly restores normal framing');
+assert.equal(api.updateSurfaceView('interior',0,0,true,2200).lift,0,'map transition clears the previous lift');
+surfaceNearby=true;api.updateSurfaceView('interior',0,0,true,2300);
+assert.equal(api.updateSurfaceView('interior',0,0,false,2400).lift,0,'scripted/seated camera ownership immediately clears assistance');
+
+// Execute the actual game camera call with independently controlled player position and camera orbit.
+const gameSource = fs.readFileSync('docs/game.js','utf8'); // Real integration must test adjacency at the character, rather than at the smoothed camera target.
+const callStart = gameSource.indexOf('const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(');
+const callEnd = gameSource.indexOf('performance.now());',callStart)+'performance.now());'.length;
+const cameraCall = '{'+gameSource.slice(callStart,callEnd)+'}'; // Block scope permits repeatedly evaluating the real call as the camera turns.
+let captured = null; // Holds the real camera adapter arguments for independent orbit tests.
+const cameraContext = {window:{HobunjiShoulderCameraCharacterFraming:{updateSurfaceView(...args){captured=args;}}},
+  currentArea:'town',player:{x:120,y:80},TILE:40,facingAngle:-Math.PI/2,azimuth:0,tx:999,tz:999,
+  lookY:.3,angle:.1,distance:2,activeCameraMode:'shoulderSurf',SHOULDER_SURF_MODE:'shoulderSurf',
+  portraitAim:null,cutscenePreviewActive:false,dialogueZoomActive:()=>false,performance:{now:()=>2500}}; // Bindings used by the shipped updateCameraPosition integration.
+vm.runInNewContext(cameraCall,cameraContext);
+assert.equal(captured[1],3,'adjacency uses player X, not the smoothed camera target');
+assert.equal(captured[2],2,'adjacency uses player Z, not the smoothed camera target');
+const originalArguments=[...captured]; // Position, mode ownership, and time are the entire lift input contract.
+for (const rotation of [-Math.PI,-Math.PI/2,0,Math.PI/2,Math.PI]) {
+ cameraContext.azimuth=rotation;cameraContext.facingAngle=rotation;cameraContext.angle=rotation; // Orbit, body yaw, and pitch change without moving the character.
+ vm.runInNewContext(cameraCall,cameraContext);
+ assert.deepEqual(captured,originalArguments,'camera and character rotation cannot affect lift inputs');
+}
+for (const ratio of [.5, 1, 1.75]) {
+ const root = makeRoot({ speciesId:'test-size', gender:'male', scaleY:.85*ratio, neckHeight:.6*ratio }); // Reuses the measured species rig path at short, reference and tall scales.
+ api.refreshPlayerFraming(root,{speciesId:'test-size',gender:'male'},'collision-limit-test');
+ assert.ok(Math.abs(api.minimumCollisionSetback()-.3*ratio)<1e-9,'collision setback scales with the same cached body ratio as native shoulder distance');
+}

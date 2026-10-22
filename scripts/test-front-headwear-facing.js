@@ -15,6 +15,7 @@ const basicHeadband = JSON.parse(read('docs/config/cosmetics/basic_headband.json
 const leatherHeadband = JSON.parse(read('docs/config/cosmetics/leather_headband.json'));
 const wideKasa = JSON.parse(read('docs/config/cosmetics/riverlandskasa_wide.json'));
 const tangedCirclet = JSON.parse(read('docs/config/cosmetics/clothes/hat/tangedcirclet.json')); // Used below to guard its species-specific behind-the-head band art.
+const bzabagHelm = JSON.parse(read('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json')); // Guards front cap and its explicitly authored rear counterparts.
 
 const forbiddenAngleBehavior = /TILT_CUTOFF|yawCutoff|tiltCutoff|FacingGate|facingUniform|worldFront|worldUp|toCamera|uprightDot|yawDot|smoothstep\s*\(|hobunjiFrontHatless|material\.opacity\s*=|currentMaterial\.opacity\s*=/i;
 assert.doesNotMatch(hats, forbiddenAngleBehavior, 'normal hats have no camera/head-angle visibility system');
@@ -79,5 +80,34 @@ for (const [variant, filename] of Object.entries(expectedTangedBack)) {
   assert(fs.existsSync('docs/assets/cosmetics/clothes/hat/' + filename));
 }
 assert.equal(portraitContext._getBehindLayerUrl(circletOption.layers[0], circletOption, 'male'), 'cosmetics/clothes/hat/headband.png');
+
+const helmOption = portraitContext.portraitOptionFromJson({ id: 'replica_bzabag_helm' }, bzabagHelm);
+const helmLayers = helmOption.variantLayers['mao-ao_male'];
+assert.equal(helmLayers.length, 2, 'helm keeps precisely two head-front layers');
+assert.deepEqual(Array.from(helmLayers, layer => layer.pos), ['front', 'front'], 'neither helm sprite goes beneath the front-view skull');
+assert(helmLayers[0].url.endsWith("replica_bzabag's_helm-cap_m.png"), 'wool cap renders before the faceguard');
+assert(helmLayers[1].url.endsWith("replica_bzabag's_helm-faceguard_m.png"), 'metal faceguard covers cap in front view');
+assert.deepEqual(Array.from(helmLayers, layer => layer.materialKind), ['cloth', 'metal'], 'cap and band retain independent material treatment');
+assert.equal(portraitContext._getBehindLayerUrl(helmLayers[0], helmOption, 'male'), helmLayers[0].url, 'rear cap retains its exact source PNG');
+assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), 'cosmetics/clothes/hat/headband.png', 'rear metal band shares Tanged Circlet behind sprite');
+assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'the rear-band pixels use the existing Tanged Circlet path');
+assert.equal(helmOption.variantLayers['mao-ao_female'], undefined, 'unillustrated gender does not inherit helm sprites');
+
+// The loom/icon compositor must follow the same explicit headwear rear URL as the actual portrait.
+const weavingSource = read('docs/js/clothing-weaving-system.js');
+assert.match(weavingSource, /behindUrl:\s*layer\?\.behindImage\?\.url/, 'loom collects the per-layer rear sprite choice');
+assert.match(weavingSource, /behindViewResultFor\(frontUrl, baseCosmeticIdValue, behindGender, behindUrl\)/, 'loom rear rendering passes each layer\'s alternate sprite');
+assert.match(weavingSource, /behindViewResultFor\(url, baseCosmeticIdValue, resolvedGender, behindUrl\)/, 'loom offers rear view when a layer has its own back sprite');
+
+// The fit editor builds the rear cap + band as a distinct view, not as cloth behind the skull.
+const fitParts = Array.from({ length: 12 }, (_, i) => read('docs/tools/clothing-species-fit/app.part' + (i + 1) + '.txt'));
+assert.doesNotThrow(() => new Function(fitParts.join('\n')), 'all split clothing-fit JavaScript compiles together');
+const fitSource = fitParts.join('\n');
+assert.match(fitSource, /canvas\._behindView=hasBehindOverride\?behindView:null/, 'headwear keeps rear-facing composite separate from under-skull artwork');
+assert.match(fitSource, /E\.exportHeadwearBack\.onclick=\(\)=>exportHeadwearView\('back'\)/, 'rear export button selects the back view');
+assert.match(fitSource, /const canvas=headwearWarpForView\(view,true\)/, 'both front and rear exports use the shared view-aware fitted source');
+assert.match(fitSource, /if\(behindView\)\{[\s\S]{0,220}rawGarmentToRuntimeLayer\(behindView,opacity\)/, 'full-character rear preview draws the dedicated back art');
+assert.match(fitSource, /Missing rear \$\{garment\.label\} layer/, 'missing rear variant falls back without discarding the whole layer');
+assert.match(fitSource, /const pinnedPreviewSha=location\.pathname\.match/, 'commit-pinned preview follows the matching repository data instead of main');
 
 console.log('Headwear angle-visibility removal checks passed.');

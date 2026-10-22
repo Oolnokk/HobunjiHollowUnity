@@ -360,6 +360,7 @@
     const avatarGroup = clonedNodeAtSamePath(source.root, root, source.avatarGroup);
     const groundShadow = clonedNodeAtSamePath(source.root, root, source.groundShadow);
     const alcoholPoseGroup = clonedNodeAtSamePath(source.root, root, source.alcoholPoseGroup);
+    const runLeanPivot = clonedNodeAtSamePath(source.root, root, source._npcRunLeanPivot); // Cloned from a runner, this visual transform must reset to a standing visitor pose.
     const neckJoint = clonedNodeAtSamePath(source.root, root, source.neckJoint);
     const stationToolMesh = clonedNodeAtSamePath(source.root, root, source.stationToolMesh);
 
@@ -369,6 +370,7 @@
       alcoholPoseGroup.position.set(0, 0, 0);
       alcoholPoseGroup.rotation.set(0, 0, 0);
     }
+    runLeanPivot?.quaternion?.identity?.();
     if (neckJoint) neckJoint.rotation.set(0, 0, 0);
     stationToolMesh?.parent?.remove?.(stationToolMesh);
 

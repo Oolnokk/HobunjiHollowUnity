@@ -1,11 +1,10 @@
 {
-  "schema": "hobunji_harlyao_night_march.v1",
-  "description": "A single spectral Harlyao army traverses one wilderness zone per civil day from midnight until 06:00. Offscreen state is chunk-only; full humanoid entities exist only while the player shares the army chunk.",
+  "schema": "hobunji_harlyao_night_march.v2",
+  "description": "A commander-led spectral army travels continuously from midnight until 06:00. Data-only marchers follow the commander offscreen; nearby actors use native pathing. The commander waits to regroup and need not reach the far edge before dawn.",
   "memberCount": 20,
   "activeHours": {
     "start": 0,
-    "end": 6,
-    "coarseStepHours": 0.4
+    "end": 6
   },
   "routesClockwise": [
     {
@@ -46,7 +45,10 @@
     "rows": 5,
     "lateralSpacingTiles": 1.35,
     "longitudinalSpacingTiles": 1.2,
-    "marchSpeedTilesPerSecond": 1.15
+    "marchSpeedTilesPerSecond": 1.15,
+    "regroupDistanceTiles": 9,
+    "resumeDistanceTiles": 5,
+    "followerCatchUpMultiplier": 1.2
   },
   "equipment": {
     "forcedCosmetics": [
@@ -65,19 +67,17 @@
     "emissiveIntensity": 1.35,
     "formationGlowRadiusTiles": 4.2,
     "formationGlowIntensity": 0.78,
-    "beaconGlowRadiusTiles": 28,
-    "beaconGlowIntensity": 0.94,
     "beaconGlowColor": "#b0f0ff",
-    "beaconMinScreenRadiusPx": 96,
-    "beaconMaxScreenRadiusPx": 220,
-    "beaconEdgeMarginPx": 44,
-    "beaconShape": "serpentine"
+    "beaconHeightTiles": 18,
+    "beaconRadiusTiles": 0.8,
+    "beaconDirectionDistanceTiles": 18
   },
   "behavior": {
-    "neutralState": "harlyaoMarch",
     "provokeWholeArmy": true,
-    "allowObservedScheduleDrift": true,
-    "despawnOutsideSharedChunk": true,
+    "fullSimulationRadiusTiles": 18,
+    "fullSimulationReleaseRadiusTiles": 24,
+    "offChunkTickSeconds": 1,
+    "dormantEntityReleaseSeconds": 3,
     "maleOnlyUntilFemaleHeadArt": true
   },
   "zoneAtmosphere": {

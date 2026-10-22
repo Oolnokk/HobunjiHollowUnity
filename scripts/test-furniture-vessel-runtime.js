@@ -18,8 +18,11 @@ const deadzone = read('docs/js/deadzone-billboard.js');
 const pieceAnimation = read('docs/js/furniture-piece-animation-runtime.js');
 const rootTotemConfigSource = read('docs/config/root-totem-config.js');
 
-assert(procedural.includes("part.kind === 'cup' || part.kind === 'liquidSurface'"),
-  'pre-existing generic primitive path must remain detectable by this regression');
+assert(procedural.includes("part.kind === 'liquidSurface'"),
+  'linked liquid-surface fallback remains available after barrel/cup geometry parity');
+assert(procedural.includes("part.kind === 'barrel' || part.kind === 'cup'") &&
+  procedural.includes('createAuthoredVesselGeometry(part)'),
+  'native runtime builds the furniture editor’s rounded barrel and open cups');
 assert(procedural.includes("if (part.materialLighting !== 'unlit') return new THREE.MeshLambertMaterial"),
   'ordinary unflagged furniture must retain its established Lambert material path');
 assert(procedural.includes('window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit'),
@@ -81,7 +84,7 @@ assert(vessel.includes('InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(tar
 assert(vessel.includes('InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(ready, cached'),
   'already-cached authored furniture must use the same ambient VFX readiness hook');
 
-assert(zone.includes("ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js')"),
+assert.match(zone, /ensureCompanionScript\('FurnitureVesselRuntime', 'furniture-vessel-runtime\.js(?:\?v=[A-Za-z0-9_-]+)?'\)/,
   'normal game boot must install the shared vessel correction');
 assert(authoredRuntime.includes('window.ProceduralFurniture.buildPartMesh(part, baseColor)'),
   'authored furniture should consume the corrected shared part builder');

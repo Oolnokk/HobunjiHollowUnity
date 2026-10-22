@@ -1762,6 +1762,57 @@
         "Mineral",
         "Non-Cooking"
       ]
+    },
+    "cloudSaffron": {
+      "id": "cloudSaffron",
+      "name": "Cloud Saffron",
+      "description": "A fragrant, tiny highland flower stigma, traded over great distances.",
+      "categories": [
+        "spice"
+      ],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "clarity",
+      "tags": [
+        "Imported",
+        "Rare",
+        "Spice"
+      ]
+    },
+    "starpepper": {
+      "id": "starpepper",
+      "name": "Starpepper",
+      "description": "A prized intensely aromatic pepper brought by distant caravans.",
+      "categories": [
+        "spice"
+      ],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "combat",
+      "tags": [
+        "Imported",
+        "Rare",
+        "Spice"
+      ]
+    },
+    "nightCardamom": {
+      "id": "nightCardamom",
+      "name": "Night Cardamom",
+      "description": "Dark fragrant pods used to season expensive meat and dairy dishes.",
+      "categories": [
+        "spice"
+      ],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "fortitude",
+      "tags": [
+        "Imported",
+        "Rare",
+        "Spice"
+      ]
     }
   },
   "recipes": [

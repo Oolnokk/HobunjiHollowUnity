@@ -2,7 +2,8 @@
 'use strict';
 
 const STORE='hobunji_clothing_species_fit_6x6_v2'; // New storage key so earlier 3×3 experiments cannot corrupt this simpler model.
-const BODY_SLOTS=new Set(['torso','overwear','pauldron']); // Keeps the garment picker focused on body clothing.
+const BODY_SLOTS=new Set(['torso','overwear','pauldron']); // Categories in the existing body-fitting workflow.
+const HEAD_SLOTS=new Set(['hat','hood']); // Categories in the new independent headwear-fitting workflow.
 const GRID_SIZE=6; // Fixed source/target cage resolution requested for this version.
 const HANDLE_RADIUS=5.2; // Visible grid-point radius in native canvas pixels.
 const HIT_RADIUS=13; // Touch-friendly pointer selection radius.
@@ -12,7 +13,7 @@ const MICRO_TRIANGLE_COUNT=(GRID_SIZE-1)*(GRID_SIZE-1)*CELL_SUBDIVISIONS*CELL_SU
 
 const $=id=>document.getElementById(id);
 const E={
-  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),garment:$('garment'),
+  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),garment:$('garment'),fitRegion:$('fitRegion'),
   help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
@@ -23,7 +24,7 @@ const E={
   threeHost:$('threeHost'),threeStatus:$('threeStatus'),retry3D:$('retry3D'),reset3D:$('reset3D'),
   scaleX:$('scaleX'),scaleY:$('scaleY'),translateX:$('translateX'),translateY:$('translateY'),
   scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
-  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),
+  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),exportHeadwearFront:$('exportHeadwearFront'),exportHeadwearBack:$('exportHeadwearBack'),
   exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),diagnosticsInput:$('diagnosticsInput'),importDiagnostics:$('importDiagnostics'),copyDebug:$('copyDebug'),debug:$('debug'),
   label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
 };
@@ -32,7 +33,8 @@ C.imageSmoothingEnabled=false;
 
 const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
-  body:null,maoBody:null,cloth:null,authoredTargetCloth:null,warped:null,
+  body:null,maoBody:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
+  assetGeneration:0, // Prevents a previous region/species request from overwriting a newer selection.
   extendedLayers:{torso:null,torsoClothing:null,overwear:null},extendedSource:null,extendedWarped:null,
   patchWorkflow:{active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:0}, // Live routed patch source. Clothing routes a source+patch composite; body routes patch-only pixels as a separate canonical body-tinted rear backplane layer in front of the selected base body layer and behind clothing.
   three:{
@@ -65,8 +67,8 @@ function defaultMaskTransform(){return{scaleX:1,scaleY:1,translateY:0}}
 function zeroOffsets(){return SOURCE_GRID.map(()=>({x:0,y:0}))}
 function fresh(){
   return{
-    version:3,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},
-    settings:{mode:'transform',gender:'male',species:'mao-ao',garment:'',repo:E.repo.value}
+    version:4,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},
+    settings:{mode:'transform',region:'body',gender:'male',species:'mao-ao',garment:'',headGarment:'',repo:E.repo.value}
   };
 }
 function migrateLegacyV1(){
@@ -86,17 +88,23 @@ function migrateLegacyV1(){
 function loadState(){
   try{
     const v=JSON.parse(localStorage.getItem(STORE)||'null');
-    if(v&&(v.version===2||v.version===3)&&v.gridSize===GRID_SIZE){
-      return{version:3,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},settings:v.settings||{}};
+    if(v&&(v.version===2||v.version===3||v.version===4)&&v.gridSize===GRID_SIZE){
+      return{version:4,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},settings:v.settings||{}};
     }
     return migrateLegacyV1()||fresh();
   }catch{return migrateLegacyV1()||fresh()}
 }
 function saveState(){
-  A.version=3;A.gridSize=GRID_SIZE;
-  A.settings={mode,gender:E.gender.value,species:E.species.value,garment:E.garment.value,repo:base()};
+  A.version=4;A.gridSize=GRID_SIZE;
+  const region=fitRegion();
+  A.settings={
+    ...A.settings,mode,region,gender:E.gender.value,species:E.species.value,repo:base(),
+    garment:region==='body'?E.garment.value:(A.settings?.garment||''),
+    headGarment:region==='headwear'?E.garment.value:(A.settings?.headGarment||'')
+  };
   localStorage.setItem(STORE,JSON.stringify(A));
 }
+function fitRegion(){return E.fitRegion.value==='headwear'?'headwear':'body'} // Controls which selection, overlay, and calibration key are active.
 function snapshot(){return JSON.stringify({baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms})}
 function pushUndo(){undoStack.push(snapshot());if(undoStack.length>50)undoStack.shift();redoStack=[];syncHistory()}
 function restore(raw){

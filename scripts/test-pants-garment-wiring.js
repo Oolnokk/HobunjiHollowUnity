@@ -96,3 +96,15 @@ console.log('Layered leg garments: PASS');
 const hybrid = { appearance: { speciesId: 'omgurku', gender: 'male' } }; // Generated NPCs resolve species from the same appearance source as the avatar.
 assert.strictEqual(Renderer.ensureNpcPants(hybrid),false,'hybrid lower body does not receive humanoid pants');
 assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does not mutate its wardrobe');
+// Execute the production scoped-depth owner without constructing WebGL garments.
+{
+ const source=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // The same closure installed on each real garment handle.
+ const start=source.indexOf('    const depthBiasLimits=new Map();'),end=source.indexOf('    const createMesh =',start);
+ const handle={depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // A nearby character must occlude the garment's physical depth.
+ vm.runInNewContext(source.slice(start,end),{handle});
+ assert(handle.setDepthBiasLimit('close-contact',0));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
+ assert(handle.setDepthBiasLimit('other',.1));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
+ assert.equal(handle.setDepthBiasLimit('other',NaN),false);assert.equal(handle.setDepthBiasLimit('other',-1),false);
+ handle.setDepthBiasLimit('close-contact',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.1);
+ handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'last release restores the original feet-covering pull');
+}

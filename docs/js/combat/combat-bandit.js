@@ -1518,21 +1518,106 @@
     return { x: targetPlayer.x + Math.cos(angle) * radiusPx, y: targetPlayer.y + Math.sin(angle) * radiusPx };
   }
 
-  // Nudges a movement target away from any other live bandit closer
-  // than BANDIT_PERSONAL_SPACE_PX -- keeps queued gang-mates from
-  // stacking on each other while they wait for an attack slot.
+  // Bandits frequently request two personal-space nudges each frame. Index the whole
+  // hostile collection once per short simulation window, then inspect local buckets
+  // instead of scanning every hostile for each bandit (quadratic in crowded towns).
+  // Bucket size is twice the avoidance radius; a 3×3 neighborhood also tolerates
+  // normal within-frame movement before the next refresh. Always use live positions
+  // for the actual push so neither the distance nor the order-dependent nudge is stale.
+  const banditSpacingBuckets = new Map(); // Buckets contain WeakRefs, never owning unloaded actor/avatar graphs.
+  const banditSpacingRefs = new WeakMap(); // Reuse the same WeakRef per actor instead of allocating one every rebuild.
+  const banditSpacingOrder = new WeakMap(); // The spatial cache must not retain retired combatants.
+  const banditSpacingCandidates = []; // Reused scratch avoids a fresh neighbors array per bandit/frame.
+  const banditSpacingSeen = new Set(); // Avoid duplicate candidates when a push crosses cells.
+  function compareBanditSpacingOrder(a, b) { return banditSpacingOrder.get(a) - banditSpacingOrder.get(b); }
+  let banditSpacingBuiltAt = -Infinity;
+  let banditSpacingCollection = null;
+  let banditSpacingCount = -1;
+  let banditSpacingCellSize = 0;
+  const BANDIT_SPACING_REFRESH_MS = 12;
+
+  function refreshBanditSpacingBuckets(personalSpacePx) {
+    const hostiles = deps.hostileObjects;
+    const count = hostiles?.size ?? hostiles?.length ?? 0;
+    const cellSize = Math.max(1, personalSpacePx * 2);
+    const tick = performance.now();
+    if (banditSpacingCollection === hostiles && banditSpacingCount === count
+      && banditSpacingCellSize === cellSize && tick - banditSpacingBuiltAt < BANDIT_SPACING_REFRESH_MS) return;
+    banditSpacingBuckets.clear();
+    let order = 0;
+    for (const hostile of hostiles || []) {
+      if (!hostile?.isBandit || hostile.health <= 0) continue;
+      banditSpacingOrder.set(hostile, order++);
+      const key = Math.floor(hostile.x / cellSize) + ',' + Math.floor(hostile.y / cellSize);
+      let bucket = banditSpacingBuckets.get(key);
+      if (!bucket) { bucket = []; banditSpacingBuckets.set(key, bucket); }
+      let reference = banditSpacingRefs.get(hostile);
+      if (!reference) {
+        reference = new WeakRef(hostile);
+        banditSpacingRefs.set(hostile, reference);
+      }
+      bucket.push(reference);
+    }
+    banditSpacingCollection = hostiles;
+    banditSpacingCount = count;
+    banditSpacingCellSize = cellSize;
+    banditSpacingBuiltAt = tick;
+  }
+
+  function appendSpacingNeighbors(cellX, cellY, minOrder) {
+    for (let y = cellY - 1; y <= cellY + 1; y++) {
+      for (let x = cellX - 1; x <= cellX + 1; x++) {
+        const bucket = banditSpacingBuckets.get(x + ',' + y);
+        if (!bucket) continue;
+        for (const reference of bucket) {
+          const actor = reference.deref();
+          if (!actor || banditSpacingSeen.has(actor)) continue;
+          // Once passed in source order, a bandit cannot push the point again
+          // even if a subsequent nudge brings it back within avoidance range.
+          if (banditSpacingOrder.get(actor) <= minOrder) continue;
+          banditSpacingSeen.add(actor);
+          banditSpacingCandidates.push(actor);
+        }
+      }
+    }
+  }
+
+  // Nudges a movement target away from nearby living bandits. An actor can
+  // push the target into the NEXT grid cell; expand the candidate set then,
+  // so downstream actors still influence it in original hostile list order.
   function banditPersonalSpaceAdjust(c, point) {
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
-    for (const o of deps.hostileObjects) {
-      if (o === c || !o.isBandit || o.health <= 0) continue;
+    refreshBanditSpacingBuckets(personalSpacePx);
+    const candidates = banditSpacingCandidates;
+    candidates.length = 0;
+    banditSpacingSeen.clear();
+    let cellX = Math.floor(px / banditSpacingCellSize);
+    let cellY = Math.floor(py / banditSpacingCellSize);
+    appendSpacingNeighbors(cellX, cellY, -1);
+    candidates.sort(compareBanditSpacingOrder);
+    for (let i = 0; i < candidates.length; i++) {
+      const o = candidates[i];
+      if (o === c || o.health <= 0) continue;
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > 0.001 && dist < personalSpacePx) {
-        const push = personalSpacePx - dist;
-        px += (dx / dist) * push; py += (dy / dist) * push;
+      if (!(dist > 0.001 && dist < personalSpacePx)) continue; // Preserve the old NaN/non-finite neighbor rejection.
+      const push = personalSpacePx - dist;
+      px += (dx / dist) * push; py += (dy / dist) * push;
+      const nextX = Math.floor(px / banditSpacingCellSize);
+      const nextY = Math.floor(py / banditSpacingCellSize);
+      if (nextX !== cellX || nextY !== cellY) {
+        cellX = nextX; cellY = nextY;
+        appendSpacingNeighbors(cellX, cellY, banditSpacingOrder.get(o));
+        // Newly entered buckets may contain as-yet-unvisited bandits
+        // interleaved with existing candidates. Keep their original order.
+        candidates.sort(compareBanditSpacingOrder);
       }
     }
+    // Scratch collections otherwise keep the last crowd alive when a zone
+    // unloads without another combat update.
+    candidates.length = 0;
+    banditSpacingSeen.clear();
     return { x: px, y: py };
   }
 
@@ -1889,17 +1974,25 @@
     scene.add(holder);
     new THREE.TextureLoader().load(BANDIT_FLASK_SPRITE, texture => {
       if (!holder.parent) { texture.dispose?.(); return; }
-      texture.magFilter = THREE.NearestFilter;
-      texture.minFilter = THREE.NearestFilter;
-      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-      else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
-      texture.needsUpdate = true;
+      // Flaskers hold an ordinary authored PNG, not a custom-effect surface.
+      // Use the same texture configuration as body and player-held tool planes.
+      const spriteSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+      if (spriteSurface?.configureTexture) spriteSurface.configureTexture(THREE, texture, 'bandit-throwing-flask');
+      else {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+      }
       const widthPx = texture.image?.naturalWidth || texture.image?.width || 1;
       const heightPx = texture.image?.naturalHeight || texture.image?.height || 1;
       const width = 0.5;
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(width, width * heightPx / Math.max(1, widthPx)),
-        new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide }),
+        spriteSurface?.makeMaterial
+          ? spriteSurface.makeMaterial(THREE, texture, 'bandit-throwing-flask', { side: THREE.DoubleSide })
+          : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.001, side: THREE.DoubleSide }),
       );
       plane.rotation.x = -Math.PI / 2;
       visual.add(plane);
@@ -1917,82 +2010,60 @@
   let banditPoseSample = null; // One SharedAttackPose sample reused by every bandit's per-frame pose; created lazily and consumed synchronously inside updateBanditToolMesh.
 
   // ── Bandit weapon swing trail ────────────────────────────────────
-  //
-  // A single-lane simplification of updateCombatConeTrail's ribbon-arc
-  // mesh (same tapered/arched shape, same BufferGeometry layout) built
-  // per-bandit instead of reading the singleton toolHolder/combatSwing*
-  // state: the real version's affliction-colored multi-lane system
-  // (up to 4 lanes, one per possible affliction) isn't reproduced --
-  // every bandit swing draws one lane, tinted by its own attackTag,
-  // which is enough to sell "the blade is sweeping through here" without
-  // needing combat-progression.js's player-only upgrade-affliction data.
-  const BANDIT_TRAIL_SAMPLES = 12;
+  // Use the same affliction palette as the player's weapon cone. Most NPC
+  // attacks have one baseline tag affliction; upgraded/multi-affliction
+  // attacks can draw up to four adjacent lanes using the shared ribbon owner.
   const BANDIT_TRAIL_HALF_THICKNESS_TILES = 0.06;
   const BANDIT_TRAIL_ARCH_UNITS = 0.2;
-  const BANDIT_TRAIL_COLOR_BY_TAG = { sharp: 0xd9ffe0, blunt: 0xffc23d };
-
-  function makeBanditTrailMesh() {
-    const geo = new THREE.BufferGeometry();
-    const vertCount = (BANDIT_TRAIL_SAMPLES + 1) * 2;
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
-    const indices = [];
-    for (let s = 0; s < BANDIT_TRAIL_SAMPLES; s++) {
-      const a = s * 2, b = a + 1, cc = a + 2, d = a + 3;
-      indices.push(a, b, cc, b, d, cc);
-    }
-    geo.setIndex(indices);
-    const mat = new THREE.MeshBasicMaterial({
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide, color: 0xffffff,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.visible = false;
-    mesh.frustumCulled = false;
-    return mesh;
-  }
-
-  // Called from each fireBandit*'s onStrike (the same moment
-  // updateCombatConeTrail's own sweep starts -- WF, not fire-time) so
-  // the arc appears exactly when the hit actually lands, not during the
-  // windup telegraph.
-  function spawnBanditTrailArc(c, rangePx, halfConeRad, angle, pitch = null) {
-    const attackTag = c.def.attackTag || 'sharp'; // Used to keep enemy ribbon color aligned with its weapon damage type.
-    const color = BANDIT_TRAIL_COLOR_BY_TAG[attackTag] || 0xffffff;
-    window.Combat?.spawnMeleeTrail?.({
-      actor: c,
-      scene: c.scene,
-      yaw: angle,
-      pitch: pitch ?? c._banditAimPitch ?? 0,
-      rangePx,
-      halfConeRad,
-      halfThickness: BANDIT_TRAIL_HALF_THICKNESS_TILES,
-      archUnits: BANDIT_TRAIL_ARCH_UNITS,
-      color,
-      holdS: BANDIT_TRAIL_HOLD_S,
-      fadeS: BANDIT_TRAIL_FADE_S,
-    });
-  }
-
-  // The real cone trail (updateCombatConeTrail) stays at FULL opacity for
-  // its entire visible window and only fades (or, for a tap attack whose
-  // strikeFrac is 1, just vanishes outright) right at the very end -- it
-  // never dims gradually from the moment it appears. The previous
-  // version here faded linearly from spawn across its whole (short)
-  // lifetime, so it spent most of its life at low opacity under additive
-  // blending -- easy to miss entirely. HOLD_S now keeps it fully bright
-  // first, matching how a tap attack's own trail reads, before a brief
-  // fade-out standing in for the real system's end-of-swing return tail.
   const BANDIT_TRAIL_HOLD_S = 0.22;
   const BANDIT_TRAIL_FADE_S = 0.16;
-  function updateBanditTrailArc(c, dt) {
-    const mesh = c._banditTrailMesh;
-    if (!mesh || !mesh.visible) return;
-    c._banditTrailAge = (c._banditTrailAge || 0) + dt;
-    if (c._banditTrailAge < BANDIT_TRAIL_HOLD_S) { mesh.material.opacity = 0.85; return; }
-    const fadeT = c._banditTrailAge - BANDIT_TRAIL_HOLD_S;
-    const alpha = 1 - fadeT / BANDIT_TRAIL_FADE_S;
-    if (alpha <= 0.01) { mesh.visible = false; return; }
-    mesh.material.opacity = alpha * 0.85;
+  const BANDIT_TRAIL_COLOR_BY_TAG = { sharp: 0xd9ffe0, blunt: 0xffc23d, poison: 0x93ff78 };
+
+  function banditTrailColors(c) {
+    const tag = c.def?.attackTag || 'sharp';
+    const palette = window.ResourceRings;
+    const bonuses = window.ResourceSystem?.afflictionBonusesForTag?.(tag);
+    if (!bonuses || !palette?.AFFLICTION_COLORS) return [BANDIT_TRAIL_COLOR_BY_TAG[tag] || 0xffffff];
+    const colors = [];
+    for (const [affliction, multiplier] of Object.entries(bonuses)) {
+      if (!(Number(multiplier) > 0)) continue;
+      const original = palette.AFFLICTION_COLORS[affliction];
+      if (original != null) colors.push(palette.neonizeColor?.(original) ?? original);
+      if (colors.length === 4) break;
+    }
+    return colors.length ? colors : [BANDIT_TRAIL_COLOR_BY_TAG[tag] || 0xffffff];
+  }
+
+  function spawnBanditTrailArc(c, rangePx, halfConeRad, angle, pitch = null) {
+    const colors = banditTrailColors(c);
+    const count = colors.length;
+    // Color lanes split only the VISUAL mesh. Show Hitboxes must still show
+    // the original full gameplay cone, not just lane zero's narrow wedge.
+    if (count > 1) window.Combat?.spawnMeleeTrail?.({
+      actor: c, scene: c.scene, yaw: angle, pitch: pitch ?? c._banditAimPitch ?? 0,
+      rangePx, halfConeRad, debugOnly: true,
+    });
+    for (let lane = 0; lane < count; lane++) {
+      // Every lane claims an adjacent slice of the attack's visual cone.
+      // The union has exactly the original attack width; damage uses the
+      // untouched shared meleeHit collider, not this decorative subdivision.
+      const laneHalfCone = halfConeRad / count;
+      const laneYaw = angle + (2 * lane + 1 - count) * laneHalfCone;
+      window.Combat?.spawnMeleeTrail?.({
+        actor: c,
+        scene: c.scene,
+        yaw: laneYaw,
+        pitch: pitch ?? c._banditAimPitch ?? 0,
+        rangePx,
+        halfConeRad: laneHalfCone,
+        halfThickness: BANDIT_TRAIL_HALF_THICKNESS_TILES,
+        archUnits: BANDIT_TRAIL_ARCH_UNITS,
+        color: colors[lane],
+        holdS: BANDIT_TRAIL_HOLD_S,
+        fadeS: BANDIT_TRAIL_FADE_S,
+        debug: count === 1, // Multi-lane attacks record their complete cone separately above.
+      });
+    }
   }
 
   // A dual-wield weapon rests in its two-weapon idle stance, exactly like the player's (the grip state at Neutral
@@ -2461,7 +2532,7 @@
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
     updateToolMesh: updateBanditToolMesh,
-    updateTrailArc: updateBanditTrailArc,
+    updateTrailArc: () => {}, // Shared Combat.update owns ribbon lifetime; legacy API remains callable.
     fireCounterRiposte: fireBanditCounterRiposte,
     naturalSwing: banditNaturalSwing,
     finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.

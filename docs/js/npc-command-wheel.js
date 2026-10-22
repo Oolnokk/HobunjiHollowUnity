@@ -19,7 +19,7 @@
   const HOLD_MS = 320; // Press length that turns a Talk tap into the wheel.
   const POLL_MS = 100; // Claim refresh cadence: cheap reads only, claims rewritten only on change.
   const PRESS_GUARD_MS = 260; // Ignores the stray Action 1 press a click on the wheel itself can produce.
-  const RADIUS_PX = 170;
+  const RADIUS_PX = 210;
 
   let deps = null;
   let claimedWalker = null;
@@ -29,22 +29,38 @@
   let overlay = null, wheelEl = null, centerEl = null;
   let lastCloseAt = 0;
   let lock = null;
-  const debug = { lastOpen: null, lastCommit: null, lastTap: null };
+  const debug = { latestChange:'Larger readable command labels; invitation responses use ambient NPC speech.', lastOpen: null, lastCommit: null, lastTap: null };
 
   function nowMs() { return performance.now(); }
 
   // ── Claims ────────────────────────────────────────────────────────────
   function optionsFor(walker) {
-    try { return window.RomanceSystem?.commandOptionsFor?.(walker) || []; } catch (_) { return []; }
+    try {
+      const options=[...(window.NpcFollowing?.commandOptionsFor?.(walker)||[]),...(window.RomanceSystem?.commandOptionsFor?.(walker)||[]),...(window.FestivalSystem?.socialOptionsFor?.(walker)||[]),...(window.NpcSeatRequest?.optionsFor?.(walker)||[])];
+      if(!options.length)return [];
+      if(!options.some(option=>option.id==='talk'))options.unshift({id:'talk',icon:'💬',label:'Talk',run:()=>deps?.openNpcDialogue?.(walker)});
+      const seen=new Set(); // Existing romance Follow/Wait commands retain their behavior without duplicate sectors.
+      return options.filter(option=>{if(seen.has(option.id))return false;seen.add(option.id);return true;});
+    } catch (_) { return []; }
   }
   function eligibleWalker() {
     if (!deps) return null;
-    if (deps.isDialogueOpen?.() || deps.isMenuOpen?.() || deps.isFarmEditMode?.()) return null;
+    if (deps.isDialogueOpen?.() || deps.isMenuOpen?.() || deps.isFarmEditMode?.() || deps.isCombatActive?.()) return null;
     const walker = deps.getNearbyNpcWalker?.();
     if (!walker || walker.isPorakanekiHunter || walker._doorstepVisitor || walker._slagothimTrader) return null;
     return optionsFor(walker).length ? walker : null;
   }
   function syncClaims() {
+    if (deps?.isCombatActive?.()) { // Combat cancels a held Talk/Commands press without re-registering input claims each 100ms.
+      if (press) { clearTimeout(press.timer); press = null; }
+      if (wheelState) closeWheel();
+      if (claimedWalker || claimSignature !== '') {
+        claimedWalker = null;
+        claimSignature = '';
+        window.WorldActionInputClaims?.clearClaims?.(OWNER_ID);
+      }
+      return;
+    }
     if (wheelState || press) return; // Keep the claim stable for the life of a press / open wheel.
     const walker = eligibleWalker();
     const signature = walker ? String(walker.rec?.id || '') : '';
@@ -59,6 +75,7 @@
   }
 
   function onPress() {
+    if (deps?.isCombatActive?.()) return;
     if (wheelState) { commit(); return; }
     if (nowMs() - lastCloseAt < PRESS_GUARD_MS) return;
     const walker = claimedWalker;
@@ -67,6 +84,7 @@
     press = { walker, at: nowMs(), timer: setTimeout(() => { if (press?.walker === walker) openWheel(walker, false); }, HOLD_MS) };
   }
   function onRelease(detail) {
+    if (deps?.isCombatActive?.()) { if (press) clearTimeout(press.timer); press = null; closeWheel(); return; }
     const active = press;
     press = null;
     if (active) clearTimeout(active.timer);
@@ -89,14 +107,14 @@
     style.textContent = `
 #npcCommandOverlay{position:fixed;inset:0;z-index:12060;background:rgba(0,0,0,.24);display:none;touch-action:none;user-select:none}
 #npcCommandOverlay.open{display:block}
-#npcCommandWheel{position:absolute;left:50%;top:50%;width:min(${RADIUS_PX * 2}px,78vmin);height:min(${RADIUS_PX * 2}px,78vmin);transform:translate(-50%,-50%);border-radius:50%;overflow:hidden;background:rgba(20,10,16,.9);box-shadow:0 0 0 2px rgba(255,190,214,.32),0 18px 70px rgba(0,0,0,.68)}
+#npcCommandWheel{position:absolute;left:50%;top:50%;width:min(${RADIUS_PX * 2}px,88vmin);height:min(${RADIUS_PX * 2}px,88vmin);transform:translate(-50%,-50%);border-radius:50%;overflow:visible;background:rgba(20,10,16,.9);box-shadow:0 0 0 2px rgba(255,190,214,.32),0 18px 70px rgba(0,0,0,.68)}
 #npcCommandWheel .socialActionSector{position:absolute;inset:0;border:0;padding:0;background:rgba(255,255,255,.045);pointer-events:none}
 #npcCommandWheel .socialActionSector.active{background:rgba(255,120,160,.32)}
-#npcCommandWheel .socialActionSector.current .socialActionLabel{color:#ffd1df}
-#npcCommandWheel .socialActionSector.muted .socialActionLabel{opacity:.5}
-#npcCommandWheel .socialActionLabel{position:absolute;left:50%;top:50%;width:104px;text-align:center;color:#fff;font:700 12px/1.12 "Pixelify Sans",system-ui,sans-serif;text-shadow:0 2px 4px #000}
-#npcCommandWheel .socialActionIcon{display:block;font-size:24px;line-height:1;margin-bottom:5px}
-#npcCommandWheelCenter{position:absolute;left:50%;top:50%;width:34%;height:34%;transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;text-align:center;padding:10px;box-sizing:border-box;background:rgba(10,4,8,.96);box-shadow:0 0 0 2px rgba(255,190,214,.24);color:#fff;font:700 12px/1.2 "Pixelify Sans",system-ui,sans-serif;pointer-events:none}
+#npcCommandWheel .socialActionLabel.current{color:#ffd1df}
+#npcCommandWheel .socialActionLabel.muted{opacity:.5}
+#npcCommandWheel .socialActionLabel{transform:translate(-50%,-50%);pointer-events:none;z-index:1;position:absolute;left:50%;top:50%;width:112px;text-align:center;color:#fff;font:700 20px/1.15 "Pixelify Sans",system-ui,sans-serif;text-shadow:0 2px 4px #000}
+#npcCommandWheel .socialActionIcon{display:block;font-size:30px;line-height:1;margin-bottom:5px}
+#npcCommandWheelCenter{position:absolute;left:50%;top:50%;width:34%;height:34%;transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;z-index:2;text-align:center;padding:10px;box-sizing:border-box;background:rgba(10,4,8,.96);box-shadow:0 0 0 2px rgba(255,190,214,.24);color:#fff;font:700 19px/1.2 "Pixelify Sans",system-ui,sans-serif;pointer-events:none}
 `;
     document.head.appendChild(style);
   }
@@ -135,22 +153,20 @@
   function renderWheel() {
     const { options, walker } = wheelState;
     wheelEl.textContent = '';
-    const rect = wheelEl.getBoundingClientRect();
-    const radius = Math.min(RADIUS_PX, (rect.width || RADIUS_PX * 2) / 2);
     options.forEach((option, index) => {
       const sector = document.createElement('div');
       sector.className = 'socialActionSector' + (option.active ? ' current' : '') + (option.muted ? ' muted' : '');
       sector.style.clipPath = sectorPolygon(index, options.length);
       const angle = -Math.PI / 2 + index * (Math.PI * 2 / options.length);
       const label = document.createElement('span');
-      label.className = 'socialActionLabel';
-      label.style.transform = `translate(-50%,-50%) translate(${Math.cos(angle) * radius * 0.64}px,${Math.sin(angle) * radius * 0.64}px)`;
+      label.className = 'socialActionLabel' + (option.active ? ' current' : '') + (option.muted ? ' muted' : '');
+      label.style.left = `${50+Math.cos(angle)*33}%`; // Match the viewport-sized circle without shrinking the text.
+      label.style.top = `${50+Math.sin(angle)*33}%`;
       const icon = document.createElement('span');
       icon.className = 'socialActionIcon';
       icon.textContent = option.icon || '•';
       label.append(icon, document.createTextNode(option.label || option.id));
-      sector.appendChild(label);
-      wheelEl.appendChild(sector);
+      wheelEl.append(sector,label); // Wedge clipping affects only its background, leaving larger labels readable.
     });
     centerEl.textContent = walker.rec?.name || 'Commands';
     wheelEl.appendChild(centerEl);
@@ -200,6 +216,7 @@
   }
 
   function openWheel(walker, latched) {
+    if (deps?.isCombatActive?.()) return false;
     const options = optionsFor(walker);
     if (!options.length) return false;
     buildOverlay();
@@ -227,6 +244,7 @@
     return true;
   }
   function commit() {
+    if (deps?.isCombatActive?.()) { closeWheel(); return false; }
     const current = wheelState;
     if (!current) return false;
     const option = current.selected >= 0 ? current.options[current.selected] : null;
@@ -249,6 +267,8 @@
 
   const api = {
     init,
+    hasOptions: walker => !!walker && optionsFor(walker).length>0,
+    optionsFor,
     open: walker => openWheel(walker || claimedWalker, true),
     close: closeWheel,
     commit,

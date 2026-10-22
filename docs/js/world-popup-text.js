@@ -224,6 +224,7 @@
     const size = layout.worldHeight; // Used to preserve the authored interaction-list world height.
     const canvas = document.createElement('canvas'); // Used as the texture backing for the mixed-size, mixed-color row.
     const ctx = canvas.getContext('2d'); // Used to measure and paint each independently styled text segment.
+    const inputPrefix = String(prompt.inputPrefix || '').trim(); // Hold hints share the bound glyph's existing color and spacing.
     const inputHint = String(prompt.inputHint || '').trim(); // Rendered in the semantic color of its matching arch input.
     const label = String(prompt.label || prompt.text || '').trim(); // Split below so only the leading verb receives emphasis.
     const words = label.split(/\s+/).filter(Boolean); // Used to style each label word according to its grammatical role.
@@ -237,12 +238,13 @@
       ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
       return ctx.measureText(text).width;
     };
+    const prefixWidth = textWidth(inputPrefix, mainFontPx);
     const inputWidth = textWidth(inputHint, mainFontPx); // Used in the row's exact texture width.
     const labelWidth = words.reduce((total, word, index) => { // Used to size the canvas for mixed-size label tokens.
       const fontPx = INTERACTION_CONNECTORS.has(word.toLowerCase()) ? connectorFontPx : mainFontPx;
       return total + textWidth(word, fontPx) + (index ? wordGapPx : 0);
     }, 0);
-    canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
+    canvas.width = Math.max(64, Math.ceil(28 + prefixWidth + (inputPrefix ? wordGapPx : 0) + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
     canvas.height = 112;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -258,6 +260,8 @@
       ctx.fillText(text, x, canvas.height / 2);
       x += ctx.measureText(text).width;
     };
+    drawSegment(inputPrefix, mainFontPx, INTERACTION_VERB_COLOR);
+    if (inputPrefix) x += wordGapPx;
     drawSegment(inputHint, mainFontPx, prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR);
     if (inputHint) x += gapPx;
     words.forEach((word, index) => { // Used to keep connector words small while emphasizing each actual action verb.
@@ -489,7 +493,7 @@
   }
 
   function setInteractionPrompts(root, prompts, options = {}) {
-    const entries = (prompts || []).filter(prompt => prompt && prompt.allowed !== false)
+    const entries = (prompts || []).filter(prompt => prompt && (prompt.allowed !== false || prompt.showWhenUnavailable))
       .slice(0, state.settings.centeredFiveRow.maxRows)
       .map(prompt => ({
         text: String(prompt.text || prompt.label || '').trim(),
@@ -497,6 +501,7 @@
         action: prompt.action || '',
         inputActionId: prompt.inputActionId || '',
         inputHint: String(prompt.inputHint || '').trim(),
+        inputPrefix: String(prompt.inputPrefix || '').trim(),
         inputColor: prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR,
       }))
       .filter(prompt => prompt.label);
@@ -505,7 +510,7 @@
       return [];
     }
     cancelInteractionPromptClear();
-    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.inputActionId}:${entry.inputHint}:${entry.inputColor}:${entry.label}`).join('|')}`;
+    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.inputActionId}:${entry.inputHint}:${entry.inputPrefix}:${entry.inputColor}:${entry.label}`).join('|')}`;
     if (signature === state.interactionSignature) return interactionListFor(root).map(event => event.sequence);
     clearInteractionPrompts();
     state.interactionSignature = signature;
@@ -583,19 +588,20 @@
     }
     const promptKeys = options.promptKeys || ['E', 'Q', 'F3', 'F4', 'F5'];
     const promptInputs = Array.isArray(options.promptInputs) ? options.promptInputs : []; // Preferred structured hints carry semantic action IDs and arch-matched colors.
-    const prompts = worldInteractions.map(button => {
+    const prompts = worldInteractions.flatMap(button => {
       const slot = buttons.indexOf(button);
       const promptInput = promptInputs[slot] || null; // Supplies the binding label, semantic action, and matching color for this exact list row.
       const keyHint = options.showInputHints !== false && slot >= 0 // Used as the colored leading segment, including rebound keys/buttons.
         ? String(promptInput?.label || promptKeys[slot] || `Action ${slot + 1}`)
         : '';
-      return {
+      const prompt = {
         ...button,
         text: `${keyHint}${keyHint ? '  ' : ''}${button.label}`,
         inputActionId: promptInput?.actionId || '',
         inputHint: keyHint,
         inputColor: promptInput?.color || INTERACTION_INPUT_FALLBACK_COLOR,
       };
+      return button.holdLabel && keyHint ? [prompt,{...prompt,action:`${button.action}:hold-hint`,label:button.holdLabel,inputPrefix:'Hold',text:`Hold ${keyHint}  ${button.holdLabel}`}] : [prompt]; // Informational list row only: no duplicate arch button or input dispatch.
     });
     return setInteractionPrompts(options.root, prompts, { scene: options.scene });
   }

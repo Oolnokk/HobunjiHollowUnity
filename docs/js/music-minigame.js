@@ -32,7 +32,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261017kurrayapluck1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261022npcpatternroots3';
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -1247,5 +1247,8 @@
     // js/music-system.js, which ducks the game's ambient bgm/cues for as
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
+    diagnostics: () => ({latestChange:'NPC-only generated performances ignore physical input; visible player sessions keep their own controls.',
+      player:playerSession?{mode:playerSession.mode,npcId:playerSession.npcId||null}:null,
+      npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
 })();

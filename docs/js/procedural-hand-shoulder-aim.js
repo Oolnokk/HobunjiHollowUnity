@@ -220,6 +220,8 @@
       return shoulderParent;
     }
 
+    rig.shoulderPositionLocal = (side,out) => { const point=shoulderInParent(side);return point ? out.copy(point) : null; }; // Paired poses capture the same authored/scanned shoulder the existing hand aim uses.
+
     function posteriorYInParent() {
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
       if (Number.isFinite(resolvedY)) return resolvedY;

@@ -1224,6 +1224,7 @@ function _textMatchesAny(text, needles) {
 }
 
 function _getBehindLayerUrl(layer, group, gender) {
+  if (typeof layer?.behindUrl === 'string') return layer.behindUrl; // Explicit rear art wins over shared per-species replacement rules.
   const rules = _pngPlaneBehindViewConfig().layerReplacements || [];
   if (!layer || !Array.isArray(rules)) return layer?.url || null;
   const idText = [group?.id, group?.originalId].filter(Boolean).join(' ');
@@ -1528,7 +1529,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ];
     for (const layerList of cosmeticLayerLists) {
       for (const entry of layerList) {
-        if (!entry?.metalState || !entry?.layer?.url) continue;
+        if (!entry?.metalState || !entry?.layer?.url || window.MetalArmorSystem?.isMetalPortraitLayer?.(entry.layer, entry.metalState) === false) continue; // Dyeable textile panels must never be baked into a metal tint or stripped of their cloth tint.
         try {
           const prepared = await window.MetalArmorSystem.preparePortraitLayers([entry.layer], entry.metalState);
           if (prepared?.[0]) entry.layer = prepared[0];
@@ -1891,12 +1892,14 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
           const paletteColorKey = (layerRole && paletteLayerMap) ? (paletteLayerMap[layerRole] || null) : null;
           layers.push({
             url: portraitRelPath(imgUrl),
+            ...(layer?.behindImage?.url ? { behindUrl: portraitRelPath(layer.behindImage.url) } : {}), // Keep rear-only artwork attached to its matching front layer and material role.
             ax:  xf.ax     ?? 0,
             ay:  xf.ay     ?? 0,
             sx:  xf.scaleX ?? 1,
             sy:  xf.scaleY ?? 1,
             pos: layerName === 'back' ? 'back' : 'front',
             paletteColorKey,
+            materialKind: layer.materialKind || null, // Per-layer hybrid material survives cosmetic portrait layer extraction.
             xformPreset: 'B',
           });
         }
@@ -1941,6 +1944,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
           sy:  xf.scaleY ?? xf.scaleMulY ?? 1,
           pos: layerName === 'back' ? 'back' : 'front',
           paletteColorKey,
+          materialKind: layer.materialKind || null, // Future torso/arm hybrid articles use the same layer-specific material override.
           xformPreset: 'B',
         });
       }
@@ -2062,6 +2066,8 @@ function portraitVariantKeysForFighter(fighter, option) {
 
 function resolveOptionLayers(option, fighter) {
   if (!option) return [];
+  // Prize cosmetics with partial art must never inherit the nearest species' portrait layers.
+  if (option.onlyExactSpeciesVariant) return (fighter && option.variantLayers?.[fighter.speciesId + '_' + fighter.gender]) || [];
   const vl = option.variantLayers;
   if (vl && fighter) {
     for (const key of portraitVariantKeysForFighter(fighter, option)) {
@@ -2116,10 +2122,11 @@ function portraitOptionFromJson(entry, json) {
                          : tintSlot);
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
+  const onlyExactSpeciesVariant = json.onlyExactSpeciesVariant === true; // Used by incomplete-variant equipment such as Bzabag's prize helm.
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.

@@ -15,6 +15,8 @@
       patchParts.push(await r.text());
     }
     (0,eval)(patchParts.join(''));
+    const behindPanel=document.getElementById('behindSpritePatchSection');
+    if(behindPanel)behindPanel.hidden=document.getElementById('fitRegion')?.value==='headwear'; // Behind-sprite body patch workflow is deliberately not exposed in headwear mode.
   }catch(error){
     console.error(error);
     document.body.insertAdjacentHTML('afterbegin',`<pre style="color:#fb7185;padding:10px;white-space:pre-wrap">Clothing Species Fit tool failed to load: ${String(error?.message||error)}</pre>`);

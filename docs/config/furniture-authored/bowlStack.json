@@ -1,0 +1,130 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "bowlStack",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "bowl-0",
+      "name": "bowl-0",
+      "kind": "cup",
+      "transform": {
+        "x": 0,
+        "y": 0.045,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.27,
+        "sy": 0.09,
+        "sz": 0.27
+      },
+      "color": "#52433e",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12
+    },
+    {
+      "id": "bowl-1",
+      "name": "bowl-1",
+      "kind": "cup",
+      "transform": {
+        "x": 0,
+        "y": 0.08,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.27,
+        "sy": 0.09,
+        "sz": 0.27
+      },
+      "color": "#52433e",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12
+    },
+    {
+      "id": "bowl-2",
+      "name": "bowl-2",
+      "kind": "cup",
+      "transform": {
+        "x": 0,
+        "y": 0.115,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.27,
+        "sy": 0.09,
+        "sz": 0.27
+      },
+      "color": "#52433e",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12
+    },
+    {
+      "id": "bowl-3",
+      "name": "bowl-3",
+      "kind": "cup",
+      "transform": {
+        "x": 0,
+        "y": 0.15000000000000002,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.27,
+        "sy": 0.09,
+        "sz": 0.27
+      },
+      "color": "#52433e",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12
+    },
+    {
+      "id": "bowl-4",
+      "name": "bowl-4",
+      "kind": "cup",
+      "transform": {
+        "x": 0,
+        "y": 0.185,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.27,
+        "sy": 0.09,
+        "sz": 0.27
+      },
+      "color": "#52433e",
+      "segments": 16,
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "innerScale": 0.82,
+      "basinDepth": 0.12
+    }
+  ]
+}

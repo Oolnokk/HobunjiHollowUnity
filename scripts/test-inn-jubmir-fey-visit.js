@@ -140,6 +140,7 @@ storage.set(api.stateKey(profile), 'complete');
     && stage.orbitAlternateFocus === true && stage.orbitZoomStepPercent === 5
     && stage.orbitInitialZoomPercent === 131.25 && stage.orbitHeightMode === 'oppositeFaceArc' && stage.orbitDistanceTiles === 1.85
     && stage.orbitInstantCut === true && stage.orbitBlendSeconds === 1
+    && stage.horizontalCameraCollision === true
     && stage.orbitDirection === 'clockwise' && stage.orbitDirectionSwitchEvery === 2
     && stage.orbitDirectionalStartOffsetDeg === 30),
     'all Jubmir paragraphs use instant cuts, CW/CW/CCW/CCW with matching 30 degree lead-ins, and preserve the optional smooth blend');

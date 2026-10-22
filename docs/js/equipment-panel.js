@@ -460,7 +460,7 @@
     const resolveIcon = window.ClothingWeavingSystem?.iconSpriteForCosmetic;
     if (typeof resolveIcon !== 'function' || !iconEl) return;
     const renderToken = Math.random().toString(36).slice(2, 8);
-    const compositeIncludesFinalDyes = !!window.ClothingWeavingSystem?.hasWovenPattern?.(item); // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
+    const compositeIncludesFinalDyes = !!window.ClothingWeavingSystem?.hasWovenPattern?.(item) || !!window.ClothingWeavingSystem?.isReweavableClothComponent?.(item); // Hybrid icon already contains final cap dye and faceguard finish. // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
     iconEl.dataset.clothingIconToken = renderToken;
     resolveIcon(item, fallbackSprite).then(sprite => {
       if (!sprite || sprite === fallbackSprite) return;

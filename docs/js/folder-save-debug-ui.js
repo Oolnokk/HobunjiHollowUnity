@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: incubation travels in world/recovery saves; detached incubators stay accessible from Farm; map changes have a separate recovery slot and saves show their trigger. Existing protections: wilderness treasure meshes are excluded from save JSON, legacy mesh bloat no longer causes false shrink warnings, campfire saves have their own guarded recovery slot separate from pause-menu Manual Save, and unreadable character/world files block folder import instead of disappearing.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Primary Save Folder writes and loads survive full browser storage; reloads reread folder-only data, browser-only restores still require durable browser storage, and quota staging appears in Save Diagnostics. Existing protections: incubation travels in world/recovery saves; map changes and campfire saves have separate recovery slots; wilderness treasure meshes are excluded from save JSON; unreadable character/world files block folder import.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -23,6 +23,7 @@
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
       provenance: safeSnapshot(() => window.__hobunjiFolderSaveProvenanceDebug?.snapshot?.()),
       runtimeFlush: safeSnapshot(() => window.__hobunjiRuntimeSaveDebug?.snapshot?.()),
+      browserQuota: safeSnapshot(() => window.HobunjiStorageQuota?.debugSnapshot?.()),
       quitGuard: safeSnapshot(() => window.__hobunjiFolderSaveQuitDebug?.snapshot?.()),
       creatorHandoff: creatorPatch?.status ? { ...creatorPatch.status } : null,
       page: {

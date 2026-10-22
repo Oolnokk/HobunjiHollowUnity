@@ -54,6 +54,7 @@
       dialogueNpcId: String(camera.dialogueNpcId || ''),
       useForDialogue: camera.useForDialogue === true || !!camera.dialogueNpcId,
       fadePets: camera.fadePets === true,
+      horizontalCameraCollision: camera.horizontalCameraCollision === true, // Width probes and non-rendered collider tiles are strictly shot-opt-in.
       stagePlayer: camera.stagePlayer === true, // Cinematic dialogue never repositions the player unless the camera explicitly opts in.
       playerStage: stageRaw ? {
         x: finite(stageRaw.x ?? stageRaw.col, position.x),
@@ -114,7 +115,7 @@
     const signature = JSON.stringify([camera.id, camera.shotKey || '', camera.fovDeg,
       camera.positionProvider ? 'live' : camera.position,
       camera.targetProvider ? 'live' : camera.target,
-      camera.targetNpcId, camera.targetNpcPoint, camera.trackSpeaker]); // Snapshot authored shot identity only at activation; recreated providers and dialogue text do not start a new blend.
+      camera.targetNpcId, camera.targetNpcPoint, camera.trackSpeaker, camera.horizontalCameraCollision]); // Snapshot authored shot identity only at activation; recreated providers and dialogue text do not start a new blend.
     if (active?.areaId === String(areaId || '') && active.signature === signature) {
       active.camera = camera;
       active.targetWalker = options.targetWalker || active.targetWalker;
@@ -228,6 +229,7 @@
       fovDeg: Math.max(15, Math.min(95, finite(options.fovDeg, 52))),
       blendSeconds: Math.max(0, finite(options.blendSeconds, 1)),
       dialogueFraming: false,
+      horizontalCameraCollision: options.horizontalCameraCollision === true, // Passed to game.js's camera collision solve only for requesting shots.
       orbitDebug: {
         actors: subjects.map(actor => String(actor.id)), focusActorId: focusActorId || null,
         zoomPercent, radius, speedDegPerSec: speedRad * 180 / Math.PI,
@@ -266,6 +268,7 @@
       targetHeight: stage.orbitTargetHeight, heightMode: stage.orbitHeightMode,
       faceHeightOffset: stage.orbitFaceHeightOffset, faceHeightRatio: stage.orbitFaceHeightRatio,
       fovDeg: stage.orbitFovDeg, blendSeconds: stage.orbitInstantCut === true ? 0 : stage.orbitBlendSeconds,
+      horizontalCameraCollision: stage.horizontalCameraCollision === true, // Authored orbit stage requests the optional horizontal sweep.
     });
     if (shot) shot.orbitDebug.instantCut = stage.orbitInstantCut === true;
     return shot;

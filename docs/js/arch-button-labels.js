@@ -256,6 +256,7 @@
 
   function meaningForButton(button) {
     if (!button || isAttackButton(button)) return '';
+    if(button.id==='toolBtn'&&window.Shattercasks?.toolArchAction?.()==='pickup')return 'PICK UP';
     const fixed = FIXED_MEANING_BY_BUTTON_ID[button.id];
     if (fixed) return fixed;
     if (!button.closest?.('#actionStack')) return '';
