@@ -339,10 +339,42 @@
     return focused;
   }
 
+  let surfacePoint = null, surfaceNormal = null; // Reused world-space probe vectors; furniture transforms remain live without scene traversal.
+  const surfaceView = { active:false, furnitureId:null, surfaceId:null, height:null }; // Latest copyable camera probe, also returned without frame allocations.
+  function highSurfaceAhead(area, x, z, cameraY, forwardX, forwardZ, retaining = false) {
+    surfaceView.active=false; surfaceView.furnitureId=null; surfaceView.surfaceId=null; surfaceView.height=null;
+    if (!window.THREE?.Vector3 || !Number.isFinite(cameraY)) return surfaceView;
+    surfacePoint ||= new window.THREE.Vector3(); surfaceNormal ||= new window.THREE.Vector3();
+    for (const entry of entries(area).values()) {
+      if (!entry.root?.parent || entry.root.visible===false) continue;
+      const f=placementFrame(entry); // Broad phase uses the existing placed furniture footprint and world transform.
+      if (Math.hypot(f.x-x,f.z-z)>3.5+Math.max(f.w,f.d)) continue;
+      const data=window.AuthoredFurniture?.peek?.(entry.record.key); // Cached authored data; camera probes never start loads.
+      for (const surface of data?.recognizedSurfaces || []) {
+        if (surface.role==='wallAttachment' || !surface.localCentroid || !surface.localNormal) continue;
+        const mesh=entry.root.userData?.meshById?.get(surface.partId); // Same part-space authority used by surface item placement.
+        if (!mesh || mesh.visible===false) continue;
+        mesh.updateWorldMatrix?.(true,false);
+        surfaceNormal.fromArray(surface.localNormal).transformDirection(mesh.matrixWorld);
+        if (surfaceNormal.y<.7) continue;
+        surfacePoint.fromArray(surface.localCentroid).applyMatrix4(mesh.matrixWorld);
+        if (surfacePoint.y<=cameraY+(retaining ? -.06 : .03)) continue;
+        const dx=surfacePoint.x-x, dz=surfacePoint.z-z; // Project into the unassisted view direction so raising the camera cannot cancel its own trigger.
+        const forward=dx*forwardX+dz*forwardZ, lateral=Math.abs(dx*forwardZ-dz*forwardX);
+        const sideExtent=Math.abs(forwardZ*f.cos+forwardX*f.sin)*f.w+Math.abs(forwardZ*f.sin-forwardX*f.cos)*f.d; // Project the rotated footprint so long tables work at their edges.
+        const forwardExtent=Math.abs(forwardX*f.cos-forwardZ*f.sin)*f.w+Math.abs(forwardX*f.sin+forwardZ*f.cos)*f.d; // Limits approach distance from the nearest edge rather than the table center.
+        if (forward<.1 || forward>3.5+forwardExtent || lateral>sideExtent+(retaining ? .45 : .25)) continue;
+        surfaceView.active=true; surfaceView.furnitureId=entry.id; surfaceView.surfaceId=surface.id; surfaceView.height=surfacePoint.y;
+        return surfaceView;
+      }
+    }
+    return surfaceView;
+  }
+
   function snapshot(area = deps?.getArea?.()) {
-    return { latestChange: 'Outdoor chairs/collision and late grass clearing repaired; six-tile NPC social aim ignores furniture/scenery blockers.',
-      collision:{...collisionStats},
+    return { latestChange: 'Nearby authored upward surfaces above the normal camera trigger smooth Mashtzarr-sized viewing; surfaceCamera reports the selected top.',
+      surfaceCamera:{...surfaceView}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
   }
-  window.FurnitureTableSystem = { init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { highSurfaceAhead, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();

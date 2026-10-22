@@ -20975,7 +20975,7 @@
           }
         }
         const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
-        const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
+        let distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
         const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
@@ -21001,6 +21001,11 @@
           // camera position below that pivot could retain an upward sightline.
           if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
+        const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(currentArea, tx, tz,
+          lookY + Math.sin(angle) * distance, azimuth,
+          activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
+          performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
+        if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;

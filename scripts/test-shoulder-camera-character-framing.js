@@ -114,3 +114,24 @@ const referenceFallback = api.resolveFraming({ speciesId: 'tletingan' }, { headH
 assert.equal(referenceFallback.targetYOffsetTiles, 0.62);
 
 console.log('Shoulder camera character framing tests passed.');
+
+scaleValues['mashtzarr::male']=1.255; // Canonical tall-species fixture controls the assisted framing target.
+api.refreshPlayerFraming(nuhonganRoot,{speciesId:'nuhongan',gender:'male'});
+let surfaceAhead=true, probeHeight=null; // Deterministic authored surface probe measures the normal camera height supplied by the real caller.
+windowObject.FurnitureTableSystem={highSurfaceAhead(area,x,z,y){probeHeight=y;return {active:surfaceAhead,furnitureId:'serving-table'};}};
+const normalDistance=shoulderMode.distanceTiles, normalTarget=shoulderMode.targetYOffsetTiles; // Species settings must survive assisted framing unchanged.
+api.updateSurfaceView('town',0,0,.45,0,true,0);
+const rising=api.updateSurfaceView('town',0,0,.45,0,true,100);
+assert(rising.lift>0 && rising.distanceScale>1 && rising.blend<1,'camera eases upward and outward instead of snapping');
+assert.equal(probeHeight,.45,'probe receives the unassisted camera height');
+for(let t=200;t<=2000;t+=100)api.updateSurfaceView('town',0,0,.45,0,true,t);
+assert(Math.abs(api.snapshot().surfaceView.distanceScale-(1.255/.6375))<.001,'zoom approaches the authored Mashtzarr height ratio');
+assert.equal(shoulderMode.distanceTiles,normalDistance,'camera help never changes player zoom/species config');
+assert.equal(shoulderMode.targetYOffsetTiles,normalTarget,'camera help never changes the normal head target');
+surfaceAhead=false;
+const before=api.snapshot().surfaceView.lift;
+const falling=api.updateSurfaceView('town',0,0,.45,0,true,2100);
+assert(falling.lift>0 && falling.lift<before,'turning away smoothly restores normal framing');
+assert.equal(api.updateSurfaceView('interior',0,0,.45,0,true,2200).lift,0,'map transition clears the previous lift');
+surfaceAhead=true;api.updateSurfaceView('interior',0,0,.45,0,true,2300);
+assert.equal(api.updateSurfaceView('interior',0,0,.45,0,false,2400).lift,0,'scripted/seated camera ownership immediately clears assistance');

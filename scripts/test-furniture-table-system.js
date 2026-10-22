@@ -73,3 +73,27 @@ area='interior';assert.equal(tables.aimedService(area),null,'service targets can
 tables.clearArea('town');assert.equal(tables.members('town','dining').length,0,'layout replacement removes old relationships');
 assert.equal(tables.tableForSeat('map_i_inn',{furnitureId:'chair'}).id,'dining','clearing town leaves interiors intact');
 console.log('Shared furniture table membership, occupancy, map isolation and provider-driven surface interactions passed.');
+
+// Real authored-part transforms drive the high-surface probe, including map changes and moved furniture.
+class SurfaceVector {
+  fromArray(a) { [this.x,this.y,this.z]=a; return this; }
+  applyMatrix4(m) { this.x+=m.x; this.y+=m.y; this.z+=m.z; return this; }
+  transformDirection() { return this; }
+} // Translation-only adapter isolates probe selection from Three.js's already-tested matrix implementation.
+window.THREE={Vector3:SurfaceVector};
+const top={id:'top',partId:'slab',localCentroid:[0,.1,0],localNormal:[0,1,0],role:'workSurface'}; // Authored local face matches actual surface placement data.
+window.AuthoredFurniture={peek:()=>({recognizedSurfaces:[top]})};
+const elevated=root(0,-2), slab={visible:true,matrixWorld:{x:0,y:1,z:-2},updateWorldMatrix(){}}; // Movable part carries its own world transform.
+elevated.userData.meshById=new Map([['slab',slab]]);
+tables.registerPlacement('surface-test',{id:'elevated',key:'tableSmall',col:0,row:-2},elevated,{fw:2,fd:1});
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,true,'a high top ahead activates camera help');
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,1.2,0,-1).active,false,'already-visible low tops do not raise the camera');
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,1).active,false,'looking away releases camera help');
+assert.equal(tables.highSurfaceAhead('other-map',0,0,.5,0,-1).active,false,'nearby tops in another map never activate');
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,1.12,0,-1,true).active,true,'small height changes retain the active surface without flickering');
+slab.matrixWorld.x=8;
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,false,'part movement is reflected without a scene scan');
+slab.matrixWorld.x=0;top.localNormal=[0,-1,0];
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,false,'undersides cannot trigger a view lift');
+top.localNormal=[0,1,0];elevated.visible=false;
+assert.equal(tables.highSurfaceAhead('surface-test',0,0,.5,0,-1).active,false,'hidden furniture cannot trigger');
