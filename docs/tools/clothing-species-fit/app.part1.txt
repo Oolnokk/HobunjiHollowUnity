@@ -24,7 +24,7 @@ const E={
   threeHost:$('threeHost'),threeStatus:$('threeStatus'),retry3D:$('retry3D'),reset3D:$('reset3D'),
   scaleX:$('scaleX'),scaleY:$('scaleY'),translateX:$('translateX'),translateY:$('translateY'),
   scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
-  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),exportHeadwear:$('exportHeadwear'),
+  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),exportHeadwearFront:$('exportHeadwearFront'),exportHeadwearBack:$('exportHeadwearBack'),
   exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),diagnosticsInput:$('diagnosticsInput'),importDiagnostics:$('importDiagnostics'),copyDebug:$('copyDebug'),debug:$('debug'),
   label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
 };
