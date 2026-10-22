@@ -16207,6 +16207,7 @@
           key: active?.key || null,
           spriteIcon: def?.spriteIcon || null,
           targetColor: def?.spriteColor ?? null,
+          wheelCache: { reads: inventoryWheelCache.reads, builds: inventoryWheelCache.builds, frame: inventoryWheelCache.frame },
           swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
           nearbyNpcAlcohol: nearbyNpcWalker?.rec?.id ? {
             id: nearbyNpcWalker.rec.id,
@@ -16224,20 +16225,28 @@
       let invActiveCat   = 'all';
       const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
-      function getKnownItemRank(key) {
-        const idx = inventoryItems.findIndex(item => item.key === key);
-        return idx === -1 ? 9999 : idx;
-      }
-
       function getInventoryStackKeys(cat = 'all') {
         // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
+        const ranks = new Map(); // Resolves catalog order once instead of scanning it in every sort comparison.
+        inventoryItems.forEach((item, index) => { if (!ranks.has(item.key)) ranks.set(item.key, index); });
         return Object.keys(inventory)
           .filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0)
           .filter(key => cat === 'all' || ITEM_DEFS[key].cat === cat)
-          .sort((a, b) => getKnownItemRank(a) - getKnownItemRank(b) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
+          .sort((a, b) => (ranks.get(a) ?? 9999) - (ranks.get(b) ?? 9999) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
       }
 
+      const inventoryWheelCache = { frame: -1, keys: [], defs: [], catalog: [], held: null, eligible: null, stacks: [], reads: 0, builds: 0 }; // Shared by held-item consumers; counters appear in the existing item-sprite diagnostics.
+
       function getInventoryStackItems() {
+        const keys = Object.keys(inventory).filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0); // Checks ownership changes immediately, even between two actions in one frame.
+        const eligible = window.ItemProcessing.isWheelEligible; // A replacement eligibility provider also invalidates this frame's result.
+        inventoryWheelCache.reads++;
+        if (inventoryWheelCache.frame === gameFrameSerial && inventoryWheelCache.eligible === eligible
+            && inventoryWheelCache.held === manualHeldItem
+            && keys.length === inventoryWheelCache.keys.length
+            && keys.every((key, index) => key === inventoryWheelCache.keys[index] && ITEM_DEFS[key] === inventoryWheelCache.defs[index])
+            && inventoryItems.length === inventoryWheelCache.catalog.length
+            && inventoryItems.every((item, index) => item === inventoryWheelCache.catalog[index])) return inventoryWheelCache.stacks;
         // The item wheel/scroller's own list — every consumer of this
         // function (the active-item scroll, the desktop selection arc,
         // refreshActionBar's held-item resolution, the two inventory-panel
@@ -16248,12 +16257,22 @@
         // inventory grid — see isWheelEligible's own comment for what does
         // and doesn't qualify, and its own "Hold" button (selectInventoryItem)
         // for how a non-wheel item still gets offered as a gift.
-        return getInventoryStackKeys('all').filter(window.ItemProcessing.isWheelEligible).map(key => inventoryItems.find(item => item.key === key) || {
+        const itemsByKey = new Map(); // Reuses the first catalog entry, matching the previous Array.find behavior.
+        inventoryItems.forEach(item => { if (!itemsByKey.has(item.key)) itemsByKey.set(item.key, item); });
+        inventoryWheelCache.stacks = getInventoryStackKeys('all').filter(eligible).map(key => itemsByKey.get(key) || {
           key,
           icon: ITEM_DEFS[key].icon,
           label: ITEM_DEFS[key].label.toUpperCase(),
           max: 99,
         });
+        inventoryWheelCache.frame = gameFrameSerial;
+        inventoryWheelCache.keys = keys;
+        inventoryWheelCache.defs = keys.map(key => ITEM_DEFS[key]);
+        inventoryWheelCache.catalog = inventoryItems.slice();
+        inventoryWheelCache.held = manualHeldItem;
+        inventoryWheelCache.eligible = eligible;
+        inventoryWheelCache.builds++;
+        return inventoryWheelCache.stacks;
       }
 
       function getActiveInventoryItem(stacks = getInventoryStackItems()) {
