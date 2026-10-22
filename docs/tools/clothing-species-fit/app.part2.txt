@@ -212,7 +212,7 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
                 rearImage=await loadImage(assetUrl(record.behindPath));
                 const rearCanvas=Object.assign(document.createElement('canvas'),{width,height}); // Independent rear-view override, never substituted for the front layer.
                 rearCanvas.getContext('2d',{alpha:true}).drawImage(rearImage,0,0);
-                exportedLayers.push({name:`head.layers.${record.name}.behindImage`,path:layerPath,url:record.behindPath,role:record.layer.layerRole||'',view:'behind',canvas:rearCanvas});
+                exportedLayers.push({name:`head.layers.${record.name}.behindImage`,path:[...layerPath,'behindImage'],url:record.behindPath,role:record.layer.layerRole||'',view:'behind',canvas:rearCanvas});
               }catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
             }
             const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
