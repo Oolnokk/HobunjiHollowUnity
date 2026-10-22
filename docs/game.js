@@ -2473,7 +2473,9 @@
         servingTable: { itemKey:'servingTableFurniture', icon:'🍲', name:'Serving Table', fw:4, fd:1, color:0x926a43, area:'any', price:40, desc:'A table with reusable furniture placed on its authored surface.' },
         servingPot: { itemKey:'servingPotFurniture', icon:'🍲', name:'Serving Pot', fw:1, fd:1, color:0x52433e, area:'any', price:10, desc:'An open serving pot for surface placement.' },
         bowlStack: { itemKey:'bowlStackFurniture', icon:'🥣', name:'Stack of Bowls', fw:1, fd:1, color:0x906344, area:'any', price:8, desc:'Stacked bowls for a shared table.' },
-        festivalArch:  { itemKey:'festivalArchFurniture',icon:'🎏',name:'Festival Road Arch',fw:1,fd:1,color:0x906344,area:'any',walkable:true,price:32,desc:'Modular overhead wooden arch with PNG pennants; festivalArchWidth sets its clear span in authored maps.' }, // Map/editor and inventory furniture registry for reusable, walk-through festival arches.
+        festivalStage: { itemKey:'festivalStageFurniture',icon:'🎵',name:'Festival Bandstand Stage',fw:2,fd:2,color:0x906344,area:'any',walkable:true,price:80,desc:'Editable wooden stage, platform, steps, and back rail.' },
+        festivalDanceFloor: { itemKey:'festivalDanceFloorFurniture',icon:'💃',name:'Festival Dance Floor',fw:2,fd:2,color:0x906344,area:'any',walkable:true,price:60,desc:'A broad wooden dance floor with carved edging.' },
+        festivalArch: { itemKey:'festivalArchFurniture',icon:'🎏',name:'Festival Road Arch',fw:1,fd:1,color:0x906344,area:'any',walkable:true,price:32,desc:'Editable overhead wooden arch with cloth pennants; festivalArchWidth sets its clear span in authored maps.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         artifactPedestal: { itemKey: 'artifactPedestalFurniture', icon: '🏛️', name: 'Artifact Pedestal', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'any', fixture: true, desc: 'Garanki’s display pedestal for donated artifacts.' },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
@@ -2541,6 +2543,8 @@
       // procedural CATALOG for any key not (yet) in this list.
       const AUTHORED_FURNITURE_KEYS = new Set([
         'servingTable', 'servingPot', 'bowlStack',
+        'festivalStage', 'festivalDanceFloor', 'festivalArch',
+        'festivalGifts', 'festivalAncestors', 'festivalBlossoms', 'festivalFeast', 'festivalSweets', 'festivalMasks', 'festivalBunting',
         'chairSimple', 'chairCushion', 'stool', 'bench',
         'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
         'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
@@ -2582,6 +2586,9 @@
       // and mechanisms use the existing copper/tin/bronze hierarchy, never rare
       // weapon-tier alloys merely for decoration. Wool supplies actual textiles.
       const FURNITURE_MATERIAL_COSTS = { // Used by the shared blueprint catalog and all Crafting-tab material checks.
+        festivalStageFurniture: { wood: 24 },
+        festivalDanceFloorFurniture: { wood: 18 },
+        festivalArchFurniture: { wood: 8, lightWool: 2 },
         pestleFurniture: { wood: 2, stone: 4 },
         squeezerFurniture: { wood: 4, bar_nativeCopper: 1 },
         handMillFurniture: { wood: 3, stone: 5, bar_lowTinBronze: 1 },

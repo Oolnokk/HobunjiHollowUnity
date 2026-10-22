@@ -48,9 +48,12 @@ assert.equal(layout.decor.filter(prop=>prop.festivalRoadArch).length,6,'town-wid
 assert(layout.decor.filter(prop=>prop.festivalRoadArch).every(prop=>prop.key==='festivalArch' && prop.festivalArchWidth>=4), 'road arches use real variable-width furniture, not rug proxies');
 const authoredSlots=town.layouts.find(l=>l.id==='festival_gorkunash').decor.reduce((n,root)=>n+(root.festivalLocale?.slots?.length||0),0); // Includes authored buffet queue/service destinations.
 assert.equal(layout.npcStations.filter(station=>station.festivalLocaleParent).length,authoredSlots,'all generated locale destinations');
-assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,23,'all generated locale furnishings, including the elevated ordinary table platform');
+assert.equal(layout.decor.filter(prop=>prop.festivalLocaleParent).length,22,'all generated locale furnishings; the stage now owns its editable platform');
 const originalRoot=town.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand');
 const originalMusic=layout.npcStations.find(station=>station.id==='gorkunash_bandstand:station:foroji');
+assert.equal(originalRoot.key,'festivalStage','stage is complete editable furniture');
+assert.equal(layout.decor.find(prop=>prop.id==='gorkunash_dancefloor').key,'festivalDanceFloor');
+for(const station of layout.npcStations.filter(station=>station.festivalRole==='musician'))assert.equal(station.rotY,90,'both musician shifts face east toward the dance area');
 const moved=structuredClone(town);
 moved.layouts.find(l=>l.id==='festival_gorkunash').decor.find(p=>p.id==='gorkunash_bandstand').col += 4;
 const movedMusic=W.MapLayoutSystem.getEffectiveMapData(moved,{dateOrdinal:civilDay,minutes:hour*60,weekday:'Anan'}).npcStations.find(station=>station.id===originalMusic.id);

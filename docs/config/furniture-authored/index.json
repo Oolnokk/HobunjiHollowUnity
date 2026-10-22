@@ -1,7 +1,10 @@
 {
   "schema": "hobunji-furniture-authored-index/v1",
   "furniture": [
-    { "key": "artifactPedestal", "file": "config/furniture-authored/artifactPedestal.json" },
+    {
+      "key": "artifactPedestal",
+      "file": "config/furniture-authored/artifactPedestal.json"
+    },
     {
       "key": "agingBarrel",
       "file": "config/furniture-authored/agingBarrel.json"
@@ -229,6 +232,58 @@
     {
       "key": "hangingBanner",
       "file": "config/furniture-authored/hangingBanner.json"
+    },
+    {
+      "key": "festivalStage",
+      "file": "config/furniture-authored/festivalStage.json"
+    },
+    {
+      "key": "festivalDanceFloor",
+      "file": "config/furniture-authored/festivalDanceFloor.json"
+    },
+    {
+      "key": "festivalArch",
+      "file": "config/furniture-authored/festivalArch.json"
+    },
+    {
+      "key": "festivalGifts",
+      "file": "config/furniture-authored/festivalGifts.json"
+    },
+    {
+      "key": "festivalAncestors",
+      "file": "config/furniture-authored/festivalAncestors.json"
+    },
+    {
+      "key": "festivalBlossoms",
+      "file": "config/furniture-authored/festivalBlossoms.json"
+    },
+    {
+      "key": "festivalFeast",
+      "file": "config/furniture-authored/festivalFeast.json"
+    },
+    {
+      "key": "festivalSweets",
+      "file": "config/furniture-authored/festivalSweets.json"
+    },
+    {
+      "key": "festivalMasks",
+      "file": "config/furniture-authored/festivalMasks.json"
+    },
+    {
+      "key": "festivalBunting",
+      "file": "config/furniture-authored/festivalBunting.json"
+    },
+    {
+      "key": "servingTable",
+      "file": "config/furniture-authored/servingTable.json"
+    },
+    {
+      "key": "servingPot",
+      "file": "config/furniture-authored/servingPot.json"
+    },
+    {
+      "key": "bowlStack",
+      "file": "config/furniture-authored/bowlStack.json"
     }
   ]
 }

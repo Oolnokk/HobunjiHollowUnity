@@ -327,6 +327,7 @@
       pendingAuthoredFurnitureKey: null,
     });
     target.updateMatrixWorld?.(true);
+    window.FestivalProps?.onAuthoredFurnitureReady?.(target); // Applies intrinsic arch span only after final authored mesh ownership is known.
     if (target.userData.instanceSurfacePlacements) authoredRuntime.setItemPlacements(target, data, target.userData.instanceSurfacePlacements); // Instance arrangements survive the same asynchronous upgrade as authored furniture.
     window.FurniturePatternSurfaces?.applyOverrides?.(target, target.userData?.patternOverrides); // Instance decorations survive asynchronous replacement of the procedural placeholder.
     window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(target, data, data.key || target.userData?.authoredFurnitureKey); // Reattaches part-bound ambient VFX only after the real authored mesh map exists.
@@ -357,6 +358,7 @@
 
     Promise.resolve(authoredRuntime.load(key))
       .then((data) => {
+        if (group.userData.authoredFurnitureDisposed) return; // A removed festival structure must not allocate a fresh mesh/material set after its async load finishes.
         if (!data) {
           group.userData.pendingAuthoredFurnitureKey = null;
           group.userData.authoredFurnitureFallbackMissing = true;

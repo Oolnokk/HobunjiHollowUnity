@@ -122,6 +122,14 @@ assert(scheduling.resolveNpcStationTarget('other'));
   console.log('Festival spacing, open exits, editor round-trip, station cleanup, and live layout lifecycle passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
-const atlasUrls=[]; // Nested editor documents must still resolve textures from docs/assets.
-vm.runInNewContext(source('festival-props'),{URL,document:{currentScript:{src:'https://example.test/commit/docs/js/festival-props.js'}},window:{THREE:{TextureLoader:class {load(url){atlasUrls.push(url);return {};}}}}});
-assert.deepEqual(atlasUrls,['https://example.test/commit/docs/assets/furniture/festival-wood.png','https://example.test/commit/docs/assets/furniture/festival-flags.png']);
+const dressingWindow = {}; // Festival dressings use the house-furniture JSON/PNG builder, rather than a separate texture atlas.
+vm.runInNewContext(source('festival-props'), {window:dressingWindow});
+for (const key of Object.values(dressingWindow.FestivalProps.dressingKeys)) {
+  const data = JSON.parse(fs.readFileSync(`docs/config/furniture-authored/${key}.json`, 'utf8')); // Real editor-importable records back every live decoration.
+  assert.equal(data.key, key);
+  assert(data.parts.length > 0);
+  for (const part of data.parts) {
+    assert(part.materialTexture, `${key}/${part.id} has a PNG surface`);
+    assert(fs.existsSync(`docs/assets/textures/${part.materialTexture}`));
+  }
+}
