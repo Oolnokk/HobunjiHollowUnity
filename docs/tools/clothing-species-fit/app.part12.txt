@@ -125,15 +125,16 @@ E.redo.onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshot());resto
 E.bodyPng.onclick=()=>R.body&&downloadCanvas(bodyOut(),`${safeName(E.species.value)}_${E.gender.value}_${fitRegion()==='headwear'?'head_reference':'body'}.png`);
 E.clothPng.onclick=()=>{const fit=captureFitState(),c=clothOut(fit);if(c){downloadCanvas(c,fittedClothingFilename());log(`Fitted clothing PNG baked ${fit.key} base ${JSON.stringify(fit.transform)} + ${fit.offsets.length} local offsets.`)}};
 E.overlayPng.onclick=()=>R.body&&downloadCanvas(overlayOut(),`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}_overlay.png`);
-E.exportHeadwear.onclick=()=>{
-  if(fitRegion()!=='headwear'||!R.body||!R.cloth){log('Select and load a hat or hood before exporting its front/back layers.');return}
+function exportHeadwearView(view){
+  if(fitRegion()!=='headwear'||!R.body||!R.cloth){log('Select and load a hat or hood before exporting headwear layers.');return}
+  const canvas=headwearWarpForView(view,true);
+  if(!canvas){log(`No ${view} headwear layer exists for this item.`);return}
   const stem=`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}`;
-  for(const view of ['back','front']){
-    const canvas=headwearWarpForView(view,true);
-    if(canvas)downloadCanvas(canvas,`${stem}_${view}.png`);
-  }
-  log(`Exported front/back fitted headwear for ${stem}; layers preserve the shared 6×6 deformation.`);
-};
+  downloadCanvas(canvas,`${stem}_${view}.png`);
+  log(`Exported ${view} fitted headwear for ${stem}.`);
+}
+E.exportHeadwearFront.onclick=()=>exportHeadwearView('front');
+E.exportHeadwearBack.onclick=()=>exportHeadwearView('back');
 E.exportJson.onclick=exportGrids;E.importJson.onclick=()=>E.file.click();
 E.file.onchange=async()=>{const f=E.file.files?.[0];if(!f)return;try{await importGrids(f)}catch(error){log('ERROR '+error.message)}E.file.value=''};
 E.importDiagnostics.onclick=importPastedDiagnostics;
