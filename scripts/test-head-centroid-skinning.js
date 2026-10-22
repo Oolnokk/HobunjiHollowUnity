@@ -19,17 +19,20 @@ function extract(source, name) {
 }
 class Matrix4 {
   constructor(s = 1, y = 0) { this.s = s; this.y = y; }
+  clone() { return new Matrix4(this.s, this.y); }
   fromArray(a, offset) { this.s = a[offset]; this.y = a[offset + 13]; return this; }
   multiplyMatrices(a, b) { this.s = a.s * b.s; this.y = a.s * b.y + a.y; return this; }
 }
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { Object.assign(this, { x, y, z }); }
+  set(x, y, z) { Object.assign(this, { x, y, z }); return this; }
   clone() { return new Vector3(this.x, this.y, this.z); }
   copy(v) { Object.assign(this, v); return this; }
   applyMatrix4(m) { this.x *= m.s; this.y = this.y * m.s + m.y; this.z *= m.s; return this; }
   addScaledVector(v, w) { this.x += v.x * w; this.y += v.y * w; this.z += v.z * w; return this; }
 }
-const context = vm.createContext({ THREE: { Vector3, Matrix4 }, portraitsFlipped: false,
+const context = vm.createContext({ pixelPositionScratch: null, // Extracted production functions share this stand-in for their enclosing reusable scratch.
+  THREE: { Vector3, Matrix4 }, portraitsFlipped: false,
   mirrorShoulderPerchWithPortrait: true, resolveSkinnedPortraitRoot: root => root,
   smoothstep01: t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); },
 });
@@ -70,6 +73,9 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
     }
     near(resolve(fixture(.8, 3, 2, cached, true), { x: 50, y: 10 }).y, 3 + .8 * .4, 'legacy two-bone rig remains supported');
   }
+  const output = new Vector3(); // The new hot-path overload must preserve caller-owned vector identity.
+  assert.strictEqual(resolve(fixture(1, 0, 2), { x: 50, y: 10 }, output), output);
+  near(output.y, .6, 'caller-owned output includes compensated head scale');
   context.portraitsFlipped = true;
   const root = fixture(1, 0, 2); root.userData.neckRig.headBoundsPx = { left: 15, right: 25 };
   near(resolve(root, { x: 80, y: 10 }).y, .6, 'mirrored landmark uses rendered X for head-scale gate');

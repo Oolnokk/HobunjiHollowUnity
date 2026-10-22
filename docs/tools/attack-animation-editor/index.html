@@ -134,6 +134,8 @@ canvas{display:block;width:100%;height:100%}
         </select>
       </div>
     </div>
+    <label class="fieldRow"><input type="checkbox" id="headRelative" style="width:auto">Head relative</label>
+    <div class="help">Use the visible head as the XYZ origin. Offsets bypass arm/orbit scaling; ranged aim pivots at the head.</div>
     <div class="field"><label>Preview held sprite / weapon</label><select id="toolSpriteSelect"></select></div>
     <div class="compactGrid">
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
@@ -291,16 +293,16 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20261017h64afb2a"></script>
+<script src="../../js/png-plane-avatar.js?v=20261022hea8b100"></script>
 <script src="../../js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-<script src="../../js/held-action-animations.js?v=20261022pantsFallback1"></script>
+<script src="../../js/held-action-animations.js?v=20261022h5a1d662"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
-<script src="../../js/combat/shared-attack-pose.js?v=20261018a"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261022h3e71602"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -555,8 +557,9 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
+    'Latest: imported B’shuakauitl adjustments; head-relative weapons are masked by their owner’s rear silhouette only.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
+    `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
     `Centroid used for X/Z orbit (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
@@ -710,6 +713,7 @@ toolBase.add(gizmoProxy);
 transformControls.setSpace('local'); // The proxy supplies the orientation: rig frame to translate, tool frame to rotate.
 const proxyPivotOffset = new THREE.Vector3(); // Visible weapon's origin in the holder's own local frame (constant while the pose rotates).
 const proxyScratch = new THREE.Vector3();
+const headGizmoScratch = new THREE.Vector3(); // Reused to invert head-origin translations during gizmo edits.
 const IDENTITY_QUATERNION = new THREE.Quaternion();
 function gizmoPivotVisual() {
   const dual = window.HobunjiDualWieldWeaponVisuals;
@@ -748,15 +752,17 @@ transformControls.addEventListener('objectChange', () => {
     toolBase.position.y + toolHolder.position.y,
     toolBase.position.z + toolHolder.position.z
   ); // Concrete selected-species point in rig space.
-  window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
+  if (!anim.headRelative) window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
   }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
-  p.x = poseOrbitScratch.x - toolBase.position.x;
-  p.y = poseOrbitScratch.y - toolBase.position.y;
-  p.z = poseOrbitScratch.z - toolBase.position.z;
+  if (anim.headRelative && SharedAttackPose.headAnchor(headGizmoScratch, avatarModel, rig)) poseOrbitScratch.sub(headGizmoScratch);
+  else poseOrbitScratch.sub(toolBase.position);
+  p.x = poseOrbitScratch.x;
+  p.y = poseOrbitScratch.y;
+  p.z = poseOrbitScratch.z;
   const e = new THREE.Euler().setFromQuaternion(toolHolder.quaternion, 'YXZ'); // Inverse of qYaw*qPitch*qRoll.
   p.pitch = THREE.MathUtils.radToDeg(e.x);
   p.yaw = THREE.MathUtils.radToDeg(e.y);
@@ -894,6 +900,7 @@ let anim = {
   strikeFrac: 0.55,
   holdFrac: 0.68,
   durationS: 0.5,
+  headRelative: false, // Selected animation's reference frame, persisted through import/export and history.
   toolEndFlip: false,
   spinBasisDeg: 0,
   spinRevolutions: 0,
@@ -1153,7 +1160,14 @@ function flipPose(p) {
   }
   return flipped;
 }
+$('headRelative').onchange = () => {
+  anim.headRelative = $('headRelative').checked;
+  for (const pose of Object.values(anim.poses)) pose.headRelative = anim.headRelative;
+  refreshJsonView();
+  logDebug(`Animation origin: ${anim.headRelative ? 'head (arm scaling bypassed)' : 'hand'}`);
+};
 function syncToolEndFlipUi() {
+  $('headRelative').checked = anim.headRelative === true;
   const btn = $('toolEndFlipBtn');
   if (!btn) return;
   btn.textContent = `↕ Tool End Flip: ${anim.toolEndFlip ? 'On' : 'Off'}`;
@@ -1310,7 +1324,15 @@ function applyPreset(preset) {
     $('durationS').value = anim.durationS;
   }
   anim.style = preset.style;
+  const gripContextSelect = $('handGripContextSelect'); // Loaded blowgun previews must use its ranged grip, never its melee calibration.
+  const gripContext = anim.style === 'ranged' ? 'ranged' : 'melee'; // Action style selects the matching authored grip family.
+  if (gripContextSelect && gripContextSelect.value !== gripContext) {
+    gripContextSelect.value = gripContext;
+    gripContextSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   anim.sequence = preset.sequence || 'attack';
+  anim.headRelative = preset.headRelative === true || preset.neutral?.headRelative === true;
+  for (const pose of Object.values(anim.poses)) pose.headRelative = anim.headRelative;
   anim.toolEndFlip = preset.toolEndFlip === true;
   anim.spinBasisDeg = safeNum(preset.spinBasisDeg, 0);
   anim.spinRevolutions = Math.max(0, safeNum(preset.spinRevolutions, 0));
@@ -1411,7 +1433,9 @@ function applyPoseToRig(pose) {
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
-  window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
+  if (anim.headRelative && SharedAttackPose.headAnchor(poseOrbitScratch, avatarModel, rig)) {
+    poseOrbitScratch.x += lastAuthoredPose.x; poseOrbitScratch.y += lastAuthoredPose.y; poseOrbitScratch.z += lastAuthoredPose.z;
+  } else window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
@@ -1459,6 +1483,7 @@ const ACTION_DEFS = [
 
   { id: 'crossbow_load', group: 'Non-attack held actions', label: 'Crossbow — Load', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_load', practical: false },
   { id: 'scatterbow_load', group: 'Non-attack held actions', label: 'Scatterbow — Load', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_load', practical: false },
+  { id: 'blowgun_ready', group: 'Non-attack held actions', label: "B'shuakauitl — Loaded", heldAnimationKey: 'blowgunReady', practical: false, toolKey: 'bshuakauitl' },
   { id: 'drink', group: 'Non-attack held actions', label: 'Drink', heldAnimationKey: 'drink', practical: false, toolKey: 'bottle' },
   { id: 'held_item_large', group: 'Non-attack held actions', label: 'Large Held Item — Idle (two-hand)', heldAnimationKey: 'heldItemLarge', practical: false, toolKey: 'bottle' },
   { id: 'heavy_idle', group: 'Non-attack held actions', label: 'Heavy Weapon — Idle', templateId: 'heavy_weapon_idle', practical: false },
@@ -1523,7 +1548,7 @@ function templateForAction(action) {
       ...held,
       sequence: held.sequence || 'attack',
       toolKey: action.toolKey,
-      still: false,
+      still: held.still === true,
     });
   }
   const preset = TOOL_PRESETS.find(entry => entry.id === action.templateId);
@@ -1956,6 +1981,7 @@ function exportAnimObject() {
     strikeFrac: anim.strikeFrac,
     holdFrac: anim.holdFrac,
     durationS: anim.durationS,
+    headRelative: anim.headRelative === true,
     toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
@@ -2028,6 +2054,7 @@ function loadAnimObject(data) {
   // than silently growing a pause into a previously-authored animation.
   anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
+  anim.headRelative = (data.headRelative ?? data.poses?.neutral?.headRelative) === true;
   anim.toolEndFlip = data.toolEndFlip === true;
   anim.spinBasisDeg = safeNum(data.spinBasisDeg, safeNum(actionSource?.spinBasisDeg, 0));
   anim.spinRevolutions = Math.max(0, safeNum(data.spinRevolutions, safeNum(actionSource?.spinRevolutions, 0)));
@@ -2046,6 +2073,7 @@ function loadAnimObject(data) {
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
+    anim.poses[phase].headRelative = anim.headRelative;
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
     if (raw?.secondaryGrip && typeof raw.secondaryGrip === 'object') anim.poses[phase].secondaryGrip = { ...raw.secondaryGrip };
     if (raw?.dualWield != null) anim.poses[phase].dualWield = typeof raw.dualWield === 'object' ? { ...raw.dualWield } : raw.dualWield;
@@ -2190,7 +2218,16 @@ function animate() {
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
-  renderer.render(scene, camera);
+  const headOcclusion = window.HeadRelativeWeaponOcclusion; // Same silhouette rule as the game compositor, including skinning and rear-only material groups.
+  const rear = avatarModel?.userData?.neckRig?.skinnedPlane; // Preview portraits use the canonical front/back skinned mesh.
+  const weapon = toolPlaneMesh?.userData?.toolPlane; // Visible PNG only; hands keep their normal depth behavior.
+  if (anim.headRelative && rear && weapon && headOcclusion) {
+    const wasVisible = weapon.visible; // Base world draw omits only the head-relative weapon, then the scoped helper draws it once.
+    weapon.visible = false;
+    try { renderer.render(scene, camera); }
+    finally { weapon.visible = wasVisible; } // Never leave the preview weapon hidden after a render failure.
+    if (wasVisible) headOcclusion.draw(renderer, scene, camera, renderer.render, [{ rear, weapons: [weapon] }], THREE);
+  } else renderer.render(scene, camera);
 }
 animate();
 

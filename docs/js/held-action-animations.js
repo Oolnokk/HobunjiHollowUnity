@@ -8,6 +8,7 @@
     version: 1,
     kind: 'hobunji_held_action_animation',
     name: 'Drink',
+    headRelative: true, // All endpoints use the visible head as their origin.
     style: 'drink',
     durationS: 0.95,
     windupFrac: 0.38,
@@ -15,10 +16,10 @@
     holdFrac: 0.78,
     poses: {
       // Neutral is an idle endpoint: Pitch + Roll aim to the shoulder.
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
+      neutral: { headRelative: true, x: -0.45, y: -0.4, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
       // Active endpoints deliberately retain Roll-only shoulder alignment.
-      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
-      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      windup: { headRelative: true, x: -0.13, y: -0.19, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      strike: { headRelative: true, x: -0.05, y: 0, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
     },
   };
 
@@ -123,7 +124,92 @@
     },
   };
 
-  window.HeldActionAnimations = Object.freeze({ drink, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
+  const blowgunReady = {
+    "version": 1,
+    "kind": "hobunji_attack_animation",
+    "name": "B'shuakauitl — Loaded",
+    "style": "ranged",
+    "sequence": "attack",
+    "windupFrac": 0.38,
+    "strikeFrac": 0.62,
+    "holdFrac": 0.78,
+    "durationS": 0.95,
+    "headRelative": true,
+    "toolEndFlip": false,
+    "poses": {
+      "neutral": {
+        "x": -0.05,
+        "y": 0,
+        "z": 0.22,
+        "pitch": -180,
+        "yaw": 21,
+        "roll": 4,
+        "bodyYaw": 0,
+        "scale": 1.3,
+        "headRelative": true,
+        "shoulderAim": {
+          "grip": false,
+          "palmNormal": true
+        },
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      },
+      "windup": {
+        "headRelative": true,
+        "x": 0.01,
+        "y": -0.03,
+        "z": 0.88,
+        "pitch": -180,
+        "yaw": 0,
+        "roll": 0,
+        "bodyYaw": 0,
+        "shoulderAim": {
+          "grip": false,
+          "palmNormal": true
+        },
+        "scale": 1.3,
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      },
+      "strike": {
+        "headRelative": true,
+        "x": -0.05,
+        "y": 0,
+        "z": 0.22,
+        "pitch": -180,
+        "yaw": 21,
+        "roll": 4,
+        "bodyYaw": 0,
+        "shoulderAim": {
+          "grip": false,
+          "palmNormal": true
+        },
+        "scale": 1.3,
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      }
+    },
+    "gripMode": "palm-parallel"
+  }; // Authored loaded/fire animation; independent from Drink.
+  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
@@ -203,12 +289,13 @@
   // Cache versions below are bumped whenever their held-item authoring contract changes.
   // This matters on the stable game/editor URLs where the parent held-action script URL itself may be cached.
   const handScripts = [
+    new URL('js/head-relative-weapon-occlusion.js?v=20261022a', docsBase).href,
     new URL('config/hand-model-profiles.js?v=20260919handreview1', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261017h24a6e68', docsBase).href,
-    new URL('js/hand-tool-grip-authored-overrides.js?v=20261007h0531ae6', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
+    new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261018hd906350', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,

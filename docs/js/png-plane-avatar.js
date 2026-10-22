@@ -971,7 +971,8 @@
   // Resolves an authored source-pixel coordinate through the same live torso/head
   // skinning used by the portrait SkinnedMesh. This remains avatar-instance
   // data so species-level cached anchors cannot be reused for a different pose.
-  function resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel) {
+  let pixelPositionScratch = null; // Lazily allocated once from the active Three.js objects, including module-based editor previews.
+  function resolveSkinnedPixelWorldPosition(avatarRoot, sourcePixel, out = null) {
     const portraitRoot = resolveSkinnedPortraitRoot(avatarRoot);
     if (!portraitRoot) return null;
     const rig = portraitRoot.userData.neckRig;
@@ -988,7 +989,8 @@
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
     const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
-    const localPoint = new THREE.Vector3(
+    const localPoint = out || new THREE.Vector3(); // Optional caller-owned output avoids per-frame vector allocations.
+    localPoint.set(
       -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
       0,
@@ -1004,19 +1006,21 @@
     // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
     // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
     // exactly as the renderer does before evaluating the skinning shader.
+    portraitRoot.updateWorldMatrix?.(true, false); // Pose callers may have changed an ancestor facing/scale before the render traversal.
     portraitRoot.updateMatrixWorld?.(true);
     skinnedPlane.updateMatrixWorld?.(true);
     skeleton.update?.();
 
-    const bindPoint = localPoint.clone().applyMatrix4(skinnedPlane.bindMatrix);
-    const deformed = new THREE.Vector3();
-    const bonePoint = new THREE.Vector3();
-    const boneMatrix = new THREE.Matrix4();
+    pixelPositionScratch ||= { // Reused across sequential pixel queries; every caller keeps its own returned/output vector.
+      bindPoint: localPoint.clone(), deformed: localPoint.clone(), bonePoint: localPoint.clone(), boneMatrix: skinnedPlane.bindMatrix.clone(),
+    };
+    const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
+    bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
+    deformed.set(0, 0, 0);
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
       ? headWeight * headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
-    const weights = [1 - headWeight, headWeight - headScaleWeight, headScaleWeight];
-    for (let i = 0; i < Math.min(weights.length, skeleton.bones.length); i++) {
-      const weight = weights[i] || 0;
+    for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
+      const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
       if (!weight) continue;
       if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
         boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
@@ -1030,8 +1034,8 @@
       bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);
       deformed.addScaledVector(bonePoint, weight);
     }
-    deformed.applyMatrix4(skinnedPlane.bindMatrixInverse);
-    return skinnedPlane.localToWorld(deformed);
+    localPoint.copy(deformed).applyMatrix4(skinnedPlane.bindMatrixInverse);
+    return skinnedPlane.localToWorld(localPoint);
   }
 
   // Builds the live local frame at an authored portrait pixel by sampling

@@ -29,10 +29,10 @@ assert(drink.durationS > 0 && drink.windupFrac < drink.strikeFrac && drink.strik
   'drink animation timing is positive and ordered');
 const numericDrinkPoses = Object.fromEntries(Object.entries(drink.poses).map(([phase, pose]) => [phase, Object.fromEntries(['x','y','z','pitch','yaw','roll','bodyYaw'].map(channel => [channel, pose[channel]]))]));
 assert.deepEqual(JSON.parse(JSON.stringify(numericDrinkPoses)), {
-  neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-  windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0 },
-  strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 },
-}, 'the shared definition preserves the exact neutral and action poses from Drink.json');
+  neutral: { x: -0.45, y: -0.4, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
+  windup: { x: -0.13, y: -0.19, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0 },
+  strike: { x: -0.05, y: 0, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 },
+}, 'drink path is expressed as head offsets, retaining its angles and relative endpoint motion');
 for (const phase of ['neutral', 'windup', 'strike']) {
   for (const channel of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
     assert(Number.isFinite(drink.poses[phase][channel]), `${phase}.${channel} is authorable numeric pose data`);

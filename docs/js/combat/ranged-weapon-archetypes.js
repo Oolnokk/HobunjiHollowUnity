@@ -111,10 +111,11 @@
     strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
   };
 
-  function syncBlowgunStanceFromDrink() {
+  function syncBlowgunStance() {
+    const authored = window.HeldActionAnimations?.blowgunReady; // Uploaded blowgun tuning now owns its endpoints independently of drinking.
     const strike = sharedDrinkStrikePose();
     for (const phase of ['neutral', 'windup', 'strike']) {
-      Object.assign(BLOWGUN_FIRE_POSE[phase], withScale(strike, 1.30));
+      Object.assign(BLOWGUN_FIRE_POSE[phase], withScale(authored?.poses?.[phase] || strike, 1.30));
     }
   }
 
@@ -240,6 +241,7 @@
 
   function blowgunConfig(toolDef) {
     const base = crossbowDefaults();
+    const animation = window.HeldActionAnimations?.blowgunReady; // Uses the complete authored loaded/fire export, including timing and grip mode.
     const projectileStats = projectileStatsForTool(toolDef, STRAIGHT_PROJECTILE_DEFAULTS);
     return {
       ...base,
@@ -258,11 +260,12 @@
       reloadWindupFrac: 0.55,
       reloadStrikeFrac: 0.56,
       reloadHoldFrac: 0.692,
-      fireDurationS: 1.04,
-      fireSequence: 'attack',
-      fireWindupFrac: 0.05,
-      fireAtFrac: 0.08,
-      fireHoldFrac: 0.17,
+      gripMode: animation?.gripMode || 'palm-parallel',
+      fireDurationS: animation?.durationS ?? 1.04,
+      fireSequence: animation?.sequence || 'attack',
+      fireWindupFrac: animation?.windupFrac ?? 0.05,
+      fireAtFrac: animation?.strikeFrac ?? 0.08,
+      fireHoldFrac: animation?.holdFrac ?? 0.17,
       firePose: clonePoseSet(BLOWGUN_FIRE_POSE),
       loadPose: clonePoseSet(BLOWGUN_LOAD_POSE),
     };
@@ -440,7 +443,7 @@
     const defs = toolDefinitions();
     if (!defs || !window.RangedWeapons?.config) return false;
     installAmmoProfiles();
-    syncBlowgunStanceFromDrink();
+    syncBlowgunStance();
     let changed = 0;
     for (const [itemKey, def] of Object.entries(defs)) {
       const type = rangedTypeFor(itemKey, def);

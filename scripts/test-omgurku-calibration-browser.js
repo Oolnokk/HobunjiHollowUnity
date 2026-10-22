@@ -177,9 +177,7 @@ const server=http.createServer((req,res)=>{
       null,{timeout:4000});
     await page.locator('#moveBtn').click();
     // Omgurku connector: use a real in-browser PNG upload, not a mocked
-    // renderer. It is disabled until the artwork arrives.
-    assert.equal(await page.evaluate(()=>[...window.HobunjiOmgurkuConnector.live].every(handle=>!handle.mesh.visible)),true,
-      'the authored connector remains hidden while its PNG is unavailable');
+    // renderer. Until the dedicated artwork ships, the basic pants sprite stands in.
     await page.evaluate(()=>{
       const canvas=document.createElement('canvas');canvas.width=80;canvas.height=120;
       const g=canvas.getContext('2d');g.fillStyle='#99bf99';g.beginPath();
@@ -197,6 +195,7 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>{
       const c=window.HobunjiOmgurkuConnector;
       return c?.live?.size===1 && [...c.live][0].mesh.visible
+        && [...c.live][0].tintStatus.source==='uploaded'
         && [...c.live][0].mesh.geometry.attributes.position.version>0;
     },null,{timeout:12000});
     const mirror=await page.evaluate(()=>{

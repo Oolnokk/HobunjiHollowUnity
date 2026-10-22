@@ -64,14 +64,7 @@ assert.match(avatarSource, /-modelWidth \/ 2 \+ \(renderedPixelX \/ pixelWidth\)
   'skinned source-pixel world placement uses the rendered portrait X coordinate');
 assert.match(avatarSource, /avatarRoot\?\.traverse\?\.\(candidate =>/,
   'authored source-pixel placement searches below an outer player root for the live PNG portrait rig');
-assert.match(paritySource, /const bindPoint = localPoint\.clone\(\)\.applyMatrix4\(skinnedPlane\.bindMatrix\)/,
-  'CPU source-pixel skinning enters the same bind space used by the Three.js SkinnedMesh shader');
-assert.match(paritySource, /boneMatrix\.fromArray\(skeleton\.boneMatrices, i \* 16\)/,
-  'CPU source-pixel skinning consumes the renderer-compatible weighted bone matrices');
-assert.match(paritySource, /deformed\.applyMatrix4\(skinnedPlane\.bindMatrixInverse\)/,
-  'CPU source-pixel skinning returns from bind space to mesh-local space before world placement');
-assert.ok(paritySource.indexOf('deformed.applyMatrix4(skinnedPlane.bindMatrixInverse)') < paritySource.indexOf('skinnedPlane.localToWorld(deformed)'),
-  'the skinned shoulder point is mesh-local before localToWorld, preventing the player world transform from being applied twice');
+// Bind-space, weighted skinning, output reuse and world-transform behavior execute in test-skinned-pixel-output.js.
 assert.match(attachmentRigSource, /shoulderPerch: \{ \.\.\.identityAnchor\(perch\), sourcePixel: \{ \.\.\.shoulderPerchRule\.sourcePixel \} \}/,
   'the gameplay-facing shoulder-perch anchor carries the same authored pixel used by its rule');
 assert.match(avatarSource, /for \(const texture of trackedPortraitTextures\) applyPortraitTextureFlip\(texture\)/,
