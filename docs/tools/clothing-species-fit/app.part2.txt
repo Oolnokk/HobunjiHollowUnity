@@ -113,7 +113,8 @@ function sourceHasGarmentArt(garment,species,gender){
   return collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).length>0;
 } // Limits the garment picker to exact authored sprites for the chosen starting character.
 function rebuildGarmentSelector(){
-  const region=fitRegion(),wantedGarment=E.garment.value||(region==='body'?(A.settings?.garment||''):(A.settings?.headGarment||''));
+  const region=fitRegion(),savedGarment=region==='body'?(A.settings?.garment||''):(A.settings?.headGarment||'');
+  const wantedGarment=(A.settings?.region===region?E.garment.value:'')||savedGarment; // Remember the previously selected item separately for clothing and headwear.
   E.garment.innerHTML='';
   for(const garment of R.garments){
     if(!(region==='body'?BODY_SLOTS:HEAD_SLOTS).has(garment.slot)||!sourceHasGarmentArt(garment,E.sourceSpecies.value,E.sourceGender.value))continue;
