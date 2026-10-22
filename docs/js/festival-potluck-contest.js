@@ -218,6 +218,7 @@
       onComplete(visit) {
         // Grant only after natural dialogue completion; a failed inventory grant leaves the visit pending.
         if (!rewardDeps?.grantMask?.(HELM_ID)) return false;
+        window.MetalArmorSystem?.prepareFestivalHelmPrize?.(); // Convert the ordinary festival cosmetic reward into a metal faceguard + wool cap article, with town-gated chest alloy.
         markRewarded(visit.event);
         rewardDeps.save?.();
         window.DoorstepVisits?.markDone?.(visit.key);
