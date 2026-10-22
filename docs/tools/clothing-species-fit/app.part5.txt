@@ -16,7 +16,7 @@ function currentExtendedWarp(finalFit=false){
 function bodyOut(){return fitRegion()==='headwear'?(R.headReference||R.body):R.body}
 function headwearWarpForView(view,finalFit=false){
   if(fitRegion()!=='headwear'||!R.cloth||!R.body)return null;
-  const source=view==='back'?R.cloth._back:R.cloth._front;
+  const source=view==='back'?(R.cloth._behindView||R.cloth._back):view==='under'?R.cloth._back:R.cloth._front;
   if(!source)return null;
   return warpGarment(source,finalFit?targetGrid():warpGridForMode(),R.body.width,R.body.height);
 } // Back and front sprites use the same saved 6×6 fit, but remain separate for compositing and exports.
@@ -34,7 +34,7 @@ function overlayOut(){
   const output=document.createElement('canvas');output.width=R.body.width;output.height=R.body.height;
   const ctx=output.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
   if(fitRegion()==='headwear'){
-    const back=headwearWarpForView('back',true),front=headwearWarpForView('front',true);
+    const back=headwearWarpForView('under',true),front=headwearWarpForView('front',true);
     if(back)ctx.drawImage(back,0,0);
     ctx.drawImage(bodyOut(),0,0);
     if(front)ctx.drawImage(front,0,0);
