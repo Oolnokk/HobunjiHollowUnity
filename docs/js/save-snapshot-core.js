@@ -69,8 +69,13 @@
     return parts.join('\u001f');
   }
 
-  function apply(snapshot) {
+  function apply(snapshot, { folderBacked = false } = {}) {
     validate(snapshot);
+    // Only a snapshot already committed to the primary folder may rely on a
+    // transient mirror. Browser/cloud/quick-load restores must survive reload.
+    if (!folderBacked && window.HobunjiStorageQuota?.requireBrowserPersistence) {
+      return window.HobunjiStorageQuota.requireBrowserPersistence(() => apply(snapshot, { folderBacked: true }));
+    }
     const validWorldIds = new Set((snapshot.meta.worlds || [])
       .map(world => String(world?.id || ''))
       .filter(Boolean));
