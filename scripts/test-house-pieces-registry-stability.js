@@ -48,6 +48,7 @@ const HousePieces = {
   },
 };
 const FarmEditor = {
+  captureFarmLayout() { return { version: 3, housePieces: registry.map(piece => ({ ...piece })) }; },
   farmLayoutKey() { return LAYOUT_KEY; },
   loadFarmLayout() {
     calls.loads += 1;
@@ -114,6 +115,8 @@ assert.equal(FarmEditor.saveFarmLayout(), false, 'invalid transient live registr
 assert.equal(calls.saves, 1, 'blocked save never reaches the original serializer');
 assert.equal(localStorage.getItem(LAYOUT_KEY), storedBeforeBlockedSave, 'blocked save leaves the authoritative stored layout untouched');
 assert.equal(HousePieces.debugRegistryStability().blockedInvalidSaveCount, 1);
+assert.throws(() => FarmEditor.captureFarmLayout(), /live house registry lost house_starter/, 'direct folder capture preserves the existing missing-house guard');
+assert.equal(localStorage.getItem(LAYOUT_KEY), storedBeforeBlockedSave, 'blocked capture makes no browser write');
 
 // FarmEditor-internal lexical saves cannot be monkey-patched from outside the
 // module. Simulate one writing a layout without housePieces; guarded loading

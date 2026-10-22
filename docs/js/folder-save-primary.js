@@ -26,6 +26,7 @@
 
   const rawLoadFromFolder = localSave.loadFromFolder.bind(localSave); // Core load retained so the wrapper can sanitize messaging and add a cross-tab lock.
   const rawSyncNow = localSave.syncNow.bind(localSave); // Core sync retained so explicit/manual flushes can share the cross-tab lock.
+  const rawSyncSnapshot = localSave.syncSnapshot?.bind(localSave); // Pinned manual/campfire/restore snapshots need the same cross-tab serialization as Settings Save.
 
   function withFolderLock(operation) {
     if (!navigator?.locks?.request) return Promise.resolve().then(operation);
@@ -41,6 +42,7 @@
   });
 
   localSave.syncNow = async (options = {}) => withFolderLock(() => rawSyncNow(options));
+  if (rawSyncSnapshot) localSave.syncSnapshot = async (snapshot, options = {}) => withFolderLock(() => rawSyncSnapshot(snapshot, options));
 
   function esc(value) {
     return String(value ?? '')
