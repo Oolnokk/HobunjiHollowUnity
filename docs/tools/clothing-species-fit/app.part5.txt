@@ -31,12 +31,10 @@ function fittedClothingFilename(){
 }
 function fittedLayerOutputs(fitState=captureFitState()){
   if(!R.cloth||!R.body)return [];
-  const patchPath=R.patchWorkflow.descriptor?.layerPath||[];
-  const hasLayerPatch=routedPatchIsClothing()&&R.patchWorkflow.canvas;
   const targetNorm=targetGridFromFitState(fitState);
   return (R.cloth._layers||[]).map(layer=>{
-    const isPatched=hasLayerPatch&&JSON.stringify(layer.path)===JSON.stringify(patchPath);
-    const source=isPatched?R.patchWorkflow.canvas:layer.canvas; // The behind author replaces exactly its chosen leaf, not every garment material.
+    const isPatched=layerMatchesRoutedClothingPatch(layer);
+    const source=fittedSourceCanvasForLayer(layer); // Same shared pixel frame and layer order as the live preview.
     return {...layer,patched:!!isPatched,canvas:warpGarment(source,targetNorm,R.body.width,R.body.height)};
   });
 } // Every layer uses one immutable fit snapshot; compositing is for preview only.
