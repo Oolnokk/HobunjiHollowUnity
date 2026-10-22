@@ -95,6 +95,27 @@ assert.equal((syncSource.match(/state\.lastRootPadKey = rootPadAudioKey\(targetC
   'Immediate root creation and live-root reuse must mark the bar as handled');
 assert.match(syncSource, /if \(!Number\.isFinite\(whenMs\)\) state\.lastRootPadKey/,
   'Scheduled future roots must not consume the current measure');
+const played = []; // Records actual root voices created by the production sync function under a fake AudioContext.
+const live = {rootPadEnabled:true,paused:false,audioContext:{state:'running'},master:{},
+  rootPadSampleBuffer:null,rootPadVoices:[],rootPadRootMidi:null,lastRootPadKey:null,rootPadLevel:.02};
+const playRoot = vm.runInNewContext(syncSource + '\nsyncRootPad;', {
+  state:live,document:{hidden:false},sharedTransportData:() => atBar(0,2),
+  rootPadAudioKey:rootKey,rootPadTargetMidi:() => 40,PAD_SYNTH_CROSSFADE_S:.8,
+  createRootPadVoice:midi => {
+    const voice = {midi,kind:'kurraya',active:true,stopping:false}; // Tracks each mock root attack through normal root voice bookkeeping.
+    live.rootPadVoices.push(voice); played.push(midi); return voice;
+  },
+  fadeOutRootPadVoice:voice => { voice.stopping = true; },
+  midiName:() => 'E2',log:() => {},
+});
+assert.equal(playRoot(true,null,atBar(8,2)),true);
+assert.equal(live.lastRootPadKey,'pluck:8:2');
+assert.equal(playRoot(true,null,atBar(9,2)),true);
+assert.deepEqual(played,[40,40], 'Even an unchanged chord gets one new root attack at the next measure');
+assert.equal(live.lastRootPadKey,'pluck:9:2');
+assert.equal(playRoot(true,1234,atBar(10,2)),true);
+assert.equal(live.lastRootPadKey,'pluck:9:2', 'Lookahead must not mark the future measure as already reached');
+
 assert.match(scripts[0], /state\.rootPadRootMidi === targetMidi && liveVoices\.some\(voice => voice\.kind === desiredKind\)/,
   'An ended pluck must not be mistaken for an active root voice');
 assert.match(host, /lyre-performance\.html\?v=[A-Za-z0-9_-]+/,
