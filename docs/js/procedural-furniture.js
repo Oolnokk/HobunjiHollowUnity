@@ -369,7 +369,7 @@
     let entry = _texCache.get(filename);
     if (entry) return entry;
     entry = { base: null, loaded: false, pendingClones: new Set() };
-    entry.base = _texLoader.load('assets/textures/' + filename, () => {
+    entry.base = _texLoader.load((window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + filename, () => {
       entry.loaded = true;
       for (const clone of entry.pendingClones) {
         finishPartTexture(clone, entry.base.image);

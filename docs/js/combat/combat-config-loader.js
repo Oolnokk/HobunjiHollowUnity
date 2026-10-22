@@ -84,7 +84,7 @@
     ['js/player-body-attachment-bridge.js?v=20261021habeb7c9', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
-    ['js/town-player-body-elevation-bridge.js?v=20261015h859406c', () => !!window.HobunjiTownBodyElevationBridge],
+    ['js/town-player-body-elevation-bridge.js?v=20261022h9a7f960', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/animal-subtle-elevation-bridge.js?v=20260920furniture1', () => !!window.HobunjiAnimalSubtleElevation],
     ['js/porch-surface-material.js?v=20260905a', () => !!window.HobunjiPorchSurfaceMaterial],
     ['js/drunk-locomotion.js?v=20261020h-npcrun-pivot3', () => !!window.HobunjiDrunkWalk],

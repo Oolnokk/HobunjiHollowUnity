@@ -28,7 +28,13 @@
       "bottomScaleX": 0.82,
       "bottomScaleZ": 0.82,
       "innerScale": 0.82,
-      "basinDepth": 0.12
+      "basinDepth": 0.12,
+      "materialTexture": "carved_smooth.png",
+      "materialRole": "pottery",
+      "materialFillMode": "always",
+      "materialFillEnabled": true,
+      "materialFillColor": "#52433e",
+      "materialRotationDeg": 0
     },
     {
       "id": "broth",
