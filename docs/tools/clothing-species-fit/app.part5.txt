@@ -44,16 +44,17 @@ function fittedLayerOutputs(fitState=captureFitState()){
 async function exportFittedGarment(){
   const fit=captureFitState();
   if(!R.cloth)return;
-  const layers=fittedLayerOutputs(fit);
-  if(layers.length<=1||routedPatchIsBody()){
-    const output=clothOut(fit);
-    if(output)downloadCanvas(output,fittedClothingFilename());
-    log(`Exported single fitted PNG (${fit.key}).`);
+  if((R.cloth._layers?.length||0)<=1||routedPatchIsBody()){
+    const output=clothOut(fit); // Don't spend another 800-triangle warp on a single-layer PNG.
+    if(output){downloadCanvas(output,fittedClothingFilename());log(`Exported single fitted PNG (${fit.key}).`)}
     return;
   }
+  const layers=fittedLayerOutputs(fit);
   const zipTools=window.ClothingFitZip; // Reuses the behind-sprite author's existing dependency-free ZIP encoder.
   if(!zipTools){log('ERROR ZIP export helper is not loaded; the editor cannot export layered sprites safely.');return}
-  const stem=`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}`;
+  const selection={garmentId:E.garment.value,fitRegion:fitRegion(),sourceSpecies:E.sourceSpecies.value,
+    sourceGender:E.sourceGender.value,targetSpecies:E.species.value,targetGender:E.gender.value}; // Pinned before asynchronous mobile PNG encoding.
+  const stem=`${safeName(selection.garmentId)}_${safeName(selection.targetSpecies)}_${selection.targetGender}`;
   const used=new Set(),files=[],entries=[];
   E.clothPng.disabled=true;
   try{
@@ -68,21 +69,19 @@ async function exportFittedGarment(){
       files.push({outputName:name,sourceConfigPath:layer.path,sourceUrl:layer.url,layerRole:layer.role,view:layer.view,patched:layer.patched});
     }
     const manifest={
-      format:'hobunji-clothing-fit-layered-v1',garmentId:E.garment.value,fitRegion:fitRegion(),
-      sourceSpecies:E.sourceSpecies.value,sourceGender:E.sourceGender.value,
-      targetSpecies:E.species.value,targetGender:E.gender.value,
+      format:'hobunji-clothing-fit-layered-v1',...selection,
       fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets},
       files
     }; // Layer identity and exact warp settings accompany every fitted raster for later config wiring.
     entries.push({name:'fitted-layers-manifest.json',bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
     const archiveName=`${stem}_fitted_layers.zip`;
     zipTools.downloadBlob(zipTools.buildStoredZip(entries),archiveName);
-    log(`Exported ${files.length} individually fitted layers in ${archiveName} from ${E.sourceSpecies.value} ${E.sourceGender.value}.`);
+    log(`Exported ${files.length} individually fitted layers in ${archiveName} from ${selection.sourceSpecies} ${selection.sourceGender}.`);
     E.sourceLayerStatus.textContent=`Exported ${files.length} layers to ${archiveName}. Composite export remains available.`;
   }catch(error){
     log('ERROR Fitted layer ZIP export: '+error.message);
     E.sourceLayerStatus.textContent='Layer export failed: '+error.message;
-  }finally{E.clothPng.disabled=false}
+  }finally{E.clothPng.disabled=!R.cloth}
 }
 function overlayOut(){
   const clothing=clothOut();if(!R.body||!clothing)return null;
