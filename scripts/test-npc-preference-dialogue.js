@@ -159,6 +159,13 @@ runtime.DialogueContent.resetDialogueState();
 runtime.DialogueContent.beginNpcConversation(activeNPC);
 assert.deepEqual(visibleChoices(), [], 'Fixed potion shop must not open outside its business map');
 
+// Character Studio must expose both fields independently; ordinary saves and local overrides use the same record.
+const studioSource = read('docs/tools/character-studio/index.html'); // Used for a lightweight editor integration check without a graphical browser.
+assert(studioSource.includes('id="npcLoreBackground"'), 'Character Studio must expose the backstory editor');
+assert(studioSource.includes("$('npcLoreBackground').value = n.loreBackground || ''"), 'Loading an NPC must populate the backstory editor');
+assert(studioSource.includes("n.loreBackground = $('npcLoreBackground').value"), 'Edits to backstory must serialize into the exported NPC database');
+assert(studioSource.includes("'npcTags','npcBio','npcLoreBackground'"), 'Backstory edits must trigger the same save/update flow as bio edits');
+
 // Backstory belongs to editable loreBackground, not NPC speech or an accidental bio fallback.
 for (const [npcId, part] of [
   ['kzubug', 'plague'], ['jubmir', 'noble blood'], ['binding_hatayap', 'wyrm'],
