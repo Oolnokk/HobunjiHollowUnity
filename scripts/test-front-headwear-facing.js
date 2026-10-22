@@ -84,10 +84,10 @@ assert.equal(portraitContext._getBehindLayerUrl(circletOption.layers[0], circlet
 const helmOption = portraitContext.portraitOptionFromJson({ id: 'replica_bzabag_helm' }, bzabagHelm);
 const helmLayers = helmOption.variantLayers['mao-ao_male'];
 assert.equal(helmLayers.length, 2, 'helm keeps precisely two head-front layers');
-assert.deepEqual(helmLayers.map(layer => layer.pos), ['front', 'front'], 'neither helm sprite goes beneath the front-view skull');
+assert.deepEqual(Array.from(helmLayers, layer => layer.pos), ['front', 'front'], 'neither helm sprite goes beneath the front-view skull');
 assert(helmLayers[0].url.endsWith("replica_bzabag's_helm-cap_m.png"), 'wool cap renders before the faceguard');
 assert(helmLayers[1].url.endsWith("replica_bzabag's_helm-faceguard_m.png"), 'metal faceguard covers cap in front view');
-assert.deepEqual(helmLayers.map(layer => layer.materialKind), ['cloth', 'metal'], 'cap and band retain independent material treatment');
+assert.deepEqual(Array.from(helmLayers, layer => layer.materialKind), ['cloth', 'metal'], 'cap and band retain independent material treatment');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[0], helmOption, 'male'), helmLayers[0].url, 'rear cap retains its exact source PNG');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), 'cosmetics/clothes/hat/headband.png', 'rear metal band shares Tanged Circlet behind sprite');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'the rear-band pixels use the existing Tanged Circlet path');
