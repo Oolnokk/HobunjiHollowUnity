@@ -20532,7 +20532,12 @@
         if (currentArea === 'town') {
           for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
-        if (currentArea === 'interior' && activeCameraMode === 'seated' && interiorWallGroup) meshes.push(interiorWallGroup);
+        if (currentArea === 'interior' && (activeCameraMode === 'seated' || activeCameraMode === SHOULDER_SURF_MODE)) {
+          if (interiorWallGroup) meshes.push(interiorWallGroup);
+          if (activeCameraMode === SHOULDER_SURF_MODE) {
+            for (const hearth of _derivedHearthMeshes) if (hearth.mesh) meshes.push(hearth.mesh);
+          }
+        }
         for (const obj of interiorFurnitureObjects) {
           const isActiveSeat = sitInteraction && obj.area === currentArea
             && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
@@ -20596,7 +20601,7 @@
       // through every crossed tile, caching tile-level walkability until the
       // beam enters a new cell. Height bounds prevent a short object acting
       // like an infinitely tall wall.
-      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ) {
+      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ, structuralOnly = false) {
         const grid = typeof npcGridForArea === 'function' ? npcGridForArea(currentArea) : null;
         if (!grid) return null;
         const dx = toX - fromX, dy = toY - fromY, dz = toZ - fromZ;
@@ -20614,11 +20619,17 @@
             // The same collision-grid authority used by NPC pathing covers
             // manual colliders, structural walls, occupied furniture tiles,
             // closed doors, and area footprint blockers.
-            isBlocked = !isNpcTileWalkable(currentArea, c, r);
+            // Radial gameplay checks structural cells only. NPC walkability
+            // expands small props to whole tiles, including a clear tile
+            // corner occupied by the player. Real meshes supply furniture
+            // shape/height; preserve the authored cutscene's grid fallback.
+            isBlocked = structuralOnly
+              ? !tile || (isSolid(tile.type) && !tile.npcFurnitureCollider)
+              : !isNpcTileWalkable(currentArea, c, r);
             if (!isBlocked) continue;
-            floor = tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+            floor = currentArea === 'interior' ? 0 : tile ? tileSurfaceYInArea(tile, currentArea) : 0;
             const furnitureFootprint = !!tile?.npcFurnitureCollider;
-            roof = floor + (furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
+            roof = floor + (currentArea === 'interior' ? INTERIOR_WALL_HEIGHT : furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
           }
           if (!isBlocked) continue;
           const y = fromY + dy * fraction;
@@ -20689,11 +20700,12 @@
             _cameraOcclusionRaycaster.far = requested;
             meshDistance = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0]?.distance ?? Infinity;
           }
-          // Structural wall tiles and furniture footprints do not always
-          // have camera-obstacle meshes, so sample the indoor collision grid.
+          // Structural walls can lack meshes. Furniture stays mesh-based:
+          // its movement footprint is too coarse for radial camera clearance.
           const tileDistance = cameraTileCollisionDistance(
             centerX, lookAtY, centerZ,
             centerX + rx * requested, idealY, centerZ + rz * requested,
+            true,
           );
           nearestHit = Math.min(nearestHit, meshDistance, tileDistance ?? Infinity);
         }
@@ -20770,7 +20782,7 @@
         } : null; // Existing 3D boom, local terrain and floor guard still follow this X/Z solve.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
-        const radialShoulder = shoulderBoom && _isBuildingArea(currentArea) && !horizontalSqueezeEnabled; // Ordinary indoor gameplay shares one collision distance for EVERY yaw direction.
+        const radialShoulder = shoulderBoom && (currentArea === 'interior' || _isBuildingArea(currentArea)) && !horizontalSqueezeEnabled; // Farmhouse and authored interiors share one collision distance for EVERY yaw direction.
         if (!radialShoulder) _shoulderRadialSample = null; // Switching modes or leaving an interior must not carry a stale radial limit.
         let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
         if (_occlusionCameraMode !== activeCameraMode) {
@@ -20931,7 +20943,7 @@
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
           _cameraBoomDebug = {
-            latestChange: 'Indoor shoulder wall collision samples a world-aligned radius so yaw never changes the zoom; recovery is smoothed while moving away from walls.',
+            latestChange: 'Farmhouse and authored interiors share yaw-independent camera clearance; furniture uses real mesh bounds instead of NPC-blocked tiles.',
             corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
             radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,

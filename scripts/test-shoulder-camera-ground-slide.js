@@ -195,6 +195,73 @@ for (const yaw of [45, 90, 180]) {
   assert.equal(ringRaycasts, callsWithShift, 'rotating the shoulder offset reuses the player-centered clearance ring');
 }
 context.s_shoulderSurfOffsetH_current = 0;
+// Use production NPC walkability to reproduce a clear standing position in
+// the same tile as a small prop. The camera must not expand that prop to a wall.
+const furnitureGrid = Array.from({ length: 12 }, () => Array.from({ length: 12 }, () => ({ type: 'floor' }))); // Shared by production NPC and camera grid readers.
+const npcContext = vm.createContext({ window: {} }); // Runs the real NPC footprint logic rather than a simplified walkability mock.
+vm.runInContext(fs.readFileSync('docs/js/npc-pathfinding.js', 'utf8'), npcContext);
+npcContext.window.NpcPathfinding.init({
+  isBuildingArea: () => true, npcGridForArea: () => furnitureGrid, isSolid: type => type === 'rock',
+  npcMovementConfig: () => ({ collisionRadiusTiles: 0.22 }),
+  furnitureBlocksMovementAt: (_, x, z) => x >= 5.4 && x <= 5.6 && z >= 5.4 && z <= 5.6,
+});
+assert.equal(npcContext.window.NpcPathfinding.isNpcPositionWalkable('map_i_test_corridor', 5.1, 5.1), true,
+  'the player can stand in the clear corner beside the prop');
+assert.equal(npcContext.window.NpcPathfinding.isNpcTileWalkable('map_i_test_corridor', 5, 5), false,
+  'the prop blocks the NPC tile center without occupying the player position');
+Object.assign(context, {
+  npcGridForArea: () => furnitureGrid,
+  isNpcTileWalkable: npcContext.window.NpcPathfinding.isNpcTileWalkable,
+  isSolid: type => type === 'rock', tileSurfaceYInArea: () => 0,
+  camTargetX: 5.1, camTargetZ: 5.1, INTERIOR_WALL_HEIGHT: 1.75,
+});
+context._cameraOcclusionRaycaster.intersectObjects = () => []; // The small prop is below the horizontal camera boom.
+vm.runInContext('_seatedOcclusionDistance = null; _shoulderRadialSample = null;', context);
+corridorClock += 130;
+const besideProp = context.solve(5.1, .62, 5.1, 5.1, .62, 6.8); // Previously collapsed a clear 1.7-tile boom to .04 tiles.
+assert.ok(Math.abs(besideProp.z - 6.8) < 1e-8, 'nearby furniture cannot turn a clear starting tile into a radial wall');
+furnitureGrid[5][6] = { type: 'rock', npcFurnitureCollider: true }; // A low bed has a movement footprint but no mesh at camera height.
+corridorClock += 130;
+assert.ok(Math.abs(context.solve(5.1, .62, 5.1, 5.1, .62, 6.8).z - 6.8) < 1e-8,
+  'furniture-only solid cells use real mesh height instead of an invented 1.45-tile wall');
+furnitureGrid[5][6].npcFurnitureCollider = false; // The same cell now represents a genuine structural wall.
+corridorClock += 130;
+assert.ok(context.solve(5.1, .62, 5.1, 5.1, .62, 6.8).z < 5.7,
+  'nonrendered structural walls still limit the shared radius');
+furnitureGrid[5][6].type = 'floor';
+
+// The farmhouse uses the separate 'interior' area and its own wall/hearth
+// groups. Execute the production collector so integration is covered too.
+const farmhouseWall = {}; // Identifies the farmhouse wall group returned by the real collector.
+const farmhouseHearth = {}; // Identifies the derived hearth, which is outside the decorative furniture array.
+Object.assign(context, {
+  currentArea: 'interior', _isZoneArea: () => false, interiorWallGroup: farmhouseWall,
+  _derivedHearthMeshes: [{ mesh: farmhouseHearth }], interiorFurnitureObjects: [], sitInteraction: null,
+  npcGridForArea: () => null,
+});
+const collectorStart = game.indexOf('      function currentAreaOcclusionMeshes() {'); // Starts the shipping obstacle collection function.
+const collectorEnd = game.indexOf('      // Pulls the camera in', collectorStart); // Ends before unrelated camera declarations.
+vm.runInContext(game.slice(collectorStart, collectorEnd), context);
+assert.ok(context.currentAreaOcclusionMeshes().includes(farmhouseWall), 'standing farmhouse camera includes its actual walls');
+assert.ok(context.currentAreaOcclusionMeshes().includes(farmhouseHearth), 'standing farmhouse camera includes derived hearth geometry');
+context._cameraOcclusionRaycaster.intersectObjects = function() {
+  return this.lastDir.x > 0.7 ? [{ distance: 0.7 }] : [];
+};
+corridorClock += 130;
+const farmhouseNorth = corridorAim(0); // A wall to the east must shorten the north-facing farmhouse boom too.
+const farmhouseDistance = Math.hypot(farmhouseNorth.x, farmhouseNorth.y - .62, farmhouseNorth.z); // Reference distance for the rotated farmhouse camera.
+assert.ok(Math.abs(farmhouseDistance - .35) < 1e-6, 'farmhouse uses the same radial wall clearance as authored interiors');
+const farmhouseEast = corridorAim(90); // Rotates toward the wall without changing the common radius.
+assert.ok(Math.abs(Math.hypot(farmhouseEast.x, farmhouseEast.y - .62, farmhouseEast.z) - farmhouseDistance) < 1e-6);
+assert.equal(context.debug().radialCamera.rays, 16, 'farmhouse diagnostics confirm radial collision is active');
+Object.assign(context, { npcGridForArea: () => furnitureGrid, camTargetX: 5.1, camTargetZ: 5.1 });
+context._cameraOcclusionRaycaster.intersectObjects = () => [];
+furnitureGrid[5][6].type = 'rock'; // Farmhouse boundary cells must block even a short character's boom below ROCK terrain height.
+context.tileSurfaceYInArea = () => .75;
+corridorClock += 130;
+assert.ok(context.solve(5.1, .15, 5.1, 5.1, .15, 6.8).z < 5.7,
+  'farmhouse wall grid starts at the rendered floor, including for short characters');
+context.currentAreaOcclusionMeshes = () => [{}];
 context.currentArea = 'farm';
 context._isBuildingArea = () => false;
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 0.7 }]; // Outdoor safety remains direct-ray-based.
