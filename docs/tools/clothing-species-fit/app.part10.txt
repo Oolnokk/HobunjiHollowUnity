@@ -24,7 +24,7 @@ function refreshDebug(){
     `body sources: ${(R.body?._paths||[]).join(' | ')}`,
     `head reference sources: ${(R.headReference?._paths||[]).join(' | ')}`,
     `garment sources: ${(R.cloth?._paths||[]).join(' | ')}`,
-    `headwear source layers: ${fitRegion()==='headwear'?[`rear=${!!R.cloth?._back}`,`front=${!!R.cloth?._front}`].join(' '):'(not active)'}`,
+    `headwear source layers: ${fitRegion()==='headwear'?[`under-skull=${!!R.cloth?._back}`,`front=${!!R.cloth?._front}`,`rear-view=${!!R.cloth?._behindView}`].join(' '):'(not active)'}`,
     `main workflow source: ${R.patchWorkflow.active?'PATCHED '+(R.patchWorkflow.descriptor?.label||R.patchWorkflow.descriptor?.sourceUrl||'source'):'repository garment'}`,
     `main workflow route semantics: ${routedPatchIsBody()?'selected-species body patch → Base Transform + 6×6 fit → isolated canonical body layer → rear base body → clothing':routedPatchIsClothing()?'clothing source + patch → Base Transform + 6×6 fit → garment plane':'repository garment'}`,
     `main workflow body tint slot: ${routedPatchIsBody()?routedBodyTintSlot(R.patchWorkflow.descriptor):'(n/a)'}`,
