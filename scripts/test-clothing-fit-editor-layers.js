@@ -101,7 +101,7 @@ async function main() {
   R.patchWorkflow = {active: true, descriptor: {kind: 'clothing', layerPath: trimLayer.path}, canvas: rawPatch};
   const patchHelpers = new Function('R', 'document', 'log',
     sourceBetween('function layerMatchesRoutedClothingPatch(', 'function routedPatchIsBody()') +
-    '\\nreturn {mainClothSource, fittedSourceCanvasForLayer};')(
+    '\nreturn {mainClothSource, fittedSourceCanvasForLayer};')(
     R, {createElement: makeCanvas}, () => {}
   );
   const composite = patchHelpers.mainClothSource();
@@ -123,7 +123,7 @@ async function main() {
   const sourceReference = new Function('R', 'document', 'HEAD_SLOTS', 'bodyLayers',
     'buildBodyCanvas', 'headwearLayerRecords', 'collectPatchImageNodes', 'loadImage', 'assetUrl', 'log',
     sourceBetween('async function buildSourceReferenceCanvas(', 'async function refreshAssets(') +
-    '\\nreturn buildSourceReferenceCanvas;')(
+    '\nreturn buildSourceReferenceCanvas;')(
     R, {createElement: makeCanvas}, new Set(['hat', 'hood']), () => [],
     () => {throw new Error('Unexpected body raster request')}, () => [],
     node => node?.parts?.torso?.layers?.back?.image?.url ?
