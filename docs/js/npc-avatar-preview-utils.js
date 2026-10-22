@@ -69,9 +69,12 @@
     const underscored = normalized.replace(/-/g, '_');
     const desiredGender = String(gender || 'male').toLowerCase();
     const fighterGender = f => f.gender ?? (f.id === 'M' ? 'male' : f.id === 'F' ? 'female' : null);
-    return fighters.find(f =>
+    const exact = fighters.find(f =>
       (f.speciesId === normalized || f.speciesId === underscored) && fighterGender(f) === desiredGender
-    ) || null;
+    );
+    if (exact) return exact;
+    const genders = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[normalized]?.genders; // Single-gender NPC species cannot render an unsupported saved gender.
+    return genders?.length === 1 ? fighters.find(f => (f.speciesId === normalized || f.speciesId === underscored) && fighterGender(f) === genders[0]) || null : null;
   }
 
   function randomProfile(seedText, options = {}) {

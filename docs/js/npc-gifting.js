@@ -28,17 +28,25 @@
     uniqueRewards: [{ trinketId: 'engravedWhistle', minFavor: 10 }],
   });
 
-  function isPorakaneki(walker) {
+  const TRIBE_CHIEFS = Object.freeze({ porakaneki: 'porakaneki_chief', omgurku: 'omgurku_chief' }); // Tribe members gift and barter on their chief's shared Favor.
+  const TRIBE_LABELS = Object.freeze({ porakaneki: 'Porakaneki', omgurku: 'Omgurku' });
+  function tribeOf(walker) {
     const rec = walker?.rec; // Named and procedural NPCs share this species/faction check.
-    return rec?.id === 'porakaneki_chief' || walker?.isPorakanekiHunter === true
-      || rec?.species === 'porakaneki' || rec?.appearance?.speciesId === 'porakaneki'
-      || rec?.tags?.includes('porakaneki');
+    const species = String(rec?.species || '').toLowerCase();
+    for (const [tribe, chiefId] of Object.entries(TRIBE_CHIEFS)) {
+      if (rec?.id === chiefId || walker?.tribeId === tribe || species === tribe
+        || rec?.appearance?.speciesId === tribe || rec?.tags?.includes(tribe)) return tribe;
+    }
+    return walker?.isPorakanekiHunter === true ? 'porakaneki' : null;
   }
+  function isPorakaneki(walker) { return tribeOf(walker) === 'porakaneki'; }
   function relationshipId(walker) {
-    return isPorakaneki(walker) ? 'porakaneki_chief' : walker?.rec?.id;
+    const tribe = tribeOf(walker);
+    return tribe ? TRIBE_CHIEFS[tribe] : walker?.rec?.id;
   }
   function preferenceRecord(walker) {
-    return isPorakaneki(walker) ? deps?.getNpcRecordById?.('porakaneki_chief') || walker.rec : walker.rec;
+    const tribe = tribeOf(walker);
+    return tribe ? deps?.getNpcRecordById?.(TRIBE_CHIEFS[tribe]) || walker.rec : walker.rec;
   }
   function barterTuning() {
     return { ...BARTER_DEFAULTS, ...(window.SCRATCHBONES_CONFIG?.game?.socialRelationships?.porakanekiBarter || {}) };
@@ -409,8 +417,9 @@
     }
 
     const favorGain = Math.round(evaluation.favorDelta * (window.FestivalSystem?.giftMultiplier?.() || 1) * (evaluation.favorDelta > 0 ? (window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1) * (window.FestivalSystem?.blessingMultiplier?.('goodwill') || 1) : 1) * 10) / 10; // Mirrors DialogueContent's actual favor gain, including existing positive-favor buffs.
-    const barterReward = isPorakaneki(walker) ? rollBarterReward(favorGain, held) : null; // Preflight the promised return before consuming anything.
-    if (isPorakaneki(walker) && !barterReward) { deps.showToast?.('Make room for a Porakaneki return gift.', false); return false; }
+    const tribe = tribeOf(walker); // Both tribes barter a return gift for presents.
+    const barterReward = tribe ? rollBarterReward(favorGain, held) : null; // Preflight the promised return before consuming anything.
+    if (tribe && !barterReward) { deps.showToast?.(`Make room for a ${TRIBE_LABELS[tribe]} return gift.`, false); return false; }
 
     let kept = true;
     let keepNote = '';
@@ -454,6 +463,7 @@
     init,
     isItemGiftable,
     isPorakaneki,
+    tribeOf,
     relationshipId,
     rollBarterReward,
     reactionTier,

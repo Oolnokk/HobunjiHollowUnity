@@ -117,7 +117,7 @@ assert(!porakanekiRuntimeSource.includes('zoneState.chiefReservation = null'),
   'bandit-space recovery must never discard the chief reservation');
 assert(banditCampSource.includes('avoidChunks = porakanekiAvoidChunks(zoneId)'),
   'bandit placement must derive hard chunk exclusions from the Porakaneki reservation API');
-assert(banditCampSource.includes('while (!instance && window.PorakanekiCamps?.reduceHuntingCampsForBandit?.(zoneId))'),
+assert(/while \(!instance && \(window\.TribeCamps \|\| window\.PorakanekiCamps\)\?\.reduceHuntingCampsForBandit\?\.\(zoneId\)\)/.test(banditCampSource),
   'bandit placement must reduce hunting camps before accepting fewer bandit camps');
 assert(!banditCampSource.includes('avoidChunks: []'),
   'no bandit placement fallback may explicitly drop the hard chunk exclusion');

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<title>Omgurku Hybrid Calibration | Hobunji</title>
+<style>
+:root{color-scheme:dark;--bg:#07111d;--panel:#101c2b;--edge:#304159;--ink:#e5f0ff;--muted:#a8bdd3;--accent:#65adff;--good:#50dfaf}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:14px system-ui,Segoe UI,sans-serif}
+#app{height:100dvh;display:flex;flex-direction:column}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:#0c1827;border-bottom:1px solid var(--edge)}
+header h1{font-size:16px;margin:0}header a{color:var(--accent)}.spacer{flex:1}
+#body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(270px,1fr) minmax(280px,360px)}
+#stage{position:relative;min-width:0;min-height:280px;background:#060e18}
+#viewport{display:block;width:100%;height:100%;touch-action:none;outline:none}
+#stagebar{position:absolute;left:10px;right:10px;bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:7px;background:#07111de8;border:1px solid var(--edge);border-radius:12px}
+#stagebadge{position:absolute;left:12px;top:12px;padding:6px 10px;border-radius:10px;background:#07111ddb;color:#bedaff;max-width:calc(100% - 24px)}
+aside{overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border-left:1px solid var(--edge);padding:12px 14px 40px}
+section{border:1px solid var(--edge);border-radius:12px;padding:12px;margin-bottom:12px;background:#121f30}
+section h2{margin:0 0 8px;font-size:14px;color:#b9d9ff}
+p,small{color:var(--muted);line-height:1.4}p{font-size:12px;margin:5px 0 10px}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+button,select,input[type=text],input[type=number]{font:inherit;border-radius:8px;border:1px solid #45607e;background:#20344a;color:var(--ink);padding:8px}
+button{cursor:pointer;font-weight:650}button:hover{border-color:var(--accent)}button.good{background:#153e36;color:#adffdc;border-color:#348771}
+button:disabled{opacity:.4}select,input[type=text]{width:100%}
+.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.row>*{flex:0 0 auto}
+.slid{display:grid;grid-template-columns:1fr 70px;align-items:center;gap:6px;padding:5px 0;border-top:1px solid #ffffff12}
+.slid label{grid-column:1/-1;margin:0;color:#d3e5ff;display:flex;justify-content:space-between}
+.slid input[type=range]{width:100%;accent-color:var(--accent);touch-action:pan-y}
+.slid input[type=number]{width:70px;min-width:0;padding:6px;font-variant-numeric:tabular-nums}
+#spriteWrap{position:relative;border-radius:9px;background:#08111d;overflow:hidden;border:1px solid var(--edge)}
+#spriteCanvas{display:block;width:100%;height:160px;image-rendering:pixelated;touch-action:none;cursor:crosshair}
+.connectorRigCanvas{display:block;width:100%;height:auto;max-height:260px;border:1px solid #314b65;border-radius:9px;background:#080f19;image-rendering:pixelated;touch-action:none;cursor:crosshair;margin:7px 0}
+.splineTools{border:1px solid var(--edge);border-radius:8px;padding:8px;margin:6px 0 14px}.splineTools button{min-height:44px;padding:6px 9px;touch-action:manipulation}.splineTools .row{gap:5px;margin:5px 0}.splineTools input[type=range]{width:100%;touch-action:pan-y}.splineTools select{width:auto;max-width:100%}.splineTools label{margin-top:6px}
+#omgurkuConnectorSection input[type=file]{color:var(--muted);border:1px solid var(--edge);border-radius:8px;padding:5px}
+#portrait{height:84px;width:84px;background:#06111c;image-rendering:pixelated;border:1px solid var(--edge);border-radius:10px;object-fit:contain}
+pre{font:11px/1.42 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
+input[type=file]{display:none}
+#feedback{font-size:12px;color:var(--good)}#feedback.error{color:#ff8e98}
+@media(max-width:800px){#body{grid-template-columns:1fr;display:flex;flex-direction:column;overflow:auto}#stage{flex:0 0 51dvh;min-height:260px}aside{border-left:none;border-top:1px solid var(--edge);overflow:visible}header{padding:8px}#stagebar{gap:5px}#stagebar button{padding:6px;font-size:12px}}
+</style>
+<script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/pants-rigs.js?v=20261020connector1"></script>
+<script src="../../js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/creature-texture-cache.js?v=20261011h0a4170f"></script>
+<script src="../../js/voorg-ass-registration.js?v=20261015h47a3826"></script>
+<script src="../../js/creature-genetics-render.js?v=20261022omgurkuMerge1"></script>
+<script src="../../js/runtime-frame-scheduler.js"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=1"></script>
+<script src="../../js/combat/attack-pose-templates.js?v=1"></script>
+<script src="../../js/combat/melee-pose-spacing.js?v=1"></script>
+<script src="../../js/species-pose-scaling.js?v=1"></script>
+<script src="../../js/held-action-animations.js?v=20261022pantsFallback1"></script>
+</head>
+<body>
+<div id="app">
+<header><h1>Omgurku hybrid calibration</h1><span class="spacer"></span><a href="../animation-author/index.html">← Animation Author</a><a href="../../index.html?omgurkuDebug=1">Game</a></header>
+<div id="body">
+<div id="stage">
+<canvas id="viewport" aria-label="Orbitable three-dimensional Omgurku hybrid preview"></canvas>
+<div id="stagebadge">Loading Omgurku gameplay renderer…</div>
+<div id="stagebar">
+<button id="frontBtn">Front</button><button id="sideBtn">Side</button><button id="backBtn">Back</button><button id="angleBtn">3/4</button>
+<button id="moveBtn" class="good" aria-pressed="false">▶ Run</button><button id="resetCameraBtn">Reset camera</button>
+</div>
+</div>
+<aside>
+<section>
+<h2>Gameplay-parity portrait &amp; rig</h2>
+<div class="row"><canvas id="portrait" width="200" height="200"></canvas><p style="flex:1;min-width:140px">Same Omgurku NPC portrait renderer, avatar model builder and headless Voorg-ass-derived lower body used in the game. Drag to orbit; pinch/scroll to zoom.</p></div>
+<label for="npcSelect">Upper-body appearance source</label>
+<select id="npcSelect"><option value="">Generated Omgurku (NPC-only)</option></select>
+<div class="row" style="margin-top:7px"><button id="refreshPreviewBtn">Rebuild preview</button><span id="frameBadge">idle</span></div>
+<label for="headingRange">NPC facing / animal heading <output id="headingValue">0°</output></label>
+<input id="headingRange" type="range" min="-180" max="180" value="0" step="1" style="width:100%;accent-color:#65adff">
+<p>Both halves share the same requested heading, but the upper portrait uses the NPC front-view deadzone and the lower body uses its own adjustable side-view deadzone (including its moving snap). Orbit the camera to examine both.</p>
+</section>
+<section>
+<h2>Hands, weapon stances &amp; attacks</h2>
+<label for="weaponPreviewMode">Preview</label><select id="weaponPreviewMode"><option value="idle">Procedural idle hands</option><option value="stance">Weapon stance</option><option value="attack">Weapon attack</option></select>
+<label for="weaponPreviewTool">Weapon</label><select id="weaponPreviewTool"></select>
+<label for="weaponPreviewStance">Resting stance</label><select id="weaponPreviewStance"><option value="heavyWeapon">Heavy weapon</option><option value="lightWeapon">Light weapon</option><option value="tool">Ordinary tool</option></select>
+<label for="weaponPreviewAttack">Existing attack</label><select id="weaponPreviewAttack"></select>
+<div class="row" style="margin-top:8px"><button id="weaponPreviewPlay">Play attack</button><button id="weaponPreviewIdle">Return to idle</button></div>
+<label><input type="checkbox" id="weaponPreviewLoop" checked> Loop attack</label>
+<label for="weaponPreviewSpeed">Playback speed</label><select id="weaponPreviewSpeed"><option value=".25">¼ speed</option><option value=".5">½ speed</option><option value="1" selected>Normal</option></select>
+<label for="weaponPreviewScrub">Attack timeline</label><input id="weaponPreviewScrub" type="range" min="0" max="1" step=".001" value="0" style="width:100%">
+<p id="weaponPreviewStatus" role="status">Procedural idle hands</p>
+<p>The upper body and weapon share one frame. The lower body turns around its fixed saddle while the connector bridges their independent rotations.</p>
+</section>
+<section id="omgurkuConnectorSection">
+<h2>Deforming waist-to-neck connector</h2>
+<p>A transparent PNG becomes a flexible bridge: its <strong>top five-point waistband</strong> follows the rider's exact Engh-Sho pants waistline, while the <strong>bottom five-point waistband</strong> fits near the animal's neck and follows its own turning.</p>
+<label for="connectorFile">Connector artwork (transparent PNG)</label>
+<input id="connectorFile" type="file" accept="image/png,.png" style="display:block;width:100%;font-size:12px">
+<small id="connectorAssetStatus">No connector PNG selected. The optional connector remains hidden.</small>
+<div class="row" style="margin-top:7px">
+<button id="connectorSourceTopBtn" class="good">Edit upper PNG seam</button>
+<button id="connectorSourceBottomBtn">Edit lower PNG seam</button>
+</div>
+<canvas id="connectorSourceCanvas" width="480" height="260" class="connectorRigCanvas" aria-label="PNG connector with two draggable five-point seams"></canvas>
+<small>Drag nodes to shape either seam. Drag each arrow tip to aim its shrinkwrap direction.</small>
+<div id="connectorSourceTools" class="splineTools"></div>
+<h2 style="margin-top:14px">Rider waist target</h2>
+<canvas id="connectorRiderCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Editable five-point rider waistband fit"></canvas>
+<small>Starts from the Engh-Sho pants waistband. Adjust or shrinkwrap it onto the visible rider pixels.</small>
+<div id="connectorRiderTools" class="splineTools"></div>
+<h2 style="margin-top:14px">Animal neck target</h2>
+<canvas id="connectorAnimalCanvas" width="480" height="230" class="connectorRigCanvas" aria-label="Animal sprite with editable five-point neck spline"></canvas>
+<small>Fit the lower edge to the animal's neck. Both connector ends always lie flat against their attached sprite planes.</small>
+<div id="connectorAnimalTools" class="splineTools"></div>
+<button id="connectorUndo" disabled>Undo last spline edit</button>
+<p id="connectorLatestChange">Latest change: waist seams follow the portrait mirror setting without crossing; chair resting keeps the lower body on the floor. Enemy/bandit conversion is not supported. Connector base #99BF99 follows body color A; lower deadzone 13°.</p>
+<label for="connectorUpperInfluence">Upper body deformation influence <output id="connectorUpperInfluenceValue">65%</output></label>
+<input id="connectorUpperInfluence" type="range" min="0" max="1" step=".01" value=".65" style="width:100%">
+<small>Lower values let the animal lead more of the connector. Higher values let the upper body lead more. Both attachment ends stay flat.</small>
+<label for="connectorOpacity">Connector opacity <output id="connectorOpacityValue">100%</output></label>
+<input id="connectorOpacity" type="range" min=".1" max="1" step=".025" value="1" style="width:100%">
+<div class="row" style="margin-top:8px">
+<button id="connectorSave" class="good">Apply connector to this browser</button>
+<button id="connectorClear">Hide / reset connector</button>
+</div>
+<div class="row" style="margin-top:7px">
+<button id="connectorExport">Export connector rig JSON</button>
+<button id="connectorDownloadPng">Download connector PNG</button>
+<button id="connectorImport">Import connector rig</button>
+<input id="connectorImportFile" type="file" accept=".json,application/json" style="display:none">
+</div>
+<p>The local PNG and splines preview in the game on this browser. For a permanent game asset, commit the exported PNG at <code>docs/assets/portraitsprites/omgurku-connector.png</code> alongside the exported connector settings in <code>omgurku.json</code>.</p>
+<div id="connectorFeedback" role="status" aria-live="polite" style="font-size:12px;color:#75edc1"></div>
+</section>
+<section>
+<h2>Place saddle on lower sprite</h2>
+<div id="spriteWrap"><canvas id="spriteCanvas" width="520" height="240" aria-label="Drag crosshair to select the upper body attachment point"></canvas></div>
+<p>Touch or drag the cyan crosshair to align the upper-body origin to the saddle. The three gameplay lower frames are already headless, so V10’s eraser mask is not required.</p>
+<div id="saddleFields"></div>
+</section>
+<section><h2>Joint &amp; upper body</h2><div id="upperFields"></div></section>
+<section><h2>Lower body dimensions &amp; floor</h2><div id="lowerFields"></div></section>
+<section><details><summary><strong>Advanced per-half offsets</strong></summary><p>Fine position tweaks relative to the saddle. These move the visual halves, not NPC pathfinding or AI.</p><div id="offsetFields"></div></details></section>
+<section>
+<h2>Apply / export</h2>
+<div class="row">
+<button id="saveLocalBtn" class="good">Apply to game on this browser</button>
+<button id="resetBtn">Reset to authored</button>
+</div>
+<p>Local calibration is shared with the game at this site and survives reloads. It does not change the repository or other players’ builds.</p>
+<div class="row"><button id="downloadBtn">Download omgurku.json</button><button id="copyBtn">Copy species config</button><button id="importBtn">Import JSON</button><input type="file" id="fileInput" accept=".json,application/json"></div>
+<p>Downloaded <code>omgurku.json</code> is the complete species configuration, with <code>hybridPlacement</code> ready to commit to <code>docs/config/species/omgurku.json</code>.</p>
+<div id="feedback" role="status" aria-live="polite">—</div>
+</section>
+<section><details><summary>Diagnostics</summary><pre id="diagnostics">Not initialized</pre><button id="refreshDiagnostics">Refresh diagnostics</button></details></section>
+</aside>
+</div>
+</div>
+<script src="./weapon-preview.js?v=20261021hc5a5c84"></script>
+<script src="./calibration.js?v=20261021ha477081"></script>
+<script src="./connector-author.js?v=20261022pantsFallback1"></script>
+</body>
+</html>

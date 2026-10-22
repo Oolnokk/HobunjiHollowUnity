@@ -190,6 +190,7 @@
   // real camp today, but reusing the existing rank/tier grid instead of a
   // bespoke single button gets tier variation for free.
   const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
+  const DEV_SPAWN_OMGURKU_KEY = 'omgurku:hunter'; // Rival tribe hunter (compound rider + quadruped) through the same tribe spawn path.
   const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
   const DEV_SPAWN_HARLYAO_LICH_KEYS = Object.freeze({ // Testing Arena-only spellcaster buttons routed through HarlyaoLichCombat rather than CREATURE_DB.
     tothal: 'harlyao-lich:tothal',
@@ -236,6 +237,8 @@
       });
       const porakanekiActive = DEV_SPAWN_PORAKANEKI_KEY === devSpawnSelectedKey ? ' fed-active' : '';
       const porakanekiBtn = `<button type="button" class="fed-btn${porakanekiActive}" data-species="${deps.esc(DEV_SPAWN_PORAKANEKI_KEY)}">🏹 Porakaneki Hunter</button>`;
+      const omgurkuActive = DEV_SPAWN_OMGURKU_KEY === devSpawnSelectedKey ? ' fed-active' : '';
+      const omgurkuBtn = `<button type="button" class="fed-btn${omgurkuActive}" data-species="${deps.esc(DEV_SPAWN_OMGURKU_KEY)}">🐎 Omgurku Hunter</button>`;
       const harlyaoSkeletonActive = DEV_SPAWN_HARLYAO_SKELETON_KEY === devSpawnSelectedKey ? ' fed-active' : ''; // Used to keep the skeleton button's selected state consistent with every other arena spawn option.
       const harlyaoSkeletonBtn = `<button type="button" class="fed-btn${harlyaoSkeletonActive}" data-species="${deps.esc(DEV_SPAWN_HARLYAO_SKELETON_KEY)}">☠️ Harlyao Skeleton</button>`; // Added to the same species grid so it works on mobile/controller through the existing panel.
       const lichBtns = Object.entries(DEV_SPAWN_HARLYAO_LICH_KEYS).map(([type, key]) => { // Three explicit arena buttons make each spell kit independently testable on mobile.
@@ -243,7 +246,7 @@
         const label = type.charAt(0).toUpperCase() + type.slice(1); // Human-readable lich tradition shown on the button.
         return `<button type="button" class="fed-btn${active}" data-species="${deps.esc(key)}">🜏 ${deps.esc(label)} Lich</button>`;
       });
-      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, harlyaoSkeletonBtn], lichBtns).join('');
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, omgurkuBtn, harlyaoSkeletonBtn], lichBtns).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -368,10 +371,12 @@
   // aggroRangePx up front (the same field makeNeutral zeroes) reproduces the
   // "not immediately hostile" behavior for a quick look/test without needing
   // a real wilderness camp.
-  async function spawnDevArenaPorakaneki(tier) {
+  // tribeId 'omgurku' spawns the rival tribe the same way (compound avatar, same neutral-until-provoked rule).
+  async function spawnDevArenaPorakaneki(tier, tribeId = 'porakaneki') {
+    const label = tribeId === 'omgurku' ? 'Omgurku' : 'Porakaneki';
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
     const cfg = await window.BanditCombat.loadGangConfig();
-    if (!cfg) { throw new Error('Could not spawn Porakaneki — bandit-gang-config.json failed to load.'); }
+    if (!cfg) { throw new Error(`Could not spawn ${label} — bandit-gang-config.json failed to load.`); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return; // player left mid-await
     const angle = Math.random() * Math.PI * 2;
     const dist = deps.TILE * (1.5 + Math.random() * 2.5);
@@ -379,21 +384,21 @@
     const y = deps.player.y + Math.sin(angle) * dist;
     const creature = await window.BanditCombat.makeEntity({
       ...cfg,
-      speciesWeights: { porakaneki: 1 },
+      speciesWeights: { [tribeId]: 1 },
       rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
     }, 'grunt', tier, x, y, {
       zoneId: DEV_ARENA_ZONE_ID,
-      nameOverride: 'Porakaneki Hunter',
-      bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(`dev-porakaneki:${x.toFixed(3)}:${y.toFixed(3)}`, 'male') || null,
-      extra: { homeX: x, homeY: y, state: 'idle', isPorakanekiHunter: true },
+      nameOverride: `${label} Hunter`,
+      bodyColorsOverride: tribeId === 'porakaneki' ? window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(`dev-porakaneki:${x.toFixed(3)}:${y.toFixed(3)}`, 'male') || null : null,
+      extra: { homeX: x, homeY: y, state: 'idle', isTribeHunter: true, tribeId, isPorakanekiHunter: tribeId === 'porakaneki' },
     });
-    if (!creature) { throw new Error('Could not spawn Porakaneki Hunter — see console/log for details.'); }
+    if (!creature) { throw new Error(`Could not spawn ${label} Hunter — see console/log for details.`); }
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     creature._porakanekiAggroRangePx = creature.def?.aggroRangePx ?? deps.TILE * 6;
     if (creature.def) creature.def.aggroRangePx = 0;
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
-    const msg = `[dev-arena] spawned Porakaneki Hunter #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, maxHealth=${creature.maxHealth}) — neutral until provoked, attack it to test the hostile turn`;
+    const msg = `[dev-arena] spawned ${label} Hunter #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, maxHealth=${creature.maxHealth}) — neutral until provoked, attack it to test the hostile turn`;
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
@@ -594,6 +599,7 @@
       const before = _arenaSpawnedCreatures.size; // Existing registration is the success authority for every creature class.
       if (selected?.startsWith('bandit:')) await spawnDevArenaBandit(selected.slice('bandit:'.length), tier);
       else if (selected === DEV_SPAWN_PORAKANEKI_KEY) await spawnDevArenaPorakaneki(tier);
+      else if (selected === DEV_SPAWN_OMGURKU_KEY) await spawnDevArenaPorakaneki(tier, 'omgurku');
       else if (selected === DEV_SPAWN_HARLYAO_SKELETON_KEY) await spawnDevArenaHarlyaoSkeleton(tier);
       else if (selected?.startsWith('harlyao-lich:')) await spawnDevArenaHarlyaoLich(selected.slice('harlyao-lich:'.length), tier);
       else await spawnDevArenaCreature(selected);
