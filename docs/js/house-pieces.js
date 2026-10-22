@@ -48,7 +48,7 @@
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261022h61b3ce5'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
-    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261012h601b36f'],
+    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261022h909ded2'],
     // A world-space spectral column follows the exact commander's bearing, settling onto the actor as the player approaches.
     ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20261021h93b0ca3'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
