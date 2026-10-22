@@ -132,8 +132,9 @@ function inferPatchView(path,url){
 }
 function behindPatchCatalog(){
   const gender=E.gender.value,targetSpecies=E.species.value;
+  const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Tracks the authored garment source independent of the target.
   const items=[]; // Exact source layers available to the behind-sprite patch author.
   const garment=fitRegion()==='body'?garmentRecord():null;
   if(garment){
-    const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
+    const sourceVariant=garment.cfg?.speciesVariants?.[`${sourceSpecies}_${sourceGender}`]||null;
     const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;
