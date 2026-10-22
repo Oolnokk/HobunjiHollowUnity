@@ -116,7 +116,7 @@ function render(scheduleRig=true){
     if(warpedBack&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedBack,0,0);C.globalAlpha=1}
     if(E.showBody.checked&&R.headReference)C.drawImage(R.headReference,0,0);
     if(warpedFront&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedFront,0,0);C.globalAlpha=1}
-    R.warped=mode==='body'?null:currentWarp();
+    R.warped=null; // The split front/rear warps above are sufficient; do not bake a redundant third full headwear warp.
     if(E.showAuthored.checked&&R.authoredTargetCloth){
       C.save();C.globalAlpha=+E.authoredOpacity.value;
       if(R.authoredTargetCloth._back)C.drawImage(R.authoredTargetCloth._back,0,0);
