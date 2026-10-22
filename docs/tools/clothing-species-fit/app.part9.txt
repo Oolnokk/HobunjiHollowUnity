@@ -111,7 +111,7 @@ function render(scheduleRig=true){
   if(!R.body)return;
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
   if(fitRegion()==='headwear'){
-    const warpedBack=mode!=='body'?headwearWarpForView('back'):null;
+    const warpedBack=mode!=='body'?headwearWarpForView('under'):null;
     const warpedFront=mode!=='body'?headwearWarpForView('front'):null;
     if(warpedBack&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedBack,0,0);C.globalAlpha=1}
     if(E.showBody.checked&&R.headReference)C.drawImage(R.headReference,0,0);
