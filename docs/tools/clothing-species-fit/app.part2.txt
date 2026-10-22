@@ -192,19 +192,28 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       const back=Object.assign(document.createElement('canvas'),{width,height});
       const behindView=Object.assign(document.createElement('canvas'),{width,height});
       let hasFront=false,hasBack=false,hasBehindOverride=false; // Avoid wasting headwear warps and exports on unused orientations.
+      const exportedLayers=[]; // Keeps headwear materials/front-back source identities separate for the fitted ZIP.
       for(const record of records){
         try{
           const image=await loadImage(assetUrl(record.path));
           const target=record.isBack?back:front;
           const ctx=target.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
           ctx.drawImage(image,0,0); // All authored headwear layers retain their source-pixel alignment.
+          const layerCanvas=Object.assign(document.createElement('canvas'),{width,height});
+          layerCanvas.getContext('2d',{alpha:true}).drawImage(image,0,0);
+          const layerPath=['parts','head','layers',record.name]; // Matches the same config leaf used by the behind-patch author.
+          exportedLayers.push({name:`head.layers.${record.name}`,path:layerPath,url:record.path,role:record.layer.layerRole||'',view:record.isBack?'under':'front',canvas:layerCanvas});
           if(record.isBack)hasBack=true;
           else{
             hasFront=true;
             let rearImage=image;
             if(record.behindPath&&record.behindPath!==record.path){
-              try{rearImage=await loadImage(assetUrl(record.behindPath))}
-              catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
+              try{
+                rearImage=await loadImage(assetUrl(record.behindPath));
+                const rearCanvas=Object.assign(document.createElement('canvas'),{width,height}); // Independent rear-view override, never substituted for the front layer.
+                rearCanvas.getContext('2d',{alpha:true}).drawImage(rearImage,0,0);
+                exportedLayers.push({name:`head.layers.${record.name}.behindImage`,path:layerPath,url:record.behindPath,role:record.layer.layerRole||'',view:'behind',canvas:rearCanvas});
+              }catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
             }
             const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
             rearCtx.drawImage(rearImage,0,0); // Compose cap then metal band in the same author-specified layer order.
@@ -217,12 +226,14 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       x.drawImage(back,0,0);x.drawImage(front,0,0);
       canvas._front=hasFront?front:null;canvas._back=hasBack?back:null;
       canvas._behindView=hasBehindOverride?behindView:null; // Dedicated rear view is distinct from cloth behind the skull.
-      canvas._paths=records.flatMap(record=>[record.path,...(record.behindPath&&record.behindPath!==record.path?[record.behindPath]:[])]);
+      canvas._layers=exportedLayers; // Independent fitted outputs use identical cage transforms but preserve the original config layer topology.
+      canvas._paths=exportedLayers.map(layer=>layer.url);
       return canvas;
     }
     if(!variant)return null; // Missing authored target species/gender body art is normal.
-    const layers=gatherImages(variant);
+    const layers=collectPatchImageNodes(variant); // One leaf per authored PNG, not one per unique URL or flattened composite.
     if(!layers.length)return null;
-    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
+    const images=await Promise.all(layers.map(layer=>loadImage(assetUrl(layer.url))));
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
     const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+    const exportedLayers=[]; // Body garments can contain independently colored/positioned nested parts.
