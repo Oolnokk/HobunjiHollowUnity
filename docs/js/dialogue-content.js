@@ -116,8 +116,13 @@
     if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
       return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
     }
-    if (rec.bio) return _paginateNpcDialogueText(rec.bio);
-    return _paginateNpcDialogueText('');
+    // Bio and loreBackground are third-person editor notes, never NPC speech.
+    // When no tree is eligible (for example, during a storm), reuse an authored
+    // ordinary line instead of reading the character's backstory aloud.
+    const fallback = (rec.dialogueTrees || []).find(tree => tree.id === `tree_${rec.id}_fallback`); // Used only when the normal tree selector found no eligible conversation.
+    const entry = (fallback?.nodes || []).find(node => node.id === fallback.entryNode); // Used to recover this NPC's existing casual speech pool.
+    const speech = entry?.type === 'text' && typeof entry.text === 'string' ? _resolveTokens(entry.text, rec) : ''; // Resolves conditioned greeting entries without exposing character notes.
+    return _paginateNpcDialogueText(speech);
   }
 
   function getNpcDlgState(npcId) {
