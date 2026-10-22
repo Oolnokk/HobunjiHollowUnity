@@ -540,7 +540,8 @@
     queuedConversationTrees.set(npcId, tree);
     return true;
   }
-  function _pickDialogueTree(rec) {
+  function _pickDialogueTree(rec, options = {}) {
+    const chatOnly = options.chatOnly === true; // Used by Shop/Chat's Chat action to bypass generated shop menus for this conversation.
     if (queuedConversationTrees.has(rec?.id)) {
       const queued = queuedConversationTrees.get(rec.id); // Delete before playback so reopening cannot trap the player in a script.
       queuedConversationTrees.delete(rec.id);
@@ -562,10 +563,17 @@
     // it to the world's protagonist or to non-owner members respectively;
     // omitted/'any' (the default) is visible to everyone.
     const all = (rec?.dialogueTrees || [])
-      .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility));
+      .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility)
+        && (!chatOnly || !t.generatedFromShopAccess));
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
-    const picked = _pickBestEntry(all, world, heard);
+    let picked = _pickBestEntry(all, world, heard);
+    // Keep eligible shops accessible even after their tree was heard and general chat was not:
+    // the shared unheard-first selector must not hide the merchant's Shop option.
+    if (!chatOnly && picked?.id === `tree_${rec?.id}_fallback`) {
+      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when a fallback would displace a merchant's Shop menu.
+      if (shops.length) picked = _pickBestEntry(shops, world, heard);
+    }
     for (const [id, context] of _contextProviders) {
       try {
         const provided = context.treeFor?.(rec, { world, defaultTree: picked });
@@ -666,7 +674,7 @@
             deps.closeNpcDialogue(); deps.openMenu('metalCraftShop');
             skipNav = true;
           } else if (act.type === 'startChat') {
-            _beginNpcConversation(_dlgNpcRec);
+            _beginNpcConversation(_dlgNpcRec, { chatOnly: true });
             skipNav = true;
           } else if (act.type === 'acceptFavor') {
             deps.setQuestStatus(act.taskId, 'available', {});
@@ -1127,11 +1135,11 @@
   // Starts the actual conversation content (dialogue tree, or the plain
   // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
   // of the merchant shop/chat choice in game.js's openNpcDialogue.
-  function _beginNpcConversation(rec) {
+  function _beginNpcConversation(rec, options = {}) {
     if (rec?.id) _lastNpcRec = rec;
     _dlgTraceSelection = null;
     _dlgTracePools.length = 0;
-    const tree = _pickDialogueTree(rec);
+    const tree = _pickDialogueTree(rec, options);
     if (tree) {
       _markDialogueTreeHeard(rec, tree);
       _dlgTree    = tree;
