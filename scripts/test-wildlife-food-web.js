@@ -110,4 +110,7 @@ assert(game.includes("roamingForagerSpecies: ['nazgraku']"), 'Nazgraku occupies 
 assert(game.includes("packSpecies: ['nelk']"), 'Western Slope explicitly registers Nelk as a hunter');
 assert(wildlife.includes('window.WildlifeFoodWeb?.onSkirmishHit'), 'Animal skirmishes allow defensive retaliation');
 assert(wildlife.includes('roamingForagerSpecies'), 'Extra foragers do not replace Voorg-Ass herds');
+assert.match(wildlife, /speciesKey === 'nelk' && denGenotype \? \{ \.\.\.denGenotype, sizeClass: 'large' \} : denGenotype/, 'wild Nelk become Large without changing the den bloodline');
+assert.match(wildlife, /denKey, genotype: wildPackGenotype, wildlifeRole:/, 'the wild Nelk size is consumed by the creature constructor');
+assert.match(wildlife, /if \(herdGenotype\) herdGenotype\.sizeClass = 'large'/, 'wild Nazgraku continue spawning as Large foragers');
 console.log('Wildlife food-web relationships and dig/defense regression passed');
