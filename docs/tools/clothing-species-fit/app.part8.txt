@@ -11,7 +11,7 @@
 function targetGarmentLayerXform(){
   if(fitRegion()==='headwear'){
     const record=headwearLayerRecords(garmentRecord(),E.species.value,E.gender.value)[0]||
-      headwearLayerRecords(garmentRecord(),'mao-ao',E.gender.value)[0];
+      headwearLayerRecords(garmentRecord(),E.sourceSpecies.value,E.sourceGender.value)[0];
     const authoredXform=record?.layer?.spriteStyle?.base?.xform?.head;
     if(authoredXform)return normalizedLayerXform(authoredXform);
   }
