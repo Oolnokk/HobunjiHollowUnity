@@ -80,7 +80,7 @@
         <div class="small">Orange is the fixed Mao source, green is the recorded base transform, and blue adds the local 6×6 corrections.</div>
       </section>
 
-      <section>
+      <section id="bodyMaskSection">
         <h2>Cloud mask preview transform</h2>
         <div class="field"><label for="maskScaleX">Mask Scale X</label><input id="maskScaleX" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
         <div class="field"><label for="maskScaleY">Mask Scale Y</label><input id="maskScaleY" type="range" min="0.3" max="2.0" step="0.005" value="1"></div>
@@ -96,7 +96,7 @@
         <div class="small">The game no longer erases the portrait with this cloud mask; it only uses the layer as the source shape for the arm cut. These controls therefore do not change the preview and are kept so older exported grids and pasted diagnostics still import.</div>
       </section>
 
-      <section>
+      <section id="bodyExtendedSection">
         <h2>Extended overlay sprites</h2>
         <div class="field"><label for="extTorsoFile">Extended torso/base PNG</label><input id="extTorsoFile" type="file" accept="image/png"></div>
         <div class="field"><label for="extTorsoClothingFile">Extended torso clothing PNG</label><input id="extTorsoClothingFile" type="file" accept="image/png"></div>
