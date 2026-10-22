@@ -301,6 +301,7 @@
   }
   const socialCandidates = []; // NPC-only ray pass ignores scenery, while furniture keeps its physical blockers.
   const focusCandidates = []; // Reused candidate buffer; the existing ranged targeting owner supplies the actual camera ray/slab intersection.
+  const attachedServiceCandidates = []; // Reused when a table's broad blocking box contains its own authored service objects.
   let focusStamp = null, focusArea = null, focused = null; // One consistent NPC/chair/service winner for prompt and press in the same frame.
   function focusedTarget(area) {
     if (!deps?.focusCandidates) return null;
@@ -337,7 +338,18 @@
     };
     for(const walker of deps.getWalkers?.() || [])addNpc(walker);
     addNpc(deps.extraWalker?.());
-    focused=deps.focusCandidates(socialCandidates, 40)?.candidate || deps.focusCandidates(focusCandidates, 40)?.candidate || null;
+    // Aim uses the actual (possibly raised) camera ray. Nearby NPCs keep their
+    // priority; a broad table blocker must not hide a pot that its ray hits.
+    const socialFocus = deps.focusCandidates(socialCandidates, 40)?.candidate || null; // Keeps the existing unobstructed NPC targeting precedence.
+    if (socialFocus) { focused = socialFocus; return focused; }
+    const furnitureFocus = deps.focusCandidates(focusCandidates, 40)?.candidate || null; // Still respects unrelated furniture blockers.
+    if (furnitureFocus?.kind === 'blocker' && furnitureFocus.entry.record.serviceId) {
+      attachedServiceCandidates.length = 0;
+      for (const candidate of focusCandidates) {
+        if (candidate.kind === 'service' && candidate.entry === furnitureFocus.entry) attachedServiceCandidates.push(candidate);
+      }
+      focused = deps.focusCandidates(attachedServiceCandidates, 40)?.candidate || furnitureFocus;
+    } else focused = furnitureFocus;
     return focused;
   }
 
