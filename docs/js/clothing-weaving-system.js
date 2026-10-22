@@ -1607,12 +1607,12 @@
   // "a rule explicitly hides this layer from the back" (changed:true,
   // url:null — e.g. a hood's front-only face trim), which behindViewUrlsFor
   // can't express since it only ever collects real substitute URLs.
-  function behindViewResultFor(url, baseCosmeticId, gender) {
+  function behindViewResultFor(url, baseCosmeticId, gender, explicitBehindUrl = null) {
     const getBehindUrl = window._getBehindLayerUrl;
     if (typeof getBehindUrl !== 'function') return { url, changed: false };
     const group = { id: baseCosmeticId, originalId: null, hairSlot: null };
     let behindUrl;
-    try { behindUrl = getBehindUrl({ url }, group, gender); } catch (_) { return { url, changed: false }; }
+    try { behindUrl = getBehindUrl({ url, ...(explicitBehindUrl ? { behindUrl: explicitBehindUrl } : {}) }, group, gender); } catch (_) { return { url, changed: false }; }
     if (!behindUrl) return { url: null, changed: true };
     const normalized = normalizeAssetPath(behindUrl);
     return { url: normalized, changed: normalized !== url };
@@ -1662,7 +1662,8 @@
         const paletteKey = mappedRole || layer?.paletteColorKey || null; // 'A'/'B' — which dye slot this layer recolors with (see renderClothingLayers).
         const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
         const url = layer?.image?.url;
-        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), role, paletteKey, materialKind: layer.materialKind || null, partName, layerName, imageLayout: layer?.image?.layout || null });
+        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push({ url: normalizeAssetPath(url), behindUrl: layer?.behindImage?.url ? normalizeAssetPath(layer.behindImage.url) : null, // The game's rear-view renderer can swap a layer by its own config rather than the global URL rules.
+          role, paletteKey, materialKind: layer.materialKind || null, partName, layerName, imageLayout: layer?.image?.layout || null });
       }
     }
     return into;
@@ -1861,14 +1862,14 @@
     const trimDyeSlot = normalizeTrimDyeSlot(trimDyeSlotOverride !== undefined ? trimDyeSlotOverride : weaving?.trim?.dyeSlot); // Draft preview and saved garments share A/B/C coloring semantics.
     const trimColorHex = trimDyeSlot === 'A' ? primaryColorHex : (trimDyeSlot === 'C' ? patternHex : secondaryColorHex); // Fixed trim reuses an existing garment dye; no fourth color channel is introduced.
     const rendered = [];
-    for (const { url: frontUrl, role, paletteKey, materialKind, imageLayout } of layers) {
+    for (const { url: frontUrl, behindUrl, role, paletteKey, materialKind, imageLayout } of layers) {
       // Some layers swap to a dedicated "-back" sprite for the rear view,
       // some are hidden entirely from the back (a hood's front-only face
       // trim), and others just reuse their front sprite — same three
       // outcomes the real 3D avatar's rear render picks between.
       let url = frontUrl;
       if (behindGender) {
-        const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, behindGender);
+        const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, behindGender, behindUrl);
         if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
         url = behind.url || frontUrl;
       }
@@ -1951,7 +1952,7 @@
     const behindSignature = behindLayers.map(layer => layer.url).join('|'); // Compared to frontSignature so a dedicated rear sprite enables the loom flip control.
     if (frontSignature !== behindSignature) return true;
     const resolvedGender = gender || playerSpeciesGender().gender;
-    return behindLayers.some(({ url }) => behindViewResultFor(url, baseCosmeticIdValue, resolvedGender).changed);
+    return behindLayers.some(({ url, behindUrl }) => behindViewResultFor(url, baseCosmeticIdValue, resolvedGender, behindUrl).changed);
   }
 
   function hexRgb(hex) {
