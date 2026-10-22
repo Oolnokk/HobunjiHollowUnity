@@ -86,9 +86,9 @@ assert.equal(queued, 1, 'One lookahead root voice per measure, not one per frame
 assert.equal(schedulerState.scheduledRootPadKey, 'pluck:8:2');
 
 const syncSource = section('  function syncRootPad(', '  function bankFooterMarkup('); // Actual root-pad function under review.
-assert.equal((syncSource.match(/state\\.lastRootPadKey = rootPadAudioKey\\(targetClock\\)/g) || []).length, 2,
+assert.equal((syncSource.match(/state\.lastRootPadKey = rootPadAudioKey\(targetClock\)/g) || []).length, 2,
   'Immediate root creation and live-root reuse must mark the bar as handled');
-assert.match(syncSource, /if \\(!Number\\.isFinite\\(whenMs\\)\\) state\\.lastRootPadKey/,
+assert.match(syncSource, /if \(!Number\.isFinite\(whenMs\)\) state\.lastRootPadKey/,
   'Scheduled future roots must not consume the current measure');
 assert.match(scripts[0], /state\.rootPadRootMidi === targetMidi && liveVoices\.some\(voice => voice\.kind === desiredKind\)/,
   'An ended pluck must not be mistaken for an active root voice');
