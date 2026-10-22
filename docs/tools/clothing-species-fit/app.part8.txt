@@ -55,11 +55,12 @@ async function composeRuntimePortrait(){
       if(!cloth)return;
       const back=cloth._back?(warp?currentWarp(cloth._back):cloth._back):null;
       const front=cloth._front?(warp?currentWarp(cloth._front):cloth._front):null;
+      const behindView=cloth._behindView?(warp?currentWarp(cloth._behindView):cloth._behindView):null;
       if(back){
         const rearLayer=await rawGarmentToRuntimeLayer(back,opacity);
         if(rearLayer){
           fctx.drawImage(rearLayer,0,0);
-          bctx.drawImage(flipCanvasX(rearLayer),0,0);
+          if(!behindView)bctx.drawImage(flipCanvasX(rearLayer),0,0);
         }
         // Front view: hood rear cloth belongs behind the skull.
         // Rear view: the game draws rear hood/hat art over the skull instead.
@@ -70,8 +71,12 @@ async function composeRuntimePortrait(){
         if(frontLayer){
           fctx.drawImage(frontLayer,0,0);
           // A hood with authored rear art displays only that piece from behind.
-          if(!(garmentRecord()?.slot==='hood'&&back))bctx.drawImage(flipCanvasX(frontLayer),0,0);
+          if(!behindView&&!(garmentRecord()?.slot==='hood'&&back))bctx.drawImage(flipCanvasX(frontLayer),0,0);
         }
+      }
+      if(behindView){
+        const rearViewLayer=await rawGarmentToRuntimeLayer(behindView,opacity);
+        if(rearViewLayer)bctx.drawImage(flipCanvasX(rearViewLayer),0,0); // Cap below rear metal band, both above the behind-view skull.
       }
     };
     if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
