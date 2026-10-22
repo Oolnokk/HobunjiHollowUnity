@@ -41,11 +41,12 @@ async function importPastedDiagnostics(){
     const imported=parseDiagnostics(E.diagnosticsInput.value);
     if(!R.speciesCfg.size||!R.garments.length)throw new Error('Wait for repository data to finish loading, then import the pasted report.');
     if(![...E.species.options].some(option=>option.value===imported.species))throw new Error(`Target species “${imported.species}” is not available in the loaded repository.`);
-    pushUndo();
     E.fitRegion.value=imported.region;
     rebuildGarmentSelector();
     if(![...E.garment.options].some(option=>option.value===imported.garment))
       throw new Error(`Garment “${imported.garment}” is not available in ${imported.region} mode.`);
+    pushUndo();
+    R.three.portraitCache.clear();
     E.gender.value=imported.gender;E.species.value=imported.species;E.garment.value=imported.garment;
     R.body=null;R.maoBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
     await refreshAssets();
@@ -126,7 +127,7 @@ function inferPatchView(path,url){
 function behindPatchCatalog(){
   const gender=E.gender.value,targetSpecies=E.species.value;
   const items=[]; // Exact source layers available to the behind-sprite patch author.
-  const garment=garmentRecord();
+  const garment=fitRegion()==='body'?garmentRecord():null;
   if(garment){
     const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
     const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;
