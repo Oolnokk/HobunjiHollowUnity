@@ -158,8 +158,8 @@ for (const yaw of [3, 90, 180, 270]) {
 // OUTWARD. Turning alone must neither reset that recovery nor create a zoom.
 corridorWallDistance = null;
 corridorClock += 130;
-const recovering = corridorAim(0);
-const recoveryDistance = Math.hypot(recovering.x, recovering.y - .62, recovering.z);
+const corridorRecovering = corridorAim(0);
+const recoveryDistance = Math.hypot(corridorRecovering.x, corridorRecovering.y - .62, corridorRecovering.z);
 assert.ok(recoveryDistance > measuredDistance && recoveryDistance < requestedCorridorDist,
   'the camera smoothly regains zoom distance after the obstruction clears');
 assert.equal(ringRaycasts, 32, 'the ring updates once after the 120ms sampling interval');
