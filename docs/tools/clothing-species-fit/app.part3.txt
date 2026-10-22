@@ -1,19 +1,25 @@
-    for(const image of images)x.drawImage(image,0,0); // Flattens every authored layer of this exact species+gender variant.
-    canvas._paths=layers.map(x=>x.path);return canvas;
+    for(let index=0;index<layers.length;index++){
+      const layer=layers[index],image=images[index];
+      x.drawImage(image,0,0); // Only the preview is composited; exports retain each authored layer.
+      const layerCanvas=Object.assign(document.createElement('canvas'),{width,height});
+      layerCanvas.getContext('2d',{alpha:true}).drawImage(image,0,0);
+      exportedLayers.push({name:layer.path.join('.').replace(/^parts\./,''),path:layer.path,url:layer.url,role:layer.role,view:inferPatchView(layer.path,layer.url),canvas:layerCanvas});
+    }
+    canvas._layers=exportedLayers; // One source raster per cosmetic config leaf, with the source URL retained in the manifest.
+    canvas._paths=layers.map(layer=>layer.url);return canvas;
   })();
   R.garmentCanvases.set(key,p);return p;
 }
-async function buildGarmentCanvas(id,gender,width,height){
-  const canvas=await buildVariantGarmentCanvas(id,'mao-ao',gender,width,height);
-  if(!canvas&&fitRegion()==='headwear'){
-    log(`No Mao-ao ${gender} headwear art for ${id}; choose another garment or gender.`);
-    return null;
-  }
-  if(!canvas)throw new Error('Selected garment has no Mao-ao source for this gender.');
+async function buildGarmentCanvas(id,species,gender,width,height){
+  const canvas=await buildVariantGarmentCanvas(id,species,gender,width,height);
+  if(!canvas)log(`No ${species} ${gender} ${fitRegion()==='headwear'?'headwear':'clothing'} art for ${id}; choose another starting sprite.`);
   return canvas;
 }
-
-function targetKey(species,gender){return`${fitRegion()==='headwear'?'headwear::':''}${species}_${gender}`} // Preserve all prior body keys, isolate headwear transforms by region.
+function targetKey(species,gender){
+  const oldKey=`${fitRegion()==='headwear'?'headwear::':''}${species}_${gender}`;
+  const source=E.sourceSpecies.value||'mao-ao',sourceGender=E.sourceGender.value||gender;
+  return source==='mao-ao'&&sourceGender===gender?oldKey:`from::${source}_${sourceGender}::${oldKey}`;
+} // Existing Mao-ao same-gender fits retain their saved keys; different source rasters never silently inherit another fit.
 function ensureTargetData(species,gender){
   const key=targetKey(species,gender);
   if(!A.baseTransforms[key])A.baseTransforms[key]=defaultTransform();
