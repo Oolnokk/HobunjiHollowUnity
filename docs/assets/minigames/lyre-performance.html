@@ -1418,6 +1418,10 @@
     'strum-bluegrass-8':{label:'Bluegrass Boom–Chuck',short:'BOOM CHK',ringLabel:'BOOM<br>CHK',kind:'strum',division:2,strumStyle:'bluegrass',category:'Strum',tradition:'Appalachian bluegrass',description:'Alternates a low-plus-melody boom with a crisp melody-top chord.'}
   };
   const FRETTED_PLUCK_MODES = AUTO_PICK_PATTERN_LIBRARY; // Compatibility alias used by the existing automatic-pick scheduler and preview system.
+  const NPC_AUTO_PICK_PATTERNS = Object.keys(AUTO_PICK_PATTERN_LIBRARY).filter(id => ['arp','strum'].includes(AUTO_PICK_PATTERN_LIBRARY[id].kind)); // NPC performance selection only; player loadouts still offer Single Note and every tremolo.
+  function randomNpcAutoPickPattern() {
+    return NPC_AUTO_PICK_PATTERNS[Math.floor(Math.random() * NPC_AUTO_PICK_PATTERNS.length)] || 'arp-forward-8';
+  }
   const DEFAULT_AUTO_PICK_SLOTS = ['direct','arp-forward-reverse-16','tremolo-16','strum-reggae-8']; // Up, Right, Down, Left defaults for the four-way slottable Auto Pick cross.
   // Hobunji's own authored songbook — replaces the earlier public-domain
   // placeholder tunes with the one real song, transcribed from Foroji's
@@ -1518,7 +1522,8 @@
     harmonyStartTime:nowMs(),
     lastHarmonyStep:-1,
     lastMetronomeBeat:-1,
-    scheduledHarmonyStep:null, // Future harmony step already queued on the Web Audio clock; prevents render frames from double-triggering the root pad at the boundary.
+    scheduledRootPadKey:null, // Upcoming chord/measure root already queued on Web Audio; avoids duplicate plucks when the render frame reaches its boundary.
+    lastRootPadKey:null, // Most recent chord/measure root processed by the render frame, separate from the look-ahead key.
     scheduledMetronomeBeat:null, // Future transport beat already queued on the Web Audio clock; keeps footsteps/clicks sample-aligned with Kurraya note scheduling.
     freePlayCapoCue:null, // Holds the currently falling curved capo cue for the next hidden free-play chord.
     freePlayCapoTargetStep:-1, // Identifies which progression step the current capo is predicting so landing flashes occur only at the correct boundary. // Prevents the visual metronome from retriggering more than once per beat.
@@ -2257,6 +2262,15 @@
     return Math.floor(clock.performanceElapsedMs / Math.max(1, stepDuration)) % progression.length;
   }
 
+  function rootPadAudioKey(clock = sharedTransportData()) {
+    const chordStep = currentHarmonyStep(clock);
+    if (state.rootPadSampleBuffer) return `chord:${chordStep}`; // A sustained imported pad only changes when its chord changes.
+    const measure = clock.mixedPhase
+      ? clock.mixedPhase.absoluteChord
+      : Math.floor(clock.performanceMeterBeatFloat / Math.max(1, clock.meter.numerator)); // Regular Kurraya plucks reattack at *every* measure, including repeated-root bars.
+    return `pluck:${measure}:${chordStep}`; // Also handles chords changing within a measure in custom songs.
+  }
+
   function currentHarmonyData(clock = sharedTransportData()) {
     const fixedCadence = usesFixedKurrayaHarmony() ? fixedKurrayaHarmonyCadence(clock) : null;
     const songSegment = fixedCadence ? null : currentSongChordSegment(clock);
@@ -2717,10 +2731,11 @@
       state.scheduledMetronomeBeat = beatBoundary.value;
     }
     if (!state.rootPadEnabled) return;
-    const chordBoundary = findUpcomingTransportBoundary(clock => currentHarmonyStep(clock));
-    if (chordBoundary && state.scheduledHarmonyStep !== chordBoundary.value) {
-      syncRootPad(false, chordBoundary.atMs, chordBoundary.clock);
-      state.scheduledHarmonyStep = chordBoundary.value;
+    const padBoundary = findUpcomingTransportBoundary(rootPadAudioKey);
+    if (padBoundary && state.scheduledRootPadKey !== padBoundary.value) {
+      if (syncRootPad(!state.rootPadSampleBuffer, padBoundary.atMs, padBoundary.clock)) {
+        state.scheduledRootPadKey = padBoundary.value; // Only mark a root queued after an audible voice was actually started/retained.
+      }
     }
   }
 
@@ -2986,14 +3001,14 @@
   function syncRootPad(force = false, whenMs = null, clock = null) {
     if (!state.rootPadEnabled || state.paused || document.hidden) {
       if (state.rootPadVoices.length) stopRootPad(0.35);
-      return;
+      return false;
     }
-    if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
+    if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return false;
     const targetClock = clock || sharedTransportData(Number.isFinite(whenMs) ? whenMs + 0.25 : nowMs());
     const targetMidi = rootPadTargetMidi(targetClock);
     const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'kurraya';
     const liveVoices = state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false);
-    if (!force && state.rootPadRootMidi === targetMidi && (desiredKind === 'kurraya' || liveVoices.some(voice => voice.kind === desiredKind))) {
+    if (!force && state.rootPadRootMidi === targetMidi && liveVoices.some(voice => voice.kind === desiredKind)) {
       const now = audioStartTimeFor(state.audioContext, whenMs);
       liveVoices.filter(voice => voice.kind === desiredKind).forEach(voice => {
         voice.gain.gain.cancelScheduledValues(now);
@@ -3001,16 +3016,19 @@
         if (targetGain <= 0) voice.gain.gain.setValueAtTime(0, now);
         else voice.gain.gain.setTargetAtTime(Math.max(0.0002, targetGain), now, 0.12);
       });
-      return;
+      if (!Number.isFinite(whenMs)) state.lastRootPadKey = rootPadAudioKey(targetClock); // An immediate manual sync already supplied this root; the next render frame must not play it again.
+      return true;
     }
     state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, PAD_SYNTH_CROSSFADE_S, whenMs));
     state.rootPadRootMidi = targetMidi;
     const voice = desiredKind === 'sample' ? createRootPadSampleVoice(targetMidi, whenMs) : createRootPadVoice(targetMidi, whenMs);
     if (!voice) {
       state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
-      return;
+      return false;
     }
+    if (!Number.isFinite(whenMs)) state.lastRootPadKey = rootPadAudioKey(targetClock); // Audio lookahead keeps its separate future key until the predicted boundary actually arrives.
     log('Harmony root pad changed', `root ${midiName(targetMidi)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
+    return true;
   }
 
   function bankFooterMarkup(mode) {
@@ -4227,7 +4245,7 @@
     state.scaleName = SCALE_NAMES[index];
     refs.scaleSelect.value = state.scaleName;
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     updateHUD();
     updatePitchLabels();
     updateArpeggioUI();
@@ -4481,7 +4499,7 @@
     $('#resetHarmonyClockBtn').addEventListener('click', () => {
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null;
       updateArpeggioUI();
@@ -5552,7 +5570,7 @@
     invalidatePitchCache('tonic changed');
     schedulePitchCacheBuild();
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     updateHUD();
     updatePitchLabels();
     syncRootPad(true);
@@ -5568,7 +5586,7 @@
     invalidatePitchCache('note set changed');
     schedulePitchCacheBuild();
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     updateHUD();
     updatePitchLabels();
     syncRootPad(true);
@@ -5584,13 +5602,13 @@
     refs.tonicSelect.addEventListener('change', () => applyPerformanceTonic(refs.tonicSelect.value));
     refs.scaleSelect.addEventListener('change', () => applyPerformanceScale(refs.scaleSelect.value));
     refs.harmonyProgression.addEventListener('change', () => { state.harmonyPattern = refs.harmonyProgression.value; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updatePitchLabels(); updateHarmonyVisual(true, true); syncRootPad(true); saveSettings(); log('Hidden progression changed', state.harmonyPattern); });
     refs.harmonyBpm.addEventListener('change', () => { state.harmonyBpm = clamp(Number(refs.harmonyBpm.value) || 96, 40, 240); refs.harmonyBpm.value = String(state.harmonyBpm); state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updateHarmonyVisual(true, true); saveSettings(); });
     refs.harmonyChordBeats.addEventListener('change', () => { state.harmonyChordBeats = Number(refs.harmonyChordBeats.value) || 8; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updateHarmonyVisual(true, true); saveSettings(); });
     refs.auditoryMetronome.addEventListener('change', async () => {
       state.auditoryMetronome = refs.auditoryMetronome.value === 'on';
@@ -6788,7 +6806,7 @@
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     state.lastMetronomeBeat = -1;
     state.scheduledMetronomeBeat = null;
     state.paused = false;
@@ -6824,7 +6842,7 @@
     state.visibilityPauseStarted = 0;
     state.harmonyStartTime = nowMs();
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     state.lastMetronomeBeat = -1;
     state.scheduledMetronomeBeat = null;
     clearNoteElements();
@@ -6869,7 +6887,7 @@
       } else if (!state.game.active && state.gameplaySelection === 'freeplay') {
         state.harmonyStartTime = nowMs(); // Starting Free Play from pause begins a fresh shared beat/harmony clock.
         state.lastHarmonyStep = -1;
-        state.scheduledHarmonyStep = null;
+        state.scheduledRootPadKey = null; state.lastRootPadKey = null;
         state.lastMetronomeBeat = -1;
         state.scheduledMetronomeBeat = null;
         updateFreePlayStatus('Free Play.');
@@ -7059,6 +7077,7 @@
     }
     scheduleTransportAudioAhead(); // Queues predictable beat/chord audio before the render frame reaches the boundary, matching automatic-note look-ahead.
     const harmonyStep = currentHarmonyStep();
+    const padKey = rootPadAudioKey(); // Checks both measure and chord without forcing a new root sample on every render.
     const beatData = currentHarmonyBeatData();
     const chordChanged = harmonyStep !== state.lastHarmonyStep;
     const beatChanged = beatData.absoluteBeat !== state.lastMetronomeBeat;
@@ -7067,10 +7086,12 @@
       state.lastHarmonyStep = harmonyStep;
       updateArpeggioUI();
       if (usesAutomaticPluckInput() && state.pluckInputMode && currentFretData()) restartActiveFrettedPluck();
-      if (state.scheduledHarmonyStep !== harmonyStep) syncRootPad(); // Fallback only: the normal path was already scheduled on the AudioContext clock.
     }
-    else if (state.rootPadEnabled && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
-      syncRootPad(true); // Self-heals a pad voice that ended or failed without waiting for the next chord boundary.
+    if (padKey !== state.lastRootPadKey) {
+      state.lastRootPadKey = padKey;
+      if (state.rootPadEnabled && state.scheduledRootPadKey !== padKey) syncRootPad(!state.rootPadSampleBuffer); // Startup/stall fallback when the look-ahead did not schedule the new bar.
+    } else if (state.rootPadEnabled && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
+      syncRootPad(true); // Restores a failed/ended imported pad or an uninitialized pluck without endlessly retriggering ordinary short plucks mid-bar.
     }
     if (beatChanged) {
       state.lastMetronomeBeat = beatData.absoluteBeat;
@@ -7150,7 +7171,7 @@
         if (state.game.loopDemo) {
           const proceduralAmbient = !!state.game.proceduralAmbient; // Ambient Foroji performances request a fresh composition each cycle; ordinary successful-preview loops can still repeat deterministically.
           if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody();
-          startSong(state.selectedSong, {demoMode:state.game.demoMode, loopDemo:true, proceduralAmbient});
+          startSong(state.selectedSong, {demoMode:state.ambientOnly ? randomNpcAutoPickPattern() : state.game.demoMode, loopDemo:true, proceduralAmbient});
           updateDebugState();
           requestAnimationFrame(updateGameFrame);
           return;
@@ -7519,7 +7540,7 @@
       state.kurrayaSongIntroSteps = normalizeKurrayaArrangementSteps(arrangement.introSteps,FIXED_HARMONY_SIX_EIGHT_CHORDS,KURRAYA_DEFAULT_INTRO_STEPS); // Applies Music Lab paint edits without mutating the songbook definition or saved gameplay settings.
       state.kurrayaSongBodySteps = normalizeKurrayaArrangementSteps(arrangement.bodySteps,FIXED_HARMONY_THREE_FOUR_CHORDS,KURRAYA_DEFAULT_BODY_STEPS); // Adjacent equal bars are grouped into sustained long sections by fixedKurrayaHarmonyCadence().
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       updateHarmonyVisual(true,true);
       if (state.rootPadEnabled) syncRootPad(true);
       return this.scaleAuditionState();
@@ -7543,7 +7564,7 @@
       state.kurrayaSongIntroSteps = KURRAYA_DEFAULT_INTRO_STEPS.slice();
       state.kurrayaSongBodySteps = KURRAYA_DEFAULT_BODY_STEPS.slice();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       updateHarmonyVisual(true,true);
       if (state.rootPadEnabled) syncRootPad(true);
       return this.scaleAuditionState();
@@ -7604,7 +7625,7 @@
     resetHarmony() {
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null;
       updateArpeggioUI();
@@ -7695,7 +7716,7 @@
       if (refs.harmonyProgression) refs.harmonyProgression.value = requested;
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null;
       updatePitchLabels();
@@ -7748,7 +7769,8 @@
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.backupPlayerEquipped = state.backupPlayerEquipped !== false;
-      const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
+      const mode = randomNpcAutoPickPattern(); // Backup preview is still the leading NPC's accompaniment; player note inputs retain their own chosen pattern.
+      state.rootPadEnabled = true; // Keep the NPC's bar-root accompaniment active when its hidden frame is replaced by this visible one.
       startSong(state.selectedSong,{demoMode:mode,backupAccompaniment:true});
       document.body.classList.add('backup-accompaniment');
       const menu = this.gameplayMenuState();
@@ -7767,7 +7789,7 @@
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
     ambientPerformanceState() {
-      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,generated:!!state.game.proceduralAmbient,inputCount:state.inputCount};
+      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,generated:!!state.game.proceduralAmbient,pattern:state.game.demoMode,inputCount:state.inputCount,rootPadEnabled:!!state.rootPadEnabled,rootPadKey:rootPadAudioKey(),rootPadPitch:state.rootPadRootMidi,rootPadVoices:state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false).length};
     },
     async startAmbientLead(songId, footstepSampleUrl) {
       state.ambientOnly = true; // Set before audio loading so held overworld controls cannot hijack an initializing NPC performance.
@@ -7782,7 +7804,8 @@
           state.ambientMetronomeBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
         } catch (error) { log('Ambient footstep metronome sample failed to load', error?.message || error); }
       }
-      const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
+      const mode = randomNpcAutoPickPattern(); // NPCs never inherit a player's Single Note/tremolo preference.
+      state.rootPadEnabled = true; // An ambient musician always plays the automatic bar-root accompaniment; does not persist over player settings.
       if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(); // Foroji begins with a new composition instead of the authored practice melody.
       startSong(state.selectedSong,{demoMode:mode,loopDemo:true,proceduralAmbient:state.selectedSong === 'when-the-kininjis-bloom'});
       return { started:!!state.game.active, title:songTitle(state.selectedSong), proceduralAmbient:!!state.game.proceduralAmbient };
@@ -7845,7 +7868,7 @@
         paused: !!state.paused,
         transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS,
         scheduledMetronomeBeat: state.scheduledMetronomeBeat,
-        scheduledHarmonyStep: state.scheduledHarmonyStep,
+        scheduledRootPadKey: state.scheduledRootPadKey,
         transportAbsoluteBeat: sharedTransportData().transportAbsoluteBeat,
         transportHarmonyStep: currentHarmonyStep(),
       };
