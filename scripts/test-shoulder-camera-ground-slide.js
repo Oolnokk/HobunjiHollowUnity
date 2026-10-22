@@ -365,7 +365,7 @@ function independentOffsetSample(offset, wall, azimuthDeg = 0) {
   // is comparable at equal elapsed time instead of depending on test order.
   vm.runInContext('_seatedOcclusionDistance = null; _seatedOcclusionUpdatedAt = 0; _shoulderCollisionOffsetBlend = 0; _shoulderCollisionOffsetAt = 0; _shoulderCollisionOffsetArea = null;', context);
   context.updateCamera();
-  for (let step = 0; step < 45; step++) { corridorClock += 16; context.updateCamera(); } // 720 ms allows the slow shoulder shift to settle near its spatial target.
+  for (let step = 0; step < 45; step++) { corridorClock += 16; context.updateCamera(); } // 720 ms allows the offset correction to settle near its spatial target.
   const az = azimuthDeg * Math.PI / 180;
   const rightX = Math.cos(az), rightZ = -Math.sin(az);
   return {
@@ -384,12 +384,12 @@ for (const side of [1, -1]) {
   const input = side * .8; // Validate corresponding positive AND negative 0.35 end values.
   assert.ok(Math.abs(independentOffsetSample(input, null).applied - input) < 1e-8, 'unobstructed shoulder offset equals the manual setting');
   const samples = []; // Records the actual rendered horizontal offset at five different collision zoom depths.
-  for (const wall of [2.45, 2.2, 1.9, 1.6, 1.3]) {
+  for (const wall of [1.7, 1.56, 1.41, 1.26, 1.11]) {
     const view = independentOffsetSample(input, wall);
     const value = side * view.applied; // Compare positive magnitudes without losing signed camera direction.
     samples.push(value);
     assert.ok(value > .35 && value < .8, 'each intermediate collision distance keeps an offset between the manual setting and signed floor');
-    assert.ok(Math.abs(view.posX - view.targetX) < 1e-8 && Math.abs(view.posZ - view.targetZ - Math.cos(9 * Math.PI / 180) * (2.6 / 1.5) * (1 - view.boom.shoulderOffsetBlend)) < 2, 'render camera and reticle aim move together');
+    assert.ok(Math.abs(view.posX - view.targetX) < 1e-8 && view.posZ > view.targetZ + .8 - 1e-8, 'render camera and reticle aim move together');
     assert.ok(view.boom.shoulderOffsetBlend > 0 && view.boom.shoulderOffsetBlend < 1, 'debug reports fractional progress for partial zoom');
   }
   assert.ok(samples.every((value, i) => !i || value < samples[i - 1] - 1e-4),
