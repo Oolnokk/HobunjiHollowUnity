@@ -125,8 +125,10 @@ assert(catalog.entries.some(entry=>entry.id===rules.HELM_ID));
 assert(cosmetic.onlyExactSpeciesVariant && Object.keys(cosmetic.parts).length===0,'non-illustrated characters cannot render Mao-ao male art');
 assert.deepEqual(Object.keys(cosmetic.speciesVariants),['mao-ao_male']);
 assert.equal(cosmetic.material,'mixed');
-assert.equal(cosmetic.speciesVariants['mao-ao_male'].parts.head.layers.back.materialKind,'cloth');
-assert.equal(cosmetic.speciesVariants['mao-ao_male'].parts.head.layers.front.materialKind,'metal');
+const helmLayers=cosmetic.speciesVariants['mao-ao_male'].parts.head.layers; // The cap must share the head-front plane with the faceguard, not sit behind the skull.
+assert.deepEqual(Object.keys(helmLayers),['front_cap','front'],'wool cap draws above the character head, then faceguard draws above the cap');
+assert.equal(helmLayers.front_cap.materialKind,'cloth');
+assert.equal(helmLayers.front.materialKind,'metal');
 for (const file of ["replica_bzabag's_helm-cap_m.png","replica_bzabag's_helm-faceguard_m.png"])
  assert(fs.existsSync('docs/assets/cosmetics/clothes/hat/'+file),'real helm PNG available: '+file);
 const traderSource = fs.readFileSync('docs/js/slagothim-traders.js','utf8');
