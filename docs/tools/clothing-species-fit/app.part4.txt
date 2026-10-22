@@ -93,19 +93,24 @@ function warpGarment(source,targetNorm,outWidth,outHeight){
 async function buildSourceReferenceCanvas(species,gender,garmentId,targetBody){
   if(bodyLayers(species,gender).length)return buildBodyCanvas(species,gender);
   const garment=R.garments.find(record=>record.id===garmentId);
-  const firstUrl=HEAD_SLOTS.has(garment?.slot)
-    ?headwearLayerRecords(garment,species,gender)[0]?.path
-    :collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`])[0]?.url;
-  if(!firstUrl){
+  const paths=HEAD_SLOTS.has(garment?.slot)
+    ?headwearLayerRecords(garment,species,gender).flatMap(layer=>[layer.path,layer.behindPath])
+    :collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).map(layer=>layer.url);
+  const urls=[...new Set(paths.filter(Boolean))]; // Collect every material and alternate rear raster before sizing the shared source.
+  if(!urls.length){
     log(`No ${species} ${gender} source body or garment raster; retaining target dimensions as an empty fitting reference.`);
     const fallback=document.createElement('canvas');fallback.width=targetBody.width;fallback.height=targetBody.height;
     fallback._paths=[];return fallback;
   }
-  const image=await loadImage(assetUrl(firstUrl)); // The garment's native source dimensions replace missing species-body dimensions.
+  const loaded=await Promise.allSettled(urls.map(url=>loadImage(assetUrl(url)))); // One absent optional rear image must not hide the other materials.
+  const images=loaded.filter(result=>result.status==='fulfilled').map(result=>result.value);
+  if(!images.length)throw new Error(`Could not load any ${species} ${gender} garment sprites to establish source dimensions.`);
   const fallback=document.createElement('canvas');
-  fallback.width=image.naturalWidth||image.width;fallback.height=image.naturalHeight||image.height;
-  fallback._paths=[firstUrl];
-  log(`Using ${species} ${gender} garment raster dimensions because that species has no body reference sprites.`);
+  fallback.width=Math.max(...images.map(image=>image.naturalWidth||image.width));
+  fallback.height=Math.max(...images.map(image=>image.naturalHeight||image.height));
+  fallback._paths=urls;
+  const missing=urls.length-images.length;
+  log(`Using ${species} ${gender} garment sprite dimensions (${fallback.width}×${fallback.height}) without body reference sprites.${missing?` ${missing} source images unavailable.`:''}`);
   return fallback;
 } // NPC-only or unimplemented body rigs can still supply valid starting clothing artwork.
 
