@@ -98,7 +98,7 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.drenkirra.an
 assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.grehlr.anchors.saddle.position)), { x: 0, y: 0.1224031140623686, z: 0 }, 'October 17 Grehlr saddle must remain authoritative');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['gar-wolf'].anchors.saddle.position)), { x: 0, y: 0.15973815894365057, z: 0.3293044388176616 }, 'October 17 Gar-wolf saddle must remain authoritative');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['dabinggi-hound'].anchors.saddle.position)), { x: 0, y: 0.17901245841201874, z: 0.6091387381509006 }, 'October 17 Dabinggi-hound saddle must remain authoritative');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.uumkaoii.anchors.saddle.position)), { x: 0, y: 0.6408071738820479, z: 0.02 }, 'October 17 Uumkaoii saddle must remain authoritative');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.uumkaoii.anchors.saddle.position)), { x: 0, y: 0.2575246358178592, z: 0.005623701988496838 }, 'October 22 Uumkaoii saddle is the latest approved calibration');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures.puktuk.anchors.saddle.position)), { x: 0, y: 0.1830394938019193, z: -0.012420318741466083 }, 'October 17 Puktuk saddle must remain authoritative');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(profiles.creatures['voorg-ass'].anchors.saddle.position)), { x: -0.0016655977917167481, y: 0.18328943170147868, z: 0.043832914384796626 }, 'October 17 Voorg-Ass saddle must remain authoritative');
 assert.match(source, /Object\.entries\(staleCreatureSaddles\)[\s\S]*?stale\.push\(`\$\{kind\}\.saddle`\)/, 'Animation Author stale-profile repair must recognize the superseded saddle defaults');
@@ -191,4 +191,51 @@ assert.strictEqual(w.HobunjiHandShoulderPoints.keyFor('ghoul', 'female'), 'mao-a
 assert.strictEqual(w.HobunjiHandShoulderPoints.keyFor('rakakoan', 'male'), 'kenkari::male', 'Rakakoan hand shoulder points must share Kenkari transforms');
 assert.strictEqual(w.HobunjiAttachmentRigRecovery, undefined, 'hand-shoulder config must not own attachment-rig recovery anymore');
 
+const newRigs = {
+  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.030176488041515424,-0.11264054358274966,0.028253979555520257], ground:[0.28,0.18,0.065] },
+  nazgraku: { saddle:[0,0.07886458733711826,-0.0022188537422596633], grip:[0.011498553593554665,-0.14241261412989242,0.000946211786312177], ground:[0.31,0.2,0.07] },
+}; // Regression fixtures use the user's October 22 calibration exports, not guessed attachment defaults.
+for (const [kind, expected] of Object.entries(newRigs)) {
+  const profile = profiles.creatures[kind]; // Runtime rig must contain the authored values without an editor import.
+  for (const [anchor, coordinates] of [['saddle',expected.saddle],['shoulderGrip',expected.grip]]) {
+    assert.deepStrictEqual(['x','y','z'].map(axis => profile.anchors[anchor].position[axis]), coordinates, kind + ' authored ' + anchor);
+  }
+  assert.deepStrictEqual(['large','medium','small'].map(size => profile.groundOffsets[size]), expected.ground, kind + ' authored floor offsets');
+  const migrated = guard.reconcileProfiles({ creatures: { [kind]: {
+    anchors: { saddle: {position:{x:0,y:0,z:0}}, shoulderGrip: {position:{x:0.01,y:0,z:0}} },
+    groundOffsets: {large:0,medium:0,small:0}, chatheadFrame:{x:0,y:0,width:0.04,height:0.04},
+  } } }).creatures[kind]; // Old browser autosave placeholders must not erase newer authoring.
+  assert.deepStrictEqual(['x','y','z'].map(axis => migrated.anchors.saddle.position[axis]), expected.saddle, kind + ' saddle recovery');
+  assert.deepStrictEqual(['x','y','z'].map(axis => migrated.anchors.shoulderGrip.position[axis]), expected.grip, kind + ' grip recovery');
+  assert.deepStrictEqual(['large','medium','small'].map(size => migrated.groundOffsets[size]), expected.ground, kind + ' floor recovery');
+  const custom = guard.reconcileProfiles({ creatures: { [kind]: {groundOffsets:{large:0.41,medium:0.23,small:0.077}} } }).creatures[kind];
+  assert.deepStrictEqual(['large','medium','small'].map(size => custom.groundOffsets[size]), [0.41,0.23,0.077], kind + ' preserves newer authored offsets');
+}
+assert.strictEqual(profiles.creatures.nelk.chatheadFrame.width, 0.3448695403032319, 'Nelk authored head framing');
+assert.deepStrictEqual([profiles.creatures.nazgraku.chatheadFrame.x, profiles.creatures.nazgraku.chatheadFrame.y, profiles.creatures.nazgraku.chatheadFrame.width, profiles.creatures.nazgraku.chatheadFrame.height], [0.23705208817610238,0.0587346014031421,0.22574006332431554,0.5112796374724654], 'Nazgraku retains new export (23) framing');
+assert.strictEqual(guard.reconcileProfiles({creatures:{nelk:{chatheadFrame:{x:0,y:0,width:0.04,height:0.04}}}}).creatures.nelk.chatheadFrame.width,0.3448695403032319);
+assert.strictEqual(guard.reconcileProfiles({creatures:{nazgraku:{chatheadFrame:{x:0,y:0,width:0.04,height:0.04}}}}).creatures.nazgraku.chatheadFrame.width,0.22574006332431554);
+const authoredUum = profiles.creatures.uumkaoii; // Compares every newly calibrated Uumkao'ii field with export (23).
+assert.deepStrictEqual(['x','y','z'].map(axis => authoredUum.anchors.shoulderGrip.position[axis]), [0,-0.2057328849409156,-0.004605298975405354]);
+assert.strictEqual(authoredUum.anchors.shoulderGrip.rotationDeg.y, 0, 'new Uumkaoii grip uses neutral yaw');
+assert.deepStrictEqual(['large','medium','small'].map(size => authoredUum.groundOffsets[size]), [0.35,0.25,0.05]);
+assert.deepStrictEqual(['x','y','width','height'].map(key => authoredUum.chatheadFrame[key]), [0.022018283422815435,0.180707251642218,0.4241864686175028,0.6442119462386413]);
+assert.deepStrictEqual(['x','y'].map(axis => authoredUum.sizeScales.large[axis]), [1.5,1.5], 'Large size stays uniform after fixing the source aspect');
+const previousUum = { // Exact former master fingerprints must upgrade on old browser autosaves.
+  anchors: {
+    saddle: { position: {x:0,y:0.6408071738820479,z:0.02}, rotationDeg:{x:0,y:0,z:0} },
+    shoulderGrip: { position: {x:0.01,y:-0.3636087789187775,z:-0.18395679109723}, rotationDeg:{x:0,y:-61,z:0} },
+  },
+  groundOffsets: {large:0.69,medium:0.48,small:0.09},
+  chatheadFrame: {x:0.009564166583519832,y:0.2923510947804583,width:0.4656387672084861,height:0.47038721094834346},
+};
+const recoveredUum = guard.reconcileProfiles({creatures:{uumkaoii:previousUum}}).creatures.uumkaoii; // Checks per-field migration without modifying unrelated species.
+assert.deepStrictEqual(recoveredUum.anchors.saddle.position, authoredUum.anchors.saddle.position);
+assert.deepStrictEqual(recoveredUum.anchors.shoulderGrip.position, authoredUum.anchors.shoulderGrip.position);
+assert.strictEqual(recoveredUum.anchors.shoulderGrip.rotationDeg.y,0);
+assert.deepStrictEqual(recoveredUum.groundOffsets,authoredUum.groundOffsets);
+assert.deepStrictEqual(recoveredUum.chatheadFrame,authoredUum.chatheadFrame);
+const bespokeUum = guard.reconcileProfiles({creatures:{uumkaoii:{groundOffsets:{large:0.4,medium:0.21,small:0.08},chatheadFrame:{x:0.12,y:0.22,width:0.3,height:0.4}}}}).creatures.uumkaoii; // Never replace future independently authored offsets/crops.
+assert.deepStrictEqual(bespokeUum.groundOffsets,{large:0.4,medium:0.21,small:0.08});
+assert.strictEqual(bespokeUum.chatheadFrame.x,0.12);
 console.log('attachment rig master tests passed');
