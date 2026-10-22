@@ -2,13 +2,14 @@
       const targetNode=targetVariant?patchNodeAtPath(targetVariant,leaf.path):null;
       const labelPath=leaf.path.join(' › ')||`layer ${index+1}`;
       items.push({
-        id:`clothing:${garment.id}:${gender}:${index}`,
+        id:`clothing:${garment.id}:${sourceSpecies}:${sourceGender}:${index}`,
         kind:'clothing',
         garmentId:garment.id,
         garmentLabel:garment.label,
         label:`${garment.label} • ${labelPath}`,
         layerPath:[...leaf.path],
-        sourceSpecies:'mao-ao',
+        sourceSpecies,
+        sourceGender,
         targetSpecies,
         gender,
         sourceUrl:leaf.url,
@@ -61,13 +62,15 @@ function setMainWorkflowPatch(sourceCanvas,meta={}){
     active:true,canvas:sourceCanvas,descriptor:meta.descriptor||null,
     filename:String(meta.filename||''),patchName:String(meta.patchName||''),revision:(R.patchWorkflow.revision||0)+1
   }; // Clothing receives a source+patch composite; body receives patch-only pixels. Both are routed through the same live transform/6×6 warp before avatar assembly.
-  E.clothPng.textContent=meta?.descriptor?.kind==='body'?'Export warped body patch PNG':'Export patched clothing-back PNG';
+  E.clothPng.textContent=meta?.descriptor?.kind==='body'?'Export warped body patch PNG'
+    :(R.cloth?._layers?.length>1?`Export ${R.cloth._layers.length} fitted layers ZIP`:'Export patched clothing-back PNG');
   render();
 }
 function clearMainWorkflowPatch(){
   if(!R.patchWorkflow.active&&!R.patchWorkflow.canvas)return;
   R.patchWorkflow={active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:(R.patchWorkflow.revision||0)+1};
-  E.clothPng.textContent='Export fitted clothing PNG';
+  E.clothPng.textContent=R.cloth?._layers?.length>1?`Export ${R.cloth._layers.length} fitted layers ZIP`
+    :(fitRegion()==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG');
   render();
 }
 function behindPatchOutputInfo(){
@@ -75,6 +78,8 @@ function behindPatchOutputInfo(){
     ready:!!(R.body&&R.maoBody),
     targetSpecies:E.species.value,
     gender:E.gender.value,
+    sourceSpecies:E.sourceSpecies.value,
+    sourceGender:E.sourceGender.value,
     garmentId:E.garment.value||'',
     fitRegion:fitRegion(),
     garmentLabel:garmentRecord()?.label||'',
@@ -109,6 +114,12 @@ E.fitRegion.onchange=()=>{
   refreshAssets();log('Fit region changed to '+fitRegion());
 };
 E.gender.onchange=refreshAssets;E.species.onchange=refreshAssets;E.garment.onchange=refreshAssets;
+function changeStartingSprite(){
+  R.three.portraitCache.clear();
+  rebuildGarmentSelector(); // Hide garments lacking a source variant for this starting species/gender.
+  refreshAssets();
+}
+E.sourceSpecies.onchange=changeStartingSprite;E.sourceGender.onchange=changeStartingSprite;
 E.showBody.onchange=render;E.showGarment.onchange=render;E.showMeshes.onchange=render;E.opacity.oninput=render;
 E.showAuthored.onchange=render;E.authoredOpacity.oninput=render;
 E.extTorsoFile.onchange=()=>importExtendedRole('torso',E.extTorsoFile.files?.[0]||null);
@@ -123,7 +134,12 @@ E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());resto
 E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
 E.redo.onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshot());restore(redoStack.pop());syncHistory()};
 E.bodyPng.onclick=()=>R.body&&downloadCanvas(bodyOut(),`${safeName(E.species.value)}_${E.gender.value}_${fitRegion()==='headwear'?'head_reference':'body'}.png`);
-E.clothPng.onclick=()=>{const fit=captureFitState(),c=clothOut(fit);if(c){downloadCanvas(c,fittedClothingFilename());log(`Fitted clothing PNG baked ${fit.key} base ${JSON.stringify(fit.transform)} + ${fit.offsets.length} local offsets.`)}};
+E.clothPng.onclick=exportFittedGarment;
+E.compositePng.onclick=()=>{
+  const fit=captureFitState(),canvas=clothOut(fit);
+  if(canvas)downloadCanvas(canvas,`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}_composite.png`);
+  if(canvas)log(`Exported composite preview PNG using fitted grid ${fit.key}.`);
+};
 E.overlayPng.onclick=()=>R.body&&downloadCanvas(overlayOut(),`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}_overlay.png`);
 function exportHeadwearView(view){
   if(fitRegion()!=='headwear'||!R.body||!R.cloth){log('Select and load a hat or hood before exporting headwear layers.');return}
