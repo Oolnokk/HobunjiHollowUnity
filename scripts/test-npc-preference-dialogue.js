@@ -190,6 +190,7 @@ const weatherGated = {
 activeNPC = weatherGated;
 area = 'map_hobunji_town';
 deps.calendar.weather = 'storm'; // The test tree requires clear weather, so the normal selector MUST return null.
+assert(!runtime.ConditionRegistry.entryEligible(weatherGated.dialogueTrees[0], { weather: 'storm' }), 'The regression fixture must actually miss the normal dialogue-tree selector');
 runtime.DialogueContent.resetDialogueState();
 runtime.DialogueContent.beginNpcConversation(activeNPC);
 assert.deepEqual(visibleChoices(), [], 'Condition-ineligible fallback must not invent a special dialogue choice');
@@ -210,6 +211,20 @@ activeNPC = lineFallback;
 runtime.DialogueContent.resetDialogueState();
 runtime.DialogueContent.beginNpcConversation(activeNPC);
 assert.equal(element('npcDialogueText').textContent, 'Hello from a fallback line.', 'Both supported spoken node types must work when a tree itself is ineligible');
+// Every authored ordinary NPC must remain conversational even if all of its trees become ineligible.
+for (const originalNpc of byId.values()) {
+  if (!originalNpc.dialogueTrees?.some(tree => tree.id === 'tree_' + originalNpc.id + '_fallback')) continue; // Banubu uses scripted quest dialogue instead.
+  activeNPC = {
+    ...originalNpc,
+    dialogueTrees: originalNpc.dialogueTrees.map(tree => ({
+      ...tree, conditions: { ...tree.conditions, weather: ['clear'] },
+    })),
+  };
+  runtime.DialogueContent.resetDialogueState();
+  runtime.DialogueContent.beginNpcConversation(activeNPC);
+  const spoken = element('npcDialogueText').textContent;
+  assert(spoken && spoken !== originalNpc.bio && !spoken.includes('{{pool:') && !spoken.includes('<suggestion:'), originalNpc.id + ': missing-tree fallback must resolve speech without leaking bio/lore');
+}
 deps.calendar.weather = originalWeather;
 
 activeNPC = byId.get('banubu'); // Banubu has no generic starter tree; its quest system supplies authored dialogue.
