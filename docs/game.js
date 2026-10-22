@@ -20564,7 +20564,11 @@
       const INTERIOR_CAMERA_WALL_CLEARANCE = 0.35; // gap kept between an interior (building-area) boom and the wall that pulled it in
       const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
       const SHOULDER_CAMERA_MIN_TARGET_HEIGHT = 0.04; // Keeps lowered shoulder offsets above the terrain so upward aim has room to shorten its boom.
+      const SHOULDER_COLLISION_OFFSET_MIN_ABS = 0.35; // Collision only reduces manual horizontal offset beyond ±0.35 tiles, leaving clear sight around the avatar's head.
       let _cameraBoomDebug = null; // Latest shoulder collision and ground solve, read by the copyable Pixel Probe report.
+      let _shoulderCollisionOffsetBlend = 0; // Spatial easing target is additionally time-smoothed: a sudden wall hit must not snap the shoulder laterally.
+      let _shoulderCollisionOffsetAt = 0; // Last camera-frame timestamp for collision-only offset easing.
+      let _shoulderCollisionOffsetArea = null; // Reset correction when travelling between areas; old wall offsets must not leak across scenes.
       let _occlusionCameraMode = null; // Resets collision smoothing when switching between shoulder, seated, and scripted cameras.
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
@@ -20786,6 +20790,7 @@
           solved: { x: idealX, z: idealZ },
         } : null; // Existing 3D boom, local terrain and floor guard still follow this X/Z solve.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
+        let adjustedLookAtX = lookAtX, adjustedLookAtZ = lookAtZ; // Returns an aim pivot shifted with the camera when collision centers the shoulder offset.
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
         const radialShoulder = shoulderBoom && (currentArea === 'interior' || _isBuildingArea(currentArea)) && !horizontalSqueezeEnabled; // Farmhouse and authored interiors share one collision distance for EVERY yaw direction.
         if (!radialShoulder) _shoulderRadialSample = null; // Switching modes or leaving an interior must not carry a stale radial limit.
@@ -20948,7 +20953,8 @@
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
           const requestedSetback = Number(window.HobunjiShoulderCameraCharacterFraming?.minimumCollisionSetback?.()); // Uses the cached species scale rather than measuring the avatar each frame.
-          const minimumSetback = Math.min(Math.hypot(dx, dz), Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.3); // Never pushes an intentionally shorter requested boom outward.
+          const requestedPlanarDistance = Math.hypot(dx, dz); // Original horizontal boom reach, used by the shoulder-offset taper.
+          const minimumSetback = Math.min(requestedPlanarDistance, Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.8); // Never pushes an intentionally shorter requested boom outward.
           const bodyLimited = Math.hypot(resultX - lookAtX, resultZ - lookAtZ) < minimumSetback; // Stops both wall and terrain retraction before the camera enters the player.
           if (bodyLimited && minimumSetback > 0) {
             const factor = minimumSetback / Math.hypot(dx, dz); // Retains requested yaw and pitch until ground clearance requires a height adjustment.
@@ -20956,16 +20962,66 @@
             resultZ = lookAtZ + dz * factor;
             resultY = Math.max(lookAtY + dy * factor, cameraSurfaceYAtWorld(resultX, resultZ) + clearance);
           }
+          // Spread offset easing across the FULL collision zoom range instead of
+          // only the last few tenths of a tile. Preserve the sign: large
+          // positive offsets approach +0.35, negatives approach -0.35, and
+          // user-selected offsets in [-0.35, +0.35] remain entirely unchanged.
+          const solvedPlanarDistance = Math.hypot(resultX - lookAtX, resultZ - lookAtZ); // Collision-resolved horizontal reach, independent of yaw.
+          const offsetFadeStartTiles = requestedPlanarDistance; // Fade begins at the first camera-boom retraction.
+          const offsetFadeSpan = requestedPlanarDistance - minimumSetback; // Entire usable retraction range, with the previous species-scaled zoom cap.
+          const configuredOffsetH = Number(typeof s_shoulderSurfOffsetH_current === 'undefined' ? 0 : s_shoulderSurfOffsetH_current); // Existing manual shoulder-offset setting.
+          const liveOffsetH = Number.isFinite(configuredOffsetH) ? configuredOffsetH : 0; // Prevent malformed settings from introducing nonfinite camera coordinates.
+          const offsetEndH = Math.abs(liveOffsetH) > SHOULDER_COLLISION_OFFSET_MIN_ABS
+            ? Math.sign(liveOffsetH) * SHOULDER_COLLISION_OFFSET_MIN_ABS : liveOffsetH; // Preserve head clearance and offsets already within ±0.35.
+          const compression = offsetFadeSpan > 1e-4
+            ? window.FormatUtils.clamp((requestedPlanarDistance - solvedPlanarDistance) / offsetFadeSpan, 0, 1)
+            : 0; // Intentionally close uncollided booms cannot generate artificial offset movement.
+          const shoulderOffsetBlend = compression * compression * (3 - 2 * compression); // Spatial target: smooth across the FULL zoom range.
+          const offsetTime = performance.now();
+          if (_shoulderCollisionOffsetArea !== currentArea || !_shoulderCollisionOffsetAt) {
+            _shoulderCollisionOffsetBlend = 0; // First frame begins at the unmodified manual shoulder offset, even if a wall is already very close.
+            _shoulderCollisionOffsetAt = offsetTime;
+            _shoulderCollisionOffsetArea = currentArea;
+          }
+          const offsetDt = Math.max(0, Math.min(0.1, (offsetTime - _shoulderCollisionOffsetAt) / 1000));
+          _shoulderCollisionOffsetAt = offsetTime;
+          if (Math.abs(liveOffsetH) <= SHOULDER_COLLISION_OFFSET_MIN_ABS) {
+            _shoulderCollisionOffsetBlend = 0; // Keep small manual offsets EXACT, with no old collision correction left over.
+          } else {
+            // Unlike the collision BOOM, which must pull inward immediately to avoid clipping a wall,
+            // the shoulder shift may catch up over several frames. This prevents an instant ±0.8→±0.35 jump.
+            const follow = 1 - Math.exp(-12 * offsetDt);
+            _shoulderCollisionOffsetBlend += (shoulderOffsetBlend - _shoulderCollisionOffsetBlend) * follow;
+          }
+          const appliedShoulderOffsetH = liveOffsetH + (offsetEndH - liveOffsetH) * _shoulderCollisionOffsetBlend; // Signed manual offset is adjusted gradually, never beyond ±0.35.
+          const shoulderOffsetFactor = Math.abs(liveOffsetH) > 1e-6 ? appliedShoulderOffsetH / liveOffsetH : 1; // Fraction of the user's manual offset remaining for diagnostics.
+          const lateralShift = liveOffsetH - appliedShoulderOffsetH; // Correction always moves toward the corresponding signed side, never to zero.
+          if (Math.abs(lateralShift) > 1e-6 && requestedPlanarDistance > 1e-6) {
+            // Shift the camera AND aim pivot together, preserving pitch, yaw,
+            // the shared radial ring, and reticle/interaction-ray agreement.
+            adjustedLookAtX -= (dz / requestedPlanarDistance) * lateralShift;
+            adjustedLookAtZ += (dx / requestedPlanarDistance) * lateralShift;
+            resultX += adjustedLookAtX - lookAtX;
+            resultZ += adjustedLookAtZ - lookAtZ;
+            resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + clearance); // Shifted camera still clears rendered terrain/snow/slush.
+          }
           _cameraBoomDebug = {
-            latestChange: 'Collision zoom stops just behind the player with a species-scaled setback; ground clearance adjusts height at that limit.',
+            latestChange: 'Collision zoom cap unchanged; signed ±0.35 offsets ease across both the full boom compression range and successive frames.',
             minimumSetbackTiles: minimumSetback,
+            offsetFadeStartTiles, // Clearance threshold where shoulder recentering begins.
+            shoulderOffsetFactor, // Proportion of the input offset still visible after collision easing.
+            shoulderOffsetBlend, // Collision-distance target over the whole zoom range (0..1).
+            appliedShoulderOffsetBlend: _shoulderCollisionOffsetBlend, // Time-smoothed transition applied to the rendered camera.
+            manualShoulderOffsetTiles: liveOffsetH, // User's unmodified signed horizontal offset.
+            minimumShoulderOffsetTiles: offsetEndH, // Signed target of ±0.35, or the untouched small manual offset.
+            appliedShoulderOffsetTiles: appliedShoulderOffsetH, // Actual camera offset after collision response.
             bodyLimited,
             corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
             radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,
-            solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
+            solvedDistance: Math.hypot(resultX - adjustedLookAtX, resultY - lookAtY, resultZ - adjustedLookAtZ), // Report the actual camera-to-aim distance after recentering.
             requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
-            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - lookAtX, resultZ - lookAtZ)) * 180 / Math.PI,
+            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - adjustedLookAtX, resultZ - adjustedLookAtZ)) * 180 / Math.PI, // Match the renderer's real final look target.
             directHitDistance: wallHitDistance,
             groundLimited: fraction < 1,
             floorClearance: clearance,
@@ -20974,6 +21030,9 @@
           };
         } else {
           _cameraBoomDebug = null;
+          _shoulderCollisionOffsetBlend = 0; // Other camera modes and authored cutscenes never inherit gameplay-only offset easing.
+          _shoulderCollisionOffsetAt = 0;
+          _shoulderCollisionOffsetArea = null;
           // Floor guard — applies everywhere, not just zones (unlike the
           // mesh-obstacle pull-in above, which has nothing to raycast against
           // for the ground itself). A steep enough upward pitch (see the
@@ -21006,7 +21065,7 @@
             resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + 0.01); // An authored target buried in cover still cannot leave the camera beneath it.
           }
         }
-        return { x: resultX, y: resultY, z: resultZ };
+        return { x: resultX, y: resultY, z: resultZ, lookAtX: adjustedLookAtX, lookAtZ: adjustedLookAtZ }; // Camera and reticle keep the same adjusted look target.
       }
 
       // How far under a tree canopy's own recorded influence radius the player
@@ -21133,8 +21192,8 @@
         // recompute doesn't fight it, while still keeping fov/aspect current.
         if (!window.__mapEditorOrbitActive) {
           camera.position.set(safe.x, safe.y, safe.z);
-          camera.lookAt(lookAtX, lookY, lookAtZ);
-          _lastCameraLookPoint.set(lookAtX, lookY, lookAtZ);
+          camera.lookAt(safe.lookAtX, lookY, safe.lookAtZ);
+          _lastCameraLookPoint.set(safe.lookAtX, lookY, safe.lookAtZ); // Interaction rays track the collision-adjusted camera aim.
         }
         // Very short ground-limited booms need a smaller near plane to keep
         // the nearby character visible; other modes retain the normal plane.

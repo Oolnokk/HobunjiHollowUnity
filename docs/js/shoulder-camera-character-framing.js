@@ -7,12 +7,12 @@
 (() => {
   'use strict';
 
-  const VERSION = 4; // Exposed in mobile diagnostics to identify this framing contract.
+  const VERSION = 5; // Exposed in mobile diagnostics to identify this framing contract.
   const SHOULDER_MODE = 'shoulderSurf'; // Used to resolve the existing native over-the-shoulder camera config.
   const REFERENCE_SPECIES = 'tletingan'; // Defines the full-height reference used for species-relative camera distance.
   const FALLBACK_DISTANCE_TILES = 2.6; // Used only if the authored Shoulder Cam distance is unavailable when this module installs.
   const FALLBACK_TARGET_Y_TILES = 0.62; // Used only if the authored Shoulder Cam vertical target is unavailable when this module installs.
-  const MIN_COLLISION_SETBACK_TILES = 0.3; // Keeps the camera just behind a reference-sized player when collision exhausts the available boom.
+  const MIN_COLLISION_SETBACK_TILES = 0.8; // Stops collision zoom farther behind a reference-sized player; the cached height ratio scales it.
   const MIN_HEIGHT_RATIO = 0.5; // Guards corrupted scale data from placing the camera implausibly close.
   const MAX_HEIGHT_RATIO = 1.75; // Guards corrupted scale data from placing the camera implausibly far away.
   const MIN_NECK_HEIGHT_TILES = 0.1; // Rejects a malformed/below-floor neck pivot before it can drive camera Y.
