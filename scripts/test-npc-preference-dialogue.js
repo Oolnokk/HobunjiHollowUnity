@@ -159,5 +159,39 @@ runtime.DialogueContent.resetDialogueState();
 runtime.DialogueContent.beginNpcConversation(activeNPC);
 assert.deepEqual(visibleChoices(), [], 'Fixed potion shop must not open outside its business map');
 
+// Backstory belongs to editable loreBackground, not NPC speech or an accidental bio fallback.
+for (const [npcId, part] of [
+  ['kzubug', 'plague'], ['jubmir', 'noble blood'], ['binding_hatayap', 'wyrm'],
+  ['tooth_hatayap', 'Tuhupnuk surname'], ['hammerhead_tuhupnuk', 'murdered'],
+  ['khannibarri_agent', 'Father Hunundi'],
+]) {
+  const npc = byId.get(npcId); // Used to pin especially spoiler-prone details to the non-spoken backstory field.
+  assert(npc.loreBackground?.includes(part), npcId + ': expected history was not migrated into loreBackground');
+  assert(!npc.bio?.includes(part), npcId + ': historical detail remained in short bio');
+}
+for (const npc of composed.npcs) {
+  assert(!/<suggestion:|design doc|source material|no further details provided/i.test(npc.bio || ''), npc.id + ': editorial writing notes must not appear in the short bio');
+}
+const originalWeather = deps.calendar.weather; // Used to force a condition-ineligible chat tree without mutating other test setup.
+activeNPC = byId.get('gikali_ginju');
+area = 'map_hobunji_town';
+deps.calendar.weather = 'storm';
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.deepEqual(visibleChoices(), [], 'Storm fallback must not invent a special dialogue choice');
+const stormLine = element('npcDialogueText').textContent; // Used to verify fallback resolves real casual speech, never narrator prose.
+assert(stormLine.length > 0 && stormLine !== activeNPC.bio && !stormLine.includes('Gorobi\'s'), 'Condition-ineligible NPC must speak a regular greeting, not biography');
+deps.calendar.weather = originalWeather;
+
+activeNPC = byId.get('banubu'); // Banubu has no generic starter tree; its quest system supplies authored dialogue.
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.equal(element('npcDialogueText').textContent, '...', 'No eligible tree or spoken lines must not fall back to a Great Fey biography');
+const spokenOverride = { id: 'test_spoken_override', bio: 'A secret written about the character.', dialogueLines: ['Hello from spoken dialogue.'], dialogueTrees: [] }; // Used to ensure deliberate authored speech still precedes generic fallback.
+activeNPC = spokenOverride;
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(spokenOverride);
+assert.equal(element('npcDialogueText').textContent, 'Hello from spoken dialogue.', 'Explicit dialogueLines must remain playable');
+
 console.log('NPC dialogue: ' + giftNPCs + ' giftable NPCs / ' + giftLines + ' gift hints, ' + dateNPCs +
   ' romanceable NPCs / ' + dateLines + ' date hints; merchant shop actions, Chat and map restrictions verified.');
