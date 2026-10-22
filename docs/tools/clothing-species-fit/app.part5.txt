@@ -131,29 +131,41 @@ async function exportFittedGarment(){
   const selection={garmentId:E.garment.value,fitRegion:fitRegion(),sourceSpecies:E.sourceSpecies.value,
     sourceGender:E.sourceGender.value,targetSpecies:E.species.value,targetGender:E.gender.value}; // Pinned before asynchronous mobile PNG encoding.
   const stem=`${safeName(selection.garmentId)}_${safeName(selection.targetSpecies)}_${selection.targetGender}`;
-  const used=new Set(),files=[],entries=[];
+  const entries=[];
   E.clothPng.disabled=true;
   try{
+    const plan=buildFittedLayerArchivePlan(layers,selection);
     for(let index=0;index<layers.length;index++){
-      const layer=layers[index];
-      const basename=`${stem}_${safeName(layer.name)}.png`;
-      let name=basename,serial=2; // Distinct config paths cannot overwrite one another in the archive.
-      while(used.has(name.toLowerCase()))name=`${stem}_${safeName(layer.name)}_${serial++}.png`;
-      used.add(name.toLowerCase());
-      E.sourceLayerStatus.textContent=`Baking fitted source layer ${index+1}/${layers.length}: ${layer.name}`;
-      entries.push({name,bytes:await zipTools.canvasToPngBytes(layer.canvas)});
-      files.push({outputName:name,sourceConfigPath:layer.path,sourceUrl:layer.url,layerRole:layer.role,view:layer.view,patched:layer.patched});
+      const mapped=plan.files[index];
+      E.sourceLayerStatus.textContent='Baking '+(index+1)+'/'+layers.length+': '+mapped.outputName;
+      entries.push({name:mapped.outputName,bytes:await zipTools.canvasToPngBytes(layers[index].canvas)});
     }
+    if(plan.configPath)
+      entries.push({name:plan.configPath,bytes:new TextEncoder().encode(JSON.stringify(plan.config,null,2)+'\n')});
     const manifest={
-      format:'hobunji-clothing-fit-layered-v1',...selection,
+      format:'hobunji-clothing-fit-layered-v2',...selection,
+      installRoot:'docs/',targetConfigUpdated:!!plan.configPath,
+      configPath:plan.configPath||garmentRecord()?.configPath,
       fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets},
-      files
-    }; // Layer identity and exact warp settings accompany every fitted raster for later config wiring.
+      files:plan.files
+    };
     entries.push({name:'fitted-layers-manifest.json',bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
+    const readme=[
+      'HOBUNJI HOLLOW — FITTED CLOTHING LAYERS',
+      '',
+      'Extract this ZIP into the repository docs/ directory, preserving its subfolders.',
+      'PNG filenames and folders match the target cosmetic config image URLs.',
+      plan.configPath
+        ?'The included '+plan.configPath+' adds/updates target layer references. Merge the JSON with newer repository edits if the repository changed since export.'
+        :'All image URLs already exist in the target cosmetic config; no config update is needed.',
+      'Existing PNGs with the same names will be overwritten. Back them up first.',
+      'See fitted-layers-manifest.json for every original layer name and source/target path.'
+    ].join('\n');
+    entries.push({name:'README-FITTED-LAYERS.txt',bytes:new TextEncoder().encode(readme)});
     const archiveName=`${stem}_fitted_layers.zip`;
     zipTools.downloadBlob(zipTools.buildStoredZip(entries),archiveName);
-    log(`Exported ${files.length} individually fitted layers in ${archiveName} from ${selection.sourceSpecies} ${selection.sourceGender}.`);
-    E.sourceLayerStatus.textContent=`Exported ${files.length} layers to ${archiveName}. Composite export remains available.`;
+    log(`Exported ${plan.files.length} ready-to-install layers in ${archiveName} for ${selection.targetSpecies} ${selection.targetGender}.`);
+    E.sourceLayerStatus.textContent=`Exported ${plan.files.length} layers with source-native names.${plan.configPath?' Updated cosmetic config included.':''}`;
   }catch(error){
     log('ERROR Fitted layer ZIP export: '+error.message);
     E.sourceLayerStatus.textContent='Layer export failed: '+error.message;
