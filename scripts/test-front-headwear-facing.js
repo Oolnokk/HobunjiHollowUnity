@@ -15,6 +15,7 @@ const basicHeadband = JSON.parse(read('docs/config/cosmetics/basic_headband.json
 const leatherHeadband = JSON.parse(read('docs/config/cosmetics/leather_headband.json'));
 const wideKasa = JSON.parse(read('docs/config/cosmetics/riverlandskasa_wide.json'));
 const tangedCirclet = JSON.parse(read('docs/config/cosmetics/clothes/hat/tangedcirclet.json')); // Used below to guard its species-specific behind-the-head band art.
+const bzabagHelm = JSON.parse(read('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json')); // Guards front cap and its explicitly authored rear counterparts.
 
 const forbiddenAngleBehavior = /TILT_CUTOFF|yawCutoff|tiltCutoff|FacingGate|facingUniform|worldFront|worldUp|toCamera|uprightDot|yawDot|smoothstep\s*\(|hobunjiFrontHatless|material\.opacity\s*=|currentMaterial\.opacity\s*=/i;
 assert.doesNotMatch(hats, forbiddenAngleBehavior, 'normal hats have no camera/head-angle visibility system');
@@ -79,5 +80,17 @@ for (const [variant, filename] of Object.entries(expectedTangedBack)) {
   assert(fs.existsSync('docs/assets/cosmetics/clothes/hat/' + filename));
 }
 assert.equal(portraitContext._getBehindLayerUrl(circletOption.layers[0], circletOption, 'male'), 'cosmetics/clothes/hat/headband.png');
+
+const helmOption = portraitContext.portraitOptionFromJson({ id: 'replica_bzabag_helm' }, bzabagHelm);
+const helmLayers = helmOption.variantLayers['mao-ao_male'];
+assert.equal(helmLayers.length, 2, 'helm keeps precisely two head-front layers');
+assert.deepEqual(helmLayers.map(layer => layer.pos), ['front', 'front'], 'neither helm sprite goes beneath the front-view skull');
+assert(helmLayers[0].url.endsWith("replica_bzabag's_helm-cap_m.png"), 'wool cap renders before the faceguard');
+assert(helmLayers[1].url.endsWith("replica_bzabag's_helm-faceguard_m.png"), 'metal faceguard covers cap in front view');
+assert.deepEqual(helmLayers.map(layer => layer.materialKind), ['cloth', 'metal'], 'cap and band retain independent material treatment');
+assert.equal(portraitContext._getBehindLayerUrl(helmLayers[0], helmOption, 'male'), helmLayers[0].url, 'rear cap retains its exact source PNG');
+assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), 'cosmetics/clothes/hat/headband.png', 'rear metal band shares Tanged Circlet behind sprite');
+assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'the rear-band pixels use the existing Tanged Circlet path');
+assert.equal(helmOption.variantLayers['mao-ao_female'], undefined, 'unillustrated gender does not inherit helm sprites');
 
 console.log('Headwear angle-visibility removal checks passed.');
