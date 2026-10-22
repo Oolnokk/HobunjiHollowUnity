@@ -22837,6 +22837,7 @@
           x: channel('x'), y: channel('y'), z: channel('z'),
           pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
           bodyYaw: channel('bodyYaw'),
+          headRelative: animation.headRelative === true || neutral.headRelative === true,
         };
       }
 
@@ -22855,9 +22856,13 @@
         };
       }
 
+      const _headPoseAnchor = new THREE.Vector3(); // Reused by drink and ranged poses; no per-frame head-vector allocation.
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
         heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+        if (pose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
+          heldItemHolder.position.set(_headPoseAnchor.x + pose.x, _headPoseAnchor.y + pose.y, _headPoseAnchor.z + pose.z);
+        }
         heldItemHolder.scale.setScalar(0.5);
         _heldItemHandMode = 'bottle';
         _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
@@ -22927,6 +22932,9 @@
         const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
         playerMesh.add(sourceProbe);
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
+        if (neutralPose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
+          sourceProbe.position.set(_headPoseAnchor.x + neutralPose.x, _headPoseAnchor.y + neutralPose.y, _headPoseAnchor.z + neutralPose.z);
+        }
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
         const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
@@ -23050,6 +23058,8 @@
           updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
         } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
           applyHeldDrinkPose(window.HeldActionAnimations.throwFlask, 0); // Idle flask rests in the authored thrown-weapon stance, the same Neutral its throw starts from.
+        } else if (usesThrustHeldPose(item) && window.HeldActionAnimations?.drink?.headRelative) {
+          applyHeldDrinkPose(window.HeldActionAnimations.drink, 0);
         } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
@@ -23304,6 +23314,7 @@
         heldItemHolder.visible = false;
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
+        toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
@@ -23433,7 +23444,14 @@
             playerMesh.position.y + playerToolBaseY + y,
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
-          if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+          if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
+          if (sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
+            toolHolder.position.set(x, y, z).applyQuaternion(_qFac);
+            if (reticleAligned) {
+              toolHolder.position.set(x, y, z).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
+            }
+            toolHolder.position.add(_headPoseAnchor);
+          } else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
           else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'ranged') {
@@ -23474,7 +23492,12 @@
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
-          if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+          if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
+          if (neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
+            toolHolder.position.set(neutral.x, neutral.y, neutral.z);
+            if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
+            toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
+          } else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
           else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
 
         } else if (anim === 'thrust') {

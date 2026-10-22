@@ -34,6 +34,9 @@
     const { THREE } = deps;
     const { holder, bottlePlane, hand, poseQuaternion } = interaction;
     holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
+    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, interaction.avatarGroup || interaction.walker?.avatarGroup, holder.parent)) {
+      holder.position.x += pose.x; holder.position.y += pose.y; holder.position.z += pose.z;
+    }
     holder.scale.setScalar(0.5);
     poseQuaternion.yaw.setFromAxisAngle(poseQuaternion.up, THREE.MathUtils.degToRad(pose.yaw));
     poseQuaternion.pitch.setFromAxisAngle(poseQuaternion.right, THREE.MathUtils.degToRad(pose.pitch));

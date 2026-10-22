@@ -332,7 +332,7 @@
   const POSE_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw'];
   function lerpPose(a, b, amount) {
     const k = Math.max(0, Math.min(1, amount));
-    const pose = {};
+    const pose = { headRelative: a?.headRelative === true }; // Preserve the pose reference frame during ranged interpolation.
     for (const key of POSE_CHANNELS) pose[key] = (a?.[key] ?? 0) + ((b?.[key] ?? 0) - (a?.[key] ?? 0)) * k;
     return pose;
   }
@@ -1614,6 +1614,7 @@
       const t = Math.min(1, action.t / action.durationS);
       pose = poseAtAction(def, action.kind, t);
     }
+    holder.userData.headRelativeBackPlane = pose.headRelative ? c.avatarRef?.backPlane : null; // Ranged-only owner silhouette; cleared immediately for ordinary poses.
     const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
     const rx = Math.cos(vθ), rz = -Math.sin(vθ), fx = Math.sin(vθ), fz = Math.cos(vθ);
     const group = c.avatarRef.group; // Converted bandit portrait root used to reconstruct the raw floor-relative hand base.
@@ -1639,6 +1640,11 @@
       });
     } else {
       scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, vθ);
+    }
+    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, group)) {
+      holder.position.x += rx * pose.x + fx * pose.z;
+      holder.position.y += pose.y;
+      holder.position.z += rz * pose.x + fz * pose.z;
     }
     c._rangedPoseCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     c._rangedPoseHeightScale = height?.heightRatio ?? 1; // Debug proof that ranged bandits share player/editor authored-Y semantics.

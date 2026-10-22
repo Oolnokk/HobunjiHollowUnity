@@ -164,6 +164,7 @@
     mergeChannels(_neutral, styleNeutral, pose.neutral);
     mergeChannels(_returnNeutral, _neutral, pose.returnNeutral);
     const scale = Number(_neutral.scale);
+    out.headRelative = pose.headRelative === true || pose.neutral?.headRelative === true;
     out.scale = Number.isFinite(scale) ? Math.max(0.1, scale) : 1;
 
     // The hand attachment is part of a true midline flip: it stays on the attack
@@ -318,7 +319,30 @@
     };
   }
 
+  // Resolves the visible head into world or actor-local space using caller-owned scratch.
+  // Head-space offsets deliberately bypass the arm-length/orbit mapper.
+  function headAnchor(out, avatar, localRoot = null) {
+    const rig = avatar?.userData?.neckRig; // Live centroid and neck transform, shared by editor/player/NPCs.
+    if (rig?.available && rig.headCentroidLocal && rig.neckJoint) {
+      out.set(rig.headCentroidLocal.x - rig.neckLocal.x,
+        rig.headCentroidLocal.y - rig.neckLocal.y,
+        (rig.headCentroidLocal.z || 0) - (rig.neckLocal.z || 0));
+      rig.neckJoint.updateWorldMatrix(true, false);
+      rig.neckJoint.localToWorld(out);
+    } else if (avatar?.localToWorld) {
+      out.set(0, (Number(avatar.userData?.portraitModelHeight) || 0.9) * 0.3, 0);
+      avatar.updateWorldMatrix(true, false);
+      avatar.localToWorld(out);
+    } else return false;
+    if (localRoot) {
+      localRoot.updateWorldMatrix(true, false);
+      localRoot.worldToLocal(out);
+    }
+    return true;
+  }
+
   window.SharedAttackPose = Object.freeze({
+    headAnchor,
     version: 1,
     POSE_KEYS,
     MIRRORED_POSE_KEYS,

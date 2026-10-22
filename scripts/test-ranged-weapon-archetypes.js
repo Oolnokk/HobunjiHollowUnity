@@ -71,7 +71,7 @@ const windowObject = {
         strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { grip: true, palmNormal: false } },
       },
     },
-    drink: { poses: { strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 } } },
+    drink: { headRelative: true, poses: { strike: { headRelative: true, x: -0.05, y: 0, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 } } },
   },
   Combat: {
     deps: {
@@ -128,6 +128,10 @@ const context = {
   setInterval: callback => { intervalCallbacks.push(callback); return intervalCallbacks.length; },
   clearInterval: () => {},
 };
+const heldDefaults = { window: {} }; // Run the actual authored definitions before their optional bootstrap dependencies.
+const heldDefaultsSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/held-action-animations.js'), 'utf8'); // Reads the production uploaded-pose copy.
+vm.runInNewContext(heldDefaultsSource.slice(0, heldDefaultsSource.indexOf('  // Shared direct-hand bootstrap.')) + '\n})();', heldDefaults);
+windowObject.HeldActionAnimations.blowgunReady = heldDefaults.window.HeldActionAnimations.blowgunReady;
 vm.createContext(context);
 
 for (const relative of [
@@ -361,6 +365,15 @@ assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose
 
 const kylieChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('kylie_copper').map(effect => effect.id);
 assert.deepStrictEqual(kylieChoices, ['congealedHealth', 'windedStamina', 'bruisedHealth', 'shatteredStamina', 'knockback'], 'Kylie ranged mastery should expose only blunt-family buildup plus knockback, preserving source ordering.');
+for (const phase of ['neutral', 'windup', 'strike']) {
+  const pose = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase]; // Loaded idle and firing phases must use their own authored head-relative endpoints.
+  assert.equal(pose.headRelative, true);
+  for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) assert.equal(pose[key], windowObject.HeldActionAnimations.blowgunReady.poses[phase][key]);
+}
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.z, 0.88);
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.yaw, 0);
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.95);
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);
 const blowgunChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('bshuakauitl_copper').map(effect => effect.id);
 assert.deepStrictEqual(blowgunChoices, afflictionIds, 'Blowgun ranged mastery should expose the full affliction set.');
 assert.strictEqual(windowObject.RangedWeapons.setBasicEffect('kylie_copper', 1, 'bleedingHealth'), false, 'Kylie should reject sharp-style Bleeding Health mastery.');

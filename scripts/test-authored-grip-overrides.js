@@ -24,12 +24,13 @@ vm.runInNewContext(source, context);
 assert.equal(data.tools.bshuakauitl.primaryGrip.position.z, 0.05);
 assert.deepEqual(JSON.parse(JSON.stringify(data.tools.bshuakauitl.primaryGripSpan)), { enabled: true, startZ: 0.0394, endZ: 0.1594 });
 assert.deepEqual(JSON.parse(JSON.stringify(data.tools.bshuakauitl.secondaryGripSpan)), { enabled: true, startZ: -0.1606, endZ: -0.0406 });
-assert.deepEqual(JSON.parse(JSON.stringify(data.tools.bshuakauitl.rangedPrimaryGrip.position)), { x: -0.04, y: -0.04, z: -0.0006 });
+assert.deepEqual(JSON.parse(JSON.stringify(data.tools.bshuakauitl.rangedPrimaryGrip.position)), { x: -0.04, y: 0.02, z: 0.24 });
 assert.deepEqual(JSON.parse(JSON.stringify(data.tools.fishingspear.primaryGrip.position)), { x: -0.04, y: -0.04, z: 0 });
 assert.deepEqual(JSON.parse(JSON.stringify(data.tools.fishingspear.primaryGripSpan)), { enabled: true, startZ: -0.3522, endZ: -0.2322 });
 assert.deepEqual(JSON.parse(JSON.stringify(data.tools.fishingspear.secondaryGripSpan)), { enabled: true, startZ: -0.0722, endZ: 0.0478 });
 assert.deepEqual(JSON.parse(JSON.stringify(data.tools.fishingspear.rangedPrimaryGrip.position)), { x: 0.04, y: -0.04, z: 0.1522 });
-assert.equal(data.authoredGripRevision, 'spear-bshuakauitl-authored-20261007-v2');
+assert.equal(data.authoredGripRevision, 'bshuakauitl-ranged-head-20261022-v4');
+assert.deepEqual(JSON.parse(JSON.stringify(data.tools.bshuakauitl.rangedPrimaryGrip.rotationDeg)), { pitch: -90, yaw: 90, roll: 0 });
 
 // Once migrated, later artist edits remain editable while the revision marker is current.
 data.tools.bshuakauitl.primaryGrip.position.z = 0.123;
@@ -87,5 +88,21 @@ realGrips.replace(oldDraft);
 assert.equal(realGrips.data.tools.fishingspear.primaryGrip.position.z, 0, 'later import carrying the v1 marker migrates too');
 assert.equal(realGrips.defaultData.tools.fishingspear.primaryGrip.position.z, 0);
 assert.equal(runtimeWindow.HobunjiAuthoredGripOverrides.debugSnapshot().applied, true);
+
+const v2Draft = realGrips.clone(); // Simulates an existing artist-tuned v2 save.
+v2Draft.authoredGripRevision = 'spear-bshuakauitl-authored-20261007-v2';
+v2Draft.tools.bshuakauitl.primaryGrip.position.z = 0.321;
+v2Draft.tools.fishingspear.primaryGrip.position.z = 0.456;
+realGrips.replace(v2Draft);
+assert.equal(realGrips.data.tools.bshuakauitl.primaryGrip.position.z, 0.321);
+assert.equal(realGrips.data.tools.fishingspear.primaryGrip.position.z, 0.456);
+assert.equal(realGrips.data.tools.bshuakauitl.rangedPrimaryGrip.position.z, 0.24);
+
+v2Draft.authoredGripRevision = 'bshuakauitl-ranged-head-20261022-v3';
+v2Draft.tools.bshuakauitl.primaryGrip.position.z = 0.777;
+v2Draft.tools.bshuakauitl.rangedPrimaryGrip.position.z = 0.19;
+realGrips.replace(v2Draft);
+assert.equal(realGrips.data.tools.bshuakauitl.primaryGrip.position.z, 0.777);
+assert.equal(realGrips.data.tools.bshuakauitl.rangedPrimaryGrip.position.z, 0.24);
 
 console.log('authored spear/bshuakauitl grip migration PASS');
