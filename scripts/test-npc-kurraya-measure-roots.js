@@ -37,6 +37,11 @@ for (let i = 0; i <= 100; i++) {
   });
   assert.ok(['arp','strum'].includes(library[selected]?.kind), 'NPC picked forbidden pattern: ' + selected);
 }
+const backupStart = section('    async startBackupPreviewSong(songId)', '    // Ambient NPC performance'); // Backup audio represents the NPC lead, not the human's own picking pattern.
+assert.match(backupStart, /const mode = randomNpcAutoPickPattern\(\)/,
+  'The audible NPC lead must never revert to the player Single Note/tremolo mode while the player joins');
+assert.match(backupStart, /state\.rootPadEnabled = true/,
+  'Replacing an NPC frame with the visible backup must preserve the NPC root accompaniment');
 const ambientStart = section('    async startAmbientLead(songId, footstepSampleUrl)', '    setBackupPlayerEquipped(equipped)');
 assert.match(ambientStart, /const mode = randomNpcAutoPickPattern\(\)/, 'NPC start must choose an NPC-only pattern');
 assert.match(scripts[0], /state\.ambientOnly\s*\?\s*randomNpcAutoPickPattern\(\)/, 'NPC loops must reselect from allowed patterns');
