@@ -185,8 +185,11 @@ assert.match(rigSource,
   /\['kenkari::female'[\s\S]{0,100}\[-0\.12331214301269552,0\.2212216457140902,0\]/,
   'Kenkari female uses the supplied shoulderPerch');
 assert.match(rigSource,
-  /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)[\s\S]{0,17000}characters\[aliasKey\] = characters\[sourceKey\]/,
-  'Rakakoan still shares Kenkari transform objects instead of owning independent perch transforms');
+  /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)/,
+  'Rakakoan still maps to Kenkari rather than owning independent perch transforms');
+assert.match(rigSource,
+  /characters\[aliasKey\] = characters\[sourceKey\]/,
+  'alias runtime profiles still share the exact source species transform object');
 assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,650}Shoulder pose:[\s\S]{0,180}inwardChance=/,
   'the mobile pixel probe reports sustained pose, hold time, and unbiased inward chance alongside genotype scale');
