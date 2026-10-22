@@ -20532,7 +20532,12 @@
         if (currentArea === 'town') {
           for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
-        if (currentArea === 'interior' && activeCameraMode === 'seated' && interiorWallGroup) meshes.push(interiorWallGroup);
+        if (currentArea === 'interior' && (activeCameraMode === 'seated' || activeCameraMode === SHOULDER_SURF_MODE)) {
+          if (interiorWallGroup) meshes.push(interiorWallGroup);
+          if (activeCameraMode === SHOULDER_SURF_MODE) {
+            for (const hearth of _derivedHearthMeshes) if (hearth.mesh) meshes.push(hearth.mesh);
+          }
+        }
         for (const obj of interiorFurnitureObjects) {
           const isActiveSeat = sitInteraction && obj.area === currentArea
             && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
@@ -20596,7 +20601,7 @@
       // through every crossed tile, caching tile-level walkability until the
       // beam enters a new cell. Height bounds prevent a short object acting
       // like an infinitely tall wall.
-      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ) {
+      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ, structuralOnly = false) {
         const grid = typeof npcGridForArea === 'function' ? npcGridForArea(currentArea) : null;
         if (!grid) return null;
         const dx = toX - fromX, dy = toY - fromY, dz = toZ - fromZ;
@@ -20614,11 +20619,17 @@
             // The same collision-grid authority used by NPC pathing covers
             // manual colliders, structural walls, occupied furniture tiles,
             // closed doors, and area footprint blockers.
-            isBlocked = !isNpcTileWalkable(currentArea, c, r);
+            // Radial gameplay checks structural cells only. NPC walkability
+            // expands small props to whole tiles, including a clear tile
+            // corner occupied by the player. Real meshes supply furniture
+            // shape/height; preserve the authored cutscene's grid fallback.
+            isBlocked = structuralOnly
+              ? !tile || (isSolid(tile.type) && !tile.npcFurnitureCollider)
+              : !isNpcTileWalkable(currentArea, c, r);
             if (!isBlocked) continue;
-            floor = tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+            floor = currentArea === 'interior' ? 0 : tile ? tileSurfaceYInArea(tile, currentArea) : 0;
             const furnitureFootprint = !!tile?.npcFurnitureCollider;
-            roof = floor + (furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
+            roof = floor + (currentArea === 'interior' ? INTERIOR_WALL_HEIGHT : furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
           }
           if (!isBlocked) continue;
           const y = fromY + dy * fraction;
@@ -20644,11 +20655,74 @@
       let _cameraHorizontalUpdatedAt = 0; // Real-time reference for frame-rate-independent horizontal collision recovery.
       let _cameraHorizontalArea = null; // Prevents a previous building's wall from shortening another area's camera.
       let _cameraHorizontalShotSignature = null; // A hard cut must not inherit the preceding paragraph's eased wall clearance.
+      // Indoor gameplay uses a world-aligned clearance ring, NOT the direction of
+      // the camera at this moment. Otherwise a tiny yaw can alternate between
+      // a nearby corridor wall and open space and violently pump the zoom.
+      const SHOULDER_RADIAL_SPOKES = 16;
+      const SHOULDER_RADIAL_REFRESH_MS = 120;
+      let _shoulderRadialSample = null;
+      function shoulderRadialClearance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ, obstacles) {
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const requested = Math.hypot(dx, dy, dz);
+        const flat = Math.hypot(dx, dz);
+        const now = performance.now();
+        // The shoulder look-at point shifts sideways when the camera yaws.
+        // Keep the radial ring centered on the player's real position, NOT
+        // that rotating shoulder offset.
+        const centerX = Number.isFinite(camTargetX) ? camTargetX : lookAtX;
+        const centerZ = Number.isFinite(camTargetZ) ? camTargetZ : lookAtZ;
+        const sideMargin = Math.abs(Number(s_shoulderSurfOffsetH_current) || 0);
+        const cached = _shoulderRadialSample;
+        // Neither yaw nor the camera's X/Z direction participates in the
+        // cache identity. Motion, changed pitch/zoom, or a fresh interval does.
+        if (cached && cached.area === currentArea && cached.obstacleCount === (obstacles?.length || 0)
+          && Math.hypot(centerX - cached.x, centerZ - cached.z) < 0.1
+          && Math.abs(lookAtY - cached.y) < 0.1 && Math.abs(sideMargin - cached.sideMargin) < 0.01
+          && Math.abs(requested - cached.requested) < 0.05
+          && Math.abs(dy / Math.max(0.01, requested) - cached.verticalRatio) < 0.025
+          && now >= cached.at && now - cached.at < SHOULDER_RADIAL_REFRESH_MS) return cached;
+        let nearestHit = Infinity;
+        const horizontalRatio = flat / Math.max(0.01, requested);
+        const verticalRatio = dy / Math.max(0.01, requested);
+        // Fixed WORLD directions are essential: rotating the camera should
+        // never rotate these samples or change the clearance radius.
+        for (let i = 0; i < SHOULDER_RADIAL_SPOKES && requested > 0.08; i++) {
+          const angle = (i * Math.PI * 2) / SHOULDER_RADIAL_SPOKES;
+          const rx = Math.cos(angle) * horizontalRatio;
+          const rz = Math.sin(angle) * horizontalRatio;
+          let meshDistance = Infinity;
+          if (obstacles?.length) {
+            _cameraOcclusionRaycaster.set(
+              _cameraOcclusionOriginVec.set(centerX, lookAtY, centerZ),
+              _cameraOcclusionDirVec.set(rx, verticalRatio, rz),
+            );
+            _cameraOcclusionRaycaster.near = 0.02;
+            _cameraOcclusionRaycaster.far = requested;
+            meshDistance = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0]?.distance ?? Infinity;
+          }
+          // Structural walls can lack meshes. Furniture stays mesh-based:
+          // its movement footprint is too coarse for radial camera clearance.
+          const tileDistance = cameraTileCollisionDistance(
+            centerX, lookAtY, centerZ,
+            centerX + rx * requested, idealY, centerZ + rz * requested,
+            true,
+          );
+          nearestHit = Math.min(nearestHit, meshDistance, tileDistance ?? Infinity);
+        }
+        const clearance = Number.isFinite(nearestHit)
+          ? Math.max(SEATED_CAMERA_MIN_DISTANCE, nearestHit - INTERIOR_CAMERA_WALL_CLEARANCE - sideMargin) : requested;
+        _shoulderRadialSample = { area: currentArea, x: centerX, y: lookAtY, z: centerZ,
+          requested, verticalRatio, sideMargin, obstacleCount: obstacles?.length || 0,
+          at: now, distance: Math.min(requested, clearance),
+          hitDistance: Number.isFinite(nearestHit) ? nearestHit : null, rays: requested > 0.08 ? SHOULDER_RADIAL_SPOKES : 0 };
+        return _shoulderRadialSample;
+      }
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         const originalIdealX = idealX, originalIdealZ = idealZ; // Authored X/Z intent, preserved for diagnostics.
         const horizontalObstacles = currentAreaOcclusionMeshes(); // Same tagged walls/furniture used by the existing full 3D boom collision.
-        const horizontalSqueezeEnabled = _isBuildingArea(currentArea) || cutscenePreviewActive || window.CinematicCameraRuntime?.isActive?.(); // Do not add lateral rays to ordinary outdoor gameplay.
-        const shotSignature = window.CinematicCameraRuntime?.activeRecord?.()?.signature || null;
+        const activeCinematicShot = window.CinematicCameraRuntime?.activeRecord?.(); // The active authored shot alone controls whether extra horizontal collision probes run.
+        const horizontalSqueezeEnabled = activeCinematicShot?.camera?.horizontalCameraCollision === true; // Off in ordinary gameplay, interiors and unmarked cutscenes.
+        const shotSignature = activeCinematicShot?.signature || null;
         if (_cameraHorizontalArea !== currentArea || _occlusionCameraMode !== activeCameraMode || _cameraHorizontalShotSignature !== shotSignature) {
           _cameraHorizontalSafeDistance = null;
           _cameraHorizontalUpdatedAt = 0;
@@ -20708,6 +20782,8 @@
         } : null; // Existing 3D boom, local terrain and floor guard still follow this X/Z solve.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
+        const radialShoulder = shoulderBoom && (currentArea === 'interior' || _isBuildingArea(currentArea)) && !horizontalSqueezeEnabled; // Farmhouse and authored interiors share one collision distance for EVERY yaw direction.
+        if (!radialShoulder) _shoulderRadialSample = null; // Switching modes or leaving an interior must not carry a stale radial limit.
         let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
         if (_occlusionCameraMode !== activeCameraMode) {
           _seatedOcclusionDistance = null;
@@ -20723,7 +20799,11 @@
           let desiredSafeDist = dist;
           let directHitDistance = null;
           let chosenSideOffsetDeg = 0;
-          if (horizontalSqueezeEnabled || (obstacles && obstacles.length)) {
+          if (radialShoulder) {
+            const ring = shoulderRadialClearance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ, obstacles);
+            desiredSafeDist = ring.distance;
+            wallHitDistance = ring.hitDistance;
+          } else if (horizontalSqueezeEnabled || (obstacles && obstacles.length)) {
             let meshDistance = Infinity;
             if (obstacles?.length) {
               _cameraOcclusionRaycaster.set(
@@ -20842,13 +20922,13 @@
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
             // the wall-only frozen view in the Pixel Probe report. Interior
-            // booms slide straight in along their own sightline too: a lift
-            // tips the view steeply down, so the smallest aim change swept the
-            // reticle's hit point across the floor or ceiling.
+            // Indoor gameplay uses the SAME radial distance at every yaw:
+            // a real camera boom zoom, not an artificial overhead tilt or
+            // a direction-dependent push-in on individual wall hits.
             const lift = (activeCameraMode === 'seated' || interiorBoom || shoulderBoom || cutscenePreviewActive) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
-            resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
+            resultY = lookAtY + dir.y * safeDist + lift;
           }
         } else if (activeCameraMode !== 'seated') {
           _seatedOcclusionDistance = null;
@@ -20862,8 +20942,21 @@
           resultX = lookAtX + (resultX - lookAtX) * fraction;
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
+          const requestedSetback = Number(window.HobunjiShoulderCameraCharacterFraming?.minimumCollisionSetback?.()); // Uses the cached species scale rather than measuring the avatar each frame.
+          const minimumSetback = Math.min(Math.hypot(dx, dz), Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.3); // Never pushes an intentionally shorter requested boom outward.
+          const bodyLimited = Math.hypot(resultX - lookAtX, resultZ - lookAtZ) < minimumSetback; // Stops both wall and terrain retraction before the camera enters the player.
+          if (bodyLimited && minimumSetback > 0) {
+            const factor = minimumSetback / Math.hypot(dx, dz); // Retains requested yaw and pitch until ground clearance requires a height adjustment.
+            resultX = lookAtX + dx * factor;
+            resultZ = lookAtZ + dz * factor;
+            resultY = Math.max(lookAtY + dy * factor, cameraSurfaceYAtWorld(resultX, resultZ) + clearance);
+          }
           _cameraBoomDebug = {
-            latestChange: 'Camera collision includes snow/slush caps and inclined edges; short-character pivots stay above cover while player ground is unchanged.',
+            latestChange: 'Collision zoom stops just behind the player with a species-scaled setback; ground clearance adjusts height at that limit.',
+            minimumSetbackTiles: minimumSetback,
+            bodyLimited,
+            corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
+            radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,
             solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
             requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
@@ -31818,7 +31911,7 @@
               const targetProvider = () => { center.set(0, 0, 0); for (const actor of subjects) center.add(actor.root.position); center.multiplyScalar(1 / Math.max(1, subjects.length)); center.y += .6; return center; };
               const offset = stage.cameraOffset || { x: 0, y: 5, z: 8 }; // Authored offset is relative to the followed midpoint.
               const positionProvider = () => position.copy(targetProvider()).add(offset);
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false, horizontalCameraCollision: stage.horizontalCameraCollision === true });
             }
           } else if (stage.cameraMode === 'orbit') {
             const subjectIds = stage.orbitActorIds || [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId]; // Actor IDs are authored independently of the speaker.
@@ -31851,7 +31944,7 @@
               povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
               source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
               cinematicCameraReady = false;
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, shotKey: JSON.stringify(stage.targetWorld || null), position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: stage.blendSeconds == null ? .35 : Math.max(0, Number(stage.blendSeconds) || 0) });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, shotKey: JSON.stringify(stage.targetWorld || null), position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: stage.blendSeconds == null ? .35 : Math.max(0, Number(stage.blendSeconds) || 0), horizontalCameraCollision: stage.horizontalCameraCollision === true });
             }
           } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;

@@ -26,6 +26,7 @@ const actors = [ // Two ordinary live cutscene actors, one of which may be the p
 ];
 const first = cinematic.createActorOrbitShot(actors, { id: 'intro', focusActorId: 'jubmir', zoomPercent: 105, distanceTiles: 3.7, speedDegPerSec: 6 }); // First reset favors Jubmir.
 assert(first);
+assert.equal(first.horizontalCameraCollision, false, 'ordinary procedural orbits default to no horizontal squeeze');
 assert(first.targetProvider().x > 10.25, 'initial gaze favors the requested speaker');
 const initialPosition = first.positionProvider().clone(); // Saves first angle for consistent-speed assertion.
 clock = 5000;
@@ -199,6 +200,9 @@ vm.runInContext(author.slice(authorOrbitStart, authorOrbitEnd) + '\nthis.preview
 const directorStage = cards.get('one'); // The same authored stage is used in real gameplay and the Director.
 const previewOrbit = authorContext.previewOrbit(directorStage, 1);
 const liveOrbit = cinematic.createStageOrbitShot(directorStage, actors, 1);
+assert.equal(liveOrbit.horizontalCameraCollision, false, 'unmarked cutscene orbits never opt in implicitly');
+assert.equal(cinematic.createStageOrbitShot({ ...directorStage, horizontalCameraCollision: true }, actors, 1).horizontalCameraCollision, true,
+  'a cutscene paragraph may explicitly enable the horizontal collider');
 assert(previewOrbit && previewOrbit.orbitDebug.focusActorId === liveOrbit.orbitDebug.focusActorId
   && previewOrbit.orbitDebug.zoomPercent === liveOrbit.orbitDebug.zoomPercent,
   'Director preview and game agree about the first focus and requested zoom');
@@ -208,7 +212,8 @@ assert(read('docs/tools/cutscene-director/index.html').includes('editOrbitHeight
   && read('docs/tools/cutscene-director/index.html').includes('editOrbitFaceHeightOffset')
   && read('docs/tools/cutscene-director/index.html').includes('editOrbitInstantCut')
   && read('docs/tools/cutscene-director/index.html').includes('editOrbitDirectionSwitchEvery')
-  && read('docs/tools/cutscene-director/index.html').includes('editOrbitDirectionalStartOffset'),
+  && read('docs/tools/cutscene-director/index.html').includes('editOrbitDirectionalStartOffset')
+  && read('docs/tools/cutscene-director/index.html').includes('editHorizontalCameraCollision'),
   'Director exposes face height, initial zoom, instant cut and paired direction authoring controls');
 const previewDirection = authorContext.previewOrbit(pairedDirectionStage, 3);
 const liveDirection = cinematic.createStageOrbitShot(pairedDirectionStage, actors, 3);
@@ -225,6 +230,7 @@ const rayDirection = { set(x, y, z) { Object.assign(this, { x, y, z }); return t
 let lateralCalls = 0, directCalls = 0; // Distinguishes off-center clearance rays from the direct 3D sightline.
 let wallVisible = true; // Toggles a side wall without changing the camera heading.
 let shotSignature = 'paragraph:1'; // Switching authored orbit shots must clear the previous paragraph's camera squeeze.
+let horizontalRequested = true; // Fake active cutscene shot lets this test enable/disable the production horizontal solver.
 let elapsedMs = 1000; // Allows frame-rate-independent outward camera recovery checks.
 const raycaster = {
   set(origin, direction) { this.origin = { ...origin }; this.direction = { ...direction }; },
@@ -248,7 +254,7 @@ const collisionContext = vm.createContext({
   npcGridForArea: () => roomTiles, tileSurfaceYInArea: () => 0,
   isNpcTileWalkable: (_, c, r) => !!roomTiles[r]?.[c] && roomTiles[r][c].type !== 'rock' && !roomTiles[r][c].npcFurnitureCollider,
   performance: { now: () => elapsedMs }, THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
-  window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true, activeRecord: () => ({signature:shotSignature}) } },
+  window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true, activeRecord: () => ({signature:shotSignature, camera:{horizontalCameraCollision:horizontalRequested}}) } },
   _cameraOcclusionOriginVec: rayOrigin, _cameraOcclusionDirVec: rayDirection, _cameraOcclusionRaycaster: raycaster,
 });
 vm.runInContext(game.slice(solverStart, solverEnd) + '\nthis.solve=occlusionSafeCameraPosition;this.horizontalDebug=()=>_cameraHorizontalDebug;this.tileDistance=cameraTileCollisionDistance;', collisionContext);
@@ -273,6 +279,24 @@ shotSignature = 'paragraph:2';
 elapsedMs = 1301;
 const hardCut = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
 assert(hardCut.z > 2.95, 'a newly activated instant-cut orbit discards stale horizontal collision smoothing');
+const probesBeforeOptOut = lateralCalls; // Confirms interior cinematic previews do not run width probes without their own opt-in.
+horizontalRequested = false;
+elapsedMs = 1400;
+const unmarkedCutscene = collisionContext.solve(0, 1, 0, 0, 1.6, 3);
+assert(unmarkedCutscene.z > 2.95, 'an unmarked cutscene in the inn preserves its authored horizontal framing');
+assert.equal(collisionContext.horizontalDebug(), null, 'no horizontal debug data is recorded without an opt-in');
+assert.equal(lateralCalls, probesBeforeOptOut, 'unmarked cinematics do not perform the extra lateral raycasts');
+roomTiles[2][0].npcFurnitureCollider = true;
+shotSignature = 'paragraph:unmarked-furniture'; // Another cut resets the direct boom smoothing before testing unmarked furniture.
+const unmarkedFurniture = collisionContext.solve(0.5, 1, 0.5, 0.5, 1.6, 4.5);
+assert(unmarkedFurniture.z > 4.4, 'an unmarked interior cinematic does not use the horizontal furniture grid');
+roomTiles[2][0].npcFurnitureCollider = false;
+horizontalRequested = true;
+wallVisible = true;
+shotSignature = 'paragraph:3';
+elapsedMs = 1500;
+assert(collisionContext.solve(0, 1, 0, 0, 1.6, 3).z < 1.1,
+  'restoring an explicitly requested camera resets clearance and squeezes against the wall');
 const emptyFloorDistance = collisionContext.tileDistance(0.5, 1, 0.5, 0.5, 1.6, 4.5);
 assert.equal(emptyFloorDistance, null, 'unobstructed floor tiles do not constrain the camera');
 roomTiles[2][0].type = 'rock'; // Authored map collider (including nonrendered wall tile).

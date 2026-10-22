@@ -155,3 +155,8 @@ for (const rotation of [-Math.PI,-Math.PI/2,0,Math.PI/2,Math.PI]) {
  vm.runInNewContext(cameraCall,cameraContext);
  assert.deepEqual(captured,originalArguments,'camera and character rotation cannot affect lift inputs');
 }
+for (const ratio of [.5, 1, 1.75]) {
+ const root = makeRoot({ speciesId:'test-size', gender:'male', scaleY:.85*ratio, neckHeight:.6*ratio }); // Reuses the measured species rig path at short, reference and tall scales.
+ api.refreshPlayerFraming(root,{speciesId:'test-size',gender:'male'},'collision-limit-test');
+ assert.ok(Math.abs(api.minimumCollisionSetback()-.3*ratio)<1e-9,'collision setback scales with the same cached body ratio as native shoulder distance');
+}
