@@ -33,7 +33,7 @@ C.imageSmoothingEnabled=false;
 
 const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
-  body:null,maoBody:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
+  body:null,sourceBody:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
   assetGeneration:0, // Prevents a previous region/species request from overwriting a newer selection.
   extendedLayers:{torso:null,torsoClothing:null,overwear:null},extendedSource:null,extendedWarped:null,
   patchWorkflow:{active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:0}, // Live routed patch source. Clothing routes a source+patch composite; body routes patch-only pixels as a separate canonical body-tinted rear backplane layer in front of the selected base body layer and behind clothing.
