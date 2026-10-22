@@ -281,3 +281,42 @@ assert.equal(trackedWoolInventory.bar_tinBronze,barsBeforeWoolFailure,'failed wo
 assert.equal(trackedWoolInventory.gold,goldBeforeWoolFailure,'failed wool debit charges no labor');
 assert.equal(trackedGear.clothingItems.length,2,'failed debit adds no item');
 delete windowStub.CookingSystem;
+
+const zlibHelm=require('node:zlib'); // Decodes the authored PNG's raw paint palette for checking the source-keyed metal recolor.
+const helmBytes=fs.readFileSync(path.join(root,"docs/assets/cosmetics/clothes/hat/replica_bzabag's_helm-faceguard_m.png"));
+let posHelm=8,headerHelm=null,paletteHelm=null,alphaHelm=null;const idatHelm=[];
+while(posHelm+12<=helmBytes.length){
+ const size=helmBytes.readUInt32BE(posHelm),type=helmBytes.toString('ascii',posHelm+4,posHelm+8),buf=helmBytes.subarray(posHelm+8,posHelm+8+size);
+ if(type==='IHDR')headerHelm={w:buf.readUInt32BE(0),h:buf.readUInt32BE(4),depth:buf[8],color:buf[9],interlace:buf[12]};
+ if(type==='PLTE')paletteHelm=buf;
+ if(type==='tRNS')alphaHelm=buf;
+ if(type==='IDAT')idatHelm.push(buf);
+ posHelm+=size+12;if(type==='IEND')break;
+}
+assert(headerHelm,'helm PNG header found');
+const bytesPerPixelHelm=({0:1,2:3,3:1,4:2,6:4})[headerHelm.color],strideHelm=headerHelm.w*bytesPerPixelHelm;
+assert.equal(headerHelm.depth,8,'helm decoder supports 8-bit PNG');assert.equal(headerHelm.interlace,0,'helm decoder supports un-interlaced PNG');
+const dataHelm=zlibHelm.inflateSync(Buffer.concat(idatHelm));const histogramHelm=new Map();let offHelm=0,lastRowHelm=new Uint8Array(strideHelm);
+for(let y=0;y<headerHelm.h;y++){
+ const filter=dataHelm[offHelm++],row=new Uint8Array(strideHelm);for(let x=0;x<strideHelm;x++){
+   const src=dataHelm[offHelm++],a=x>=bytesPerPixelHelm?row[x-bytesPerPixelHelm]:0,b=lastRowHelm[x],c=x>=bytesPerPixelHelm?lastRowHelm[x-bytesPerPixelHelm]:0;
+   let value=src;
+   if(filter===1)value+=a;else if(filter===2)value+=b;else if(filter===3)value+=Math.floor((a+b)/2);
+   else if(filter===4){const p=a+b-c;value+=[a,b,c].sort((u,v)=>Math.abs(p-u)-Math.abs(p-v))[0];}
+   else assert.equal(filter,0,'PNG filter supported');
+   row[x]=value&255;
+ }
+ for(let x=0;x<headerHelm.w;x++){const k=x*bytesPerPixelHelm;let red,green,blue,alpha=255;
+ if(headerHelm.color===6){red=row[k];green=row[k+1];blue=row[k+2];alpha=row[k+3];}
+ else if(headerHelm.color===2){red=row[k];green=row[k+1];blue=row[k+2];}
+ else if(headerHelm.color===3){const idx=row[k];red=paletteHelm[idx*3];green=paletteHelm[idx*3+1];blue=paletteHelm[idx*3+2];alpha=alphaHelm?.[idx]??255;}
+ else if(headerHelm.color===0){red=green=blue=row[k];}
+ else if(headerHelm.color===4){red=green=blue=row[k];alpha=row[k+1];}
+ if(alpha<128)continue;
+ const hex=[red,green,blue].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
+ histogramHelm.set(hex,(histogramHelm.get(hex)||0)+1);
+ }
+ lastRowHelm=row;
+}
+const topColorsHelm=[...histogramHelm].sort((a,b)=>b[1]-a[1]).slice(0,40);
+throw Error('HELM FACEGUARD SOURCE COLOR AUDIT '+JSON.stringify({header:headerHelm,uniqueColors:histogramHelm.size,topColors:topColorsHelm}));
