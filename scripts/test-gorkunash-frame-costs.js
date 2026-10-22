@@ -80,6 +80,8 @@ const ambient = vm.createContext({
   refs: new Proxy({}, { get() { throw new Error('ambient frame touched the DOM'); } }),
   requestAnimationFrame() { frames++; },
   scheduleTransportAudioAhead() {}, currentHarmonyStep: () => 0,
+  rootPadAudioKey: () => 'pluck:0:0', // Stubs the new per-measure audio identity without introducing Web Audio in a frame-layout test.
+  randomNpcAutoPickPattern: () => 'arp-forward-8', // Keeps the NPC loop deterministic; pattern selection has its own regression coverage.
   currentHarmonyBeatData: () => ({ absoluteBeat: 0 }), gameTime: () => clock,
   noteMidi: () => 60, arpeggioMidi: () => 48,
   playAuditoryOnlyMidi() { audioCalls++; },
