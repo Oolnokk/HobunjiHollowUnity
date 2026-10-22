@@ -200,6 +200,31 @@ async function main() {
   assert.equal(plan.config.speciesVariants.kenkari_female.parts.head.layers.front.image.url,
     './'+plan.files[0].outputName, 'The packaged config maps a shared texture to its independent fitted file');
 
+  // Existing aliases and other layers in the SAME target variant are separate hazards
+  // from sharing an image across different species.
+  const hoodCfg=cosmetics[1].cfg;
+  const hoodTarget=hoodCfg.speciesVariants['engh-sho_female'].parts.head.layers;
+  const hoodSibling=hoodCfg.speciesVariants['mao-ao_female'].parts.head.layers.front;
+  const normalFront=hoodTarget.front.image.url;
+  const originalSibling=hoodSibling.image.url;
+  hoodTarget.front.behindImage={url:normalFront};
+  hoodSibling.image.url=normalFront; // Force a genuine outside-variant collision.
+  selection={sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'engh-sho',targetGender:'female'};
+  plan=archiveApi.buildFittedLayerArchivePlan(sourceHood._layers,selection);
+  assert.equal(plan.config.speciesVariants['engh-sho_female'].parts.head.layers.front.behindImage.url,
+    './'+plan.files[0].outputName,
+    'An existing target front/rear alias must follow the renamed fitted front image');
+  hoodSibling.image.url=originalSibling;
+  hoodTarget.front_trim.image.url=normalFront; // Same-variant sibling reuses the front PNG.
+  plan=archiveApi.buildFittedLayerArchivePlan(sourceHood._layers,selection);
+  assert(plan.configPath,'Shared PNGs within the target variant require a rewritten config');
+  assert(plan.files.every(file=>file.outputName!=='assets/cosmetics/clothes/hood/engh_finehood_base_f.png'),
+    'An exported layer cannot overwrite a PNG also referenced by a different target layer');
+  assert.equal(new Set(plan.files.map(file=>file.outputName.toLowerCase())).size,plan.files.length,
+    'Layers sharing a target texture export to distinct, collision-free filenames');
+  delete hoodTarget.front.behindImage;
+  hoodTarget.front_trim.image.url='./assets/cosmetics/clothes/hood/engh_finehood_trim_f.png';
+
   archiveGarment = cosmetics[0];
   selection = {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'kenkari',targetGender:'female'};
   plan = archiveApi.buildFittedLayerArchivePlan(helm._layers, selection);
