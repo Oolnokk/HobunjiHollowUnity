@@ -400,7 +400,7 @@
   }
 
   function campSitesFor(area) {
-    try { return window.PorakanekiCamps?.occupiedSites?.(area) || []; } catch (_) { return []; }
+    try { return window.TribeCamps?.occupiedSites?.(area) || window.PorakanekiCamps?.occupiedSites?.(area) || []; } catch (_) { return []; }
   }
 
   function chooseCampStop(grid, area, basePoints, anyDistance) {

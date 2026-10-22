@@ -133,7 +133,7 @@ assert.equal(banditTent.base.faces.length, 8, 'Bandit tent keeps the authored A-
 assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/bandit-tent.json' && entry.category === 'tent'), 'Bandit Tent must be available in the House Editor repo picker');
 assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/porakaneki-tent.json' && entry.category === 'tent'), 'original Porakaneki Tent must remain available in the House Editor repo picker');
 assert(assetIndex.housePieces.some(entry => entry.path === 'config/pieces/porakaneki-hunting-tent.json' && entry.category === 'tent'), 'Porakaneki Hunting Tent must be available in the House Editor repo picker');
-assert(runtimeSource.includes("const TENT_PIECE_URL = 'config/pieces/porakaneki-hunting-tent.json'"), 'Porakaneki camp runtime must load the dedicated 2x2 hunting tent');
+assert(runtimeSource.includes("tentPieceUrl: 'config/pieces/porakaneki-hunting-tent.json'"), 'Porakaneki camp runtime must load the dedicated 2x2 hunting tent');
 assert(runtimeSource.includes("const BENCHLOG_KEY = 'benchlog'"), 'camp runtime must reuse the authored wilderness sitting log');
 assert(runtimeSource.includes("const BONFIRE_KEY = 'bonfire'"), 'camp runtime must use the large shared bonfire key');
 assert(runtimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Porakaneki runtime must render through HousePieceGen');
@@ -146,12 +146,12 @@ assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
 assert(/porakaneki-camps-runtime\.js\?v=[A-Za-z0-9_.-]+/.test(houseLoader));
-assert(runtimeSource.includes("bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(hunter.id, 'male') || null"), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
+assert(runtimeSource.includes("bodyColorsForSeed: seed => window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(seed, 'male') || null") && runtimeSource.includes('bodyColorsOverride: tribe.bodyColorsForSeed?.(hunter.id) || null'), 'camp residents must choose an authored Mashtzarr swatch only when materializing their avatar');
 const bodyColorWriteIndex = combatBanditSource.indexOf('roster.appearance.bodyColors = opts.bodyColorsOverride'); // Used with avatar-build ordering below to ensure explicit finite colors reach the portrait before raster work begins.
 const banditAvatarBuildIndex = combatBanditSource.indexOf('const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);'); // Must occur after the explicit body-color assignment.
 assert(bodyColorWriteIndex >= 0 && banditAvatarBuildIndex > bodyColorWriteIndex, 'BanditCombat must apply explicit body colors before portrait generation');
 assert(!combatBanditSource.includes('opts.appearanceSeed'), 'Porakaneki color variation must not randomize the whole portrait profile or create continuous body tint-cache keys');
-assert(devSpawnerSource.includes('bodyColorsOverride: window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.('), 'Testing Arena Porakaneki must use the same bounded authored swatch helper');
+assert(devSpawnerSource.includes('window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(`dev-porakaneki:'), 'Testing Arena Porakaneki must use the same bounded authored swatch helper');
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
@@ -162,7 +162,7 @@ assert(runtimeSource.includes('Targets only exterior walkable tiles; hunters nev
 assert(!runtimeSource.includes("if (activity === 'hunt') hunter.target = randomPointAround"), 'legacy solo random-radius hunting target must stay removed');
 assert(runtimeSource.includes('for (const zoneId of (cfg.wildernessZones || []))'), 'runtime must build camps across every configured wilderness zone');
 assert(runtimeSource.includes("entity.state = 'return'"), 'neutral Porakaneki must delegate actual travel/rendering to the shared hostile return/home path');
-assert(runtimeSource.includes("const SCHEDULER_ID = 'porakaneki-camps-runtime'"), 'Porakaneki planner exposes a stable shared-frame scheduler id');
+assert(runtimeSource.includes("const SCHEDULER_ID = `${KEY}-camps-runtime`") && runtimeSource.includes("id: 'porakaneki'"), 'Porakaneki planner exposes a stable shared-frame scheduler id');
 assert(runtimeSource.includes('window.RuntimeFrameScheduler.register(SCHEDULER_ID') && runtimeSource.includes("phase: 'pre-game'"), 'production Porakaneki planner runs from the shared pre-game scheduler before hostile AI');
 assert(runtimeSource.includes("if (!installRuntimeTick())") && runtimeSource.includes("state.tickOwner = 'BanditCamps-fallback'"), 'isolated contexts without RuntimeFrameScheduler retain the legacy BanditCamps wrapper fallback');
 assert(runtimeSource.includes('state.updateTicks += 1'), 'planner cadence increments a mobile-visible tick counter whenever a real planner step executes');
@@ -569,7 +569,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(pora._porakanekiPlannerControlled, true, 'ecology combat does not make Porakaneki hostile to the player');
   let ecologyDebug = api.debugSnapshot().ecology;
   assert.deepEqual(JSON.parse(JSON.stringify(ecologyDebug)), {
-    chunk: '2,2', porakaneki: 1, bandits: 1, predators: 1, prey: 1, humanoidTargets: 2, predatorTargets: 1,
+    chunk: '2,2', porakaneki: 1, omgurku: 0, bandits: 1, predators: 1, prey: 1, humanoidTargets: 2, predatorTargets: 1,
   }, 'debug snapshot exposes the active 16x16 ecology chunk and assignment counts for mobile verification');
   assert.equal(api.hasSharedEnemyNearby(pora), true, 'bandit/predator in the player chunk activates crossfire forgiveness');
 
@@ -580,6 +580,20 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(api.hasSharedEnemyNearby(pora), true, 'recent shared-enemy combat retains the short simultaneous-death grace');
   fakeNowMs += 1600;
   assert.equal(api.hasSharedEnemyNearby(pora), false, 'crossfire grace expires when no shared enemy remains');
+
+  // Rival tribes: an Omgurku hunter in the same chunk is a shared enemy, so
+  // Porakaneki fight it on sight (neutral to the player) instead of hunting prey.
+  const omg = { id: 'eco_omg', x: 33 * combatDeps.TILE, y: 33 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, isTribeHunter: true, tribeId: 'omgurku', _porakanekiPlannerControlled: true, def: {} };
+  hostileObjects.add(omg);
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, omg, 'Porakaneki attack a rival Omgurku before prey');
+  assert.equal(omg._chunkCombatTarget, pora, 'Omgurku attack a rival Porakaneki');
+  assert.equal(omg._porakanekiPlannerControlled, true, 'tribe-vs-tribe combat keeps both hunters neutral to the player');
+  assert.equal(api.hasSharedEnemyNearby(pora), true, 'a rival tribe in the chunk forgives crossfire deaths like a bandit does');
+  assert.equal(api.debugSnapshot().ecology.omgurku, 1);
+  hostileObjects.delete(omg);
+  api.__test.updateChunkEcology();
+  fakeNowMs += 1600;
 
   hostileObjects.delete(prey);
   const outsideBandit = { id: 'eco_outside_bandit', x: 48 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };

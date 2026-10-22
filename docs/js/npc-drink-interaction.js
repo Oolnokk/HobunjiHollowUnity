@@ -124,7 +124,7 @@
     const bottlePlane = deps.makeBottlePlane?.({ ...itemDef, key: itemKey });
     if (!bottlePlane) return false;
     holder.add(bottlePlane);
-    root.add(holder);
+    (avatarGroup.userData?.proceduralHandParent || root).add(holder);
     carry = {
       ownerId: key,
       root,
@@ -233,7 +233,7 @@
     interaction.startScale.copy(sourceTransform.scale);
 
     const targetProbe = new THREE.Group(); // Resolves the NPC-local neutral hand pose into active-scene coordinates.
-    walker.root.add(targetProbe);
+    (walker.avatarGroup?.userData?.proceduralHandParent || walker.root).add(targetProbe);
     interaction.holder = targetProbe;
     interaction.bottlePlane = null;
     applyHolderPose(interaction, neutralPose);
@@ -241,7 +241,7 @@
     targetProbe.getWorldPosition(interaction.targetPosition);
     targetProbe.getWorldQuaternion(interaction.targetQuaternion);
     targetProbe.getWorldScale(interaction.targetScale);
-    walker.root.remove(targetProbe);
+    targetProbe.parent.remove(targetProbe);
     interaction.holder = holder;
     interaction.bottlePlane = bottlePlane;
 
@@ -294,7 +294,7 @@
         interaction.holder.scale.lerpVectors(interaction.startScale, interaction.targetScale, eased);
         if (t >= 1) {
           interaction.holder.parent?.remove(interaction.holder);
-          interaction.walker.root.add(interaction.holder);
+          (interaction.walker.avatarGroup?.userData?.proceduralHandParent || interaction.walker.root).add(interaction.holder);
           interaction.phase = 'drink';
           publishHandTarget(interaction.walker.root,interaction.holder,interaction.bottlePlane);
           interaction.elapsed = 0;

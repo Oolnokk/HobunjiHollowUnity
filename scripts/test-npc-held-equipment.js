@@ -163,6 +163,12 @@ function makeRuntimeWalker(id, name) {
   const oddclaw = makeRuntimeWalker('oddclaw_unumanuk', 'Oddclaw Unumanuk');
   runtimeScene.add(spearhead.root);
   runtimeScene.add(oddclaw.root);
+  const mountedTorso = new TestGroup(); // Hybrid torso owns a separate floor frame for hands, but both must share stance yaw.
+  const mountedHands = new TestGroup();
+  const lowerBody = new TestGroup(); // Must stay outside the upper-body stance wrapper.
+  spearhead.avatarGroup.add(mountedTorso);spearhead.avatarGroup.add(lowerBody);mountedTorso.add(mountedHands);
+  spearhead.avatarGroup.userData.proceduralBodyRoot=mountedTorso;
+  spearhead.avatarGroup.userData.proceduralHandRig.parent=mountedHands;
   const runtimeWalkers = [spearhead, oddclaw];
 
   function makeToolPlaneMesh(toolKey) {
@@ -237,6 +243,10 @@ function makeRuntimeWalker(id, name) {
   spearhead.area = 'farm'; // The farm tour and rescue still use the outdoor spear/stance.
   spearhead.update(1/60);
   assert.equal(runtimeWindow.NpcHeldEquipment.debugSnapshot('spearhead_unumanuk').holderVisible,true);
+
+  assert.equal(mountedHands.parent,mountedTorso,'mounted hand frame stays under the torso');
+  assert.equal(mountedTorso.parent.userData.npcHeldStanceBodyYaw,true,'authored stance yaw wraps the whole upper body');
+  assert.equal(lowerBody.parent,spearhead.avatarGroup,'lower half keeps its own deadzone independently of the armed stance');
 
   // A watchman in another area skips the pose/hand work and hides its
   // scene-parented weapon holder, then picks both back up on return.

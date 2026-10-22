@@ -93,6 +93,9 @@ assert.strictEqual(Renderer.garmentForCosmetics(generatedFemale.equippedCosmetic
 assert.strictEqual(Renderer.ensureNpcPants(generatedFemale), false, 'never add basic pants on top of a skirt');
 console.log('Layered leg garments: PASS');
 
+const hybrid = { appearance: { speciesId: 'omgurku', gender: 'male' } }; // Generated NPCs resolve species from the same appearance source as the avatar.
+assert.strictEqual(Renderer.ensureNpcPants(hybrid),false,'hybrid lower body does not receive humanoid pants');
+assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does not mutate its wardrobe');
 // Execute the production scoped-depth owner without constructing WebGL garments.
 {
  const source=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // The same closure installed on each real garment handle.

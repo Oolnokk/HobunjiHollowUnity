@@ -8,7 +8,7 @@ const end = source.indexOf('  function ensureCurrentCampMeshes(', start);
 let now = 0, builds = 0, warnings = 0, rejectBuild;
 const zone = { scene: { add(mesh) { mesh.parent = this; } } };
 const context = {
-  Promise, Math, performance: { now: () => now }, buildGeneration: 1, BENCHLOG_KEY: 'benchlog',
+  Promise, Math, performance: { now: () => now }, buildGeneration: 1, BENCHLOG_KEY: 'benchlog', KEY: 'porakaneki',
   currentArea: () => 'slope', combatDeps: { zoneScenes: new Map([['slope', zone]]) },
   benchRecordForProp: () => ({ centerX: 1, centerZ: 2 }), registerCampBenchStations() {},
   disposeObject3D() {}, markOutline() {}, num: (v, fallback) => v ?? fallback,

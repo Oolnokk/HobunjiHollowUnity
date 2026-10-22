@@ -4964,7 +4964,7 @@
         if (!c.isCompanion) {
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
-          const isBarbarian = c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
+          const isBarbarian = c.isTribeHunter === true || c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
           window.HobunjiActivityEvents?.emit('creature_killed', {
             creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
             isBandit: !!c.isBandit, isBarbarian,
@@ -4989,7 +4989,10 @@
         // their own swept 3D Box3 collision and deliberately bypass this.
         const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
           && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
-        if (!environmentalImpact && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+        // Bandit/tribe actor-vs-actor hits name their attacker; standing near
+        // the player must not turn them into the player's own swing.
+        const actorAttacker = dmgOpts?.attacker && dmgOpts.attacker !== player ? dmgOpts.attacker : null;
+        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
           const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
           if (reach && !reach.reachable) {
             lastMeleeHeightBlock = {
@@ -5011,11 +5014,13 @@
         if (!environmentalImpact) {
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
-          amount *= window.SkillSystem?.attackMultiplier?.() || 1;
-          amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
-          amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
-          amount = banditTryGuard(c, amount, player);
-          if (!c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+          if (!actorAttacker) { // The player's skill, potion and perk multipliers only scale the player's own hits.
+            amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+            amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+            amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
+          }
+          amount = banditTryGuard(c, amount, actorAttacker || player);
+          if (!actorAttacker && !c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
@@ -6372,7 +6377,11 @@
                ((c.denKey || c.herdKey) && window.Music?.isNightTime?.()))) {
             window.WildlifeFoodWeb?.cancelForage?.(c);
           }
-          const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          // A tribe-camp ecology fight (js/porakaneki-camps-runtime.js) assigns a
+          // humanoid a live actor target and zeroes its player aggro; chase,
+          // leash and sight below must follow that actor, not the player.
+          const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
+          const targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -6436,7 +6445,7 @@
           }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
             c.state = 'return';
-          } else if (c.state === 'chase' && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
+          } else if (c.state === 'chase' && !chunkCombatTarget && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
@@ -11956,7 +11965,7 @@
         window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
-          speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
+          speciesId: (NPC_SPECIES_IDS.includes(guessSpecies) || Object.hasOwn(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {}, guessSpecies)) ? guessSpecies : undefined,
           gender: rec?.gender === 'female' ? 'female' : 'male',
           cosmetics: {},
         };
@@ -12008,7 +12017,8 @@
         );
         const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
         const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
-        const avatarGroundLift = namedAnimalDef
+        const authoredGroundLift = avatarGroup.userData?.avatarGroundLift; // Compound avatars can own a floor origin instead of the ordinary centered portrait origin.
+        const avatarGroundLift = Number.isFinite(authoredGroundLift) ? authoredGroundLift : namedAnimalDef
           ? (Number.isFinite(namedAnimalGroundOffset) ? namedAnimalGroundOffset : avatarHeight / 2)
           : avatarHeight / 2; // Animal ground lift exactly mirrors makeCreatureEntity; humanoids keep their historical center placement.
         if (namedAnimalDef) window.CreatureGenetics.applyCreatureBillboardScale(avatarGroup, namedAnimalSizeScale); // Grehlr size class owns world scaling before any NPC state wrapper.
@@ -12551,7 +12561,8 @@
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
                 const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
-                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
+                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY
+                  : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
@@ -12562,11 +12573,11 @@
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
-                  if (this.stationToolMesh) root.remove(this.stationToolMesh);
+                  if (this.stationToolMesh) this.stationToolMesh.parent?.remove(this.stationToolMesh);
                   this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
-                  if (this.stationToolMesh) root.add(this.stationToolMesh);
+                  if (this.stationToolMesh) (avatarGroup.userData?.proceduralHandParent || root).add(this.stationToolMesh);
                 }
                 if (this.stationToolMesh && isKurraya) {
                   // Same held-still-until-a-note-sounds treatment as the
@@ -12620,12 +12631,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
+                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
+            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
@@ -12702,7 +12713,12 @@
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
         if (walker._animalSleepPresentationRegistered) window.AnimalSleepPresentation?.unregisterExternalSleeper?.(walker); // Releases the shared sleep presenter when a visitor despawns.
+        window.NpcHeldEquipment?.detachCutsceneWalker?.(walker); // Release owned tool/hand claims before the avatar hierarchy is torn down.
         walker.legs?.dispose?.();
+        if (walker.avatarGroup) {
+          window.PNGPlaneAvatar?.disposeAvatarModel?.(walker.avatarGroup); // Refcounted hybrid textures and procedural hands must use their owning disposer.
+          walker.avatarGroup.parent?.remove(walker.avatarGroup);
+        }
         walker.root?.traverse?.(object => {
           object.geometry?.dispose?.();
           const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.
@@ -12806,7 +12822,7 @@
         actorHitbox: walker => window.RangedWeapons?.actorHitbox?.(walker),
         frameId: () => window.RuntimeFrameScheduler?.frameId?.(),
         npcReach: () => npcMovementConfig().socialInteractionRadiusTiles ?? 6,
-        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) : null,
+        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? (window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) || window.OmgurkuCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2)) : null,
         getAim: () => { const aim = getReticleTile(); return { c:aim.probeX / TILE, r:aim.probeY / TILE }; },
         assignmentChanged: area => { if (area === 'farm' || area === 'interior') window.FarmEditor?.saveFarmLayout?.(); }, // Stable inventory chair/table links survive reloads.
         surfaceY: furnitureSurfaceYAtWorld,
@@ -25652,7 +25668,7 @@
             const tradeButton = window.SlagothimTraders.actionButtonFor(nearbyNpcWalker);
             return tradeButton ? [npcDialogueButton(), tradeButton] : [npcDialogueButton()];
           }
-          const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
+          const btns = (nearbyNpcWalker.isTribeHunter || nearbyNpcWalker.isPorakanekiHunter) ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
           if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());
@@ -28929,6 +28945,10 @@
         craftedToolItemKey,
         metalDmgMultiplier,
         damagePlayer,
+        // Bandit/tribe hits on other actors (chunk ecology fights). Without it
+        // damageBanditCombatTarget fell back to damagePlayer. Routed through
+        // Combat.deps so faction-rule wrappers see these hits too.
+        damageCreature: (...args) => (window.Combat?.deps?.damageCreature || damageCreature)(...args),
         inCone,
         sweptMove,
         canOccupyAt,

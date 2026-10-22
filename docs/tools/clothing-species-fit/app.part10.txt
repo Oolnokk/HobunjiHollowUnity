@@ -19,7 +19,7 @@ function refreshDebug(){
     `target grid: ${fitRegion()==='headwear'?'headwear::':''}${E.species.value}_${E.gender.value}`, // Keep diagnostics parsing compatible with the original source-neutral target label.
     `source species: ${E.sourceSpecies.value}`,
     `source gender: ${E.sourceGender.value}`,
-    `saved fit key: ${targetKey(E.species.value,E.gender.value)}`, 
+    `saved fit key: ${targetKey(E.species.value,E.gender.value)}`,
     `base transform: ${JSON.stringify(currentTransform())}`,
     `local offset points: ${currentOffsets().length}`,
     `garment: ${garmentRecord()?.id||'(none)'}`,
@@ -27,7 +27,7 @@ function refreshDebug(){
     `body sources: ${(R.body?._paths||[]).join(' | ')}`,
     `head reference sources: ${(R.headReference?._paths||[]).join(' | ')}`,
     `garment sources: ${(R.cloth?._paths||[]).join(' | ')}`,
-    `authored source layers: ${(R.cloth?._layers||[]).map(l=>`${l.name} [${l.view}] ${l.url}`).join(' | ')||'(none)'}`, 
+    `authored source layers: ${(R.cloth?._layers||[]).map(l=>`${l.name} [${l.view}] ${l.url}`).join(' | ')||'(none)'}`,
     `headwear source layers: ${fitRegion()==='headwear'?[`under-skull=${!!R.cloth?._back}`,`front=${!!R.cloth?._front}`,`rear-view=${!!R.cloth?._behindView}`].join(' '):'(not active)'}`,
     `main workflow source: ${R.patchWorkflow.active?'PATCHED '+(R.patchWorkflow.descriptor?.label||R.patchWorkflow.descriptor?.sourceUrl||'source'):'repository garment'}`,
     `main workflow route semantics: ${routedPatchIsBody()?'selected-species body patch → Base Transform + 6×6 fit → isolated canonical body layer → rear base body → clothing':routedPatchIsClothing()?'clothing source + patch → Base Transform + 6×6 fit → garment plane':'repository garment'}`,

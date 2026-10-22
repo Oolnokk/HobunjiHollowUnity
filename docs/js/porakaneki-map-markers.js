@@ -9,36 +9,48 @@
   const MARKER_FLAG = '__porakanekiCampMapMarker'; // Used to replace only this adapter's map-only locale proxies during seasonal migration/regeneration.
   const SMALL_LOCALE_PREFIX = 'locale_porakaneki_camp_small_runtime_'; // Per-camp discovery ids consumed by WildernessMap's existing discoveredLocales save data.
   const CHIEF_LOCALE_ID = 'locale_porakaneki_camp_chief'; // Stable always-visible id lets a selected chief-camp waypoint follow seasonal migration automatically.
+  // Both tribes share the camp locale templates; Omgurku markers get their own
+  // stable ids/names so discovery and waypoints stay per tribe.
+  const PORAKANEKI = Object.freeze({ id: 'porakaneki', label: 'Porakaneki', namespace: 'PorakanekiCamps', smallPrefix: SMALL_LOCALE_PREFIX, chiefLocaleId: CHIEF_LOCALE_ID });
+  const TRIBES = Object.freeze([
+    PORAKANEKI,
+    Object.freeze({ id: 'omgurku', label: 'Omgurku', namespace: 'OmgurkuCamps', smallPrefix: 'locale_omgurku_camp_small_runtime_', chiefLocaleId: 'locale_omgurku_camp_chief' }),
+  ]);
 
   let mapDeps = null; // Captured from WildernessMap.init; supplies the authoritative generated _zoneLayouts map.
   let lastSignature = ''; // Avoids rewriting layout.localeInstances on every 0.2 s camp tick when nothing moved.
 
-  function snapshot() {
-    try { return window.PorakanekiCamps?.campCenters?.() || window.PorakanekiCamps?.debugSnapshot?.() || null; } // Runs every fog update; campCenters() avoids building the full debug snapshot.
+  function snapshot(tribe = PORAKANEKI) {
+    const camps = window[tribe.namespace];
+    try { return camps?.campCenters?.() || camps?.debugSnapshot?.() || null; } // Runs every fog update; campCenters() avoids building the full debug snapshot.
     catch { return null; }
   }
 
-  function campLocaleId(zoneId, camp) {
-    if (camp.kind === 'chief') return CHIEF_LOCALE_ID;
+  function campLocaleId(zoneId, camp, tribe = PORAKANEKI) {
+    if (camp.kind === 'chief') return tribe.chiefLocaleId;
     const suffix = String(camp.id || `${zoneId}_${camp.center?.col}_${camp.center?.row}`)
-      .replace(/^porakaneki_small_/, '')
+      .replace(new RegExp(`^${tribe.id}_small_`), '')
       .replace(/[^a-zA-Z0-9_-]+/g, '_');
-    return `${SMALL_LOCALE_PREFIX}${suffix}`;
+    return `${tribe.smallPrefix}${suffix}`;
   }
 
-  function desiredMarkers(debug) {
+  function allMarkers() {
+    return TRIBES.flatMap(tribe => desiredMarkers(snapshot(tribe), tribe));
+  }
+
+  function desiredMarkers(debug, tribe = PORAKANEKI) {
     const markers = [];
     for (const [zoneId, zone] of Object.entries(debug?.zones || {})) {
       for (const camp of (zone.camps || [])) {
         if (!camp?.center || !Number.isFinite(camp.center.col) || !Number.isFinite(camp.center.row)) continue;
         const chief = camp.kind === 'chief';
-        const localeId = campLocaleId(zoneId, camp);
+        const localeId = campLocaleId(zoneId, camp, tribe);
         markers.push({
           zoneId,
-          id: `porakaneki_map_${localeId}`,
+          id: `${tribe.id}_map_${localeId}`,
           localeId,
           templateLocaleId: chief ? CHIEF_LOCALE_ID : 'locale_porakaneki_camp_small',
-          name: chief ? 'Porakaneki Chief Camp' : 'Porakaneki Hunting Camp',
+          name: chief ? `${tribe.label} Chief Camp` : `${tribe.label} Hunting Camp`,
           category: 'porakaneki_camp',
           // WildernessMap centers locale markers by adding 0.5 to x/y.
           x: camp.center.col - 0.5,
@@ -82,7 +94,7 @@
 
   function syncMarkers() {
     if (!mapDeps?._zoneLayouts || !window.PorakanekiCamps?.debugSnapshot) return false;
-    const markers = desiredMarkers(snapshot());
+    const markers = allMarkers();
     const signature = signatureFor(markers);
     // A fresh Tothal layout can coincidentally produce the same camp coordinates
     // as the prior one, so matching coordinates alone is not enough: verify the
@@ -170,7 +182,7 @@
   window.PorakanekiMapMarkers = Object.freeze({
     version: 1,
     sync: syncMarkers,
-    debugSnapshot: () => ({ ready: !!mapDeps, signature: lastSignature, markers: desiredMarkers(snapshot()) }),
+    debugSnapshot: () => ({ ready: !!mapDeps, signature: lastSignature, markers: allMarkers() }),
     __test: Object.freeze({ campLocaleId, desiredMarkers }),
   });
 

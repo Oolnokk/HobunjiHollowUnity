@@ -258,6 +258,11 @@
     return i => matches[i >> 2] === 1;
   }
 
+  // Shared keyed shade-fill for animal coats and matching attached PNG surfaces.
+  function recolorKeyedPixels(px, targetRgb, sourceKey, sourceReferenceHex = null, debugLabel = null) {
+    recolorPixels(px, targetRgb, sourceKeyPredicate(px, sourceKey), sourceReferenceHex, debugLabel);
+  }
+
   async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '', sourceKey = null) {
     const key = `base|${url}|${color}|ref:${sourceReferenceHex || 'auto'}|full:${allowUnmasked}|key:${sourceKey?.hex || ''}`;
     if (_recolorCache.has(key)) return cachedRecolor(key);
@@ -269,12 +274,14 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      recolorPixels(
+      const debugLabel = kind ? `animal-base:${kind}${!maskMatches && sourceKey ? ':hex-target' : ''}` : 'animal-base'; // Shared diagnostics identify both keyed and masked fills.
+      if (!maskMatches && sourceKey) recolorKeyedPixels(px, hexToRgb(color), sourceKey, sourceReferenceHex, debugLabel);
+      else recolorPixels(
         px,
         hexToRgb(color),
-        maskMatches ? (i) => mask.data[i / 4] : sourceKey ? sourceKeyPredicate(px, sourceKey) : null,
+        maskMatches ? (i) => mask.data[i / 4] : null,
         sourceReferenceHex,
-        kind ? `animal-base:${kind}${!maskMatches && sourceKey ? ':hex-target' : ''}` : 'animal-base',
+        debugLabel,
       );
       ctx.putImageData(data, 0, 0);
       return c;
@@ -603,7 +610,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, SPECIES, recolorPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);

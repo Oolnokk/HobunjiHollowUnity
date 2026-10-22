@@ -1643,6 +1643,7 @@
     c._rangedPoseCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     c._rangedPoseHeightScale = height?.heightRatio ?? 1; // Debug proof that ranged bandits share player/editor authored-Y semantics.
     holder.rotation.set(THREE.MathUtils.degToRad(pose.pitch), vθ + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll), 'YXZ');
+    window.BanditCombat?.applyRiderMount?.(c, holder); // Compound mounted riders hold the weapon from their saddle.
   }
 
   function cancelBanditAction(c) {

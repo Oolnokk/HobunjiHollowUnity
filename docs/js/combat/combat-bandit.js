@@ -332,6 +332,11 @@
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait',
       },
     );
+    if (portrait.userData?.proceduralBodyRoot) { // Compound avatars (Omgurku rider + quadruped) keep their own hierarchy instead of being split into two rigid planes.
+      return buildCompoundBanditAvatar(portrait, {
+        roster, profile, resolvedRosterDyes, frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, MODEL_W,
+      });
+    }
     const assembly = portrait.children[0];
     const frontMesh = assembly?.children?.[0];
     const backMesh = assembly?.children?.[1];
@@ -490,6 +495,91 @@
         window.PNGPlaneAvatar.disposeAvatarModel?.(group);
       },
     };
+  }
+
+  // Compound hostile avatar: the whole PNGPlaneAvatar root (a floor-origin
+  // group owning the rider portrait, its hand frame and the animal halves)
+  // sits inside frontPivot. That pivot receives the same rotations
+  // updateCreatureMesh/creature-death give a portrait plane, so facing, lean
+  // and corpse tipping carry the compound unchanged; backPivot stays empty
+  // because the rider portrait already renders its own back face.
+  function buildCompoundBanditAvatar(portrait, { roster, profile, resolvedRosterDyes, frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, MODEL_W }) {
+    const upper = portrait.userData.proceduralBodyRoot; // Rider portrait root; owns the textures the combat frown refreshes.
+    const riderFrame = portrait.userData.proceduralHandParent; // Floor-relative rider frame the procedural hands already attach to.
+    const modelWidth = upper.userData?.portraitModelWidth || MODEL_W;
+    const modelHeight = upper.userData?.portraitModelHeight || MODEL_W;
+    const group = new THREE.Group();
+    group.name = 'bandit_avatar_group';
+    const frontPivot = new THREE.Group(); frontPivot.name = 'bandit_front_plane';
+    const backPivot = new THREE.Group(); backPivot.name = 'bandit_back_plane';
+    portrait.position.set(0, -(modelHeight / 2), 0); // The hostile group is center-anchored; the compound root is a floor origin.
+    frontPivot.add(portrait);
+    group.add(frontPivot);
+    group.add(backPivot);
+    group.userData.portraitModelWidth = modelWidth;
+    group.userData.portraitModelHeight = modelHeight;
+    group.userData.portraitVerticalPlacementRatio = upper.userData?.portraitVerticalPlacementRatio ?? 0.5;
+    group.userData.portraitScaleMultiplier = upper.userData?.portraitScaleMultiplier ?? 1;
+    group.userData.armLength = upper.userData?.armLength ?? null;
+    group.userData.scaledArmLength = upper.userData?.scaledArmLength ?? null;
+    group.userData.poseOrbitScale = upper.userData?.poseOrbitScale ?? 1;
+    group.userData.poseOrbitAxes = upper.userData?.poseOrbitAxes ?? null;
+    group.userData.speciesId = portrait.userData?.speciesId || roster.appearance.speciesId;
+    group.userData.gender = portrait.userData?.gender || roster.appearance.gender;
+    group.userData.handAttachX = upper.userData?.handAttachX;
+    group.userData.handAttachY = upper.userData?.handAttachY;
+    group.userData.visualCentroidLocalY = upper.userData?.visualCentroidLocalY ?? 0;
+    group.userData.poseCentroidY = upper.userData?.poseCentroidY ?? (modelHeight * 0.5);
+    return {
+      group, frontPlane: frontPivot, backPlane: backPivot, legsPivot: null, legs: null,
+      handsPivot: null, handRigAvatarRoot: portrait, textureRoot: upper, resolvedRosterDyes,
+      riderMount: { root: portrait, upper, riderFrame }, // Weapon holders are world objects; applyRiderMount moves them onto the mounted rider.
+      frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
+      combatExpressionActive: false,
+      modelWidth, modelHeight,
+      speciesId: group.userData.speciesId,
+      gender: group.userData.gender,
+      neckJoint: null, // The rider portrait has no auto neck skin; the head-look system no-ops.
+      handAttachX: upper.userData?.handAttachX,
+      handAttachY: upper.userData?.handAttachY,
+      armLength: upper.userData?.armLength,
+      poseOrbitScale: upper.userData?.poseOrbitScale ?? 1,
+      poseOrbitAxes: upper.userData?.poseOrbitAxes ?? null,
+      visualCentroidLocalY: group.userData.visualCentroidLocalY,
+      poseCentroidY: group.userData.poseCentroidY,
+      dispose() {
+        portrait.parent?.remove?.(portrait);
+        window.PNGPlaneAvatar.disposeAvatarModel?.(portrait); // Compound disposer releases refcounted animal textures and the hand rig.
+        window.PNGPlaneAvatar.disposeAvatarModel?.(group);
+      },
+    };
+  }
+
+  // Weapon poses are solved for a standing humanoid whose floor is the hostile
+  // group's floor. A mounted rider stands on its saddle instead, scaled, and
+  // offset forward/sideways inside the compound root; re-express the finished
+  // holder point about that rider floor so the procedural hands reach it.
+  function applyRiderMount(c, holder) {
+    const mount = c?.avatarRef?.riderMount;
+    const group = c?.avatarRef?.group;
+    if (!mount || !holder || !group) return false;
+    const { root, upper, riderFrame } = mount;
+    const scale = Number(upper.scale?.x) || 1;
+    const localX = upper.position.x * (root.scale?.x || 1);
+    const localZ = upper.position.z * (root.scale?.z || 1);
+    const localY = upper.position.y + (Number(riderFrame?.position?.y) || 0) * scale;
+    const yaw = (group.rotation.y || 0) + (c.avatarRef.frontPlane?.rotation?.y || 0); // Compound root yaw in world space.
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const floorY = group.position.y - (c.halfHeight || 0);
+    const p = holder.position;
+    const dx = p.x - group.position.x, dy = p.y - floorY, dz = p.z - group.position.z;
+    p.set(
+      group.position.x + localX * cos + localZ * sin + dx * scale,
+      floorY + localY + dy * scale,
+      group.position.z - localX * sin + localZ * cos + dz * scale,
+    );
+    holder.scale.multiplyScalar(scale);
+    return true;
   }
 
   function copyBanditExpressionCanvas(target, source) {
@@ -819,7 +909,7 @@
   }
 
   function resolvedBanditCombatTarget(c, fallbackTarget) {
-    const target = c?._chunkCombatTarget; // Set only by PorakanekiCamps' active-player-chunk ecology pass.
+    const target = c?._chunkCombatTarget; // Set only by the tribe camps' active-player-chunk ecology pass.
     if (!target) return fallbackTarget;
     const alive = Number(target.health) > 0;
     const sameArea = !target.areaId || !c?.areaId || target.areaId === c.areaId;
@@ -2293,6 +2383,7 @@
       );
       scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Legacy thrust uses the same finished-point transform without changing rotation/timing.
     }
+    if (c.avatarRef?.riderMount) { holder.scale.setScalar(1); applyRiderMount(c, holder); }
     if (resetAfterDraw) {
       resetBanditSwingToNatural(c);
       c._banditSwingResetDone = true; // Tells a wrapper that temporarily substituted the swing fields not to restore the finished swing over this reset.
@@ -2437,7 +2528,7 @@
     groundShadow.position.set(x / deps.TILE, surfY + deps.characterGroundShadowSurfaceOffset(), y / deps.TILE);
     targetScene.add(groundShadow);
 
-    const enemyClass = opts.enemyClass || opts.extra?.enemyClass || (opts.extra?.isPorakanekiHunter ? 'porakaneki-hunter' : 'bandit'); // Semantic hostile category layered over the shared humanoid combat implementation.
+    const enemyClass = opts.enemyClass || opts.extra?.enemyClass || (opts.extra?.tribeId ? `${opts.extra.tribeId}-hunter` : (opts.extra?.isPorakanekiHunter ? 'porakaneki-hunter' : 'bandit')); // Semantic hostile category layered over the shared humanoid combat implementation.
     const c = {
       id: 'bandit_' + rank + '_' + (performance.now() | 0) + '_' + Math.floor(deps.rnd() * 100000),
       creatureKey: 'bandit-' + rank, def, avatarRef, groundShadow,
@@ -2511,6 +2602,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    applyRiderMount, // Shared by the ranged visual so thrown/held ranged weapons follow a mounted compound rider too.
     rollFlaskLoadout: rollBanditFlaskLoadout,
     availableFlaskRecipeIds: availableBanditFlaskRecipeIds,
     characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive, ...characterBuildStatus }), // Existing debug report reads queue pressure without retaining roster objects.

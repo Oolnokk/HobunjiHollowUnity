@@ -102,7 +102,7 @@
 
   function ensureBodyYawWrapper(state) {
     const three = T(), walker = state?.walker, rig = rigFor(walker);
-    const body = rig?.parent, root = walker?.root;
+    const body = avatarRootFor(walker)?.userData?.proceduralBodyRoot || rig?.parent, root = walker?.root; // Mounted hands and torso must turn together while the lower body keeps its own deadzone.
     if (!three || !body || !root || body === root || !body.parent) return null;
     if (state.bodyYaw?.body === body && body.parent === state.bodyYaw.wrapper) return state.bodyYaw;
     if (state.bodyYaw) disposeBodyYawWrapper(state);

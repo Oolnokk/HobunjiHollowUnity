@@ -1,0 +1,139 @@
+'use strict';
+// Omgurku as an enemy tribe in the full game: compound hostile avatar, mounted
+// weapon, Porakaneki-vs-Omgurku ecology fight, and the two tribes' camp networks.
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const http=require('node:http');
+let chromium;
+try { ({ chromium } = require('playwright')); }
+catch (error) {
+  if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  console.log('skip: playwright not installed (browser-only test)');
+  process.exit(0);
+}
+const root=path.resolve(__dirname,'..');
+const types={'.js':'text/javascript','.html':'text/html','.json':'application/json','.png':'image/png','.jpg':'image/jpeg','.glb':'model/gltf-binary','.css':'text/css'};
+const server=http.createServer((req,res)=>{
+  const relative=decodeURIComponent((req.url||'/').split('?')[0]).replace(/^\/+/,'');
+  const absolute=path.resolve(root,relative);
+  if(!absolute.startsWith(root+path.sep)){res.writeHead(403);return res.end();}
+  fs.readFile(absolute,(error,data)=>{
+    if(error){res.writeHead(404);return res.end('Missing '+relative);}
+    res.setHeader('Content-Type',types[path.extname(absolute)]||'application/octet-stream');
+    res.end(data);
+  });
+});
+(async()=>{
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,args:['--enable-webgl','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+  try{
+    const page=await browser.newPage({viewport:{width:1200,height:800}});
+    // Optional installed Three.js package makes this smoke test independent of CDN access.
+    if(process.env.HOBUNJI_THREE_TEST_ROOT)await page.route('https://esm.sh/**',async route=>{
+      const suffix=new URL(route.request().url()).pathname.replace(/^\/three@[^/]+\/?/,'');
+      const relative=suffix||'build/three.module.js'; // Use the same version as the game's configured CDN module.
+      const base=path.resolve(process.env.HOBUNJI_THREE_TEST_ROOT);
+      const file=path.resolve(base,relative);
+      if(!file.startsWith(base+path.sep))return route.abort();
+      try{await route.fulfill({contentType:'text/javascript',body:fs.readFileSync(file,'utf8').replace(/from ['"']three['"']/g,"from 'https://esm.sh/three@0.128.0'")});}
+      catch(error){await route.abort();}
+    });
+    if(process.env.HOBUNJI_THREE_TEST_ROOT)await page.route('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(process.env.HOBUNJI_THREE_TEST_ROOT,'build/three.min.js'))}));
+    await page.route('https://unpkg.com/three@0.128.0/**',async route=>{
+      const relative=new URL(route.request().url()).pathname.replace('/three@0.128.0/',''); // Serve the game dependencies without a CDN dependency.
+      const base=process.env.HOBUNJI_THREE_TEST_ROOT;
+      if(!base)return route.continue();
+      try{await route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(base,relative))});}catch(_){await route.abort();}
+    });
+    await page.addInitScript(()=>{
+      window.__hobunjiPlayerProfile={playerId:'tribe-test',characterId:'tribe-test',worldId:'tribe-test',worldLabel:'Tribe QA',
+        worldOwnerCharacterId:'tribe-test',isWorldOwner:true,nickname:'Tribe QA',farmhandPermissions:{},
+        appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{}},equippedCosmetics:[],appliedDyes:{},nonGearInventory:{},
+        packClothing:[],npcRelationships:{},questProgress:{},isNewWorld:false};
+      localStorage.setItem('hobunjiOpeningStory.v1:tribe-test','complete');
+      localStorage.setItem('hobunjiOpeningStory.v1:tribe-test:farm-tour','complete');
+    });
+    await page.route('**/config/npcs/hobunji-starter-npc-database.json*',route=>{
+      const database=JSON.parse(fs.readFileSync(path.join(root,'docs/config/npcs/hobunji-starter-npc-database.json'),'utf8')); // Keep this full-game fixture focused on the actors it creates.
+      database.npcs=[];return route.fulfill({contentType:'application/json',body:JSON.stringify(database)});
+    });
+    const errors=[]; // Report newly raised exceptions during actor creation separately from baseline game initialization.
+    page.on('pageerror',error=>{errors.push(String(error));console.error('game page error:',String(error));});
+    await page.goto('http://127.0.0.1:'+server.address().port+'/docs/index.html?skipIntro=1&skipRescue=1&skipMeeting=1',
+      {waitUntil:'domcontentloaded',timeout:60000});
+    await page.waitForFunction(()=>window.__hobunjiGameStarted&&window.RomanceSystem?.helpers.deps(),null,{timeout:180000});
+    await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
+    await page.waitForFunction(()=>window.GridTileAccessors.getCurrentArea()==='interior',null,{timeout:120000});
+    const baseline=errors.length;
+    const SHOTS=process.env.OMGURKU_TRIBE_SHOTS||''; // Optional directory for visual review screenshots.
+    await page.evaluate(()=>window.DevSpawner.teleportToDevArena());
+    await page.waitForFunction(()=>window.GridTileAccessors.getCurrentArea()==='map_dev_arena',null,{timeout:60000});
+    await page.waitForFunction(()=>window.OmgurkuCamps?.debugSnapshot().configReady&&window.PorakanekiCamps?.debugSnapshot().configReady,null,{timeout:60000});
+    const spawned=await page.evaluate(async()=>{
+      const deps=window.Combat.deps,cfg=await window.BanditCombat.loadGangConfig();
+      const spawn=async(tribeId,dx)=>{
+        const x=deps.player.x+dx*deps.TILE,y=deps.player.y+deps.TILE*2;
+        const entity=await window.BanditCombat.makeEntity({...cfg,speciesWeights:{[tribeId]:1},rangedWeaponChanceByRank:{grunt:0,lieutenant:0,captain:0}},'grunt',0,x,y,{
+          zoneId:'map_dev_arena',nameOverride:tribeId+' QA',
+          defOverride:{weaponKey:'hatchet',weaponShapeKey:'hatchet'},
+          extra:{homeX:x,homeY:y,state:'idle',isTribeHunter:true,tribeId,isPorakanekiHunter:tribeId==='porakaneki',porakanekiCampId:tribeId+'_qa_camp',_porakanekiPlannerControlled:true}});
+        entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
+      };
+      const omg=await spawn('omgurku',-1),pora=await spawn('porakaneki',1);
+      window.__tribeQa={omg,pora};
+      const ref=omg.avatarRef;
+      for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
+      const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
+      const holder=omg._banditToolHolder?.position;
+      const floorY=ref.group.position.y-omg.halfHeight;
+      return {omg:!!omg,pora:!!pora,species:omg.rosterRecord?.appearance?.speciesId,compound:!!ref.riderMount,
+        enemyClass:omg.enemyClass,backChildren:ref.backPlane.children.length,
+        holderToRider:holder?Math.hypot(holder.x-rider.x,holder.z-rider.z):null,
+        holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
+        riderHandY:rider.y-floorY+(ref.riderMount.upper.scale.x||1)*(Number(ref.handAttachY)||0),groundHandY:Number(ref.handAttachY)||0,
+        live:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
+    });
+    assert(spawned.omg&&spawned.pora,'both tribe hunters build through BanditCombat');
+    assert.equal(spawned.species,'omgurku');
+    assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
+    assert.equal(spawned.enemyClass,'omgurku-hunter');
+    assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
+    assert(spawned.holderToRider!=null&&spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
+    assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
+    // Let the shared hostile loop and the 5 Hz tribe ecology pass run.
+    await page.waitForFunction(()=>window.__tribeQa.omg._chunkCombatTarget===window.__tribeQa.pora&&window.__tribeQa.pora._chunkCombatTarget===window.__tribeQa.omg,null,{timeout:20000});
+    await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa;return omg.health<omg.maxHealth||pora.health<pora.maxHealth;},null,{timeout:45000}); // Rival tribes actually trade blows.
+    if(SHOTS){
+      await page.evaluate(()=>{for(const id of ['ob-overlay','save-startup-gate'])document.getElementById(id)?.style.setProperty('display','none');if(window.Combat.deps.playerMesh)window.Combat.deps.playerMesh.visible=false;}); // Review-only: reveal the fighters under the new-world overlay and behind the player.
+      await page.screenshot({path:path.join(SHOTS,'tribe-fight.png')});
+    }
+    const fight=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa;
+      return {neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};});
+    assert.deepEqual(fight.neutral,[true,true],'tribe-vs-tribe fighting keeps both neutral to the player');
+    const camps=await page.evaluate(()=>{
+      const chunks=api=>Object.keys(api.debugSnapshot().zones).flatMap(zone=>api.reservedCampChunks(zone).map(key=>zone+':'+key));
+      const pora=window.PorakanekiCamps.debugSnapshot(),omg=window.OmgurkuCamps.debugSnapshot();
+      const poraChunks=new Set(chunks(window.PorakanekiCamps));
+      return {tribes:window.TribeCamps.list().map(t=>t.tribeId),omgZones:Object.keys(omg.zones).length,
+        omgSmall:omg.totalSmallCamps,poraSmall:pora.totalSmallCamps,
+        overlap:chunks(window.OmgurkuCamps).filter(key=>poraChunks.has(key)),
+        chiefs:[pora.chiefZoneId,omg.chiefZoneId],omgFavor:omg.favor};
+    });
+    assert.deepEqual(camps.tribes,['porakaneki','omgurku']);
+    assert.equal(camps.omgZones,4,'Omgurku camps exist on all four wilderness maps');
+    assert(camps.omgSmall>=4,'every wilderness map keeps at least one Omgurku hunting camp');
+    assert(Math.abs(camps.omgSmall-camps.poraSmall)<=4,`rival tribes get comparable hunting camps (${camps.omgSmall} Omgurku / ${camps.poraSmall} Porakaneki)`);
+    assert.deepEqual(camps.overlap,[],'Omgurku camps never share a stream chunk with Porakaneki camps');
+    assert.notEqual(camps.chiefs[0],camps.chiefs[1],'the two chief camps are on different maps');
+    const removed=await page.evaluate(()=>{
+      const {omg,pora}=window.__tribeQa;
+      for(const entity of [omg,pora]){window.Combat.deps.hostileObjects.delete(entity);window.BanditCombat.discardEntity(entity);}
+      delete window.__tribeQa;
+      return window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount;
+    });
+    assert.equal(removed,spawned.live-1,'discarding the hostile releases its compound avatar');
+    assert.deepEqual(errors.slice(baseline),[],'tribe spawning, fighting and cleanup raise no exceptions');
+    console.log('Omgurku tribe browser smoke passed',JSON.stringify({fight,camps}));
+  }finally{await browser.close();server.close();}
+})().catch(error=>{console.error(error);server.close();process.exitCode=1;});

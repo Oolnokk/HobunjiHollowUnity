@@ -47,7 +47,7 @@
     if (!deps) return null;
     if (deps.isDialogueOpen?.() || deps.isMenuOpen?.() || deps.isFarmEditMode?.() || deps.isCombatActive?.()) return null;
     const walker = deps.getNearbyNpcWalker?.();
-    if (!walker || walker.isPorakanekiHunter || walker._doorstepVisitor || walker._slagothimTrader) return null;
+    if (!walker || walker.isTribeHunter || walker.isPorakanekiHunter || walker._doorstepVisitor || walker._slagothimTrader) return null;
     return optionsFor(walker).length ? walker : null;
   }
   function syncClaims() {

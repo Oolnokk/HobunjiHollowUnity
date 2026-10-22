@@ -169,9 +169,9 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261022h35c6b05"></script>
+  <script src="js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20261010h76d5f7b"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261021hbc9a71f"></script>
   <script src="js/png-plane-avatar.js?v=20261017h64afb2a"></script>
   <script src="js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -181,7 +181,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261007hfd6211c"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261022hoffcap2"></script>
+  <script src="js/held-action-animations.js?v=20261022pantsFallback1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -190,17 +190,17 @@
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
-  <script src="js/npc-drink-interaction.js?v=20261020h2974281"></script>
+  <script src="js/npc-drink-interaction.js?v=20261022ha5ced1d"></script>
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
-  <script src="js/procedural-leg-animation.js?v=20261019hd5bc9ee"></script>
+  <script src="js/procedural-leg-animation.js?v=20261022h500c2bc"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
-  <script src="js/pants-rig-core.js?v=1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261020ha3920c1"></script>
+  <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
+  <script src="js/pants-garment-renderer.js?v=20261022hedb90bc"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -215,7 +215,7 @@
   <script src="js/creature-genetics.js?v=20261020foodweb2"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
-  <script src="js/creature-genetics-render.js?v=20261021h1ec7531"></script>
+  <script src="js/creature-genetics-render.js?v=20261022omgurkuMerge1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -332,7 +332,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261020hitcolor2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261022hff46858"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261010hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -342,7 +342,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261019h77311dd"></script>
+  <script src="js/combat/combat-bandit.js?v=20261022h84f9354"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -353,7 +353,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261018ha062610"></script>
+  <script src="js/bandit-camps.js?v=20261022hbd9c20e"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -361,7 +361,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261022hc1f3dbf"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261022h23a6604"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -441,7 +441,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261022h3f454f0&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261022chiefNames1&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -483,7 +483,7 @@
        game.js calls window.SlagothimTraders.init(...); the name generator supplies
        Slagothim culture names for caravan members. -->
   <script src="js/scratchbones-name-generator.js?v=20261008slagothim1"></script>
-  <script src="js/slagothim-traders.js?v=20261021h0275343"></script>
+  <script src="js/slagothim-traders.js?v=20261022h37c004e"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -608,7 +608,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261020foodweb1"></script>
+  <script src="js/wildlife-spawn.js?v=20261022h93979db"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -641,7 +641,7 @@
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
-  <script src="js/dev-spawner.js?v=20261019arenacask1"></script>
+  <script src="js/dev-spawner.js?v=20261022hdd9bed3"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -847,7 +847,7 @@
   <script src="js/crop-growth.js?v=20261015hcrop001"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261021hd899004"></script>
+  <script src="js/perception-mode.js?v=20261022h908ed08"></script>
   <script src="js/world-portrait-life.js?v=20261020hf6210b5"></script>
 </head>
 <body>
@@ -2689,13 +2689,13 @@
   <script src="js/romance-wedding.js?v=20261007wedding1"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/romance-system.js?v=20261021-npcsafety-rebased1"></script>
-  <script src="js/npc-command-wheel.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/npc-command-wheel.js?v=20261022hd6fb14a"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261022hoffmin35time"></script>
+  <script src="game.js?v=20261022omgurkuTribe2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
