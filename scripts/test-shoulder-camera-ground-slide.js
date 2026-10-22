@@ -48,7 +48,7 @@ for (const height of [0.04, 0.1, 0.15, 0.2, 0.465, 0.62, 0.95]) {
 context.currentAreaOcclusionMeshes = () => [{}];
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 0.48 }];
 const wallResult = aim(0.465, 20); // Exercises outdoor walls inside the old three-tile minimum.
-assert.ok(Math.abs(wallResult.z - .3) < 1e-9 && context.debug().bodyLimited, 'outdoor wall zoom stops at the player setback');
+assert.ok(Math.abs(wallResult.z - .8) < 1e-9 && context.debug().bodyLimited, 'outdoor wall zoom stops at the earlier collision zoom cap');
 assert.ok(Math.abs(pitchOf(wallResult, 0.465) - 20) < 1e-7, 'wall collision preserves upward aim instead of lifting the camera');
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 0.15 }];
 const nearWall = aim(0.15, 0, 0.3); // A zoomed boom shorter than half a tile must still raycast walls.
@@ -143,7 +143,7 @@ function corridorAim(deg, targetX = 0) {
 const requestedCorridorDist = 2.6 / 1.5;
 const corridorBefore = corridorAim(0);
 const measuredDistance = Math.hypot(corridorBefore.x, corridorBefore.y - .62, corridorBefore.z);
-assert.ok(Math.abs(measuredDistance - .35) < 1e-6, 'east wall sets a radial zoom limit even while the camera faces north');
+assert.ok(Math.abs(measuredDistance - .8 / Math.cos(9 * Math.PI / 180)) < 1e-6, 'the east wall respects the earlier body cap when the camera faces north');
 assert.equal(ringRaycasts, 16, 'the radial ring is sampled once with 16 fixed world-space spokes');
 assert.equal(context.debug().radialCamera.rays, 16, 'diagnostics report the sampled radial clearance');
 assert.ok(context.debug().corridorReframe, 'the game reports that its shared indoor radius is active');
@@ -185,17 +185,18 @@ assert.equal(ringRaycasts, 64, 'player translation refreshes the radial measurem
 context.s_shoulderSurfOffsetH_current = 0.14;
 corridorClock += 130;
 const shifted0 = corridorAim(0, 0);
-const shiftedDist = Math.hypot(shifted0.x - 0.14, shifted0.y - .62, shifted0.z);
+const shiftedDist = Math.hypot(shifted0.x - shifted0.lookAtX, shifted0.y - .62, shifted0.z - shifted0.lookAtZ); // Compare boom reach relative to its recentered aim pivot.
 const callsWithShift = ringRaycasts;
 for (const yaw of [45, 90, 180]) {
   corridorClock += 16;
   const a = yaw * Math.PI / 180;
   const shifted = corridorAim(yaw);
-  const lookAtX = Math.cos(a) * .14, lookAtZ = -Math.sin(a) * .14;
-  assert.ok(Math.abs(Math.hypot(shifted.x - lookAtX, shifted.y - .62, shifted.z - lookAtZ) - shiftedDist) < 1e-6,
+  assert.ok(Math.abs(Math.hypot(shifted.x - shifted.lookAtX, shifted.y - .62, shifted.z - shifted.lookAtZ) - shiftedDist) < 1e-6,
     'rotating the shoulder offset cannot move the ring or change radial zoom');
   assert.equal(ringRaycasts, callsWithShift, 'rotating the shoulder offset reuses the player-centered clearance ring');
 }
+assert.ok(Math.abs(shifted0.lookAtX) < 1e-8 && Math.abs(shifted0.lookAtZ) < 1e-8,
+  'at the collision cap the shifted shoulder camera aims at the player center');
 context.s_shoulderSurfOffsetH_current = 0;
 // Use production NPC walkability to reproduce a clear standing position in
 // the same tile as a small prop. The camera must not expand that prop to a wall.
@@ -252,7 +253,7 @@ context._cameraOcclusionRaycaster.intersectObjects = function() {
 corridorClock += 130;
 const farmhouseNorth = corridorAim(0); // A wall to the east must shorten the north-facing farmhouse boom too.
 const farmhouseDistance = Math.hypot(farmhouseNorth.x, farmhouseNorth.y - .62, farmhouseNorth.z); // Reference distance for the rotated farmhouse camera.
-assert.ok(Math.abs(farmhouseDistance - .35) < 1e-6, 'farmhouse uses the same radial wall clearance as authored interiors');
+assert.ok(Math.abs(farmhouseDistance - .8 / Math.cos(9 * Math.PI / 180)) < 1e-6, 'farmhouse respects the same earlier body cap as authored interiors');
 const farmhouseEast = corridorAim(90); // Rotates toward the wall without changing the common radius.
 assert.ok(Math.abs(Math.hypot(farmhouseEast.x, farmhouseEast.y - .62, farmhouseEast.z) - farmhouseDistance) < 1e-6);
 assert.equal(context.debug().radialCamera.rays, 16, 'farmhouse diagnostics confirm radial collision is active');
@@ -283,21 +284,56 @@ assert.ok(outdoorHit.y < .62 + Math.sin(outdoorAngle) * outdoorDistance,
   'the outdoor shoulder camera still retracts directly along its wall ray');
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .06 }]; // An extremely close wall attempts to retract every boom below the body limit.
 for (const ratio of [.5, 1, 1.75]) {
-  context.window.HobunjiShoulderCameraCharacterFraming = { minimumCollisionSetback: () => .3 * ratio };
+  context.window.HobunjiShoulderCameraCharacterFraming = { minimumCollisionSetback: () => .8 * ratio };
   for (const yaw of [0, 3, 90, 180, 270]) {
     const a = yaw * Math.PI / 180; // Projects the final camera behind the player regardless of shoulder side offset or yaw.
     const lx = Math.cos(a) * .14, lz = -Math.sin(a) * .14; // Rotating shoulder offset remains perpendicular to the backward camera direction.
     corridorClock += 16;
-    const limited = context.solve(lx, .62, lz, lx + Math.sin(a) * 1.2, .8, lz + Math.cos(a) * 1.2); // Runs the production solver at short, reference and tall body scales.
-    assert.ok(Math.abs((limited.x - lx) * Math.sin(a) + (limited.z - lz) * Math.cos(a) - .3 * ratio) < 1e-8,
+    const limited = context.solve(lx, .62, lz, lx + Math.sin(a) * 2, .8, lz + Math.cos(a) * 2); // Runs the production solver at short, reference and tall body scales.
+    assert.ok(Math.abs((limited.x - lx) * Math.sin(a) + (limited.z - lz) * Math.cos(a) - .8 * ratio) < 1e-8,
       'collision zoom stops slightly behind the player at every yaw and species scale');
     assert.ok(context.debug().bodyLimited);
-    assert.equal(context.debug().minimumSetbackTiles, .3 * ratio, 'mobile diagnostics report the actual body setback');
+    assert.equal(context.debug().minimumSetbackTiles, .8 * ratio, 'mobile diagnostics report the actual body setback');
   }
 }
 context.window.HobunjiShoulderCameraCharacterFraming.minimumCollisionSetback = () => NaN;
-assert.ok(Math.abs(context.solve(0, .62, 0, 0, .62, 1.2).z - .3) < 1e-8, 'invalid rig metrics retain a finite body-safe fallback');
+assert.ok(Math.abs(context.solve(0, .62, 0, 0, .62, 1.2).z - .8) < 1e-8, 'invalid rig metrics retain a finite body-safe fallback');
 context.cutscenePreviewActive = true;
 assert.ok(context.solve(0, .62, 0, 0, .62, 1.2).z < .1, 'authored cutscenes retain their own collision framing without the gameplay body limit');
 context.cutscenePreviewActive = false;
-console.log('Shoulder camera ground slide: terrain, radial collision, species-scaled body setback, cache, recovery, and scripted-camera isolation passed.');
+// Exercise a partially shortened boom, full centering at the cap, and the
+// render camera's use of the recentered target without browser devtools.
+Object.assign(context, {
+  activeCameraMode: 'shoulderSurf', currentArea: 'farm',
+  camTargetX: 0, camTargetZ: 0, camTargetY: 0,
+  activeSurfaceYAtWorld: () => 0,
+  currentAreaOcclusionMeshes: () => [{}],
+  s_shoulderSurfOffsetH_current: .3, s_shoulderSurfOffsetV_current: 0,
+  cameraAzimuthOffsetDeg: 0, cameraAngleOffsetDeg: 0,
+});
+mode.distanceTiles = 2.6; mode.targetYOffsetTiles = .62; mode.angleFromGroundDeg = 9;
+context.window.HobunjiShoulderCameraCharacterFraming.minimumCollisionSetback = () => .8;
+context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 1.5 }];
+vm.runInContext('_seatedOcclusionDistance = null; _seatedOcclusionUpdatedAt = 0;', context);
+context.updateCamera();
+assert.ok(context.debug().shoulderOffsetFactor > 0 && context.debug().shoulderOffsetFactor < 1,
+  'a partly retracted collision boom smoothly reduces, rather than snaps away, the horizontal offset');
+assert.ok(camera.target.x > 0 && camera.target.x < .3,
+  'the real render camera uses the partially recentered aim pivot');
+context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .05 }];
+context.updateCamera();
+assert.ok(context.debug().bodyLimited && context.debug().shoulderOffsetFactor === 0,
+  'a sufficiently close wall triggers the body cap and fully recenters the offset');
+assert.ok(Math.abs(camera.target.x) < 1e-8 && Math.abs(camera.position.x) < 1e-8,
+  'recentered aim and camera position remain aligned behind the player');
+assert.ok(Math.abs(camera.position.z - .8) < 1e-8, 'the earlier cap holds the camera away from the avatar');
+context._cameraOcclusionRaycaster.intersectObjects = () => [];
+for (let step = 0; step < 12; step++) { corridorClock += 100; context.updateCamera(); }
+assert.ok(context.debug().shoulderOffsetFactor === 1 && Math.abs(camera.target.x - .3) < 1e-8,
+  'clear space restores the full authored shoulder offset smoothly');
+context.cutscenePreviewActive = true;
+context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .05 }];
+context.updateCamera();
+assert.ok(Math.abs(camera.target.x - .3) < 1e-8 && context.debug() === null,
+  'an authored preview retains its normal offset and is exempt from gameplay recentering');
+console.log('Shoulder camera ground slide: terrain, radial zoom, species-scaled cap, offset taper/recovery, and scripted-camera isolation passed.');

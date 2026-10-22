@@ -1396,6 +1396,7 @@
       const wall = boom.directHitDistance == null ? 'none' : boom.directHitDistance.toFixed(3); // Formats the nearest wall separately from terrain shortening.
       lines.push('');
       lines.push(`Shoulder camera boom: ideal=${boom.idealDistance.toFixed(3)} actual=${boom.solvedDistance.toFixed(3)} wallHit=${wall} corridorReframe=${boom.corridorReframe ? 'yes' : 'no'} groundSlide=${boom.groundLimited ? 'yes' : 'no'} pitch=${boom.requestedPitchDeg.toFixed(2)}deg solvedPitch=${boom.solvedPitchDeg.toFixed(2)}deg clearance=${boom.floorClearance.toFixed(3)} targetY=${boom.targetY.toFixed(3)} floorY=${boom.floorY.toFixed(3)}`);
+      lines.push(`Camera collision framing: minSetback=${Number(boom.minimumSetbackTiles || 0).toFixed(3)} offsetFadeStart=${Number(boom.offsetFadeStartTiles || 0).toFixed(3)} horizontalOffsetKept=${(Number(boom.shoulderOffsetFactor ?? 1) * 100).toFixed(1)}% appliedOffset=${Number(boom.appliedShoulderOffsetTiles || 0).toFixed(3)} bodyLimit=${boom.bodyLimited ? 'yes' : 'no'}`);
       if (boom.radialCamera) lines.push(`Indoor camera radial zoom: radius=${Number(boom.radialCamera.distance || 0).toFixed(3)} nearestWall=${boom.radialCamera.hitDistance == null ? 'none' : boom.radialCamera.hitDistance.toFixed(3)} spokes=${boom.radialCamera.rays} (independent of turning)`);
       lines.push(`Latest camera change: ${boom.latestChange}`);
       const framing = window.HobunjiShoulderCameraCharacterFraming?.snapshot?.(); // Reads the event-time framing report so mobile users can verify head-centered targeting.
