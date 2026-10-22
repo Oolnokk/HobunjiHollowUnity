@@ -93,6 +93,33 @@ async function main() {
   region = 'headwear';
   assert.equal(api.targetKey('kenkari', 'male'), 'from::kenkari_female::headwear::kenkari_male');
 
+  // Switching fit regions should restore each region's last selected garment.
+  const garmentPicker = {options: [], _value: 'tunic', selectedIndex: 0,
+    get value() {return this._value},
+    set value(value) {this._value = this.options.some(option => option.value === value) ? value : ''},
+    set innerHTML(value) {this.options = [];this._value = ''},
+    appendChild(option) {this.options.push(option);if(this.options.length === 1)this._value = option.value}
+  };
+  const selectionE = {
+    garment: garmentPicker, sourceSpecies: {value: 'mao-ao'}, sourceGender: {value: 'male'},
+    exportHeadwearFront: {}, exportHeadwearBack: {}, bodyPng: {}, clothPng: {}, sourceLayerStatus: {},
+    showBody: {parentElement: {lastChild: {textContent: ''}}}
+  };
+  const selectionState = {settings: {region: 'body', garment: 'tunic', headGarment: 'hood'}};
+  let selectionRegion = 'headwear';
+  const selectFn = new Function('A','R','E','document','fitRegion','BODY_SLOTS','HEAD_SLOTS','sourceHasGarmentArt',
+    sourceBetween('function rebuildGarmentSelector()', 'function bodyLayers(') +
+    '\nreturn rebuildGarmentSelector;')(
+    selectionState, R, selectionE, {createElement: () => ({value: '', textContent: ''})},
+    () => selectionRegion, new Set(['torso']), new Set(['hat', 'hood']), () => true
+  );
+  selectFn();
+  assert.equal(garmentPicker.value, 'hood', 'Headwear selection restores the prior headwear choice');
+  selectionRegion = 'body';
+  selectionState.settings.region = 'headwear';
+  selectFn();
+  assert.equal(garmentPicker.value, 'tunic', 'Body selection restores the prior clothing choice');
+
   // A patch on one material must not suppress the garment's other materials in the preview.
   const baseLayer = {path: ['parts', 'torso', 'layers', 'base'], canvas: makeCanvas()};
   const trimLayer = {path: ['parts', 'torso', 'layers', 'trim'], canvas: makeCanvas()};
