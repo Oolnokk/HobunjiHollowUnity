@@ -7769,7 +7769,8 @@
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.backupPlayerEquipped = state.backupPlayerEquipped !== false;
-      const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
+      const mode = randomNpcAutoPickPattern(); // Backup preview is still the leading NPC's accompaniment; player note inputs retain their own chosen pattern.
+      state.rootPadEnabled = true; // Keep the NPC's bar-root accompaniment active when its hidden frame is replaced by this visible one.
       startSong(state.selectedSong,{demoMode:mode,backupAccompaniment:true});
       document.body.classList.add('backup-accompaniment');
       const menu = this.gameplayMenuState();
