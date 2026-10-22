@@ -11,8 +11,8 @@
   let deps = null; // Existing game seating and actor adapters, injected by game.js.
   const point = { x: 0, y: 0, z: 0 }; // Non-Three fallback used by data-only editor/tests.
   function areaId(area) { return area === 'map_hobunji_town' || area === 'hobunji_main_town' ? 'town' : area; }
-  function init(value) { deps = value; collisionAreas.clear(); }
-  function clearArea(area) { for(const entry of entries(area).values())window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`); areas.delete(areaId(area)); collisionAreas.delete(areaId(area)); focusStamp=null; }
+  function init(value) { deps = value; collisionAreas.clear(); surfaceProbe.valid=false; }
+  function clearArea(area) { surfaceProbe.valid=false; for(const entry of entries(area).values())window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`); areas.delete(areaId(area)); collisionAreas.delete(areaId(area)); focusStamp=null; }
   function registerPlacement(area, record, root, def = {}) {
     area = areaId(area);
     let entries = areas.get(area); // One registry per map, so identical table ids never cross interiors.
@@ -23,9 +23,11 @@
     entries.set(id, entry);
     collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
     focusStamp = null; // Placement changes invalidate any cached interaction target.
+    surfaceProbe.valid=false; // New/replaced furniture must be visible to camera proximity immediately.
     entry.height = def.sit ? 1 : .8;
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
+      surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
       const bounds = new window.THREE.Box3().setFromObject(root); // One asset-readiness measurement, never scene traversal during interaction queries.
       if (!bounds.isEmpty()) entry.height=(bounds.max.y-bounds.min.y)/Math.max(.001,Math.abs(root.scale?.y||1));
       if(record.walkableElevation)window.HobunjiWalkableElevation?.registerObject?.(root,{id:`placed-furniture:${area}:${id}`,kind:'placed-furniture',area,sourceId:id,sourceKey:record.key}); // Reuses the inn-stage/porch support registry for both player and NPC elevation.
@@ -339,10 +341,53 @@
     return focused;
   }
 
+  const SURFACE_PROBE_REFRESH_MS = 100; // Moving/async furniture is rechecked at most ten times per second while the player stays in one tile.
+  const surfaceProbe = { valid:false, area:null, col:null, row:null, expiresAt:0, scans:0, cacheHits:0, candidates:0 }; // One reusable camera query cache and mobile performance counters.
+  let surfacePoint = null, surfaceNormal = null; // Reused world-space probe vectors; furniture transforms remain live without scene traversal.
+  const surfaceView = { active:false, furnitureId:null, surfaceId:null, height:null }; // Latest copyable camera probe, also returned without frame allocations.
+  function nearbySurface(area, x, z) {
+    if (!window.THREE?.Vector3 || !Number.isFinite(x) || !Number.isFinite(z)) {
+      surfaceProbe.valid=false; surfaceView.active=false; surfaceView.furnitureId=null; surfaceView.surfaceId=null; surfaceView.height=null;
+      return surfaceView;
+    }
+    const col=Math.floor(x), row=Math.floor(z), key=areaId(area); // Tile-only proximity makes sub-tile movement and camera rotation free cache hits.
+    const now=typeof performance!=='undefined' ? performance.now() : Date.now(); // Monotonic browser clock bounds stale moved-furniture results.
+    if (surfaceProbe.valid && surfaceProbe.area===key && surfaceProbe.col===col && surfaceProbe.row===row && now<surfaceProbe.expiresAt) {
+      surfaceProbe.cacheHits++; return surfaceView;
+    }
+    surfaceProbe.valid=true; surfaceProbe.area=key; surfaceProbe.col=col; surfaceProbe.row=row; surfaceProbe.expiresAt=now+SURFACE_PROBE_REFRESH_MS; surfaceProbe.scans++;
+    surfaceView.active=false; surfaceView.furnitureId=null; surfaceView.surfaceId=null; surfaceView.height=null;
+    surfacePoint ||= new window.THREE.Vector3(); surfaceNormal ||= new window.THREE.Vector3();
+    for (const entry of entries(area).values()) {
+      if (!entry.root?.parent || entry.root.visible===false) continue;
+      surfaceProbe.candidates++; // Counts furniture tested only on cache misses, never on normal camera-frame hits.
+      const f=placementFrame(entry); // Broad phase uses the existing placed furniture footprint and world transform.
+      const dxTile=f.x-(col+.5), dzTile=f.z-(row+.5); // The character tile and its eight neighbors form a world-aligned three-by-three square.
+      const axes=Math.abs(f.cos)+Math.abs(f.sin); // Projection of that square onto either rotated furniture axis.
+      const extentX=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, extentZ=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d; // Live rotated footprint bounds include every occupied tile of a long table.
+      if (Math.abs(dxTile)>=1.5+extentX || Math.abs(dzTile)>=1.5+extentZ
+        || Math.abs(dxTile*f.cos-dzTile*f.sin)>=f.w+1.5*axes
+        || Math.abs(dxTile*f.sin+dzTile*f.cos)>=f.d+1.5*axes) continue; // Separating-axis test rejects footprints outside the same/neighboring tiles, including corner gaps.
+      const data=window.AuthoredFurniture?.peek?.(entry.record.key); // Cached authored data; camera probes never start loads.
+      for (const surface of data?.recognizedSurfaces || []) {
+        if (surface.role==='wallAttachment' || !surface.localCentroid || !surface.localNormal) continue;
+        const mesh=entry.root.userData?.meshById?.get(surface.partId); // Same part-space authority used by surface item placement.
+        if (!mesh || mesh.visible===false) continue;
+        mesh.updateWorldMatrix?.(true,false);
+        surfaceNormal.fromArray(surface.localNormal).transformDirection(mesh.matrixWorld);
+        if (surfaceNormal.y<.7) continue;
+        surfacePoint.fromArray(surface.localCentroid).applyMatrix4(mesh.matrixWorld);
+        surfaceView.active=true; surfaceView.furnitureId=entry.id; surfaceView.surfaceId=surface.id; surfaceView.height=surfacePoint.y;
+        return surfaceView;
+      }
+    }
+    return surfaceView;
+  }
+
   function snapshot(area = deps?.getArea?.()) {
-    return { latestChange: 'Outdoor chairs/collision and late grass clearing repaired; six-tile NPC social aim ignores furniture/scenery blockers.',
-      collision:{...collisionStats},
+    return { latestChange: 'Camera lift depends only on an authored upward surface occupying the player tile or any of eight neighboring tiles; looking direction and camera pitch do not affect it.',
+      surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
   }
-  window.FurnitureTableSystem = { init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();
