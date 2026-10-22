@@ -90,6 +90,25 @@ function warpGarment(source,targetNorm,outWidth,outHeight){
   return output;
 }
 
+async function buildSourceReferenceCanvas(species,gender,garmentId,targetBody){
+  if(bodyLayers(species,gender).length)return buildBodyCanvas(species,gender);
+  const garment=R.garments.find(record=>record.id===garmentId);
+  const firstUrl=HEAD_SLOTS.has(garment?.slot)
+    ?headwearLayerRecords(garment,species,gender)[0]?.path
+    :collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`])[0]?.url;
+  if(!firstUrl){
+    log(`No ${species} ${gender} source body or garment raster; retaining target dimensions as an empty fitting reference.`);
+    const fallback=document.createElement('canvas');fallback.width=targetBody.width;fallback.height=targetBody.height;
+    fallback._paths=[];return fallback;
+  }
+  const image=await loadImage(assetUrl(firstUrl)); // The garment's native source dimensions replace missing species-body dimensions.
+  const fallback=document.createElement('canvas');
+  fallback.width=image.naturalWidth||image.width;fallback.height=image.naturalHeight||image.height;
+  fallback._paths=[firstUrl];
+  log(`Using ${species} ${gender} garment raster dimensions because that species has no body reference sprites.`);
+  return fallback;
+} // NPC-only or unimplemented body rigs can still supply valid starting clothing artwork.
+
 async function refreshAssets(){
   const generation=++R.assetGeneration; // The latest selection alone may install downloaded images.
   const species=E.species.value,gender=E.gender.value,garmentId=E.garment.value,region=fitRegion();
@@ -102,7 +121,7 @@ async function refreshAssets(){
       E.clothPng.textContent=region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG';
     }
     const body=await buildBodyCanvas(species,gender);
-    const sourceBody=await buildBodyCanvas(sourceSpecies,sourceGender); // Legacy field now holds the selected source character's native body raster.
+    const sourceBody=await buildSourceReferenceCanvas(sourceSpecies,sourceGender,garmentId,body); // Body art is optional for source-only NPC species.
     const headReference=region==='headwear'?await buildHeadReferenceCanvas(species,gender,body.width,body.height):null;
     const cloth=garmentId?await buildGarmentCanvas(garmentId,sourceSpecies,sourceGender,sourceBody.width,sourceBody.height):null;
     const authored=garmentId
