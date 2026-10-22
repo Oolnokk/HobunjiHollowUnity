@@ -140,7 +140,7 @@ function render(scheduleRig=true){
   }
 
   if(E.showMeshes.checked){
-    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed Mao-ao source.
+    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed normalized starting-species source.
     drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
     if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
   }
@@ -151,7 +151,7 @@ function render(scheduleRig=true){
       :mode==='body'
         ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
         :mode==='fit'
-          ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
+          ?`Species Fit • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
           :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`);
 
   refreshHelp();refreshDebug();if(scheduleRig!==false)scheduleThreePreview();
