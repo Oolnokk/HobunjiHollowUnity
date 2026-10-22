@@ -82,6 +82,24 @@ function assetReferencedOutsideVariant(path,garmentId,targetVariantKey){
   return false; // Shared texture URLs must not overwrite an unrelated species or clothing item.
 }
 
+function assetReferencedByOtherTargetLayer(assetPath,variant,layerPath){
+  // Every reference to the same PNG must belong to the layer being fitted.
+  // image and behindImage on that SAME layer may intentionally share an identical PNG.
+  const references=[];
+  const visit=(node,path=[])=>{
+    if(!node||typeof node!=='object')return;
+    if(archiveAssetPath(node.image?.url)===assetPath)references.push(path);
+    if(archiveAssetPath(node.behindImage?.url)===assetPath)references.push(path);
+    for(const [key,value] of Object.entries(node)){
+      if(key==='image'||key==='behindImage')continue;
+      if(value&&typeof value==='object')visit(value,[...path,key]);
+    }
+  };
+  visit(variant);
+  const ownerPath=layerPath.at(-1)==='behindImage'?layerPath.slice(0,-1):layerPath;
+  return references.some(path=>JSON.stringify(path)!==JSON.stringify(ownerPath));
+} // Avoid clobbering unexported or differently authored layers within the target variant.
+
 function buildFittedLayerArchivePlan(layers,selection){
   const garment=garmentRecord(),cfg=garment?.cfg;
   if(!cfg||!garment.configPath)throw new Error('This garment has no repository cosmetic config path for a ready-to-install export.');
@@ -102,7 +120,11 @@ function buildFittedLayerArchivePlan(layers,selection){
     const behind=layer.path.at(-1)==='behindImage';
     const targetUrl=behind?originalTarget?.url:originalTarget?.image?.url;
     const existing=archiveAssetPath(targetUrl);
-    const shared=existing&&assetReferencedOutsideVariant(existing,garment.id,targetKey);
+    const shared=existing&&(
+      assetReferencedOutsideVariant(existing,garment.id,targetKey)||
+      assetReferencedByOtherTargetLayer(existing,cfg.speciesVariants?.[targetKey],layer.path)||
+      assetReferencedByOtherTargetLayer(existing,{parts:cfg.parts||{}},[])
+    );
     let outputName=existing&&!shared?existing:fittedFallbackAssetPath(layer,selection);
     if(used.has(outputName.toLowerCase())){
       const suffix=safeName(layer.path.join('_'));
@@ -121,6 +143,15 @@ function buildFittedLayerArchivePlan(layers,selection){
         installed.leaf.image.url='./'+outputName;
       }
       modified=true;
+    }
+    // If front and rear originally use the same image, updating a front file must
+    // update its matching rear alias even when the target layer ALREADY exists.
+    // A distinct authored behindImage is handled by its own exported layer instead.
+    if(!behind&&changedUrl&&installed.leaf.behindImage?.url===targetUrl){
+      const explicitRear=layers.some(other=>other.path.length===layer.path.length+1&&
+        other.path.at(-1)==='behindImage'&&
+        JSON.stringify(other.path.slice(0,-1))===JSON.stringify(layer.path));
+      if(!explicitRear)installed.leaf.behindImage.url='./'+outputName;
     }
     if(installed.created&&!behind&&installed.leaf.behindImage?.url===layer.url){
       installed.leaf.behindImage.url='./'+outputName;
