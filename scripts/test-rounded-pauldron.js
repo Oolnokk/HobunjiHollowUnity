@@ -251,3 +251,33 @@ assert.equal(ps.__test.craft(hybrid.id,'tinBronze','unrecognized'),false,'invali
 assert.equal(ps.__test.craft(hybrid.id,'tinBronze','light'),false,'insufficient wool is rejected without charging');
 assert.equal(prizeGear.clothingItems.length,2);
 
+
+// Real quality-aware smithing consumes one canonical item stack and its star-quality buckets.
+const trackedWoolInventory={gold:200,bar_tinBronze:12,lightWool:3,puktukWool:2}; // Shared with CookingSystem's quality consumer in this smith-only regression.
+const trackedGear={clothingItems:[],clothing:{}}; // Receives new helms only after atomic wool + alloy checks.
+const qualityConsumes=[]; // Confirms both wool variants use exactly the established lowest-quality consumption API.
+windowStub.CookingSystem={consumeQualityByPolicy(key,amount,policy) {
+  qualityConsumes.push({key,amount,policy});
+  if (trackedWoolInventory[key] < amount) return null;
+  trackedWoolInventory[key]-=amount;
+  return {stars:2,groups:[{stars:2,amount}]};
+}};
+ps.init({getGearInventory:()=>trackedGear,getPackClothing:()=>[],saveGearInventory:()=>{},saveMemberWorldData:()=>{},
+  getPlayerData:()=>({appearance:{speciesId:'mao-ao',gender:'male'}}),inventory:trackedWoolInventory,
+  VERDIGRIS_METAL_KEYS:['tinBronze'],metalBarItemKey:key=>'bar_'+key,
+  clampInventoryStack:()=>{},showToast:()=>{}});
+ps.learnBlueprints([{cosmeticId:hybrid.id,slot:'hat'}]);
+assert(ps.__test.craft(hybrid.id,'tinBronze','light'),'quality-tracked smithing succeeds');
+assert.equal(trackedWoolInventory.lightWool,1);
+assert.deepEqual(qualityConsumes[0],{key:'lightWool',amount:2,policy:'lowest'},'quality-aware smithy uses the same low-first policy as the loom');
+assert(ps.__test.craft(hybrid.id,'tinBronze','heavy'),'tracked heavy wool uses its own quality bucket');
+assert.deepEqual(qualityConsumes[1],{key:'puktukWool',amount:2,policy:'lowest'});
+assert.equal(trackedWoolInventory.puktukWool,0);
+windowStub.CookingSystem.consumeQualityByPolicy=()=>null; // Simulates an unreconciled/ineligible quality bucket despite an apparent wool count.
+const barsBeforeWoolFailure=trackedWoolInventory.bar_tinBronze;
+const goldBeforeWoolFailure=trackedWoolInventory.gold;
+assert.equal(ps.__test.craft(hybrid.id,'tinBronze','light'),false,'failed quality consumer cannot produce a free helmet');
+assert.equal(trackedWoolInventory.bar_tinBronze,barsBeforeWoolFailure,'failed wool debit charges no metal bars');
+assert.equal(trackedWoolInventory.gold,goldBeforeWoolFailure,'failed wool debit charges no labor');
+assert.equal(trackedGear.clothingItems.length,2,'failed debit adds no item');
+delete windowStub.CookingSystem;

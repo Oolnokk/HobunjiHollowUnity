@@ -562,6 +562,18 @@
     return Math.max(0, Number(deps?.inventory?.[key]) || 0);
   }
 
+  function consumeSmithyWool(wool, amount) {
+    if (!wool) return true;
+    if (inventoryCount(wool.key) < amount) return false;
+    const consumeQuality = window.CookingSystem?.consumeQualityByPolicy; // Smithy and loom must debit the same quality-star inventory buckets.
+    if (typeof consumeQuality === 'function') {
+      return !!consumeQuality.call(window.CookingSystem, wool.key, amount, 'lowest'); // Protects the highest-quality wool, matching other automatic crafting.
+    }
+    deps.inventory[wool.key] = inventoryCount(wool.key) - amount; // Bootstrap fallback when CookingSystem has not loaded.
+    deps.clampInventoryStack?.(wool.key);
+    return true;
+  }
+
   function makeCraftedItem(blueprintId, metalKey, weaveMaterial = 'light') {
     const blueprint = blueprintForId(blueprintId);
     if (!blueprint) return null;
@@ -640,10 +652,13 @@
     if (!gear) return false;
     if (!gear.clothing || typeof gear.clothing !== 'object') gear.clothing = {};
     if (!Array.isArray(gear.clothingItems)) gear.clothingItems = [];
+    if (wool && !consumeSmithyWool(wool, blueprint.woolCost)) {
+      deps.showToast?.(`Could not consume ${blueprint.woolCost} ${wool.label}.`, false);
+      return false; // Do not charge metal or labor when tracked wool consumption fails.
+    }
     deps.inventory[barKey] = inventoryCount(barKey) - barCost;
     deps.clampInventoryStack?.(barKey);
     deps.inventory.gold = inventoryCount('gold') - laborGold;
-    if (wool) { deps.inventory[wool.key] = inventoryCount(wool.key) - blueprint.woolCost; deps.clampInventoryStack?.(wool.key); }
     const item = makeCraftedItem(blueprintId, metalKey, weaveMaterial);
     gear.clothingItems.push(item);
     gear.clothing[blueprint.slot] = item;
@@ -784,7 +799,7 @@
   function treasureEligibleMetalKey() {
     const metalKeys = (deps?.VERDIGRIS_METAL_KEYS || Object.keys(DENSITY_G_CM3)).filter(key => DENSITY_G_CM3[key]);
     const townValue = window.TownMine?.getTownValue?.(); // Uses the same town-value eligibility gate as wilderness treasure and fishing chests.
-    const eligible = window.TownMine?.filterMetalKeysForTownValue?.(metalKeys, townValue) || metalKeys;
+    const eligible = window.TownMine?.filterMetalKeysForTownValue?.(metalKeys, townValue) || metalKeys.slice(0, 1); // Without town progression loaded, never award a high-tier alloy that treasure chests would prohibit.
     const keys = eligible.filter(key => DENSITY_G_CM3[key]);
     if (!keys.length) return 'nativeCopper';
     const index = Math.min(keys.length - 1, Math.floor(Math.pow(Math.random(), 2.2) * keys.length)); // Same low-tier-biased distribution as chest metal bars.
