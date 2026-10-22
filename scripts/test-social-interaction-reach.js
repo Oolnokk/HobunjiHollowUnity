@@ -39,4 +39,45 @@ assert(tables.objectAt('town',0,3).onAction('obj_sit').ok);assert.equal(pressed,
 const nearer=actor('nearer-on-ray',0,4);walkers.push(nearer);target.root.position.x=0;frame++;
 assert.equal(tables.focusedTarget('town').walker,nearer,'overlapping NPC silhouettes use the first actor along the ray');
 assert.equal(tables.snapshot().socialReach,6);assert.equal(tables.snapshot().socialIgnoresColliders,true);
-console.log('Social focus: production directional ray, six-tile reach, collider-independent NPC aim, map/range exclusions and chair prompt/press passed.');
+// A raised camera must target real serving objects instead of the broad parent-table blocker.
+// Load the shipped eight attachments so this also detects accidentally changing their authoring.
+const servingData=JSON.parse(fs.readFileSync('docs/config/furniture-authored/servingTable.json','utf8')); // Actual Gorkunash placements define the fixture.
+const servingRoot=root(0,1.5); // A four-tile table with its physical children at the authored surface anchors.
+servingRoot.userData={authoredItemPlacements:{children:servingData.itemPlacements.map(placement=>({
+  userData:{surfacePlacement:placement},
+  getWorldPosition(out){out.x=placement.position.u;out.y=.545;out.z=1.5+placement.position.v;return out;}
+}))}};
+window.THREE={Vector3:Vector}; // Shared furniture focus uses the same world-vector shape as the production ray selector.
+tables.registerPlacement('raised-view-test',{id:'gorkunash_feast',key:'servingTable',col:-2,row:1,serviceId:'gorkunash-feast'},servingRoot,{fw:4,fd:1});
+tables.registerService('gorkunash-feast',{enabled:()=>true,buttons:()=>[{action:'obj_inspect_meal',allowed:true}],onAction:()=>({ok:true})});
+for(const placement of servingData.itemPlacements) {
+  ray.origin=new Vector(placement.position.u,2.35,-3); // Mirrors the actually elevated camera position in world space.
+  ray.direction=new Vector(0,-1.7/(4.5+placement.position.v),1); // Reticle intersects this authored object above its tabletop.
+  frame++;
+  const focus=tables.focusedTarget('raised-view-test'); // The same result drives both prompts and interaction input.
+  assert.equal(focus?.placement?.id,placement.id,'lifted camera must reach '+placement.id+' rather than the table blocker');
+  assert.equal(tables.objectAt('raised-view-test',0,1)?.getButtons?.()[0]?.action,'obj_inspect_meal',
+    'authored service action must be reachable for '+placement.id);
+}
+ray.origin=new Vector(0,.1,-3);ray.direction=new Vector(0,0,1);frame++;
+assert.notEqual(tables.focusedTarget('raised-view-test')?.kind,'service','a ray below the tabletop does not acquire a pot');
+const barrier=root(0,-1); // An unrelated tall solid between the camera and buffet should still occlude the pots.
+tables.registerPlacement('raised-view-test',{id:'unrelated-barrier',key:'block',col:0,row:-1},barrier,{fw:1,fd:1}).height=3;
+ray.origin=new Vector(0,2.35,-3);ray.direction=new Vector(0,-.38,1);frame++;
+assert.equal(tables.focusedTarget('raised-view-test')?.entry?.id,'unrelated-barrier','foreign geometry still blocks surface interactions');
+
+// Pin the camera-ray contract: interaction rays originate at the lifted camera,
+// not at an independently stored or hard-coded original character eye height.
+const gameSource=fs.readFileSync('docs/game.js','utf8'); // Verifies the runtime camera-to-interaction dependency, not just a fixture.
+const interactionStart=gameSource.indexOf('function currentPlayerInteractionRay()'); // Limits the assertion to the source ray authority.
+const interactionEnd=gameSource.indexOf('function playerPerspectiveOriginWorld()',interactionStart);
+assert(interactionStart>=0 && interactionEnd>interactionStart,'currentPlayerInteractionRay must exist');
+assert.match(gameSource.slice(interactionStart,interactionEnd),/setFromCamera\(ndc, camera\)/,
+  'world interaction ray must read the live rendered camera');
+const surfaceStart=gameSource.indexOf('const surfaceView = window.HobunjiShoulderCameraCharacterFraming');
+const cameraPositionAt=gameSource.indexOf('const cameraY =',surfaceStart);
+assert(surfaceStart>=0 && cameraPositionAt>surfaceStart,'camera surface framing must run before the camera position is resolved');
+assert.match(gameSource.slice(surfaceStart,cameraPositionAt),/lookY \+= surfaceView\.lift/,
+  'short-species surface lift must affect the actual camera and hence interaction-ray origin');
+
+console.log('Social focus: production directional ray, six-tile reach, collider-independent NPC aim, map/range exclusions, chair prompt/press and raised-camera buffet service hits passed.');
