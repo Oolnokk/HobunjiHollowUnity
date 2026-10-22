@@ -111,7 +111,7 @@ function rebuildSelectors(){
 }
 function sourceHasGarmentArt(garment,species,gender){
   if(HEAD_SLOTS.has(garment?.slot))return headwearLayerRecords(garment,species,gender).length>0;
-  return collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).length>0;
+  return collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).some(layer=>!['exposed','exposedSkin'].includes(String(layer.role||'')));
 } // Limits the garment picker to exact authored sprites for the chosen starting character.
 function rebuildGarmentSelector(){
   const region=fitRegion(),savedGarment=region==='body'?(A.settings?.garment||''):(A.settings?.headGarment||'');
@@ -233,7 +233,7 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       return canvas;
     }
     if(!variant)return null; // Missing authored target species/gender body art is normal.
-    const layers=collectPatchImageNodes(variant); // One leaf per authored PNG, not one per unique URL or flattened composite.
+    const layers=collectPatchImageNodes(variant).filter(layer=>!['exposed','exposedSkin'].includes(String(layer.role||''))); // Only wearable materials, never species skin/hair sprite overlays, go in the fitted ZIP.
     if(!layers.length)return null;
     const images=await Promise.all(layers.map(layer=>loadImage(assetUrl(layer.url))));
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
