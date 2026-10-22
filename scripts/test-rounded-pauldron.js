@@ -230,6 +230,8 @@ const helmLayers=prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers; /
 assert.deepEqual(Object.keys(helmLayers),['front_cap','front'],'cap and faceguard share the front plane, behind neither head nor each other incorrectly');
 assert.equal(helmLayers.front_cap.materialKind,'cloth');
 assert.equal(helmLayers.front.materialKind,'metal');
+assert.equal(helmLayers.front_cap.behindImage.url,helmLayers.front_cap.image.url,'cap retains exactly the same PNG in both views');
+assert.equal(helmLayers.front.behindImage.url,'./assets/cosmetics/clothes/hat/headband.png','the metal faceguard has the Tanged Circlet rear-band silhouette');
 assert(weaving.includes('metalItem: hybrid ? item : null'),'icon compositor uses exact plated/patinated faceguard state');
 assert(weaving.includes('isReweavableClothComponent(item)'),'loom can reweave the cloth cap without adding a smith blueprint to craftables');
 assert(weaving.includes('cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)'),'unavailable helm variants cannot leak Mao-ao art into icons/loom previews');
