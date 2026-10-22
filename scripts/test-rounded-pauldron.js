@@ -225,9 +225,11 @@ assert.equal(article.weaving,savedPattern);
 assert.equal(ps.visualOptions({blueprintId:hybrid.id,metalKey:'tinBronze',temperXp:300}).oxidationAmount,1,'Temper fully oxidizes the faceguard');
 assert.equal(ps.visualOptions({blueprintId:hybrid.id,metalKey:'tinBronze',temperXp:300,smithTreatment:{mode:'cosmetic',metalKey:'gold'}}).oxidationAmount,0,'plating suppresses the original patina');
 const prizeConfig=json('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json');
-assert.equal(prizeConfig.speciesVariants.mao_ao_male?.parts?.head?.layers?.back?.materialKind, undefined); // Legacy typo key must not shadow the official mao-ao variant.
-assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.back.materialKind,'cloth');
-assert.equal(prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers.front.materialKind,'metal');
+assert.equal(prizeConfig.speciesVariants.mao_ao_male?.parts?.head?.layers?.front_cap?.materialKind, undefined); // Legacy typo key must not shadow the official mao-ao variant.
+const helmLayers=prizeConfig.speciesVariants['mao-ao_male'].parts.head.layers; // Ordering supplies base → trim on the same head-front plane.
+assert.deepEqual(Object.keys(helmLayers),['front_cap','front'],'cap and faceguard share the front plane, behind neither head nor each other incorrectly');
+assert.equal(helmLayers.front_cap.materialKind,'cloth');
+assert.equal(helmLayers.front.materialKind,'metal');
 assert(weaving.includes('metalItem: hybrid ? item : null'),'icon compositor uses exact plated/patinated faceguard state');
 assert(weaving.includes('isReweavableClothComponent(item)'),'loom can reweave the cloth cap without adding a smith blueprint to craftables');
 assert(weaving.includes('cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)'),'unavailable helm variants cannot leak Mao-ao art into icons/loom previews');
