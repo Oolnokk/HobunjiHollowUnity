@@ -5,7 +5,7 @@
   ctx.globalAlpha=opacity;
   ctx.drawImage(rawCanvas,rect.x,rect.y,rect.w,rect.h);
   ctx.globalAlpha=1;
-  await applyRuntimeCloudMask(out);
+  if(fitRegion()!=='headwear')await applyRuntimeCloudMask(out); // Cloud opacity masks clip torso layers, never the skull or hats.
   return out;
 }
 function targetGarmentLayerXform(){
@@ -17,6 +17,17 @@ function targetGarmentLayerXform(){
   }
   return targetBodyLayerXform();
 } // In 3D use the actual garment's portrait xform rather than implicitly applying the torso preset to hats.
+function canonicalHeadReference(source){
+  if(!source||!R.body)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+  const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  const rect=portraitLayerRect(R.body.width,R.body.height,targetBodyLayerXform(),source.width,source.height);
+  ctx.drawImage(source,-rect.x*canvas.width/rect.w,-rect.y*canvas.height/rect.h,
+    source.width*canvas.width/rect.w,source.height*canvas.height/rect.h);
+  canvas._paths=[R.speciesCfg.get(E.species.value)?.[E.gender.value]?.headSprite||'head'];
+  canvas._canonical=true;
+  return canvas;
+} // Inverse-projects the game's tinted head + UR anatomy to the raw garment-coordinate fitting canvas.
 function flipCanvasX(source){
   const out=Object.assign(document.createElement('canvas'),{width:source.width,height:source.height});
   const ctx=out.getContext('2d',{alpha:true});
