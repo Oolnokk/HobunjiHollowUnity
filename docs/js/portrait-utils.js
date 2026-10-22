@@ -1217,6 +1217,7 @@ function _textMatchesAny(text, needles) {
 }
 
 function _getBehindLayerUrl(layer, group, gender) {
+  if (typeof layer?.behindUrl === 'string') return layer.behindUrl; // Explicit rear art wins over shared per-species replacement rules.
   const rules = _pngPlaneBehindViewConfig().layerReplacements || [];
   if (!layer || !Array.isArray(rules)) return layer?.url || null;
   const idText = [group?.id, group?.originalId].filter(Boolean).join(' ');
@@ -1860,6 +1861,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
           const paletteColorKey = (layerRole && paletteLayerMap) ? (paletteLayerMap[layerRole] || null) : null;
           layers.push({
             url: portraitRelPath(imgUrl),
+            ...(layer?.behindImage?.url ? { behindUrl: portraitRelPath(layer.behindImage.url) } : {}), // Keep rear-only artwork attached to its matching front layer and material role.
             ax:  xf.ax     ?? 0,
             ay:  xf.ay     ?? 0,
             sx:  xf.scaleX ?? 1,
