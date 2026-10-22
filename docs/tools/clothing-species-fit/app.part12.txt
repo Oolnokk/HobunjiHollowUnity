@@ -75,7 +75,7 @@ function clearMainWorkflowPatch(){
 }
 function behindPatchOutputInfo(){
   return{
-    ready:!!(R.body&&R.maoBody),
+    ready:!!(R.body&&R.sourceBody),
     targetSpecies:E.species.value,
     gender:E.gender.value,
     sourceSpecies:E.sourceSpecies.value,
@@ -85,8 +85,8 @@ function behindPatchOutputInfo(){
     garmentLabel:garmentRecord()?.label||'',
     outputWidth:R.body?.width||0,
     outputHeight:R.body?.height||0,
-    sourceWidth:R.maoBody?.width||0,
-    sourceHeight:R.maoBody?.height||0
+    sourceWidth:R.sourceBody?.width||0,
+    sourceHeight:R.sourceBody?.height||0
   };
 }
 window.ClothingSpeciesFitTool=Object.freeze({
