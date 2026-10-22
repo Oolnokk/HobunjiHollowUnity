@@ -2,7 +2,9 @@
   const p=new Promise((ok,bad)=>{
     const img=new Image();img.crossOrigin='anonymous';img.onload=()=>ok(img);img.onerror=()=>bad(new Error('Image failed: '+url));img.src=url;
   });
-  R.images.set(url,p);return p;
+  R.images.set(url,p);
+  p.catch(()=>{if(R.images.get(url)===p)R.images.delete(url)}); // A newly added sprite can succeed on a later refresh rather than reusing an old rejected image.
+  return p;
 }
 function loadLocalImage(file){
   return new Promise((resolve,reject)=>{
@@ -76,13 +78,14 @@ async function loadRepositoryData(){
     for(const x of cosmeticResults){
       if(!x||x.error)continue;
       const cfg=x.cfg,variants=cfg?.speciesVariants||{};
-      if(BODY_SLOTS.has(cfg?.slot)&&(variants['mao-ao_male']||variants['mao-ao_female'])){
+      if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
+         (variants['mao-ao_male']||variants['mao-ao_female']||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
         R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg});
       }
     }
     R.garments.sort((a,b)=>a.label.localeCompare(b.label));
     rebuildSelectors();await refreshAssets();
-    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} Mao-ao body garments.`);
+    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} Mao-ao body/headwear items.`);
     log('Repository load complete.');
   }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
 }
@@ -95,13 +98,22 @@ function rebuildSelectors(){
   }
   if([...E.species.options].some(o=>o.value===wantedSpecies))E.species.value=wantedSpecies;
 
-  const wantedGarment=A.settings?.garment||'';
+  rebuildGarmentSelector();
+}
+function rebuildGarmentSelector(){
+  const region=fitRegion(),wantedGarment=region==='body'?(A.settings?.garment||''):(A.settings?.headGarment||'');
   E.garment.innerHTML='';
   for(const garment of R.garments){
+    if(!(region==='body'?BODY_SLOTS:HEAD_SLOTS).has(garment.slot))continue;
     const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
   }
   if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
   if(!E.garment.value&&E.garment.options.length)E.garment.selectedIndex=0;
+  E.exportHeadwearFront.hidden=region!=='headwear';
+  E.exportHeadwearBack.hidden=region!=='headwear';
+  E.bodyPng.textContent=region==='headwear'?'Head reference PNG':'Body PNG';
+  E.clothPng.textContent=region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG';
+  E.showBody.parentElement.lastChild.textContent=region==='headwear'?' head':' body';
 }
 function bodyLayers(species,gender){
   return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
@@ -131,12 +143,78 @@ function gatherImages(node,out=[],seen=new Set()){
   return out;
 }
 function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
+function headwearLayerRecords(garment,species,gender){
+  const cfg=garment?.cfg,variant=cfg?.speciesVariants?.[`${species}_${gender}`];
+  const parts=variant?.parts||(cfg?.onlyExactSpeciesVariant?null:cfg?.parts);
+  const layers=parts?.head?.layers||{};
+  return Object.entries(layers).filter(([,layer])=>layer?.image?.url&&
+    !['exposed','exposedSkin'].includes(String(layer.layerRole||''))).map(([name,layer])=>({
+      name,layer,path:layer.image.url,isBack:/^(back|rear|behind)/i.test(name),
+      behindPath:layer.behindImage?.url||null // A hat can use different back-view art without moving its front piece behind the skull.
+    })); // A hood's rear cloth is not interchangeable with front cloth or exposed-species ear pixels.
+}
+async function buildHeadReferenceCanvas(species,gender,width,height){
+  const cfg=R.speciesCfg.get(species)?.[gender],url=cfg?.headSprite;
+  const canvas=Object.assign(document.createElement('canvas'),{width,height});
+  if(!url){
+    log(`No head sprite configured for ${species} ${gender}; using a blank reference until a sprite is authored.`);
+    canvas._paths=[];return canvas;
+  }
+  let image;
+  try{image=await loadImage(assetUrl(url))}catch(error){
+    log(`Head reference not available for ${species} ${gender}: ${error.message}`);
+    canvas._paths=[url];return canvas;
+  }
+  const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  const sourceHead=window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49};
+  const bodyXform=normalizedLayerXform(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers?.find(layer=>layer.id==='torso')?.xform||{ax:-.2,ay:0,sx:2.55,sy:2.55});
+  const headRect=portraitLayerRect(image.naturalWidth,image.naturalHeight,sourceHead);
+  const bodyRect=portraitLayerRect(width,height,bodyXform);
+  const scaleX=width/bodyRect.w,scaleY=height/bodyRect.h;
+  ctx.drawImage(image,(headRect.x-bodyRect.x)*scaleX,(headRect.y-bodyRect.y)*scaleY,headRect.w*scaleX,headRect.h*scaleY);
+  canvas._paths=[url];return canvas; // Inverse of canonical portrait draw positions, so head and headwear share the raw clothing-stage coordinate space.
+}
 async function buildVariantGarmentCanvas(id,species,gender,width,height){
-  const key=`${id}::${species}::${gender}::${width}x${height}`;
+  const key=`${id}::${species}::${gender}::${width}x${height}::${fitRegion()}`;
   if(R.garmentCanvases.has(key))return R.garmentCanvases.get(key);
   const p=(async()=>{
     const garment=R.garments.find(x=>x.id===id),variant=garment?.cfg?.speciesVariants?.[`${species}_${gender}`];
-    if(!variant)return null; // Missing target-species art is normal; comparison overlay simply stays unavailable.
+    if(HEAD_SLOTS.has(garment?.slot)){
+      const records=headwearLayerRecords(garment,species,gender);
+      if(!records.length)return null;
+      const front=Object.assign(document.createElement('canvas'),{width,height});
+      const back=Object.assign(document.createElement('canvas'),{width,height});
+      const behindView=Object.assign(document.createElement('canvas'),{width,height});
+      let hasFront=false,hasBack=false,hasBehindOverride=false; // Avoid wasting headwear warps and exports on unused orientations.
+      for(const record of records){
+        try{
+          const image=await loadImage(assetUrl(record.path));
+          const target=record.isBack?back:front;
+          const ctx=target.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+          ctx.drawImage(image,0,0); // All authored headwear layers retain their source-pixel alignment.
+          if(record.isBack)hasBack=true;
+          else{
+            hasFront=true;
+            let rearImage=image;
+            if(record.behindPath&&record.behindPath!==record.path){
+              try{rearImage=await loadImage(assetUrl(record.behindPath))}
+              catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
+            }
+            const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
+            rearCtx.drawImage(rearImage,0,0); // Compose cap then metal band in the same author-specified layer order.
+            if(record.behindPath)hasBehindOverride=true;
+          }
+        }catch(error){log(`Missing ${garment.label} layer ${record.path}: ${error.message}`)}
+      }
+      const canvas=Object.assign(document.createElement('canvas'),{width,height});
+      const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+      x.drawImage(back,0,0);x.drawImage(front,0,0);
+      canvas._front=hasFront?front:null;canvas._back=hasBack?back:null;
+      canvas._behindView=hasBehindOverride?behindView:null; // Dedicated rear view is distinct from cloth behind the skull.
+      canvas._paths=records.flatMap(record=>[record.path,...(record.behindPath&&record.behindPath!==record.path?[record.behindPath]:[])]);
+      return canvas;
+    }
+    if(!variant)return null; // Missing authored target species/gender body art is normal.
     const layers=gatherImages(variant);
     if(!layers.length)return null;
     const images=await Promise.all(layers.map(x=>loadImage(x.url)));

@@ -32,6 +32,10 @@ async function updateThreePreview(){
 
     const avatar=await composeRuntimePortrait();
     if(buildId!==R.three.buildGeneration)return;
+    if(fitRegion()==='headwear'&&avatar.headOnlyFront&&!R.headReference?._canonical){
+      const reference=canonicalHeadReference(avatar.headOnlyFront);
+      if(reference){R.headReference=reference;render(false)}
+    }
     const THREE=window.THREE;
     disposeRuntimeRig();
 
@@ -103,24 +107,36 @@ function scheduleThreePreview(delay=90){
   clearTimeout(R.three.buildTimer);
   R.three.buildTimer=setTimeout(()=>updateThreePreview(),delay);
 }
-function render(){
+function render(scheduleRig=true){
   if(!R.body)return;
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
-  if(E.showBody.checked)C.drawImage(R.body,0,0);
-
-  if(mode==='transform'||mode==='fit'||mode==='preview'){
-    R.warped=currentWarp();
-    const showRoutedSource=routedPatchIsBody()?E.showBody.checked:E.showGarment.checked;
-    if(R.warped&&showRoutedSource){
-      C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
+  if(fitRegion()==='headwear'){
+    const warpedBack=mode!=='body'?headwearWarpForView('under'):null;
+    const warpedFront=mode!=='body'?headwearWarpForView('front'):null;
+    if(warpedBack&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedBack,0,0);C.globalAlpha=1}
+    if(E.showBody.checked&&R.headReference)C.drawImage(R.headReference,0,0);
+    if(warpedFront&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedFront,0,0);C.globalAlpha=1}
+    R.warped=null; // The split front/rear warps above are sufficient; do not bake a redundant third full headwear warp.
+    if(E.showAuthored.checked&&R.authoredTargetCloth){
+      C.save();C.globalAlpha=+E.authoredOpacity.value;
+      if(R.authoredTargetCloth._back)C.drawImage(R.authoredTargetCloth._back,0,0);
+      if(R.headReference&&E.showBody.checked)C.drawImage(R.headReference,0,0);
+      if(R.authoredTargetCloth._front)C.drawImage(R.authoredTargetCloth._front,0,0);
+      C.restore();
     }
-  }
-
-  if(E.showAuthored.checked&&R.authoredTargetCloth){
-    C.save();
-    C.globalAlpha=+E.authoredOpacity.value;
-    C.drawImage(R.authoredTargetCloth,0,0); // Existing hand-authored target-species art overlays the experimental warp for visual matching.
-    C.restore();
+  }else{
+    if(E.showBody.checked)C.drawImage(R.body,0,0);
+    if(mode==='transform'||mode==='fit'||mode==='preview'){
+      R.warped=currentWarp();
+      const showRoutedSource=routedPatchIsBody()?E.showBody.checked:E.showGarment.checked;
+      if(R.warped&&showRoutedSource){
+        C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
+      }
+    }
+    if(E.showAuthored.checked&&R.authoredTargetCloth){
+      C.save();C.globalAlpha=+E.authoredOpacity.value;
+      C.drawImage(R.authoredTargetCloth,0,0);C.restore();
+    }
   }
 
   if(E.showMeshes.checked){
@@ -129,23 +145,23 @@ function render(){
     if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
   }
 
-  E.label.textContent=
-    mode==='transform'
+  E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
+    (mode==='transform'
       ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
       :mode==='body'
         ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
         :mode==='fit'
           ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
-          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`;
+          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`);
 
-  refreshHelp();refreshDebug();scheduleThreePreview();
+  refreshHelp();refreshDebug();if(scheduleRig!==false)scheduleThreePreview();
 }
 function refreshHelp(){
-  E.help.textContent=
-    mode==='transform'
+  E.help.textContent=(fitRegion()==='headwear'?'Headwear: fit hats and hoods against the selected head; saved separately from body. ':'')+
+    (mode==='transform'
       ?'First fit overall size and position: independent Scale X / Scale Y plus translation. Drag the canvas to translate quickly.'
       :mode==='body'
         ?'Edit only the local target 6×6 corrections without clothing.'
         :mode==='fit'
           ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
-          :'Switch garments to verify the same saved global transform and local corrections are reused.';
+          :'Switch garments to verify the same saved global transform and local corrections are reused.');

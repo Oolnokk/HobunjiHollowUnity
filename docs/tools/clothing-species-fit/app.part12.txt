@@ -76,6 +76,7 @@ function behindPatchOutputInfo(){
     targetSpecies:E.species.value,
     gender:E.gender.value,
     garmentId:E.garment.value||'',
+    fitRegion:fitRegion(),
     garmentLabel:garmentRecord()?.label||'',
     outputWidth:R.body?.width||0,
     outputHeight:R.body?.height||0,
@@ -95,7 +96,19 @@ window.ClothingSpeciesFitTool=Object.freeze({
 }); // Narrow bridge for the behind.part1-5.txt patch author; repository loading and deformation math remain owned by the core editor.
 
 E.modeBtns.forEach(b=>b.onclick=()=>{mode=b.dataset.mode;saveState();render()});
-E.reload.onclick=loadRepositoryData;E.gender.onchange=refreshAssets;E.species.onchange=refreshAssets;E.garment.onchange=refreshAssets;
+E.reload.onclick=loadRepositoryData;
+E.fitRegion.onchange=()=>{
+  // Keep the last item selection for each region and never reuse body transforms for headwear.
+  R.three.portraitCache.clear();
+  R.assetGeneration++;
+  rebuildGarmentSelector();
+  document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
+  document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
+  const patchSection=document.getElementById('behindSpritePatchSection');
+  if(patchSection)patchSection.hidden=fitRegion()==='headwear';
+  refreshAssets();log('Fit region changed to '+fitRegion());
+};
+E.gender.onchange=refreshAssets;E.species.onchange=refreshAssets;E.garment.onchange=refreshAssets;
 E.showBody.onchange=render;E.showGarment.onchange=render;E.showMeshes.onchange=render;E.opacity.oninput=render;
 E.showAuthored.onchange=render;E.authoredOpacity.oninput=render;
 E.extTorsoFile.onchange=()=>importExtendedRole('torso',E.extTorsoFile.files?.[0]||null);
@@ -109,16 +122,35 @@ wireMaskPair(E.maskScaleX,E.maskScaleXNumber,'scaleX');wireMaskPair(E.maskScaleY
 E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
 E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
 E.redo.onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshot());restore(redoStack.pop());syncHistory()};
-E.bodyPng.onclick=()=>R.body&&downloadCanvas(bodyOut(),`${safeName(E.species.value)}_${E.gender.value}_body.png`);
+E.bodyPng.onclick=()=>R.body&&downloadCanvas(bodyOut(),`${safeName(E.species.value)}_${E.gender.value}_${fitRegion()==='headwear'?'head_reference':'body'}.png`);
 E.clothPng.onclick=()=>{const fit=captureFitState(),c=clothOut(fit);if(c){downloadCanvas(c,fittedClothingFilename());log(`Fitted clothing PNG baked ${fit.key} base ${JSON.stringify(fit.transform)} + ${fit.offsets.length} local offsets.`)}};
 E.overlayPng.onclick=()=>R.body&&downloadCanvas(overlayOut(),`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}_overlay.png`);
+function exportHeadwearView(view){
+  if(fitRegion()!=='headwear'||!R.body||!R.cloth){log('Select and load a hat or hood before exporting headwear layers.');return}
+  const canvas=headwearWarpForView(view,true);
+  if(!canvas){log(`No ${view} headwear layer exists for this item.`);return}
+  const stem=`${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}`;
+  downloadCanvas(canvas,`${stem}_${view}.png`);
+  log(`Exported ${view} fitted headwear for ${stem}.`);
+}
+E.exportHeadwearFront.onclick=()=>exportHeadwearView('front');
+E.exportHeadwearBack.onclick=()=>exportHeadwearView('back');
 E.exportJson.onclick=exportGrids;E.importJson.onclick=()=>E.file.click();
 E.file.onchange=async()=>{const f=E.file.files?.[0];if(!f)return;try{await importGrids(f)}catch(error){log('ERROR '+error.message)}E.file.value=''};
 E.importDiagnostics.onclick=importPastedDiagnostics;
 E.copyDebug.onclick=async()=>{try{await navigator.clipboard.writeText(E.debug.textContent);log('Diagnostics copied.')}catch(error){log('Clipboard unavailable: '+error.message)}};
 
-if(A.settings?.repo)E.repo.value=A.settings.repo;
+// Commit-pinned raw.githack previews must also load cosmetic JSON and game runtime from that commit,
+// not silently fall back to the main-branch repository value saved by an older visit.
+const pinnedPreviewSha=location.pathname.match(/^\/Oolnokk\/HobunjiHollowUnity\/([a-f0-9]{40})\/docs\/tools\/clothing-species-fit\/index\.html$/i)?.[1]||null;
+const savedRepo=String(A.settings?.repo||'');
+if(pinnedPreviewSha&&(!savedRepo||/^https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUnity\/(?:main|[a-f0-9]{40})\/docs\/?$/i.test(savedRepo))){
+  E.repo.value=`https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/${pinnedPreviewSha}/docs/`;
+}else if(savedRepo)E.repo.value=savedRepo;
 if(A.settings?.gender)E.gender.value=A.settings.gender;
+if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
+document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
+document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
 if(!['transform','body','fit','preview'].includes(mode))mode='transform';
 syncHistory();refreshHelp();updateExtendedStatus();ensureThreePreview();syncMaskTransformControls();loadRepositoryData();
 })();

@@ -102,6 +102,7 @@ async function runtimePortraitSet(){
     const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
     const make=()=>Object.assign(document.createElement('canvas'),{width:size,height:size});
     const front=make(),back=make(),head=make();
+    let headOnlyFront=null,headOnlyBack=null; // Head/UR anatomy overlay restores the skull in front of rear hood fabric during headwear preview.
 
     // This is the important V11 change: the preview transform is installed
     // while portrait-utils renders the WHOLE front/back portrait. Its canonical
@@ -119,7 +120,19 @@ async function runtimePortraitSet(){
     await window.NpcAvatarPreview.renderProfileToCanvas(
       head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
     );
-    return{npc,profile,front,back,head,size};
+    if(fitRegion()==='headwear'){
+      const isolatedFighter={...profile.fighter,
+        id:`__clothing_fit_head_only_${safeName(E.species.value)}_${E.gender.value}`,
+        headUrl:profile.fighter?.headUrl?`${profile.fighter.headUrl}#clothing-fit-head-only`:null,
+        bodyLayers:[],opacityMaskLayer:null,fixedPortraitSlots:null
+      }; // resolvePortraitFighter falls back by matching headUrl even when the ID is unique.
+         // A URL fragment keeps the actual sprite fetch identical but prevents accidental canonical full-body resolution.
+      const headProfile={...profile,fighter:isolatedFighter};
+      headOnlyFront=make();headOnlyBack=make();
+      await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyFront,headProfile,{seatId:'clothing-fit-head-front',forceEyesOpen:true});
+      await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyBack,headProfile,{seatId:'clothing-fit-head-back',portraitView:'behind',forceEyesOpen:true});
+    }
+    return{npc,profile,front,back,head,headOnlyFront,headOnlyBack,size};
   })();
   R.three.portraitCache.set(cacheKey,promise);
   try{return await promise}catch(error){R.three.portraitCache.delete(cacheKey);throw error}

@@ -1,6 +1,7 @@
 
   const targetKeyText=readLine('target grid');
-  const identity=targetKeyText.match(/^(.+)_(male|female)$/);
+  const region=readLine('fit region')==='headwear'||targetKeyText.startsWith('headwear::')?'headwear':'body';
+  const identity=targetKeyText.replace(/^headwear::/,'').match(/^(.+)_(male|female)$/);
   if(!identity)throw new Error('Could not read the target species and gender from “target grid”.');
   const [,species,gender]=identity;
   const garment=readLine('garment');
@@ -32,7 +33,7 @@
   let maskTransform=null;
   const maskLine=readLine('cloud mask preview');
   if(maskLine){try{maskTransform=JSON.parse(maskLine)}catch{}}
-  return{species,gender,garment,transform,points,maskTransform};
+  return{region,species,gender,garment,transform,points,maskTransform};
 }
 
 async function importPastedDiagnostics(){
@@ -40,11 +41,14 @@ async function importPastedDiagnostics(){
     const imported=parseDiagnostics(E.diagnosticsInput.value);
     if(!R.speciesCfg.size||!R.garments.length)throw new Error('Wait for repository data to finish loading, then import the pasted report.');
     if(![...E.species.options].some(option=>option.value===imported.species))throw new Error(`Target species “${imported.species}” is not available in the loaded repository.`);
-    if(![...E.garment.options].some(option=>option.value===imported.garment))throw new Error(`Garment “${imported.garment}” is not available in the loaded repository.`);
-
+    E.fitRegion.value=imported.region;
+    rebuildGarmentSelector();
+    if(![...E.garment.options].some(option=>option.value===imported.garment))
+      throw new Error(`Garment “${imported.garment}” is not available in ${imported.region} mode.`);
     pushUndo();
+    R.three.portraitCache.clear();
     E.gender.value=imported.gender;E.species.value=imported.species;E.garment.value=imported.garment;
-    R.body=null;R.maoBody=null;R.cloth=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
+    R.body=null;R.maoBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
     await refreshAssets();
     if(!R.body||!R.cloth)throw new Error('Could not load the selected body and source garment; check repository access and try again.');
 
@@ -63,7 +67,7 @@ async function importGrids(file){
   const v=JSON.parse(await file.text());
   if(v.gridSize!==GRID_SIZE)throw new Error('This file is not a 6×6 species-grid export.');
   pushUndo();
-  if(v.version===3||v.version===2){
+  if(v.version===4||v.version===3||v.version===2){
     A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};
   }else if(v.version===1&&v.targetGrids){
     A.baseTransforms={};A.localOffsets={};A.maskPreviewTransforms={};
@@ -123,7 +127,7 @@ function inferPatchView(path,url){
 function behindPatchCatalog(){
   const gender=E.gender.value,targetSpecies=E.species.value;
   const items=[]; // Exact source layers available to the behind-sprite patch author.
-  const garment=garmentRecord();
+  const garment=fitRegion()==='body'?garmentRecord():null;
   if(garment){
     const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
     const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;

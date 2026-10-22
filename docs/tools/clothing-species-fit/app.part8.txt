@@ -1,13 +1,33 @@
   const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
   const out=Object.assign(document.createElement('canvas'),{width:size,height:size});
   const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
-  const xf=targetBodyLayerXform(),rect=portraitLayerRect(rawCanvas.width,R.body.height,xf,size,size);
+  const xf=targetGarmentLayerXform(),rect=portraitLayerRect(rawCanvas.width,R.body.height,xf,size,size);
   ctx.globalAlpha=opacity;
   ctx.drawImage(rawCanvas,rect.x,rect.y,rect.w,rect.h);
   ctx.globalAlpha=1;
-  await applyRuntimeCloudMask(out);
+  if(fitRegion()!=='headwear')await applyRuntimeCloudMask(out); // Cloud opacity masks clip torso layers, never the skull or hats.
   return out;
 }
+function targetGarmentLayerXform(){
+  if(fitRegion()==='headwear'){
+    const record=headwearLayerRecords(garmentRecord(),E.species.value,E.gender.value)[0]||
+      headwearLayerRecords(garmentRecord(),'mao-ao',E.gender.value)[0];
+    const authoredXform=record?.layer?.spriteStyle?.base?.xform?.head;
+    if(authoredXform)return normalizedLayerXform(authoredXform);
+  }
+  return targetBodyLayerXform();
+} // In 3D use the actual garment's portrait xform rather than implicitly applying the torso preset to hats.
+function canonicalHeadReference(source){
+  if(!source||!R.body)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+  const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  const rect=portraitLayerRect(R.body.width,R.body.height,targetBodyLayerXform(),source.width,source.height);
+  ctx.drawImage(source,-rect.x*canvas.width/rect.w,-rect.y*canvas.height/rect.h,
+    source.width*canvas.width/rect.w,source.height*canvas.height/rect.h);
+  canvas._paths=[R.speciesCfg.get(E.species.value)?.[E.gender.value]?.headSprite||'head'];
+  canvas._canonical=true;
+  return canvas;
+} // Inverse-projects the game's tinted head + UR anatomy to the raw garment-coordinate fitting canvas.
 function flipCanvasX(source){
   const out=Object.assign(document.createElement('canvas'),{width:source.width,height:source.height});
   const ctx=out.getContext('2d',{alpha:true});
@@ -30,19 +50,46 @@ async function composeRuntimePortrait(){
     if(patchLayer)bctx.drawImage(patchLayer,0,0); // Explicit backplane order: patch is in front of the torso/body, while the clothing block below still draws afterward and therefore remains in front of the patch.
   }
 
-  if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
-    const warped=currentWarp();
-    const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
-    if(layer){
-      fctx.drawImage(layer,0,0);
-      bctx.drawImage(flipCanvasX(layer),0,0);
+  if(fitRegion()==='headwear'){
+    const drawHeadwear=async(cloth,opacity,warp)=>{
+      if(!cloth)return;
+      const back=cloth._back?(warp?currentWarp(cloth._back):cloth._back):null;
+      const front=cloth._front?(warp?currentWarp(cloth._front):cloth._front):null;
+      const behindView=cloth._behindView?(warp?currentWarp(cloth._behindView):cloth._behindView):null;
+      if(back){
+        const rearLayer=await rawGarmentToRuntimeLayer(back,opacity);
+        if(rearLayer){
+          fctx.drawImage(rearLayer,0,0);
+          if(!behindView)bctx.drawImage(flipCanvasX(rearLayer),0,0);
+        }
+        // Front view: hood rear cloth belongs behind the skull.
+        // Rear view: the game draws rear hood/hat art over the skull instead.
+        if(runtime.headOnlyFront)fctx.drawImage(runtime.headOnlyFront,0,0);
+      }
+      if(front){
+        const frontLayer=await rawGarmentToRuntimeLayer(front,opacity);
+        if(frontLayer){
+          fctx.drawImage(frontLayer,0,0);
+          // A hood with authored rear art displays only that piece from behind.
+          if(!behindView&&!(garmentRecord()?.slot==='hood'&&back))bctx.drawImage(flipCanvasX(frontLayer),0,0);
+        }
+      }
+      if(behindView){
+        const rearViewLayer=await rawGarmentToRuntimeLayer(behindView,opacity);
+        if(rearViewLayer)bctx.drawImage(flipCanvasX(rearViewLayer),0,0); // Cap below rear metal band, both above the behind-view skull.
+      }
+    };
+    if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
+    if(E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
+  }else{
+    if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
+      const warped=currentWarp();
+      const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
+      if(layer){fctx.drawImage(layer,0,0);bctx.drawImage(flipCanvasX(layer),0,0)}
     }
-  }
-  if(E.showAuthored.checked&&R.authoredTargetCloth){
-    const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
-    if(authored){
-      fctx.drawImage(authored,0,0);
-      bctx.drawImage(flipCanvasX(authored),0,0);
+    if(E.showAuthored.checked&&R.authoredTargetCloth){
+      const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
+      if(authored){fctx.drawImage(authored,0,0);bctx.drawImage(flipCanvasX(authored),0,0)}
     }
   }
   return{...runtime,frontComposed:front,backComposed:back};

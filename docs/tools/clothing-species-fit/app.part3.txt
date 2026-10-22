@@ -5,11 +5,15 @@
 }
 async function buildGarmentCanvas(id,gender,width,height){
   const canvas=await buildVariantGarmentCanvas(id,'mao-ao',gender,width,height);
+  if(!canvas&&fitRegion()==='headwear'){
+    log(`No Mao-ao ${gender} headwear art for ${id}; choose another garment or gender.`);
+    return null;
+  }
   if(!canvas)throw new Error('Selected garment has no Mao-ao source for this gender.');
   return canvas;
 }
 
-function targetKey(species,gender){return`${species}_${gender}`} // One recorded transform and local-offset set per species+gender.
+function targetKey(species,gender){return`${fitRegion()==='headwear'?'headwear::':''}${species}_${gender}`} // Preserve all prior body keys, isolate headwear transforms by region.
 function ensureTargetData(species,gender){
   const key=targetKey(species,gender);
   if(!A.baseTransforms[key])A.baseTransforms[key]=defaultTransform();
