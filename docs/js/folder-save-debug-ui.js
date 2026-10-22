@@ -23,6 +23,7 @@
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
       provenance: safeSnapshot(() => window.__hobunjiFolderSaveProvenanceDebug?.snapshot?.()),
       runtimeFlush: safeSnapshot(() => window.__hobunjiRuntimeSaveDebug?.snapshot?.()),
+      browserQuota: safeSnapshot(() => window.HobunjiStorageQuota?.debugSnapshot?.()),
       quitGuard: safeSnapshot(() => window.__hobunjiFolderSaveQuitDebug?.snapshot?.()),
       creatorHandoff: creatorPatch?.status ? { ...creatorPatch.status } : null,
       page: {

@@ -50,6 +50,28 @@ assert.throws(() => sessionStorage.setItem('k', fill(50)), /quota/, 'sessionStor
 assert.equal(Q.isQuotaError(quotaError()), true);
 assert.ok(Q.debugSnapshot().quotaHits >= 2);
 
+// A canonical save too large even after eviction remains usable by an armed
+// folder, while browser-only saves and other storage keys must still fail.
+win.LocalSaveFolder = { getStatus: () => ({ state: 'ready', autoSyncArmed: true }) };
+localStorage.setItem('hobunjiSaveMeta', fill(500));
+assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(500));
+assert.notEqual(localStorage._data.get('hobunjiSaveMeta'), fill(500), 'staging does not pretend to have written native browser storage');
+assert.ok(Q.debugSnapshot().stagedKeys.includes('hobunjiSaveMeta'));
+localStorage.setItem('hobunjiSaveMeta', fill(520));
+assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(520), 'repeated read/modify/write sees the latest staged state');
+assert.throws(() => localStorage.setItem('unrelated', fill(500)), /quota/);
+assert.throws(() => localStorage.setItem(manual, fill(500)), /quota/, 'recovery checkpoints are not silently staged');
+win.LocalSaveFolder = { getStatus: () => ({ state: 'ready', autoSyncArmed: false }) };
+assert.throws(() => localStorage.setItem('hobunjiSaveMeta', fill(530)), /quota/, 'an unarmed folder does not authorize writes');
+Q.importFolderSnapshot(() => localStorage.setItem('hobunjiSaveMeta', fill(540)));
+assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(540), 'validated folder imports can hydrate before arming');
+assert.throws(() => localStorage.setItem('hobunjiSaveMeta', fill(550)), /quota/, 'import staging permission does not leak');
+localStorage.setItem('hobunjiSaveMeta', fill(20));
+assert.equal(Q.debugSnapshot().stagedKeys.length, 0, 'a successful native write supersedes staging');
+Q.importFolderSnapshot(() => localStorage.setItem('hobunji_farm_layout_v3:test', fill(500)));
+localStorage.removeItem('hobunji_farm_layout_v3:test');
+assert.equal(localStorage.getItem('hobunji_farm_layout_v3:test'), null, 'deletion clears staged layouts');
+
 const index = fs.readFileSync('docs/index.html', 'utf8');
 const guardAt = index.indexOf('js/storage-quota-guard.js');
 const firstLocalScript = index.search(/<script src="js\//);
