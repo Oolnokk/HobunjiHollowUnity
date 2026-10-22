@@ -20566,6 +20566,9 @@
       const SHOULDER_CAMERA_MIN_TARGET_HEIGHT = 0.04; // Keeps lowered shoulder offsets above the terrain so upward aim has room to shorten its boom.
       const SHOULDER_COLLISION_OFFSET_MIN_ABS = 0.35; // Collision only reduces manual horizontal offset beyond ±0.35 tiles, leaving clear sight around the avatar's head.
       let _cameraBoomDebug = null; // Latest shoulder collision and ground solve, read by the copyable Pixel Probe report.
+      let _shoulderCollisionOffsetBlend = 0; // Spatial easing target is additionally time-smoothed: a sudden wall hit must not snap the shoulder laterally.
+      let _shoulderCollisionOffsetAt = 0; // Last camera-frame timestamp for collision-only offset easing.
+      let _shoulderCollisionOffsetArea = null; // Reset correction when travelling between areas; old wall offsets must not leak across scenes.
       let _occlusionCameraMode = null; // Resets collision smoothing when switching between shoulder, seated, and scripted cameras.
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
@@ -20973,8 +20976,24 @@
           const compression = offsetFadeSpan > 1e-4
             ? window.FormatUtils.clamp((requestedPlanarDistance - solvedPlanarDistance) / offsetFadeSpan, 0, 1)
             : 0; // Intentionally close uncollided booms cannot generate artificial offset movement.
-          const shoulderOffsetBlend = compression * compression * (3 - 2 * compression); // Smooth transition over the FULL zoom range without endpoint kinks.
-          const appliedShoulderOffsetH = liveOffsetH + (offsetEndH - liveOffsetH) * shoulderOffsetBlend; // Interpolate the SIGNED manual offset toward its signed minimum.
+          const shoulderOffsetBlend = compression * compression * (3 - 2 * compression); // Spatial target: smooth across the FULL zoom range.
+          const offsetTime = performance.now();
+          if (_shoulderCollisionOffsetArea !== currentArea || !_shoulderCollisionOffsetAt) {
+            _shoulderCollisionOffsetBlend = 0; // First frame begins at the unmodified manual shoulder offset, even if a wall is already very close.
+            _shoulderCollisionOffsetAt = offsetTime;
+            _shoulderCollisionOffsetArea = currentArea;
+          }
+          const offsetDt = Math.max(0, Math.min(0.1, (offsetTime - _shoulderCollisionOffsetAt) / 1000));
+          _shoulderCollisionOffsetAt = offsetTime;
+          if (Math.abs(liveOffsetH) <= SHOULDER_COLLISION_OFFSET_MIN_ABS) {
+            _shoulderCollisionOffsetBlend = 0; // Keep small manual offsets EXACT, with no old collision correction left over.
+          } else {
+            // Unlike the collision BOOM, which must pull inward immediately to avoid clipping a wall,
+            // the shoulder shift may catch up over several frames. This prevents an instant ±0.8→±0.35 jump.
+            const follow = 1 - Math.exp(-12 * offsetDt);
+            _shoulderCollisionOffsetBlend += (shoulderOffsetBlend - _shoulderCollisionOffsetBlend) * follow;
+          }
+          const appliedShoulderOffsetH = liveOffsetH + (offsetEndH - liveOffsetH) * _shoulderCollisionOffsetBlend; // Signed manual offset is adjusted gradually, never beyond ±0.35.
           const shoulderOffsetFactor = Math.abs(liveOffsetH) > 1e-6 ? appliedShoulderOffsetH / liveOffsetH : 1; // Fraction of the user's manual offset remaining for diagnostics.
           const lateralShift = liveOffsetH - appliedShoulderOffsetH; // Correction always moves toward the corresponding signed side, never to zero.
           if (Math.abs(lateralShift) > 1e-6 && requestedPlanarDistance > 1e-6) {
@@ -20987,11 +21006,12 @@
             resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + clearance); // Shifted camera still clears rendered terrain/snow/slush.
           }
           _cameraBoomDebug = {
-            latestChange: 'Collision zoom cap unchanged; large signed offsets ease across the full retraction range toward ±0.35, not zero.',
+            latestChange: 'Collision zoom cap unchanged; signed ±0.35 offsets ease across both the full boom compression range and successive frames.',
             minimumSetbackTiles: minimumSetback,
             offsetFadeStartTiles, // Clearance threshold where shoulder recentering begins.
             shoulderOffsetFactor, // Proportion of the input offset still visible after collision easing.
-            shoulderOffsetBlend, // Progress across the entire collision zoom range.
+            shoulderOffsetBlend, // Collision-distance target over the whole zoom range (0..1).
+            appliedShoulderOffsetBlend: _shoulderCollisionOffsetBlend, // Time-smoothed transition applied to the rendered camera.
             manualShoulderOffsetTiles: liveOffsetH, // User's unmodified signed horizontal offset.
             minimumShoulderOffsetTiles: offsetEndH, // Signed target of ±0.35, or the untouched small manual offset.
             appliedShoulderOffsetTiles: appliedShoulderOffsetH, // Actual camera offset after collision response.
@@ -21010,6 +21030,9 @@
           };
         } else {
           _cameraBoomDebug = null;
+          _shoulderCollisionOffsetBlend = 0; // Other camera modes and authored cutscenes never inherit gameplay-only offset easing.
+          _shoulderCollisionOffsetAt = 0;
+          _shoulderCollisionOffsetArea = null;
           // Floor guard — applies everywhere, not just zones (unlike the
           // mesh-obstacle pull-in above, which has nothing to raycast against
           // for the ground itself). A steep enough upward pitch (see the
