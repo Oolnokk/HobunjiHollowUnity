@@ -120,4 +120,10 @@ assert.match(scripts[0], /state\.rootPadRootMidi === targetMidi && liveVoices\.s
   'An ended pluck must not be mistaken for an active root voice');
 assert.match(host, /lyre-performance\.html\?v=[A-Za-z0-9_-]+/,
   'Host iframe cache key must change when the embedded engine changes');
+const lab = fs.readFileSync(path.join(__dirname, '../docs/tools/kurraya-music-lab/index.html'), 'utf8'); // Ensures both music frontends run the same shipped engine revision.
+const engineVersionPattern = /lyre-performance\.html\?v=([A-Za-z0-9_-]+)/; // Extracts cache identity without pinning a particular commit's token.
+const gameplayEngineVersion = host.match(engineVersionPattern)?.[1]; // Game iframe revision checked against Music Lab below.
+const labEngineVersion = lab.match(engineVersionPattern)?.[1]; // Audition iframe must not serve an earlier root/pattern engine.
+assert.ok(gameplayEngineVersion, 'Gameplay Kurraya engine must carry a cache token');
+assert.equal(labEngineVersion,gameplayEngineVersion,'Music Lab and gameplay must load the same versioned Kurraya engine');
 console.log('NPC patterns, repeat-bar roots, imported-pad sustain, audio lookahead, and script syntax OK');
