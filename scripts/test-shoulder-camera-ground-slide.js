@@ -198,8 +198,8 @@ for (const yaw of [45, 90, 180]) {
     'rotating the shoulder offset cannot move the ring or change radial zoom');
   assert.equal(ringRaycasts, callsWithShift, 'rotating the shoulder offset reuses the player-centered clearance ring');
 }
-assert.ok(Math.abs(shifted0.lookAtX) < 1e-8 && Math.abs(shifted0.lookAtZ) < 1e-8,
-  'at the collision cap the shifted shoulder camera aims at the player center');
+assert.ok(Math.abs(shifted0.lookAtX - .14) < 1e-8 && Math.abs(shifted0.lookAtZ) < 1e-8,
+  'a manually chosen offset smaller than 0.35 stays untouched, even at the body cap');
 context.s_shoulderSurfOffsetH_current = 0;
 // Use production NPC walkability to reproduce a clear standing position in
 // the same tile as a small prop. The camera must not expand that prop to a wall.
@@ -306,14 +306,14 @@ assert.ok(Math.abs(context.solve(0, .62, 0, 0, .62, 1.2).z - .8) < 1e-8, 'invali
 context.cutscenePreviewActive = true;
 assert.ok(context.solve(0, .62, 0, 0, .62, 1.2).z < .1, 'authored cutscenes retain their own collision framing without the gameplay body limit');
 context.cutscenePreviewActive = false;
-// Exercise a partially shortened boom, full centering at the cap, and the
-// render camera's use of the recentered target without browser devtools.
+// Exercise signed shoulder-offset tapering over the full collision-zoom range
+// and confirm the render camera uses the offset-adjusted look-at pivot.
 Object.assign(context, {
   activeCameraMode: 'shoulderSurf', currentArea: 'farm',
   camTargetX: 0, camTargetZ: 0, camTargetY: 0,
   activeSurfaceYAtWorld: () => 0,
   currentAreaOcclusionMeshes: () => [{}],
-  s_shoulderSurfOffsetH_current: .3, s_shoulderSurfOffsetV_current: 0,
+  s_shoulderSurfOffsetH_current: .8, s_shoulderSurfOffsetV_current: 0,
   cameraAzimuthOffsetDeg: 0, cameraAngleOffsetDeg: 0,
 });
 mode.distanceTiles = 2.6; mode.targetYOffsetTiles = .62; mode.angleFromGroundDeg = 9;
@@ -323,26 +323,65 @@ vm.runInContext('_seatedOcclusionDistance = null; _seatedOcclusionUpdatedAt = 0;
 context.updateCamera();
 assert.ok(context.debug().shoulderOffsetFactor > 0 && context.debug().shoulderOffsetFactor < 1,
   'a partly retracted collision boom smoothly reduces, rather than snaps away, the horizontal offset');
-assert.ok(camera.target.x > 0 && camera.target.x < .3,
-  'the real render camera uses the partially recentered aim pivot');
+assert.ok(camera.target.x > .35 && camera.target.x < .8,
+  'partial collision compression gradually moves the render camera toward +0.35');
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .05 }];
 context.updateCamera();
-assert.ok(context.debug().bodyLimited && context.debug().shoulderOffsetFactor === 0,
-  'a sufficiently close wall triggers the body cap and fully recenters the offset');
-assert.ok(Math.abs(camera.target.x) < 1e-8 && Math.abs(camera.position.x) < 1e-8,
-  'recentered aim and camera position remain aligned behind the player');
+assert.ok(context.debug().bodyLimited && Math.abs(context.debug().appliedShoulderOffsetTiles - .35) < 1e-8,
+  'a close wall triggers the unchanged body cap and ends offset tapering at +0.35');
+assert.ok(Math.abs(camera.target.x - .35) < 1e-8 && Math.abs(camera.position.x - .35) < 1e-8,
+  'camera position and aim stay aligned at the positive signed minimum, not zero');
 assert.ok(Math.abs(camera.position.z - .8) < 1e-8, 'the earlier cap holds the camera away from the avatar');
 assert.ok(Math.abs(context.debug().solvedDistance - Math.hypot(camera.position.x - camera.target.x,
   camera.position.y - camera.target.y, camera.position.z - camera.target.z)) < 1e-8,
   'mobile diagnostics measure the post-recentering camera-to-target distance');
 context._cameraOcclusionRaycaster.intersectObjects = () => [];
 for (let step = 0; step < 12; step++) { corridorClock += 100; context.updateCamera(); }
-assert.ok(context.debug().shoulderOffsetFactor === 1 && Math.abs(camera.target.x - .3) < 1e-8,
-  'clear space restores the full authored shoulder offset smoothly');
+assert.ok(context.debug().shoulderOffsetFactor === 1 && Math.abs(camera.target.x - .8) < 1e-8,
+  'clear space restores the full positive manual shoulder offset with eased camera zoom recovery');
 context.cutscenePreviewActive = true;
 context.cutscenePreviewZoomPercent = 100; // Scripted preview uses its own zoom percent; this fixture must supply that authored input.
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .05 }];
 context.updateCamera();
-assert.ok(Math.abs(camera.target.x - .3) < 1e-8 && context.debug() === null,
-  'an authored preview retains its normal offset and is exempt from gameplay recentering');
-console.log('Shoulder camera ground slide: terrain, radial zoom, species-scaled cap, offset taper/recovery, and scripted-camera isolation passed.');
+assert.ok(Math.abs(camera.target.x - .8) < 1e-8 && context.debug() === null,
+  'an authored preview retains its unmodified manual shoulder offset');
+// The user's signed min/max must be respected at ALL camera rotations
+// without re-enabling direction-dependent collision logic or reticle drift.
+context.cutscenePreviewActive = false;
+function independentOffsetSample(offset, wall) {
+  context.s_shoulderSurfOffsetH_current = offset; // Actual manual Settings input, used by the gameplay camera update.
+  context._cameraOcclusionRaycaster.intersectObjects = () => wall == null ? [] : [{ distance: wall }];
+  vm.runInContext('_seatedOcclusionDistance = null; _seatedOcclusionUpdatedAt = 0;', context); // Avoid hiding spatial interpolation behind the previous sample's outward easing.
+  context.updateCamera();
+  return { aimX: camera.target.x, posX: camera.position.x, posZ: camera.position.z, boom: context.debug() }; // Shares the real camera solver and instrumentation.
+}
+for (const offset of [0, .14, .34, .35, -.14, -.34, -.35]) {
+  const sample = independentOffsetSample(offset, .05);
+  assert.ok(Math.abs(sample.aimX - offset) < 1e-8, `manual offset ${offset} in the ±0.35 window stays unchanged at collision cap`);
+  assert.equal(sample.boom.shoulderOffsetFactor, 1, 'small manual offsets are excluded from collision-driven interpolation');
+}
+for (const side of [1, -1]) {
+  const input = side * .8; // Validate corresponding positive AND negative 0.35 end values.
+  assert.ok(Math.abs(independentOffsetSample(input, null).aimX - input) < 1e-8, 'unobstructed shoulder offset equals the manual setting');
+  const samples = []; // Records the actual rendered horizontal offset at five different collision zoom depths.
+  for (const wall of [2.45, 2.2, 1.9, 1.6, 1.3]) {
+    const view = independentOffsetSample(input, wall);
+    const value = side * view.aimX; // Compare positive magnitudes without losing signed camera direction.
+    samples.push(value);
+    assert.ok(value > .35 && value < .8, 'each intermediate collision distance keeps an offset between the manual setting and signed floor');
+    assert.ok(Math.abs(view.posX - view.aimX) < 1e-8, 'render camera and reticle aim move together');
+    assert.ok(view.boom.shoulderOffsetBlend > 0 && view.boom.shoulderOffsetBlend < 1, 'debug reports fractional progress for partial zoom');
+  }
+  assert.ok(samples.every((value, i) => !i || value < samples[i - 1] - 1e-4),
+    'horizontal offset tapers in distinct gradual steps throughout the full collision distance');
+  const fullyRetracted = independentOffsetSample(input, .05);
+  assert.ok(fullyRetracted.boom.bodyLimited && Math.abs(fullyRetracted.aimX - side * .35) < 1e-8,
+    'fully compressed shoulder offset ends at signed ±0.35 instead of crossing zero');
+  assert.ok(Math.abs(fullyRetracted.posX - side * .35) < 1e-8 && Math.abs(fullyRetracted.posZ - .8) < 1e-8,
+    'both side modes retain the accepted 0.8 camera zoom cap and shifted camera aim');
+  for (const tiny of [.35001, .351]) {
+    const boundary = independentOffsetSample(side * tiny, .05);
+    assert.ok(Math.abs(boundary.aimX - side * .35) < 1e-8, 'offset transitions continuously at the positive and negative setting thresholds');
+  }
+}
+console.log('Shoulder camera ground slide: terrain, radial zoom, species-scaled cap, signed ±0.35 offset taper/recovery, and scripted-camera isolation passed.');
