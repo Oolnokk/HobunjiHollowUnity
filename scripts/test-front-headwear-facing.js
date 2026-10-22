@@ -104,7 +104,8 @@ const fitParts = Array.from({ length: 12 }, (_, i) => read('docs/tools/clothing-
 assert.doesNotThrow(() => new Function(fitParts.join('\n')), 'all split clothing-fit JavaScript compiles together');
 const fitSource = fitParts.join('\n');
 assert.match(fitSource, /canvas\._behindView=hasBehindOverride\?behindView:null/, 'headwear keeps rear-facing composite separate from under-skull artwork');
-assert.match(fitSource, /headwearWarpForView\('back'\)/, 'headwear back export uses the authored rear composite');
+assert.match(fitSource, /E\.exportHeadwearBack\.onclick=\(\)=>exportHeadwearView\('back'\)/, 'rear export button selects the back view');
+assert.match(fitSource, /const canvas=headwearWarpForView\(view,true\)/, 'both front and rear exports use the shared view-aware fitted source');
 assert.match(fitSource, /if\(behindView\)\{[\s\S]{0,220}rawGarmentToRuntimeLayer\(behindView,opacity\)/, 'full-character rear preview draws the dedicated back art');
 assert.match(fitSource, /Missing rear \$\{garment\.label\} layer/, 'missing rear variant falls back without discarding the whole layer');
 assert.match(fitSource, /const pinnedPreviewSha=location\.pathname\.match/, 'commit-pinned preview follows the matching repository data instead of main');
