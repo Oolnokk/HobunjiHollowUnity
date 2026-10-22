@@ -17,7 +17,7 @@ const documentStub = context.document; delete context.document;
 load('condition-registry'); context.document = documentStub;
 // Expose the real private selectors in this isolated test only; no WebGL/UI startup or duplicate selection logic.
 vm.runInContext(read('dialogue-content').replace('  window.DialogueContent = {',
-  '  window.DialogueContent = { testPick: _pickDialogueTree, testTokens: _resolveTokens,'), context);
+  '  window.DialogueContent = { testPick: _pickDialogueTree, testTokens: _resolveTokens, testChoices: _showDlgChoices,'), context);
 load('npc-scheduling'); load('festival-calendar'); load('festival-system'); load('festival-dialogue');
 vm.runInContext(read('ambient-dialogue').replace('  window.AmbientDialogue = api;',
   '  api.testTemplate = templateLine; window.AmbientDialogue = api;'), context);
@@ -107,4 +107,21 @@ hour = 17;
 const home = scheduling.resolveNpcScheduleTarget(kinami);
 assert.equal(home.area, kinami.scheduleHooks.defaultPosition.area);
 assert(!home.visitorDeparture);
+const shopMenus = [], shopToasts = []; // Observe real dialogue actions without opening UI panels.
+const option = {classList:{add(){},remove(){},contains(){return false;}},querySelector:()=>null}; // Minimal actionable dialogue option.
+context.document.getElementById = id => id === 'dlgOpt1' ? option : null;
+dialogue.init({getDialogueOpen:()=>true,getWaresPools:()=>({generalStoreWares:{menuId:'generalStore'}}),
+  closeNpcDialogue(){},openMenu:id=>shopMenus.push(id),showToast:message=>shopToasts.push(message)});
+dialogue.beginSyntheticChoice(npc('kzubug'));
+for (const type of ['openShop','openCraftMenu']) {
+  hour=17;
+  dialogue.testChoices({choices:[{label:'Shop',actions:[{type}]}]});
+  option.onclick();
+  assert.equal(shopMenus.length,0,`${type} cannot bypass festival closing through dialogue`);
+}
+assert.equal(shopToasts.length,2,'mobile players see why the shop is closed');
+hour=1;
+dialogue.testChoices({choices:[{label:'Shop',actions:[{type:'openShop'}]}]});
+option.onclick();
+assert.deepEqual(shopMenus,['generalStore'],'dialogue restriction releases when gathering ends');
 console.log('Festival dialogue: authored branches, Oliphanti ancestry, nickname tokens, choices, greeting hooks, quest priority, exact hours, home and departure/return passed.');

@@ -651,6 +651,11 @@
               window.NpcRapport?.adjust?.(_dlgNpcRec?.id, amount, `dialogue_choice:${_dlgTree?.id || 'synthetic'}:${node.id || i}`);
             }
           } else if (act.type === 'openShop') {
+            if (window.FestivalSystem?.shopsClosedFor?.(_dlgNpcRec)) {
+              deps.showToast('The shop is closed during the festival gathering.', false);
+              skipNav = true;
+              return;
+            }
             // `pool` names a WARES_POOLS entry; omitted defaults to the
             // General Store for backward compatibility with any tree
             // authored before pools existed (bare {type:'openShop'}).
@@ -659,6 +664,11 @@
             if (pool) { deps.closeNpcDialogue(); deps.openMenu(pool.menuId); }
             skipNav = true;
           } else if (act.type === 'openCraftMenu') {
+            if (window.FestivalSystem?.shopsClosedFor?.(_dlgNpcRec)) {
+              deps.showToast('The shop is closed during the festival gathering.', false);
+              skipNav = true;
+              return;
+            }
             // Sloomi/Kzubug's smithing counter — craft/plate/reinforce
             // verdigris tools from dug-up metal bars (see
             // renderMetalCraftShopPage). Both smiths offer the identical

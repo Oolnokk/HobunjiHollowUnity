@@ -18,6 +18,7 @@
   // General Store and Carpenter only count as open while their keeper is
   // standing idle at one of the configured counter stations.
   function isAtCounter(walker, cfg, defaultIds, defaultStationLabels) {
+    if (window.FestivalSystem?.shopsClosedFor?.(walker?.rec)) return false;
     const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : defaultIds;
     const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : defaultStationLabels;
     const npcId = walker?.rec?.id || '';
@@ -42,6 +43,7 @@
   function smithyButtonConfig() { return mobileControls().smithyButton || {}; }
   function smithyAction() { return smithyButtonConfig().action || 'open_smithy'; }
   function isSmithyNpcInBronzeworks(walker) {
+    if (window.FestivalSystem?.shopsClosedFor?.(walker?.rec)) return false;
     const cfg = smithyButtonConfig();
     const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['kzubug', 'sloomi'];
     return deps?.getCurrentArea?.() === (cfg.areaId || 'map_i_smithy') && ids.includes(walker?.rec?.id || '');

@@ -50,8 +50,16 @@
   const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',clarity:'🧠',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
   function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the eighteen-hour fullness window.
   function festivalHours() {
-    const hour = Number(window.CalendarSystem?.getHour?.()) || 0;
-    return hour >= 15 || hour < 1;
+    const current = festival(); // A gathering window never closes shops on an ordinary day.
+    if (!current) return false;
+    const hour = Number(window.CalendarSystem?.getHour?.()); // Civil time shared by attendance and shop access.
+    const start = current.gatheringHours?.start ?? 15; // Optional per-festival hours, inclusive at opening.
+    const end = current.gatheringHours?.end ?? 1; // Exclusive end releases the normal shopkeeper schedule immediately.
+    return Number.isFinite(hour) && (start < end ? hour >= start && hour < end : hour >= start || hour < end);
+  }
+  function shopsClosedFor(rec) {
+    return !!rec && HOME_IDS.has(rec.homeId) && !rec.visitorPresence
+      && !deps?.isFestivalSuspended?.() && festivalHours();
   }
   function isRomanceable(rec) {
     return !!rec && !rec.isChild && (rec.relationship?.canDate === true
@@ -484,10 +492,10 @@
     return !!walker && !!station && walker.area==='town' && Math.hypot(walker.root.position.x-station.col-.5,walker.root.position.z-station.row-.5)<=.5;
   }
   function scheduledDuty(rec) { // The shift the band plan assigns, before any watchdog verdict.
+    if (!festivalHours()) return false;
     const hour = Number(window.CalendarSystem?.getHour?.())||0; // Incoming performers overlap their shift so the outgoing musician can wait for actual arrival.
     if (rec.id === 'kaboku_kunji') return hour>=19.5 || (hour<1) || (hour>=14 && (musicianAbsent('foroji_funji') || stageFailed('foroji_funji')));
     if (hour>=14 && hour<20) return true;
-    if (!festivalHours()) return false;
     const incoming = (deps.getWalkers?.()||[]).find(w=>w.rec?.id==='kaboku_kunji');
     return stageFailed('kaboku_kunji') || !incoming || incoming.rec.dead || incoming.area!=='town' || !stationFor('kaboku_kunji') || !onStage('kaboku_kunji');
   }
@@ -515,7 +523,7 @@
     if (festival()?.id === 'gorkunash' && stageDuty(rec)) {
       const station = layout()?.npcStations?.find(s=>s.festivalNpcId===rec.id && s.festivalLocaleKind==='bandstand');
       const target = station && window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
-      if (target) { release(); return target; } // Ordinary pathfinding takes the host to a real walkable stage before the gathering opens.
+      if (target) { release(); return target; } // Ordinary pathfinding takes the host to the stage during gathering hours.
     }
     if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return release();
     if (festival()?.id === 'gorkunash') {
@@ -661,7 +669,8 @@
       dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
-      latestChange:'Inspect each festival dish for original ingredient quality, contest points and real quality-scaled eating buffs.' };
+      gatheringActive:festivalHours(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
+      latestChange:'Shops pause only during active festival hours and resume their normal schedules afterward.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
@@ -876,6 +885,6 @@
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
-    socialOptionsFor, festivalHours, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
+    socialOptionsFor, festivalHours, shopsClosedFor, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
