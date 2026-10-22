@@ -232,8 +232,9 @@ assert.ok(Math.abs(context.solve(5.1, .62, 5.1, 5.1, .62, 6.8).z - 6.8) < 1e-8,
   'furniture-only solid cells use real mesh height instead of an invented 1.45-tile wall');
 furnitureGrid[5][6].npcFurnitureCollider = false; // The same cell now represents a genuine structural wall.
 corridorClock += 130;
-assert.ok(context.solve(5.1, .62, 5.1, 5.1, .62, 6.8).z < 5.7,
-  'nonrendered structural walls still limit the shared radius');
+const structuralWall = context.solve(5.1, .62, 5.1, 5.1, .62, 6.8); // Wall must still constrain the boom, but the earlier body cap prevents shortening under 0.8 tiles.
+assert.ok(structuralWall.z <= 5.9 + 1e-8 && context.debug().bodyLimited,
+  'nonrendered structural walls still limit the shared radius, stopping at the new body cap');
 furnitureGrid[5][6].type = 'floor';
 
 // The farmhouse uses the separate 'interior' area and its own wall/hearth
@@ -265,8 +266,9 @@ context._cameraOcclusionRaycaster.intersectObjects = () => [];
 furnitureGrid[5][6].type = 'rock'; // Farmhouse boundary cells must block even a short character's boom below ROCK terrain height.
 context.tileSurfaceYInArea = () => .75;
 corridorClock += 130;
-assert.ok(context.solve(5.1, .15, 5.1, 5.1, .15, 6.8).z < 5.7,
-  'farmhouse wall grid starts at the rendered floor, including for short characters');
+const farmhouseWallShort = context.solve(5.1, .15, 5.1, 5.1, .15, 6.8); // Short-character wall still triggers collision while the larger player setback remains authoritative.
+assert.ok(farmhouseWallShort.z <= 5.9 + 1e-8 && context.debug().bodyLimited,
+  'farmhouse wall grid starts at the rendered floor, capped behind short characters');
 context.currentAreaOcclusionMeshes = () => [{}];
 context.currentArea = 'farm';
 context._isBuildingArea = () => false;
