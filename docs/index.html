@@ -361,7 +361,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261022hfdaea93"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261022hc1f3dbf"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -459,7 +459,7 @@
        via init(), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.ProceduralTasks.init(...) during its own setup. -->
-  <script src="js/procedural-tasks.js?v=20261013h1950542"></script>
+  <script src="js/procedural-tasks.js?v=20261022hdff11f0"></script>
   <!-- Alchemy reagent plant scatter/pick (window.ReagentPlants) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -714,7 +714,7 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls each module's init(...) during its
        own setup. -->
-  <script src="js/tasks-panel.js?v=20260807a"></script>
+  <script src="js/tasks-panel.js?v=20261022h4ae3174"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
   <script src="js/wildlife-debug-panel.js?v=20261020animal2"></script>
@@ -736,7 +736,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20261015hc140b14"></script>
+  <script src="js/crafting-panel.js?v=20261022hnewpalette"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
