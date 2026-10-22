@@ -95,6 +95,7 @@ assert.equal((syncSource.match(/state\.lastRootPadKey = rootPadAudioKey\(targetC
   'Immediate root creation and live-root reuse must mark the bar as handled');
 assert.match(syncSource, /if \(!Number\.isFinite\(whenMs\)\) state\.lastRootPadKey/,
   'Scheduled future roots must not consume the current measure');
+rootPadState.rootPadSampleBuffer = null; // Return the shared key calculator to plucked mode after testing imported-pad sustain.
 const played = []; // Records actual root voices created by the production sync function under a fake AudioContext.
 const live = {rootPadEnabled:true,paused:false,audioContext:{state:'running'},master:{},
   rootPadSampleBuffer:null,rootPadVoices:[],rootPadRootMidi:null,lastRootPadKey:null,rootPadLevel:.02};
