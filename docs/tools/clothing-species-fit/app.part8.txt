@@ -61,22 +61,20 @@ async function composeRuntimePortrait(){
           fctx.drawImage(rearLayer,0,0);
           bctx.drawImage(flipCanvasX(rearLayer),0,0);
         }
-      }
-      // Rear hood/hat panels must not cover the face. Redraw just the head and UR anatomy
-      // in the same location as the game's portrait renderer before placing front panels.
-      if(back){
+        // Front view: hood rear cloth belongs behind the skull.
+        // Rear view: the game draws rear hood/hat art over the skull instead.
         if(runtime.headOnlyFront)fctx.drawImage(runtime.headOnlyFront,0,0);
-        if(runtime.headOnlyBack)bctx.drawImage(runtime.headOnlyBack,0,0);
       }
       if(front){
         const frontLayer=await rawGarmentToRuntimeLayer(front,opacity);
         if(frontLayer){
           fctx.drawImage(frontLayer,0,0);
-          bctx.drawImage(flipCanvasX(frontLayer),0,0);
+          // A hood with authored rear art displays only that piece from behind.
+          if(!(garmentRecord()?.slot==='hood'&&back))bctx.drawImage(flipCanvasX(frontLayer),0,0);
         }
       }
     };
-    if(E.showGarment.checked)await drawHeadwear(R.cloth,+E.opacity.value,true);
+    if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
     if(E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
   }else{
     if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
