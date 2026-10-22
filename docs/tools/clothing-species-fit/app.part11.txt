@@ -54,7 +54,7 @@ async function importPastedDiagnostics(){
     pushUndo();
     R.three.portraitCache.clear();
     E.garment.value=imported.garment;
-    R.body=null;R.maoBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
+    R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
     await refreshAssets();
     if(!R.body||!R.cloth)throw new Error('Could not load the selected body and source garment; check repository access and try again.');
 
