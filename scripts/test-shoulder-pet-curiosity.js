@@ -179,7 +179,7 @@ assert.match(rigSource,
   /\['drenkirra'[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
   'Drenkirra uses the supplied shoulderGrip');
 assert.match(rigSource,
-  /\['uumkaoii'[\s\S]{0,180}\[0\.01,-0\.3636087789187775,-0\.18395679109723\]/,
+  /\['uumkaoii'[\s\S]{0,180}\[0,-0\.2057328849409156,-0\.004605298975405354\]/,
   'Uumkaoii uses the supplied shoulderGrip');
 assert.match(rigSource,
   /\['kenkari::female'[\s\S]{0,100}\[-0\.12331214301269552,0\.2212216457140902,0\]/,
