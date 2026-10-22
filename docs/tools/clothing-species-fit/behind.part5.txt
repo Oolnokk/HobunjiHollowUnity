@@ -9,6 +9,8 @@
   writeU32(view,12,centralSize);writeU32(view,16,localOffset);writeU16(view,20,0);
   return new Blob([...localParts,...centralParts,end],{type:'application/zip'});
 }
+window.ClothingFitZip=Object.freeze({canvasToPngBytes,buildStoredZip,downloadBlob}); // Shared ZIP encoder for exported fitted layers.
+
 function uniqueName(name,used){
   const lower=name.toLowerCase();
   if(!used.has(lower)){used.add(lower);return name}

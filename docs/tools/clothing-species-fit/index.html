@@ -31,7 +31,10 @@
         <div class="field"><label for="gender">Gender</label><select id="gender"><option value="male">male</option><option value="female">female</option></select></div>
         <div class="field"><label for="species">Target species</label><select id="species"></select></div>
         <div class="field"><label for="fitRegion">Fit region</label><select id="fitRegion"><option value="body">Body + clothing</option><option value="headwear">Head + hats / hoods</option></select></div>
-        <div class="field"><label for="garment">Mao-ao source garment / headwear</label><select id="garment"></select></div>
+        <div class="field"><label for="sourceSpecies">Starting sprite species</label><select id="sourceSpecies"></select></div>
+        <div class="field"><label for="sourceGender">Starting sprite gender</label><select id="sourceGender"><option value="male">male</option><option value="female">female</option></select></div>
+        <div class="field"><label for="garment">Source garment / headwear</label><select id="garment"></select></div>
+        <div id="sourceLayerStatus" class="small" aria-live="polite">Loading clothing source layers…</div>
       </section>
 
       <section>
@@ -77,7 +80,7 @@
           <button id="undo">Undo</button>
           <button id="redo">Redo</button>
         </div>
-        <div class="small">Orange is the fixed Mao source, green is the recorded base transform, and blue adds the local 6×6 corrections.</div>
+        <div class="small">Orange is the normalized starting-sprite source, green is the recorded base transform, and blue adds the local 6×6 corrections.</div>
       </section>
 
       <section id="bodyMaskSection">
@@ -111,12 +114,12 @@
 
       <section>
         <h2>Downloads</h2>
-        <div class="row"><button id="bodyPng">Body PNG</button><button id="clothPng">Export fitted clothing PNG</button></div>
+        <div class="row"><button id="bodyPng">Body PNG</button><button id="clothPng">Export fitted clothing PNG</button><button id="compositePng">Composite PNG</button></div>
         <div class="row"><button id="overlayPng">Overlay PNG</button><button id="exportHeadwearFront" hidden>Headwear front PNG</button><button id="exportHeadwearBack" hidden>Headwear back PNG</button><button id="exportJson">Export grids</button></div>
         <div class="row"><button id="importJson">Import grids</button><input id="file" type="file" accept=".json,application/json" hidden></div>
         <div class="field" style="margin-top:8px"><label for="diagnosticsInput">Paste Copy diagnostics output</label><textarea id="diagnosticsInput" rows="12" spellcheck="false" placeholder="Paste the complete diagnostics block here"></textarea></div>
         <button id="importDiagnostics">Import pasted fit</button>
-        <div class="small" style="margin-top:5px">This selects the species, gender, and garment in the pasted report, applies its 6×6 fit, and then the export button saves the fitted clothing PNG.</div>
+        <div class="small" style="margin-top:5px">Pasted diagnostics restore the starting sprite species/gender and target fit. Multi-layer garments export a single ZIP with one fitted PNG per authored layer and a manifest; Composite PNG remains available separately.</div>
       </section>
 
       <details>
@@ -145,7 +148,7 @@
         </div>
       </div>
       <div class="shell"><canvas id="stage" width="234" height="173"></canvas></div>
-      <div class="small" style="margin-top:7px">Select Body or Headwear, fit overall scale/position, then edit local blue nodes. Headwear uses Mao-ao hat/hood art as the source and the selected species' head as reference; rear and front headwear layers can be exported separately.</div>
+      <div class="small" style="margin-top:7px">Select Body or Headwear, choose any available starting species/gender garment, then fit overall scale/position and edit local blue nodes. Headwear uses the starting species' hat/hood art and the target species' head as reference; rear and front headwear layers can be exported separately.</div>
 
       <div class="threeToolbar">
         <div><h2 style="margin:0">Runtime full-character rig preview</h2><div id="threeStatus" class="small">Initializing Three.js…</div></div>

@@ -89,7 +89,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261019h317d759&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261022hde68491&window=20260926rebase1"></script>
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -234,7 +234,7 @@
   <script src="js/interior-door-tiles.js?v=20261018h0336068"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=20261022h0fa27ca"></script>
+  <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
   <script src="js/authored-furniture-runtime.js?v=20261019h0a80a02"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261016h86b86fc"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
@@ -276,7 +276,7 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261022hae86d2a"></script>
+  <script src="js/local-save-folder.js?v=20261022h1783ba2"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261016h2f34a58"></script>
@@ -459,7 +459,7 @@
        via init(), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.ProceduralTasks.init(...) during its own setup. -->
-  <script src="js/procedural-tasks.js?v=20261013h1950542"></script>
+  <script src="js/procedural-tasks.js?v=20261022hdff11f0"></script>
   <!-- Alchemy reagent plant scatter/pick (window.ReagentPlants) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -714,7 +714,7 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls each module's init(...) during its
        own setup. -->
-  <script src="js/tasks-panel.js?v=20260807a"></script>
+  <script src="js/tasks-panel.js?v=20261022h4ae3174"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
   <script src="js/wildlife-debug-panel.js?v=20261020animal2"></script>
@@ -736,7 +736,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20261015hc140b14"></script>
+  <script src="js/crafting-panel.js?v=20261022hnewpalette"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render

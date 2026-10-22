@@ -80,7 +80,7 @@
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
     ['HousePieces', 'house-pieces-core.js?v=20261004hf503d1e'],
-    [null, 'house-pieces-registry-stability.js?v=20260906a'],
+    [null, 'house-pieces-registry-stability.js?v=20261022he201668'],
     [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
   ];
 

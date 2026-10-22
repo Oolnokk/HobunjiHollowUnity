@@ -4,12 +4,13 @@
   if (Number(window.NpcCraftingCommissions?.version) >= 2) return;
 
   const VERSION = 2; // Loader/debug version for adapters around the existing task/dialogue/crafting systems.
-  const COMMISSION_CHANCE_BY_TIER = Object.freeze([0, 0.12, 0.18, 0.25, 0.32, 0.40]); // Chance an otherwise-generic NPC favor becomes a crafting commission.
+  const COMMISSION_CHANCE_BY_TIER = Object.freeze([0.30, 0.34, 0.37, 0.40, 0.43, 0.46]); // Even new acquaintances may request craftsmanship; a commission remains possible before the first two hearts.
 
   let taskDeps = null; // ProceduralTasks dependency bag used by readiness, completion, and Tasks-tab decoration.
   let craftingDeps = null; // CraftingPanel dependency bag forwarded to the generator for the live furniture catalog.
   let giftingDeps = null; // NpcGifting dependency bag forwarded for NPC records and pack clothing.
   let lastError = null; // Latest integration error for mobile-friendly diagnostics.
+  let lastAttempt = null; // Latest eligible dialogue roll and reason for fallback, visible in mobile diagnostics.
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   function generator() { return window.NpcCraftingCommissionGenerator; }
@@ -65,10 +66,23 @@
     api.maybeOfferFavor = function npcCraftingCommissionMaybeOffer(npcRec) {
       if (!taskDeps || !npcRec?.id || !api.isQuestEligibleNpc?.(npcRec) || api.isRequestGiver?.(npcRec.id)) return originalMaybeOfferFavor(npcRec);
       if (activeFavorForNpc(npcRec.id) || declinedFavorToday(npcRec.id)) return originalMaybeOfferFavor(npcRec);
-      const tier = api.friendshipTier?.(npcRec.id) ?? 0; // Live friendship tier, including FavorBalance's point-scale patch.
-      if (Math.random() < (COMMISSION_CHANCE_BY_TIER[tier] || 0)) {
-        const task = generator()?.generateTask?.(npcRec, tier);
-        if (task) return task;
+      const tier = Math.max(0, Math.min(5, Math.floor(finite(api.friendshipTier?.(npcRec.id), 0)))); // Live friendship tier, including FavorBalance's point-scale patch.
+      const chance = COMMISSION_CHANCE_BY_TIER[tier]; // One crafting roll per eligible conversation, separate from the ordinary-favor roll.
+      const roll = Math.random(); // Stored only for on-demand mobile diagnostics, never polled each frame.
+      lastAttempt = { npcId: npcRec.id, day: taskDeps.calendar?.day, tier, chance, roll, generated: false, reason: 'chance missed' };
+      if (roll < chance) {
+        try {
+          const task = generator()?.generateTask?.(npcRec, tier);
+          if (task) {
+            lastAttempt.generated = true;
+            lastAttempt.reason = 'commission offered';
+            return task;
+          }
+          lastAttempt.reason = 'no eligible learned clothing or job-related furniture recipe';
+        } catch (error) {
+          lastError = String(error?.stack || error);
+          lastAttempt.reason = 'generation error';
+        }
       }
       return originalMaybeOfferFavor(npcRec);
     };
@@ -126,45 +140,6 @@
     return true;
   }
 
-  function escapeHtml(value) {
-    const esc = taskDeps?.esc; // Existing task-panel escape helper when available.
-    if (typeof esc === 'function') return esc(String(value ?? ''));
-    return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
-  }
-
-  function decorateQuestRows() {
-    const list = document.getElementById('tasksList'); // Accepted Quest Log container rendered by TasksPanel first.
-    if (!list || !taskDeps) return;
-    const active = Object.entries(taskDeps.getQuestProgress?.() || {})
-      .filter(([, state]) => state?.status === 'available' && !!state?.progress?.commission)
-      .map(([id, state]) => ({ id, ...state.progress }));
-    const rows = [...list.querySelectorAll('.shop-row')]; // Generic favor rows still say “No delivery items recorded” before this specialization pass.
-    for (const task of active) {
-      const row = rows.find(candidate => candidate.textContent?.includes(`${task.npcName}'s favor`) && candidate.textContent?.includes('No delivery items recorded'));
-      if (!row) continue;
-      const ready = !!delivery()?.isReady?.(task); // Live literal crafted-output readiness for mobile-visible feedback.
-      row.innerHTML = `
-        <div class="sh-icon">🛠️</div>
-        <div class="sh-info">
-          <div class="sh-name">${escapeHtml(task.npcName)}'s crafting commission</div>
-          <div class="sh-desc">${escapeHtml(delivery()?.requirementText?.(task) || 'Craft the requested piece.')}</div>
-          <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">Reward: ${Math.round(finite(task.rewardGold, 0))}g + ${finite(task.rewardFriendship, 0)} friendship + ${Math.floor(finite(task.rewardMotes, 0))} Motes of Craft. ${ready ? `Ready — return to ${escapeHtml(task.npcName)}.` : 'Craft the requested piece, then return it.'}</div>
-        </div>`;
-    }
-  }
-
-  function patchTasksPanel(api) {
-    if (!api?.render || api.__npcCraftingCommissionRowsPatched) return false;
-    const originalRender = api.render.bind(api); // Existing Quest Log renderer stays authoritative; commissions are a post-render specialization.
-    api.render = async function npcCraftingCommissionTasksRender(...args) {
-      const result = await originalRender(...args);
-      decorateQuestRows();
-      return result;
-    };
-    Object.defineProperty(api, '__npcCraftingCommissionRowsPatched', { configurable: true, value: true });
-    return true;
-  }
-
   function futureGlobal(name, patch) {
     if (patch(window[name])) return;
     const descriptor = Object.getOwnPropertyDescriptor(window, name); // Chains existing lazy-global setters rather than trampling them.
@@ -190,6 +165,8 @@
       taskDepsReady: !!taskDeps,
       craftingDepsReady: !!craftingDeps,
       giftingDepsReady: !!giftingDeps,
+      chanceByTier: [...COMMISSION_CHANCE_BY_TIER],
+      lastAttempt: lastAttempt ? { ...lastAttempt } : null,
       generator: generator()?.debugSnapshot?.() || null,
       delivery: delivery()?.debugSnapshot?.() || null,
       mastery: window.CraftingMasterySystem?.debugSnapshot?.() || null,
@@ -197,11 +174,10 @@
     };
   }
 
-  window.NpcCraftingCommissions = Object.freeze({ version: VERSION, decorateQuestRows, debugSnapshot });
+  window.NpcCraftingCommissions = Object.freeze({ version: VERSION, debugSnapshot });
   window.__craftCommissionDebug = debugSnapshot;
 
   futureGlobal('ProceduralTasks', patchProceduralTasks);
   futureGlobal('CraftingPanel', patchCraftingPanel);
   futureGlobal('NpcGifting', patchNpcGifting);
-  futureGlobal('TasksPanel', patchTasksPanel);
 })();

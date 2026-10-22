@@ -96,4 +96,137 @@ worldId = 'world-a';
 assert.equal(mastery.rank('efficientJoinery'), 1, 'switching back restores world A progression');
 assert.equal(mastery.rank('specificTest'), 0, 'newly registered specific perk remains isolated to the world that bought it');
 
+
+// Functional tier-zero commission: generator, offered -> accepted -> delivered,
+// and quest reward all use the actual same market/labor quote.
+const mockMath = Object.create(Math);
+mockMath.random = () => 0.05;
+const commissionProgress = {};
+const commissionInventory = { gold: 0, pineLog: 10, chairFurniture: 0 };
+let earnedFavor = 0;
+let earnedMotes = 0;
+const completionPopups = []; // Records the actual world-list categories emitted by a commission turn-in.
+const furniture = { key: 'chairBlueprint', furnitureKey: 'chairFurniture', name: 'Wooden Chair', category: 'seating', craftCost: { wood: 4 } };
+const commissionContext = {
+  console, Math: mockMath, document: { getElementById: () => null },
+  ProceduralTasks: {
+    init() {}, isQuestEligibleNpc: () => true, isRequestGiver: () => false,
+    friendshipTier: () => 0, maybeOfferFavor: () => null,
+    favorAskLine: () => 'generic', turnInTask: () => ({ ok: false }),
+    getTurnInReadyTaskForNpc: () => null, makeTaskId: () => 'craft-test',
+  },
+  CraftingPanel: { init() {}, render() {} },
+  NpcGifting: { init() {} },
+  DialogueContent: { adjustNpcFavor(_id, amount) { earnedFavor += amount; return amount; } },
+  CraftingMasterySystem: {
+    debugSnapshot: () => ({ worldId: 'world-test' }),
+    getState: () => ({ motes: earnedMotes }),
+    saveState(state) { earnedMotes = state.motes; },
+    awardMotes(amount) { earnedMotes += amount; return amount; },
+    renderPanel() {},
+  },
+  ClothingWeavingSystem: { woolCostForSlot: slot => ({ hat: 1, hood: 2, torso: 3, overwear: 4, pants: 2 })[slot] || 1 },
+  WorldPopupText: { queueReward(kind, message) { completionPopups.push({ kind, message }); } },
+};
+commissionContext.window = commissionContext;
+vm.createContext(commissionContext);
+for (const [filename, source] of [
+  ['generator', generatorSource], ['delivery', deliverySource], ['adapter', adapterSource],
+]) vm.runInContext(source, commissionContext, { filename });
+const taskDeps = {
+  calendar: { day: 1 }, inventory: commissionInventory, getQuestProgress: () => commissionProgress,
+  getNpcRecordById: id => ({ id, role: 'carpenter' }),
+  setQuestStatus(id, status, progressPatch) {
+    const prior = commissionProgress[id]?.progress || {};
+    commissionProgress[id] = { status, progress: { ...prior, ...progressPatch } };
+  },
+  clampInventoryStack() {}, buildInventoryGrid() {}, saveMemberWorldData() {}, showToast() {},
+};
+commissionContext.CraftingPanel.init({
+  FURNITURE_BLUEPRINT_CATALOG: [furniture],
+  ITEM_DEFS: { pineLog: { sellPrice: 6 }, shadewoodLog: { sellPrice: 5 } },
+});
+commissionContext.ProceduralTasks.init(taskDeps);
+const offered = commissionContext.ProceduralTasks.maybeOfferFavor({ id: 'carpenter', name: 'Carpenter', role: 'carpenter' });
+assert(offered?.commission, 'crafting commissions must be offered even at friendship tier zero');
+assert.equal(commissionContext.NpcCraftingCommissions.debugSnapshot().lastAttempt.generated, true);
+const quote = commissionContext.NpcCraftingCommissionGenerator.rewardQuote(offered);
+assert(quote.gold > 70 + (4 * 6 * 1.5), 'crafting income covers material opportunity cost and real labor');
+assert(quote.favor >= 6, 'commission Favor is rewarded in the same 40-point-per-heart scale as gifts');
+taskDeps.setQuestStatus(offered.id, 'available', {});
+assert.equal(commissionInventory.chairBlueprint, 1, 'acceptance grants the required blueprint');
+commissionInventory.chairFurniture = 1;
+const result = commissionContext.ProceduralTasks.turnInTask(offered.id);
+assert.equal(result.ok, true, 'commission consumes the freshly crafted piece');
+assert.equal(commissionInventory.chairFurniture, 0);
+assert.equal(commissionInventory.gold, quote.gold);
+assert.equal(earnedFavor, quote.favor);
+assert.equal(earnedMotes, quote.motes);
+assert.equal(commissionProgress[offered.id].status, 'completed');
+assert(completionPopups.some(entry => entry.kind === 'currency' && entry.message === '+' + quote.gold + 'g'), 'commission gold appears in the world reward list');
+assert(completionPopups.some(entry => entry.kind === 'masteryXp' && entry.message.includes(quote.motes + ' Mote')), 'Craft Motes use a recognized mastery popup category');
+assert(!completionPopups.some(entry => entry.kind === 'craft'), 'the unsupported craft popup category must not be used');
+const legacyQuote = commissionContext.NpcCraftingCommissionGenerator.rewardQuote({
+  ...offered, rewardGold: 80, rewardFriendship: 1, rewardMotes: 1,
+});
+assert(legacyQuote.gold >= quote.gold, 'an old saved commission also receives the new payout floor');
+
+// A composite requirement must match a real dye the player has actually unlocked.
+// Independently selecting a liked hue, saturation, and brightness used to produce impossible jobs.
+const palette = [
+  { id: 'red-hot-bright', traits: ['hueRed', 'hot', 'bright'] },
+  { id: 'blue-muted-dark', traits: ['hueBlue', 'muted', 'dark'] },
+];
+const unlockedDyeIds = new Set(['red-hot-bright']); // Matches one character's currently unlocked loom swatches.
+commissionContext.DyeSystem = {
+  ensureCollection() {},
+  getCatalog: () => palette,
+  owns: id => unlockedDyeIds.has(id),
+};
+commissionContext.ItemTraits = {
+  resolveHsv: dye => dye,
+  colorTraitsForHsv: dye => dye.traits,
+};
+const feasible = commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueRed', 'hot', 'dark']);
+assert(feasible?.includes('hueRed') && feasible.includes('hot'), 'must request the recipient’s preferred hue and saturation');
+assert(!feasible.includes('dark'), 'cannot demand a dark swatch when the only unlocked red is bright');
+assert(feasible.every(trait => palette[0].traits.includes(trait)), 'every AND-ed dye requirement must match a single unlocked swatch');
+assert.equal(commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueBlue']), null, 'locked dyes never produce undeliverable commissions');
+unlockedDyeIds.add('blue-muted-dark');
+assert(commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueBlue', 'dark'])?.includes('dark'), 'unlocked dye traits become valid immediately');
+
+
+// Both quest-log preview and ordinary task turn-in read this single method.
+const regularPopups = []; // Captures regular task world-list rewards at the actual completion point.
+const taskContext = {
+  console,
+  DialogueContent: { adjustNpcFavor(_id, reward) { return reward; } },
+  WorldPopupText: { queueReward(kind, message) { regularPopups.push({ kind, message }); } },
+};
+taskContext.window = taskContext;
+vm.createContext(taskContext);
+vm.runInContext(read('docs/js/procedural-tasks.js'), taskContext);
+const regularDeps = {
+  calendar: { day: 3 }, ITEM_DEFS: { berry: { sellPrice: 3 } },
+  inventory: { berry: 5, gold: 0 },
+  getQuestProgress: () => ({ oldRequest: { status: 'available', progress: {
+    kind: 'request', npcId: 'hreesh', npcName: 'Hreesh', domain: 'farming',
+    items: [{ itemKey: 'berry', qty: 5 }], rewardGold: 15, rewardFriendship: 1.5,
+    tier: 2, deadlineDay: 5, bonusMultiplier: 2,
+  } } }),
+  setQuestStatus() {}, clampInventoryStack() {}, showToast() {},
+};
+taskContext.ProceduralTasks.init(regularDeps);
+const onTime = taskContext.ProceduralTasks.rewardPreview(regularDeps.getQuestProgress().oldRequest.progress);
+assert(onTime.baseGold > 15 && onTime.gold === onTime.baseGold * 2, 'labor premium is doubled for an on-time request');
+assert.equal(onTime.favor, 9);
+regularDeps.calendar.day = 6;
+const overdue = taskContext.ProceduralTasks.rewardPreview(regularDeps.getQuestProgress().oldRequest.progress);
+assert.equal(overdue.gold, overdue.baseGold, 'expired requests pay the displayed base, not the expired bonus');
+assert.equal(taskContext.ProceduralTasks.turnInTask('oldRequest').ok, true);
+assert.equal(regularDeps.inventory.gold, overdue.gold, 'the task credits exactly the amount in its reward preview');
+assert.equal(regularDeps.inventory.berry, 0, 'turn-in consumes the requested inventory');
+assert(regularPopups.some(entry => entry.kind === 'currency' && entry.message === '+' + overdue.gold + 'g'), 'regular task money is included in the floating reward list');
+
+
 console.log('npc crafting commissions regression: ok');

@@ -21,8 +21,8 @@ function importedExtendedLayers(){
 function rebuildExtendedSource(){
   const layers=importedExtendedLayers();
   if(!layers.length){R.extendedSource=null;R.extendedWarped=null;updateExtendedStatus();return null}
-  const width=R.maoBody?.width||layers[0].width;
-  const normalHeight=R.maoBody?.height||0;
+  const width=R.sourceBody?.width||layers[0].width;
+  const normalHeight=R.sourceBody?.height||0;
   const height=Math.max(normalHeight,...layers.map(l=>l.height));
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
@@ -79,13 +79,14 @@ async function loadRepositoryData(){
       if(!x||x.error)continue;
       const cfg=x.cfg,variants=cfg?.speciesVariants||{};
       if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
-         (variants['mao-ao_male']||variants['mao-ao_female']||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
-        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg});
+         (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
+        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg,
+          configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\.\//,'')}`}); // Ready-to-install ZIPs can include updated target config when needed.
       }
     }
     R.garments.sort((a,b)=>a.label.localeCompare(b.label));
     rebuildSelectors();await refreshAssets();
-    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} Mao-ao body/headwear items.`);
+    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} body/headwear items. Starting sprites: ${E.sourceSpecies.value} ${E.sourceGender.value}.`);
     log('Repository load complete.');
   }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
 }
@@ -97,14 +98,27 @@ function rebuildSelectors(){
     const o=document.createElement('option');o.value=entry.speciesId;o.textContent=entry.label||entry.speciesId;E.species.appendChild(o);
   }
   if([...E.species.options].some(o=>o.value===wantedSpecies))E.species.value=wantedSpecies;
-
+  const wantedSource=A.settings?.sourceSpecies||'mao-ao'; // Independent source picker keeps existing Mao-ao saves backward compatible.
+  E.sourceSpecies.innerHTML='';
+  for(const entry of R.speciesIndex){
+    if(!R.speciesCfg.has(entry.speciesId))continue;
+    const option=document.createElement('option');option.value=entry.speciesId;
+    option.textContent=entry.label||entry.speciesId;E.sourceSpecies.appendChild(option);
+  }
+  if([...E.sourceSpecies.options].some(o=>o.value===wantedSource))E.sourceSpecies.value=wantedSource;
+  E.sourceGender.value=A.settings?.sourceGender||A.settings?.gender||E.gender.value;
   rebuildGarmentSelector();
 }
+function sourceHasGarmentArt(garment,species,gender){
+  if(HEAD_SLOTS.has(garment?.slot))return headwearLayerRecords(garment,species,gender).length>0;
+  return collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).some(layer=>!['exposed','exposedSkin'].includes(String(layer.role||'')));
+} // Limits the garment picker to exact authored sprites for the chosen starting character.
 function rebuildGarmentSelector(){
-  const region=fitRegion(),wantedGarment=region==='body'?(A.settings?.garment||''):(A.settings?.headGarment||'');
+  const region=fitRegion(),savedGarment=region==='body'?(A.settings?.garment||''):(A.settings?.headGarment||'');
+  const wantedGarment=(A.settings?.region===region?E.garment.value:'')||savedGarment; // Remember the previously selected item separately for clothing and headwear.
   E.garment.innerHTML='';
   for(const garment of R.garments){
-    if(!(region==='body'?BODY_SLOTS:HEAD_SLOTS).has(garment.slot))continue;
+    if(!(region==='body'?BODY_SLOTS:HEAD_SLOTS).has(garment.slot)||!sourceHasGarmentArt(garment,E.sourceSpecies.value,E.sourceGender.value))continue;
     const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
   }
   if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
@@ -113,6 +127,9 @@ function rebuildGarmentSelector(){
   E.exportHeadwearBack.hidden=region!=='headwear';
   E.bodyPng.textContent=region==='headwear'?'Head reference PNG':'Body PNG';
   E.clothPng.textContent=region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG';
+  E.sourceLayerStatus.textContent=E.garment.options.length
+    ?`${E.garment.options.length} ${region==='headwear'?'headwear':'clothing'} items with ${E.sourceSpecies.value} ${E.sourceGender.value} artwork.`
+    :`No ${region==='headwear'?'headwear':'clothing'} sprites authored for ${E.sourceSpecies.value} ${E.sourceGender.value}. Choose a different starting species/gender.`;
   E.showBody.parentElement.lastChild.textContent=region==='headwear'?' head':' body';
 }
 function bodyLayers(species,gender){
@@ -132,15 +149,6 @@ async function buildBodyCanvas(species,gender){
     canvas._paths=layers.map(x=>x.path);return canvas;
   })();
   R.bodyCanvases.set(key,p);return p;
-}
-function gatherImages(node,out=[],seen=new Set()){
-  if(!node||typeof node!=='object')return out;
-  if(node.image?.url){
-    const resolved=assetUrl(node.image.url);
-    if(!seen.has(resolved)){seen.add(resolved);out.push({url:resolved,path:node.image.url})}
-  }
-  for(const value of Object.values(node))gatherImages(value,out,seen);
-  return out;
 }
 function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
 function headwearLayerRecords(garment,species,gender){
@@ -186,19 +194,28 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       const back=Object.assign(document.createElement('canvas'),{width,height});
       const behindView=Object.assign(document.createElement('canvas'),{width,height});
       let hasFront=false,hasBack=false,hasBehindOverride=false; // Avoid wasting headwear warps and exports on unused orientations.
+      const exportedLayers=[]; // Keeps headwear materials/front-back source identities separate for the fitted ZIP.
       for(const record of records){
         try{
           const image=await loadImage(assetUrl(record.path));
           const target=record.isBack?back:front;
           const ctx=target.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
           ctx.drawImage(image,0,0); // All authored headwear layers retain their source-pixel alignment.
+          const layerCanvas=Object.assign(document.createElement('canvas'),{width,height});
+          layerCanvas.getContext('2d',{alpha:true}).drawImage(image,0,0);
+          const layerPath=['parts','head','layers',record.name]; // Matches the same config leaf used by the behind-patch author.
+          exportedLayers.push({name:`head.layers.${record.name}`,path:layerPath,url:record.path,role:record.layer.layerRole||'',view:record.isBack?'under':'front',canvas:layerCanvas});
           if(record.isBack)hasBack=true;
           else{
             hasFront=true;
             let rearImage=image;
             if(record.behindPath&&record.behindPath!==record.path){
-              try{rearImage=await loadImage(assetUrl(record.behindPath))}
-              catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
+              try{
+                rearImage=await loadImage(assetUrl(record.behindPath));
+                const rearCanvas=Object.assign(document.createElement('canvas'),{width,height}); // Independent rear-view override, never substituted for the front layer.
+                rearCanvas.getContext('2d',{alpha:true}).drawImage(rearImage,0,0);
+                exportedLayers.push({name:`head.layers.${record.name}.behindImage`,path:[...layerPath,'behindImage'],url:record.behindPath,role:record.layer.layerRole||'',view:'behind',canvas:rearCanvas});
+              }catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
             }
             const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
             rearCtx.drawImage(rearImage,0,0); // Compose cap then metal band in the same author-specified layer order.
@@ -211,12 +228,14 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       x.drawImage(back,0,0);x.drawImage(front,0,0);
       canvas._front=hasFront?front:null;canvas._back=hasBack?back:null;
       canvas._behindView=hasBehindOverride?behindView:null; // Dedicated rear view is distinct from cloth behind the skull.
-      canvas._paths=records.flatMap(record=>[record.path,...(record.behindPath&&record.behindPath!==record.path?[record.behindPath]:[])]);
+      canvas._layers=exportedLayers; // Independent fitted outputs use identical cage transforms but preserve the original config layer topology.
+      canvas._paths=exportedLayers.map(layer=>layer.url);
       return canvas;
     }
     if(!variant)return null; // Missing authored target species/gender body art is normal.
-    const layers=gatherImages(variant);
+    const layers=collectPatchImageNodes(variant).filter(layer=>!['exposed','exposedSkin'].includes(String(layer.role||''))); // Only wearable materials, never species skin/hair sprite overlays, go in the fitted ZIP.
     if(!layers.length)return null;
-    const images=await Promise.all(layers.map(x=>loadImage(x.url)));
+    const images=await Promise.all(layers.map(layer=>loadImage(assetUrl(layer.url))));
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
     const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+    const exportedLayers=[]; // Body garments can contain independently colored/positioned nested parts.

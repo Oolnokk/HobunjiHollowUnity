@@ -7,13 +7,13 @@ const HEAD_SLOTS=new Set(['hat','hood']); // Categories in the new independent h
 const GRID_SIZE=6; // Fixed source/target cage resolution requested for this version.
 const HANDLE_RADIUS=5.2; // Visible grid-point radius in native canvas pixels.
 const HIT_RADIUS=13; // Touch-friendly pointer selection radius.
-const SOURCE_GRID=makeRegularGrid(GRID_SIZE); // Fixed Mao-ao 6x6 source cage spanning the full portrait.
+const SOURCE_GRID=makeRegularGrid(GRID_SIZE); // Source-neutral 6×6 normalized cage spanning whichever species' raster is selected.
 const CELL_SUBDIVISIONS=4; // Each 6x6 cell is internally sampled as a 4x4 bilinear micro-grid so all four cell corners influence the whole cell.
 const MICRO_TRIANGLE_COUNT=(GRID_SIZE-1)*(GRID_SIZE-1)*CELL_SUBDIVISIONS*CELL_SUBDIVISIONS*2; // 800 small affine triangles approximate the bilinear 25-quad warp.
 
 const $=id=>document.getElementById(id);
 const E={
-  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),garment:$('garment'),fitRegion:$('fitRegion'),
+  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),sourceSpecies:$('sourceSpecies'),sourceGender:$('sourceGender'),sourceLayerStatus:$('sourceLayerStatus'),garment:$('garment'),fitRegion:$('fitRegion'),
   help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
@@ -24,7 +24,7 @@ const E={
   threeHost:$('threeHost'),threeStatus:$('threeStatus'),retry3D:$('retry3D'),reset3D:$('reset3D'),
   scaleX:$('scaleX'),scaleY:$('scaleY'),translateX:$('translateX'),translateY:$('translateY'),
   scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
-  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),overlayPng:$('overlayPng'),exportHeadwearFront:$('exportHeadwearFront'),exportHeadwearBack:$('exportHeadwearBack'),
+  reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),compositePng:$('compositePng'),overlayPng:$('overlayPng'),exportHeadwearFront:$('exportHeadwearFront'),exportHeadwearBack:$('exportHeadwearBack'),
   exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),diagnosticsInput:$('diagnosticsInput'),importDiagnostics:$('importDiagnostics'),copyDebug:$('copyDebug'),debug:$('debug'),
   label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
 };
@@ -33,7 +33,7 @@ C.imageSmoothingEnabled=false;
 
 const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
-  body:null,maoBody:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
+  body:null,sourceBody:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
   assetGeneration:0, // Prevents a previous region/species request from overwriting a newer selection.
   extendedLayers:{torso:null,torsoClothing:null,overwear:null},extendedSource:null,extendedWarped:null,
   patchWorkflow:{active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:0}, // Live routed patch source. Clothing routes a source+patch composite; body routes patch-only pixels as a separate canonical body-tinted rear backplane layer in front of the selected base body layer and behind clothing.
@@ -68,7 +68,7 @@ function zeroOffsets(){return SOURCE_GRID.map(()=>({x:0,y:0}))}
 function fresh(){
   return{
     version:4,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},
-    settings:{mode:'transform',region:'body',gender:'male',species:'mao-ao',garment:'',headGarment:'',repo:E.repo.value}
+    settings:{mode:'transform',region:'body',gender:'male',species:'mao-ao',sourceSpecies:'mao-ao',sourceGender:'male',garment:'',headGarment:'',repo:E.repo.value}
   };
 }
 function migrateLegacyV1(){
@@ -98,7 +98,7 @@ function saveState(){
   A.version=4;A.gridSize=GRID_SIZE;
   const region=fitRegion();
   A.settings={
-    ...A.settings,mode,region,gender:E.gender.value,species:E.species.value,repo:base(),
+    ...A.settings,mode,region,gender:E.gender.value,species:E.species.value,sourceSpecies:E.sourceSpecies.value,sourceGender:E.sourceGender.value,repo:base(),
     garment:region==='body'?E.garment.value:(A.settings?.garment||''),
     headGarment:region==='headwear'?E.garment.value:(A.settings?.headGarment||'')
   };

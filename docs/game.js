@@ -8536,49 +8536,54 @@
       // directly, but under world.members[characterId] instead of the
       // character record — this is the data that stays behind in the world
       // when a character leaves, rather than following them.
+      function captureMemberWorldData(meta) {
+        const worldId = _tothalWorldId(); // Active world whose live member data replaces the snapshot's saved copy.
+        const charId = (window.__hobunjiPlayerProfile || _playerData)?.characterId; // Active farmer captured by both browser and direct folder saves.
+        if (!worldId || !charId) throw new Error('The active farmer/world is unavailable for save capture.');
+        const world = (meta?.worlds || []).find(w => w.id === worldId);
+        if (!world) throw new Error('The active world is missing from the save snapshot.');
+        if (!world.members) world.members = {};
+        const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
+        member.nonGearInventory = { ...inventory };
+        member.packClothing    = [...packClothing];
+        member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
+        member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
+        member.questProgress    = { ...questProgress };
+        member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
+        member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
+        member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
+        member.festivals = window.FestivalSystem?.serialize?.() || {};
+        member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
+        member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
+        member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
+        member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
+        member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
+        member.cookingState = window.CookingSystem.serialize();
+        member.wildBerryState = window.WildBerries.serializeState();
+        member.zoneTreasureState = window.WildTreasure.serializeState();
+        member.wildernessChunkState = serializeWildernessChunkState();
+        member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
+        member.felledTreeState = serializeZoneFelledTreeState();
+        member.minedRockState = serializeZoneMinedRockState();
+        member.townMineState = window.TownMine?.serialize?.() || null;
+        member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+        member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
+        member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
+        member.romanceState = window.RomanceSystem?.serialize?.() || null;
+        // Only ever consumed on the next boot if it lands in a wilderness
+        // zone with a still-active campfire there (see spawnPlayerAvatar) —
+        // saved unconditionally anyway since it's cheap and harmless
+        // otherwise; farm/town/interior/building sessions always start
+        // inside the farmhouse (see spawnPlayerAvatar).
+        member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
+        return meta;
+      }
+
       function saveMemberWorldData() {
-        const worldId  = _tothalWorldId();
-        const charId   = (window.__hobunjiPlayerProfile || _playerData)?.characterId;
-        if (!worldId || !charId) return;
         try {
-          const meta  = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          if (!world.members) world.members = {};
-          const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
-          member.nonGearInventory = { ...inventory };
-          member.packClothing    = [...packClothing];
-          member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
-          member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
-          member.questProgress    = { ...questProgress };
-          member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
-          member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
-          member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
-          member.festivals = window.FestivalSystem?.serialize?.() || {};
-          member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
-          member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
-          member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
-          member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
-          member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
-          member.cookingState = window.CookingSystem.serialize();
-          member.wildBerryState = window.WildBerries.serializeState();
-          member.zoneTreasureState = window.WildTreasure.serializeState();
-          member.wildernessChunkState = serializeWildernessChunkState();
-          member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
-          member.felledTreeState = serializeZoneFelledTreeState();
-          member.minedRockState = serializeZoneMinedRockState();
-          member.townMineState = window.TownMine?.serialize?.() || null;
-          member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
-          member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
-          member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
-          member.romanceState = window.RomanceSystem?.serialize?.() || null;
-          // Only ever consumed on the next boot if it lands in a wilderness
-          // zone with a still-active campfire there (see spawnPlayerAvatar) —
-          // saved unconditionally anyway since it's cheap and harmless
-          // otherwise; farm/town/interior/building sessions always start
-          // inside the farmhouse (see spawnPlayerAvatar).
-          member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
+          if (!meta) return;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
         } catch {}
       }
 
@@ -30605,6 +30610,7 @@
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
+        captureMemberWorldData,
         companionAiTypeForKind,
         creatureAttachmentAnchor,
         creaturePlaneGroundOffset,

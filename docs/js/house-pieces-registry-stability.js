@@ -76,6 +76,28 @@
     farmEditor.loadFarmLayout = guardedLoadFarmLayout;
   }
 
+  function liveHouseRegistryIsSafe() {
+    const liveRegistry = deps?.getHousePieces?.(); // Shared check protects browser writes and direct folder captures alike.
+    const key = layoutKey(); // Authoritative saved layout and its existing backup establish whether a starter house must survive.
+    const prior = key ? readStoredJson(key) : null;
+    const backup = backupLayout(key);
+    if (Array.isArray(liveRegistry) && !hasStarterRecords(liveRegistry)
+        && (validHouseLayout(prior) || validHouseLayout(backup))) {
+      blockedInvalidSaveCount += 1;
+      deps?.debugLog?.('Farm layout save blocked: live house registry lost house_starter; preserving the last valid house save.', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  if (farmEditor?.captureFarmLayout) {
+    const originalCaptureFarmLayout = farmEditor.captureFarmLayout; // Reuses the save guard without creating a browser backup during capture.
+    farmEditor.captureFarmLayout = function houseRegistryGuardedCapture() {
+      if (!liveHouseRegistryIsSafe()) throw new Error('Farm layout capture blocked: live house registry lost house_starter.');
+      return originalCaptureFarmLayout.apply(this, arguments);
+    };
+  }
+
   // Most gameplay and the pagehide/beforeunload flush call the exported
   // FarmEditor.saveFarmLayout function. If this world already has a valid
   // saved house, never allow a transient live registry without house_starter
@@ -84,16 +106,8 @@
   if (farmEditor?.saveFarmLayout && !farmEditor.saveFarmLayout.__houseRegistryGuarded) {
     const originalSaveFarmLayout = farmEditor.saveFarmLayout;
     const guardedSaveFarmLayout = function houseRegistryGuardedSave() {
-      const liveRegistry = deps?.getHousePieces?.();
+      if (!liveHouseRegistryIsSafe()) return false;
       const key = layoutKey();
-      const prior = key ? readStoredJson(key) : null;
-      const backup = backupLayout(key);
-      if (Array.isArray(liveRegistry) && !hasStarterRecords(liveRegistry)
-          && (validHouseLayout(prior) || validHouseLayout(backup))) {
-        blockedInvalidSaveCount += 1;
-        deps?.debugLog?.('Farm layout save blocked: live house registry lost house_starter; preserving the last valid house save.', 'error');
-        return false;
-      }
       const result = originalSaveFarmLayout.apply(this, arguments);
       if (result !== false && key) {
         const written = readStoredJson(key);
