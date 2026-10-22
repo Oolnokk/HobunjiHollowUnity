@@ -340,6 +340,7 @@ for (let step = 0; step < 12; step++) { corridorClock += 100; context.updateCame
 assert.ok(context.debug().shoulderOffsetFactor === 1 && Math.abs(camera.target.x - .3) < 1e-8,
   'clear space restores the full authored shoulder offset smoothly');
 context.cutscenePreviewActive = true;
+context.cutscenePreviewZoomPercent = 100; // Scripted preview uses its own zoom percent; this fixture must supply that authored input.
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .05 }];
 context.updateCamera();
 assert.ok(Math.abs(camera.target.x - .3) < 1e-8 && context.debug() === null,
