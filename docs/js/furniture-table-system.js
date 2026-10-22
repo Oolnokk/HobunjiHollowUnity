@@ -301,7 +301,7 @@
   }
   const socialCandidates = []; // NPC-only ray pass ignores scenery, while furniture keeps its physical blockers.
   const focusCandidates = []; // Reused candidate buffer; the existing ranged targeting owner supplies the actual camera ray/slab intersection.
-  const attachedServiceCandidates = []; // Reused when a table's broad blocking box contains its own authored service objects.
+  const unobstructedCandidates = []; // Reused to find the first actual hit past a service table's oversized collision bounds.
   let focusStamp = null, focusArea = null, focused = null; // One consistent NPC/chair/service winner for prompt and press in the same frame.
   function focusedTarget(area) {
     if (!deps?.focusCandidates) return null;
@@ -344,11 +344,15 @@
     if (socialFocus) { focused = socialFocus; return focused; }
     const furnitureFocus = deps.focusCandidates(focusCandidates, 40)?.candidate || null; // Still respects unrelated furniture blockers.
     if (furnitureFocus?.kind === 'blocker' && furnitureFocus.entry.record.serviceId) {
-      attachedServiceCandidates.length = 0;
+      unobstructedCandidates.length = 0;
       for (const candidate of focusCandidates) {
-        if (candidate.kind === 'service' && candidate.entry === furnitureFocus.entry) attachedServiceCandidates.push(candidate);
+        // Only the hit table's own broad-phase blocker is ignored. An unrelated
+        // obstruction inside that box still wins before any serving object behind it.
+        if (candidate !== furnitureFocus) unobstructedCandidates.push(candidate);
       }
-      focused = deps.focusCandidates(attachedServiceCandidates, 40)?.candidate || furnitureFocus;
+      const visible = deps.focusCandidates(unobstructedCandidates, 40)?.candidate;
+      focused = visible?.kind === 'service' && visible.entry === furnitureFocus.entry
+        ? visible : furnitureFocus;
     } else focused = furnitureFocus;
     return focused;
   }
