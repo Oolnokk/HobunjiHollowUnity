@@ -121,7 +121,7 @@
     // ordinary line instead of reading the character's backstory aloud.
     const fallback = (rec.dialogueTrees || []).find(tree => tree.id === `tree_${rec.id}_fallback`); // Used only when the normal tree selector found no eligible conversation.
     const entry = (fallback?.nodes || []).find(node => node.id === fallback.entryNode); // Used to recover this NPC's existing casual speech pool.
-    const speech = entry?.type === 'text' && typeof entry.text === 'string' ? _resolveTokens(entry.text, rec) : ''; // Resolves conditioned greeting entries without exposing character notes.
+    const speech = (entry?.type === 'text' || entry?.type === 'line') && typeof entry.text === 'string' ? _resolveTokens(entry.text, rec) : ''; // Resolves authored dialogue in either supported spoken node format, without exposing character notes.
     return _paginateNpcDialogueText(speech);
   }
 
@@ -1137,8 +1137,8 @@
     _navigateDlgTo(next || null);
   }
 
-  // Starts the actual conversation content (dialogue tree, or the plain
-  // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
+  // Starts the actual conversation content (dialogue tree, or authored
+  // spoken-line fallback) — shared by plain NPCs and by the "Chat" branch
   // of the merchant shop/chat choice in game.js's openNpcDialogue.
   function _beginNpcConversation(rec, options = {}) {
     if (rec?.id) _lastNpcRec = rec;
@@ -1159,7 +1159,7 @@
       hideChoiceButtons();
       _dialogueLines   = _npcDialogueLines(rec);
       _dialogueLineIdx = 0;
-      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so the NPC record\'s plain bio/lines are shown.' } });
+      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so authored spoken lines (never bio/lore) are shown.' } });
       _setNpcDialogueText(_dialogueLines[0]);
       updateNpcDialoguePortrait(0);
     }
