@@ -1,8 +1,8 @@
 }
 function routedPatchIsBody(){return R.patchWorkflow.active&&R.patchWorkflow.descriptor?.kind==='body'}
 function routedPatchIsClothing(){return R.patchWorkflow.active&&R.patchWorkflow.descriptor?.kind==='clothing'}
-function currentWarp(){
-  const source=mainClothSource();
+function currentWarp(sourceOverride=null){
+  const source=sourceOverride||mainClothSource();
   if(!source)return null;
   return warpGarment(source,warpGridForMode(),R.body.width,R.body.height); // Routed clothing and body patches share the same live Base Transform / 6×6 fit path before their different avatar-assembly stages.
 }
@@ -13,7 +13,13 @@ function currentExtendedWarp(finalFit=false){
   return R.extendedWarped;
 }
 
-function bodyOut(){return R.body}
+function bodyOut(){return fitRegion()==='headwear'?(R.headReference||R.body):R.body}
+function headwearWarpForView(view,finalFit=false){
+  if(fitRegion()!=='headwear'||!R.cloth||!R.body)return null;
+  const source=view==='back'?R.cloth._back:R.cloth._front;
+  if(!source)return null;
+  return warpGarment(source,finalFit?targetGrid():warpGridForMode(),R.body.width,R.body.height);
+} // Back and front sprites use the same saved 6×6 fit, but remain separate for compositing and exports.
 function clothOut(fitState=captureFitState()){
   const source=mainClothSource();
   if(!source||!R.body)return null;
@@ -27,7 +33,13 @@ function overlayOut(){
   const clothing=clothOut();if(!R.body||!clothing)return null;
   const output=document.createElement('canvas');output.width=R.body.width;output.height=R.body.height;
   const ctx=output.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
-  ctx.drawImage(R.body,0,0);ctx.drawImage(clothing,0,0);return output;
+  if(fitRegion()==='headwear'){
+    const back=headwearWarpForView('back',true),front=headwearWarpForView('front',true);
+    if(back)ctx.drawImage(back,0,0);
+    ctx.drawImage(bodyOut(),0,0);
+    if(front)ctx.drawImage(front,0,0);
+  }else{ctx.drawImage(R.body,0,0);ctx.drawImage(clothing,0,0)}
+  return output;
 }
 function safeName(value){return String(value||'sprite').trim().replace(/[^a-z0-9_-]+/gi,'_').replace(/^_+|_+$/g,'')||'sprite'}
 function downloadCanvas(canvas,filename){
