@@ -2,7 +2,9 @@
   const p=new Promise((ok,bad)=>{
     const img=new Image();img.crossOrigin='anonymous';img.onload=()=>ok(img);img.onerror=()=>bad(new Error('Image failed: '+url));img.src=url;
   });
-  R.images.set(url,p);return p;
+  R.images.set(url,p);
+  p.catch(()=>{if(R.images.get(url)===p)R.images.delete(url)}); // A newly added sprite can succeed on a later refresh rather than reusing an old rejected image.
+  return p;
 }
 function loadLocalImage(file){
   return new Promise((resolve,reject)=>{
@@ -173,18 +175,20 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       if(!records.length)return null;
       const front=Object.assign(document.createElement('canvas'),{width,height});
       const back=Object.assign(document.createElement('canvas'),{width,height});
+      let hasFront=false,hasBack=false; // Avoid wasting headwear warps and exports on unused orientations.
       for(const record of records){
         try{
           const image=await loadImage(assetUrl(record.path));
           const target=record.isBack?back:front;
           const ctx=target.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
           ctx.drawImage(image,0,0); // All authored headwear layers retain their source-pixel alignment.
+          if(record.isBack)hasBack=true;else hasFront=true;
         }catch(error){log(`Missing ${garment.label} layer ${record.path}: ${error.message}`)}
       }
       const canvas=Object.assign(document.createElement('canvas'),{width,height});
       const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
       x.drawImage(back,0,0);x.drawImage(front,0,0);
-      canvas._front=front;canvas._back=back;canvas._paths=records.map(record=>record.path);
+      canvas._front=hasFront?front:null;canvas._back=hasBack?back:null;canvas._paths=records.map(record=>record.path);
       return canvas;
     }
     if(!variant)return null; // Missing authored target species/gender body art is normal.
