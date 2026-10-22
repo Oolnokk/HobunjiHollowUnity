@@ -4989,7 +4989,10 @@
         // their own swept 3D Box3 collision and deliberately bypass this.
         const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
           && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
-        if (!environmentalImpact && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+        // Bandit/tribe actor-vs-actor hits name their attacker; standing near
+        // the player must not turn them into the player's own swing.
+        const actorAttacker = dmgOpts?.attacker && dmgOpts.attacker !== player ? dmgOpts.attacker : null;
+        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
           const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
           if (reach && !reach.reachable) {
             lastMeleeHeightBlock = {
@@ -5011,11 +5014,13 @@
         if (!environmentalImpact) {
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
-          amount *= window.SkillSystem?.attackMultiplier?.() || 1;
-          amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
-          amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
-          amount = banditTryGuard(c, amount, player);
-          if (!c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+          if (!actorAttacker) { // The player's skill, potion and perk multipliers only scale the player's own hits.
+            amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+            amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+            amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
+          }
+          amount = banditTryGuard(c, amount, actorAttacker || player);
+          if (!actorAttacker && !c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
@@ -28876,6 +28881,10 @@
         craftedToolItemKey,
         metalDmgMultiplier,
         damagePlayer,
+        // Bandit/tribe hits on other actors (chunk ecology fights). Without it
+        // damageBanditCombatTarget fell back to damagePlayer. Routed through
+        // Combat.deps so faction-rule wrappers see these hits too.
+        damageCreature: (...args) => (window.Combat?.deps?.damageCreature || damageCreature)(...args),
         inCone,
         sweptMove,
         canOccupyAt,

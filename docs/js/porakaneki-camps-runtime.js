@@ -486,7 +486,7 @@
     teardownCamp(camp);
     window.TemporaryLocales?.release?.(zoneState.view, camp.instance);
     state.lastReason = `hunting-camp-reduced-for-bandits:${zoneId}:${camp.id}`;
-    window.__farmLog?.(`[${KEY}] removed hunting camp ${camp.id} so a bandit camp can keep its required chunk separation.`, 'wildlife');
+    window.__farmLog?.(`[${KEY}] removed hunting camp ${camp.id} so a bandit or rival-tribe camp can keep its required chunk separation.`, 'wildlife');
     return camp.id;
   }
 
@@ -548,6 +548,14 @@
 
     const targetCount = smallCampCountForZone(zoneId);
     for (let i = 0; i < targetCount; i++) stampHuntingCamp(zoneState, zoneId, i, false);
+    // Earlier tribes fill the zone first. A later tribe takes over their
+    // surplus hunting-camp slots (never below their one-camp floor) so rival
+    // tribes end up with comparable camps while chunks stay exclusive.
+    for (let i = 0; i < targetCount && zoneState.smallCamps.length < targetCount; i++) {
+      if (zoneState.smallCamps.some(camp => camp.id === `${KEY}_small_${zoneId}_${i}`)) continue;
+      const rival = earlierTribes().find(other => num(other.debugSnapshot().zones?.[zoneId]?.smallCampCount, 0) > zoneState.smallCamps.length + 1);
+      if (rival?.reduceHuntingCampsForBandit(zoneId)) stampHuntingCamp(zoneState, zoneId, i, false);
+    }
     if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE) {
       stampHuntingCamp(zoneState, zoneId, targetCount, true); // Exhaustive zero-clearance/non-flat fallback prevents an unlucky zone from ending up camp-less.
     }

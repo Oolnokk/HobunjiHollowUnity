@@ -73,7 +73,7 @@ const server=http.createServer((req,res)=>{
     const spawned=await page.evaluate(async()=>{
       const deps=window.Combat.deps,cfg=await window.BanditCombat.loadGangConfig();
       const spawn=async(tribeId,dx)=>{
-        const x=deps.player.x+dx*deps.TILE,y=deps.player.y+deps.TILE*1.5;
+        const x=deps.player.x+dx*deps.TILE,y=deps.player.y+deps.TILE*2;
         const entity=await window.BanditCombat.makeEntity({...cfg,speciesWeights:{[tribeId]:1},rangedWeaponChanceByRank:{grunt:0,lieutenant:0,captain:0}},'grunt',0,x,y,{
           zoneId:'map_dev_arena',nameOverride:tribeId+' QA',
           defOverride:{weaponKey:'hatchet',weaponShapeKey:'hatchet'},
@@ -83,8 +83,15 @@ const server=http.createServer((req,res)=>{
       const omg=await spawn('omgurku',-1),pora=await spawn('porakaneki',1);
       window.__tribeQa={omg,pora};
       const ref=omg.avatarRef;
+      for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
+      const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
+      const holder=omg._banditToolHolder?.position;
+      const floorY=ref.group.position.y-omg.halfHeight;
       return {omg:!!omg,pora:!!pora,species:omg.rosterRecord?.appearance?.speciesId,compound:!!ref.riderMount,
-        enemyClass:omg.enemyClass,frontChildren:ref.frontPlane.children.length,backChildren:ref.backPlane.children.length,
+        enemyClass:omg.enemyClass,backChildren:ref.backPlane.children.length,
+        holderToRider:holder?Math.hypot(holder.x-rider.x,holder.z-rider.z):null,
+        holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
+        riderHandY:rider.y-floorY+(ref.riderMount.upper.scale.x||1)*(Number(ref.handAttachY)||0),groundHandY:Number(ref.handAttachY)||0,
         live:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
     });
     assert(spawned.omg&&spawned.pora,'both tribe hunters build through BanditCombat');
@@ -92,24 +99,18 @@ const server=http.createServer((req,res)=>{
     assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
     assert.equal(spawned.enemyClass,'omgurku-hunter');
     assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
+    assert(spawned.holderToRider!=null&&spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
+    assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
     // Let the shared hostile loop and the 5 Hz tribe ecology pass run.
     await page.waitForFunction(()=>window.__tribeQa.omg._chunkCombatTarget===window.__tribeQa.pora&&window.__tribeQa.pora._chunkCombatTarget===window.__tribeQa.omg,null,{timeout:20000});
-    if(SHOTS)await page.screenshot({path:path.join(SHOTS,'tribe-fight.png')});
-    const fight=await page.evaluate(async()=>{
-      const {omg,pora}=window.__tribeQa,ref=omg.avatarRef;
-      const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
-      const holder=omg._banditToolHolder.position;
-      const startHealth=[omg.health,pora.health];
-      await new Promise(resolve=>setTimeout(resolve,8000));
-      return {neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],
-        holderToRider:Math.hypot(holder.x-rider.x,holder.z-rider.z),holderAboveFloor:holder.y-(ref.group.position.y-omg.halfHeight),
-        riderFloorY:rider.y-(ref.group.position.y-omg.halfHeight),
-        damaged:omg.health<startHealth[0]||pora.health<startHealth[1],health:[omg.health,pora.health]};
-    });
+    await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa;return omg.health<omg.maxHealth||pora.health<pora.maxHealth;},null,{timeout:45000}); // Rival tribes actually trade blows.
+    if(SHOTS){
+      await page.evaluate(()=>{for(const id of ['ob-overlay','save-startup-gate'])document.getElementById(id)?.style.setProperty('display','none');if(window.Combat.deps.playerMesh)window.Combat.deps.playerMesh.visible=false;}); // Review-only: reveal the fighters under the new-world overlay and behind the player.
+      await page.screenshot({path:path.join(SHOTS,'tribe-fight.png')});
+    }
+    const fight=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa;
+      return {neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};});
     assert.deepEqual(fight.neutral,[true,true],'tribe-vs-tribe fighting keeps both neutral to the player');
-    assert(fight.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${fight.holderToRider.toFixed(2)})`);
-    assert(fight.holderAboveFloor>fight.riderFloorY,'weapon is raised onto the saddle, not left at ground hand height');
-    assert(fight.damaged,`rival tribes actually trade blows (${fight.health})`);
     const camps=await page.evaluate(()=>{
       const chunks=api=>Object.keys(api.debugSnapshot().zones).flatMap(zone=>api.reservedCampChunks(zone).map(key=>zone+':'+key));
       const pora=window.PorakanekiCamps.debugSnapshot(),omg=window.OmgurkuCamps.debugSnapshot();
@@ -122,6 +123,7 @@ const server=http.createServer((req,res)=>{
     assert.deepEqual(camps.tribes,['porakaneki','omgurku']);
     assert.equal(camps.omgZones,4,'Omgurku camps exist on all four wilderness maps');
     assert(camps.omgSmall>=4,'every wilderness map keeps at least one Omgurku hunting camp');
+    assert(Math.abs(camps.omgSmall-camps.poraSmall)<=4,`rival tribes get comparable hunting camps (${camps.omgSmall} Omgurku / ${camps.poraSmall} Porakaneki)`);
     assert.deepEqual(camps.overlap,[],'Omgurku camps never share a stream chunk with Porakaneki camps');
     assert.notEqual(camps.chiefs[0],camps.chiefs[1],'the two chief camps are on different maps');
     const removed=await page.evaluate(()=>{

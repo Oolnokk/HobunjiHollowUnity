@@ -53,3 +53,6 @@ jobs:
 
       - name: Omgurku NPC gameplay browser smoke
         run: node scripts/test-omgurku-gameplay-browser.js
+
+      - name: Omgurku enemy tribe browser smoke
+        run: node scripts/test-omgurku-tribe-browser.js
