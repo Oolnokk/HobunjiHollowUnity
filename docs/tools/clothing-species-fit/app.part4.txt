@@ -94,7 +94,7 @@ async function refreshAssets(){
   const generation=++R.assetGeneration; // The latest selection alone may install downloaded images.
   const species=E.species.value,gender=E.gender.value,garmentId=E.garment.value,region=fitRegion();
   const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Source dimensions and garment raster are independent of the target avatar.
-  R.body=null;R.maoBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null;
+  R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null;
   E.clothPng.disabled=true;E.compositePng.disabled=true; // Never allow exporting a stale garment during a source/target change.
   try{
     if(R.patchWorkflow.active||R.patchWorkflow.canvas){
@@ -102,14 +102,14 @@ async function refreshAssets(){
       E.clothPng.textContent=region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG';
     }
     const body=await buildBodyCanvas(species,gender);
-    const maoBody=await buildBodyCanvas(sourceSpecies,sourceGender); // Legacy field now holds the selected source character's native body raster.
+    const sourceBody=await buildBodyCanvas(sourceSpecies,sourceGender); // Legacy field now holds the selected source character's native body raster.
     const headReference=region==='headwear'?await buildHeadReferenceCanvas(species,gender,body.width,body.height):null;
-    const cloth=garmentId?await buildGarmentCanvas(garmentId,sourceSpecies,sourceGender,maoBody.width,maoBody.height):null;
+    const cloth=garmentId?await buildGarmentCanvas(garmentId,sourceSpecies,sourceGender,sourceBody.width,sourceBody.height):null;
     const authored=garmentId
       ?await buildVariantGarmentCanvas(garmentId,species,gender,body.width,body.height)
       :null;
     if(generation!==R.assetGeneration)return; // Switching modes/species while images load cannot reinstall stale art.
-    R.body=body;R.maoBody=maoBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
+    R.body=body;R.sourceBody=sourceBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
     const layerCount=cloth?._layers?.length||0; // Distinct authored source rasters, including explicit alternate behind-view images.
     E.clothPng.disabled=!cloth;E.compositePng.disabled=!cloth;
     E.clothPng.textContent=layerCount>1?`Export ${layerCount} fitted layers ZIP`:(region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG');
