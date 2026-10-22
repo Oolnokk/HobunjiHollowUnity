@@ -90,25 +90,56 @@ function warpGarment(source,targetNorm,outWidth,outHeight){
   return output;
 }
 
+async function buildSourceReferenceCanvas(species,gender,garmentId,targetBody){
+  if(bodyLayers(species,gender).length)return buildBodyCanvas(species,gender);
+  const garment=R.garments.find(record=>record.id===garmentId);
+  const paths=HEAD_SLOTS.has(garment?.slot)
+    ?headwearLayerRecords(garment,species,gender).flatMap(layer=>[layer.path,layer.behindPath])
+    :collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).map(layer=>layer.url);
+  const urls=[...new Set(paths.filter(Boolean))]; // Collect every material and alternate rear raster before sizing the shared source.
+  if(!urls.length){
+    log(`No ${species} ${gender} source body or garment raster; retaining target dimensions as an empty fitting reference.`);
+    const fallback=document.createElement('canvas');fallback.width=targetBody.width;fallback.height=targetBody.height;
+    fallback._paths=[];return fallback;
+  }
+  const loaded=await Promise.allSettled(urls.map(url=>loadImage(assetUrl(url)))); // One absent optional rear image must not hide the other materials.
+  const images=loaded.filter(result=>result.status==='fulfilled').map(result=>result.value);
+  if(!images.length)throw new Error(`Could not load any ${species} ${gender} garment sprites to establish source dimensions.`);
+  const fallback=document.createElement('canvas');
+  fallback.width=Math.max(...images.map(image=>image.naturalWidth||image.width));
+  fallback.height=Math.max(...images.map(image=>image.naturalHeight||image.height));
+  fallback._paths=urls;
+  const missing=urls.length-images.length;
+  log(`Using ${species} ${gender} garment sprite dimensions (${fallback.width}×${fallback.height}) without body reference sprites.${missing?` ${missing} source images unavailable.`:''}`);
+  return fallback;
+} // NPC-only or unimplemented body rigs can still supply valid starting clothing artwork.
+
 async function refreshAssets(){
   const generation=++R.assetGeneration; // The latest selection alone may install downloaded images.
   const species=E.species.value,gender=E.gender.value,garmentId=E.garment.value,region=fitRegion();
-  R.body=null;R.maoBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null;
+  const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Source dimensions and garment raster are independent of the target avatar.
+  R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null;
+  E.clothPng.disabled=true;E.compositePng.disabled=true; // Never allow exporting a stale garment during a source/target change.
   try{
     if(R.patchWorkflow.active||R.patchWorkflow.canvas){
       R.patchWorkflow={active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:(R.patchWorkflow.revision||0)+1};
       E.clothPng.textContent=region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG';
     }
     const body=await buildBodyCanvas(species,gender);
-    const maoBody=await buildBodyCanvas('mao-ao',gender);
+    const sourceBody=await buildSourceReferenceCanvas(sourceSpecies,sourceGender,garmentId,body); // Body art is optional for source-only NPC species.
     const headReference=region==='headwear'?await buildHeadReferenceCanvas(species,gender,body.width,body.height):null;
-    const cloth=garmentId?await buildGarmentCanvas(garmentId,gender,maoBody.width,maoBody.height):null;
+    const cloth=garmentId?await buildGarmentCanvas(garmentId,sourceSpecies,sourceGender,sourceBody.width,sourceBody.height):null;
     const authored=garmentId
       ?await buildVariantGarmentCanvas(garmentId,species,gender,body.width,body.height)
       :null;
     if(generation!==R.assetGeneration)return; // Switching modes/species while images load cannot reinstall stale art.
-    R.body=body;R.maoBody=maoBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
-    E.clothPng.disabled=!cloth;
+    R.body=body;R.sourceBody=sourceBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
+    const layerCount=cloth?._layers?.length||0; // Distinct authored source rasters, including explicit alternate behind-view images.
+    E.clothPng.disabled=!cloth;E.compositePng.disabled=!cloth;
+    E.clothPng.textContent=layerCount>1?`Export ${layerCount} fitted layers ZIP`:(region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG');
+    E.sourceLayerStatus.textContent=cloth
+      ?`${sourceSpecies} ${sourceGender}: ${layerCount} authored source layer${layerCount===1?'':'s'} → ${species} ${gender}. ${layerCount>1?'Export preserves every layer in a ZIP.':'Single-layer PNG export.'}`
+      :`No source garment art for ${sourceSpecies} ${sourceGender} in this slot. Choose another item or starting sprite.`;
     E.exportHeadwearFront.disabled=region!=='headwear'||!cloth?._front;
     E.exportHeadwearBack.disabled=region!=='headwear'||!(cloth?._behindView||cloth?._back);
     E.authoredStatus.textContent=authored
@@ -119,6 +150,7 @@ async function refreshAssets(){
     window.dispatchEvent(new CustomEvent('hobunji-clothing-fit-assets-refreshed',{detail:{species,gender,garmentId}}));
   }catch(error){
     if(generation!==R.assetGeneration)return;
+    E.sourceLayerStatus.textContent='Source/target reload failed: '+error.message;
     status('Refresh failed: '+error.message);log('ERROR '+error.message);console.error(error);
   }
 }
@@ -150,5 +182,34 @@ function drawGrid(ctx,points,color,active){
   ctx.restore();
 }
 function warpGridForMode(){return mode==='transform'?transformedSourceGrid():targetGrid()}
+function layerMatchesRoutedClothingPatch(layer){
+  const descriptor=R.patchWorkflow.descriptor;
+  return R.patchWorkflow.active&&descriptor?.kind==='clothing'&&
+    Array.isArray(descriptor.layerPath)&&JSON.stringify(layer?.path)===JSON.stringify(descriptor.layerPath);
+} // A corrective image belongs to one exact cosmetic config leaf, not the entire garment.
+
+function fittedSourceCanvasForLayer(layer){
+  if(!layerMatchesRoutedClothingPatch(layer)||!R.patchWorkflow.canvas)return layer.canvas;
+  if(R.patchWorkflow._patchedLayer===layer&&R.patchWorkflow._patchedLayerCanvas)return R.patchWorkflow._patchedLayerCanvas;
+  const canvas=document.createElement('canvas'); // Fits the patched native raster in the garment's shared source-pixel frame.
+  canvas.width=R.cloth.width;canvas.height=R.cloth.height;
+  const context=canvas.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  context.drawImage(R.patchWorkflow.canvas,0,0); // Do not stretch a smaller sprite to the full portrait.
+  R.patchWorkflow._patchedLayer=layer;R.patchWorkflow._patchedLayerCanvas=canvas;
+  return canvas;
+}
+
 function mainClothSource(){
-  return R.patchWorkflow.active&&R.patchWorkflow.canvas?R.patchWorkflow.canvas:R.cloth; // Generic deform source: clothing uses a composite, body routes only the positioned corrective patch.
+  if(!R.patchWorkflow.active||!R.patchWorkflow.canvas)return R.cloth;
+  if(R.patchWorkflow.descriptor?.kind!=='clothing'||!R.cloth?._layers?.length)return R.patchWorkflow.canvas; // Body patches remain patch-only.
+  if(R.patchWorkflow._compositeBase===R.cloth&&R.patchWorkflow._compositeCanvas)return R.patchWorkflow._compositeCanvas;
+  const layers=R.cloth._layers,matched=layers.some(layer=>layerMatchesRoutedClothingPatch(layer));
+  if(!matched){
+    if(!R.patchWorkflow._warnedMissingLayer){log('Patch source no longer matches a garment layer; using the unpatched garment.');R.patchWorkflow._warnedMissingLayer=true}
+    return R.cloth;
+  }
+  const canvas=document.createElement('canvas');canvas.width=R.cloth.width;canvas.height=R.cloth.height;
+  const context=canvas.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
+  for(const layer of layers)context.drawImage(fittedSourceCanvasForLayer(layer),0,0); // Keep every other material, in authored draw order.
+  R.patchWorkflow._compositeBase=R.cloth;R.patchWorkflow._compositeCanvas=canvas; // Reuse during frequent 2D and 3D redraws.
+  return canvas;

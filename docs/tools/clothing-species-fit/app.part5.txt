@@ -29,6 +29,209 @@ function fittedClothingFilename(){
   if(R.patchWorkflow.active&&R.patchWorkflow.filename)return R.patchWorkflow.filename;
   return `${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}.png`;
 }
+function fittedLayerOutputs(fitState=captureFitState()){
+  if(!R.cloth||!R.body)return [];
+  const targetNorm=targetGridFromFitState(fitState);
+  return (R.cloth._layers||[]).map(layer=>{
+    const isPatched=layerMatchesRoutedClothingPatch(layer);
+    const source=fittedSourceCanvasForLayer(layer); // Same shared pixel frame and layer order as the live preview.
+    return {...layer,patched:!!isPatched,canvas:warpGarment(source,targetNorm,R.body.width,R.body.height)};
+  });
+} // Every layer uses one immutable fit snapshot; compositing is for preview only.
+
+function archiveAssetPath(url){
+  const path=String(url||'').replace(/^\.\//,'');
+  if(!/^assets\/.+\.png$/i.test(path)||/[\\?#:"<>|\x00-\x1f]/.test(path)||
+     path.split('/').some(segment=>!segment||segment==='.'||segment==='..'))return null;
+  return path;
+}
+function fittedFallbackAssetPath(layer,selection){
+  const source=archiveAssetPath(layer.url);
+  const directory=source?.slice(0,source.lastIndexOf('/')+1)||'assets/cosmetics/clothes/';
+  const original=(source?.split('/').pop()||safeName(layer.name)+'.png').replace(/\.png$/i,'');
+  const noSourceGender=original.replace(/[_-](male|female|m|f)$/i,'');
+  const suffix=selection.targetGender==='female'?'f':'m';
+  return directory+noSourceGender+'_'+safeName(selection.targetSpecies)+'_'+suffix+'.png';
+}
+function archiveVariantLeaf(variant,path,originalLeaf){
+  let cursor=variant,created=false;
+  for(let index=0;index<path.length;index++){
+    const key=path[index];
+    if(!cursor[key]||typeof cursor[key]!=='object'){
+      cursor[key]=index===path.length-1?JSON.parse(JSON.stringify(originalLeaf)):{};
+      created=true;
+    }
+    cursor=cursor[key];
+  }
+  return{leaf:cursor,created};
+}
+function assetReferencedOutsideVariant(path,garmentId,targetVariantKey){
+  const matches=node=>{
+    if(!node||typeof node!=='object')return false;
+    if(archiveAssetPath(node.image?.url)===path||archiveAssetPath(node.behindImage?.url)===path)return true;
+    return Object.entries(node).some(([key,value])=>
+      key!=='image'&&key!=='behindImage'&&value&&typeof value==='object'&&matches(value));
+  };
+  for(const garment of R.garments){
+    for(const [variantKey,variant] of Object.entries(garment.cfg?.speciesVariants||{})){
+      if(garment.id===garmentId&&variantKey===targetVariantKey)continue;
+      if(matches(variant))return true;
+    }
+    if(garment.id!==garmentId&&matches(garment.cfg?.parts))return true;
+  }
+  return false; // Shared texture URLs must not overwrite an unrelated species or clothing item.
+}
+
+function assetReferencedByOtherTargetLayer(assetPath,variant,layerPath){
+  // Every reference to the same PNG must belong to the layer being fitted.
+  // image and behindImage on that SAME layer may intentionally share an identical PNG.
+  const references=[];
+  const visit=(node,path=[])=>{
+    if(!node||typeof node!=='object')return;
+    if(archiveAssetPath(node.image?.url)===assetPath)references.push(path);
+    if(archiveAssetPath(node.behindImage?.url)===assetPath)references.push(path);
+    for(const [key,value] of Object.entries(node)){
+      if(key==='image'||key==='behindImage')continue;
+      if(value&&typeof value==='object')visit(value,[...path,key]);
+    }
+  };
+  visit(variant);
+  const ownerPath=layerPath.at(-1)==='behindImage'?layerPath.slice(0,-1):layerPath;
+  return references.some(path=>JSON.stringify(path)!==JSON.stringify(ownerPath));
+} // Avoid clobbering unexported or differently authored layers within the target variant.
+
+function archiveAssetUsedByAnyGarment(path){
+  return R.garments.some(garment=>
+    Object.values(garment.cfg?.speciesVariants||{}).some(variant=>
+      assetReferencedByOtherTargetLayer(path,variant,[]))||
+    assetReferencedByOtherTargetLayer(path,{parts:garment.cfg?.parts||{}},[])
+  );
+} // Even suggested new filenames cannot overwrite another already-authored sprite URL.
+
+function buildFittedLayerArchivePlan(layers,selection){
+  const garment=garmentRecord(),cfg=garment?.cfg;
+  if(!cfg||!garment.configPath)throw new Error('This garment has no repository cosmetic config path for a ready-to-install export.');
+  const sourceKey=selection.sourceSpecies+'_'+selection.sourceGender;
+  const targetKey=selection.targetSpecies+'_'+selection.targetGender;
+  const sourceVariant=cfg.speciesVariants?.[sourceKey]||{parts:cfg.parts||{}};
+  if(!sourceVariant&&!HEAD_SLOTS.has(garment.slot))throw new Error('Cannot resolve the selected source garment variant.');
+  const config=JSON.parse(JSON.stringify(cfg));
+  config.speciesVariants ||= {};
+  let modified=false;
+  if(!config.speciesVariants[targetKey]){config.speciesVariants[targetKey]={parts:{}};modified=true}
+  const draft=config.speciesVariants[targetKey];
+  const used=new Set(),files=[];
+  for(const layer of layers){
+    const sourceLeaf=patchNodeAtPath(sourceVariant,layer.path)||
+      (layer.path.at(-1)==='behindImage'?{url:layer.url}:{image:{url:layer.url},layerRole:layer.role||''});
+    const originalTarget=patchNodeAtPath(cfg.speciesVariants?.[targetKey],layer.path);
+    const behind=layer.path.at(-1)==='behindImage';
+    const targetUrl=behind?originalTarget?.url:originalTarget?.image?.url;
+    const existing=archiveAssetPath(targetUrl);
+    const shared=existing&&(
+      assetReferencedOutsideVariant(existing,garment.id,targetKey)||
+      assetReferencedByOtherTargetLayer(existing,cfg.speciesVariants?.[targetKey],layer.path)||
+      assetReferencedByOtherTargetLayer(existing,{parts:cfg.parts||{}},[])
+    );
+    let outputName=existing&&!shared?existing:fittedFallbackAssetPath(layer,selection);
+    const collides=name=>used.has(name.toLowerCase())||
+      (name!==existing&&archiveAssetUsedByAnyGarment(name));
+    if(collides(outputName)){
+      const suffix=safeName(layer.path.join('_'));
+      const base=outputName.replace(/\.png$/i,'');
+      outputName=base+'__'+suffix+'.png';
+      for(let index=2;collides(outputName);index++)outputName=base+'__'+suffix+'_'+index+'.png';
+    }
+    used.add(outputName.toLowerCase());
+    const changedUrl=!existing||outputName!==existing;
+    const installed=archiveVariantLeaf(draft,layer.path,sourceLeaf);
+    if(installed.created)modified=true;
+    if(changedUrl){
+      if(behind)installed.leaf.url='./'+outputName;
+      else{
+        installed.leaf.image ||= {};
+        installed.leaf.image.url='./'+outputName;
+      }
+      modified=true;
+    }
+    // If front and rear originally use the same image, updating a front file must
+    // update its matching rear alias even when the target layer ALREADY exists.
+    // A distinct authored behindImage is handled by its own exported layer instead.
+    if(!behind&&changedUrl&&installed.leaf.behindImage?.url===targetUrl){
+      const explicitRear=layers.some(other=>other.path.length===layer.path.length+1&&
+        other.path.at(-1)==='behindImage'&&
+        JSON.stringify(other.path.slice(0,-1))===JSON.stringify(layer.path));
+      if(!explicitRear)installed.leaf.behindImage.url='./'+outputName;
+    }
+    if(installed.created&&!behind&&installed.leaf.behindImage?.url===layer.url){
+      installed.leaf.behindImage.url='./'+outputName;
+      modified=true;
+    }
+    files.push({
+      outputName,originalLayerName:layer.name,sourceConfigPath:layer.path,sourceUrl:layer.url,
+      targetUrl:'./'+outputName,existingTargetFilename:!!existing&&!changedUrl,
+      sharedTargetAssetAvoided:!!shared,
+      layerRole:layer.role,view:layer.view,patched:layer.patched
+    });
+  }
+  return{files,configPath:modified?garment.configPath:null,originalConfigPath:garment.configPath,
+    config:modified?config:null};
+}
+
+async function exportFittedGarment(){
+  const fit=captureFitState();
+  if(!R.cloth)return;
+  if((R.cloth._layers?.length||0)<=1||routedPatchIsBody()){
+    const output=clothOut(fit); // Don't spend another 800-triangle warp on a single-layer PNG.
+    if(output){downloadCanvas(output,fittedClothingFilename());log(`Exported single fitted PNG (${fit.key}).`)}
+    return;
+  }
+  const layers=fittedLayerOutputs(fit);
+  const zipTools=window.ClothingFitZip; // Reuses the behind-sprite author's existing dependency-free ZIP encoder.
+  if(!zipTools){log('ERROR ZIP export helper is not loaded; the editor cannot export layered sprites safely.');return}
+  const selection={garmentId:E.garment.value,fitRegion:fitRegion(),sourceSpecies:E.sourceSpecies.value,
+    sourceGender:E.sourceGender.value,targetSpecies:E.species.value,targetGender:E.gender.value}; // Pinned before asynchronous mobile PNG encoding.
+  const stem=`${safeName(selection.garmentId)}_${safeName(selection.targetSpecies)}_${selection.targetGender}`;
+  const entries=[];
+  E.clothPng.disabled=true;
+  try{
+    const plan=buildFittedLayerArchivePlan(layers,selection);
+    for(let index=0;index<layers.length;index++){
+      const mapped=plan.files[index];
+      E.sourceLayerStatus.textContent='Baking '+(index+1)+'/'+layers.length+': '+mapped.outputName;
+      entries.push({name:mapped.outputName,bytes:await zipTools.canvasToPngBytes(layers[index].canvas)});
+    }
+    if(plan.configPath)
+      entries.push({name:plan.configPath,bytes:new TextEncoder().encode(JSON.stringify(plan.config,null,2)+'\n')});
+    const manifest={
+      format:'hobunji-clothing-fit-layered-v2',...selection,
+      installRoot:'docs/',targetConfigUpdated:!!plan.configPath,
+      configPath:plan.originalConfigPath, // Pin garment metadata before asynchronous image encoding.
+      fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets},
+      files:plan.files
+    };
+    entries.push({name:'fitted-layers-manifest.json',bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
+    const readme=[
+      'HOBUNJI HOLLOW — FITTED CLOTHING LAYERS',
+      '',
+      'Extract this ZIP into the repository docs/ directory, preserving its subfolders.',
+      'PNG filenames and folders match the target cosmetic config image URLs.',
+      plan.configPath
+        ?'The included '+plan.configPath+' adds/updates target layer references. Merge the JSON with newer repository edits if the repository changed since export.'
+        :'All image URLs already exist in the target cosmetic config; no config update is needed.',
+      'Existing PNGs with the same names will be overwritten. Back them up first.',
+      'See fitted-layers-manifest.json for every original layer name and source/target path.'
+    ].join('\n');
+    entries.push({name:'README-FITTED-LAYERS.txt',bytes:new TextEncoder().encode(readme)});
+    const archiveName=`${stem}_fitted_layers.zip`;
+    zipTools.downloadBlob(zipTools.buildStoredZip(entries),archiveName);
+    log(`Exported ${plan.files.length} ready-to-install layers in ${archiveName} for ${selection.targetSpecies} ${selection.targetGender}.`);
+    E.sourceLayerStatus.textContent=`Exported ${plan.files.length} layers with source-native names.${plan.configPath?' Updated cosmetic config included.':''}`;
+  }catch(error){
+    log('ERROR Fitted layer ZIP export: '+error.message);
+    E.sourceLayerStatus.textContent='Layer export failed: '+error.message;
+  }finally{E.clothPng.disabled=!R.cloth}
+}
 function overlayOut(){
   const clothing=clothOut();if(!R.body||!clothing)return null;
   const output=document.createElement('canvas');output.width=R.body.width;output.height=R.body.height;

@@ -4,6 +4,7 @@
   const identity=targetKeyText.replace(/^headwear::/,'').match(/^(.+)_(male|female)$/);
   if(!identity)throw new Error('Could not read the target species and gender from “target grid”.');
   const [,species,gender]=identity;
+  const sourceSpecies=readLine('source species')||'mao-ao',sourceGender=readLine('source gender')||gender; // Old pasted reports implicitly used same-gender Mao-ao art.
   const garment=readLine('garment');
   if(!garment||garment==='(none)')throw new Error('The pasted report does not identify a garment.');
 
@@ -33,7 +34,7 @@
   let maskTransform=null;
   const maskLine=readLine('cloud mask preview');
   if(maskLine){try{maskTransform=JSON.parse(maskLine)}catch{}}
-  return{region,species,gender,garment,transform,points,maskTransform};
+  return{region,species,gender,sourceSpecies,sourceGender,garment,transform,points,maskTransform};
 }
 
 async function importPastedDiagnostics(){
@@ -41,14 +42,19 @@ async function importPastedDiagnostics(){
     const imported=parseDiagnostics(E.diagnosticsInput.value);
     if(!R.speciesCfg.size||!R.garments.length)throw new Error('Wait for repository data to finish loading, then import the pasted report.');
     if(![...E.species.options].some(option=>option.value===imported.species))throw new Error(`Target species “${imported.species}” is not available in the loaded repository.`);
+    if(![...E.sourceSpecies.options].some(option=>option.value===imported.sourceSpecies))
+      throw new Error(`Starting sprite species “${imported.sourceSpecies}” is not in the loaded repository.`);
+    if(!['male','female'].includes(imported.sourceGender))throw new Error('Invalid starting sprite gender.');
     E.fitRegion.value=imported.region;
+    E.gender.value=imported.gender;E.species.value=imported.species;
+    E.sourceSpecies.value=imported.sourceSpecies;E.sourceGender.value=imported.sourceGender;
     rebuildGarmentSelector();
     if(![...E.garment.options].some(option=>option.value===imported.garment))
-      throw new Error(`Garment “${imported.garment}” is not available in ${imported.region} mode.`);
+      throw new Error(`Garment “${imported.garment}” has no ${imported.sourceSpecies} ${imported.sourceGender} source artwork in ${imported.region} mode.`);
     pushUndo();
     R.three.portraitCache.clear();
-    E.gender.value=imported.gender;E.species.value=imported.species;E.garment.value=imported.garment;
-    R.body=null;R.maoBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
+    E.garment.value=imported.garment;
+    R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
     await refreshAssets();
     if(!R.body||!R.cloth)throw new Error('Could not load the selected body and source garment; check repository access and try again.');
 
@@ -59,7 +65,7 @@ async function importPastedDiagnostics(){
     if(imported.maskTransform&&['scaleX','scaleY','translateY'].every(name=>Number.isFinite(Number(imported.maskTransform[name]))))
       A.maskPreviewTransforms[key]={...imported.maskTransform};
     mode='fit';saveState();syncTransformControls();syncMaskTransformControls();render();syncHistory();
-    log(`Imported pasted fit for ${imported.garment} → ${imported.species} ${imported.gender}. Export fitted clothing PNG when ready.`);
+    log(`Imported pasted fit for ${imported.garment}, ${imported.sourceSpecies} ${imported.sourceGender} → ${imported.species} ${imported.gender}.`);
   }catch(error){log('ERROR '+error.message);status('Pasted fit not imported: '+error.message)}
 }
 
@@ -126,8 +132,9 @@ function inferPatchView(path,url){
 }
 function behindPatchCatalog(){
   const gender=E.gender.value,targetSpecies=E.species.value;
+  const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Tracks the authored garment source independent of the target.
   const items=[]; // Exact source layers available to the behind-sprite patch author.
   const garment=fitRegion()==='body'?garmentRecord():null;
   if(garment){
-    const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
+    const sourceVariant=garment.cfg?.speciesVariants?.[`${sourceSpecies}_${sourceGender}`]||null;
     const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;
