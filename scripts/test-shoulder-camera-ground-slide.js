@@ -55,8 +55,11 @@ const nearWall = aim(0.15, 0, 0.3); // A zoomed boom shorter than half a tile mu
 assert.ok(Math.abs(nearWall.z - .3) < 1e-9, 'near walls cannot push a short boom into the player');
 context.currentAreaOcclusionMeshes = () => [];
 context.performance.now = () => 1100;
-const recovering = aim(0.15, 0, 0.8); // Clearing a wall eases the boom outward beyond the body limit.
-assert.ok(recovering.z > nearWall.z && recovering.z < 0.8, 'unobstructed wall recovery is smoothed');
+const recovering = aim(0.15, 0, 1.3); // The new zoom cap is enforced even when a previously intentional 0.3-tile view zooms back out.
+assert.ok(recovering.z >= .8 - 1e-9 && recovering.z < 1.3, 'recovery first respects the new 0.8-tile minimum without jumping to the full requested boom');
+context.performance.now = () => 1200;
+const recoveringFurther = aim(0.15, 0, 1.3); // Once above that minimum, the ordinary unobstructed outward recovery remains eased.
+assert.ok(recoveringFurther.z > recovering.z && recoveringFurther.z < 1.3, 'unobstructed wall recovery continues smoothly past the collision cap');
 vm.runInContext('_seatedOcclusionDistance = null; _seatedOcclusionUpdatedAt = 0;', context);
 
 context.activeSurfaceYAtWorld = (x, z) => 2 + z * 0.3;
