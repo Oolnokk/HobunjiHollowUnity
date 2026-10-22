@@ -20932,7 +20932,7 @@
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
           _cameraBoomDebug = {
             latestChange: 'Indoor shoulder wall collision samples a world-aligned radius so yaw never changes the zoom; recovery is smoothed while moving away from walls.',
-            corridorReframe: radialShoulder && safeDist < dist - 1e-4,
+            corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
             radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,
             solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
