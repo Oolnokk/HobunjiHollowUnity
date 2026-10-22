@@ -32,6 +32,10 @@ async function updateThreePreview(){
 
     const avatar=await composeRuntimePortrait();
     if(buildId!==R.three.buildGeneration)return;
+    if(fitRegion()==='headwear'&&avatar.headOnlyFront&&!R.headReference?._canonical){
+      const reference=canonicalHeadReference(avatar.headOnlyFront);
+      if(reference){R.headReference=reference;render(false)}
+    }
     const THREE=window.THREE;
     disposeRuntimeRig();
 
@@ -103,7 +107,7 @@ function scheduleThreePreview(delay=90){
   clearTimeout(R.three.buildTimer);
   R.three.buildTimer=setTimeout(()=>updateThreePreview(),delay);
 }
-function render(){
+function render(scheduleRig=true){
   if(!R.body)return;
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
   if(fitRegion()==='headwear'){
@@ -150,7 +154,7 @@ function render(){
           ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
           :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`);
 
-  refreshHelp();refreshDebug();scheduleThreePreview();
+  refreshHelp();refreshDebug();if(scheduleRig!==false)scheduleThreePreview();
 }
 function refreshHelp(){
   E.help.textContent=(fitRegion()==='headwear'?'Headwear: fit hats and hoods against the selected head; saved separately from body. ':'')+
