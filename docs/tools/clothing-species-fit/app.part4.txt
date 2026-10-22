@@ -110,7 +110,7 @@ async function refreshAssets(){
     R.body=body;R.maoBody=maoBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
     E.clothPng.disabled=!cloth;
     E.exportHeadwearFront.disabled=region!=='headwear'||!cloth?._front;
-    E.exportHeadwearBack.disabled=region!=='headwear'||!cloth?._back;
+    E.exportHeadwearBack.disabled=region!=='headwear'||!(cloth?._behindView||cloth?._back);
     E.authoredStatus.textContent=authored
       ?`Authored ${species}_${gender} variant available.`
       :'No authored target variant for this garment/species/gender.';
