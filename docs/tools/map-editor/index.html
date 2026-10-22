@@ -458,14 +458,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/surface-stretch-uv-furniture.js?v=20261016h4fe902d"></script>
 <script src="../../js/HousePieceGen.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/";</script>
+<script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/"; window.__hobunjiFurnitureAssetBase = "../../assets/";</script>
 <script src="../../js/authored-furniture-runtime.js?v=20261019h0a80a02"></script>
 <script src="../../js/furniture-table-system.js?v=20261022h6287322"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
-<script src="../../js/furniture-vessel-runtime.js?v=20261019h8231811"></script>
+<script src="../../js/furniture-vessel-runtime.js?v=20261022h17f665c"></script>
 <script src="../../js/festival-calendar.js?v=20261020he3496ca"></script>
-<script src="../../js/festival-props.js?v=20261020h0f51834"></script>
+<script src="../../js/festival-props.js?v=20261022hb972a07"></script>
 <script>
 (() => {
 'use strict';
@@ -566,6 +566,9 @@ const PROCESSORS = {
 };
 
 const DECOR = {
+  festivalStage:{icon:'🎵',label:'Festival Bandstand Stage',fw:2,fd:2,area:'any'},
+  festivalDanceFloor:{icon:'💃',label:'Festival Dance Floor',fw:2,fd:2,area:'any'},
+  festivalArch:{icon:'🎏',label:'Festival Road Arch',fw:1,fd:1,area:'any'},
   basicBed:{icon:'🛏️',label:'Single Bed',fw:1,fd:2,area:'interior'}, doubleBed:{icon:'🛏️',label:'Double Bed',fw:2,fd:2,area:'interior'},
   bedroll:{icon:'🛌',label:'Bedroll',fw:1,fd:1,area:'interior'}, bench:{icon:'🪑',label:'Short Bench',fw:2,fd:1,area:'interior'},
   bookshelf:{icon:'📚',label:'Bookshelf',fw:2,fd:1,area:'interior'}, bucket:{icon:'🪣',label:'Tin Bucket',fw:1,fd:1,area:'any'},
