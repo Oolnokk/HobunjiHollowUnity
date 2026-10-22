@@ -3016,6 +3016,7 @@
         if (targetGain <= 0) voice.gain.gain.setValueAtTime(0, now);
         else voice.gain.gain.setTargetAtTime(Math.max(0.0002, targetGain), now, 0.12);
       });
+      if (!Number.isFinite(whenMs)) state.lastRootPadKey = rootPadAudioKey(targetClock); // An immediate manual sync already supplied this root; the next render frame must not play it again.
       return true;
     }
     state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, PAD_SYNTH_CROSSFADE_S, whenMs));
@@ -3025,6 +3026,7 @@
       state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
       return false;
     }
+    if (!Number.isFinite(whenMs)) state.lastRootPadKey = rootPadAudioKey(targetClock); // Audio lookahead keeps its separate future key until the predicted boundary actually arrives.
     log('Harmony root pad changed', `root ${midiName(targetMidi)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
     return true;
   }
