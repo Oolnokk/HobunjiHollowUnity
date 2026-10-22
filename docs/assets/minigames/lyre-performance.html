@@ -2725,13 +2725,14 @@
   }
 
   function restartCssAnimation(element, className) {
-    if (!element) return;
+    if (state.ambientOnly || !element) return;
     element.classList.remove(className);
     void element.offsetWidth;
     element.classList.add(className);
   }
 
   function updateHarmonyVisual(popChord = false, pulseBeat = false) {
+    if (state.ambientOnly) return; // Hidden NPC playback has no visual harmony panel.
     if (!refs.chordDegree) return;
     const harmony = currentHarmonyData();
     const beat = currentHarmonyBeatData();
@@ -3263,6 +3264,7 @@
   }
 
   function updateArpeggioUI() {
+    if (state.ambientOnly) return;
     if (!refs.arpRing) return;
     if (isDualArpLayout()) {
       renderStickRing(refs.arpRing, 'dual-left', DUAL_ARP_LABELS.left.map(label => ({label})), state.arpeggioIndex);
@@ -3987,6 +3989,7 @@
   }
 
   function flashTarget(noteIndex, modeOffset = currentModeOffset()) {
+    if (state.ambientOnly) return;
     const lane = laneIndexFor(noteIndex,modeOffset);
     if (state.visualPreset === 'timing-rings') {
       const fixedTarget = $(`[data-timing-lane="${lane}"]`,refs.timingNoteField);
@@ -4578,7 +4581,12 @@
   }
 
   function pollGamepad() {
-    const pads = state.ambientOnly ? [] : (navigator.getGamepads?.() || []);
+    if (state.ambientOnly) {
+      // Keep the existing loop ready for a later visible session without mutating hidden status labels every frame.
+      requestAnimationFrame(pollGamepad);
+      return;
+    }
+    const pads = navigator.getGamepads?.() || [];
     let gamepad = state.gamepadIndex != null ? pads[state.gamepadIndex] : null;
     if (!gamepad) {
       gamepad = [...pads].find(Boolean);
@@ -6728,7 +6736,7 @@
     if (event.inputType === 'strum') {
       const midi = arpeggioMidi(event.noteIndex);
       void playAuditoryOnlyMidi(midi,`demo-strum:${state.demoGeneration}:${eventIndex}:${++state.previewCounter}`,0.82,null,false);
-      restartCssAnimation(refs.arpPad,'played');
+      if (!state.ambientOnly) restartCssAnimation(refs.arpPad,'played');
     } else {
       const midi = noteMidi(event.noteIndex,event.modeOffset);
       void playAuditoryOnlyMidi(midi,`demo-melody:${state.demoGeneration}:${eventIndex}:${++state.previewCounter}`,0.86,null,false);
@@ -7020,7 +7028,7 @@
       event.targetElement.classList.add('hit');
       setTimeout(() => event.targetElement?.classList.remove('hit'),280);
     }
-    setTimeout(() => event.element?.remove(), 440);
+    if (event.element) setTimeout(() => event.element?.remove(), 440);
     state.game.hits++;
     state.game.combo++;
     let points = 500;
@@ -7035,6 +7043,7 @@
   }
 
   function feedback(text, color) {
+    if (state.ambientOnly) return;
     refs.feedback.textContent = text;
     refs.feedback.style.color = color;
     refs.feedback.classList.remove('show');
@@ -7068,12 +7077,12 @@
       if (state.scheduledMetronomeBeat !== beatData.absoluteBeat) playMetronomeClick(beatData); // Fallback for startup or a stall longer than the look-ahead horizon.
     }
     if (chordChanged || beatChanged) updateHarmonyVisual(chordChanged, beatChanged);
-    updateFreePlayCapoCue(); // Free-play chord guidance runs continuously even though there are no song-note events to spawn.
+    if (!state.ambientOnly) updateFreePlayCapoCue(); // Free-play chord guidance is only visible in the player's instrument UI.
     if (state.game.active && !state.paused) {
       const time = gameTime();
-      const stageHeight = refs.stage.clientHeight;
+      const stageHeight = state.ambientOnly ? 0 : refs.stage.clientHeight; // Audio-only NPC frames never force layout of the hidden rhythm stage.
       const hitY = state.visualPreset === 'lyre-view' ? stageHeight * 0.82 : stageHeight * 0.86;
-      if (state.visualPreset === 'timing-rings') $$('.timing-note.ready',refs.timingNoteField).forEach(target => target.classList.remove('ready'));
+      if (!state.ambientOnly && state.visualPreset === 'timing-rings') $$('.timing-note.ready',refs.timingNoteField).forEach(target => target.classList.remove('ready'));
       for (let eventIndex = 0; eventIndex < state.game.events.length; eventIndex++) {
         const event = state.game.events[eventIndex];
         const until = event.time - time;
@@ -7083,6 +7092,11 @@
         // trigger to the same hitWindow used for miss detection below lets a badly-late note fall
         // through to the ordinary miss path instead of sounding out of time.
         if (state.game.demoActive && event.state === 'pending' && !event.demoTriggered && time >= event.time - 8 && time - event.time <= state.hitWindow) performSuccessfulPreviewEvent(event,eventIndex);
+        if (state.ambientOnly) {
+          // Keep the same late-note cutoff and looping transport without creating, moving, or measuring invisible prompts.
+          if (event.state === 'pending' && time - event.time > state.hitWindow) { event.state = 'miss'; state.game.combo = 0; }
+          continue;
+        }
         const timingRingHorizonMs = Math.max(1,state.game.beatMs || (60000 / clamp(state.bpm,45,220))) * state.timingPromptBeats; // User-selected beat horizon for Timing Rings prompts.
         const cueLeadMs = state.visualPreset === 'timing-rings' && event.inputType !== 'strum' ? timingRingHorizonMs : state.game.travelMs + 250;
         if (event.state === 'pending' && until <= cueLeadMs && !event.element) createNoteElement(event);
@@ -7170,6 +7184,7 @@
   }
 
   function updateHUD() {
+    if (state.ambientOnly) return;
     refs.scaleHud.textContent = `${state.scaleName} · ${midiName(state.tonicMidi)}`;
     refs.scoreHud.textContent = state.game.score.toLocaleString();
     refs.comboHud.textContent = state.game.combo;
@@ -7221,7 +7236,7 @@
   }
 
   function updateDebugState() {
-    if (!refs.debugState) return;
+    if (state.ambientOnly || !refs.debugState) return; // The ambient bridge exposes state on demand; there is no visible debug panel to refresh.
     updateOutputMeter();
     const gamepad = state.gamepadIndex != null ? navigator.getGamepads?.()[state.gamepadIndex] : null;
     const marker = state.markers;
