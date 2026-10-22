@@ -296,7 +296,8 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
               <div><label>Romanceable (can date)</label><select id="romanceable"><option>false</option><option>true</option></select></div>
             </div>
             <div style="margin-top:8px"><label>Tags</label><input id="npcTags"></div>
-            <div style="margin-top:8px"><label>Bio / notes</label><textarea id="npcBio"></textarea></div>
+            <div style="margin-top:8px"><label>Character summary (not spoken)</label><textarea id="npcBio"></textarea></div>
+            <div style="margin-top:8px"><label>Backstory / lore (not spoken)</label><textarea id="npcLoreBackground"></textarea></div>
           </div>
         </section>
         <section id="social" class="tabPanel">
@@ -2029,6 +2030,7 @@ function fillFields(n) {
   $('canMarry').value = String(!!n.relationship?.canMarry);
   $('npcTags').value = (n.tags || []).join(', ');
   $('npcBio').value = n.bio || '';
+  $('npcLoreBackground').value = n.loreBackground || ''; // Used to edit historical notes independently of spoken dialogue and the short character profile.
   $('maxHearts').value = n.relationship?.maxHearts ?? 10;
   $('baseDisposition').value = n.relationship?.baseDisposition ?? 0;
   $('decayRule').value = n.relationship?.decayRule || 'unknown';
@@ -2091,6 +2093,7 @@ function read() {
   n.relationship.speciesStartingDisposition = parse('speciesDispositionJson', []);
   n.relationship.friendshipUnlocks = parse('friendUnlocksJson', []);
   n.bio = $('npcBio').value;
+  n.loreBackground = $('npcLoreBackground').value; // Used by export/override saves so moved NPC backstories remain editable.
   n.tags = split($('npcTags').value);
   n.appearance = parse('appearanceJson', n.appearance || {});
   n.equippedCosmetics = parse('cosmeticsJson', n.equippedCosmetics || []);
@@ -2294,7 +2297,7 @@ document.querySelectorAll('.tabBtn').forEach(b => b.onclick = () => {
 });
 
 ['npcId','npcName','homeId','npcSpecies','npcGender','npcAge','npcRole','romanceable','canBefriend','canMarry',
- 'npcTags','npcBio','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
+ 'npcTags','npcBio','npcLoreBackground','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
  'appearanceJson','cosmeticsJson','dyesJson','avatarRawJson','lovedGifts','likedGifts','neutralGifts',
  'dislikedGifts','hatedGifts','giftCategoriesJson','dialogueJson','worldJson'
 ].forEach(id => { const el = $(id); if (el) el.addEventListener('input', read); });

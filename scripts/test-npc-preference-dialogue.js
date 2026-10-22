@@ -1,74 +1,241 @@
 #!/usr/bin/env node
 'use strict';
 
-// Regression check for authored NPC gift/date hint dialogue. Run: node scripts/test-npc-preference-dialogue.js
+// Run with: node scripts/test-npc-preference-dialogue.js
+// Protects casual gift/date hints and their coexistence with generated merchant access.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ROOT = path.join(__dirname, '..'); // Used to resolve shipped NPC data and runtime source without a browser.
-const read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'); // Shared source loader for config/runtime assertions.
-const database = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // The authored NPC dialogue surface under test.
-const context = { window: { SCRATCHBONES_CONFIG: { game: {} } } }; // Minimal browser-global stub used to load the real romance configuration.
-vm.runInNewContext(read('docs/config/romance-config.js'), context, { filename: 'romance-config.js' });
-vm.runInNewContext(read('docs/js/npc-interaction-policy.js'), context, { filename: 'npc-interaction-policy.js' });
-vm.runInNewContext(read('docs/js/condition-registry.js'), context, { filename: 'condition-registry.js' });
-const likes = context.window.HobunjiRomanceConfig.likes; // Actual scored date activities; placeholders must stay aligned.
-const selectPool = (npc, kind) => npc.phrasePools?.find(pool => pool.id === `pool_${npc.id}_${kind}_hints`); // Avoids name matching when NPC display names change.
+const ROOT = path.join(__dirname, '..'); // Used to find the same checked-in data and runtime modules used by the game.
+const read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'); // Used for both authored data and real runtime sources.
+const database = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Source for every named NPC's dialogue.
+const shopStock = JSON.parse(read('docs/config/shops/shop-stock.json')); // Source of generated Shop/Chat access.
+const policies = { window: { SCRATCHBONES_CONFIG: { game: {} } } }; // Isolates romance and Great Fey policies from the UI harness.
+vm.runInNewContext(read('docs/config/romance-config.js'), policies, { filename: 'romance-config.js' });
+vm.runInNewContext(read('docs/js/npc-interaction-policy.js'), policies, { filename: 'npc-interaction-policy.js' });
+vm.runInNewContext(read('docs/js/condition-registry.js'), policies, { filename: 'condition-registry.js' });
+const likes = policies.window.HobunjiRomanceConfig.likes; // Used to verify that date hints remain aligned with date activity preferences.
+const isGreatFey = policies.window.NpcInteractionPolicy.isPassiveGreatFey; // Used to exclude scripted quest-givers from ordinary preference hints.
 
-let gifts = 0, dates = 0, giftLines = 0, dateLines = 0; // Used only for the test's final audit report.
+let giftNPCs = 0, dateNPCs = 0, giftLines = 0, dateLines = 0; // Summary counters for regression results.
 for (const npc of database.npcs) {
-  assert(npc.gifts, `${npc.id} must retain its mechanical gift preferences`);
-  const excluded = context.window.NpcInteractionPolicy.isPassiveGreatFey(npc); // Great Fey use authored quest/ordinary lines, not gift hints.
-  if (npc.id === 'banubu') { assert(!selectPool(npc, 'gift')); continue; } // His authored quest script supplants the starter record.
-  const fallback = npc.dialogueTrees.find(tree => tree.id === `tree_${npc.id}_fallback`);
-  assert(fallback, `${npc.id} has no general conversation tree`);
-  const start = fallback.nodes.find(node => node.id === fallback.entryNode);
+  assert(npc.gifts, npc.id + ': gift scoring data must remain intact');
+  const excluded = isGreatFey(npc); // Great Fey use authored conversation/quests rather than preference hints.
+  const oldPools = (npc.phrasePools || []).filter(pool => /_(gift|date)_hints$/.test(pool.id));
+  assert.equal(oldPools.length, 0, npc.id + ': hint pools must not remain behind as orphaned selectable topics');
+  if (npc.id === 'banubu') continue; // His quest replaces the generic fallback record.
+  const fallback = npc.dialogueTrees.find(tree => tree.id === 'tree_' + npc.id + '_fallback');
+  assert(fallback, npc.id + ': missing general conversation tree');
+  const entry = fallback.nodes.find(node => node.id === fallback.entryNode);
+  assert.equal(entry?.type, 'text', npc.id + ': conversation must not require a gift/date choice');
+  assert(!entry.choices?.length, npc.id + ': no standalone gift/date choices');
+  assert.equal(fallback.nodes.length, 1, npc.id + ': old gift/date nodes must not remain unreachable');
+  const greetingName = /^\{\{pool:(.+)\}\}$/.exec(entry.text)?.[1]; // Used to find the regular speech pool, not a special hint submenu.
+  const chatter = (npc.phrasePools || []).find(pool => pool.name === greetingName);
+  assert(chatter?.entries?.length, npc.id + ': must have an ordinary randomized dialogue pool');
+  const gift = chatter.entries.filter(line => line.id.startsWith('pe_' + npc.id + '_gift_hint_'));
+  const date = chatter.entries.filter(line => line.id.startsWith('pe_' + npc.id + '_date_hint_'));
+  assert(chatter.entries.some(line => !gift.includes(line) && !date.includes(line)), npc.id + ': normal conversation variation was lost');
   if (excluded) {
-    assert.equal(start?.type, 'text', `${npc.id} must retain its original no-gift conversation`);
-    assert(!selectPool(npc, 'gift'), `${npc.id} must have no misleading gift-hint pool`);
-    assert(!fallback.nodes.some(node => node.id.includes('gift_hint')), `${npc.id} must have no hidden gift-hint nodes`);
+    assert.equal(gift.length + date.length, 0, npc.id + ': Great Fey must not suggest gifts/dates');
     continue;
   }
-  assert.equal(start?.type, 'choice', `${npc.id} needs selectable hint topics`);
-  assert.match(start.text, /^{{pool:.+ Greetings}}$/, `${npc.id} must retain its ordinary greeting`);
-  assert.equal(start.choices.at(-1)?.next, null, `${npc.id} needs a Goodbye exit`);
-  assert(start.choices.length <= 6, `${npc.id} exceeds the dialogue UI's six choices`);
-  const nodes = new Map(fallback.nodes.map(node => [node.id, node]));
-  for (const choice of start.choices) if (choice.next != null) assert(nodes.has(choice.next), `${npc.id}: broken choice target ${choice.next}`);
-  const gift = selectPool(npc, 'gift');
-  assert(gift?.entries?.length, `${npc.id} missing gift hint pool`);
-  assert(start.choices.some(choice => choice.next === `n_${npc.id}_gift_hint`));
-  const giftNode = nodes.get(`n_${npc.id}_gift_hint`);
-  assert.equal(giftNode?.text, `{{pool:${gift.id}}}`);
-  assert.equal(giftNode?.next, null);
-  for (const entry of gift.entries) {
-    assert.match(entry.text, /^<[^<>]+>$/, `${npc.id} gift hint must be an unmistakable placeholder`);
-    assert(context.window.ConditionRegistry.entryEligible(entry, { weather: 'clear' }), `${npc.id}: hint not eligible`);
+  assert(gift.length > 0, npc.id + ': gift writing prompts must appear in ordinary chatter');
+  for (const line of [...gift, ...date]) {
+    assert.match(line.text, /^<[^<>]+>$/, npc.id + ': hint should remain a writer-facing placeholder');
+    assert(policies.window.ConditionRegistry.entryEligible(line, { timesOfDay: 'day', weather: 'clear' }), npc.id + ': an eligible hint must be reachable without topic choices');
   }
-  gifts++; giftLines += gift.entries.length;
-
-  const date = selectPool(npc, 'date');
-  if (!npc.relationship?.canDate) {
-    assert(!date, `${npc.id}: non-romanceable NPC should have no date pool`);
-    assert(!start.choices.some(choice => /date/i.test(choice.label)), `${npc.id}: undesired date option`);
-    continue;
+  giftNPCs++;
+  giftLines += gift.length;
+  if (npc.relationship?.canDate) {
+    assert(date.length, npc.id + ': romanceable NPC is missing date-writing prompts');
+    const configured = likes[npc.id] || []; // Used to verify one authored date prompt per scored activity (or explicit TODO).
+    assert.equal(date.length, Math.max(1, configured.length), npc.id + ': mismatched date hints');
+    if (!configured.length) assert.match(date[0].text, /TODO.*romance\.likes/);
+    dateNPCs++;
+    dateLines += date.length;
+  } else {
+    assert.equal(date.length, 0, npc.id + ': date hints must not leak to non-date NPCs');
   }
-  assert(date?.entries?.length, `${npc.id} is romanceable but has no date hints`);
-  assert(start.choices.some(choice => choice.next === `n_${npc.id}_date_hint`));
-  assert.equal(nodes.get(`n_${npc.id}_date_hint`)?.text, `{{pool:${date.id}}}`);
-  const configured = likes[npc.id] || []; // Empty is intentionally left TODO instead of scoring a fictional activity.
-  assert.equal(date.entries.length, Math.max(1, configured.length), `${npc.id} must have one hint per scored date like`);
-  for (const entry of date.entries) assert.match(entry.text, /^<[^<>]+>$/);
-  if (!configured.length) assert.match(date.entries[0].text, /TODO.*romance\.likes/);
-  dates++; dateLines += date.entries.length;
 }
-assert.equal(gifts, database.npcs.length - 4);
-assert.equal(dates, database.npcs.filter(npc => npc.relationship?.canDate).length);
-const banubuContent = read('docs/js/banubu-quest-content.js'); // Banubu's original quest dialogue must remain untouched by gift hint generation.
+assert.equal(giftNPCs, database.npcs.length - 4);
+assert.equal(dateNPCs, database.npcs.filter(npc => npc.relationship?.canDate).length);
+assert.equal(giftLines, 89);
+assert.equal(dateLines, 48);
+const banubuContent = read('docs/js/banubu-quest-content.js'); // Used to ensure ordinary hint cleanup did not touch the authored fishing quest.
 assert(!banubuContent.includes('<Something that indicates that I like receiving fish as gifts.>'));
-assert.match(banubuContent, /banubu_intro_8/);
-assert.match(banubuContent, /banubu_q1_active_1/);
-assert.match(banubuContent, /banubu_blocked_1/);
-console.log(`NPC hint dialogue verified: ${gifts} giftable NPCs (${giftLines} gift hints), ${dates} date NPCs (${dateLines} activity hints); four Great Fey excluded.`);
+for (const nodeId of ['banubu_intro_8', 'banubu_q1_active_1', 'banubu_blocked_1']) assert(banubuContent.includes(nodeId));
+
+// Browser-free integration harness runs the actual shop-tree composer,
+// dialogue selector, action buttons, and Chat callback—not a reimplementation.
+const elements = new Map(); // Used to observe rendered option buttons and spoken dialogue without a real browser.
+function element(id) {
+  if (!elements.has(id)) {
+    const classes = new Set(); // Used to represent the visible option and dialogue shell classes.
+    const label = { textContent: '', style: {}, scrollHeight: 10, clientHeight: 10 }; // Used by the option font-fit routine.
+    elements.set(id, {
+      id, textContent: '', style: {}, label,
+      classList: { add: value => classes.add(value), remove: value => classes.delete(value),
+        contains: value => classes.has(value), toggle: (value, active) => active ? classes.add(value) : classes.delete(value) },
+      setAttribute() {}, querySelector: () => label,
+    });
+  }
+  return elements.get(id);
+}
+const runtime = {
+  console, performance: { now: () => 0 }, // Used for portrait update gating; profiles are absent in this harness.
+  SCRATCHBONES_CONFIG: { game: { npcDialogue: { text: { typewriter: { enabled: false } } } } },
+  DialogueRichText: {
+    parse: text => [{ text }], plain: runs => runs.map(run => run.text).join(''),
+    render: (target, runs) => { target.textContent = runs.map(run => run.text).join(''); },
+  },
+};
+runtime.window = runtime;
+vm.createContext(runtime);
+vm.runInContext(read('docs/js/condition-registry.js'), runtime, { filename: 'condition-registry.js' });
+runtime.document = { currentScript: null, getElementById: element }; // Used by DialogueContent and stops the optional dynamic loader in LocalDBOverrides.
+vm.runInContext(read('docs/js/local-db-overrides.js'), runtime, { filename: 'local-db-overrides.js' });
+vm.runInContext(read('docs/js/dialogue-content.js'), runtime, { filename: 'dialogue-content.js' });
+const composed = runtime.LocalDBOverrides.applyShopDialogueAccess(database, shopStock); // Used to inspect real generated shop and fallback trees.
+const byId = new Map(composed.npcs.map(npc => [npc.id, npc])); // Used to look up the active seller's composed dialogue.
+for (const [poolId, shop] of Object.entries(shopStock.shops)) {
+  const access = shop.dialogueAccess; // Used to keep the map-gated merchant requirements from the authoritative shop stock.
+  if (!access?.sellerIds || (!access.roaming && !access.businessMaps?.length)) continue;
+  for (const sellerId of access.sellerIds) {
+    const npc = byId.get(sellerId);
+    assert(npc, poolId + ': seller not found in NPC database: ' + sellerId);
+    const tree = npc.dialogueTrees.find(tree => tree.generatedFromShopAccess && tree.shopPool === poolId);
+    assert(tree, poolId + ': Shop/Chat tree was not generated for ' + sellerId);
+    assert.equal(tree.nodes[0].type, 'choice');
+    assert(tree.nodes[0].choices.some(choice => choice.actions?.some(action => action.type === 'openShop' && action.pool === poolId)));
+    assert(tree.nodes[0].choices.some(choice => choice.actions?.some(action => action.type === 'startChat')));
+    assert.deepEqual(Array.from(tree.conditions.maps), Array.from(access.roaming ? [] : access.businessMaps || []));
+  }
+}
+
+let area = '', activeNPC = null; // Changed between interactions to test location-specific shops.
+const menus = []; // Records real openShop actions for assertions.
+const deps = {
+  canAccessContent: () => true, currentWeekdayName: () => 'Anan',
+  currentSeason: () => ({ name: 'Deadgrass' }), calendar: { weather: 'clear' },
+  fishingTimeOfDay: () => 'day', getCurrentArea: () => area,
+  getPlayerData: () => ({ nickname: 'Farmer', appearance: { speciesId: 'mao-ao' } }),
+  getDialogueOpen: () => true, getDialogueWalker: () => ({ rec: activeNPC }),
+  normalizeStationLabel: label => String(label || '').toLowerCase(),
+  closeNpcDialogue() {}, openMenu: menuId => menus.push(menuId),
+  getWaresPools: () => shopStock.shops,
+};
+runtime.DialogueContent.init(deps);
+function visibleChoices() {
+  return [1, 2, 3, 4, 5, 6].filter(i => element('dlgOpt' + i).classList.contains('dlg-opt-visible'));
+}
+function checkMerchant(npcId, mapId, expectedMenu) {
+  area = mapId;
+  activeNPC = byId.get(npcId);
+  const state = runtime.DialogueContent.getNpcDlgState(npcId); // Used to force the previously-heard case where fallback could displace the shop.
+  state.heardTrees = activeNPC.dialogueTrees.map(tree => tree.id);
+  runtime.DialogueContent.resetDialogueState();
+  runtime.DialogueContent.beginNpcConversation(activeNPC);
+  assert.deepEqual(visibleChoices(), [1, 2], npcId + ': merchant Shop/Chat should remain available on repeat talks');
+  assert.equal(element('dlgOpt2').label.textContent, 'Chat');
+  element('dlgOpt1').onclick();
+  assert.equal(menus.at(-1), expectedMenu, npcId + ': selecting Shop did not open the correct wares');
+  runtime.DialogueContent.resetDialogueState();
+  runtime.DialogueContent.beginNpcConversation(activeNPC);
+  element('dlgOpt2').onclick(); // Actual startChat action must bypass merchant trees for this interaction.
+  assert.deepEqual(visibleChoices(), [], npcId + ': Chat looped back to Shop/Chat instead of ordinary speech');
+  assert(element('npcDialogueText').textContent.length > 0, npcId + ': Chat should say an ordinary line');
+}
+checkMerchant('furunji_funji', 'map_i_general_store', 'generalStore');
+checkMerchant('kaboku_kunji', 'map_i_kunjis_potions_F1', 'generalStore');
+checkMerchant('dzibim_khibu', 'map_i_carpenters', 'carpenterShop');
+checkMerchant('jubmir', 'map_town', 'jubmirShop');
+checkMerchant('garanki_gabu', 'map_northern_cliffs', 'garankiEnchanter');
+
+area = 'map_town'; activeNPC = byId.get('kaboku_kunji'); // Proves map restrictions still apply to permanent shop access.
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.deepEqual(visibleChoices(), [], 'Fixed potion shop must not open outside its business map');
+
+// Character Studio must expose both fields independently; ordinary saves and local overrides use the same record.
+const studioSource = read('docs/tools/character-studio/index.html'); // Used for a lightweight editor integration check without a graphical browser.
+assert(studioSource.includes('id="npcLoreBackground"'), 'Character Studio must expose the backstory editor');
+assert(studioSource.includes("$('npcLoreBackground').value = n.loreBackground || ''"), 'Loading an NPC must populate the backstory editor');
+assert(studioSource.includes("n.loreBackground = $('npcLoreBackground').value"), 'Edits to backstory must serialize into the exported NPC database');
+assert(studioSource.includes("'npcTags','npcBio','npcLoreBackground'"), 'Backstory edits must trigger the same save/update flow as bio edits');
+
+// Backstory belongs to editable loreBackground, not NPC speech or an accidental bio fallback.
+for (const [npcId, part] of [
+  ['kzubug', 'plague'], ['jubmir', 'noble blood'], ['binding_hatayap', 'wyrm'],
+  ['tooth_hatayap', 'Tuhupnuk surname'], ['hammerhead_tuhupnuk', 'murdered'],
+  ['khannibarri_agent', 'Father Hunundi'],
+]) {
+  const npc = byId.get(npcId); // Used to pin especially spoiler-prone details to the non-spoken backstory field.
+  assert(npc.loreBackground?.includes(part), npcId + ': expected history was not migrated into loreBackground');
+  assert(!npc.bio?.includes(part), npcId + ': historical detail remained in short bio');
+}
+for (const npc of composed.npcs) {
+  assert(!/<suggestion:|design doc|source material|no further details provided/i.test(npc.bio || ''), npc.id + ': editorial writing notes must not appear in the short bio');
+}
+const originalWeather = deps.calendar.weather; // Used to make a real dialogue tree ineligible and thereby exercise _npcDialogueLines.
+const gikali = byId.get('gikali_ginju');
+const weatherGated = {
+  ...gikali,
+  dialogueTrees: gikali.dialogueTrees.map(tree => ({
+    ...tree, conditions: { ...tree.conditions, weather: ['clear'] }, // Only this test clone is gated; source NPCs keep authored conditions.
+  })),
+};
+activeNPC = weatherGated;
+area = 'map_hobunji_town';
+deps.calendar.weather = 'storm'; // The test tree requires clear weather, so the normal selector MUST return null.
+assert(!runtime.ConditionRegistry.entryEligible(weatherGated.dialogueTrees[0], { weather: 'storm' }), 'The regression fixture must actually miss the normal dialogue-tree selector');
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.deepEqual(visibleChoices(), [], 'Condition-ineligible fallback must not invent a special dialogue choice');
+const stormLine = element('npcDialogueText').textContent; // Must be resolved casual speech, not lore or an unresolved pool token.
+assert(stormLine.length > 0 && !stormLine.includes('{{pool:') && stormLine !== gikali.bio && !stormLine.includes("Gorobi's"), 'A real dialogue-tree miss must display authored greeting speech, never a character biography');
+
+const lineFallback = {
+  id: 'test_line_node_fallback',
+  bio: 'Hidden character backstory',
+  loreBackground: 'More hidden lore',
+  dialogueTrees: [{
+    id: 'tree_test_line_node_fallback_fallback', entryNode: 'spoken', trigger: 'interact',
+    conditions: { weather: ['clear'] },
+    nodes: [{ id: 'spoken', type: 'line', text: 'Hello from a fallback line.' }],
+  }],
+};
+activeNPC = lineFallback;
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.equal(element('npcDialogueText').textContent, 'Hello from a fallback line.', 'Both supported spoken node types must work when a tree itself is ineligible');
+// Every authored ordinary NPC must remain conversational even if all of its trees become ineligible.
+for (const originalNpc of byId.values()) {
+  if (!originalNpc.dialogueTrees?.some(tree => tree.id === 'tree_' + originalNpc.id + '_fallback')) continue; // Banubu uses scripted quest dialogue instead.
+  activeNPC = {
+    ...originalNpc,
+    dialogueTrees: originalNpc.dialogueTrees.map(tree => ({
+      ...tree, conditions: { ...tree.conditions, weather: ['clear'] },
+    })),
+  };
+  runtime.DialogueContent.resetDialogueState();
+  runtime.DialogueContent.beginNpcConversation(activeNPC);
+  const spoken = element('npcDialogueText').textContent;
+  assert(spoken && spoken !== originalNpc.bio && !spoken.includes('{{pool:') && !spoken.includes('<suggestion:'), originalNpc.id + ': missing-tree fallback must resolve speech without leaking bio/lore');
+}
+deps.calendar.weather = originalWeather;
+
+activeNPC = byId.get('banubu'); // Banubu has no generic starter tree; its quest system supplies authored dialogue.
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(activeNPC);
+assert.equal(element('npcDialogueText').textContent, '...', 'No eligible tree or spoken lines must not fall back to a Great Fey biography');
+const spokenOverride = { id: 'test_spoken_override', bio: 'A secret written about the character.', dialogueLines: ['Hello from spoken dialogue.'], dialogueTrees: [] }; // Used to ensure deliberate authored speech still precedes generic fallback.
+activeNPC = spokenOverride;
+runtime.DialogueContent.resetDialogueState();
+runtime.DialogueContent.beginNpcConversation(spokenOverride);
+assert.equal(element('npcDialogueText').textContent, 'Hello from spoken dialogue.', 'Explicit dialogueLines must remain playable');
+
+console.log('NPC dialogue: ' + giftNPCs + ' giftable NPCs / ' + giftLines + ' gift hints, ' + dateNPCs +
+  ' romanceable NPCs / ' + dateLines + ' date hints; merchant shop actions, Chat and map restrictions verified.');
