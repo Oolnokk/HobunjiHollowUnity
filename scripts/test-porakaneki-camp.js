@@ -289,6 +289,8 @@ const contextWindow = {
 contextWindow.window = contextWindow;
 let fakeNowMs = 1000;
 const context = vm.createContext({ window: contextWindow, fetch: contextWindow.fetch, console, Date, Math, Set, Map, Promise, performance: { now: () => fakeNowMs } });
+vm.runInContext(fs.readFileSync('docs/js/faction-conflicts.js', 'utf8'), context, { filename: 'faction-conflicts.js' }); // The camps runtime hands its chunk-local actors to this data-driven module.
+contextWindow.FactionConflicts.configure(JSON.parse(fs.readFileSync('docs/config/faction-conflicts.json', 'utf8')), 'test');
 vm.runInContext(runtimeSource, context, { filename: 'porakaneki-camps-runtime.js' });
 
 const randomValues = [0.91, 0.91, 0.12, 0.4, 0.6, 0.2, 0.8, 0.3, 0.7, 0.1];
@@ -569,7 +571,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(pora._porakanekiPlannerControlled, true, 'ecology combat does not make Porakaneki hostile to the player');
   let ecologyDebug = api.debugSnapshot().ecology;
   assert.deepEqual(JSON.parse(JSON.stringify(ecologyDebug)), {
-    chunk: '2,2', porakaneki: 1, bandits: 1, predators: 1, prey: 1, humanoidTargets: 2, predatorTargets: 1,
+    chunk: '2,2', porakaneki: 1, bandits: 1, predators: 1, prey: 1, humanoidTargets: 2, predatorTargets: 1, fleeing: 0,
   }, 'debug snapshot exposes the active 16x16 ecology chunk and assignment counts for mobile verification');
   assert.equal(api.hasSharedEnemyNearby(pora), true, 'bandit/predator in the player chunk activates crossfire forgiveness');
 
@@ -586,6 +588,23 @@ function hunterDebug(api, zoneId, campId, index) {
   hostileObjects.add(outsideBandit);
   api.__test.updateChunkEcology();
   assert.equal(pora._chunkCombatTarget, null, 'an actor across the 16-tile chunk boundary is not simulated as a faction target');
+  // A fight that is already running survives a few tiles past the chunk edge (no chase/return stutter at the border); an unengaged actor there is still ignored.
+  hostileObjects.delete(outsideBandit);
+  const edgeBandit = { id: 'eco_edge_bandit', x: 49 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
+  hostileObjects.add(edgeBandit);
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, null, 'an unengaged bandit 1 tile past the chunk edge is not picked up');
+  pora._chunkCombatTarget = edgeBandit;
+  edgeBandit._chunkCombatTarget = pora;
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, edgeBandit, 'an engaged fight is kept within the edge pad');
+  assert.equal(edgeBandit._chunkCombatTarget, pora);
+  edgeBandit.x = 60 * combatDeps.TILE;
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, null, 'beyond the edge pad the fight is released');
+  assert.equal(edgeBandit._chunkCombatTarget, null);
+  hostileObjects.delete(edgeBandit);
+  hostileObjects.add(outsideBandit);
   assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(15.99, 0))), { x: 0, y: 0 });
   assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(16, 0))), { x: 1, y: 0 });
 

@@ -4982,11 +4982,14 @@
         if (!environmentalImpact) {
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
-          amount *= window.SkillSystem?.attackMultiplier?.() || 1;
-          amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
-          amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
-          amount = banditTryGuard(c, amount, player);
-          if (!c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+          const npcFactionHit = dmgOpts?.factionCombat === true; // Chunk-local actor-vs-actor fight (js/faction-conflicts.js): the player's own scaling and XP do not apply.
+          if (!npcFactionHit) {
+            amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+            amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+            amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
+          }
+          amount = banditTryGuard(c, amount, npcFactionHit && dmgOpts.attacker ? dmgOpts.attacker : player); // A guarding bandit ripostes whoever actually struck it.
+          if (!c.combatTutorialTarget && !npcFactionHit) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
@@ -5036,7 +5039,8 @@
         // animal mid-fight should never make it flee instead; it's
         // supposed to protect its home, not bail the moment it takes a hit.
         const territorialPhase = c._territorialBehavior?.phase;
-        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight'
+          && window.FactionConflicts?.fleesWhenHit(c) !== false) { // A neutral Porakaneki hunter is def.hostile=false only toward the player; its fight/flee choices come from config/faction-conflicts.json.
           // A drenkirra mid-forage or asleep is pinned to a branch —
           // clear that (see wildlife-cloud-forest-behavior.js's
           // interruptForFlee) before the state flip below, or the
@@ -6393,9 +6397,15 @@
             c.state = 'chase';
             c.targetPlayer = targetPlayer;
           }
-          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
+          // An actor handed a live faction target by the chunk-local pass
+          // (js/faction-conflicts.js) is fighting that target, not the player:
+          // the player leash/line-of-sight checks below would otherwise flip it
+          // to 'return'/'searching' between every 5 Hz re-target whenever the
+          // fight sits more than a leash length from the player.
+          const factionEngaged = c.state === 'chase' && window.FactionConflicts?.hasActiveTarget(c) === true;
+          if (c.state === 'chase' && !factionEngaged && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
             c.state = 'return';
-          } else if (c.state === 'chase' && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
+          } else if (c.state === 'chase' && !factionEngaged && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
@@ -6476,13 +6486,17 @@
             // Beelines home ignoring player/prey aggro (see the guards above)
             // until it settles, then starts its re-aggro cooldown — nothing
             // fights to the death in a wildlife skirmish (applyWildlifeSkirmishDamage).
-            if (distFromHome < DEN_SETTLE_RADIUS_PX) {
+            // js/faction-conflicts.js may point a faction flee at a camp or an
+            // away-from-the-threat spot (_fleeToX/Y) instead of the den/home.
+            const fleeX = Number.isFinite(c._fleeToX) ? c._fleeToX : c.homeX, fleeY = Number.isFinite(c._fleeToY) ? c._fleeToY : c.homeY;
+            if (Math.hypot(c.x - fleeX, c.y - fleeY) < DEN_SETTLE_RADIUS_PX) {
               c.state = 'idle';
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
+              window.FactionConflicts?.noteFleeSettled(c);
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, entityDt);
-              if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
+              moving = travelCreatureToward(c, fleeX, fleeY, def.chaseSpeed || def.moveSpeed, entityDt);
+              if (moving) aimAngle = Math.atan2(fleeY - c.y, fleeX - c.x);
             }
           } else if (c.state === 'patrol-chase') {
             // A simplified creature-vs-creature chase (no telegraph/pounce
@@ -6490,13 +6504,20 @@
             // specifically) — beelines onto the prey and lands plain bite
             // damage through applyWildlifeSkirmishDamage on cooldown.
             const prey = c.targetCreature;
-            const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId || prey.state === 'fleeing-low-health';
+            // A fleeing target ends the chase unless the faction rules say this
+            // attacker pursues fleeing enemies of that faction (pursueFleeing).
+            const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId
+              || (prey.state === 'fleeing-low-health' && !window.FactionConflicts?.pursuesFleeing(c, prey));
             if (preyGone) {
               c.state = 'idle'; c.targetCreature = null;
             } else {
               const pdx = prey.x - c.x, pdy = prey.y - c.y;
               const pdist = Math.hypot(pdx, pdy);
-              if (pdist > (def.leashRangePx || TILE * 9) || distFromHome > (def.leashRangePx || TILE * 9)) {
+              // The home leash is for wandering patrols; a chunk-local faction
+              // fight is bounded by the player's chunk instead, so it must not
+              // keep snapping the attacker back to 'return' mid-fight.
+              const leashPx = window.FactionConflicts?.hasActiveTarget(c) ? Infinity : (def.leashRangePx || TILE * 9);
+              if (pdist > leashPx || distFromHome > leashPx) {
                 c.state = 'return'; c.targetCreature = null;
               } else {
                 aimAngle = Math.atan2(pdy, pdx);
@@ -28478,6 +28499,7 @@
         craftedToolItemKey,
         metalDmgMultiplier,
         damagePlayer,
+        damageCreature, // Bandit/Porakaneki strikes on a chunk-local faction enemy (damageBanditCombatTarget); without it they fell through to damagePlayer.
         inCone,
         sweptMove,
         canOccupyAt,

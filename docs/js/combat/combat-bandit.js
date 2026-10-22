@@ -1521,7 +1521,7 @@
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
     for (const o of deps.hostileObjects) {
-      if (o === c || !o.isBandit || o.health <= 0) continue;
+      if (o === c || o === c._chunkCombatTarget || !o.isBandit || o.health <= 0) continue; // Personal space is for gang-mates; a faction enemy this actor is fighting must be reachable (humanoid-vs-humanoid fights otherwise stall ~47px apart, outside melee range).
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
       if (dist > 0.001 && dist < personalSpacePx) {
@@ -2440,6 +2440,7 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    resolveCombatTarget: resolvedBanditCombatTarget, // The actor this humanoid is really fighting: its chunk-local faction target, else the passed player. Wrappers that aim/turn must use it, not their targetPlayer argument.
     rollFlaskLoadout: rollBanditFlaskLoadout,
     availableFlaskRecipeIds: availableBanditFlaskRecipeIds,
     characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive, ...characterBuildStatus }), // Existing debug report reads queue pressure without retaining roster objects.
