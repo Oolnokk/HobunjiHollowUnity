@@ -133,7 +133,8 @@ function buildFittedLayerArchivePlan(layers,selection){
       layerRole:layer.role,view:layer.view,patched:layer.patched
     });
   }
-  return{files,configPath:modified?garment.configPath:null,config:modified?config:null};
+  return{files,configPath:modified?garment.configPath:null,originalConfigPath:garment.configPath,
+    config:modified?config:null};
 }
 
 async function exportFittedGarment(){
@@ -164,7 +165,7 @@ async function exportFittedGarment(){
     const manifest={
       format:'hobunji-clothing-fit-layered-v2',...selection,
       installRoot:'docs/',targetConfigUpdated:!!plan.configPath,
-      configPath:plan.configPath||garmentRecord()?.configPath,
+      configPath:plan.originalConfigPath, // Pin garment metadata before asynchronous image encoding.
       fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets},
       files:plan.files
     };
