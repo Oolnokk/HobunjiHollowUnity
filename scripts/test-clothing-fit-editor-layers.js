@@ -200,6 +200,16 @@ async function main() {
   assert.equal(plan.config.speciesVariants.kenkari_female.parts.head.layers.front.image.url,
     './'+plan.files[0].outputName, 'The packaged config maps a shared texture to its independent fitted file');
 
+  const sibling=cosmetics[1].cfg.speciesVariants['mao-ao_female'].parts.head.layers.front;
+  const beforeSibling=sibling.image.url;
+  sibling.image.url='./assets/cosmetics/clothes/hood/finehood-base_kenkari_f.png';
+  plan=archiveApi.buildFittedLayerArchivePlan(sourceHood._layers,selection);
+  assert(plan.files[0].outputName!=='assets/cosmetics/clothes/hood/finehood-base_kenkari_f.png',
+    'Generated fallback names must not overwrite an existing sprite referenced elsewhere');
+  assert(plan.files[0].outputName.includes('__parts_head_layers_front.png'),
+    'Colliding fallback retains the source filename plus a unique original layer-path suffix');
+  sibling.image.url=beforeSibling;
+
   // Existing aliases and other layers in the SAME target variant are separate hazards
   // from sharing an image across different species.
   const hoodCfg=cosmetics[1].cfg;
