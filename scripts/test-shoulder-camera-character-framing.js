@@ -117,24 +117,24 @@ console.log('Shoulder camera character framing tests passed.');
 
 scaleValues['mashtzarr::male']=1.255; // Canonical tall-species fixture controls the assisted framing target.
 api.refreshPlayerFraming(nuhonganRoot,{speciesId:'nuhongan',gender:'male'});
-let surfaceAhead=true, probeHeight=null; // Deterministic authored surface probe measures the normal camera height supplied by the real caller.
-windowObject.FurnitureTableSystem={highSurfaceAhead(area,x,z,y){probeHeight=y;return {active:surfaceAhead,furnitureId:'serving-table'};}};
+let surfaceNearby=true, probePosition=null; // Deterministic authored surface probe records only character position; orientation and camera height are absent.
+windowObject.FurnitureTableSystem={nearbySurface(area,x,z){probePosition=[x,z];return {active:surfaceNearby,furnitureId:'serving-table'};}};
 const normalDistance=shoulderMode.distanceTiles, normalTarget=shoulderMode.targetYOffsetTiles; // Species settings must survive assisted framing unchanged.
-api.updateSurfaceView('town',0,0,.45,0,true,0);
-const rising=api.updateSurfaceView('town',0,0,.45,0,true,100);
+api.updateSurfaceView('town',0,0,true,0);
+const rising=api.updateSurfaceView('town',0,0,true,100);
 assert(rising.lift>0 && rising.distanceScale>1 && rising.blend<1,'camera eases upward and outward instead of snapping');
-assert.equal(probeHeight,.45,'probe receives the unassisted camera height');
-for(let t=200;t<=2000;t+=100)api.updateSurfaceView('town',0,0,.45,0,true,t);
+assert.deepEqual(probePosition,[0,0],'probe receives only player position');
+for(let t=200;t<=2000;t+=100)api.updateSurfaceView('town',0,0,true,t);
 assert(Math.abs(api.snapshot().surfaceView.distanceScale-(1.255/.6375))<.001,'zoom approaches the authored Mashtzarr height ratio');
 assert.equal(shoulderMode.distanceTiles,normalDistance,'camera help never changes player zoom/species config');
 assert.equal(shoulderMode.targetYOffsetTiles,normalTarget,'camera help never changes the normal head target');
-surfaceAhead=false;
+surfaceNearby=false;
 const before=api.snapshot().surfaceView.lift;
-const falling=api.updateSurfaceView('town',0,0,.45,0,true,2100);
-assert(falling.lift>0 && falling.lift<before,'turning away smoothly restores normal framing');
-assert.equal(api.updateSurfaceView('interior',0,0,.45,0,true,2200).lift,0,'map transition clears the previous lift');
-surfaceAhead=true;api.updateSurfaceView('interior',0,0,.45,0,true,2300);
-assert.equal(api.updateSurfaceView('interior',0,0,.45,0,false,2400).lift,0,'scripted/seated camera ownership immediately clears assistance');
+const falling=api.updateSurfaceView('town',0,0,true,2100);
+assert(falling.lift>0 && falling.lift<before,'walking away smoothly restores normal framing');
+assert.equal(api.updateSurfaceView('interior',0,0,true,2200).lift,0,'map transition clears the previous lift');
+surfaceNearby=true;api.updateSurfaceView('interior',0,0,true,2300);
+assert.equal(api.updateSurfaceView('interior',0,0,false,2400).lift,0,'scripted/seated camera ownership immediately clears assistance');
 
 // Execute the actual game camera call with independently controlled player position and camera orbit.
 const gameSource = fs.readFileSync('docs/game.js','utf8'); // Real integration must test adjacency at the character, rather than at the smoothed camera target.
@@ -149,11 +149,9 @@ const cameraContext = {window:{HobunjiShoulderCameraCharacterFraming:{updateSurf
 vm.runInNewContext(cameraCall,cameraContext);
 assert.equal(captured[1],3,'adjacency uses player X, not the smoothed camera target');
 assert.equal(captured[2],2,'adjacency uses player Z, not the smoothed camera target');
-assert.equal(captured[4],0,'normal view probes the camera direction');
-cameraContext.azimuth=Math.PI/3;
-vm.runInNewContext(cameraCall,cameraContext);
-assert.equal(captured[4],Math.PI/3,'camera turns update the general direction without an exact surface ray hit');
-let probeDirection=null; // Validates camera azimuth to world-direction conversion.
-windowObject.FurnitureTableSystem.highSurfaceAhead=(area,x,z,y,dx,dz)=>{probeDirection=[dx,dz];return {active:true};};
-api.updateSurfaceView('town',0,0,.45,0,true,2600);
-assert(Math.abs(probeDirection[0])<1e-9 && Math.abs(probeDirection[1]+1)<1e-9,'default camera probes north');
+const originalArguments=[...captured]; // Position, mode ownership, and time are the entire lift input contract.
+for (const rotation of [-Math.PI,-Math.PI/2,0,Math.PI/2,Math.PI]) {
+ cameraContext.azimuth=rotation;cameraContext.facingAngle=rotation;cameraContext.angle=rotation; // Orbit, body yaw, and pitch change without moving the character.
+ vm.runInNewContext(cameraCall,cameraContext);
+ assert.deepEqual(captured,originalArguments,'camera and character rotation cannot affect lift inputs');
+}

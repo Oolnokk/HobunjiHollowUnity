@@ -217,7 +217,7 @@
       usedMeasuredHead: resolved.usedMeasuredHead,
       usedMeasuredNeck: resolved.usedMeasuredNeck,
       targetSource: resolved.targetSource,
-      latestChange: 'Looking generally toward a high surface in the player tile or eight neighboring tiles blends toward tall Mashtzarr-sized framing.',
+      latestChange: 'An authored upward surface in the player tile or eight neighboring tiles blends toward tall Mashtzarr-sized framing regardless of viewing direction.',
       referenceSpecies: resolved.referenceSpecies,
       distanceDeferredForRangedFocus: false,
       rangedFocusActive: focusActive,
@@ -291,14 +291,14 @@
   const surfaceFrame = { lift:0, distanceScale:1, blend:0, active:false, referenceSpecies:'mashtzarr', furnitureId:null }; // Frame-local overrides never mutate the player's normal species settings.
   let surfaceArea = null, surfaceTime = null; // Resets the blend on map changes and measures real elapsed camera update time.
   let surfaceTargetLift = 0, surfaceTargetDistanceScale = 1; // Cached Mashtzarr-sized framing derived when the player rig is measured.
-  function updateSurfaceView(area, x, z, normalCameraY, azimuth, enabled, now) {
+  function updateSurfaceView(area, x, z, enabled, now) {
     if (area!==surfaceArea || !enabled) {
       surfaceFrame.blend=0; surfaceFrame.lift=0; surfaceFrame.distanceScale=1;
       surfaceArea=area; surfaceTime=now;
     }
     const dt=surfaceTime==null ? 0 : Math.max(0,Math.min(.1,(now-surfaceTime)/1000)); // Frame-rate-independent easing also tolerates pause/resume.
     surfaceTime=now;
-    const probe=enabled && surfaceTargetLift>0 && window.FurnitureTableSystem?.highSurfaceAhead?.(area,x,z,normalCameraY,-Math.sin(azimuth),-Math.cos(azimuth),surfaceFrame.active); // Broad camera-facing direction requires no precise ray hit on the surface.
+    const probe=enabled && surfaceTargetLift>0 && window.FurnitureTableSystem?.nearbySurface?.(area,x,z); // Proximity alone controls assistance; no camera or character orientation enters the probe.
     surfaceFrame.active=!!probe?.active; surfaceFrame.furnitureId=probe?.furnitureId || null;
     surfaceFrame.blend+=(Number(surfaceFrame.active)-surfaceFrame.blend)*(1-Math.exp(-6*dt));
     if (surfaceFrame.blend<.0001) surfaceFrame.blend=0;
