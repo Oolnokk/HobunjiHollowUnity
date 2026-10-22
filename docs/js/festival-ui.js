@@ -74,7 +74,7 @@
     const type = feastInspectIndex !== null ? 'feast' : prop.activity.type;
     root.querySelector('#festivalTitle').textContent = type === 'feast' ? '🍲 Gorkunash potluck dishes'
       : `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
-    root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings 15:00–01:00`;
+    root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings ${api.gatheringHoursLabel()}`;
     const content = root.querySelector('#festivalContent');
     let html = '';
     if (type === 'feast') {
@@ -111,7 +111,7 @@
       if(type==='potluck'&&f.id==='gorkunash') {
         const bowl=api.festivalBowl();
         const dishes=api.feastMenu();
-        html+=`<h3>Seven pots · day ${api.contestStandings()?.day || 1} of 7</h3><p class="festival-note">The feast runs from 3 PM to 1 AM. Pick up a temporary bowl, fill it with ten portions of one meal, then eat while sitting with the villagers. Each portion adds five minutes of that food buff (up to fifty). At 10/10 fullness, no more festival food can be eaten for eighteen in-game hours from the first serving.</p>`;
+        html+=`<h3>Seven pots · day ${api.contestStandings()?.day || 1} of 7</h3><p class="festival-note">Feast hours: ${esc(api.gatheringHoursLabel())}. Pick up a temporary bowl, fill it with ten portions of one meal, then eat while sitting with the villagers. Each portion adds five minutes of that food buff (up to fifty). At 10/10 fullness, no more festival food can be eaten for eighteen in-game hours from the first serving.</p>`;
         html+=`<p>🥣 Bowl: ${bowl?.meal ? esc(bowl.meal.label)+' · '+bowl.uses+'/10':bowl?'empty · 0/10':'not held'} · Fullness ${api.currentFullness()}/10</p>`;
         html+=button('Take fresh bowl','take-bowl',!api.festivalHours());
         html+=`<div class="festival-options">${dishes.map((meal,index)=>button(`${meal.icon} Pot ${index+1}: ${meal.label}${meal.id==='reserved'?'':' · '+meal.score+'★'}`,'fill-bowl',!bowl||!api.festivalHours()||meal.id==='reserved',`data-pot-index="${index}"`)).join('')}</div>`;

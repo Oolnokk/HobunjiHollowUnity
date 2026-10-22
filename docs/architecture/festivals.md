@@ -51,6 +51,10 @@ Annual claims and the ancestor blessing live in `member.festivals`. Dance progre
 
 ## Verification
 
+Resident shop actions and dialogue purchases/crafting pause only while a festival's gathering window is active. Outside it, the existing shopkeeper work/counter schedules apply again; no early closing time is saved or copied into ordinary schedules. Gathering windows default to 15:00 inclusive–01:00 exclusive; a festival definition may override them with `gatheringHours: { start: 13, end: 16 }` (civil hours). The end releases shop service and musician attendance together, including when it falls before normal closing. Visiting traders retain their own schedules. Suspended festivals do not impose shop closures. `FestivalSystem.diagnostics()` reports `gatheringActive`, `shopsClosed`, and the latest change for mobile inspection.
+
+Custom hours accept numeric values and numeric strings; invalid/out-of-range or equal start/end values disable the gathering instead of closing shops all day. An explicit 00:00–24:00 window represents a full day. The festival menu and copied diagnostics use the same configured hours label. `test-festival-shop-hours.js` executes the real scheduler against authored shopkeeper shifts/stations to verify reopening, normal closing times, days off, suspended festivals and all five festival dates. Shop-action checks reject unrelated NPC IDs before consulting festival dates.
+
 `node scripts/run-tests.js festival combat-tutorial favor-heart-balance npc-gifting harlyao-calendar`
 
 Festival tests execute shipped rules and layout selection, exact-quality consumption, inventory-capacity rejection, remote-friend eligibility, annual renewal, save/restore, blessing expiry across a year boundary, costume immutability, and interrupted dancing. Integration tests execute editor copy-on-write/JSON round-trips, station cleanup, live town start/end/failure recovery, and spatial checks against actual furniture footprints, rotated buildings, paths, exits, and other props. Combat tests execute transient world-space sparring and cleanup.

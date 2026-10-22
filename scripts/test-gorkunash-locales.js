@@ -89,6 +89,36 @@ assert.equal(target('friend').festivalLocaleKind,'dining','nonromance guests fav
 hour=21;assert.equal(target('kaboku_kunji').toolKey,'kurraya','Kaboku leads late');
 hour=0;assert.equal(target('kaboku_kunji').toolKey,'kurraya','music continues after midnight');
 hour=1;assert.equal(target('foroji_funji'),null,'festival gathering ends at 1 AM');
+// Shop actions and attendance use the same live window, with no latched early closing time.
+load('npc-shop-buttons');
+W.NpcShopButtons.init({getCurrentArea:()=> 'map_i_smithy'});
+const smith = {rec:{id:'sloomi',homeId:'smithy'}}; // The smithy action must close even before the smith has walked out.
+const general = {rec:{id:'furunji_funji',homeId:'general_store'},state:'idle',root:{position:{x:.5,z:.5}},currentScheduleTarget:{c:0,r:0,label:'Counter'}}; // Actual counter proximity used by the general-store action.
+const carpenter = {rec:{id:'dzibim_khibu',homeId:'carpenters'},state:'idle',root:{position:{x:.5,z:.5}},currentScheduleTarget:{c:0,r:0,label:'Carpentry Work'}}; // Actual carpentry station used by the carpenter action.
+W.SCRATCHBONES_CONFIG.game.mobileControls={generalStoreButton:{stationLabels:['Counter']}};
+for (const [testHour,closed] of [[14,false],[14.999,false],[15,true],[23.999,true],[0,true],[.999,true],[1,false],[8,false]]) {
+  hour=testHour;
+  assert.equal(api.shopsClosedFor(smith.rec),closed,`shop closure at ${hour}`);
+  assert.equal(W.NpcShopButtons.isSmithyNpcInBronzeworks(smith),!closed,`smithy action at ${hour}`);
+  assert.equal(W.NpcShopButtons.isGeneralStoreNpcOnDuty(general),!closed,`store counter at ${hour}`);
+  assert.equal(W.NpcShopButtons.isCarpenterNpcOnDuty(carpenter),!closed,`carpenter counter at ${hour}`);
+}
+hour=14.999;assert.equal(target('foroji_funji'),null,'stage preparation cannot close the general store before the gathering');
+civilDay=1;hour=16;
+assert.equal(api.festivalHours(),false,'ordinary afternoons do not activate a festival window');
+assert.equal(api.shopsClosedFor(smith.rec),false,'ordinary shop hours remain available');
+civilDay=120;
+const currentFestival = api.festival(); // Temporary shorter gathering exercises reopening before normal closing time.
+currentFestival.gatheringHours={start:13,end:16};
+hour=15.999;assert.equal(api.shopsClosedFor(smith.rec),true);
+hour=16;assert.equal(api.shopsClosedFor(smith.rec),false,'short gathering releases shops exactly at its end');
+assert.equal(target('foroji_funji'),null,'musicians also return to ordinary schedules after an earlier end');
+assert.equal(W.NpcShopButtons.isGeneralStoreNpcOnDuty(general),true,'store can resume counter service before 18:00');
+general.currentScheduleTarget.label='Home';
+assert.equal(W.NpcShopButtons.isGeneralStoreNpcOnDuty(general),false,'festival end never forces an off-duty shopkeeper to trade');
+delete currentFestival.gatheringHours;
+hour=16;
+assert.equal(api.shopsClosedFor({id:'jubmir',homeId:'inn',visitorPresence:{}}),false,'visiting traders keep their own schedule');
 // Approaching the active feast without a bowl must never abort gameplay's action-button pass.
 // Its eight-tile activity radius also overlaps the nearby bandstand.
 for (const festivalHour of [14.999, 15, 17, 23.999, 0.999, 1]) {

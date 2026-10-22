@@ -20942,8 +20942,19 @@
           resultX = lookAtX + (resultX - lookAtX) * fraction;
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
+          const requestedSetback = Number(window.HobunjiShoulderCameraCharacterFraming?.minimumCollisionSetback?.()); // Uses the cached species scale rather than measuring the avatar each frame.
+          const minimumSetback = Math.min(Math.hypot(dx, dz), Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.3); // Never pushes an intentionally shorter requested boom outward.
+          const bodyLimited = Math.hypot(resultX - lookAtX, resultZ - lookAtZ) < minimumSetback; // Stops both wall and terrain retraction before the camera enters the player.
+          if (bodyLimited && minimumSetback > 0) {
+            const factor = minimumSetback / Math.hypot(dx, dz); // Retains requested yaw and pitch until ground clearance requires a height adjustment.
+            resultX = lookAtX + dx * factor;
+            resultZ = lookAtZ + dz * factor;
+            resultY = Math.max(lookAtY + dy * factor, cameraSurfaceYAtWorld(resultX, resultZ) + clearance);
+          }
           _cameraBoomDebug = {
-            latestChange: 'Farmhouse and authored interiors share yaw-independent camera clearance; furniture uses real mesh bounds instead of NPC-blocked tiles.',
+            latestChange: 'Collision zoom stops just behind the player with a species-scaled setback; ground clearance adjusts height at that limit.',
+            minimumSetbackTiles: minimumSetback,
+            bodyLimited,
             corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
             radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,

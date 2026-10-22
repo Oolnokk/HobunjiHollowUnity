@@ -36,7 +36,8 @@ for (const height of [0.04, 0.1, 0.15, 0.2, 0.465, 0.62, 0.95]) {
   for (const pitch of [0, 5, 15, 30, 45, 60, 76]) {
     const result = aim(height, pitch); // Executes the complete wall/ground solver for short and reference characters.
     const boom = context.debug(); // Reads the same values delivered to mobile Pixel Probe.
-    assert.ok(Math.abs(pitchOf(result, height) - pitch) < 1e-7, `height ${height}: preserves ${pitch} degree upward aim`);
+    if (!boom.bodyLimited) assert.ok(Math.abs(pitchOf(result, height) - pitch) < 1e-7, `height ${height}: preserves ${pitch} degree upward aim before reaching the player`);
+    assert.ok(Math.hypot(result.x, result.z) >= boom.minimumSetbackTiles - 1e-9, 'terrain cannot retract the camera into the player');
     assert.ok(result.y >= boom.floorY + boom.floorClearance - 1e-9, 'camera stays above terrain');
     assert.ok(boom.solvedDistance > 0, 'short characters never collapse onto the look target');
     assert.ok(boom.solvedDistance <= previousDistance + 1e-6, 'greater upward pitch brings camera closer');
@@ -47,26 +48,27 @@ for (const height of [0.04, 0.1, 0.15, 0.2, 0.465, 0.62, 0.95]) {
 context.currentAreaOcclusionMeshes = () => [{}];
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 0.48 }];
 const wallResult = aim(0.465, 20); // Exercises outdoor walls inside the old three-tile minimum.
-assert.ok(context.debug().solvedDistance <= 0.23 + 1e-9, 'outdoor shoulder boom retracts in front of nearby walls');
+assert.ok(Math.abs(wallResult.z - .3) < 1e-9 && context.debug().bodyLimited, 'outdoor wall zoom stops at the player setback');
 assert.ok(Math.abs(pitchOf(wallResult, 0.465) - 20) < 1e-7, 'wall collision preserves upward aim instead of lifting the camera');
 context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: 0.15 }];
 const nearWall = aim(0.15, 0, 0.3); // A zoomed boom shorter than half a tile must still raycast walls.
-assert.ok(Math.hypot(nearWall.z, nearWall.y - 0.15) <= 0.04 + 1e-9, 'short booms still collide with nearby walls');
+assert.ok(Math.abs(nearWall.z - .3) < 1e-9, 'near walls cannot push a short boom into the player');
 context.currentAreaOcclusionMeshes = () => [];
 context.performance.now = () => 1100;
-const recovering = aim(0.15, 0, 0.3); // Clearing a wall eases the boom outward instead of snapping back.
-assert.ok(recovering.z > nearWall.z && recovering.z < 0.3, 'unobstructed wall recovery is smoothed');
+const recovering = aim(0.15, 0, 0.8); // Clearing a wall eases the boom outward beyond the body limit.
+assert.ok(recovering.z > nearWall.z && recovering.z < 0.8, 'unobstructed wall recovery is smoothed');
 vm.runInContext('_seatedOcclusionDistance = null; _seatedOcclusionUpdatedAt = 0;', context);
 
 context.activeSurfaceYAtWorld = (x, z) => 2 + z * 0.3;
 context.camTargetY = 2;
 const rampResult = aim(2.15, 30); // Elevated rising ramp should stop the camera at local terrain, preserving its angle.
 assert.ok(rampResult.y >= context.activeSurfaceYAtWorld(rampResult.x, rampResult.z) + context.debug().floorClearance - 1e-9);
-assert.ok(Math.abs(pitchOf(rampResult, 2.15) - 30) < 1e-7);
+assert.ok(context.debug().bodyLimited || Math.abs(pitchOf(rampResult, 2.15) - 30) < 1e-7);
 context.activeSurfaceYAtWorld = (x, z) => z >= 0.3 && z < 0.65 ? 0.5 : 0;
 context.camTargetY = 0;
 const ridgeResult = aim(0.4, 0); // Checks the whole boom: its endpoint is clear but an intervening raised tile blocks it.
-assert.ok(ridgeResult.z < 0.3, 'boom cannot pass through an intervening ridge to reach a clear endpoint');
+assert.ok(context.debug().groundLimited && context.debug().bodyLimited, 'an intervening ridge reaches the body setback before the camera can retract farther');
+assert.ok(ridgeResult.y >= context.debug().floorY + context.debug().floorClearance - 1e-9, 'the capped camera stays above the ridge');
 context.activeSurfaceYAtWorld = (x, z) => -z;
 const downhillResult = aim(0.15, 30); // Descending terrain provides more clearance than the player's own ground plane.
 assert.ok(Math.abs(Math.hypot(downhillResult.z, downhillResult.y - 0.15) - 1.3) < 1e-9, 'downhill terrain allows the full boom');
@@ -97,12 +99,12 @@ Object.assign(context, {
 });
 vm.runInContext(game.slice(updateStart, updateEnd) + '\nthis.updateCamera = updateCameraPosition;', context);
 context.updateCamera();
-assert.ok(Math.abs(pitchOf(camera.position, camera.target.y) - 76) < 1e-7, 'gameplay update retains maximum upward pitch for a short character');
+assert.ok(context.debug().bodyLimited && camera.position.z >= .3, 'maximum upward pitch retains the player setback when ground clearance runs out');
 assert.ok(camera.near < 0.1 && camera.near < context.debug().solvedDistance, 'near plane shrinks when the camera approaches the character');
 context.s_shoulderSurfOffsetV_current = -0.4;
 context.updateCamera();
 assert.equal(camera.target.y, 0.04, 'a lowered Settings offset cannot bury the aim target');
-assert.ok(Math.abs(pitchOf(camera.position, camera.target.y) - 76) < 1e-7, 'lowered offset still permits upward aim');
+assert.ok(context.debug().bodyLimited && camera.position.z >= .3, 'lowered offsets cannot pull the camera inside the player');
 context.activeCameraMode = 'default';
 context.updateCamera();
 assert.equal(camera.near, 0.1, 'switching camera modes restores the normal near plane');
@@ -279,4 +281,23 @@ const outdoorHit = context.solve(0, .62, 0,
   Math.cos(3 * Math.PI / 180) * Math.cos(outdoorAngle) * outdoorDistance);
 assert.ok(outdoorHit.y < .62 + Math.sin(outdoorAngle) * outdoorDistance,
   'the outdoor shoulder camera still retracts directly along its wall ray');
-console.log('Shoulder camera ground slide: terrain, wall collision, seated compatibility, direction-independent radial corridor zoom, cache, recovery, and outdoor isolation passed.');
+context._cameraOcclusionRaycaster.intersectObjects = () => [{ distance: .06 }]; // An extremely close wall attempts to retract every boom below the body limit.
+for (const ratio of [.5, 1, 1.75]) {
+  context.window.HobunjiShoulderCameraCharacterFraming = { minimumCollisionSetback: () => .3 * ratio };
+  for (const yaw of [0, 3, 90, 180, 270]) {
+    const a = yaw * Math.PI / 180; // Projects the final camera behind the player regardless of shoulder side offset or yaw.
+    const lx = Math.cos(a) * .14, lz = -Math.sin(a) * .14; // Rotating shoulder offset remains perpendicular to the backward camera direction.
+    corridorClock += 16;
+    const limited = context.solve(lx, .62, lz, lx + Math.sin(a) * 1.2, .8, lz + Math.cos(a) * 1.2); // Runs the production solver at short, reference and tall body scales.
+    assert.ok(Math.abs((limited.x - lx) * Math.sin(a) + (limited.z - lz) * Math.cos(a) - .3 * ratio) < 1e-8,
+      'collision zoom stops slightly behind the player at every yaw and species scale');
+    assert.ok(context.debug().bodyLimited);
+    assert.equal(context.debug().minimumSetbackTiles, .3 * ratio, 'mobile diagnostics report the actual body setback');
+  }
+}
+context.window.HobunjiShoulderCameraCharacterFraming.minimumCollisionSetback = () => NaN;
+assert.ok(Math.abs(context.solve(0, .62, 0, 0, .62, 1.2).z - .3) < 1e-8, 'invalid rig metrics retain a finite body-safe fallback');
+context.cutscenePreviewActive = true;
+assert.ok(context.solve(0, .62, 0, 0, .62, 1.2).z < .1, 'authored cutscenes retain their own collision framing without the gameplay body limit');
+context.cutscenePreviewActive = false;
+console.log('Shoulder camera ground slide: terrain, radial collision, species-scaled body setback, cache, recovery, and scripted-camera isolation passed.');
