@@ -4364,7 +4364,7 @@
                               "activityLabel": "sleeping"
                         }
                   ],
-                  "loreBackground": "Doesn't believe in Foroji's dream of being a bard — wants him to take over the store instead. <suggestion: backstory — what Furunji actually says when pressed about Foroji's music, and whether he's softening over time>\n\n<suggestion: backstory — how Furunji's wife died, and how long ago>",
+                  "loreBackground": "Doesn't believe in Foroji's dream of being a bard — wants him to take over the store instead. <suggestion: backstory — what Furunji actually says when pressed about Foroji's music, and whether he's softening over time>\n\n<suggestion: backstory — how Furunji's wife died, and how long ago>\n\nForoji is Furunji's only surviving family member.",
                   "phrasePools": [
                         {
                               "id": "pool_furunji_greetings",
@@ -6983,7 +6983,7 @@
                         "visitor",
                         "romanceable"
                   ],
-                  "bio": "Slagothim trader who makes barely profitable trips to Hobunji because he genuinely cares about its people.",
+                  "bio": "The only Slagothim trader still making the barely-profitable bi-weekly journey to Hobunji, because he genuinely cares about its people.",
                   "relationship": {
                         "canBefriend": true,
                         "canDate": true,
