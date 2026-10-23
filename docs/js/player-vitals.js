@@ -424,7 +424,8 @@
       nodes.row.classList.toggle('is-exhausted', exhausted);
 
       const missingCapacity = Math.max(0, authoredMax - effectiveMax); // Hatches capacity removed by afflictions (rather than treating it as spent).
-      nodes.cap.hidden = exhausted || missingCapacity <= 0.05;
+      const capHidden = exhausted || missingCapacity <= 0.05;
+      if (nodes.cap.hidden !== capHidden) nodes.cap.hidden = capHidden;
       // Late-registered reducer definitions sometimes lack the canonical
       // reducesEffectiveMax metadata; honor the observed drop in capacity.
       const capAfflicted = activeAfflictions.some(([id, def]) =>
@@ -439,8 +440,10 @@
         ensureStarvedCap(nodes.cap, reducerColor === '#000000' ? '#555' : reducerColor);
       }
       if (!nodes.cap.hidden) {
-        nodes.cap.style.left = (effectiveMax / denominator * 100).toFixed(1) + '%';
-        nodes.cap.style.width = (missingCapacity / denominator * 100).toFixed(1) + '%';
+        const capLeft = (effectiveMax / denominator * 100).toFixed(1) + '%';
+        const capWidth = (missingCapacity / denominator * 100).toFixed(1) + '%';
+        if (nodes.cap.style.left !== capLeft) nodes.cap.style.left = capLeft;
+        if (nodes.cap.style.width !== capWidth) nodes.cap.style.width = capWidth;
       }
       const pieces = exhausted ? [] : visibleAfflictionSegments(player, spec.key, activeAfflictions, denominator, rs);
       drawAfflictionSegments(nodes, pieces, denominator, rs);
@@ -448,10 +451,14 @@
       const amountLabel = exhausted
         ? 'Exhausted ' + percent.toFixed(0) + '%'
         : Math.round(current) + ' / ' + Math.round(effectiveMax);
-      nodes.row.setAttribute('aria-valuenow', String(Math.round(percent)));
-      nodes.row.title = spec.label + ': ' + amountLabel +
+      // Runs every frame while a bar is showing: compare before writing so
+      // idle frames queue no attribute mutations (AGENTS.md per-frame rule).
+      const valueNow = String(Math.round(percent));
+      if (nodes.row.getAttribute('aria-valuenow') !== valueNow) nodes.row.setAttribute('aria-valuenow', valueNow);
+      const title = spec.label + ': ' + amountLabel +
         (activeAfflictions.length ? '\n' + activeAfflictions.map(([id, def]) =>
           (def.name || id) + ' ' + Math.round(rs.getAffliction(player, id))).join(', ') : '');
+      if (nodes.row.title !== title) nodes.row.title = title;
     }
     hudRoot.classList.toggle('is-active', visibleCount > 0);
   }

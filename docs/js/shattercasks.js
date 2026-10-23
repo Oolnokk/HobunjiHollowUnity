@@ -156,19 +156,20 @@
       cached={scene:targetScene,static:[],ready:false};
       placementCache.set(mapId,cached);
     }
-    // Camps are dynamic: new camps may be generated after the zone scene loads.
+    // Camps are dynamic: new camps may be generated after the zone scene loads,
+    // so they are re-read on every poll instead of joining the static cache.
     const result=[];
-    if(!cached.ready) {
-      const cave=window.CaveSiteSystem?.__test?.plansByMapId?.get?.(mapId);
-      if(cave)for(const entry of cave.shattercasks||[]) cached.static.push({
-        id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row
-      });
     const camps=window.BanditCamps?.campInstances?.get?.(mapId)||[];
     camps.forEach((camp,index)=>{
       const x=Math.floor(Number(camp.homeX)/tileSize()),z=Math.floor(Number(camp.homeY)/tileSize());
       const spot=nearestOpen(g,x,z,4);
       if(spot)result.push({id:'bandit_'+(camp.discoveryKey||index),...spot});
     });
+    if(!cached.ready) {
+      const cave=window.CaveSiteSystem?.__test?.plansByMapId?.get?.(mapId);
+      if(cave)for(const entry of cave.shattercasks||[]) cached.static.push({
+        id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row
+      });
       // Generated ruin occupancy sorts every floor cell when snapshotted:
       // sample it once per generated scene, never once every 140ms.
       if(mapId==='map_i_dev_random_ruin') {
