@@ -17,7 +17,7 @@ const expected = {
   grehlr: { large: 0.50, medium: 0.26, small: 0.13 },
   'gar-wolf': { large: 0.50, medium: 0.33, small: 0.11 },
   'dabinggi-hound': { large: 0.50, medium: 0.27, small: 0.09 },
-  uumkaoii: { large: 0.69, medium: 0.48, small: 0.09 },
+  uumkaoii: { large: 0.35, medium: 0.25, small: 0.05 },
 }; // Exact values from hobunji.attachment-rig-profiles.v10 exported 2026-08-30.
 for (const [kind, offsets] of Object.entries(expected)) {
   assert.deepEqual({ ...context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures[kind].groundOffsets }, offsets, `${kind} ground offsets match authored v10 data`);

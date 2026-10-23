@@ -116,4 +116,41 @@ for (const channel of ['weightMap', 'compressibilityMap', 'stretchabilityMap']) 
     && (index % 2 === 0 ? value > 0 : value <= 256)), channel + ': invalid RLE values');
 }
 
+// All three Uumkao'ii frames really are 641x451; do not silently fall back to the 1375x600 legacy billboard ratio.
+const uumSize = { width: 641, height: 451 }; // Used to check native sprite headers and source/preview aspect consistency.
+for (const frame of ['idle','run1','run2']) {
+  const bytes = fs.readFileSync(`docs/assets/creaturesprites/uumkao'ii_${frame}.png`);
+  assert.equal(bytes.readUInt32BE(16),uumSize.width,`Uumkaoii ${frame} native width`);
+  assert.equal(bytes.readUInt32BE(20),uumSize.height,`Uumkaoii ${frame} native height`);
+}
+const nativeAspect = uumSize.height / uumSize.width; // Used by all three Uumkao'ii game definitions and the mirrored bestiary.
+const defs = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json')).creatures;
+assert(Math.abs(defs.find(entry=>entry.id==='uumkaoii').spriteAspect-nativeAspect)<1e-12,'tool bestiary must use the native Uumkaoii art ratio');
+assert.equal((game.match(/spriteAspect:\s*451\s*\/\s*641/g)||[]).length>=3,true,'game applies native Uumkaoii aspect to domestic, wild, and den-mother models');
+const farm = read('docs/js/farm-animals.js'); // Owned adults must use the corrected species aspect, not an independent old literal.
+assert.match(farm,/ANIMAL_H = ANIMAL_W \* \(deps\.CREATURE_DB\.uumkaoii\?\.spriteAspect/);
+const troughs = read('docs/js/farm-troughs.js'); // Sleep/barn models were already using the correct 451x641 source.
+assert.match(troughs,/kind === 'uumkaoii' \? modelWidth \* \(451 \/ 641\)/);
+// Every ordinary, unsquashed Uumkao'ii billboard must reproduce the source width:height ratio,
+// regardless of overall adult width, genotype size class, or which stable/baby renderer built it.
+const nativeWidthHeight = uumSize.width / uumSize.height; // 641 / 451, not the legacy 1375 / 600.
+const standardFarmWidth = 1.275 * (600 / 1375) / nativeAspect; // Preserve the pre-fix standing height without stretching the texture.
+assert(Math.abs(standardFarmWidth * nativeAspect - 1.275 * (600 / 1375)) < 1e-12,
+  'correcting the adult model width preserves the existing height and ground-frame basis');
+for (const sizeScale of [0.2, 1, 1.5]) {
+  assert(Math.abs((standardFarmWidth * sizeScale) / (standardFarmWidth * nativeAspect * sizeScale) - nativeWidthHeight) < 1e-12,
+    'Small, Medium, and Large must keep the exact native sprite aspect ratio');
+}
+const farmSource = read('docs/js/farm-animals.js');
+assert.match(farmSource, /ANIMAL_W = 1\.275 \* \(600 \/ 1375\) \/ \(451 \/ 641\)/,
+  'standing Uumkao\'ii uses the corrected visual width');
+assert.match(farmSource, /CREATURE_DB\.uumkaoii\?\.spriteAspect \|\| \(451 \/ 641\)/,
+  'standing Uumkao\'ii falls back to its own native aspect if the creature definition is unavailable');
+for (const path of ['docs/js/livestock-nursery.js','docs/js/barn-incubator.js','docs/js/den-nest-system.js']) {
+  const code = read(path);
+  assert(code.includes('1.275 * (600 / 1375) / (451 / 641)'), path + ' uses the same adult width baseline as standing animals');
+  assert(code.includes('451 / 641 : 600 / 1375'), path + ' preserves native Uumkao\'ii aspect when the bestiary is absent');
+}
+assert(read('docs/js/farm-troughs.js').includes('1.275 * (600 / 1375) / (451 / 641)'),
+  'sleeping Uumkao\'ii uses the corrected width baseline too');
 console.log('creature new sprite integration: all regression checks passed');

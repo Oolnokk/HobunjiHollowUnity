@@ -1256,8 +1256,8 @@
         // be summoned via the same generic companion AI as the dabinggi-hound.
         // Routed to 'vigilantProtector' as a stand-in per design direction —
         // a gentler, dedicated AI type can replace this once one exists.
-        // Reuses the existing livestock sprite as-is (already the right
-        // 1375x600 side-view sheet convention makeCreatureEntity expects).
+        // Uumkao'ii now uses a 641x451 idle/run canvas, not the legacy 1375x600 sheet.
+        // The actual height/width ratio must survive all size-class scales.
         uumkaoii: {
           label: "Uumkao'ii", hostile: false,
           maxHealth: 40, maxStamina: 30,
@@ -1271,7 +1271,7 @@
           // no match for a hound's nose.
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff, lungeHeightUnits: 0.08, // Nearly grounded; high aim should shed almost all travel.
+          modelWidth: 1.6, spriteAspect: 451 / 641, tint: 0xffffff, lungeHeightUnits: 0.08, // Real 641x451 Uumkao'ii art; prevents legacy horizontal stretch. // Nearly grounded; high aim should shed almost all travel.
           // See dabinggi-hound's matching comment — Uumkao'ii default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
@@ -1397,7 +1397,7 @@
           maxHealth: 30, maxStamina: 20,
           moveSpeed: 110, chaseSpeed: 110,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff,
+          modelWidth: 1.6, spriteAspect: 451 / 641, tint: 0xffffff, // Wild Uumkao'ii share the same 641x451 idle and run art.
           sprites: {
             idle: "assets/creaturesprites/uumkao'ii_idle.png",
             run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
@@ -1440,7 +1440,7 @@
           attackTag: 'blunt',
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
           canClimb: false, canSwim: false,
-          modelWidth: 2.8, tint: 0x8a6a3a,
+          modelWidth: 2.8, spriteAspect: 451 / 641, tint: 0x8a6a3a, // The enlarged den mother uses the same source sprite ratio.
           sprites: {
             idle: "assets/creaturesprites/uumkao'ii_idle.png",
             run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
