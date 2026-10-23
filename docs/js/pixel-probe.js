@@ -987,6 +987,13 @@
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
     if (shingleSurfaces) lines.push('Shingle surfaces: ' + JSON.stringify(shingleSurfaces));
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
+    try {
+      const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
+      lines.push('Den nests: ' + JSON.stringify(nestDebug || { missingRuntime: true }));
+      lines.push('Den locale: ' + JSON.stringify(window.DenLocaleRuntime?.debugSnapshot?.() || { missingRuntime: true }));
+    } catch (error) {
+      lines.push('Den nest diagnostics failed: ' + String(error?.message || error));
+    }
     const metalArmorDiagnostics = window.MetalArmorSystem?.diagnosticsText?.(); // Copyable on-phone proof of every equipped metal article's slot, alloy, Temper, verdigris, weight, and XP-hook readiness.
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
     const mammakhbuurDebug = window.HobunjiMammakhbuurSpecies?.debugSnapshot?.(); // Copies the new species' size/placement and fallback contract on mobile.

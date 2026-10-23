@@ -67,4 +67,48 @@ buildingScenes.set(lastMap, { scene: new Obj3D(), grid, transitions: [] });
 runStates.set(lastMap, { floor: 7, canDescend: true, descentRevealed: false, remainingRocks: 1, remainingEnemies: 0 });
 assert.strictEqual(descent.tryReveal(lastMap, 2, 2, 'rubble'), true, 'Collecting the last rubble always opens the descent');
 
+// The chance is based on *previous* breaks: the first rock keeps its base
+// odds, and ten failed rocks add exactly 20 percentage points to the eleventh.
+const pityMap = 'map_i_town_mine_f_008';
+buildingScenes.set(pityMap, { scene: new Obj3D(), grid, transitions: [] });
+runStates.set(pityMap, { floor: 8, canDescend: true, descentRevealed: false, remainingRocks: 25, remainingEnemies: 2 });
+random = 0.99;
+for (let index = 0; index < 10; index++) {
+  assert.strictEqual(descent.tryReveal(pityMap, 2, 2, 'rock'), false, 'High rolls do not reveal a hole during the first ten breaks');
+}
+const pityStatus = descent.debugStatus(pityMap);
+assert.strictEqual(pityStatus.rocksBrokenOnFloor, 10, 'Ten rock breaks are tracked for this floor');
+assert.ok(Math.abs(pityStatus.nextRockChance - 0.28) < 1e-10, 'Eleventh rock has base 8% plus 20 percentage points');
+assert.ok(Math.abs(pityStatus.nextRubbleChance - 0.55) < 1e-10, 'Shattercask rubble also benefits from previous rocks');
+random = 0.279;
+assert.strictEqual(descent.tryReveal(pityMap, 2, 2, 'rock'), true, 'The eleventh rock opens a hole at a roll above the old base chance');
+assert.strictEqual(descent.debugStatus(pityMap).rocksBrokenOnFloor, 11, 'A successful break counts exactly once');
+assert.strictEqual(descent.tryReveal(pityMap, 2, 2, 'rock'), false, 'No subsequent breaks count after the floor has revealed its hole');
+
+// Entering a different floor creates a distinct run state and starts at base odds.
+const nextMap = 'map_i_town_mine_f_009';
+buildingScenes.set(nextMap, { scene: new Obj3D(), grid, transitions: [] });
+runStates.set(nextMap, { floor: 9, canDescend: true, descentRevealed: false, remainingRocks: 15, remainingEnemies: 2 });
+assert.strictEqual(descent.debugStatus(nextMap).rocksBrokenOnFloor, 0, 'The next floor has no accumulated breaks');
+assert.ok(Math.abs(descent.debugStatus(nextMap).nextRockChance - 0.08) < 1e-10, 'The next floor starts at the base rock chance');
+random = 0.1;
+assert.strictEqual(descent.tryReveal(nextMap, 2, 2, 'rock'), false, 'A 10% roll fails on a fresh floor');
+assert.ok(Math.abs(descent.debugStatus(nextMap).nextRockChance - 0.10) < 1e-10, 'The first break adds 2 percentage points to the next roll');
+
+// Rubble is equivalent to one rock break for the cumulative chance, but
+// enemy rolls keep their own separate base odds.
+random = 0.99;
+assert.strictEqual(descent.tryReveal(nextMap, 2, 2, 'rubble'), false, 'A failed rubble roll adds one mined-rock break');
+assert.strictEqual(descent.debugStatus(nextMap).rocksBrokenOnFloor, 2, 'Rubble increments the same per-floor counter');
+assert.ok(Math.abs(descent.debugStatus(nextMap).nextRockChance - 0.12) < 1e-10, 'Pickaxe odds also increase after rubble');
+random = 0.17; // Above the independent enemy base chance (16%).
+assert.strictEqual(descent.tryReveal(nextMap, 2, 2, 'enemy'), false, 'Rock break bonus never inflates enemy kill odds');
+assert.strictEqual(descent.debugStatus(nextMap).rocksBrokenOnFloor, 2, 'Enemy kills do not increment the rock count');
+
+// The additive chance saturates at 100%, never exceeds it.
+const capMap = 'map_i_town_mine_f_010';
+buildingScenes.set(capMap, { scene: new Obj3D(), grid, transitions: [] });
+runStates.set(capMap, { floor: 10, canDescend: true, descentRevealed: false, remainingRocks: 2, remainingEnemies: 1, rocksBrokenOnFloor: 100 });
+assert.strictEqual(descent.debugStatus(capMap).nextRockChance, 1, 'Accumulated chance is capped at 100%');
+
 console.log('Town mine descent reveal checks passed.');

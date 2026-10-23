@@ -1353,7 +1353,8 @@
     // vary per spawn cycle — only the pack-vs-herd identity itself is
     // pinned to the den.
     const speciesKey = explicitSpeciesKey || pool[Math.floor(deps.rnd() * pool.length)];
-    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey); // Explicit den pools can still contain a species authored as part of the zone's herbivore ecology.
+    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey)
+      || deps.CREATURE_DB[speciesKey]?.diet === 'herbivore'; // Den-only foragers retain their species' prey role instead of becoming predators.
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
     // genotype — see getOrMakeDenGenotype.

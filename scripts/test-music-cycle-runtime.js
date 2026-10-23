@@ -40,6 +40,7 @@ async function createRuntime(area = 'map_northern_cliffs') {
       return { ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(docs, file), 'utf8')) };
     },
   }); // Only browser I/O is mocked; loading, selection, transport, and transitions run unchanged.
+  vm.runInContext('Math.random = () => 0.999;', context); // Top roll draws the rarest (longest, 16 s) authored inter-cue gap so the clock checks are reproducible.
   for (const file of ['config/scratchbones-config.js', 'js/condition-registry.js', 'js/music-system.js']) {
     vm.runInContext(fs.readFileSync(path.join(docs, file), 'utf8'), context, { filename: file });
   }
@@ -78,15 +79,15 @@ async function run() {
   assert.equal(live.media.at(-1), cue, 'polling a completed cue must retain the authored quiet gap');
   assert.equal(cue._musicRetired, true, 'polling completion retires the cue');
   cue.dispatchEvent(new Event('ended'));
-  live.now += 19000;
+  live.now += 15000;
   window.Music.updateAmbientCues();
-  assert.equal(live.media.at(-1), cue, 'the shortest authored inter-cue gap is still twenty seconds');
-  live.now += 26001;
+  assert.equal(live.media.at(-1), cue, 'the drawn sixteen-second inter-cue gap is honored');
+  live.now += 1001;
   window.Music.updateAmbientCues();
   const secondCue = live.media.at(-1); // A second motif verifies that B remains a series of cues.
   assert.match(secondCue.src, /northern_cliffs\/mas\d+\.ogg$/);
   assert.notEqual(secondCue.src, cue.src);
-  live.now += 80000;
+  live.now += 110000;
   window.Music.updateAmbientCues();
   assert.equal(live.media.at(-1), secondCue, 'a playing final cue finishes after the phase deadline');
   secondCue.complete(false);
