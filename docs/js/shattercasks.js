@@ -1437,33 +1437,16 @@
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
       const id=event.target?.closest?.('button')?.id||'';
-      // Tool Select is the context-sensitive Set Down button. Do not drop on
-      // pointerdown and accidentally also recall a tool on pointerup.
+      // Do not intercept existing Tool Select or native carried-action buttons;
+      // equipment changes elsewhere can still release the carried vase.
       if(id==='toolBtn'||id==='btnAction1'||id==='btnAction2')return;
       if(/(?:weapon|tool|item|dequip|swap)/i.test(id))drop();
     },true);
   }
-  // ControllerInput already edge-detects every configured action. Subscribe
-  // before selection/gameplay so a Shattercask owns its input without asking
-  // the generic tool/item action router to understand a fabricated item key.
-  const controllerSuppressed=new Set();
-  function controllerCode(id){
-    const bindings=window.InputBindings?.getCurrentBindings?.()?.controller;
-    return bindings?.[id]||window.InputBindings?.getDefaultBindings?.('controller')?.[id]||null;
-  }
-  window.ControllerInput?.subscribe?.('shattercask-context-actions',frame=>{
-    if(!frame?.focused||!frame.pad||window.ControllerInput?.owner!=='gameplay')return;
-    for(const [id,press]of [['toolSelect',()=>toolArchTap()]]){
-      const code=controllerCode(id);if(!code)continue;
-      const claimed=id==='toolSelect'?toolArchAction()==='pickup':!!held;
-      if(frame.pressed?.has?.(code)&&claimed){
-        press();controllerSuppressed.add(code);frame.pressed.delete(code);
-      }
-      if(frame.released?.has?.(code)&&controllerSuppressed.delete(code)){
-        frame.released.delete(code);
-      }
-    }
-  },12);
+  // Tool Select pickup is processed by game.js's canonical controller
+  // dispatcher, while ControllerSelectionUI suppresses the entire held
+  // selector gesture. A separate frame subscriber here would race that
+  // dispatcher and accidentally recall equipment after pickup.
   window.Shattercasks=Object.freeze({
     RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
