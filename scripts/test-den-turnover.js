@@ -281,6 +281,20 @@ const reloadContext = vm.createContext({ window:windowStub, localStorage, consol
 vm.runInContext(wildlifeSource, reloadContext);
 windowStub.WildlifeSpawn.init(deps);
 assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,2,'cold reload preserves the renewed generation');
+
+const beforeColdCalendar = storage.get('hobunjiSaveMeta'); // Folder-transferred cave coordinates/genotypes must survive reads before calendar hydration.
+const relocatedPosition = { x:den.x, y:den.y, mouthAnchor:{ ...den.mouthAnchor } }; // Physical entrance location expected beside a separately restored campfire.
+windowStub.CalendarSystem.tothalCycle = () => 1;
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId).length,0,'default startup cycle does not expose a later cycle\'s cave records');
+assert.equal(storage.get('hobunjiSaveMeta'),beforeColdCalendar,'early ecology/debug reads must not delete portable cave relocation records');
+windowStub.CalendarSystem.tothalCycle = () => 3;
+// Fresh generation on another device starts from the original seed's anchor.
+den.x=5; den.y=5; den.mouthAnchor={x:6,y:8};
+windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
+assert.equal(den.x,relocatedPosition.x,'restored folder state moves the physical cave back to its saved x');
+assert.equal(den.y,relocatedPosition.y,'restored folder state moves the physical cave back to its saved y');
+assert.deepEqual(JSON.parse(JSON.stringify(den.mouthAnchor)),relocatedPosition.mouthAnchor,'restored physical entrance keeps its saved relationship to the campfire');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverDebug(zoneId)[0].generation,2,'calendar hydration restores the relocated cave generation');
 windowStub.CalendarSystem.getHour=()=>25;
 deps.calendar.day=24;
 windowStub.WildlifeSpawn.enterCave(cavernMapId,'After Midnight Cave');

@@ -324,10 +324,9 @@
       const world = (meta?.worlds || []).find(entry => entry.id === identity.worldId);
       const saved = world?.denTurnover;
       if (!saved || Number(saved.year) !== identity.year || !Array.isArray(saved.records)) {
-        if (world?.denTurnover) {
-          delete world.denTurnover;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        }
+        // A startup/debug read can precede restoration of the saved calendar.
+        // Ignore other cycles in memory without deleting their saved entrance
+        // coordinates and genotypes. Real ecology writes replace obsolete state.
         return;
       }
       for (const record of saved.records) {
