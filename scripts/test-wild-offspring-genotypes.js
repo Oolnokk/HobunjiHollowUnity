@@ -36,7 +36,8 @@ run('docs/js/den-nest-system.js');
 run('docs/js/puktuk-den-nest-registration.js');
 for (const callback of callbacks) callback();
 context.CreatureGenetics.init({ CREATURE_DB: context.CREATURE_DB, clamp: (value, min, max) => Math.max(min, Math.min(max, value)) });
-context.WildlifeSpawn.init({ CREATURE_DB: context.CREATURE_DB, EXTERIOR_ZONES: context.EXTERIOR_ZONES, DEN_MOTHER_DEFS: context.SCRATCHBONES_CONFIG.game.wildlife.denMothers });
+const wildlifeDeps = { CREATURE_DB: context.CREATURE_DB, EXTERIOR_ZONES: context.EXTERIOR_ZONES, DEN_MOTHER_DEFS: context.SCRATCHBONES_CONFIG.game.wildlife.denMothers }; // Reused to exercise the real spawn owner after verifying the configuration.
+context.WildlifeSpawn.init(wildlifeDeps);
 
 const itemKinds = context.SCRATCHBONES_CONFIG.game.livestock.itemKinds; // Live item-to-species authority consumed by FarmAnimals and the Stable.
 const mothers = context.SCRATCHBONES_CONFIG.game.wildlife.denMothers; // Includes synchronous Puktuk registration.
@@ -73,6 +74,19 @@ for (const [roll, expected] of [[0, 'grehlr-den-mother'], [0.99, 'nazgraku']]) {
   const mapId = context.WildlifeSpawn.denCavernMapId('map_northern_cliffs', `offspring_${expected}`); // Real cavern identity enables the shared exterior/interior species lookup.
   assert.equal(context.CavernGenerator.pickDenMotherKind(mapId), expected, 'both Northern Cliffs families are selected by the real cavern generator');
 }
+
+Object.assign(wildlifeDeps, {
+  TILE: 32, TileType: {}, rnd: () => 0.5, hostileObjects: new Set(),
+  zoneLayouts: new Map([['map_northern_cliffs', { dens: [{ id: 'nazgraku_review', x: 10, y: 10 }], tiles: [] }]]),
+  getCurrentArea: () => 'map_northern_cliffs', getCutscenePreviewActive: () => false, _isZoneArea: () => true, buildZoneScene: () => true, showToast() {},
+  makeCreatureEntity: (creatureKey, x, y, options) => ({ creatureKey, x, y, health: 100, ...options }),
+});
+context.BanditCamps = { ensureCurrentZoneCamps() {} };
+context.WildlifeSpawn.updateHostileSpawning(3);
+const denNazgraku = [...wildlifeDeps.hostileObjects].filter(creature => creature.creatureKey === 'nazgraku' && creature.denKey); // Actual exterior den residents, distinct from the separate forager slot.
+assert(denNazgraku.length > 0, 'Nazgraku dens spawn their real exterior family');
+assert(denNazgraku.every(creature => creature.wildlifeRole === 'prey'), 'herbivorous Nazgraku den residents never receive predator faction behavior');
+assert(denNazgraku.every(creature => creature.genotype?.base?.color), 'live exterior Nazgraku carry real family genotypes');
 
 run('docs/js/farm-animals.js');
 const inventory = Object.fromEntries([...offspring.keys()].map(key => [key, 2])); // Two copies exercise both farm and companion deployment after a reload.

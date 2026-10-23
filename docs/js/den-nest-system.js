@@ -452,7 +452,7 @@
       const babyScale = Number(window.LivestockNursery?.constants?.BABY_SCALE)
         || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125;
       const sleepScaleY = Number(window.BARN_INCUBATOR_CONFIG?.visuals?.sleepScaleY) || 0.5;
-      const speciesDef = window.CREATURE_DB?.[kind] || {};
+      const speciesDef = deps.CREATURE_DB?.[kind] || {};
       const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
       const adultWidth = kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[kind]) || 1.7); // Match the corrected standing adult rather than using a wider baby.
       const spriteAspect = Number(speciesDef.spriteAspect) || (kind === 'uumkaoii' ? 451 / 641 : 600 / 1375);

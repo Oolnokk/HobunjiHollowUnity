@@ -29835,6 +29835,7 @@
       });
 
       window.DenNestSystem?.init({
+        CREATURE_DB,
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
