@@ -1512,9 +1512,10 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['grehlr'],
+          denSpecies: ['grehlr', 'nazgraku'], // Both native den families provide collectible offspring with inherited genes.
           roamingForagerSpecies: ['nazgraku'], // Separate forager slot preserves both existing Voorg-Ass herds.
           roamingForagerCount: 1,
-          // Northern Cliffs caverns are Grehlr dens. Voorg-Asses are not
+          // Northern Cliffs caverns house Grehlr or Nazgraku. Voorg-Asses are not
           // den wildlife at all: WildlifeSpawn maintains two independent
           // large exterior herds that bed down together in the open at night.
           herbivoreSpecies: [],
@@ -13936,21 +13937,22 @@
               const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
               const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
               const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
-              const liveBirth = !!motherDef?.liveBirth;
+              const motherConfig = Object.values(DEN_MOTHER_DEFS).find(def => def.creatureKey === motherKey); // Nest presentation may use hatched babies for an egg-laying species.
+              const liveBirth = !!(motherConfig?.liveBirth ?? motherDef?.liveBirth);
               const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
-              if (itemKey) {
-                _denNests.set(mapId, {
-                  col: nestCol, row: nestRow, w: 2, h: 2,
-                  itemKey, liveBirth, remaining: mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining, genotype: denGenotype,
-                });
-              } else {
+              // The authored nest renderer also needs a record when collection
+              // is disabled. Only the clutch count depends on having a reward.
+              _denNests.set(mapId, {
+                col: nestCol, row: nestRow, w: 2, h: 2,
+                floorY: tileSurfaceYInArea(bGrid?.[nestRow]?.[nestCol], mapId),
+                itemKey, liveBirth, remaining: itemKey ? (mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining) : 0, genotype: denGenotype,
+              });
+              if (!itemKey) {
                 window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
               }
-              // Simple nest marker so the 2x2 chamber reads as an objective.
-              const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
-              const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
-              nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
-              bScene.add(nestMarker);
+              // Build the actual nest even when the optional locale document
+              // is unavailable; do not depend on a later box-replacement pass.
+              window.DenNestSystem.ensureCavernNestFurniture(_denNests.get(mapId), bScene, buildFurnitureVisual);
             }
 
             // A "bigger, tunnely" den (see generateCavernFloor) deserves real
@@ -15716,7 +15718,9 @@
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
         { key: 'nelkCrate',          icon: '🦎', label: 'NELK CRATE',        max: 9  },
+        { key: 'nelkBaby',           icon: '🦎', label: 'NELK HATCHLING',    max: 9  },
         { key: 'nazgrakuCrate',      icon: '🐟', label: 'NAZGRAKU CRATE',    max: 9  },
+        { key: 'nazgrakuBaby',       icon: '🐟', label: 'NAZGRAKU HATCHLING', max: 9 },
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
@@ -15777,7 +15781,9 @@
         drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
         nelkCrate: { icon: '🦎', label: 'Nelk Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nelk to your livestock through the Farm tab.' },
+        nelkBaby: { icon: '🦎', label: 'Nelk Hatchling', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A Nelk hatchling taken from a western-slope den. Add it to a farm or stable to raise it.' },
         nazgrakuCrate: { icon: '🐟', label: 'Nazgraku Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nazgraku to your livestock through the Farm tab.' },
+        nazgrakuBaby: { icon: '🐟', label: 'Nazgraku Hatchling', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A Nazgraku hatchling taken from a northern-cliff den. Add it to a farm or stable to raise it.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
@@ -29537,7 +29543,7 @@
         getInventoryMax: () => window.InventoryStacks.MAX_TOTAL, // Past 99 an item spills into another bag box (js/inventory-stacks.js).
         getPorakanekiRewardPools: () => {
           const zone = EXTERIOR_ZONES[currentArea] || {}; // Uses live species overrides, including Puktuk and Voorg-Ass registration.
-          const species = [...new Set([...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Tree-nesting Drenkirra are native cloud-forest wildlife outside the den pools.
+          const species = [...new Set([...(zone.denSpecies || []), ...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(zone.roamingForagerSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Includes den-only families, roaming foragers, and tree-nesting Drenkirra in native animal rewards.
           const livestockKinds = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {}; // Shared egg/baby inventory keys and domesticated species aliases.
           const animals = Object.entries(livestockKinds).filter(([key, kind]) => !key.endsWith('Crate') && species.some(wild => (window.CreatureGenetics?.SPECIES_ALIAS?.[wild] || wild) === kind)).map(([itemKey, kind]) => ({ itemKey, kind })); // Preserve the canonical genotype shape used by FarmAnimals.
           const fishZone = { map_northern_cliffs: 'northernCliffs', map_southern_cloud_forest: 'cloudForest', map_western_slope: 'westernSlope', map_eastern_mire: 'easternMire' }[currentArea]; // Mirrors authored wilderness fishing regions.
@@ -29828,6 +29834,8 @@
       });
 
       window.DenNestSystem?.init({
+        CREATURE_DB,
+        buildFurnitureVisual,
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },

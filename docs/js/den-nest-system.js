@@ -162,6 +162,8 @@
   let _activeNestContentHoldId = null; // Used to reset the hold if the reticle moves from one clutch member to another.
   let _lastFocusedNestContent = null; // Used by mobile-visible diagnostics and the interaction-ray overlay.
   const _nestContentDebug = {
+    furnitureBuilds: 0,
+    legacyMarkersReplaced: 0,
     lastChange: 'Individual nest contents ready.',
     renderedNests: 0,
     renderedContents: 0,
@@ -181,6 +183,45 @@
     lastFocusedAlpha: null,
     lastError: null,
   }; // Mobile-friendly summary exposed through DenNestSystem.debugSnapshot().
+
+  function isLegacyCavernNestMarker(marker, nest) {
+    const shape = marker?.geometry?.parameters; // Identifies the exact old box at this nest's centre, including cached mesh references.
+    return !!marker?.isMesh && marker.material?.color?.getHex?.() === 0x3a2a1a
+      && shape?.width === 2 && shape?.height === 0.12 && shape?.depth === 2
+      && Math.abs(marker.position.x - nest.col - nest.w / 2) <= 0.01
+      && Math.abs(marker.position.z - nest.row - nest.h / 2) <= 0.01;
+  }
+
+  function ensureCavernNestFurniture(nest, scene, buildFurniture = deps?.buildFurnitureVisual) {
+    if (!nest || !scene) return null;
+    if (nest.devArenaTestNest) return nest.mesh || null; // The arena spawner owns and disposes its own test furniture.
+    if (nest.mesh?.parent === scene && !isLegacyCavernNestMarker(nest.mesh, nest)) return nest.mesh;
+    if (!buildFurniture || performance.now() < (nest._furnitureRetryAt || 0)) return null;
+    try {
+      const mesh = buildFurniture('nest', 0xc9a227); // Uses the ordinary furniture pipeline, including its hollow-cup fallback and authored upgrade.
+      if (!mesh) return null;
+      const x = nest.col + nest.w / 2, z = nest.row + nest.h / 2; // Shared nest centre used to place the mesh and recognize old boxes.
+      const y = Number.isFinite(nest.floorY) ? nest.floorY : (deps?.activeSurfaceYAtWorld?.(x, z) || 0); // Captured cave floor wins when the scene is being built off-screen.
+      mesh.position.set(x, y, z);
+      mesh.userData.denNestFurniture = true;
+      scene.add(mesh);
+      nest.mesh = mesh;
+      _nestContentDebug.furnitureBuilds++;
+      for (const marker of [...(scene.children || [])]) {
+        if (!isLegacyCavernNestMarker(marker, nest)) continue;
+        scene.remove(marker);
+        marker.geometry?.dispose?.();
+        marker.material?.dispose?.();
+        _nestContentDebug.legacyMarkersReplaced++;
+      }
+      _nestContentDebug.lastChange = 'Real cavern nest built directly; existing brown markers are repaired without resetting the clutch.';
+      return mesh;
+    } catch (error) {
+      nest._furnitureRetryAt = performance.now() + 1000;
+      _nestContentDebug.lastError = `Nest furniture: ${String(error?.message || error)}`;
+      return null;
+    }
+  }
 
   function isPlayerNearDenNest(nest) {
     const cx = (nest.col + nest.w / 2) * deps.TILE, cy = (nest.row + nest.h / 2) * deps.TILE;
@@ -316,7 +357,7 @@
       return { x: nest.x / deps.TILE, y, z: nest.y / deps.TILE };
     }
     const x = nest.col + nest.w / 2, z = nest.row + nest.h / 2;
-    return { x, y: deps.activeSurfaceYAtWorld(x, z), z };
+    return { x, y: Number.isFinite(nest.floorY) ? nest.floorY : deps.activeSurfaceYAtWorld(x, z), z };
   }
 
   function _contentOffset(index, count) {
@@ -452,7 +493,7 @@
       const babyScale = Number(window.LivestockNursery?.constants?.BABY_SCALE)
         || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125;
       const sleepScaleY = Number(window.BARN_INCUBATOR_CONFIG?.visuals?.sleepScaleY) || 0.5;
-      const speciesDef = window.CREATURE_DB?.[kind] || {};
+      const speciesDef = deps.CREATURE_DB?.[kind] || {};
       const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
       const adultWidth = kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[kind]) || 1.7); // Match the corrected standing adult rather than using a wider baby.
       const spriteAspect = Number(speciesDef.spriteAspect) || (kind === 'uumkaoii' ? 451 / 641 : 600 / 1375);
@@ -588,7 +629,10 @@
 
     const area = deps.getCurrentArea();
     const cavernNest = deps._denNests.get(area);
-    if (cavernNest && activeScene) _syncOneNest(cavernNest, activeScene, 'cavern');
+    if (cavernNest && activeScene) {
+      ensureCavernNestFurniture(cavernNest, activeScene);
+      _syncOneNest(cavernNest, activeScene, 'cavern');
+    }
 
     const branches = window.ClimbSystem?.debugBranchesFor?.(area) || [];
     for (const branch of branches) {
@@ -791,6 +835,11 @@
       deps.player._nestTakeActive = false;
       _activeNestContentHoldId = null;
       _nestTakeHudEl?.classList.remove('visible');
+      if ((deps.inventory[nest.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) {
+        _nestContentDebug.lastChange = 'Bag full; nest contents and inherited genotype kept in place.';
+        deps.showToast('No room in your bag for this baby or egg.', false);
+        return;
+      }
       const state = focused.state;
       _removeContentRecord(state, content);
       nest.remaining = Math.max(0, Number(nest.remaining) - 1);
@@ -828,6 +877,11 @@
     }
     return {
       ..._nestContentDebug,
+      furnitureRevision: 'direct-cavern-nest-v1',
+      currentNest: (() => {
+        const nest = deps?._denNests?.get?.(deps?.getCurrentArea?.()); // Reports the actual cached record instead of inferring offspring from a visible mesh.
+        return nest ? { itemKey: nest.itemKey || null, remaining: nest.remaining, liveBirth: nest.liveBirth, hasGenotype: !!nest.genotype, mesh: nest.mesh?.name || null, meshAttached: !!nest.mesh?.parent } : null;
+      })(),
       area: deps?.getCurrentArea?.() || null,
       alphaThreshold: NEST_CONTENT_ALPHA_THRESHOLD,
       holdSeconds: NEST_TAKE_HOLD_S,
@@ -858,6 +912,7 @@
   }
 
   window.DenNestSystem = {
+    ensureCavernNestFurniture,
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
     teleportToRandomDen, warpToDenAnchor,
     isPlayerNearDenNest, aimedCavernNest, currentAimedNest,

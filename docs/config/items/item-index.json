@@ -1427,6 +1427,18 @@
     "icon": "🦎",
     "cat": "livestock"
   },
+  "nelkBaby": {
+    "key": "nelkBaby",
+    "label": "Nelk Hatchling",
+    "icon": "🦎",
+    "cat": "livestock"
+  },
+  "nazgrakuBaby": {
+    "key": "nazgrakuBaby",
+    "label": "Nazgraku Hatchling",
+    "icon": "🐟",
+    "cat": "livestock"
+  },
   "nazgrakuCrate": {
     "key": "nazgrakuCrate",
     "label": "Nazgraku Crate",
