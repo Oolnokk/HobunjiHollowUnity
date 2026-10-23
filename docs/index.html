@@ -70,7 +70,7 @@
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
-  <script src="js/den-nest-system.js?v=20261011h8031c61"></script>
+  <script src="js/den-nest-system.js?v=20261023hrawratio2"></script>
   <script src="js/corpse-hold-loot.js?v=20261010corpsehold1"></script>
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
@@ -418,7 +418,7 @@
   <script src="js/farm-production.js?v=20261019hb8d96fb"></script>
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261013h27ea706"></script>
-  <script src="js/farm-animals.js?v=20261023hrawratio1"></script>
+  <script src="js/farm-animals.js?v=20261023hrawratio2"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -433,7 +433,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261023hrawratio1"></script>
+  <script src="js/farm-troughs.js?v=20261023hrawratio2"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
