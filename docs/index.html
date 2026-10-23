@@ -541,8 +541,8 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20261011h44009cf"></script>
-  <script src="js/navigation-compass.js?v=20261013hf6393a3"></script>
+  <script src="js/wilderness-map.js?v=20261023h02fc3f4"></script>
+  <script src="js/navigation-compass.js?v=20261023h72d5c44"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -608,7 +608,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261023h53e5213"></script>
+  <script src="js/wildlife-spawn.js?v=20261023h33e22b9"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
