@@ -5517,9 +5517,11 @@
         return Math.asin(window.FormatUtils.clamp(Number(direction?.y) || 0, -1, 1));
       }
 
+      // A live _chunkCombatTarget means a tribe/bandit ecology fight
+      // (js/porakaneki-camps-runtime.js) chasing another actor, not the player.
       function isPlayerInCombat() {
         for (const c of hostileObjects) {
-          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && (c.state === 'chase' || c.state === 'searching')) return true;
+          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && (c.state === 'chase' || c.state === 'searching') && !(c._chunkCombatTarget?.health > 0)) return true;
         }
         return false;
       }
@@ -6450,7 +6452,11 @@
             c.state = 'chase';
             c.targetPlayer = targetPlayer;
           }
-          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
+          // An ecology fight's home is the planner's travel destination, not a
+          // leash anchor; leashing to it flipped chase -> return every frame
+          // between 5 Hz ecology ticks, so travel won and the fight never landed.
+          // The ecology pass itself drops the target once it leaves the chunk.
+          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || (!chunkCombatTarget && distFromHome > def.leashRangePx))) {
             c.state = 'return';
           } else if (c.state === 'chase' && !chunkCombatTarget && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
             beginEnemySearch(c, targetPlayer);
