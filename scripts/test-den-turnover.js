@@ -48,9 +48,10 @@ const resetCaves = []; // Records resets of the cave contents when its old incar
 const corpseObjects = new Set(); // Renewal must purge dead mothers and bodies too.
 const forgottenDenMarkers = []; // Captures the exact stable den key invalidated when the old physical entrance collapses.
 
+let metadataWrites = 0; // Counts save rewrites so repeated marker recovery can prove it does no redundant I/O.
 const localStorage = {
   getItem(key){ return storage.has(key) ? storage.get(key) : null; },
-  setItem(key,value){ storage.set(key,String(value)); },
+  setItem(key,value){ if (key === 'hobunjiSaveMeta') metadataWrites++; storage.set(key,String(value)); },
   removeItem(key){ storage.delete(key); },
 };
 
@@ -305,6 +306,33 @@ vm.runInContext(wildlifeSource, reloadAgain);
 windowStub.WildlifeSpawn.init(deps);
 assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).name,'After Midnight Cave','cold reload keeps the discovered name');
 assert.deepEqual(JSON.parse(JSON.stringify(windowStub.WildlifeSpawn.advanceCaveMidnight(26))),['After Midnight Cave will collapse in 2 days'],'cold reload cannot charge the same midnight twice');
+
+// A surviving visited-cave record repairs discovery markers lost by older builds.
+reloadAgain.document = { getElementById:()=>null }; // Map controls are absent on this cold-device headless fixture.
+vm.runInContext(fs.readFileSync(path.join(ROOT,'docs/js/wilderness-map.js'),'utf8'),reloadAgain);
+windowStub.WildernessMap.init({ tothalWorldId:()=> 'world-den-test', currentTothalYear:()=>3, _zoneLayouts:deps.zoneLayouts });
+const restoredDiscoveryKey = `den:${zoneId}:${den.id}`; // Stable key shared by the restored entrance and its map marker.
+assert(!windowStub.WildernessMap.getDiscoveredThreats()[restoredDiscoveryKey],'fixture has no marker before surviving exploration records are replayed');
+windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
+assert.equal(windowStub.WildernessMap.getDiscoveredThreats()[restoredDiscoveryKey]?.label,'After Midnight Cave','saved exploration recovers a missing named cave marker without re-entering it');
+assert.equal(windowStub.WildernessMap.getDiscoveredThreats()[restoredDiscoveryKey].col,den.mouthAnchor.x+0.5,'recovered marker points at the restored physical entrance');
+const beforeRepeatedRestore = storage.get('hobunjiSaveMeta'); // An already-correct marker must not need another save rewrite.
+const writesBeforeRepeatedRestore = metadataWrites; // Replaying a restored marker must avoid even an identical save write.
+windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
+assert.equal(storage.get('hobunjiSaveMeta'),beforeRepeatedRestore,'replaying cave restoration is idempotent');
+assert.equal(metadataWrites,writesBeforeRepeatedRestore,'already-correct discoveries incur no repeated save writes');
+
+// Restored but unentered cave slots must remain undiscovered.
+const unenteredMeta = JSON.parse(storage.get('hobunjiSaveMeta')); // Fresh slot fixture retains its entrance but has no exploration record.
+delete unenteredMeta.worlds[0].discoveredThreats;
+Object.assign(unenteredMeta.worlds[0].denTurnover.records[0],{ enteredCivilDay:null, name:null });
+storage.set('hobunjiSaveMeta',JSON.stringify(unenteredMeta));
+vm.runInContext(wildlifeSource,reloadAgain);
+windowStub.WildlifeSpawn.init(deps);
+vm.runInContext(fs.readFileSync(path.join(ROOT,'docs/js/wilderness-map.js'),'utf8'),reloadAgain);
+windowStub.WildernessMap.init({ tothalWorldId:()=> 'world-den-test', currentTothalYear:()=>3, _zoneLayouts:deps.zoneLayouts });
+windowStub.WildlifeSpawn.forgetZoneDenState(zoneId);
+assert(!windowStub.WildernessMap.getDiscoveredThreats()[restoredDiscoveryKey],'marker recovery must not reveal an unentered cave');
 
 // Legacy kill-triggered collapse saves retain the defeated mother without arming a timer.
 const legacyMeta=JSON.parse(storage.get('hobunjiSaveMeta'));

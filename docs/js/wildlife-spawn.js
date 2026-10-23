@@ -905,6 +905,7 @@
     const layout = deps.zoneLayouts.get(zoneId);
     const anchors = layout?.caveAnchors || layout?.dens; // Restore every cave even while wildlife temporarily filters non-animal anchors.
     if (!anchors?.length) return;
+    const discoveries = window.WildernessMap?.getDiscoveredThreats?.() || {}; // Surviving entered-cave records repair missing/stale markers once per zone restore.
     for (const record of denTurnoverByKey.values()) {
       if (record.zoneId !== zoneId) continue;
       const den = anchors.find(candidate => String(candidate.id) === String(record.denId));
@@ -926,6 +927,15 @@
       delete den._collapseEscapeVisual;
       syncSceneDenTransition(zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
       syncDenVisual(zoneId, den);
+      if (record.enteredCivilDay != null && record.name) {
+        const discoveryKey = `den:${record.denKey}`; // Matches physical-entry and companion-perception marker identities.
+        const col = Number(den.mouthAnchor?.x ?? den.x) + 0.5; // Recovered marker uses the restored entrance, including relocations.
+        const row = Number(den.mouthAnchor?.y ?? den.y) + 0.5; // Map coordinates share the entrance's tile-center convention.
+        const marker = discoveries[discoveryKey]; // Existing marker avoids redundant metadata writes on repeated restore.
+        if (!marker || marker.kind !== 'den' || marker.zoneId !== zoneId || marker.col !== col || marker.row !== row || marker.label !== record.name) {
+          window.WildernessMap?.rememberDiscoveredThreat?.(discoveryKey, { kind:'den', zoneId, denKey:record.denKey, col, row, label:record.name });
+        }
+      }
     }
   }
 
