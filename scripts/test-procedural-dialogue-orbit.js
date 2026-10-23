@@ -251,12 +251,13 @@ const collisionContext = vm.createContext({
   cutscenePreviewActive: true, dialogueZoomActive: () => false,
   camTargetY: 0, _playerGroundY: () => 0, activeSurfaceYAtWorld: () => 0,
   currentArea: 'map_i_inn_F2_jubmir', _isBuildingArea: () => true, currentAreaOcclusionMeshes: () => [{}],
-  npcGridForArea: () => roomTiles, tileSurfaceYInArea: () => 0,
+  npcGridForArea: () => roomTiles, tileSurfaceYInArea: () => 0, isSolid: type => type === 'rock', INTERIOR_WALL_HEIGHT: 1.75,
   isNpcTileWalkable: (_, c, r) => !!roomTiles[r]?.[c] && roomTiles[r][c].type !== 'rock' && !roomTiles[r][c].npcFurnitureCollider,
   performance: { now: () => elapsedMs }, THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
   window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) }, CinematicCameraRuntime: { isActive: () => true, activeRecord: () => ({signature:shotSignature, camera:{horizontalCameraCollision:horizontalRequested}}) } },
   _cameraOcclusionOriginVec: rayOrigin, _cameraOcclusionDirVec: rayDirection, _cameraOcclusionRaycaster: raycaster,
 });
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../docs/js/camera-tile-collision.js'), 'utf8'), collisionContext); // Grid boom collision now lives in its own module.
 vm.runInContext(game.slice(solverStart, solverEnd) + '\nthis.solve=occlusionSafeCameraPosition;this.horizontalDebug=()=>_cameraHorizontalDebug;this.tileDistance=cameraTileCollisionDistance;', collisionContext);
 const squeezed = collisionContext.solve(0, 1, 0, 0, 1.6, 3); // A wall barely crossing the camera's right edge must pull the X/Z orbit inward.
 assert(squeezed.z < 1.1, 'horizontal wall squeeze shortens the orbit despite a clear central 3D ray');

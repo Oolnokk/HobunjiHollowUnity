@@ -15662,7 +15662,11 @@
       }
 
       function getWorldObjectAt(col, row) {
-        const furniture = window.FurnitureTableSystem?.objectAt(currentArea, col, row); // Exterior chairs and attached surface furniture use ordinary world inputs.
+        // FurnitureTableSystem.objectAt answers "what is the camera ray focused on" and ignores
+        // col/row, so only the reticle tile may use it; placement/occupancy probes of other
+        // tiles must not all report the currently focused chair or serving pot.
+        const aim = getReticleTile();
+        const furniture = aim.col === col && aim.row === row ? window.FurnitureTableSystem?.objectAt(currentArea, col, row) : null; // Exterior chairs and attached surface furniture use ordinary world inputs.
         if (furniture) return furniture;
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
@@ -20626,60 +20630,19 @@
         return 1;
       }
 
-      // The navigation grid is the second authority for collision in addition
-      // to visible wall/furniture meshes. Most solid room tiles have no
-      // cameraObstacle mesh, and furniture footprints can be collision-solid
-      // without any render triangle at the ray's center. Sample the boom
-      // through every crossed tile, caching tile-level walkability until the
-      // beam enters a new cell. Height bounds prevent a short object acting
-      // like an infinitely tall wall.
+      // The grid half of camera boom collision (cameraTileCollisionDistance)
+      // now lives in js/camera-tile-collision.js (window.CameraTileCollision).
+      window.CameraTileCollision.init({
+        getCurrentArea: () => currentArea,
+        npcGridForArea: area => (typeof npcGridForArea === 'function' ? npcGridForArea(area) : null),
+        isSolid: type => isSolid(type),
+        isNpcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
+        tileSurfaceYInArea: (tile, area) => tileSurfaceYInArea(tile, area),
+        isBuildingArea: area => _isBuildingArea(area),
+        interiorWallHeight: () => INTERIOR_WALL_HEIGHT,
+      });
       function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ, structuralOnly = false) {
-        const grid = typeof npcGridForArea === 'function' ? npcGridForArea(currentArea) : null;
-        if (!grid) return null;
-        const dx = toX - fromX, dy = toY - fromY, dz = toZ - fromZ;
-        const len = Math.hypot(dx, dy, dz), flat = Math.hypot(dx, dz);
-        if (flat < 0.025 || len < 0.025) return null;
-        const samples = Math.max(1, Math.min(160, Math.ceil(flat / 0.12))); // Sub-tile heights and near corners cannot slip between adjacent cells.
-        let lastC = null, lastR = null, isBlocked = false, floor = 0, roof = 0;
-        for (let i = 1; i <= samples; i++) {
-          const fraction = i / samples;
-          const x = fromX + dx * fraction, z = fromZ + dz * fraction;
-          const c = Math.floor(x), r = Math.floor(z);
-          if (c !== lastC || r !== lastR) {
-            lastC = c; lastR = r;
-            const tile = grid[r]?.[c];
-            // The same collision-grid authority used by NPC pathing covers
-            // manual colliders, structural walls, occupied furniture tiles,
-            // closed doors, and area footprint blockers.
-            // Radial gameplay checks structural cells only. NPC walkability
-            // expands small props to whole tiles, including a clear tile
-            // corner occupied by the player. Real meshes supply furniture
-            // shape/height; preserve the authored cutscene's grid fallback.
-            isBlocked = structuralOnly
-              ? !tile || (isSolid(tile.type) && !tile.npcFurnitureCollider)
-              : !isNpcTileWalkable(currentArea, c, r);
-            if (!isBlocked) continue;
-            floor = currentArea === 'interior' ? 0 : tile ? tileSurfaceYInArea(tile, currentArea) : 0;
-            const furnitureFootprint = !!tile?.npcFurnitureCollider;
-            roof = floor + (currentArea === 'interior' ? INTERIOR_WALL_HEIGHT : furnitureFootprint ? 1.45 : _isBuildingArea(currentArea) ? 2.6 : 1.6);
-          }
-          if (!isBlocked) continue;
-          const y = fromY + dy * fraction;
-          if (y >= floor - 0.04 && y <= roof) {
-            // Refine the entry distance so dense tile clipping does not make
-            // the camera jump in discrete .12-tile increments.
-            let before = (i - 1) / samples, after = fraction;
-            for (let j = 0; j < 6; j++) {
-              const mid = (before + after) * 0.5;
-              const mc = Math.floor(fromX + dx * mid), mr = Math.floor(fromZ + dz * mid);
-              const my = fromY + dy * mid;
-              if (mc === c && mr === r && my >= floor - 0.04 && my <= roof) after = mid;
-              else before = mid;
-            }
-            return len * after;
-          }
-        }
-        return null;
+        return window.CameraTileCollision.distance(fromX, fromY, fromZ, toX, toY, toZ, structuralOnly);
       }
 
       let _cameraHorizontalDebug = null; // Last horizontal clearance calculation, included in cutscene Pixel Probe reports.

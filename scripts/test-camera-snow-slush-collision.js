@@ -77,6 +77,7 @@ const context = vm.createContext({
   performance:{now:()=>1000}, THREE:{MathUtils:{degToRad:n=>n*Math.PI/180}},
   window:{EnvironmentSurfaceMicroPlateau:api, FormatUtils:{clamp:(n,lo,hi)=>Math.max(lo,Math.min(hi,n))}},
 }); // Keeps player terrain at zero while the rendered cap is raised.
+vm.runInContext(fs.readFileSync('docs/js/camera-tile-collision.js', 'utf8'), context); // Grid boom collision lives in its own module (window.CameraTileCollision).
 vm.runInContext(game.slice(start,game.indexOf('      // How far under a tree canopy',start))+'\nthis.solve=occlusionSafeCameraPosition; this.debug=()=>_cameraBoomDebug;',context);
 const updateStart = game.indexOf('      function updateCameraPosition() {'); // Gameplay integration, including the short-character target guard.
 const camera = {position:{set(x,y,z){Object.assign(this,{x,y,z});}},lookAt(x,y,z){this.target={x,y,z};},updateProjectionMatrix(){}}; // Final camera pose capture.

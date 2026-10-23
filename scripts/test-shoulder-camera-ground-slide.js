@@ -21,6 +21,7 @@ const context = vm.createContext({
   _cameraOcclusionDirVec: { set() { return this; } },
   _cameraOcclusionRaycaster: { set() {}, intersectObjects: () => [] },
 }); // Supplies only existing game dependencies, with controllable terrain and walls.
+vm.runInContext(fs.readFileSync('docs/js/camera-tile-collision.js', 'utf8'), context); // Grid boom collision lives in its own module (window.CameraTileCollision).
 vm.runInContext(game.slice(start, end) + '\nthis.solve = occlusionSafeCameraPosition; this.debug = () => _cameraBoomDebug;', context);
 
 function aim(height, pitch, distance = 1.3, x = 0, z = 0) {
