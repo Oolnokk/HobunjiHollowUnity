@@ -957,8 +957,8 @@
     if (!renderer || !avatarApi?.buildAnimalPlaneAvatarModel || !idleUrl || !scene || !anchor) return;
     const speciesDef = animalDeps?.CREATURE_DB?.[slot.baby.kind] || {}; // Sprite aspect source shared with farm animals.
     const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {}; // Existing per-species size overrides.
-    const adultWidth = slot.baby.kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[slot.baby.kind]) || 1.7); // Same fallback convention as Nursery visuals.
-    const aspect = Number(speciesDef.spriteAspect) || (600 / 1375); // Model height aspect.
+    const adultWidth = slot.baby.kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[slot.baby.kind]) || 1.7); // Match corrected standing-adult Uumkao'ii width.
+    const aspect = Number(speciesDef.spriteAspect) || (slot.baby.kind === 'uumkaoii' ? 451 / 641 : 600 / 1375); // Preserve native Uumkao'ii aspect even before the species definition loads.
     const modelWidth = adultWidth * CONFIG.visuals.babyScale; // Baby-scale billboard width.
     const modelHeight = adultWidth * aspect * CONFIG.visuals.babyScale; // Baby-scale billboard height.
     const avatarRef = avatarApi.buildAnimalPlaneAvatarModel(THREE, idleUrl, {
