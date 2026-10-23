@@ -149,6 +149,9 @@
       boundaryMode: 'legacyFullRing',
       boundaryModeLabel: 'Legacy full boundary cliff ring',
       boundaryCliffBoost: 0,
+      boundaryFarRise: null, // Far-boundary height above the highest possible playable tier, keyed by compass side.
+      boundaryLocalRise: null, // Per-side cliff height above nearby playable ground, for borders that should follow the local topography.
+      heightCurves: null, // Shared two-axis profile supplied by the wilderness height editor.
       stepCurve: 'northernCliffs',
       stepCurveLabel: 'Northern Cliffs',
       plateaus: 76,
@@ -340,6 +343,9 @@
       boundaryMode: settings.boundaryMode,
       boundaryModeLabel: settings.boundaryModeLabel,
       boundaryCliffBoost: settings.boundaryCliffBoost,
+      boundaryFarRise: settings.boundaryFarRise,
+      boundaryLocalRise: settings.boundaryLocalRise,
+      heightCurves: settings.heightCurves,
       stepCurve: settings.stepCurve,
       stepCurveLabel: settings.stepCurveLabel,
       greatBasinHorseshoe: false,
@@ -733,6 +739,7 @@
   }
 
   function northwardMaxTierAtY(y) {
+    if (settings.heightCurves?.enabled) return Math.max(1, settings.maxTier); // Two-axis profiles cannot use a north-only cap.
     if (usesDramaticPlateauPreset()) {
       // Dramatic presets allow strong east/west spikes, but the cap still rises as the map goes north.
       return clamp(Math.ceil(northwardTierFloatAtY(y) + 3), 1, Math.max(1, settings.maxTier));
@@ -741,6 +748,7 @@
   }
 
   function northwardPreferredPlateauTier(x, y, field = null) {
+    if (settings.heightCurves?.enabled) return heightCurveTierAt(x, y);
     const maxTier = Math.max(1, settings.maxTier);
     if (maxTier <= 1) return 1;
     const rowFloat = northwardTierFloatAtY(y);
@@ -755,6 +763,7 @@
   }
 
   function enforceSouthToNorthElevationRule() {
+    if (settings.heightCurves?.enabled) return { clamped:0, raisedNorthShoulders:0 }; // Authored EW curves supersede the northward rule.
     let clamped = 0;
     let raisedNorthShoulders = 0;
     for (const tile of allTiles()) {
@@ -1801,28 +1810,35 @@
         const localWidth = borderEscarpmentLocalWidthAt(x, y);
         resetBoundaryLandscapeFlags(tile);
         const isEntrySide = inward.side === entrySide;
-        if (modeConfig.entryOnly && !isEntrySide) {
+        if (modeConfig.entryOnly && !isEntrySide && !Number.isFinite(settings.boundaryFarRise?.[inward.side])) {
           const displayHeight = paintDistantBoundaryLandscapeTile(tile, inward.side, edgeDist, scan);
           maxHeight = Math.max(maxHeight, displayHeight);
           distantTiles++;
           continue;
         }
         const oldHeight = tileHeight(tile);
-        const targetHeight = targetBoundaryHeight(tile, inward, edgeDist, localWidth, scan, modeConfig);
+        const farRise = Number(settings.boundaryFarRise?.[inward.side]); // Absolute high-backdrop side: crest is maximum playable tier + rise.
+        const customFarRise = settings.boundaryFarRise && Number.isFinite(farRise) ? clamp(farRise, 0, MAX_VERTICAL_TIER) : null;
+        const localRise = Number(settings.boundaryLocalRise?.[inward.side]); // Local side/front cliff: crest tracks terrain next to this part of the boundary.
+        const customLocalRise = settings.boundaryLocalRise && Number.isFinite(localRise) ? clamp(localRise, 0, MAX_VERTICAL_TIER) : null;
+        const targetHeight = customFarRise !== null ? Math.max(settings.maxTier, 1) + customFarRise
+          : customLocalRise !== null
+            ? clamp(Math.round(localBoundaryPlayableAverage(x, y, inward, scan)) + customLocalRise, 1, Math.max(settings.maxTier, 1) + customLocalRise)
+            : targetBoundaryHeight(tile, inward, edgeDist, localWidth, scan, modeConfig);
         const sideStat = scan && scan.sides ? scan.sides[inward.side] : null;
         const localBaseHeight = modeConfig.followsMapHeight
           ? Math.max(scan ? scan.averagePlayableHeight : 0, sideStat ? sideStat.average : 0, localBoundaryPlayableAverage(x, y, inward, scan))
           : Math.max(oldHeight || 0, northwardMaxTierAtY(y));
         // new variable: boundaryHeightCap is tied to the scanned local target instead of global maxTier+boost, preventing a uniform max-height wall around the whole map.
         const boundaryHeightCap = Math.max(1, localBaseHeight + settings.boundaryCliffBoost + (usesDramaticPlateauPreset() ? 5 : 3));
-        const cappedHeight = clamp(targetHeight, 1, boundaryHeightCap);
+        const cappedHeight = customFarRise !== null || customLocalRise !== null ? targetHeight : clamp(targetHeight, 1, boundaryHeightCap);
         tile.borderEscarpment = true;
         tile.borderEscarpmentDepth = edgeDist;
         tile.borderEscarpmentSide = inward.side;
         tile.borderEscarpmentBaseHeight = Number(localBaseHeight.toFixed(2));
         tile.borderEscarpmentHeightBonus = Number((cappedHeight - tile.borderEscarpmentBaseHeight).toFixed(2));
         tile.height = cappedHeight;
-        tile.elevation = settings.boundaryCliffBoost < 0 ? Math.round(cappedHeight) : Math.max(tile.elevation || 0, Math.round(cappedHeight));
+        tile.elevation = customFarRise !== null || customLocalRise !== null || settings.boundaryCliffBoost < 0 ? Math.round(cappedHeight) : Math.max(tile.elevation || 0, Math.round(cappedHeight));
         tile.terrain = 'plateau';
         tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'border_escarpment';
         tile.plateauGroupId = null;
@@ -1837,7 +1853,7 @@
       }
     }
     const sideSummary = Object.values(scan.sides || {}).map(stat => `${stat.side}:${stat.average}/${stat.highAverage}`).join(', ');
-    map.distantBoundaryLandscapes = Object.values(scan.sides || {}).filter(stat => modeConfig.entryOnly && stat.side !== entrySide).map(stat => ({ ...stat, source: 'non-entry side far-edge sample' }));
+    map.distantBoundaryLandscapes = Object.values(scan.sides || {}).filter(stat => modeConfig.entryOnly && stat.side !== entrySide && !Number.isFinite(settings.boundaryFarRise?.[stat.side])).map(stat => ({ ...stat, source: 'non-entry side far-edge sample' }));
     logDebug(`boundary plateaus: mode ${settings.boundaryModeLabel}, entry side ${entrySide}, cliffs ${tiles}, distant landscape ${distantTiles}, raised ${raised}, water cuts ${waterCuts}, max depth ${borderEscarpmentMaxDepth()}, max height ${maxHeight.toFixed ? maxHeight.toFixed(2) : maxHeight}, playable height scan avg ${scan.averagePlayableHeight} (${sideSummary}), cliff boost ${settings.boundaryCliffBoost}`);
   }
 
@@ -3263,13 +3279,13 @@
       return null;
     }
 
-    const placementFilter = (x, y, w, h) => {
+    const placementFilter = (x, y, w, h, ignoreFlat = false) => {
       if (map.entry && minDistFromEntry > 0) {
         const cx = x + w / 2, cy = y + h / 2;
         const dist = Math.hypot(cx - map.entry.x, cy - map.entry.y);
         if (dist < minDistFromEntry) return false;
       }
-      if (requiresFlat) {
+      if (requiresFlat && !ignoreFlat) {
         const centerTile = tileAt(Math.floor(x + w / 2), Math.floor(y + h / 2));
         if (!centerTile) return false;
         const targetHeight = tileHeight(centerTile);
@@ -3303,6 +3319,53 @@
         // stays as near the entrance as the terrain actually allows.
         warn(`locale ${locale.id}: no room in the entry's sector (${x0},${y0})-(${x1},${y1}), falling back to the nearest spot in the whole zone`);
         spot = bestFreeAreaInRect(0, 0, settings.width, settings.height, paddedW, paddedH, { filter: placementFilter }, map.entry);
+      }
+    }
+    // Curved highland profiles can legitimately have no naturally level site as wide as
+    // a story locale. Regrade a small vacant patch near the entry instead of silently
+    // losing the Researcher's Tent (or changing the generator's overall slope).
+    if (!spot && requiresFlat && placement.sameSectorAsEntry && settings.heightCurves?.enabled && map.entry) {
+      const sectorW = settings.width / 3, sectorH = settings.height / 3; // Entry-sector grid size for nearby site preference.
+      const sx = clamp(Math.floor(map.entry.x / sectorW), 0, 2);
+      const sy = clamp(Math.floor(map.entry.y / sectorH), 0, 2);
+      let best = null; // Lowest-grade vacant site, with distance to the actual entry as the secondary criterion.
+      let bestScore = Infinity;
+      const scanSites = (x0, y0, x1, y1, outsideSectorPenalty) => {
+        for (let y = y0; y <= y1 - paddedH; y++) for (let x = x0; x <= x1 - paddedW; x++) {
+          if (!areaFree(x, y, paddedW, paddedH, { allowPlateauRing:true, allowCliffSkirt:true }) || !placementFilter(x, y, paddedW, paddedH, true)) continue; // Regrading erases old tier-ring/cliff-skirt classification.
+          let minimum = Infinity, maximum = -Infinity;
+          const counts = new Map(); // Mode of source heights, for regrading while retaining nearby plateau altitude.
+          for (let yy = y; yy < y + paddedH; yy++) for (let xx = x; xx < x + paddedW; xx++) {
+            const level = Math.round(tileHeight(tileAt(xx, yy)));
+            minimum = Math.min(minimum, level); maximum = Math.max(maximum, level);
+            counts.set(level, (counts.get(level) || 0) + 1);
+          }
+          const proximity = Math.hypot(x + paddedW / 2 - map.entry.x, y + paddedH / 2 - map.entry.y);
+          const score = (maximum - minimum) * 100 + proximity * 0.1 + outsideSectorPenalty;
+          if (score >= bestScore) continue;
+          const targetTier = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]; // Modal tier minimizes the cut-and-fill area.
+          bestScore = score;
+          best = { x, y, tier: targetTier, spread: maximum - minimum };
+        }
+      };
+      scanSites(Math.round(sx * sectorW), Math.round(sy * sectorH),
+        Math.round((sx + 1) * sectorW), Math.round((sy + 1) * sectorH), 0);
+      if (!best) scanSites(0, 0, settings.width, settings.height, 30);
+      if (best) {
+        spot = { x: best.x, y: best.y };
+        for (let y = best.y; y < best.y + paddedH; y++) for (let x = best.x; x < best.x + paddedW; x++) {
+          const tile = tileAt(x, y); // The existing plateau painter will re-evaluate the modified area after late rivers.
+          tile.elevation = best.tier;
+          tile.height = best.tier;
+          tile.terrain = best.tier > 0 ? 'plateau' : 'grass';
+          tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'locale_height_curve_clearing';
+          tile.cliffSkirt = false;
+          tile.plateauGroupId = null;
+          tile.plateauRing = false;
+          tile.plateauInterior = false;
+        }
+        logDebug('height-curve locale clearing: ' + locale.id + ' at (' + best.x + ',' + best.y
+          + '), tier ' + best.tier + ', source spread ' + best.spread);
       }
     }
     if (!spot) spot = randomFreeArea(paddedW, paddedH, { filter: placementFilter }, 2500);
@@ -6635,7 +6698,18 @@
   // combination each zone renders with; everything else is the tool's own
   // default (see defaultSettings).
   const ZONE_CONFIG = {
-    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
+    map_northern_cliffs: {
+      entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+      // Preserve the original towering boundary cliffs; lift the INTERIOR plateaus toward
+      // their existing north-wall crest only after the cliff heights are calculated.
+      plateauLiftToNorthWallGap: 2,
+      heightCurves: {
+        enabled: true,
+        eastWest: [0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5],
+        northSouth: [1,0.96,0.91,0.84,0.76,0.66,0.56,0.46,0.37,0.29,0.22,0.14,0.06],
+        upwardVariation: 1.2, downwardVariation: 1.1
+      }
+    },
     // trees/bushes well above the shared default (130/75) — this zone is
     // meant to read as an actual dense rainforest, not a scattering of
     // copses, now that FoliageGenerator gives it real full-size trees (with
@@ -6682,7 +6756,16 @@
       // chooseTradeExit) — Slagothim caravans enter and leave by it.
       tradeExitSide: 'south',
     },
-    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    map_western_slope: {
+      entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0,
+      maxTier: 14, boundaryFarRise: { west: 2 }, // West edge gets real cliff geometry; north and south retain distant scenery.
+      heightCurves: {
+        enabled: true,
+        eastWest: [1,0.92,0.84,0.76,0.68,0.60,0.52,0.44,0.36,0.28,0.20,0.12,0.04],
+        northSouth: [0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5],
+        upwardVariation: 0.8, downwardVariation: 0.8
+      }
+    },
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
 
@@ -6992,6 +7075,110 @@
     return STEP_CURVE_MODES[(settings && settings.stepCurve) || 'northernCliffs'] || STEP_CURVE_MODES.northernCliffs;
   }
 
+
+  function normalizedHeightCurveSettings(value) {
+    if (!value || value.enabled !== true) return null;
+    // Knots run west→east and north→south; imported profiles must be finite and bounded.
+    const knots = key => Array.isArray(value[key]) && value[key].length >= 2 && value[key].length <= 65
+      && value[key].every(n => Number.isFinite(n))
+      ? value[key].map(n => clamp(n, 0, 1)) : null;
+    const eastWest = knots('eastWest'); // Horizontal spline sampled by every generated map column.
+    const northSouth = knots('northSouth'); // Vertical spline sampled by every generated map row.
+    if (!eastWest || !northSouth) return null;
+    return {
+      enabled: true, eastWest, northSouth,
+      upwardVariation: clamp(Number(value.upwardVariation) || 0, 0, 8),
+      downwardVariation: clamp(Number(value.downwardVariation) || 0, 0, 8)
+    };
+  }
+
+  function sampleHeightSpline(knots, at) {
+    const x = clamp(at, 0, 1) * (knots.length - 1); // Position on the spline in knot units.
+    const i = Math.min(knots.length - 2, Math.floor(x)); // Segment containing the current sample.
+    const t = x - i; // Fraction of the current segment.
+    const a = knots[Math.max(0, i - 1)], b = knots[i]; // Previous knot and current segment start.
+    const c = knots[i + 1], d = knots[Math.min(knots.length - 1, i + 2)]; // Segment end and following knot.
+    const m0 = (c - a) * 0.5, m1 = (d - b) * 0.5; // Smooth Catmull–Rom tangents.
+    return clamp((2*t*t*t-3*t*t+1)*b + (t*t*t-2*t*t+t)*m0 + (-2*t*t*t+3*t*t)*c + (t*t*t-t*t)*m1, 0, 1);
+  }
+
+  function heightCurveTierAt(x, y) {
+    const curves = settings.heightCurves; // Validated author profile shared across plateau placement passes.
+    const eastWest = sampleHeightSpline(curves.eastWest, x / Math.max(1, settings.width - 1));
+    const northSouth = sampleHeightSpline(curves.northSouth, y / Math.max(1, settings.height - 1));
+    // Each axis is additive: a straight 0.5 axis leaves the other axis unchanged.
+    const level = clamp(eastWest + northSouth - 0.5, 0, 1);
+    const coarse = noise2(Math.floor(x / 9), Math.floor(y / 9), 91371 + settings.heightCurveNoiseSalt);
+    const fine = noise2(Math.floor(x / 3), Math.floor(y / 3), 91393 + settings.heightCurveNoiseSalt);
+    const variation01 = clamp(coarse * 0.7 + fine * 0.3, 0, 1); // Seed-stable spatial noise, not per-render jitter.
+    const variation = variation01 * (curves.upwardVariation + curves.downwardVariation) - curves.downwardVariation;
+    return clamp(Math.round(1 + (settings.maxTier - 1) * level + variation), 1, settings.maxTier);
+  }
+
+  function applyHeightCurvePlateauProfile() {
+    if (!settings.heightCurves?.enabled) return { retiered:0 };
+    let retiered = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation <= 0 || tile.water || tile.plateauPond || tile.plateauStream || tile.waterfall) continue;
+      if (tile.designReserve || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge || tile.occupiedBy) continue;
+      if (tile.path || tile.invisiblePath || tile.denRoute) continue;
+      const target = heightCurveTierAt(tile.x, tile.y); // Final authored height after water carving, before ramps and boundary placement.
+      if (tile.elevation === target) continue;
+      tile.elevation = target;
+      tile.height = target;
+      if (tile.dramaticBleacherTier != null) tile.dramaticBleacherTier = target;
+      retiered++;
+    }
+    logDebug('height-curve plateau profile: retiered ' + retiered + ' tiles; random offsets +'
+      + settings.heightCurves.upwardVariation + '/-' + settings.heightCurves.downwardVariation);
+    return { retiered };
+  }
+
+  // Northern Cliffs: preserve the original border-cliff heights and raise the
+  // playable shelves instead. This intentionally runs AFTER generateBorderEscarpments:
+  // changing settings.maxTier or the plateau profile before the wall calculation
+  // would move the walls too, defeating the intended old-wall comparison.
+  function liftNorthernPlateausTowardExistingWall() {
+    if (settings.plateauLiftToNorthWallGap == null || !settings.heightCurves?.enabled) return { raised:0 };
+    const gap = Number(settings.plateauLiftToNorthWallGap);
+    if (!Number.isFinite(gap) || gap < 0) return { raised:0 };
+    let northCrest = 0;
+    for (const tile of allTiles()) {
+      if (tile?.borderEscarpment && tile.borderEscarpmentSide === 'north') {
+        northCrest = Math.max(northCrest, tile.elevation || 0); // Real old wall, not backdrop or distant landscape.
+      }
+    }
+    const originalMaxTier = settings.maxTier; // The original plateau maximum used when building these very same cliffs.
+    const targetMaxTier = Math.min(MAX_VERTICAL_TIER, Math.round(northCrest - gap));
+    if (!(targetMaxTier > originalMaxTier)) return { raised:0, northCrest, originalMaxTier, targetMaxTier };
+    let raised = 0;
+    for (const tile of allTiles()) {
+      if (!tile || tile.elevation <= 0 || tile.water || tile.plateauPond || tile.plateauStream || tile.waterfall) continue;
+      if (tile.borderEscarpment || tile.distantBoundaryLandscape || tile.designReserve
+        || tile.ramp || tile.navRamp || tile.bridge || tile.navBridge || tile.occupiedBy) continue;
+      if (tile.path || tile.invisiblePath || tile.denRoute) continue;
+      const oldProfileTier = heightCurveTierAt(tile.x, tile.y); // 1..old max tier, retaining both authored spline shapes.
+      const normalizedTier = (oldProfileTier - 1) / Math.max(1, originalMaxTier - 1);
+      const target = Math.round(1 + (targetMaxTier - 1) * normalizedTier);
+      if (target <= tile.elevation) continue; // Never flatten an already higher shelf.
+      tile.elevation = target;
+      tile.height = target;
+      tile.terrain = 'plateau';
+      if (tile.dramaticBleacherTier != null) tile.dramaticBleacherTier = target;
+      if (tile.dramaticShelfParentTier != null) tile.dramaticShelfParentTier = target;
+      raised++;
+    }
+    // All later ramp/locale/tier consumers need the NEW playable maximum, but
+    // the bordering cliff tiles are already built and must remain untouched.
+    settings.maxTier = targetMaxTier;
+    map.northernPlateauLift = { originalMaxTier, targetMaxTier, northCrest, targetGap: gap, raisedTiles: raised };
+    applyManualPlateauPaintingRules(); // Replace the old-height painted footprint groups before ramp placement.
+    logDebug('Northern Cliffs: lifted ' + raised + ' playable plateau tiles from tier ' + originalMaxTier
+      + ' to ' + targetMaxTier + ', leaving the existing north wall at tier ' + northCrest
+      + ' (' + gap + '-tier crest gap)');
+    return { raised, originalMaxTier, targetMaxTier, northCrest };
+  }
+
   function applyGreatBasinBoundarySideExtensions() {
     if (!usesGreatBasinPreset()) return { raised: 0, sideTiles: 0, maxSideTier: 0 };
     let raised = 0;
@@ -7159,7 +7346,9 @@
           if (!south || south.borderEscarpment || south.ramp || south.navRamp) continue;
           southernSupportTier = Math.max(southernSupportTier, south.elevation || 0);
         }
-        if (usesGreatInclineStepCurve()) {
+        if (settings.heightCurves?.enabled) {
+          // Do not force an east/west profile uphill by the south-only support rule.
+        } else if (usesGreatInclineStepCurve()) {
           // new variable: limitedSouthernSupport prevents one accidental high southern cliff from dragging the entire Great Incline northward into gentle same-height shelves.
           const limitedSouthernSupport = Math.min(southernSupportTier, targetTier + 1);
           targetTier = clamp(Math.max(targetTier, limitedSouthernSupport), 1, settings.maxTier);
@@ -7473,6 +7662,7 @@
   }
 
   function dramaticBleacherTargetTier(x, y) {
+    if (settings.heightCurves?.enabled) return heightCurveTierAt(x, y);
     let baseTier;
     if (usesGreatInclineStepCurve()) {
       // new variable: inclineWave keeps Great Incline from becoming a perfectly straight contour map while preserving the smooth south-to-north steepening.
@@ -7649,6 +7839,7 @@
   }
 
   function enforceNorthwardRowScanner() {
+    if (settings.heightCurves?.enabled) return { raisedTiles:0, raisedComponents:0, violationsDetected:0, waterfallCandidates:0, skippedBoundarySources:0, protectedAprons:0, worstSameTierRowShare:0 };
     if (!usesDramaticPlateauPreset()) {
       logDebug('northward plateau-component scanner: skipped for custom preset');
       return { raisedTiles: 0, raisedComponents: 0, violationsDetected: 0, waterfallCandidates: 0, skippedBoundarySources: 0, protectedAprons: 0, worstSameTierRowShare: 0 };
@@ -8406,6 +8597,8 @@
       ? Math.max(merged.maxTier, dramaticMinimumTier) : merged.maxTier;
     settings = {
       ...merged,
+      heightCurves: normalizedHeightCurveSettings(merged.heightCurves),
+      heightCurveNoiseSalt: hashSeed(String(merged.seed)) % 65521, // Seeded spatial offset shared by both spline axes without changing the main RNG sequence.
       preset: preset.id,
       presetLabel: preset.label,
       boundaryMode: boundaryModeConfig.id,
@@ -8432,9 +8625,12 @@
     syncTileHeights();
     applyGreatInclineMountainsideProfile();
     applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
+    applyHeightCurvePlateauProfile(); // Normalize plateau heights before cliffs and ramps are placed.
     syncTileHeights();
     map.preselectedEntrySide = resolveGenerationEntrySide();
     generateBorderEscarpments();
+    liftNorthernPlateausTowardExistingWall(); // Preserve the old cliffs; make the playable plateaus dramatically taller instead.
+    syncTileHeights();
     generateRamps();
     applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
     syncTileHeights();

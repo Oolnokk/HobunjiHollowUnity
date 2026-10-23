@@ -69,6 +69,7 @@
     const map = workspace?.maps?.find(m => !m?.isSubmap) || workspace?.maps?.[0];
     if (!map?.tiles) return workspace;
     let removed = 0;
+    const clearedNorthKeys = []; // Fallback boundary conversions handed to CloudForestRuntimeV2's shared foliage pass.
     for (const [key, tile] of Object.entries(map.tiles)) {
       if (!tile?.borderEscarpment || tile.borderEscarpmentSide !== 'north') continue;
       const [c, r] = key.split(',').map(Number);
@@ -89,10 +90,12 @@
       delete tile.borderEscarpmentDepth;
       delete tile.borderEscarpmentSide;
       delete tile.borderEscarpmentHeightBonus;
+      clearedNorthKeys.push(key);
       removed++;
     }
+    const replanted = root.CloudForestRuntimeV2?.reforestClearedNorthEdge?.(workspace, clearedNorthKeys) || 0; // Same spacing/road rules as the normal Cloud Forest runtime.
     if (removed) {
-      map.generatedFrom = { ...(map.generatedFrom || {}), northBoundaryCliffsRemoved: removed };
+      map.generatedFrom = { ...(map.generatedFrom || {}), northBoundaryCliffsRemoved: removed, northBoundaryForestTrees: replanted };
       workspace.generatorPreset = { ...(workspace.generatorPreset || {}), northBoundaryCliffsRemoved: true };
     }
     return workspace;

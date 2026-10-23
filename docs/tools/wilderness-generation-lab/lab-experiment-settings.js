@@ -11,6 +11,7 @@
       else if (element.tagName === 'SELECT') output[key] = element.value;
       else output[key] = Number(element.value);
     }
+    output.heightCurves = window.WildernessLabHeightCurveEditor?.getProfile?.() || null; // Include finger-drawn axes in copied/downloaded sets.
     const raw = document.getElementById('advancedJson')?.value.trim();
     if (raw) {
       try {

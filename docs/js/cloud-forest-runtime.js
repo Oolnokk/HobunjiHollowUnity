@@ -192,6 +192,64 @@
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
   }
 
+  // Keep cliff-removal planting identical to the entrance-causeway repair and
+  // the original Cloud Forest's 2x source lattice × 80% thinning survivors ×
+  // 5/6 species/prop survivors. The shared corridor API is normally present
+  // by the time a zone generates; use equivalent math for standalone tests.
+  function cloudForestTreePosition(c, r) {
+    if (typeof root.WildernessEntryCorridor?.cloudForestTreePosition === 'function') {
+      return root.WildernessEntryCorridor.cloudForestTreePosition(c, r);
+    }
+    if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0
+      || (c & 1) !== 0 || (r & 1) !== 0) return false;
+    let hash = (Math.imul(c + 37, 73856093) ^ Math.imul(r + 73, 19349663)) >>> 0;
+    hash = Math.imul(hash ^ (hash >>> 16), 0x7feb352d) >>> 0;
+    hash = Math.imul(hash ^ (hash >>> 15), 0x846ca68b) >>> 0;
+    hash = (hash ^ (hash >>> 16)) >>> 0;
+    return hash / 4294967296 < (1 - 0.2) * (1 - 1 / 6);
+  }
+
+  // Replant the empty strip created when the north escarpment turns into grass.
+  // SHRUB/copse is the existing world tree rendering and culling contract.
+  function reforestClearedNorthEdge(workspace, formerCliffKeys = []) {
+    const map = workspaceRoot(workspace);
+    if (!map?.tiles || !formerCliffKeys.length) return 0;
+    let planted = 0;
+    for (const key of formerCliffKeys) {
+      const coords = /^(\d+),(\d+)$/.exec(key);
+      if (!coords) continue;
+      const c = Number(coords[1]), r = Number(coords[2]); // Source coordinates for spacing, safety and stable tree identity.
+      // World-edge margin, then every-other-tile spacing like the normal 2x-scaled copse lattice.
+      if (r < 2 || c < 2 || c >= map.cols - 2 || !cloudForestTreePosition(c, r)) continue;
+      const tile = map.tiles[key]; // A formerly inaccessible cliff tile now available to become a Shadewood.
+      if (!tile || String(tile.type).toLowerCase() !== 'grass'
+        || tile.distantBoundaryLandscape || tile.borderEscarpment
+        || tile.generatedObjectId || tile.generatedObjectType
+        || tile.entryCorridorProtected || tile.entryCorridorShoulder) continue;
+      let nearRoad = false;
+      for (let dr = -1; dr <= 1 && !nearRoad; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const neighbor = map.tiles[(c + dc) + ',' + (r + dr)];
+          if (neighbor?.type === 'path' || neighbor?.entryCorridorProtected
+            || neighbor?.borderEscarpment || neighbor?.distantBoundaryLandscape) {
+            nearRoad = true;
+            break;
+          }
+        }
+      }
+      if (nearRoad) continue;
+      tile.type = 'shrub';
+      tile.generatedObjectId = 'cloud_north_copse_' + c + '_' + r;
+      tile.generatedObjectType = 'copse';
+      tile.cloudForestNorthReplanted = true; // Exposed to Pixel Probe and generator diagnostics.
+      planted++;
+    }
+    if (planted) {
+      map.generatedFrom = { ...(map.generatedFrom || {}), northBoundaryForestTrees: (map.generatedFrom?.northBoundaryForestTrees || 0) + planted };
+    }
+    return planted;
+  }
+
   // Cloud Forest is supposed to continue uphill beyond the north edge, not
   // terminate in the generic wilderness escarpment. Preserve each generated
   // boundary plateau's own footprint/submap identity, but normalize its tier to
@@ -201,6 +259,7 @@
     if (!map?.tiles) return { removed: 0, groups: 0 };
     const elevations = plateauElevationMap(workspace);
     const targetTiersByGroup = new Map();
+    const clearedNorthKeys = []; // Newly cleared cliff cells, consumed by the reforestation pass.
     let removed = 0;
 
     for (const [key, tile] of Object.entries(map.tiles)) {
@@ -227,6 +286,7 @@
       delete tile.borderEscarpmentDepth;
       delete tile.borderEscarpmentSide;
       delete tile.borderEscarpmentHeightBonus;
+      clearedNorthKeys.push(key);
       removed++;
     }
 
@@ -238,8 +298,9 @@
         if (mapOut?.plateauGroupId === groupId) mapOut.elevation = tier;
       }
     }
+    const replanted = reforestClearedNorthEdge(workspace, clearedNorthKeys); // Restore Shadewoods after plateau elevations normalize.
     if (removed) {
-      map.generatedFrom = { ...(map.generatedFrom || {}), northBoundaryCliffsRemoved: removed };
+      map.generatedFrom = { ...(map.generatedFrom || {}), northBoundaryCliffsRemoved: removed, northBoundaryForestTrees: replanted };
       workspace.generatorPreset = { ...(workspace.generatorPreset || {}), northBoundaryCliffsRemoved: true };
     }
     return { removed, groups: targetTiersByGroup.size };
@@ -540,7 +601,8 @@
       const value = original.call(this, zoneMapId, ...args);
       const apply = workspace => {
         repairGeneratedEntryWorkspace(workspace);
-        if (zoneMapId === CLOUD_ID) removeCloudForestNorthCliffs(workspace);
+        // The scenery setting is authoritative: cliff mode must not erase the generated north wall.
+        if (zoneMapId === CLOUD_ID && root.CloudForestSceneryOptions?.treeWallEnabled?.() !== false) removeCloudForestNorthCliffs(workspace);
         return workspace;
       };
       return value && typeof value.then === 'function' ? value.then(apply) : apply(value);
@@ -636,7 +698,7 @@
     CLOUD_ID, NORTH_DEPTH, SHOULDER_DEPTH, SHOULDER_RISE, STEEP_RISE,
     TREE_LATTICE_WORLD, TREE_KEEP_PROBABILITY,
     edgePathRuns, findEntryRun, repairGeneratedEntryWorkspace,
-    removeCloudForestNorthCliffs, makeSteepNorthProfile, buildForestLayout,
+    removeCloudForestNorthCliffs, reforestClearedNorthEdge, cloudForestTreePosition, makeSteepNorthProfile, buildForestLayout,
     patchGenerator, patchBorderTerrain,
     // Settings tab's Cloud Forest Background Forest toggle (game.js) writes
     // this directly — read at the next zone build (see patchBorderTerrain).

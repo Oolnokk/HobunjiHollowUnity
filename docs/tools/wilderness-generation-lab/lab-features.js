@@ -8,7 +8,7 @@
   const LIVE_ZONE_RECIPES = Object.freeze({
     liveNorthernCliffs: {
       label: 'LIVE — Northern Cliffs exact',
-      settings: { entrySide:'south', preset:'cliffs', boundaryMode:'followMapHeight', boundaryCliffBoost:5 },
+      settings: window.WildernessMapGenerator?.zoneSettings?.('map_northern_cliffs') || {},
     },
     liveSouthernCloudForest: {
       label: 'LIVE — Southern Cloud Forest exact',
@@ -21,7 +21,7 @@
     },
     liveWesternSlope: {
       label: 'LIVE — Western Slope exact',
-      settings: { entrySide:'east', preset:'cliffs', boundaryMode:'entrySideDistantLandscape', boundaryCliffBoost:0 },
+      settings: window.WildernessMapGenerator?.zoneSettings?.('map_western_slope') || {},
     },
     liveEasternMire: {
       label: 'LIVE — Eastern Mire exact',
@@ -103,7 +103,7 @@
   function ensureMarkerScriptLoaded() {
     if (window.WildernessLabPreview?.markerColors || document.querySelector('script[data-wilderness-lab-markers]')) return;
     const script = document.createElement('script'); // Dynamically loaded because older lab HTML already includes this feature module before lab-preview.js.
-    script.src = 'lab-markers.js';
+    script.src = 'lab-markers.js?v=20261020clouddensity1';
     script.async = false;
     script.dataset.wildernessLabMarkers = '1';
     script.addEventListener('load', () => {
@@ -189,9 +189,16 @@
   function applyResolvedRecipe(settings, hybrid = { enabled:false }) {
     const generatorDefaults = window.WildernessMapGenerator?.defaultSettings?.() || {}; // Live recipes intentionally start from real generator defaults, never the user's previous slider state.
     const resolved = { ...generatorDefaults, ...(settings || {}) };
+    window.WildernessLabHeightCurveEditor?.setProfile?.(resolved.heightCurves); // Exact live recipe and editor must reflect the same profile.
     setControlRangeMax('trees', 5000); // Southern Cloud Forest currently needs 4000 trees, beyond the original lab cap of 500.
     setControlRangeMax('pathWindiness', 10); // Southern Cloud Forest currently needs windiness 8, beyond the original lab cap of 4.
     for (const [key, value] of Object.entries(resolved)) setControlValue(key, value);
+    // This derived-tier setting intentionally does not replace the ordinary maxTier slider.
+    // Include it in the Lab's real advanced overrides so LIVE Northern Cliffs
+    // previews the same post-boundary plateau lift as gameplay.
+    const advanced = document.getElementById('advancedJson');
+    if (advanced) advanced.value = Number.isFinite(settings?.plateauLiftToNorthWallGap)
+      ? JSON.stringify({ plateauLiftToNorthWallGap: settings.plateauLiftToNorthWallGap }, null, 2) : '';
     setHybridControls(hybrid);
     const generateButton = document.getElementById('generateBtn'); // Special recipes are meant to visibly apply immediately, not wait for Auto mode.
     setTimeout(() => { if (generateButton && !generateButton.disabled) generateButton.click(); }, 0);

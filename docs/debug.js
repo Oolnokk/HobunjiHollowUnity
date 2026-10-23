@@ -23,7 +23,7 @@
   // this small compatibility hook synchronous without changing the large HTML
   // boot manifest. Outside initial parsing, fall back to a normal script tag.
   (function loadCloudForestSceneryOptionsEarly() {
-    const src = 'js/cloud-forest-scenery-options.js?v=20260818b';
+    const src = 'js/cloud-forest-scenery-options.js?v=20261020entryforest1';
     if (window.CloudForestSceneryOptions || document.querySelector('script[data-cloud-forest-scenery-options]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-cloud-forest-scenery-options="1"><\/script>`);

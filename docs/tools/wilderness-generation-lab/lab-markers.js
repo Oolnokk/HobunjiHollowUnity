@@ -16,9 +16,11 @@
 
   async function boot() {
     try {
-      // Load the shared causeway repair first. The Lab's final preview assertion
-      // must never race a later dynamically inserted generator adapter.
-      await loadScript('../../js/wilderness-entry-corridor.js', 'wilderness-entry-corridor');
+      // Game parity: load the Cloud Forest cliff-removal/tree restoration and
+      // causeway repair before the first Lab preview. Otherwise only the causeway
+      // gets trees and the old north-wall clearing remains inexplicably blank.
+      await loadScript('../../js/cloud-forest-runtime.js?v=20261020clouddensity1', 'cloud-forest-runtime');
+      await loadScript('../../js/wilderness-entry-corridor.js?v=20261020clouddensity1', 'wilderness-entry-corridor');
       await loadScript('lab-terrain-experiments.js', 'wilderness-lab-terrain-experiments'); // Calculates Great Basin spoon heights, river canyon overrides, and karst placement.
       await loadScript('lab-basin-rampify.js', 'wilderness-lab-basin-rampify'); // Converts the spoon floor into one continuous walkable rampElevation field instead of tiny terraces.
       await loadScript('lab-terrain-finalize.js', 'wilderness-lab-terrain-finalize'); // Reconciles transformed cells with old plateau mesa masks.
@@ -32,11 +34,11 @@
       await loadScript('../../js/environment-surface-micro-plateau.js', 'wilderness-lab-environment-surface-micro-plateau'); // The actual live game module that renders Western Slope snow and Coldmuck slush.
       await loadScript('lab-real-environment-surface.js', 'wilderness-lab-real-environment-surface'); // Replaces this lab's old standalone winter mesh preview above with the real game module, so the preview can't drift out of sync with what actually ships.
       await loadScript('lab-scale-reference.js', 'wilderness-lab-scale-reference'); // Loads after environment-refresh so its figure is placed on the final, snow/slush-adjusted terrain height.
-      await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
+      await loadScript('lab-entry-repair.js?v=20261020clouddensity1', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
       await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
       await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain'); // Locale Editor autosave/import source plus selected/rejected terrain-probe and embedded-carve overlays.
       await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave'); // Repo-backed Banubu Cave injection plus exact game cave renderer and actual Grehlr live visual.
-      console.log('[WildernessLab] shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + real environment surface + scale reference + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
+      console.log('[WildernessLab] Cloud Forest north reforestation + shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + real environment surface + scale reference + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {

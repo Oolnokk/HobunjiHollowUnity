@@ -134,11 +134,24 @@
     return slices;
   }
 
-  function shouldCloudTree(axis, inward, centerAxis) {
+  // Generated Cloud Forest saturates a 2x-scaled source lattice, then drops
+  // 20% of trees and converts 1/6 of survivors to other foliage/resources.
+  // Backfill MUST use this same ~1/6 final-tile density, not a 50% checkerboard.
+  const CLOUD_FOREST_TREE_KEEP = (1 - 0.2) * (1 - 1 / 6);
+  function cloudForestTreePosition(c, r) {
+    if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0
+      || (c & 1) !== 0 || (r & 1) !== 0) return false;
+    let hash = (Math.imul(c + 37, 73856093) ^ Math.imul(r + 73, 19349663)) >>> 0;
+    hash = Math.imul(hash ^ (hash >>> 16), 0x7feb352d) >>> 0;
+    hash = Math.imul(hash ^ (hash >>> 15), 0x846ca68b) >>> 0;
+    hash = (hash ^ (hash >>> 16)) >>> 0;
+    return hash / 4294967296 < CLOUD_FOREST_TREE_KEEP;
+  }
+
+  function shouldCloudTree(axis, inward, centerAxis, side, map) {
     if (Math.abs(axis - centerAxis) <= SHOULDER_HALF_WIDTH) return false;
-    // Dense checkerboard starts the forest immediately outside the shoulder
-    // without planting trunks in adjacent cardinal cells.
-    return ((axis + inward) & 1) === 0;
+    const [c, r] = coordsAt(side, axis, inward, map);
+    return cloudForestTreePosition(c, r);
   }
 
   function applyWorkspace(workspace, options = {}) {
@@ -207,7 +220,7 @@
         delete tile.entryCausewayCenterline;
         reclaimedTiles++;
 
-        if (zoneId === CLOUD_ID && !tile.generatedObjectType && shouldCloudTree(axis, slice.inward, slice.centerAxis)) {
+        if (zoneId === CLOUD_ID && !tile.generatedObjectType && shouldCloudTree(axis, slice.inward, slice.centerAxis, side, map)) {
           tile.type = 'shrub';
           tile.generatedObjectType = 'copse';
           tile.generatedObjectId = `entry_copse_${c}_${r}`;
@@ -284,6 +297,8 @@
     SHOULDER_HALF_WIDTH,
     WIDE_PATH_THRESHOLD,
     CLOUD_ID,
+    CLOUD_FOREST_TREE_KEEP,
+    cloudForestTreePosition,
     applyWorkspace,
     installGeneratorAdapter,
     detectWidePathSlab,
