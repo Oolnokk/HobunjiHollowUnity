@@ -25658,6 +25658,11 @@
         // itself — no action-bar buttons underneath it.
         if (window.MusicMinigame?.state?.active) return [];
 
+        // A carried Shattercask behaves as the active tool: its two authored
+        // actions replace the normal Action 1/2 slots on every input device.
+        const carriedShattercaskActions=window.Shattercasks?.actionButtons?.(); // Native arch and physical-slot resolver both consume these.
+        if(carriedShattercaskActions)return carriedShattercaskActions;
+
         // Reticle furniture placement owns Action 1/2 while armed. These
         // explicit entries are essential on touch: keyboard/controller can
         // invoke action1/action2 without visible DOM, while mobile can only
