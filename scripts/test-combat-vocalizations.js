@@ -159,6 +159,7 @@ assert.match(animalPlaybackSource, /renderDecodedIndependentBuffer/, 'combat sho
 assert.match(animalPlaybackSource, /GENERIC_MAX_SHIFT_SEMITONES = 24/, 'combat may use +14 semitone profiles without raising the animal-call +/-12 ceiling');
 assert.match(animalPlaybackSource, /function readyForIndependentPitch\(\)/, 'breathing must have a stable readiness gate for Web Audio startup');
 assert.match(animalPlaybackSource, /context\.state === 'interrupted'/, 'mobile interrupted AudioContexts also try to resume before breathing');
+assert.match(animalPlaybackSource, /primeAudioContext\(true\)/, 'trusted mobile or keyboard gesture must override a resume request left pending by passive breathing');
 assert.match(animalPlaybackSource, /function trimDecodedSilence/, 'shared pitch-preserving playback trims decoded leading/trailing silence before combat timing');
 assert.match(animalPlaybackSource, /extraWetBase/, 'generic combat one-shots route through the environmental reverb send without inheriting animal-only extra wetness');
 assert.match(source, /__combatVocalWet = window\.EnvironmentalReverb\?\.connectWetNode/, 'custom charge playback also sends into the current environmental reverb space');
