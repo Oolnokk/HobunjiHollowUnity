@@ -131,4 +131,26 @@ const farm = read('docs/js/farm-animals.js'); // Owned adults must use the corre
 assert.match(farm,/ANIMAL_H = ANIMAL_W \* \(deps\.CREATURE_DB\.uumkaoii\?\.spriteAspect/);
 const troughs = read('docs/js/farm-troughs.js'); // Sleep/barn models were already using the correct 451x641 source.
 assert.match(troughs,/kind === 'uumkaoii' \? modelWidth \* \(451 \/ 641\)/);
+// Every ordinary, unsquashed Uumkao'ii billboard must reproduce the source width:height ratio,
+// regardless of overall adult width, genotype size class, or which stable/baby renderer built it.
+const nativeWidthHeight = uumSize.width / uumSize.height; // 641 / 451, not the legacy 1375 / 600.
+const standardFarmWidth = 1.275 * (600 / 1375) / nativeAspect; // Preserve the pre-fix standing height without stretching the texture.
+assert(Math.abs(standardFarmWidth * nativeAspect - 1.275 * (600 / 1375)) < 1e-12,
+  'correcting the adult model width preserves the existing height and ground-frame basis');
+for (const sizeScale of [0.2, 1, 1.5]) {
+  assert(Math.abs((standardFarmWidth * sizeScale) / (standardFarmWidth * nativeAspect * sizeScale) - nativeWidthHeight) < 1e-12,
+    'Small, Medium, and Large must keep the exact native sprite aspect ratio');
+}
+const farmSource = read('docs/js/farm-animals.js');
+assert.match(farmSource, /ANIMAL_W = 1\.275 \* \(600 \/ 1375\) \/ \(451 \/ 641\)/,
+  'standing Uumkao\'ii uses the corrected visual width');
+assert.match(farmSource, /CREATURE_DB\.uumkaoii\?\.spriteAspect \|\| \(451 \/ 641\)/,
+  'standing Uumkao\'ii falls back to its own native aspect if the creature definition is unavailable');
+for (const path of ['docs/js/livestock-nursery.js','docs/js/barn-incubator.js','docs/js/den-nest-system.js']) {
+  const code = read(path);
+  assert(code.includes('1.275 * (600 / 1375) / (451 / 641)'), path + ' uses the same adult width baseline as standing animals');
+  assert(code.includes('451 / 641 : 600 / 1375'), path + ' preserves native Uumkao\'ii aspect when the bestiary is absent');
+}
+assert(read('docs/js/farm-troughs.js').includes('1.275 * (600 / 1375) / (451 / 641)'),
+  'sleeping Uumkao\'ii uses the corrected width baseline too');
 console.log('creature new sprite integration: all regression checks passed');
