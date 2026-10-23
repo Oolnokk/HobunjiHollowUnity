@@ -791,6 +791,11 @@
       deps.player._nestTakeActive = false;
       _activeNestContentHoldId = null;
       _nestTakeHudEl?.classList.remove('visible');
+      if ((deps.inventory[nest.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) {
+        _nestContentDebug.lastChange = 'Bag full; nest contents and inherited genotype kept in place.';
+        deps.showToast('No room in your bag for this baby or egg.', false);
+        return;
+      }
       const state = focused.state;
       _removeContentRecord(state, content);
       nest.remaining = Math.max(0, Number(nest.remaining) - 1);
