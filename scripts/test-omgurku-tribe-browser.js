@@ -72,15 +72,19 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>window.OmgurkuCamps?.debugSnapshot().configReady&&window.PorakanekiCamps?.debugSnapshot().configReady,null,{timeout:60000});
     const spawned=await page.evaluate(async()=>{
       const deps=window.Combat.deps,cfg=await window.BanditCombat.loadGangConfig();
+      const chunkSize=window.PorakanekiCamps.__test.streamChunkSizeTiles();
+      const chunkCol=Math.floor(deps.player.x/deps.TILE/chunkSize),chunkRow=Math.floor(deps.player.y/deps.TILE/chunkSize);
+      const centerCol=Math.max(chunkCol*chunkSize+1.5,Math.min(deps.player.x/deps.TILE,(chunkCol+1)*chunkSize-1.5));
+      const centerRow=Math.max(chunkRow*chunkSize+1.5,Math.min(deps.player.y/deps.TILE,(chunkRow+1)*chunkSize-1.5));
       const spawn=async(tribeId,dx)=>{
-        const x=deps.player.x+dx*deps.TILE,y=deps.player.y+deps.TILE*2;
+        const x=(centerCol+dx)*deps.TILE,y=centerRow*deps.TILE;
         const entity=await window.BanditCombat.makeEntity({...cfg,speciesWeights:{[tribeId]:1},rangedWeaponChanceByRank:{grunt:0,lieutenant:0,captain:0}},'grunt',0,x,y,{
           zoneId:'map_dev_arena',nameOverride:tribeId+' QA',
           defOverride:{weaponKey:'hatchet',weaponShapeKey:'hatchet'},
           extra:{homeX:x,homeY:y,state:'idle',isTribeHunter:true,tribeId,isPorakanekiHunter:tribeId==='porakaneki',porakanekiCampId:tribeId+'_qa_camp',_porakanekiPlannerControlled:true}});
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
-      const omg=await spawn('omgurku',-1),pora=await spawn('porakaneki',1);
+      const omg=await spawn('omgurku',-0.45),pora=await spawn('porakaneki',0.45);
       window.__tribeQa={omg,pora};
       const ref=omg.avatarRef;
       for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
@@ -111,6 +115,14 @@ const server=http.createServer((req,res)=>{
     const fight=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa;
       return {neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};});
     assert.deepEqual(fight.neutral,[true,true],'tribe-vs-tribe fighting keeps both neutral to the player');
+    const wildernessZones=await page.evaluate(()=>window.WildernessMapGenerator.zoneMapIds());
+    for(const zoneId of wildernessZones){
+      await page.evaluate(async id=>window.__hobunjiFurnitureDebug.enterZoneDebug(id),zoneId);
+      await page.waitForFunction(id=>window.GridTileAccessors.getCurrentArea()===id&&window.Combat.deps.zoneLayouts.has(id),zoneId,{timeout:60000});
+      await page.waitForFunction(id=>window.OmgurkuCamps.debugSnapshot().zones[id]&&window.PorakanekiCamps.debugSnapshot().zones[id],zoneId,{timeout:60000});
+    }
+    await page.evaluate(()=>window.DevSpawner.teleportToDevArena());
+    await page.waitForFunction(()=>window.GridTileAccessors.getCurrentArea()==='map_dev_arena',null,{timeout:60000});
     const camps=await page.evaluate(()=>{
       const chunks=api=>Object.keys(api.debugSnapshot().zones).flatMap(zone=>api.reservedCampChunks(zone).map(key=>zone+':'+key));
       const pora=window.PorakanekiCamps.debugSnapshot(),omg=window.OmgurkuCamps.debugSnapshot();
