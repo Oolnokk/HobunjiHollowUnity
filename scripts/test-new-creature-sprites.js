@@ -60,6 +60,7 @@ const eyePixels = new Uint8ClampedArray([
   112, 146, 111, 255, // Darker mint skin shadow should preserve shading.
   173, 224, 225, 255, // Cyan iris detail must remain blue.
   0, 0, 0, 255,       // Solid black outline must remain black.
+  5, 9, 4, 255,       // Near-black green outline noise must also stay black.
 ]); // Simulates the authored mint/iris colors without needing browser canvas APIs.
 // Decode the checked-in RGBA PNGs directly so each authored eye variant is tested, not only a synthetic pixel.
 function rgbaPng(filename) {
@@ -107,7 +108,7 @@ for (const pose of ['A','B','C','D']) {
   for (let i = 0; i < original.length; i += 4) {
     if (!original[i + 3]) continue;
     const hsv = context.window.ColorFill.rgbToHsv(original[i], original[i+1], original[i+2]);
-    const isMint = hsv.s >= minSaturation && context.window.ColorFill.hueDistance(hsv.h, keyHsv.h) <= eyeKey.hueTolerance;
+    const isMint = hsv.v >= eyeKey.minValue && hsv.s >= minSaturation && context.window.ColorFill.hueDistance(hsv.h, keyHsv.h) <= eyeKey.hueTolerance;
     const isChanged = original[i] !== recolored[i] || original[i+1] !== recolored[i+1] || original[i+2] !== recolored[i+2];
     if (isMint) mint++;
     if (isChanged) { changed++; assert(isMint, `Eye ${pose}: changed non-mint pixel`); }
@@ -128,6 +129,7 @@ assert(eyePixels[4] > eyePixels[5], 'Mint skin shadow should take the red genoty
 assert(eyePixels[0] > eyePixels[4], 'The brighter skin pixel should remain brighter after tinting');
 assert.deepEqual(Array.from(eyePixels.slice(8, 12)), irisBefore, 'Cyan iris must remain intact');
 assert.deepEqual(Array.from(eyePixels.slice(12, 16)), [0, 0, 0, 255], 'Black eye outlines must remain intact');
+assert.deepEqual(Array.from(eyePixels.slice(16, 20)), [5, 9, 4, 255], 'Near-black green anti-alias outlines must stay intact');
 
 
 const patterns = { brushtail: { enabled: true, copies: 2, color: '#445566' },
