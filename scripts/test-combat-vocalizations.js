@@ -94,12 +94,15 @@ context.window.dispatchEvent = event => emit(listeners, event.type, event.detail
 context.document = {
   addEventListener: (type, fn) => addListener(docListeners, type, fn),
 };
+let pitchBackendReady = true; // Tests startup context suspension independently of the audio mock's decoded playback.
 context.window.AnimalVoiceIndependentPlayback = {
+  readyForIndependentPitch: () => pitchBackendReady,
   playIndependent(url, opts = {}) {
     const entry = { url, ...opts, pitchPreserved: true, stopped: false, fadeOutS: null, handle: null };
     let finished = false;
     const finish = () => { if (finished) return; finished = true; opts.onFinished?.(); };
     const handle = {
+      independentPitch: true, // Mirrors the decoded WebAudio voice path so the mobile diagnostic can verify the selected backend.
       stop(fadeOutS = 0) { entry.stopped = true; entry.fadeOutS = fadeOutS; finish(); },
       finish,
     };
@@ -154,6 +157,9 @@ assert(Math.abs(chargePlan.catchUpTempo - chargePlan.stretchedTempo * 2) > 1, 'c
 assert.equal(chargePlan.earlyReleaseNormalSpeedMul, 2);
 assert.match(animalPlaybackSource, /renderDecodedIndependentBuffer/, 'combat should reuse the animal-call independent tempo/pitch renderer');
 assert.match(animalPlaybackSource, /GENERIC_MAX_SHIFT_SEMITONES = 24/, 'combat may use +14 semitone profiles without raising the animal-call +/-12 ceiling');
+assert.match(animalPlaybackSource, /function readyForIndependentPitch\(\)/, 'breathing must have a stable readiness gate for Web Audio startup');
+assert.match(animalPlaybackSource, /context\.state === 'interrupted'/, 'mobile interrupted AudioContexts also try to resume before breathing');
+assert.match(animalPlaybackSource, /primeAudioContext\(true\)/, 'trusted mobile or keyboard gesture must override a resume request left pending by passive breathing');
 assert.match(animalPlaybackSource, /function trimDecodedSilence/, 'shared pitch-preserving playback trims decoded leading/trailing silence before combat timing');
 assert.match(animalPlaybackSource, /extraWetBase/, 'generic combat one-shots route through the environmental reverb send without inheriting animal-only extra wetness');
 assert.match(source, /__combatVocalWet = window\.EnvironmentalReverb\?\.connectWetNode/, 'custom charge playback also sends into the current environmental reverb space');
@@ -184,7 +190,24 @@ assert(played.at(-1).url.includes('heavybreath_medium_intensity3'), 'non-exhaust
 assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));
 assert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use independent pitch preservation');
 assert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');
-assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'breathing receives the same Nuhongan female species pitch shift plus small authored random variation');
+assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'breathing retains its subtle variation on top of the Nuhongan female species pitch shift');
+assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, true, 'breathing debug records an actual independent pitch handle');
+const breathBackendHandle = played.at(-1).handle; // Simulates a decoded renderer switching to a native fallback after the call already returned.
+breathBackendHandle.independentPitch = false;
+assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, false, 'mobile breath diagnostic reflects asynchronous renderer fallback');
+breathBackendHandle.independentPitch = true;
+played.at(-1).handle.finish();
+pitchBackendReady = false;
+const beforeDeferredBreath = played.length; // Simulates the first breath arriving before Android/desktop AudioContext resume settles.
+scheduledBreath({ timestamp: 10000 });
+assert.equal(played.length, beforeDeferredBreath, 'breathing must not fall back to native unpitched playback during audio unlock');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.reason, 'audio-context-pending');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.suppressed, true);
+pitchBackendReady = true;
+scheduledBreath({ timestamp: 10100 });
+assert.equal(played.length, beforeDeferredBreath + 1, 'breathing retries promptly after the pitch-preserving backend becomes ready');
+assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'deferred breath retains the same species pitch shift');
+played.at(-1).handle.finish();
 assert.equal(played.at(-1).trimSilence, true, 'combat vocals request decoded silence trimming');
 assert.equal(played.at(-1).tailPadS, 0, 'combat vocals add no artificial silent tail after trimming');
 
@@ -437,6 +460,17 @@ assert.equal(nativeDodge.snd.preservesPitch, false);
 assert(Math.abs(nativeDodge.snd.playbackRate - ((1 / 0.75) * Math.pow(2, (-6 + 1.47) / 12))) < 1e-9);
 assert.equal(nativeDodge.independentPitch, false);
 W.CharacterVoiceOwner.release(nativeDodge.claim);
+player.stamina = 5;
+scheduledBreath({ timestamp: 150000 });
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.reason, 'pitch-renderer-loading', 'breathing waits for an asynchronously loading pitch renderer');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.suppressed, true);
+now += 6000; // Simulates an unavailable module after the bounded startup retry window.
+scheduledBreath({ timestamp: 150100 });
+const nativeBreathDebug = W.CombatVocalizations.debugSnapshot().lastBreath; // Confirms that the native-only path still transposes a winded player's voice.
+assert.equal(nativeBreathDebug.independentPitch, false);
+assert(Math.abs(nativeBreathDebug.pitchSemitones - (-6 + 0.2156)) < 1e-9, 'native breathing retains the authored Mashtzarr male pitch shift and subtle randomized variation');
+assert.equal(W.CharacterVoiceOwner.current(player)?.kind, 'breath');
+W.CharacterVoiceOwner.stop(player, 0);
 
 // Execute the real ordinary dodge entry point, including all its early exits.
 const dodgeActor = { x: 0, y: 0, angle: 0, inputStrength: 1, inputX: 1, inputY: 0, stamina: 100 }; // Isolated player for the authoritative game.js action.

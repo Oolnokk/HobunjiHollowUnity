@@ -71,6 +71,7 @@
   const silenceTrimCache = new WeakMap(); // Decoded AudioBuffer -> WeakMap(AudioContext -> Map(settings -> trimmed result)); repeated breathing never rescans the same clip.
   const previewHandles = new Set();
   let sharedContext = null;
+  let pendingContextResume = null; // A pending gesture-unlock resume is shared by breathing retries rather than issuing one resume per frame.
   let adapterInstalled = false;
   let lastPlaybackError = null;
   let lastBackend = 'idle';
@@ -153,18 +154,33 @@
     try { sharedContext = new AudioCtx(); return sharedContext; }
     catch (error) { lastPlaybackError = error; return null; }
   }
-  function primeAudioContext() {
+  function primeAudioContext(fromUserGesture = false) {
     const context = ensureContext();
     if (!context) return false;
-    if (context.state === 'suspended') {
-      try { context.resume()?.catch?.(error => { lastPlaybackError = error; }); }
-      catch (error) { lastPlaybackError = error; }
+    // A background resume can remain pending until a trusted gesture, so never let it block the gesture itself.
+    if ((context.state === 'suspended' || context.state === 'interrupted') && (!pendingContextResume || fromUserGesture)) {
+      try {
+        const resumed = context.resume();
+        if (resumed?.then) {
+          const pending = Promise.resolve(resumed).catch(error => { lastPlaybackError = error; }); // Tracks one resume attempt so older pending completions cannot clear a newer gesture attempt.
+          pendingContextResume = pending;
+          pending.finally(() => { if (pendingContextResume === pending) pendingContextResume = null; });
+        }
+      } catch (error) { lastPlaybackError = error; }
     }
     return context.state === 'running';
   }
+
+  function readyForIndependentPitch() {
+    const context = ensureContext();
+    if (!context) return true; // Browsers without Web Audio retain the existing native playback behavior.
+    if (context.state === 'running') return true;
+    primeAudioContext(); // Unlock asynchronously; passive breathing retries on its existing short suppression timer.
+    return false;
+  }
   function installGestureUnlock() {
     if (typeof window.addEventListener !== 'function') return;
-    const unlock = () => primeAudioContext();
+    const unlock = () => primeAudioContext(true); // Trusted input may restart a resume left pending by a breathing-frame readiness check.
     window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
     window.addEventListener('touchstart', unlock, { capture: true, passive: true });
     window.addEventListener('keydown', unlock, { capture: true });
@@ -778,6 +794,7 @@
     const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
     if (!context || context.state !== 'running') {
       active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      handle.independentPitch = active?.independentPitch ?? false; // Native fallback cannot preserve authored pitch independently of playback speed.
       return handle;
     }
     lastBackend = 'fixed render pending';
@@ -796,6 +813,7 @@
         if (stopped) return;
         lastPlaybackError = error;
         active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+        handle.independentPitch = active?.independentPitch ?? false; // Decoding/render failure also downgrades the handle's reported pitch backend.
       });
     return handle;
   }
@@ -992,6 +1010,7 @@
     stopAllPreviews,
     stopAll() { for (const handle of [...activeHandles]) handle.stop(); },
     primeAudioContext,
+    readyForIndependentPitch,
     clampPitch,
     clampTempo,
     clipKey,

@@ -1137,6 +1137,8 @@
     if (combatVoiceDebug) {
       lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}; attack delay=${Number(combatVoiceDebug.attackStartDelayS || 0).toFixed(3)}s; queued inputs=${(combatVoiceDebug.queuedAttacks || []).join(',') || 'none'}`);
       lines.push(`Combat voice modulation: ${JSON.stringify({ latestChange: combatVoiceDebug.latestChange, modulation: combatVoiceDebug.modulation, breath: combatVoiceDebug.lastBreath, dodge: combatVoiceDebug.lastDodge, failure: combatVoiceDebug.failedPlayback })}`);
+      const vocalRenderer = window.AnimalVoiceIndependentPlayback?.debugSnapshot?.(); // Captures the real browser backend and last requested pitch without desktop devtools.
+      if (vocalRenderer) lines.push(`Vocal pitch renderer (last clip): ${JSON.stringify({ backend: vocalRenderer.backend, lastUrl: vocalRenderer.lastUrl, lastPitchSemitones: vocalRenderer.lastPitchSemitones, contextState: vocalRenderer.contextState })}`);
     }
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {

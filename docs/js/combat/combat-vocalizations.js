@@ -244,6 +244,8 @@
   const activeChargeTokens = new Set(); // Used for cleanup/debug without coupling tokens to one combat archetype.
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
+  let lastBreathPlaybackHandle = null; // Mobile diagnostics inspect this handle after asynchronous render failures can switch playback to native audio.
+  let pitchBackendMissingSinceMs = null; // Bounds the startup wait for the asynchronously loaded pitch renderer before native compatibility fallback.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
   const DODGE_DURATION_SCALE = 0.75; // Dodge compresses pain intensity 1 to 75% of its normal species/gender-modulated duration.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
@@ -395,6 +397,22 @@
     if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
+    // Passive breathing may begin before the asynchronously requested playback module loads.
+    // Don't immediately use native playback at startup: its browser-dependent pitch preservation can leave early breaths untransposed.
+    if (voiceKind === 'breath') {
+      const pitchPlayback = window.AnimalVoiceIndependentPlayback; // Shared renderer needed for consistent species/gender pitch shifting.
+      if (!pitchPlayback) {
+        if (pitchBackendMissingSinceMs == null) pitchBackendMissingSinceMs = nowMs();
+        if (nowMs() - pitchBackendMissingSinceMs < 5000) { // Bounded wait keeps native-only/failed-load browsers from losing breathing indefinitely.
+          return { suppressed: true, reason: 'pitch-renderer-loading', voiceKind, ...detail };
+        }
+      } else {
+        pitchBackendMissingSinceMs = null;
+        if (pitchPlayback.readyForIndependentPitch?.() === false) {
+          return { suppressed: true, reason: 'audio-context-pending', voiceKind, ...detail };
+        }
+      }
+    }
     const claim = window.CharacterVoiceOwner?.request?.(entity, {
       kind: voiceKind,
       priority: voicePriority(voiceKind),
@@ -454,7 +472,7 @@
       tempo: plan.tempo,
       pitchSemitones: plan.pitchSemitones,
       modulation: plan.modulation,
-      independentPitch: !!(window.AnimalVoiceIndependentPlayback?.playIndependent || window.AnimalVoiceIndependentPlayback?.play),
+      independentPitch: snd?.independentPitch ?? (snd ? Math.abs(plan.pitchSemitones) < 0.05 : false), // Report the real playback handle, not merely whether an independent renderer exists.
       suppressed: false,
       ...detail,
     };
@@ -512,6 +530,7 @@
       { intensity },
       'breath',
     );
+    lastBreathPlaybackHandle = played?.snd || null;
     debug.lastBreath = {
       atMs: Math.round(atMs),
       entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
@@ -520,8 +539,11 @@
       maxStamina: Number(entity.maxStamina) || 0,
       exhausted: !!entity.exhaustion?.active,
       suppressed: !!played?.suppressed,
+      reason: played?.reason || null, // Identifies temporary audio-unlock suppression without using a desktop console.
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
+      modulation: played?.modulation ? { ...played.modulation } : voiceModulation(entity), // Mobile diagnostics distinguish authored species pitch from randomized breath pitch.
+      independentPitch: played?.independentPitch ?? null, // Records whether this particular breath used the pitch-preserving backend.
     };
     return played;
   }
@@ -1268,6 +1290,7 @@ function beginCharge(options = {}) {
 
   function resetTransientState() {
     attackActions.clear();
+    lastBreathPlaybackHandle = null;
     window.Combat?.input?.abortAllPresses?.();
     lastDotPainAtMsByEntity = new WeakMap();
     trackedBreathers.clear();
@@ -1285,7 +1308,7 @@ function beginCharge(options = {}) {
     } catch (_) {}
 
     const request = typeof fetch === 'function'
-      ? fetch(`${CONFIG_URL}?v=20261013vocal3`).then(response => response.ok ? response.json() : null)
+      ? fetch(`${CONFIG_URL}?v=20261023breathPitch1`).then(response => response.ok ? response.json() : null)
       : Promise.resolve(null);
 
     return request.then(authored => {
@@ -1328,7 +1351,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1372,7 +1395,10 @@ function beginCharge(options = {}) {
       })),
       liveChargeAbilities: [...liveChargesByAbility.keys()],
       modulation: voiceModulation(),
-      lastBreath: debug.lastBreath ? { ...debug.lastBreath } : null,
+      lastBreath: debug.lastBreath ? {
+        ...debug.lastBreath,
+        independentPitch: lastBreathPlaybackHandle?.independentPitch ?? debug.lastBreath.independentPitch, // Reflects native fallback even if the decode failed after playBreath returned.
+      } : null,
       lastPain: debug.lastPain ? { ...debug.lastPain } : null,
       lastDodge: debug.lastDodge ? { ...debug.lastDodge } : null,
       lastStrike: debug.lastStrike ? { ...debug.lastStrike } : null,
