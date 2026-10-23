@@ -8,8 +8,30 @@
   // its sibling systems; game.js still owns the per-visit maps it reads.
   const THREE = window.THREE;
   let deps = null;
+  const ROCK_CHANCE_GAIN_PER_BREAK = 0.02; // Used to raise rock-based descent odds by two percentage points for each previous break on this floor.
 
   function init(injectedDeps) { deps = injectedDeps; }
+
+  function rockBreakCount(state) {
+    return Math.max(0, Math.floor(Number(state?.rocksBrokenOnFloor) || 0));
+  }
+
+  function descentRollChance(source, state) {
+    const baseChance = window.TownMine?.descentChance?.(source) ?? (source === 'enemy' ? 0.16 : source === 'rubble' ? 0.35 : 0.08); // Used to preserve base odds and Mining perks independently of the cumulative bonus.
+    const rockBonus = (source === 'rock' || source === 'rubble') ? rockBreakCount(state) * ROCK_CHANCE_GAIN_PER_BREAK : 0; // Used only for rock-based discoveries, never enemy kills.
+    return Math.min(1, Math.max(0, baseChance + rockBonus));
+  }
+
+  function debugStatus(mapId) {
+    const state = deps?.runStates?.get(mapId); // Used to expose the active floor's next-roll odds through the existing in-game mine diagnostics.
+    if (!state) return null;
+    return {
+      rocksBrokenOnFloor: rockBreakCount(state),
+      nextRockChance: descentRollChance('rock', state),
+      nextRubbleChance: descentRollChance('rubble', state),
+      descentRevealed: !!state.descentRevealed,
+    };
+  }
 
   function revealMineDescentVisual(mapId, col, row) {
     const info = deps.buildingScenes.get(mapId);
@@ -66,10 +88,13 @@
   function tryRevealMineDescent(mapId, preferredCol, preferredRow, source) {
     const state = deps.runStates.get(mapId);
     if (!state || state.descentRevealed) return false;
-    if (source === 'rock' || source === 'rubble') state.remainingRocks = Math.max(0, state.remainingRocks - 1); // Each blasted rock leaves exactly one rubble pile.
+    const chance = descentRollChance(source, state); // Roll using prior breaks only: ten broken rocks add 20% to the eleventh roll.
+    if (source === 'rock' || source === 'rubble') {
+      state.remainingRocks = Math.max(0, state.remainingRocks - 1); // Each collected Shattercask rock pile counts as one broken rock.
+      state.rocksBrokenOnFloor = rockBreakCount(state) + 1; // Used by future rock/rubble rolls; a newly generated floor starts again at zero.
+    }
     if (source === 'enemy') state.remainingEnemies = Math.max(0, state.remainingEnemies - 1);
     if (!state.canDescend) return false;
-    const chance = window.TownMine?.descentChance?.(source) || (source === 'enemy' ? 0.16 : 0.08); // Doubled base odds; TownMine adds the source-specific perk rank.
     const guaranteedFallback = state.remainingRocks + state.remainingEnemies === 0;
     if (!guaranteedFallback && Math.random() >= chance) return false;
     const tile = nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow);
@@ -85,5 +110,6 @@
     tryReveal: tryRevealMineDescent,
     revealVisual: revealMineDescentVisual,
     nearestWalkableHoleTile: nearestWalkableMineHoleTile,
+    debugStatus,
   });
 })();

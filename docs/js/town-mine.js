@@ -419,7 +419,8 @@
     const area = deps?.getCurrentArea?.(); // Used by the mobile-safe diagnostic report to identify the active mine context.
     const floor = floorFromMapId(area);
     const sceneInfo = floor ? deps?.buildingScenes?.get?.(area) : null; // Used to expose placement-clearance counts without requiring desktop developer tools.
-    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy'), rubble: descentChance('rubble') } };
+    const descentProgress = floor ? window.TownMineDescent?.debugStatus?.(area) ?? null : null; // Used to expose this floor's cumulative next-rock odds in existing mobile-friendly diagnostics.
+    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy'), rubble: descentChance('rubble') }, descentProgress };
     window.__farmLog?.(`[town-mine] ${JSON.stringify(snapshot)}`, 'info', 'mine');
     return snapshot;
   }
