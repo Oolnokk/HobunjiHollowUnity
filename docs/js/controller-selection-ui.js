@@ -38,6 +38,8 @@
     preferredPadIndex: null,
     lastStickSource: 'none',
     lastInput: 'ready',
+    suppressedCarryToolSelectCode: null, // Suppresses selector tap-recall and hold-open through the physical pickup release.
+    suppressedCarryPadIndex: null, // Associates that input with the controller that started pickup.
   }; // Exposed through getDebug() so controller selection can be diagnosed without browser devtools.
 
   let unsubscribe = null; // Handle for this module's slot in ControllerInput's shared frame loop.
@@ -298,7 +300,23 @@
     if (!pad) {
       if (state.activeAction) finishSelection(false, 'controller disconnected');
       if (state.pendingAction) clearPending('cancelled (controller disconnected)');
+      state.suppressedCarryToolSelectCode = null;
+      state.suppressedCarryPadIndex = null;
       return; // Nothing below can do anything without a pad.
+    }
+
+    if (state.suppressedCarryToolSelectCode) {
+      // The independent controller gameplay dispatcher handles pickup. This
+      // selector also watches physical down state, not just the initial edge,
+      // so suppression must persist until the matching release.
+      const samePad = state.suppressedCarryPadIndex === pad.index;
+      const stillDown = samePad && isDown(frame, state.suppressedCarryToolSelectCode);
+      if (!stillDown) {
+        state.suppressedCarryToolSelectCode = null;
+        state.suppressedCarryPadIndex = null;
+        state.lastInput = 'Shattercask Tool Select released without recalling equipment';
+      }
+      return; // The release frame must not open another selector.
     }
 
     if (state.activeAction) {
@@ -326,6 +344,15 @@
       state.preferredPadIndex = pad.index;
       const pressed = firstPressedSelector(frame); // Resolves semantic selector ownership from the player's current configured binding.
       if (pressed) {
+        // Both this selector and game.js inspect the same physical Tool Select
+        // key; reserve a new Shattercask pickup for the gameplay dispatcher.
+        if (pressed.actionId === 'toolSelect' && frame.pressed?.has?.(pressed.code)
+          && window.Shattercasks?.toolArchAction?.() === 'pickup') {
+          state.suppressedCarryToolSelectCode = pressed.code;
+          state.suppressedCarryPadIndex = pad.index;
+          state.lastInput = 'Shattercask pickup reserved Tool Select';
+          return;
+        }
         if (TAP_RECALL_ACTION_IDS.has(pressed.actionId)) beginPendingTapHold(pressed.actionId, pad, pressed.code, frame.now);
         else beginSelection(pressed.actionId, pad, pressed.code);
       }
@@ -345,6 +372,7 @@
       preferredPadIndex: state.preferredPadIndex,
       lastStickSource: state.lastStickSource,
       lastInput: state.lastInput,
+      suppressedCarryToolSelectCode: state.suppressedCarryToolSelectCode, // Mobile debug report distinguishes contextual pickup from a stuck selector.
       sharedFrameSubscribed: !!unsubscribe,
       menuActive: menuIsActive(),
       bindings: Object.fromEntries(SELECTOR_ACTION_IDS.map(actionId => [actionId, bindingFor(actionId)])),
