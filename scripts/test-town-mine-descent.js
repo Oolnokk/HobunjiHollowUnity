@@ -66,6 +66,7 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   assert.strictEqual(mineLadder.parts.length, 6, 'The authored ladder should retain every supplied part');
   assert.strictEqual(mine.descentChance('rock'), 0.08, 'Rock discovery should have the doubled 8% base chance');
   assert.strictEqual(mine.descentChance('enemy'), 0.16, 'Enemy discovery should have the doubled 16% base chance');
+  assert.ok(mine.descentChance('rubble') >= 4 * mine.descentChance('rock'), 'Collecting Shattercask blast rubble should open a descent far more readily than a pick');
   context.window.PerkSystem = { rank: (_skill, perkId) => perkId === 'weakRockSense' || perkId === 'collapsingBlows' ? 5 : 0 };
   assert.strictEqual(mine.descentChance('rock'), 0.155, 'Weak Rock Sense should remain a separate additive bonus');
   assert.strictEqual(mine.descentChance('enemy'), 0.31, 'Collapsing Blows should remain a separate additive bonus');
