@@ -55,9 +55,13 @@
   }
   const throwPoses=()=>window.HeldActionAnimations?.throwFlask?.poses||null;
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
+  let gameDeps = null; // game.js-owned inventory, resource-visual and mine-descent helpers (see init()); Combat.deps carries none of them.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
-  let promptRoot = null; // Same WorldPopupText prompts as other world interactions.
   let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
+  let offeredPileId = null; // Sticky aimed rubble pile so the arch does not blink as the reticle crosses a tile edge.
+  const PILE_REACH = 1.65; // Same reach as Shattercask pickup.
+  // Blast rubble pays out more than breaking the same tile by hand (2-3 stone / 2-3 logs).
+  const RUBBLE_YIELD = Object.freeze({ rockStone:[4,5], pebble:2, oreMultiplier:2, treeLogs:[4,5], mulch:2 });
   let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
   const THREE = window.THREE;
   if (!THREE) return;
@@ -75,6 +79,11 @@
   let emitterVisibilityElapsed = 0; // Cull only on the 140ms poll cadence, not every frame.
 
   function deps() { return window.Combat?.deps; }
+  function init(injected) { gameDeps = injected || null; }
+  // Town-mine floors are re-carved on every visit (TownMine.synthesizeFloorMapData),
+  // so blast openings, rubble and the consumed floor charge must not be
+  // replayed onto the next visit's unrelated layout.
+  function isRegeneratedArea(mapId) { return String(mapId||'').startsWith('map_i_town_mine_f_'); }
   function area() { return String(deps()?.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || ''); }
   function scene() { return window.GridTileAccessors?.getActiveScene?.() || deps()?.getActiveScene?.(); }
   function grid() { return window.GridTileAccessors?.getActiveGrid?.(); }
@@ -131,6 +140,11 @@
     const existing=records.get(mapId);
     if(existing?.scene===targetScene)return existing;
     placementCache.delete(mapId); // Generated geometry changed; only then may the expensive placements be sampled again.
+    if(isRegeneratedArea(mapId)){
+      terrainHistory.delete(mapId);pileHistory.delete(mapId);
+      for(const id of [...persisted])if(id.startsWith(mapId+':'))persisted.delete(id);
+      persistWorld();
+    }
     const rec={scene:targetScene,vases:new Map(),piles:new Map(),pileVisuals:new Map()}; // At most two debris draw calls per area, no matter how many tiles blast.
     records.set(mapId,rec);
     restoreSceneHistory(mapId,rec); // Scene reconstruction must retain both opened cave barriers and unlooted rubble.
@@ -854,7 +868,7 @@
   function actionButtons(){return held?CARRIED_ACTION_BUTTONS:null;}
   function grantLoot(items) {
     if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
-    const inv=deps()?.inventory;
+    const inv=gameDeps?.inventory||deps()?.inventory;
     if(!inv)return [];
     const gained=[];
     for(const [item,count] of Object.entries(items)) {
@@ -864,16 +878,73 @@
     }
     return gained;
   }
+  function rollRange([min,max]) { return min+Math.floor(Math.random()*(max-min+1)); }
+  function rubbleLoot(pile) {
+    if(pile.kind==='tree')return {[pile.woodKey||'pineLog']:rollRange(RUBBLE_YIELD.treeLogs),mulch:RUBBLE_YIELD.mulch};
+    const items={stone:rollRange(RUBBLE_YIELD.rockStone),pebble:RUBBLE_YIELD.pebble};
+    const oreItemKey=pile.oreKey?gameDeps?.oreItemKey?.(pile.oreKey):null;
+    if(oreItemKey){
+      const ore=Number(window.TownMine?.rollOreYield?.(Math.random,0))||1;
+      items[oreItemKey]=ore*RUBBLE_YIELD.oreMultiplier;
+      window.TownMine?.recordHeldOres?.([pile.oreKey]);
+    }
+    return items;
+  }
   function collectPile(pile) {
     if(!pile||!records.get(pile.mapId)?.piles.has(pile.id))return false;
-    grantLoot(pile.kind==='tree'?{[pile.woodKey||'pineLog']:2}:{stone:3,pebble:2}); // Canonical inventory keys, not descriptive stick/wood pseudo-items.
+    const items=rubbleLoot(pile); // Canonical inventory keys, not descriptive stick/wood pseudo-items.
+    grantLoot(items);
     records.get(pile.mapId).piles.delete(pile.id);
     pileHistory.get(pile.mapId)?.delete(pile.id);
+    if(offeredPileId===pile.id)offeredPileId=null;
     persistWorld();
     syncPileVisuals(records.get(pile.mapId)); // Rebuild one instanced matrix batch on looting, never remove four separate meshes.
     lastEvent='looted '+pile.id;
-    deps()?.showToast?.('Collected '+(pile.kind==='tree'?'wood and sticks':'stone and pebbles')+'.',true);
+    // Each blasted mine rock becomes exactly one rock pile, so collecting it
+    // stands in for breaking that rock: it counts down the floor's remaining
+    // rocks and rolls the (much higher) rubble descent chance.
+    const revealed=pile.kind==='rock'&&!!gameDeps?.tryRevealMineDescent?.(pile.mapId,pile.col,pile.row,'rubble');
+    const summary=Object.entries(items).map(([item,count])=>count+' '+(gameDeps?.itemLabel?.(item)||item)).join(', ');
+    deps()?.showToast?.('Collected '+summary+'.'+(revealed?' A hole leading deeper has been revealed!':''),true);
+    deps()?.refreshActionBar?.();
     return true;
+  }
+  // Aimed rubble is an ordinary action-arch context button (touch arch,
+  // desktop Interact, controller Interact and the floating prompt all read
+  // computeActionButtons), like an aimed corpse. Intact casks are not: an
+  // arch button would replace the weapon slot that melee-detonates them, so
+  // they keep Tool Select pickup plus the Interact claim in prompt().
+  function aimedPile(reticle) {
+    if(held||!reticle)return null;
+    const p=playerPosition(),rec=records.get(area());
+    if(!p||!rec?.piles.size)return null;
+    let sticky=null;
+    for(const pile of rec.piles.values()){
+      if(distance(p,{x:pile.col+.5,z:pile.row+.5})>=PILE_REACH)continue;
+      if(pile.col===reticle.col&&pile.row===reticle.row)return pile;
+      if(pile.id===offeredPileId)sticky=pile;
+    }
+    return sticky;
+  }
+  function contextButtons(reticle) {
+    const pile=aimedPile(reticle);
+    offeredPileId=pile?.id||null;
+    if(!pile)return null;
+    if(!pile.contextButtons){
+      const anchor=pile.promptAnchor||(pile.promptAnchor=new THREE.Object3D());
+      anchor.position.set(pile.col+.5,pile.y+.25,pile.row+.5);
+      if(!anchor.parent)records.get(pile.mapId)?.scene.add(anchor);
+      pile.contextButtons=Object.freeze([Object.freeze({
+        icon:pile.kind==='tree'?'🪵':'🪨',label:pile.kind==='tree'?'Collect Sticks':'Collect Rubble',
+        action:'shattercask_collect',style:'primary',allowed:true,worldInteraction:true,
+        inputAction:'interact',promptRoot:anchor,
+      })]); // Cached per pile: computeActionButtons runs every frame.
+    }
+    return pile.contextButtons;
+  }
+  function collectAimedPile(reticle) {
+    const pile=aimedPile(reticle);
+    return pile?collectPile(pile):false;
   }
   function interact() {
     if(held)return drop();
@@ -927,47 +998,41 @@
       btn.title='';
     }
   }
+  function nearVase() {
+    const target=held?null:nearInteraction();
+    return target?.type==='vase'?target.obj:null;
+  }
   function prompt() {
     // Carried furniture uses normal press/release Action 1 and 2, not
-    // Interact or the optional, normally unbound Action 4/5 inputs.
-    const target=held?null:nearInteraction();
-    const label=target?.type==='pile'
-      ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
-    const claim=held?'carried:'+held.id:target?target.type+':'+(target.obj?.id||''):'';
+    // Interact or the optional, normally unbound Action 4/5 inputs. A nearby
+    // intact cask claims Interact; rubble is an ordinary arch button instead
+    // (see contextButtons) so touch players can collect it too.
+    const vase=nearVase();
+    const claim=held?'carried:'+held.id:vase?'vase:'+vase.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
         {actionId:'action1',label:'Throw Shattercask',priority:810,
           onPress:startShatterAim,onRelease:detail=>detail?.canceled?cancelShatterAim():releaseShatterAim()},
         {actionId:'action2',label:'Drop Shattercask',priority:810,onPress:drop},
       ]);
-      else if(target)window.WorldActionInputClaims?.setClaims?.('shattercask',
-        [{actionId:'interact',label,priority:410,onPress:interact}]);
+      else if(vase)window.WorldActionInputClaims?.setClaims?.('shattercask',
+        [{actionId:'interact',label:'Pick up Shattercask',priority:410,onPress:interact}]);
       else window.WorldActionInputClaims?.clearClaims?.('shattercask');
       promptClaim=claim;
+      if(vase&&!vase.promptButtons)vase.promptButtons=Object.freeze([Object.freeze({
+        icon:'✋',label:'Pick up Shattercask',action:'shattercask_pickup_prompt',allowed:true,
+        worldInteraction:true,inputAction:'interact',promptRoot:vase.group,
+      })]);
     }
-    if(!target){
-      if(promptRoot)window.WorldPopupText?.clearInteractionPrompts?.();
-      promptRoot=null;return;
-    }
-    if(window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return;
-    const obj=target.obj;
-    const root=obj.group||obj.promptAnchor||(obj.promptAnchor=new THREE.Object3D());
-    if(!obj.group){
-      root.position.set(obj.col+.5,obj.y+.25,obj.row+.5);
-      if(!root.parent)records.get(obj.mapId)?.scene.add(root);
-    }
-    promptRoot=root;
-    // Match the game's action-arch binding glyph and semantic input color,
-    // including remapped keyboard controls and controller/touch prompts.
-    const action='interact';
-    const device=window.ActionPromptUI?.getLastInputDevice?.()||'desktop';
-    const binding=device==='touch'?'':window.InputBindings?.getCurrentBindings?.()?.[device]?.[action];
-    const inputHint=device==='touch'?'✋'
-      :(window.InputBindings?.buttonLabel?.(binding,device)||binding||'E');
-    const inputColor=window.ActionArchSlotColors?.inputColors?.[action]||'#B8C5C0';
-    window.WorldPopupText?.setInteractionPrompts?.(root,
-      [{label,worldInteraction:true,inputActionId:action,inputHint,inputColor}],
-      {scene:records.get(area())?.scene});
+  }
+  // Prompt-only rows merged into game.js's single floating-prompt pass. The
+  // module used to draw its own WorldPopupText list, which game.js's
+  // per-frame sync cleared ~120ms later: the visible prompt flicker.
+  function promptButtons() {
+    if(held||!promptClaim.startsWith('vase:'))return null;
+    if(window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return null;
+    const vase=records.get(area())?.vases.get(promptClaim.slice(5));
+    return vase&&!vase.exploded&&!vase.carried?vase.promptButtons||null:null;
   }
   function baseHeight(col,row) {
     const d=deps(),t=tileSize();
@@ -1053,12 +1118,12 @@
       state.mesh.computeBoundingSphere?.(); // Keep normal camera frustum culling after matrix changes.
     }
   }
-  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog') {
+  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null) {
     const id=kind+'_'+col+'_'+row;
     if(rec.piles.has(id))return;
-    rec.piles.set(id,{id,col,row,kind,woodKey,y,mapId}); // Logical loot records are distinct from the pooled GPU instance geometry.
+    rec.piles.set(id,{id,col,row,kind,woodKey,oreKey,y,mapId}); // Logical loot records are distinct from the pooled GPU instance geometry.
     if(!pileHistory.has(mapId))pileHistory.set(mapId,new Map());
-    pileHistory.get(mapId).set(id,{col,row,kind,woodKey}); // Persist once after the full blast, not once per pile.
+    pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey}); // Persist once after the full blast, not once per pile.
   }
   function destroyTerrain(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
@@ -1078,17 +1143,18 @@
       if(kind==='rock'&&tile.rockKind!=='diggableRockOre'&&!tile.caveSeparator)continue;
       const floor=baseHeight(col,row);
       const priorType=tile.type;
+      const oreKey=kind==='rock'?tile.oreKey||null:null; // Mine/zone ore nodes keep their ore in the rubble instead of vanishing.
       tile.type=types.GRASS||'grass';
       if(kind==='rock') {
         window.CavernOreRocks?.removeVisual?.(mapId,col,row); // O(1) tile-index removal, never a full THREE.Scene traversal per rock.
-        deps()?.removeZoneMineableRockVisual?.(mapId,col,row);
+        gameDeps?.removeZoneMineableRockVisual?.(mapId,col,row); // Zone and town-mine rock mounds.
       } else {
         window.ZoneRegrowth?.updateClearedZoneVegetationVisual?.(mapId,col,row,priorType);
-        deps()?.removeZoneVegetationVisual?.(mapId,col,row);
+        gameDeps?.removeZoneVegetationVisual?.(mapId,col,row);
       }
       delete tile.rockKind;delete tile.oreKind;delete tile.oreKey;delete tile.caveSeparator;
       const woodKey=String(tile.treeKind||tile.generatedObjectType||'').toLowerCase().includes('shadewood')?'shadewoodLog':'pineLog';
-      spawnPile(mapId,rec,col,row,kind,floor,woodKey);
+      spawnPile(mapId,rec,col,row,kind,floor,woodKey,oreKey);
       if(!terrainHistory.has(mapId))terrainHistory.set(mapId,new Map());
       terrainHistory.get(mapId).set(key(col,row),{kind,woodKey});
       changedChunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
@@ -1122,7 +1188,7 @@
       chunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
     }
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
-      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey);
+      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null);
     if(rec.piles.size)syncPileVisuals(rec);
     if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
       if(window.WildernessChunks)for(const cell of chunks.values())
@@ -1449,10 +1515,11 @@
   // selector gesture. A separate frame subscriber here would race that
   // dispatcher and accidentally recall equipment after pickup.
   window.Shattercasks=Object.freeze({
-    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
+    init,RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
+    contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Carried Shattercasks own only standard Action 1/2; Tool Select picks up; mobile arch stays in its existing slots.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Desktop E picks up casks; aimed rubble is an arch button with boosted yield and mine descent rolls; prompts render in game.js (no flicker).',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,

@@ -14115,9 +14115,10 @@
           // own `.userData.cameraObstacle` tags) — collected once here, same
           // as buildZoneScene's occlusionMeshes, rather than walking the
           // whole scene graph every frame in occlusionSafeCameraPosition.
-          const occlusionMeshes = [];
+          let occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
           for (const furniture of buildingCameraFurniture) if (!occlusionMeshes.includes(furniture)) occlusionMeshes.push(furniture); // Track even furniture that has no collision-grid marker.
+          occlusionMeshes = window.CameraOcclusionChunks?.replaceLargeMeshes?.(THREE, occlusionMeshes) || occlusionMeshes; // Cavern shells become near-ray-only chunk proxies (camera raycasts were the mine's main per-frame cost).
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
@@ -14887,73 +14888,11 @@
         return true;
       }
 
-      function revealMineDescentVisual(mapId, col, row) {
-        const info = _buildingScenes.get(mapId);
-        const floor = window.TownMine?.floorFromMapId?.(mapId);
-        if (!info?.scene || !floor || floor >= 100) return false;
-        const key = `${col},${row}`;
-        let hole = _mineDescentHoleMeshes.get(mapId)?.get(key);
-        if (!hole) {
-          hole = new THREE.Group();
-          const voidDisk = new THREE.Mesh(new THREE.CircleGeometry(0.37, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false }));
-          voidDisk.rotation.x = -Math.PI / 2;
-          voidDisk.position.y = 0.135;
-          hole.add(voidDisk);
-          const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.065, 8, 24), new THREE.MeshLambertMaterial({ color: 0x73777b }));
-          rim.rotation.x = Math.PI / 2;
-          rim.position.y = 0.15;
-          hole.add(rim);
-          const innerRim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0x25282b }));
-          innerRim.rotation.x = Math.PI / 2;
-          innerRim.position.y = 0.145;
-          hole.add(innerRim);
-          hole.position.set(col + 0.5, 0, row + 0.5);
-          info.scene.add(hole);
-          if (!_mineDescentHoleMeshes.has(mapId)) _mineDescentHoleMeshes.set(mapId, new Map());
-          _mineDescentHoleMeshes.get(mapId).set(key, hole);
-        }
-        if (!info.transitions.some(transition => transition.mineDynamicDescent)) {
-          info.transitions.push({
-            col, row, area: mapId, target: 'building',
-            targetMapId: window.TownMine.mapIdForFloor(floor + 1),
-            mineDynamicDescent: true,
-          });
-        }
-        return true;
-      }
-
-      function nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow) {
-        const info = _buildingScenes.get(mapId);
-        if (!info?.grid) return null;
-        const occupiedTransitions = new Set(info.transitions.map(transition => `${transition.col},${transition.row}`));
-        for (let radius = 0; radius <= 6; radius++) {
-          for (let row = preferredRow - radius; row <= preferredRow + radius; row++) {
-            for (let col = preferredCol - radius; col <= preferredCol + radius; col++) {
-              if (Math.max(Math.abs(col - preferredCol), Math.abs(row - preferredRow)) !== radius) continue;
-              const tile = info.grid[row]?.[col];
-              if (!tile || tile.type === TileType.ROCK || occupiedTransitions.has(`${col},${row}`)) continue;
-              return { col, row };
-            }
-          }
-        }
-        return null;
-      }
-
+      // Mine descent-hole discovery (revealMineDescentVisual /
+      // nearestWalkableMineHoleTile / tryRevealMineDescent) now lives in
+      // js/town-mine-descent.js (window.TownMineDescent); wired by init below.
       function tryRevealMineDescent(mapId, preferredCol, preferredRow, source) {
-        const state = _mineFloorRunStates.get(mapId);
-        if (!state || state.descentRevealed) return false;
-        if (source === 'rock') state.remainingRocks = Math.max(0, state.remainingRocks - 1);
-        if (source === 'enemy') state.remainingEnemies = Math.max(0, state.remainingEnemies - 1);
-        if (!state.canDescend) return false;
-        const chance = window.TownMine?.descentChance?.(source) || (source === 'enemy' ? 0.16 : 0.08); // Doubled base odds; TownMine adds the source-specific perk rank.
-        const guaranteedFallback = state.remainingRocks + state.remainingEnemies === 0;
-        if (!guaranteedFallback && Math.random() >= chance) return false;
-        const tile = nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow);
-        if (!tile || !revealMineDescentVisual(mapId, tile.col, tile.row)) return false;
-        state.descentRevealed = true;
-        state.descentCol = tile.col;
-        state.descentRow = tile.row;
-        return true;
+        return window.TownMineDescent.tryReveal(mapId, preferredCol, preferredRow, source);
       }
 
       // Wilderness zone ground-visual refresh after a runtime tile edit
@@ -19139,6 +19078,7 @@
         // each of these fires straight from its own action-bar slot near a
         // placed campfire (see getNearbyActions in wilderness-campfire.js)
         // instead of opening a shared panel first.
+        if (activeAction === 'shattercask_collect') { window.Shattercasks?.collectAimedPile?.(getReticleTile()); return; }
         if (activeAction === 'campfire_save') { window.WildernessCampfire?.doSave(); return; }
         if (activeAction === 'campfire_cook') { window.WildernessCampfire?.doCook(); return; }
         if (activeAction === 'campfire_brew') { window.WildernessCampfire?.doBrew(); return; }
@@ -25651,6 +25591,8 @@
         }
 
         const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
+        const rubbleButtons = !farmEditMode ? window.Shattercasks?.contextButtons?.(furnitureAim) : null; // Aimed Shattercask blast rubble; exact reticle tile (sticky while in reach), like corpse loot.
+        if (rubbleButtons) return rubbleButtons;
         const directFurniture = !farmEditMode && window.FurnitureTableSystem?.objectAt(currentArea, furnitureAim.col, furnitureAim.row);
         const directFurnitureButtons = directFurniture?.getButtons?.() || [];
         if (directFurnitureButtons.length) return directFurnitureButtons;
@@ -26055,7 +25997,13 @@
           || button?.action === 'corpse_hold_loot'
           || button?.action === 'climb_branch'
           || button?.action?.startsWith('obj_');
-        const interactionButton = btns.find(isWorldInteraction) || null;
+        const archInteractionButton = btns.find(isWorldInteraction) || null;
+        // Prompt-only rows that own no arch slot (an intact Shattercask's
+        // Interact pickup — an arch button would replace the weapon slot that
+        // melee-detonates it). Merged here so this stays the one prompt owner.
+        const promptOnlyButtons = archInteractionButton ? null : (window.Shattercasks?.promptButtons?.() || null);
+        const promptButtons = promptOnlyButtons ? btns.concat(promptOnlyButtons) : btns;
+        const interactionButton = archInteractionButton || promptOnlyButtons?.[0] || null;
         if (interactionButton) {
           _worldInteractionPromptAnchor.position.set(
             reticle.col + 0.5,
@@ -26068,7 +26016,7 @@
           || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
-        const promptInputs = btns.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
+        const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
           const actionId = button.inputAction || (button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
@@ -26078,7 +26026,7 @@
           };
         });
         window.WorldPopupText?.syncInteractionPrompts?.({
-          buttons: btns,
+          buttons: promptButtons,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
           scene: window.GridTileAccessors.getActiveScene(),
@@ -26194,7 +26142,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act === 'shattercask_collect' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -26965,6 +26913,12 @@
       function runInteractAction() {
         // Interact is reserved for world targets such as doors, NPCs, and
         // furniture. Tool swings and every held-item action use action slots.
+        // Desktop E taps arrive here directly (not via runInputAction), so
+        // world claims (e.g. Shattercask pickup) must be offered first too.
+        if (dispatchWorldInputClaim('interact', 'press', 'interact-tap')) {
+          dispatchWorldInputClaim('interact', 'release', 'interact-tap');
+          return;
+        }
         const toolSet = new Set(Object.values(toolActions).flat());
         const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
@@ -30152,6 +30106,24 @@
         refreshInventory: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
         save: saveMemberWorldData,
         travelToFloor: floor => enterBuilding(window.TownMine.mapIdForFloor(floor)),
+      });
+
+      window.TownMineDescent.init({
+        buildingScenes: _buildingScenes,
+        holeMeshes: _mineDescentHoleMeshes,
+        runStates: _mineFloorRunStates,
+        TileType,
+      });
+
+      // Blast cleanup in zones/mines and rubble rewards (js/shattercasks.js)
+      // need these game-owned helpers; Combat.deps exposes none of them.
+      window.Shattercasks?.init?.({
+        inventory,
+        removeZoneMineableRockVisual,
+        removeZoneVegetationVisual,
+        tryRevealMineDescent,
+        oreItemKey: metalOreItemKey,
+        itemLabel: key => ITEM_DEFS[key]?.label || key,
       });
 
       window.ZonePlateauMesa?.init({

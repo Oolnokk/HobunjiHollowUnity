@@ -281,6 +281,7 @@
     const enemySource = source === 'enemy'; // Used to select the separately balanced kill roll and its matching Mining perk.
     const perkId = enemySource ? 'collapsingBlows' : 'weakRockSense'; // Used to keep the two discovery upgrades independent.
     const perkRank = window.PerkSystem?.rank?.('mining', perkId) || 0; // Used by mine-floor runtime rolls and mobile-readable diagnostics.
+    if (source === 'rubble') return 0.35 + perkRank * 0.03; // Collecting Shattercask blast rubble: a blast cracks the floor far more readily than a pick.
     return enemySource ? 0.16 + perkRank * 0.03 : 0.08 + perkRank * 0.015;
   }
 
@@ -418,7 +419,7 @@
     const area = deps?.getCurrentArea?.(); // Used by the mobile-safe diagnostic report to identify the active mine context.
     const floor = floorFromMapId(area);
     const sceneInfo = floor ? deps?.buildingScenes?.get?.(area) : null; // Used to expose placement-clearance counts without requiring desktop developer tools.
-    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy') } };
+    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy'), rubble: descentChance('rubble') } };
     window.__farmLog?.(`[town-mine] ${JSON.stringify(snapshot)}`, 'info', 'mine');
     return snapshot;
   }

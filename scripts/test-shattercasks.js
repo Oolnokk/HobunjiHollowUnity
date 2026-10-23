@@ -52,10 +52,10 @@ assert(actionArcCode.includes('window.Shattercasks?.toolArchTap?.()') &&
   code.includes('syncToolArchPickup();') &&
   arcCss.includes('#toolBtn.shattercask-context'),
   'Tool Select directly picks up a facing-nearby Shattercask regardless of active equipment');
-assert(code.includes('WorldPopupText?.setInteractionPrompts') &&
+assert(!code.includes('WorldPopupText?.setInteractionPrompts') &&
   code.includes("WorldActionInputClaims?.setClaims") &&
   !code.includes("document.createElement('button')"),
-  'pickup uses the world prompt and native interaction claims instead of a standalone DOM button');
+  'pickup uses native interaction claims and game.js\'s single prompt pass (no competing popup owner, no standalone DOM button)');
 assert(asset.carryable.hitbox.enabled&&
   ['x','y','z'].every(axis=>asset.carryable.hitbox.size[axis]>0) &&
   code.includes('worldHitbox(vase)'),
@@ -350,8 +350,13 @@ async function scenario(reloading=false) {
   assert.equal(drawBudget.activeDebrisInstances,8,'two piles each contain four GPU instances');
   assert.equal(drawBudget.textureBatchesCreated,1,'texture uploads and material allocation occur only once');
   player.x=5.5*64;
-  assert(game.Shattercasks.interact(),'rubble is looted with one interaction');
-  assert.equal(inventory.stone,3,'stone becomes actual inventory stock');
+  assert.equal(game.Shattercasks.contextButtons({col:1,row:1}),null,'rubble the reticle is not on owns no arch slot');
+  const rubbleButtons=game.Shattercasks.contextButtons({col:5,row:3});
+  assert(rubbleButtons?.length===1&&rubbleButtons[0].action==='shattercask_collect'&&rubbleButtons[0].worldInteraction
+    &&rubbleButtons[0].promptRoot,'aimed rubble is an ordinary arch button with a floating-prompt anchor (touch, E and controller)');
+  assert.strictEqual(game.Shattercasks.contextButtons({col:5,row:3}),rubbleButtons,'per-frame arch query reuses the cached button list');
+  assert(game.Shattercasks.collectAimedPile({col:5,row:3}),'rubble is looted with one interaction');
+  assert(inventory.stone>=4&&inventory.stone<=5,'blast rubble pays more stone than breaking the rock by hand (2-3)');
   assert.equal(inventory.pebble,2,'stone pile also gives pebbles');
   assert.equal(game.Shattercasks.debugSnapshot().rubble.length,1,'looting does not remove the other pile');
   assert.equal(game.Shattercasks.debugSnapshot().performance.activeDebrisInstances,4,
