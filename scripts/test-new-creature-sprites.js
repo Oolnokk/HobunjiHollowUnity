@@ -6,6 +6,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const zlib = require('node:zlib'); // Decodes the actual eye sprite RGBA for tint regression tests.
 const read = file => fs.readFileSync(file, 'utf8');
 
 const present = new Set([...fs.readdirSync('docs/assets/creaturesprites'),
@@ -60,6 +61,66 @@ const eyePixels = new Uint8ClampedArray([
   173, 224, 225, 255, // Cyan iris detail must remain blue.
   0, 0, 0, 255,       // Solid black outline must remain black.
 ]); // Simulates the authored mint/iris colors without needing browser canvas APIs.
+// Decode the checked-in RGBA PNGs directly so each authored eye variant is tested, not only a synthetic pixel.
+function rgbaPng(filename) {
+  const bytes = fs.readFileSync(filename); // Uses the source file from the creature sprite directory.
+  assert.equal(bytes.toString('hex', 0, 8), '89504e470d0a1a0a');
+  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20); // Native raster dimensions for PNG row filters.
+  assert.equal(bytes[24], 8); assert.equal(bytes[25], 6); assert.equal(bytes[28], 0); // RGBA8, non-interlaced.
+  const chunks = []; // Accumulates PNG IDAT chunks for a single inflate.
+  for (let pos = 8; pos < bytes.length;) {
+    const n = bytes.readUInt32BE(pos), type = bytes.toString('ascii', pos + 4, pos + 8);
+    if (type === 'IDAT') chunks.push(bytes.subarray(pos + 8, pos + 8 + n));
+    pos += n + 12;
+  }
+  const inflated = zlib.inflateSync(Buffer.concat(chunks)); // One filter byte before each image row.
+  const stride = width * 4, rgba = new Uint8ClampedArray(stride * height); // Decoded channels fed into production's tint function.
+  let offset = 0; // Advances through the inflated scanlines.
+  for (let y = 0; y < height; y++) {
+    const filter = inflated[offset++]; // PNG predictor filter for this scanline.
+    assert(filter <= 4);
+    for (let x = 0; x < stride; x++) {
+      const index = y * stride + x;
+      const left = x >= 4 ? rgba[index - 4] : 0, up = y ? rgba[index - stride] : 0;
+      const corner = y && x >= 4 ? rgba[index - stride - 4] : 0;
+      let prediction = 0; // Inverse PNG None/Sub/Up/Average/Paeth filtering.
+      if (filter === 1) prediction = left;
+      else if (filter === 2) prediction = up;
+      else if (filter === 3) prediction = Math.floor((left + up) / 2);
+      else if (filter === 4) {
+        const p = left + up - corner, a = Math.abs(p - left), b = Math.abs(p - up), c = Math.abs(p - corner);
+        prediction = a <= b && a <= c ? left : b <= c ? up : corner;
+      }
+      rgba[index] = (inflated[offset++] + prediction) & 255;
+    }
+  }
+  assert.equal(offset, inflated.length, 'PNG scanlines must decode exactly');
+  return rgba;
+}
+const keyHsv = context.window.ColorFill.rgbToHsv(...render.hexToRgb(eyeKey.hex)); // Authored mint skin hue.
+const minSaturation = Math.max(0.04, keyHsv.s * eyeKey.minSaturationRatio); // Shared source-key selection rule.
+for (const pose of ['A','B','C','D']) {
+  const original = rgbaPng(`docs/assets/creaturesprites/nelk_eye-${pose}.png`);
+  const recolored = new Uint8ClampedArray(original); // Checks a distinct full-raster tint for each pose.
+  render.recolorKeyedPixels(recolored, render.hexToRgb('#E07090'), eyeKey);
+  let mint = 0, changed = 0, cyan = 0; // Counts recolorable skin, actually changed skin, and untouched iris details.
+  for (let i = 0; i < original.length; i += 4) {
+    if (!original[i + 3]) continue;
+    const hsv = context.window.ColorFill.rgbToHsv(original[i], original[i+1], original[i+2]);
+    const isMint = hsv.s >= minSaturation && context.window.ColorFill.hueDistance(hsv.h, keyHsv.h) <= eyeKey.hueTolerance;
+    const isChanged = original[i] !== recolored[i] || original[i+1] !== recolored[i+1] || original[i+2] !== recolored[i+2];
+    if (isMint) mint++;
+    if (isChanged) { changed++; assert(isMint, `Eye ${pose}: changed non-mint pixel`); }
+    if (hsv.h >= 165 && hsv.h <= 205 && hsv.s > .08 && original[i] > 40) {
+      cyan++;
+      assert(!isChanged, `Eye ${pose}: iris recolored`);
+    }
+    if (original[i] < 10 && original[i+1] < 10 && original[i+2] < 10)
+      assert(!isChanged, `Eye ${pose}: black outlines recolored`);
+  }
+  assert(mint >= 30 && changed >= 30, `Eye ${pose}: mint skin not tinted (${mint} matching, ${changed} changed)`);
+  assert(cyan > 0, `Eye ${pose}: expected cyan iris detail`);
+}
 const irisBefore = Array.from(eyePixels.slice(8, 12)); // Ensures the eye detail is unchanged after recoloring.
 render.recolorKeyedPixels(eyePixels, render.hexToRgb('#E07090'), eyeKey);
 assert(eyePixels[0] > eyePixels[1], 'Mint skin highlight should take the red genotype hue');
