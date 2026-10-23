@@ -157,7 +157,7 @@
   function primeAudioContext() {
     const context = ensureContext();
     if (!context) return false;
-    if (context.state === 'suspended' && !pendingContextResume) {
+    if ((context.state === 'suspended' || context.state === 'interrupted') && !pendingContextResume) {
       try {
         const resumed = context.resume();
         if (resumed?.then) {
