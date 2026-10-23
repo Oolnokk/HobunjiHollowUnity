@@ -13944,16 +13944,15 @@
               // is disabled. Only the clutch count depends on having a reward.
               _denNests.set(mapId, {
                 col: nestCol, row: nestRow, w: 2, h: 2,
+                floorY: tileSurfaceYInArea(bGrid?.[nestRow]?.[nestCol], mapId),
                 itemKey, liveBirth, remaining: itemKey ? (mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining) : 0, genotype: denGenotype,
               });
               if (!itemKey) {
                 window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
               }
-              // Simple nest marker so the 2x2 chamber reads as an objective.
-              const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
-              const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
-              nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
-              bScene.add(nestMarker);
+              // Build the actual nest even when the optional locale document
+              // is unavailable; do not depend on a later box-replacement pass.
+              window.DenNestSystem.ensureCavernNestFurniture(_denNests.get(mapId), bScene, buildFurnitureVisual);
             }
 
             // A "bigger, tunnely" den (see generateCavernFloor) deserves real
@@ -29836,6 +29835,7 @@
 
       window.DenNestSystem?.init({
         CREATURE_DB,
+        buildFurnitureVisual,
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },

@@ -300,6 +300,12 @@
 
   function ensureCavernNestFurniture(nest, scene) {
     if (!nest || !scene || !encounter || !window.AuthoredFurniture) return;
+    if (nest.mesh?.parent === scene && nest.mesh.userData?.denNestFurniture) {
+      nest.mesh.userData.denLocaleFurniture = true;
+      applyNestFurnitureTransform(nest.mesh, nest);
+      lastFurnitureUpgrade = 'cavern:shared-nest';
+      return;
+    }
     let state = cavernFurnitureState.get(nest);
     if (state?.scene === scene && state.group?.parent === scene) {
       applyNestFurnitureTransform(state.group, nest);
@@ -322,6 +328,7 @@
       group.userData.denLocaleFurniture = true;
       group.userData.denLocaleId = locale?.id || LOCALE_ID;
       scene.add(group);
+      nest.mesh = group;
       state.group = group;
       state.building = false;
       applyNestFurnitureTransform(group, nest);

@@ -53,6 +53,9 @@ async function main() {
     BoxGeometry: class { constructor(width, height, depth) { this.parameters = { width, height, depth }; } },
     Mesh: class { constructor(geometry, material) { Object.assign(this, object(), { geometry, material, isMesh: true }); } },
   };
+  context.tileSurfaceYInArea = () => 0;
+  context.buildFurnitureVisual = () => ({ ...object(), name: 'shared_authored_nest' });
+  vm.runInContext(fs.readFileSync('docs/js/den-nest-system.js', 'utf8'), context);
   vm.runInContext(nestSource, context);
   const nest = context._denNests.get(context.mapId); // The live record is also the locale renderer's source of truth.
   assert.equal(nest.itemKey, 'nelkBaby');
@@ -60,8 +63,9 @@ async function main() {
   assert.equal(context.CREATURE_DB.nelk.liveBirth, false, 'adult egg production metadata is unchanged');
   assert.equal(nest.remaining, 3, 'uncollected existing caves receive their deterministic configured clutch');
   assert.equal(context.hostileObjects.size, 1, 'mother still spawns');
+  assert.equal(nest.mesh?.parent, context.bScene, 'real nest exists at cave creation before any locale module loads');
+  assert(!context.bScene.children.some(child => child.isMesh), 'cave creation never draws the old brown box');
 
-  vm.runInContext(fs.readFileSync('docs/js/den-nest-system.js', 'utf8'), context);
   context.DenNestSystem.init({ _denNests: context._denNests, TILE: 32, activeSurfaceYAtWorld: () => 0, getCurrentArea: () => context.mapId, getActiveScene: () => context.bScene });
   const pending = context.DenNestSystem.debugSnapshot(); // Existing mobile diagnostics must resolve every Nelk record as a baby.
   assert.equal(pending.babyRecords.length, 3);

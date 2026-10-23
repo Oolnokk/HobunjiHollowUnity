@@ -162,6 +162,8 @@
   let _activeNestContentHoldId = null; // Used to reset the hold if the reticle moves from one clutch member to another.
   let _lastFocusedNestContent = null; // Used by mobile-visible diagnostics and the interaction-ray overlay.
   const _nestContentDebug = {
+    furnitureBuilds: 0,
+    legacyMarkersReplaced: 0,
     lastChange: 'Individual nest contents ready.',
     renderedNests: 0,
     renderedContents: 0,
@@ -181,6 +183,41 @@
     lastFocusedAlpha: null,
     lastError: null,
   }; // Mobile-friendly summary exposed through DenNestSystem.debugSnapshot().
+
+  function ensureCavernNestFurniture(nest, scene, buildFurniture = deps?.buildFurnitureVisual) {
+    if (!nest || !scene) return null;
+    if (nest.devArenaTestNest) return nest.mesh || null; // The arena spawner owns and disposes its own test furniture.
+    if (nest.mesh?.parent === scene) return nest.mesh;
+    if (!buildFurniture || performance.now() < (nest._furnitureRetryAt || 0)) return null;
+    try {
+      const mesh = buildFurniture('nest', 0xc9a227); // Uses the ordinary furniture pipeline, including its hollow-cup fallback and authored upgrade.
+      if (!mesh) return null;
+      const x = nest.col + nest.w / 2, z = nest.row + nest.h / 2; // Shared nest centre used to place the mesh and recognize old boxes.
+      const y = Number.isFinite(nest.floorY) ? nest.floorY : (deps?.activeSurfaceYAtWorld?.(x, z) || 0); // Captured cave floor wins when the scene is being built off-screen.
+      mesh.position.set(x, y, z);
+      mesh.userData.denNestFurniture = true;
+      mesh.userData.denNestArea = deps?.getCurrentArea?.() || null;
+      scene.add(mesh);
+      nest.mesh = mesh;
+      _nestContentDebug.furnitureBuilds++;
+      for (const marker of [...(scene.children || [])]) {
+        const shape = marker.geometry?.parameters; // Old generated nests are uniquely identified by dimensions, colour and this nest's centre.
+        if (marker === mesh || !marker.isMesh || marker.material?.color?.getHex?.() !== 0x3a2a1a
+          || shape?.width !== 2 || shape?.height !== 0.12 || shape?.depth !== 2
+          || Math.abs(marker.position.x - x) > 0.01 || Math.abs(marker.position.z - z) > 0.01) continue;
+        scene.remove(marker);
+        marker.geometry?.dispose?.();
+        marker.material?.dispose?.();
+        _nestContentDebug.legacyMarkersReplaced++;
+      }
+      _nestContentDebug.lastChange = 'Real cavern nest built directly; existing brown markers are repaired without resetting the clutch.';
+      return mesh;
+    } catch (error) {
+      nest._furnitureRetryAt = performance.now() + 1000;
+      _nestContentDebug.lastError = `Nest furniture: ${String(error?.message || error)}`;
+      return null;
+    }
+  }
 
   function isPlayerNearDenNest(nest) {
     const cx = (nest.col + nest.w / 2) * deps.TILE, cy = (nest.row + nest.h / 2) * deps.TILE;
@@ -588,7 +625,10 @@
 
     const area = deps.getCurrentArea();
     const cavernNest = deps._denNests.get(area);
-    if (cavernNest && activeScene) _syncOneNest(cavernNest, activeScene, 'cavern');
+    if (cavernNest && activeScene) {
+      ensureCavernNestFurniture(cavernNest, activeScene);
+      _syncOneNest(cavernNest, activeScene, 'cavern');
+    }
 
     const branches = window.ClimbSystem?.debugBranchesFor?.(area) || [];
     for (const branch of branches) {
@@ -833,6 +873,11 @@
     }
     return {
       ..._nestContentDebug,
+      furnitureRevision: 'direct-cavern-nest-v1',
+      currentNest: (() => {
+        const nest = deps?._denNests?.get?.(deps?.getCurrentArea?.()); // Reports the actual cached record instead of inferring offspring from a visible mesh.
+        return nest ? { itemKey: nest.itemKey || null, remaining: nest.remaining, liveBirth: nest.liveBirth, hasGenotype: !!nest.genotype, mesh: nest.mesh?.name || null, meshAttached: !!nest.mesh?.parent } : null;
+      })(),
       area: deps?.getCurrentArea?.() || null,
       alphaThreshold: NEST_CONTENT_ALPHA_THRESHOLD,
       holdSeconds: NEST_TAKE_HOLD_S,
@@ -863,6 +908,7 @@
   }
 
   window.DenNestSystem = {
+    ensureCavernNestFurniture,
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
     teleportToRandomDen, warpToDenAnchor,
     isPlayerNearDenNest, aimedCavernNest, currentAimedNest,
