@@ -187,6 +187,10 @@ assert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use 
 assert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');
 assert(played.at(-1).pitchSemitones > 15 && played.at(-1).pitchSemitones < 15.5, 'breathing receives the Nuhongan female species shift plus audible random variation');
 assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, true, 'breathing debug records an actual independent pitch handle');
+const breathBackendHandle = played.at(-1).handle; // Simulates a decoded renderer switching to a native fallback after the call already returned.
+breathBackendHandle.independentPitch = false;
+assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, false, 'mobile breath diagnostic reflects asynchronous renderer fallback');
+breathBackendHandle.independentPitch = true;
 assert.equal(played.at(-1).trimSilence, true, 'combat vocals request decoded silence trimming');
 assert.equal(played.at(-1).tailPadS, 0, 'combat vocals add no artificial silent tail after trimming');
 

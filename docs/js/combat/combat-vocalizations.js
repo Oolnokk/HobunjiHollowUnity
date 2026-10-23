@@ -244,6 +244,7 @@
   const activeChargeTokens = new Set(); // Used for cleanup/debug without coupling tokens to one combat archetype.
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
+  let lastBreathPlaybackHandle = null; // Mobile diagnostics inspect this handle after asynchronous render failures can switch playback to native audio.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
   const DODGE_DURATION_SCALE = 0.75; // Dodge compresses pain intensity 1 to 75% of its normal species/gender-modulated duration.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
@@ -512,6 +513,7 @@
       { intensity },
       'breath',
     );
+    lastBreathPlaybackHandle = played?.snd || null;
     debug.lastBreath = {
       atMs: Math.round(atMs),
       entity: entity?.id || entity?.npcId || entity?.name || (entity === player() ? 'player' : 'npc'),
@@ -1270,6 +1272,7 @@ function beginCharge(options = {}) {
 
   function resetTransientState() {
     attackActions.clear();
+    lastBreathPlaybackHandle = null;
     window.Combat?.input?.abortAllPresses?.();
     lastDotPainAtMsByEntity = new WeakMap();
     trackedBreathers.clear();
@@ -1374,7 +1377,10 @@ function beginCharge(options = {}) {
       })),
       liveChargeAbilities: [...liveChargesByAbility.keys()],
       modulation: voiceModulation(),
-      lastBreath: debug.lastBreath ? { ...debug.lastBreath } : null,
+      lastBreath: debug.lastBreath ? {
+        ...debug.lastBreath,
+        independentPitch: lastBreathPlaybackHandle?.independentPitch ?? debug.lastBreath.independentPitch, // Reflects native fallback even if the decode failed after playBreath returned.
+      } : null,
       lastPain: debug.lastPain ? { ...debug.lastPain } : null,
       lastDodge: debug.lastDodge ? { ...debug.lastDodge } : null,
       lastStrike: debug.lastStrike ? { ...debug.lastStrike } : null,
