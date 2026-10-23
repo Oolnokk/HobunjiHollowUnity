@@ -497,8 +497,8 @@
 
     const speciesDef = animalDeps?.CREATURE_DB?.[entry.kind] || {};
     const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
-    const adultWidth = entry.kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[entry.kind]) || 1.7);
-    const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
+    const adultWidth = entry.kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[entry.kind]) || 1.7); // Match Uumkao'ii's standing adult width after source-aspect correction.
+    const spriteAspect = Number(speciesDef.spriteAspect) || (entry.kind === 'uumkaoii' ? 451 / 641 : 600 / 1375);
     const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(entry.kind, entry.genotype) || { x: 1, y: 1 };
     const modelWidth = adultWidth * BABY_SCALE;
     const modelHeight = adultWidth * spriteAspect * BABY_SCALE;
