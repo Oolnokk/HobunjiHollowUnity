@@ -1242,10 +1242,32 @@
   }
 
   function scheduleNextCueDelay() {
-    const audioCfg = window.AudioSystem?.gameAudioConfig();
+    const audioCfg = window.AudioSystem?.gameAudioConfig() || {};
+    const pickedSec = pickWeightedCueDelaySec(audioCfg.ambientCueDelayChoicesSec);
+    if (pickedSec != null) {
+      _ambientCueState.nextAt = performance.now() + pickedSec * 1000;
+      return;
+    }
     const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
     const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 45);
     _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
+  }
+
+  // Picks the gap after a finished cue from a short authored list of
+  // discrete delays (shorter gaps weighted more heavily). Falls back to the
+  // older uniform min/max range when no choice list is configured.
+  function pickWeightedCueDelaySec(choices) {
+    const valid = (Array.isArray(choices) ? choices : [])
+      .map(choice => ({ sec: Math.max(0, Number(choice?.sec) || 0), weight: Math.max(0, Number(choice?.weight) || 0) }))
+      .filter(choice => choice.weight > 0);
+    if (!valid.length) return null;
+    const total = valid.reduce((sum, choice) => sum + choice.weight, 0);
+    let roll = Math.random() * total;
+    for (const choice of valid) {
+      roll -= choice.weight;
+      if (roll < 0) return choice.sec;
+    }
+    return valid[valid.length - 1].sec;
   }
 
   function beginAmbientCuePhase() {

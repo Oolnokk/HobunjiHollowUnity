@@ -3574,6 +3574,15 @@ window.SCRATCHBONES_CONFIG = {
         "bgsFadeMs": 1600,
         "ambientCueMinDelaySec": 20,
         "ambientCueMaxDelaySec": 45,
+        // Gap after each finished cue is one of these, picked when the cue ends;
+        // shorter gaps are likelier. Overrides the min/max range above.
+        "ambientCueDelayChoicesSec": [
+          { "sec": 0, "weight": 5 },
+          { "sec": 4, "weight": 4 },
+          { "sec": 8, "weight": 3 },
+          { "sec": 12, "weight": 2 },
+          { "sec": 16, "weight": 1 }
+        ],
         "ambientCuePhaseDurationSec": 120, // Stage B runs random standalone cues for two minutes after each complete song.
         "areaBgm": {
           "map_i_dev_random_ruin": [

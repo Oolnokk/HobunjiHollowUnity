@@ -492,5 +492,29 @@ assert.ok(fs.statSync(fishCaughtCuePath).size > 1000,
 assert.ok(fs.statSync(progressDeeperCuePath).size > 1000,
   'progress-deeper gameplay cue must be present and nonempty');
 
+// After each cue the gap is one of a few authored delays, shorter ones likelier.
+{
+  const state = { nextAt: 0 };
+  const choices = [{ sec: 0, weight: 5 }, { sec: 4, weight: 4 }, { sec: 8, weight: 3 }, { sec: 12, weight: 2 }, { sec: 16, weight: 1 }];
+  let roll = 0;
+  const context = {
+    window: { AudioSystem: { gameAudioConfig: () => ({ ambientCueDelayChoicesSec: choices, ambientCueMinDelaySec: 20, ambientCueMaxDelaySec: 45 }) } },
+    performance: { now: () => 1000 }, _ambientCueState: state,
+    Math: Object.create(Math, { random: { value: () => roll } }),
+  };
+  const delaySource = music.slice(music.indexOf('  function scheduleNextCueDelay()'), music.indexOf('  function beginAmbientCuePhase('));
+  vm.runInNewContext(delaySource, context);
+  const pickAt = r => { roll = r; context.scheduleNextCueDelay(); return (state.nextAt - 1000) / 1000; };
+  assert.equal(pickAt(0), 0, 'lowest roll picks the zero-second gap');
+  assert.equal(pickAt(5 / 15 - 1e-9), 0, 'zero seconds owns the largest weight band');
+  assert.equal(pickAt(5 / 15), 4, 'next band is four seconds');
+  assert.equal(pickAt(14 / 15), 16, 'top band is the rare sixteen-second gap');
+  const counts = new Map();
+  for (let i = 0; i < 15; i++) { const sec = pickAt((i + 0.5) / 15); counts.set(sec, (counts.get(sec) || 0) + 1); }
+  assert.deepEqual([...counts], [[0, 5], [4, 4], [8, 3], [12, 2], [16, 1]], 'shorter gaps are proportionally more likely');
+  context.window.AudioSystem.gameAudioConfig = () => ({ ambientCueMinDelaySec: 7, ambientCueMaxDelaySec: 7 });
+  assert.equal(pickAt(0.5), 7, 'without a choice list the legacy min/max range still applies');
+}
+
 console.log('music system tests passed');
 
