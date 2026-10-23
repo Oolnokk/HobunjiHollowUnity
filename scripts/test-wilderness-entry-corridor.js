@@ -117,7 +117,44 @@ for (const [key, tile] of backfilled) {
   assert(Math.abs(c - center) > 2, 'trees must remain outside 3-wide road + one-tile shoulders');
   assert.equal(tile.type, 'shrub');
   assert.equal(tile.plateau, 'plat_generated_tier_2_23');
+  assert.equal(c & 1, 0, 'reclaimed trees must align to the generator\'s 2x-scaled source lattice');
+  assert.equal(r & 1, 0, 'reclaimed trees must align to the generator\'s 2x-scaled source lattice');
+  assert(EntryCorridor.cloudForestTreePosition(c, r), 'reclaimed tree must survive normal Cloud Forest thinning');
 }
+
+// Density regression: the old checkerboard converted 50% of reclaimed tiles
+// into trees. Normal Cloud Forest saturation occupies one of four final tiles
+// BEFORE the 20% thinning and 1/6 variety replacement: ~1/6 after both.
+const cols = 96, rows = 100, bigTiles = {};
+for (let r = 0; r < 10; r++) for (let c = 47; c <= 49; c++) put(bigTiles, c, r);
+for (let r = 10; r < 14; r++) put(bigTiles, 48, r);
+for (let r = 14; r < 78; r++) for (let c = 37; c <= 59; c++) put(bigTiles, c, r);
+const big = {
+  maps: [{ id:'large_cloud_wilderness_root', cols, rows, tiles:bigTiles,
+    transitions:[{ id:'sp_generated_entry', label:'Entry north', col:48, row:0 }],
+    generatedFrom:{} }],
+};
+const bigReport = EntryCorridor.applyWorkspace(big, { zoneId:EntryCorridor.CLOUD_ID });
+assert.equal(bigReport.applied, true, 'large cloud-entry fixture must find delayed wide causeway');
+assert.equal(bigReport.wideSlices, 64);
+const candidates = [], actual = [];
+for (let r = 14; r < 78; r++) for (let c = 37; c <= 59; c++) {
+  if (Math.abs(c - 48) <= 2) continue; // The three-tile road and one-tile shoulders remain treeless.
+  const tile = bigTiles[c + ',' + r];
+  if ((c & 1) === 0 && (r & 1) === 0) candidates.push([c,r]);
+  if (tile.generatedObjectType === 'copse') actual.push([c,r]);
+}
+const actualLatticeFraction = actual.length / candidates.length;
+assert(Math.abs(actualLatticeFraction - EntryCorridor.CLOUD_FOREST_TREE_KEEP) < 0.08,
+  'causeway backfill must match normal survivor density, not 50% checkerboard: '
+    + actual.length + '/' + candidates.length);
+assert(actual.length < 220, 'backfill must be substantially sparser than the previous checkerboard');
+assert(actual.every(([c,r]) => ((c & 1) === 0 && (r & 1) === 0)),
+  'all backfill must respect two-dimensional tree spacing');
+const normalSample = Array.from({length:64},(_,r) => Array.from({length:64},(_,c) =>
+  EntryCorridor.cloudForestTreePosition(c,r) ? 1 : 0).reduce((a,b) => a+b,0)).reduce((a,b) => a+b,0);
+assert(Math.abs(normalSample / (64*64) - (1/6)) < 0.025,
+  'tree chooser must average near 1/6 of ordinary final-world cells over a full plot');
 
 console.log('PASS wilderness entry corridor V4', {
   ordinary: result,
