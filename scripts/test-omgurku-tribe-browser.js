@@ -116,6 +116,7 @@ const server=http.createServer((req,res)=>{
       return {neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};});
     assert.deepEqual(fight.neutral,[true,true],'tribe-vs-tribe fighting keeps both neutral to the player');
     const wildernessZones=await page.evaluate(()=>window.WildernessMapGenerator.zoneMapIds());
+    await page.evaluate(()=>{window.__hobunjiPlayerProfile.isWorldOwner=false;}); // This test uses the debug travel seam, not the owner's opening-story gate.
     for(const zoneId of wildernessZones){
       await page.evaluate(async id=>window.__hobunjiFurnitureDebug.enterZoneDebug(id),zoneId);
       await page.waitForFunction(id=>window.GridTileAccessors.getCurrentArea()===id&&window.Combat.deps.zoneLayouts.has(id),zoneId,{timeout:60000});
