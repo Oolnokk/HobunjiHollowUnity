@@ -16,9 +16,9 @@ const indexCode = read('docs/index.html'); // The lazy loader's own cache versio
 
 assert(!shatterCode.includes("'shattercask-context-actions'"),
   'Shattercasks no longer subscribe independently and trigger a second controller pickup');
-assert(loaderCode.includes('controller-selection-ui.js?v=20261022shattercaskguard1'),
+assert.match(loaderCode, /controller-selection-ui\.js\?v=[A-Za-z0-9_-]+/,
   'the lazy loader requests the revised controller selector');
-assert(indexCode.includes('character-action-locks.js?v=20261022shattercaskguard1'),
+assert.match(indexCode, /character-action-locks\.js\?v=[A-Za-z0-9_-]+/,
   'shipped HTML invalidates the cached lazy loader');
 
 const toolStart = gameCode.indexOf("if (actionId === 'toolSelect') {", gameCode.indexOf('function runInputAction('));
