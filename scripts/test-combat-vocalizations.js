@@ -94,7 +94,9 @@ context.window.dispatchEvent = event => emit(listeners, event.type, event.detail
 context.document = {
   addEventListener: (type, fn) => addListener(docListeners, type, fn),
 };
+let pitchBackendReady = true; // Tests startup context suspension independently of the audio mock's decoded playback.
 context.window.AnimalVoiceIndependentPlayback = {
+  readyForIndependentPitch: () => pitchBackendReady,
   playIndependent(url, opts = {}) {
     const entry = { url, ...opts, pitchPreserved: true, stopped: false, fadeOutS: null, handle: null };
     let finished = false;
@@ -185,12 +187,24 @@ assert(played.at(-1).url.includes('heavybreath_medium_intensity3'), 'non-exhaust
 assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));
 assert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use independent pitch preservation');
 assert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');
-assert(played.at(-1).pitchSemitones > 15 && played.at(-1).pitchSemitones < 15.5, 'breathing receives the Nuhongan female species shift plus audible random variation');
+assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'breathing retains its subtle variation on top of the Nuhongan female species pitch shift');
 assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, true, 'breathing debug records an actual independent pitch handle');
 const breathBackendHandle = played.at(-1).handle; // Simulates a decoded renderer switching to a native fallback after the call already returned.
 breathBackendHandle.independentPitch = false;
 assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, false, 'mobile breath diagnostic reflects asynchronous renderer fallback');
 breathBackendHandle.independentPitch = true;
+played.at(-1).handle.finish();
+pitchBackendReady = false;
+const beforeDeferredBreath = played.length; // Simulates the first breath arriving before Android/desktop AudioContext resume settles.
+scheduledBreath({ timestamp: 10000 });
+assert.equal(played.length, beforeDeferredBreath, 'breathing must not fall back to native unpitched playback during audio unlock');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.reason, 'audio-context-pending');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.suppressed, true);
+pitchBackendReady = true;
+scheduledBreath({ timestamp: 10100 });
+assert.equal(played.length, beforeDeferredBreath + 1, 'breathing retries promptly after the pitch-preserving backend becomes ready');
+assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'deferred breath retains the same species pitch shift');
+played.at(-1).handle.finish();
 assert.equal(played.at(-1).trimSilence, true, 'combat vocals request decoded silence trimming');
 assert.equal(played.at(-1).tailPadS, 0, 'combat vocals add no artificial silent tail after trimming');
 
@@ -406,7 +420,7 @@ for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfi
     played.at(-1).handle.finish();
     scheduledBreath({ timestamp: 100000 });
     assert(played.at(-1).url.includes('heavybreath_'));
-    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/breath pitch`);
+    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 0.2156)) < 1e-9, `${actor.id}/breath pitch`);
     assert.equal(played.at(-1).tempo, profile.tempo);
     assert.equal(played.at(-1).volume, Math.min(1, 0.72 * profile.gain));
     const breathEntry = played.at(-1); // Dodge must preempt this actor's breathing with the shared click-safe handoff.

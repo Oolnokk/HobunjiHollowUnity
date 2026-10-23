@@ -34,7 +34,7 @@
           "intervalHighStaminaS": 4.5,
           "intervalLowStaminaS": 1.25,
           "exhaustedIntervalS": 0.85,
-          "pitchRandomSemitones": 1.5,
+          "pitchRandomSemitones": 0.22,
           "volume": 0.72
       },
       "pain": {
@@ -396,6 +396,11 @@
     if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
+    // Passive breathing may begin while the page's Web Audio context is still unlocking.
+    // Retry instead of routing that early breath through native media playback, whose pitch preservation varies by browser.
+    if (voiceKind === 'breath' && window.AnimalVoiceIndependentPlayback?.readyForIndependentPitch?.() === false) {
+      return { suppressed: true, reason: 'audio-context-pending', voiceKind, ...detail };
+    }
     const claim = window.CharacterVoiceOwner?.request?.(entity, {
       kind: voiceKind,
       priority: voicePriority(voiceKind),
@@ -522,6 +527,7 @@
       maxStamina: Number(entity.maxStamina) || 0,
       exhausted: !!entity.exhaustion?.active,
       suppressed: !!played?.suppressed,
+      reason: played?.reason || null, // Identifies temporary audio-unlock suppression without using a desktop console.
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
       modulation: played?.modulation ? { ...played.modulation } : voiceModulation(entity), // Mobile diagnostics distinguish authored species pitch from randomized breath pitch.
@@ -1333,7 +1339,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Breathing now has audible pitch variation consistent with pain/grunts; mobile diagnostics show the actual breath pitch path. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Breathing now waits for Web Audio to unlock before playing, keeping the subtle authored pitch variation and species/gender shift; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,

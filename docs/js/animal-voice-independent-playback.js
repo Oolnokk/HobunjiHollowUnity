@@ -71,6 +71,7 @@
   const silenceTrimCache = new WeakMap(); // Decoded AudioBuffer -> WeakMap(AudioContext -> Map(settings -> trimmed result)); repeated breathing never rescans the same clip.
   const previewHandles = new Set();
   let sharedContext = null;
+  let pendingContextResume = null; // A pending gesture-unlock resume is shared by breathing retries rather than issuing one resume per frame.
   let adapterInstalled = false;
   let lastPlaybackError = null;
   let lastBackend = 'idle';
@@ -156,11 +157,24 @@
   function primeAudioContext() {
     const context = ensureContext();
     if (!context) return false;
-    if (context.state === 'suspended') {
-      try { context.resume()?.catch?.(error => { lastPlaybackError = error; }); }
-      catch (error) { lastPlaybackError = error; }
+    if (context.state === 'suspended' && !pendingContextResume) {
+      try {
+        const resumed = context.resume();
+        if (resumed?.then) {
+          pendingContextResume = Promise.resolve(resumed).catch(error => { lastPlaybackError = error; })
+            .finally(() => { pendingContextResume = null; });
+        }
+      } catch (error) { lastPlaybackError = error; }
     }
     return context.state === 'running';
+  }
+
+  function readyForIndependentPitch() {
+    const context = ensureContext();
+    if (!context) return true; // Browsers without Web Audio retain the existing native playback behavior.
+    if (context.state === 'running') return true;
+    primeAudioContext(); // Unlock asynchronously; passive breathing retries on its existing short suppression timer.
+    return false;
   }
   function installGestureUnlock() {
     if (typeof window.addEventListener !== 'function') return;
@@ -994,6 +1008,7 @@
     stopAllPreviews,
     stopAll() { for (const handle of [...activeHandles]) handle.stop(); },
     primeAudioContext,
+    readyForIndependentPitch,
     clampPitch,
     clampTempo,
     clipKey,
