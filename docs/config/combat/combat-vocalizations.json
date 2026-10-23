@@ -25,7 +25,7 @@
     "intervalHighStaminaS": 4.5,
     "intervalLowStaminaS": 1.25,
     "exhaustedIntervalS": 0.85,
-    "pitchRandomSemitones": 0.22,
+    "pitchRandomSemitones": 1.5,
     "volume": 0.72
   },
   "pain": {

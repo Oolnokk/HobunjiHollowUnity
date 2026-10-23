@@ -100,6 +100,7 @@ context.window.AnimalVoiceIndependentPlayback = {
     let finished = false;
     const finish = () => { if (finished) return; finished = true; opts.onFinished?.(); };
     const handle = {
+      independentPitch: true, // Mirrors the decoded WebAudio voice path so the mobile diagnostic can verify the selected backend.
       stop(fadeOutS = 0) { entry.stopped = true; entry.fadeOutS = fadeOutS; finish(); },
       finish,
     };
@@ -184,7 +185,8 @@ assert(played.at(-1).url.includes('heavybreath_medium_intensity3'), 'non-exhaust
 assert(!played.at(-1).url.includes('intensity4') && !played.at(-1).url.includes('intensity5'));
 assert.equal(played.at(-1).pitchPreserved, true, 'breath tempo changes must use independent pitch preservation');
 assert.equal(played.at(-1).tempo, 1, 'default vocal tempo remains 1x');
-assert(played.at(-1).pitchSemitones > 14 && played.at(-1).pitchSemitones < 14.3, 'breathing receives the same Nuhongan female species pitch shift plus small authored random variation');
+assert(played.at(-1).pitchSemitones > 15 && played.at(-1).pitchSemitones < 15.5, 'breathing receives the Nuhongan female species shift plus audible random variation');
+assert.equal(context.window.CombatVocalizations.debugSnapshot().lastBreath.independentPitch, true, 'breathing debug records an actual independent pitch handle');
 assert.equal(played.at(-1).trimSilence, true, 'combat vocals request decoded silence trimming');
 assert.equal(played.at(-1).tailPadS, 0, 'combat vocals add no artificial silent tail after trimming');
 
@@ -400,7 +402,7 @@ for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfi
     played.at(-1).handle.finish();
     scheduledBreath({ timestamp: 100000 });
     assert(played.at(-1).url.includes('heavybreath_'));
-    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 0.2156)) < 1e-9, `${actor.id}/breath pitch`);
+    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/breath pitch`);
     assert.equal(played.at(-1).tempo, profile.tempo);
     assert.equal(played.at(-1).volume, Math.min(1, 0.72 * profile.gain));
     const breathEntry = played.at(-1); // Dodge must preempt this actor's breathing with the shared click-safe handoff.
@@ -437,6 +439,13 @@ assert.equal(nativeDodge.snd.preservesPitch, false);
 assert(Math.abs(nativeDodge.snd.playbackRate - ((1 / 0.75) * Math.pow(2, (-6 + 1.47) / 12))) < 1e-9);
 assert.equal(nativeDodge.independentPitch, false);
 W.CharacterVoiceOwner.release(nativeDodge.claim);
+player.stamina = 5;
+scheduledBreath({ timestamp: 150000 });
+const nativeBreathDebug = W.CombatVocalizations.debugSnapshot().lastBreath; // Confirms that the native-only path still transposes a winded player's voice.
+assert.equal(nativeBreathDebug.independentPitch, false);
+assert(Math.abs(nativeBreathDebug.pitchSemitones - (-6 + 1.47)) < 1e-9, 'native breathing retains the authored Mashtzarr male pitch shift');
+assert.equal(W.CharacterVoiceOwner.current(player)?.kind, 'breath');
+W.CharacterVoiceOwner.stop(player, 0);
 
 // Execute the real ordinary dodge entry point, including all its early exits.
 const dodgeActor = { x: 0, y: 0, angle: 0, inputStrength: 1, inputX: 1, inputY: 0, stamina: 100 }; // Isolated player for the authoritative game.js action.

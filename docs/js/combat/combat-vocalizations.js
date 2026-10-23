@@ -34,7 +34,7 @@
           "intervalHighStaminaS": 4.5,
           "intervalLowStaminaS": 1.25,
           "exhaustedIntervalS": 0.85,
-          "pitchRandomSemitones": 0.22,
+          "pitchRandomSemitones": 1.5,
           "volume": 0.72
       },
       "pain": {
@@ -454,7 +454,7 @@
       tempo: plan.tempo,
       pitchSemitones: plan.pitchSemitones,
       modulation: plan.modulation,
-      independentPitch: !!(window.AnimalVoiceIndependentPlayback?.playIndependent || window.AnimalVoiceIndependentPlayback?.play),
+      independentPitch: snd?.independentPitch ?? (snd ? Math.abs(plan.pitchSemitones) < 0.05 : false), // Report the real playback handle, not merely whether an independent renderer exists.
       suppressed: false,
       ...detail,
     };
@@ -522,6 +522,8 @@
       suppressed: !!played?.suppressed,
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
+      modulation: played?.modulation ? { ...played.modulation } : voiceModulation(entity), // Mobile diagnostics distinguish authored species pitch from randomized breath pitch.
+      independentPitch: played?.independentPitch ?? null, // Records whether this particular breath used the pitch-preserving backend.
     };
     return played;
   }
@@ -1285,7 +1287,7 @@ function beginCharge(options = {}) {
     } catch (_) {}
 
     const request = typeof fetch === 'function'
-      ? fetch(`${CONFIG_URL}?v=20261013vocal3`).then(response => response.ok ? response.json() : null)
+      ? fetch(`${CONFIG_URL}?v=20261023breathPitch1`).then(response => response.ok ? response.json() : null)
       : Promise.resolve(null);
 
     return request.then(authored => {
@@ -1328,7 +1330,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Breathing now has audible pitch variation consistent with pain/grunts; mobile diagnostics show the actual breath pitch path. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,

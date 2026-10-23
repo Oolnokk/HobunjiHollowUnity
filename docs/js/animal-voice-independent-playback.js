@@ -778,6 +778,7 @@
     const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
     if (!context || context.state !== 'running') {
       active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      handle.independentPitch = active?.independentPitch ?? false; // Native fallback cannot preserve authored pitch independently of playback speed.
       return handle;
     }
     lastBackend = 'fixed render pending';
@@ -796,6 +797,7 @@
         if (stopped) return;
         lastPlaybackError = error;
         active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+        handle.independentPitch = active?.independentPitch ?? false; // Decoding/render failure also downgrades the handle's reported pitch backend.
       });
     return handle;
   }
