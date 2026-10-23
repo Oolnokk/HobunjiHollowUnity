@@ -36,6 +36,7 @@ const context = {
 };
 context.Math.random = () => 0; // Deterministic next-eye direction for each simulated blink.
 vm.createContext(context);
+vm.runInContext(read('docs/js/color-fill.js'), context, { filename: 'color-fill.js' }); // Loads the exact tint math used by game canvases.
 vm.runInContext(read('docs/js/creature-genetics-render.js'), context, { filename: 'creature-genetics-render.js' });
 vm.runInContext(read('docs/js/creature-genetics.js'), context, { filename: 'creature-genetics.js' });
 vm.runInContext(read('docs/js/creature-blink.js'), context, { filename: 'creature-blink.js' });
@@ -51,6 +52,22 @@ assert.equal(render.eyeStateKey('C'), 'eye-C');
 assert.equal(render.eyeStateKey(true), 'b');
 assert.equal(render.eyeStateKey(false), 'o');
 assert.equal(render.eyeStatesForKind('nelk').join(','), 'A,B,C,D');
+const eyeKey = render.SPECIES.nelk.eyes.skinRecolorKey; // Used to verify the exact color-key predicate installed for all four eye poses.
+assert(eyeKey && render.SPECIES.nelk.eyes.variants.length === 4, 'Every Nelk eye pose uses one skin recolor rule');
+const eyePixels = new Uint8ClampedArray([
+  163, 200, 159, 255, // Mint skin highlight should track the inherited base tint.
+  112, 146, 111, 255, // Darker mint skin shadow should preserve shading.
+  173, 224, 225, 255, // Cyan iris detail must remain blue.
+  0, 0, 0, 255,       // Solid black outline must remain black.
+]); // Simulates the authored mint/iris colors without needing browser canvas APIs.
+const irisBefore = Array.from(eyePixels.slice(8, 12)); // Ensures the eye detail is unchanged after recoloring.
+render.recolorKeyedPixels(eyePixels, render.hexToRgb('#E07090'), eyeKey);
+assert(eyePixels[0] > eyePixels[1], 'Mint skin highlight should take the red genotype hue');
+assert(eyePixels[4] > eyePixels[5], 'Mint skin shadow should take the red genotype hue');
+assert(eyePixels[0] > eyePixels[4], 'The brighter skin pixel should remain brighter after tinting');
+assert.deepEqual(Array.from(eyePixels.slice(8, 12)), irisBefore, 'Cyan iris must remain intact');
+assert.deepEqual(Array.from(eyePixels.slice(12, 16)), [0, 0, 0, 255], 'Black eye outlines must remain intact');
+
 
 const patterns = { brushtail: { enabled: true, copies: 2, color: '#445566' },
   cape: { enabled: true, copies: 1, color: '#aabbcc' } };
