@@ -154,15 +154,17 @@
     try { sharedContext = new AudioCtx(); return sharedContext; }
     catch (error) { lastPlaybackError = error; return null; }
   }
-  function primeAudioContext() {
+  function primeAudioContext(fromUserGesture = false) {
     const context = ensureContext();
     if (!context) return false;
-    if ((context.state === 'suspended' || context.state === 'interrupted') && !pendingContextResume) {
+    // A background resume can remain pending until a trusted gesture, so never let it block the gesture itself.
+    if ((context.state === 'suspended' || context.state === 'interrupted') && (!pendingContextResume || fromUserGesture)) {
       try {
         const resumed = context.resume();
         if (resumed?.then) {
-          pendingContextResume = Promise.resolve(resumed).catch(error => { lastPlaybackError = error; })
-            .finally(() => { pendingContextResume = null; });
+          const pending = Promise.resolve(resumed).catch(error => { lastPlaybackError = error; }); // Tracks one resume attempt so older pending completions cannot clear a newer gesture attempt.
+          pendingContextResume = pending;
+          pending.finally(() => { if (pendingContextResume === pending) pendingContextResume = null; });
         }
       } catch (error) { lastPlaybackError = error; }
     }
@@ -178,7 +180,7 @@
   }
   function installGestureUnlock() {
     if (typeof window.addEventListener !== 'function') return;
-    const unlock = () => primeAudioContext();
+    const unlock = () => primeAudioContext(true); // Trusted input may restart a resume left pending by a breathing-frame readiness check.
     window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
     window.addEventListener('touchstart', unlock, { capture: true, passive: true });
     window.addEventListener('keydown', unlock, { capture: true });
