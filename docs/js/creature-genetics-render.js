@@ -104,7 +104,7 @@
       },
       patterns: ['brushtail', 'cape', 'spectacles'],
       eyes: { mode: 'cycle', variants: ['A','B','C','D'].map(id => `assets/creaturesprites/nelk_eye-${id}.png`),
-        skinRecolorKey: { hex: '#A3C89F', hueTolerance: 20, minSaturationRatio: 0.45 } }, // Matches mint skin in every eye pose while excluding blue iris, highlights, and black outlines.
+        skinRecolorKey: { hex: '#A3C89F', hueTolerance: 20, minSaturationRatio: 0.45, minValue: 0.12 } }, // Matches mint skin in every eye pose while excluding blue iris, highlights, and black outlines.
     },
     nazgraku: {
       prefix: 'nzg',
@@ -250,10 +250,11 @@
       const keyHsv = colorFill.rgbToHsv(...keyRgb);
       const tolerance = Number.isFinite(sourceKey.hueTolerance) ? sourceKey.hueTolerance : 20;
       const minSaturation = Math.max(0.04, keyHsv.s * (Number.isFinite(sourceKey.minSaturationRatio) ? sourceKey.minSaturationRatio : 0.45));
+      const minValue = Number.isFinite(sourceKey.minValue) ? Math.max(0, Math.min(1, sourceKey.minValue)) : 0; // Species-specific outline protection for dark pixels whose noisy hue resembles the coat.
       for (let i = 0; i < px.length; i += 4) {
         if (!px[i + 3]) continue;
         const hsv = colorFill.rgbToHsv(px[i], px[i + 1], px[i + 2]);
-        matches[i >> 2] = hsv.s >= minSaturation && colorFill.hueDistance(hsv.h, keyHsv.h) <= tolerance ? 1 : 0;
+        matches[i >> 2] = hsv.v >= minValue && hsv.s >= minSaturation && colorFill.hueDistance(hsv.h, keyHsv.h) <= tolerance ? 1 : 0;
       }
     }
     return i => matches[i >> 2] === 1;
@@ -459,9 +460,9 @@
   // where in spec.patterns a given species happens to draw "spectacles" —
   // dabinggi-hound's stripes layer draws after its own spectacles, for
   // instance) so the eyes always render above any spectacles pattern,
-  // never the other way around. Untinted raw art, same convention as the
-  // NPC portrait pipeline's "untinted_regions" overlays — these are
-  // already fully painted eye sprites, not a recolor target.
+  // never the other way around. Eyes are normally untinted like NPC
+  // untinted_regions; Nelk's eye sprite has mint skin and therefore opts
+  // into keyed skin-only recoloring while retaining its painted iris.
   let composeTail = Promise.resolve(); // One native-resolution compositor at a time bounds overlapping pixel arrays and temporary canvases.
   let composePending = 0, composeActive = 0; // Mobile checkpoint diagnostics distinguish queued requests from actual allocation work.
   async function composeFrame(kind, frame, genotype, blinkShut = false) {
