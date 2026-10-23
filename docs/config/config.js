@@ -290,11 +290,19 @@
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
 
+  // Sampled once per grass instance on every town grass refilter and per actor
+  // per frame by the town elevation bridges, so the "has any heights" check is
+  // memoized by object identity instead of re-allocating Object.keys() over
+  // every town tile on each call.
+  let nonEmptyVisualHeights = null;
   function visualHeightMap() {
-    const live = capturedDeps?.getTownZone?.();
     const cached = root.__hobunjiTownElevationMap;
-    if (cached?.visualHeights && Object.keys(cached.visualHeights).length) return cached;
-    return live;
+    const heights = cached?.visualHeights;
+    if (heights && (heights === nonEmptyVisualHeights || Object.keys(heights).length)) {
+      nonEmptyVisualHeights = heights;
+      return cached;
+    }
+    return capturedDeps?.getTownZone?.();
   }
 
   function sampleHeight(map, x, z) {
