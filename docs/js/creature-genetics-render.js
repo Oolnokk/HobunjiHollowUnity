@@ -103,7 +103,8 @@
         run2: 'assets/creaturesprites/nelk_run2.png',
       },
       patterns: ['brushtail', 'cape', 'spectacles'],
-      eyes: { mode: 'cycle', variants: ['A','B','C','D'].map(id => `assets/creaturesprites/nelk_eye-${id}.png`) },
+      eyes: { mode: 'cycle', variants: ['A','B','C','D'].map(id => `assets/creaturesprites/nelk_eye-${id}.png`),
+        skinRecolorKey: { hex: '#A3C89F', hueTolerance: 20, minSaturationRatio: 0.45 } }, // Matches mint skin in every eye pose while excluding blue iris, highlights, and black outlines.
     },
     nazgraku: {
       prefix: 'nzg',
@@ -549,7 +550,10 @@
         ? spec.eyes.variants[Math.max(0, Math.min(3, 'ABCD'.indexOf(typeof blinkShut === 'string' ? blinkShut : 'A')))]
         : (blinkShut ? spec.eyes.blink : spec.eyes.open); // Shared boolean blinks and four-way chameleon eyes use one compositing pipeline.
       try {
-        const eyeImg = await loadImage(eyeUrl);
+        const eyeSkinKey = spec.eyes.skinRecolorKey; // Optional keyed skin recolor for the eye overlay, sharing the coat's genotype color.
+        const eyeImg = eyeSkinKey && baseColor
+          ? await recoloredBase(eyeUrl, baseColor, null, false, null, `${kind}-eye`, eyeSkinKey)
+          : await loadImage(eyeUrl);
         ctx.drawImage(eyeImg, 0, 0, c.width, c.height);
       } catch (e) {
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): eye overlay failed to load (${eyeUrl}) — skipped: ${e.message}`, 'warn');
@@ -562,7 +566,7 @@
     // covers the base sprite's network load + recolor pixel pass, patternMs
     // covers every enabled pattern layer's load+recolor combined.
     const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : sourceKey ? 'source-key' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.
-    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} sourceRef=${spec.baseShadeReferenceHex || 'auto'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} sourceRef=${spec.baseShadeReferenceHex || 'auto'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} eyeSkinTint=${!!(spec.eyes?.skinRecolorKey && baseColor)} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
   }
 
