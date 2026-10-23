@@ -23,7 +23,7 @@ async function checkSpecies(kind) {
   const aspect = png.readUInt32BE(20) / png.readUInt32BE(16); // Native height divided by width, independent of the legacy fallback.
   const scene = group('test_scene'); // Captures completed world roots and their alpha-target planes.
   const genotype = { sizeClass: 'large', base: { color: '#abcdef', copies: 2 } }; // Exact family genes must reach the compositor without a reroll.
-  const nest = { col: 4, row: 7, w: 2, h: 2, itemKey: `${kind}Baby`, liveBirth: true, remaining: 1, genotype }; // Uses the new real hatchling item keys.
+  const nest = { col: 4, row: 7, w: 2, h: 2, floorY: -0.4, itemKey: `${kind}Baby`, liveBirth: true, remaining: 1, genotype }; // Explicit cave floor intentionally differs from the active surface query.
   const builds = []; // Captures actual model dimensions passed to the shared PNG avatar builder.
   const canvas = { width: 1, height: 1 }; // Composed canvas is sufficient for world-plane tagging in this fixture.
   const context = vm.createContext({
@@ -59,6 +59,7 @@ async function checkSpecies(kind) {
   assert.equal(debug.babyRecords[0].alphaReady, true);
   assert.equal(debug.babyRecords[0].hitPlanes, 2);
   assert.equal(debug.babyBuildFailures, 0);
+  assert(Math.abs(scene.children[0].position.y - debug.babyRecords[0].groundLift - nest.floorY) < 1e-12, 'hatchling and nest furniture share the captured cave floor');
   assert.equal(scene.children[0].scale.y, 0.75, 'normal inherited scale and sleeping flattening are both applied');
   assert(scene.children[0].children.every(plane => plane.userData.nestContentAlphaCanvas === canvas), 'both targetable sprite planes use the inherited-genotype canvas');
 }

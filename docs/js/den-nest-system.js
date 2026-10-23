@@ -184,10 +184,18 @@
     lastError: null,
   }; // Mobile-friendly summary exposed through DenNestSystem.debugSnapshot().
 
+  function isLegacyCavernNestMarker(marker, nest) {
+    const shape = marker?.geometry?.parameters; // Identifies the exact old box at this nest's centre, including cached mesh references.
+    return !!marker?.isMesh && marker.material?.color?.getHex?.() === 0x3a2a1a
+      && shape?.width === 2 && shape?.height === 0.12 && shape?.depth === 2
+      && Math.abs(marker.position.x - nest.col - nest.w / 2) <= 0.01
+      && Math.abs(marker.position.z - nest.row - nest.h / 2) <= 0.01;
+  }
+
   function ensureCavernNestFurniture(nest, scene, buildFurniture = deps?.buildFurnitureVisual) {
     if (!nest || !scene) return null;
     if (nest.devArenaTestNest) return nest.mesh || null; // The arena spawner owns and disposes its own test furniture.
-    if (nest.mesh?.parent === scene) return nest.mesh;
+    if (nest.mesh?.parent === scene && !isLegacyCavernNestMarker(nest.mesh, nest)) return nest.mesh;
     if (!buildFurniture || performance.now() < (nest._furnitureRetryAt || 0)) return null;
     try {
       const mesh = buildFurniture('nest', 0xc9a227); // Uses the ordinary furniture pipeline, including its hollow-cup fallback and authored upgrade.
@@ -196,15 +204,11 @@
       const y = Number.isFinite(nest.floorY) ? nest.floorY : (deps?.activeSurfaceYAtWorld?.(x, z) || 0); // Captured cave floor wins when the scene is being built off-screen.
       mesh.position.set(x, y, z);
       mesh.userData.denNestFurniture = true;
-      mesh.userData.denNestArea = deps?.getCurrentArea?.() || null;
       scene.add(mesh);
       nest.mesh = mesh;
       _nestContentDebug.furnitureBuilds++;
       for (const marker of [...(scene.children || [])]) {
-        const shape = marker.geometry?.parameters; // Old generated nests are uniquely identified by dimensions, colour and this nest's centre.
-        if (marker === mesh || !marker.isMesh || marker.material?.color?.getHex?.() !== 0x3a2a1a
-          || shape?.width !== 2 || shape?.height !== 0.12 || shape?.depth !== 2
-          || Math.abs(marker.position.x - x) > 0.01 || Math.abs(marker.position.z - z) > 0.01) continue;
+        if (!isLegacyCavernNestMarker(marker, nest)) continue;
         scene.remove(marker);
         marker.geometry?.dispose?.();
         marker.material?.dispose?.();
@@ -353,7 +357,7 @@
       return { x: nest.x / deps.TILE, y, z: nest.y / deps.TILE };
     }
     const x = nest.col + nest.w / 2, z = nest.row + nest.h / 2;
-    return { x, y: deps.activeSurfaceYAtWorld(x, z), z };
+    return { x, y: Number.isFinite(nest.floorY) ? nest.floorY : deps.activeSurfaceYAtWorld(x, z), z };
   }
 
   function _contentOffset(index, count) {

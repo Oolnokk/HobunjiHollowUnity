@@ -15,6 +15,7 @@ for (const remaining of [0, 1, 3]) {
   scene.add(legacy);
   const genotype = { base: { color: '#abcdef' }, sizeClass: 'large' }; // Existing inherited bloodline must survive repair by identity.
   const nest = { col: 4, row: 7, w: 2, h: 2, itemKey: 'nelkBaby', liveBirth: true, remaining, genotype }; // A saved empty clutch must stay empty too.
+  if (remaining === 1) nest.mesh = legacy; // Covers an older cached record that explicitly points at its fake mesh.
   let builds = 0; // Confirms per-frame sync does not repeatedly rebuild furniture.
   const context = vm.createContext({ document: { getElementById() {} }, performance, window: { SCRATCHBONES_CONFIG: { game: { livestock: { itemKinds: { nelkBaby: 'nelk' } } } } } }); // Deliberately omits DenLocaleRuntime and AuthoredFurniture.
   vm.runInContext(source, context);

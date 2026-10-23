@@ -145,7 +145,7 @@
     // Den locale runtime is an ordinary sibling module, not a script injected
     // from inside Puktuk registration. Keeping one parser-owned loader prevents
     // den setup from perturbing held-item/stance bootstrap ordering.
-    ['js/den-locale-runtime.js?v=20261023hb67e631', () => Number(window.DenLocaleRuntime?.version) >= 4],
+    ['js/den-locale-runtime.js?v=20261023h95ecfb3', () => Number(window.DenLocaleRuntime?.version) >= 4],
     ['js/puktuk-den-nest-registration.js?v=20261019h4aab194', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
