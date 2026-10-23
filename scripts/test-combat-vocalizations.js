@@ -464,7 +464,7 @@ player.stamina = 5;
 scheduledBreath({ timestamp: 150000 });
 const nativeBreathDebug = W.CombatVocalizations.debugSnapshot().lastBreath; // Confirms that the native-only path still transposes a winded player's voice.
 assert.equal(nativeBreathDebug.independentPitch, false);
-assert(Math.abs(nativeBreathDebug.pitchSemitones - (-6 + 1.47)) < 1e-9, 'native breathing retains the authored Mashtzarr male pitch shift');
+assert(Math.abs(nativeBreathDebug.pitchSemitones - (-6 + 0.2156)) < 1e-9, 'native breathing retains the authored Mashtzarr male pitch shift and subtle randomized variation');
 assert.equal(W.CharacterVoiceOwner.current(player)?.kind, 'breath');
 W.CharacterVoiceOwner.stop(player, 0);
 
