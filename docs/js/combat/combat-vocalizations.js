@@ -245,6 +245,7 @@
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
   let lastBreathPlaybackHandle = null; // Mobile diagnostics inspect this handle after asynchronous render failures can switch playback to native audio.
+  let pitchBackendMissingSinceMs = null; // Bounds the startup wait for the asynchronously loaded pitch renderer before native compatibility fallback.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
   const DODGE_DURATION_SCALE = 0.75; // Dodge compresses pain intensity 1 to 75% of its normal species/gender-modulated duration.
   const BREATH_RETRY_AFTER_SUPPRESSION_MS = 100; // Resume passive breathing promptly once pain/attack vocals release the mouth.
@@ -396,10 +397,21 @@
     if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
-    // Passive breathing may begin while the page's Web Audio context is still unlocking.
-    // Retry instead of routing that early breath through native media playback, whose pitch preservation varies by browser.
-    if (voiceKind === 'breath' && window.AnimalVoiceIndependentPlayback?.readyForIndependentPitch?.() === false) {
-      return { suppressed: true, reason: 'audio-context-pending', voiceKind, ...detail };
+    // Passive breathing may begin before the asynchronously requested playback module loads.
+    // Don't immediately use native playback at startup: its browser-dependent pitch preservation can leave early breaths untransposed.
+    if (voiceKind === 'breath') {
+      const pitchPlayback = window.AnimalVoiceIndependentPlayback; // Shared renderer needed for consistent species/gender pitch shifting.
+      if (!pitchPlayback) {
+        if (pitchBackendMissingSinceMs == null) pitchBackendMissingSinceMs = nowMs();
+        if (nowMs() - pitchBackendMissingSinceMs < 5000) { // Bounded wait keeps native-only/failed-load browsers from losing breathing indefinitely.
+          return { suppressed: true, reason: 'pitch-renderer-loading', voiceKind, ...detail };
+        }
+      } else {
+        pitchBackendMissingSinceMs = null;
+        if (pitchPlayback.readyForIndependentPitch?.() === false) {
+          return { suppressed: true, reason: 'audio-context-pending', voiceKind, ...detail };
+        }
+      }
     }
     const claim = window.CharacterVoiceOwner?.request?.(entity, {
       kind: voiceKind,
@@ -1339,7 +1351,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Breathing now waits for Web Audio to unlock before playing, keeping the subtle authored pitch variation and species/gender shift; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,

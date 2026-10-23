@@ -462,6 +462,10 @@ assert.equal(nativeDodge.independentPitch, false);
 W.CharacterVoiceOwner.release(nativeDodge.claim);
 player.stamina = 5;
 scheduledBreath({ timestamp: 150000 });
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.reason, 'pitch-renderer-loading', 'breathing waits for an asynchronously loading pitch renderer');
+assert.equal(W.CombatVocalizations.debugSnapshot().lastBreath.suppressed, true);
+now += 6000; // Simulates an unavailable module after the bounded startup retry window.
+scheduledBreath({ timestamp: 150100 });
 const nativeBreathDebug = W.CombatVocalizations.debugSnapshot().lastBreath; // Confirms that the native-only path still transposes a winded player's voice.
 assert.equal(nativeBreathDebug.independentPitch, false);
 assert(Math.abs(nativeBreathDebug.pitchSemitones - (-6 + 0.2156)) < 1e-9, 'native breathing retains the authored Mashtzarr male pitch shift and subtle randomized variation');
