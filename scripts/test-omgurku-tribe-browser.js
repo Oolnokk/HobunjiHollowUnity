@@ -118,8 +118,11 @@ const server=http.createServer((req,res)=>{
     const wildernessZones=await page.evaluate(()=>window.WildernessMapGenerator.zoneMapIds());
     await page.evaluate(()=>{window.__hobunjiPlayerProfile.isWorldOwner=false;}); // This test uses the debug travel seam, not the owner's opening-story gate.
     for(const zoneId of wildernessZones){
-      await page.evaluate(async id=>window.__hobunjiFurnitureDebug.enterZoneDebug(id),zoneId);
-      await page.waitForFunction(id=>window.GridTileAccessors.getCurrentArea()===id&&window.Combat.deps.zoneLayouts.has(id),zoneId,{timeout:60000});
+      const entered=await page.evaluate(async id=>{
+        await window.__hobunjiFurnitureDebug.enterZoneDebug(id);
+        return window.GridTileAccessors.getCurrentArea()===id&&window.Combat.deps.zoneLayouts.has(id);
+      },zoneId);
+      assert(entered,`zone transition completes with its layout loaded (${zoneId})`);
       await page.waitForFunction(id=>window.OmgurkuCamps.debugSnapshot().zones[id]&&window.PorakanekiCamps.debugSnapshot().zones[id],zoneId,{timeout:60000});
     }
     await page.evaluate(()=>window.DevSpawner.teleportToDevArena());
