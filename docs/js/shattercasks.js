@@ -619,8 +619,9 @@
     setHeldRearXray(cask);
     Object.assign(lastEquipment,switchEquipment());
     lastEvent='picked up '+cask.id;
-    refreshCarriedArch();
-    deps()?.showToast?.('Carrying Shattercask — Item Action 1: hold and release to throw; Action 2: drop.',false);
+    prompt(); // Claim Action 1/2 immediately after the Tool Select pickup.
+    deps()?.refreshActionBar?.(); // Rebuild native tool/item slots on every input device.
+    deps()?.showToast?.('Carrying Shattercask — Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
   function drop() {
@@ -635,7 +636,8 @@
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     refreshMeshBounds(cask);
     cask.carried=false;held=null;
-    refreshCarriedArch();
+    prompt(); // Immediately restore nearby normal world interactions.
+    deps()?.refreshActionBar?.();
     lastEvent='dropped '+cask.id;
     return true;
   }
@@ -806,6 +808,7 @@
     active.add(c.group);c.group.position.copy(origin);
     c.group.quaternion.copy(quat);c.group.scale.copy(scale);
     c.carried=false;c.flying=true;held=null;cancelShatterAim();
+    prompt();deps()?.refreshActionBar?.(); // Return the ordinary actions when the thrown cask leaves the hand.
     const distanceTiles=Math.hypot(target.x-origin.x,target.z-origin.z);
     flight={vase:c,origin,target,distanceTiles,
       duration:window.AlchemyFlasks?.flightDuration?.(distanceTiles)
@@ -842,28 +845,13 @@
       if(ratio>=1){flight=null;detonate(c,'throw-impact');}
     }
   }
-  function refreshCarriedArch(){
-    if(typeof document==='undefined')return;
-    for(const [id,label,icon] of [
-      ['btnItemAction1','Throw Shattercask','↗'],['btnItemAction2','Set Down Shattercask','⬇']]){
-      const b=document.getElementById(id);if(!b)continue;
-      if(held){
-        b.classList?.remove?.('abt-hidden','blocked');
-        b.disabled=false;
-        if(b.style.display)b.style.display='';
-        const action=id==='btnItemAction1'?'shattercask_throw':'shattercask_drop';
-        if(b.dataset.action!==action)b.dataset.action=action;
-        if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label);
-        if(b.dataset.shattercaskPresentation!=='1'||!b.textContent?.includes(icon)){
-          b.textContent=icon;b.dataset.shattercaskPresentation='1';
-        }
-      }else if(b.dataset.shattercaskPresentation==='1'){
-        b.removeAttribute('data-shattercask-presentation');
-        b.removeAttribute('data-action');
-        b.textContent='';
-      }
-    }
-  }
+  // Existing tool/item Action 1 and 2 slots are the only carried controls.
+  // The native action-bar renderer positions them, avoiding extra mobile buttons.
+  const CARRIED_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({icon:'↗',label:'Throw Shattercask',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
+    Object.freeze({icon:'⬇',label:'Drop Shattercask',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
+  ]); // Shared by computeActionButtonsImpl while carrying; no per-frame allocations.
+  function actionButtons(){return held?CARRIED_ACTION_BUTTONS:null;}
   function grantLoot(items) {
     if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
     const inv=deps()?.inventory;
@@ -940,14 +928,19 @@
     }
   }
   function prompt() {
-    // Native action-claim input + world-space interaction prompt. No extra
-    // button or direct keyboard event that bypasses rebinds and controllers.
-    const target=held?{type:'held',obj:held}:nearInteraction();
-    const label=target?.type==='held'?'Action 1: Throw / Action 2: Drop':target?.type==='pile'
+    // Carried furniture uses normal press/release Action 1 and 2, not
+    // Interact or the optional, normally unbound Action 4/5 inputs.
+    const target=held?null:nearInteraction();
+    const label=target?.type==='pile'
       ?'Collect '+(target.obj.kind==='tree'?'sticks':'rubble'):'Pick up Shattercask';
-    const claim=target?target.type+':'+(target.obj?.id||''):'';
+    const claim=held?'carried:'+held.id:target?target.type+':'+(target.obj?.id||''):'';
     if(claim!==promptClaim){
-      if(target)window.WorldActionInputClaims?.setClaims?.('shattercask',
+      if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
+        {actionId:'action1',label:'Throw Shattercask',priority:810,
+          onPress:startShatterAim,onRelease:detail=>detail?.canceled?cancelShatterAim():releaseShatterAim()},
+        {actionId:'action2',label:'Drop Shattercask',priority:810,onPress:drop},
+      ]);
+      else if(target)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label,priority:410,onPress:interact}]);
       else window.WorldActionInputClaims?.clearClaims?.('shattercask');
       promptClaim=claim;
@@ -1162,7 +1155,7 @@
   function detonate(cask,cause='weapon') {
     if(!cask||cask.exploded)return false;
     cask.exploded=true;
-    if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);}
+    if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
     if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);
     const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
@@ -1332,7 +1325,7 @@
     }
     prompt();
     syncToolArchPickup();
-    refreshCarriedArch();
+
   }
   function attachRuntime() {
     const combat=window.Combat;
@@ -1398,9 +1391,9 @@
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
       const id=actionButton(event);
-      if(id!=='btnItemAction1'&&id!=='btnItemAction2')return;
+      if(id!=='btnAction1'&&id!=='btnAction2')return;
       event.preventDefault?.();event.stopImmediatePropagation?.();
-      if(id==='btnItemAction2'){dropPointers.add(event.pointerId);drop();return;}
+      if(id==='btnAction2'){dropPointers.add(event.pointerId);drop();return;}
       throwPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
       startShatterAim();
     },true);
@@ -1445,43 +1438,21 @@
     window.addEventListener('pointerdown',event=>{
       if(!held)return;
       const id=event.target?.closest?.('button')?.id||'';
-      // Tool Select is the context-sensitive Set Down button. Do not drop on
-      // pointerdown and accidentally also recall a tool on pointerup.
-      if(id==='toolBtn'||id==='btnItemAction1'||id==='btnItemAction2')return;
+      // Do not intercept existing Tool Select or native carried-action buttons;
+      // equipment changes elsewhere can still release the carried vase.
+      if(id==='toolBtn'||id==='btnAction1'||id==='btnAction2')return;
       if(/(?:weapon|tool|item|dequip|swap)/i.test(id))drop();
     },true);
   }
-  // ControllerInput already edge-detects every configured action. Subscribe
-  // before selection/gameplay so a Shattercask owns its input without asking
-  // the generic tool/item action router to understand a fabricated item key.
-  const controllerSuppressed=new Set();
-  function controllerCode(id){
-    const bindings=window.InputBindings?.getCurrentBindings?.()?.controller;
-    return bindings?.[id]||window.InputBindings?.getDefaultBindings?.('controller')?.[id]||null;
-  }
-  window.ControllerInput?.subscribe?.('shattercask-context-actions',frame=>{
-    if(!frame?.focused||!frame.pad||window.ControllerInput?.owner!=='gameplay')return;
-    for(const [id,press]of [
-      ['toolSelect',()=>toolArchTap()],
-      ['action4',()=>startShatterAim()],
-      ['action5',()=>drop()]
-    ]){
-      const code=controllerCode(id);if(!code)continue;
-      const claimed=id==='toolSelect'?toolArchAction()==='pickup':!!held;
-      if(frame.pressed?.has?.(code)&&claimed){
-        press();controllerSuppressed.add(code);frame.pressed.delete(code);
-      }
-      if(frame.released?.has?.(code)&&controllerSuppressed.delete(code)){
-        if(id==='action4')releaseShatterAim();
-        frame.released.delete(code);
-      }
-    }
-  },12);
+  // Tool Select pickup is processed by game.js's canonical controller
+  // dispatcher, while ControllerSelectionUI suppresses the entire held
+  // selector gesture. A separate frame subscriber here would race that
+  // dispatcher and accidentally recall equipment after pickup.
   window.Shattercasks=Object.freeze({
-    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,
+    RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Throw preview refreshes on release and clears when a held charge detonates; cask stays out of weapon PNG replay.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Carried Shattercasks own only standard Action 1/2; Tool Select picks up; mobile arch stays in its existing slots.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,

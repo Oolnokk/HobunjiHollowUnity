@@ -619,8 +619,8 @@
   }
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
-    const ANIMAL_W = 1.275;
-    const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB.uumkaoii?.spriteAspect || (600 / 1375)); // Match the new authored locomotion sheets instead of the retired single sprite.
+    const ANIMAL_W = 1.275 * (600 / 1375) / (451 / 641); // Use the real 641x451 source aspect, keeping the legacy animal height/ground-anchor calibration.
+    const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB.uumkaoii?.spriteAspect || (451 / 641)); // Match the new authored locomotion sheets instead of the retired single sprite.
     const sizeScale = window.CreatureGenetics.creatureSizeScale('uumkaoii', genotype); // Uses the Animation Author's class-specific proportions.
     const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset('uumkaoii', genotype); // Optional absolute floor-to-origin lift measured in Rigging.
     const halfH = ANIMAL_H * sizeScale.y / 2; // Existing automatic baseline and physical half-height.

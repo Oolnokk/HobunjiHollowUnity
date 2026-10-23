@@ -97,52 +97,73 @@
     ['grehlr',[0,0.1224031140623686,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.25802842155776196,0.09111564500894845],[[1,1],[0.5,0.5],[0.3,0.3]],2],
     ['gar-wolf',[0,0.15973815894365057,0.3293044388176616],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],
     ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
-    ['uumkaoii',[0,0.6408071738820479,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
+    ['uumkaoii',[0,0.2575246358178592,0.005623701988496838],'animation-author-export-2026-10-22',null,null,null,[0,-0.2057328849409156,-0.004605298975405354],[[1.5,1.5],[1,1],[0.2,0.2]],null],
     ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
     ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[1.164,1.164],[0.75,0.75],[0.27,0.27]],null], // Large is 20% above the September 15 0.97 calibration so wild Large adults read distinctly bigger.
-    // Uncalibrated starter anchors make these newly registered animals selectable in Animation Author.
-    // The zero saddle/grip and automatic ground offsets are intentionally editable—not claimed as approved fits.
-    ['nelk',[0,0,0],'uncalibrated-defaults',null,null,null,[0,0,0],[[1.5,1.5],[1,1],[0.35,0.35]],null],
-    ['nazgraku',[0,0,0],'uncalibrated-defaults',null,null,null,[0,0,0],[[1.5,1.5],[1,1],[0.35,0.35]],null],
+    // Recovered saddle and shoulder-grip authoring from the October 22 exports (19), (20), and (21).
+    ['nelk',[0,0.12365496943656872,0.09343178888117182],'animation-author-export-2026-10-22',null,null,null,[0.030176488041515424,-0.11264054358274966,0.028253979555520257],[[1.5,1.5],[1,1],[0.35,0.35]],null],
+    ['nazgraku',[0,0.07886458733711826,-0.0022188537422596633],'animation-author-export-2026-10-22',null,null,null,[0.011498553593554665,-0.14241261412989242,0.000946211786312177],[[1.5,1.5],[1,1],[0.35,0.35]],null],
   ];
   const staleCreatureSaddles = Object.freeze({ // Used by reconcileProfiles and the Animation Author repair bridge to migrate only exact superseded defaults.
     drenkirra: Object.freeze([Object.freeze([0,0.09289353489875796,0.02])]),
     grehlr: Object.freeze([Object.freeze([0,0.12393333333333335,0])]),
     'gar-wolf': Object.freeze([Object.freeze([0,0.14184834174882754,0.2761841625577698])]),
     'dabinggi-hound': Object.freeze([Object.freeze([0,0.12212625800404886,0.6091387381509006])]),
-    uumkaoii: Object.freeze([Object.freeze([0,0.26595632314682005,0.02])]),
+    uumkaoii: Object.freeze([Object.freeze([0,0.26595632314682005,0.02]), Object.freeze([0,0.6408071738820479,0.02])]),
     puktuk: Object.freeze([Object.freeze([0,0.16937859550590686,-0.012420318741466083])]),
     'voorg-ass': Object.freeze([Object.freeze([-0.0016655977917167481,0.12286908956931555,0.043832914384796626])]),
+    nelk: Object.freeze([Object.freeze([0,0,0])]), // Pre-calibration saddle placeholders.
+    nazgraku: Object.freeze([Object.freeze([0,0,0])]),
   });
   const staleCreatureShoulderGrips = Object.freeze({
+    nelk: Object.freeze([Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]),
+    nazgraku: Object.freeze([Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]),
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
     drenkirra: Object.freeze([
       Object.freeze([0.01,-0.1636307385658067,0.0009131708735385657]),
       Object.freeze([0.01,-0.1636307385658067,0.003984738737597559]),
     ]),
-    uumkaoii: Object.freeze([Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352])]),
+    uumkaoii: Object.freeze([Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352]), Object.freeze([0.01,-0.3636087789187775,-0.18395679109723])]),
   });
   const staleCreatureSizeScales = Object.freeze({
     grehlr: Object.freeze({ small: Object.freeze({ x: 0.2, y: 0.2 }) }),
     drenkirra: Object.freeze({ small: Object.freeze({ x: 1, y: 1 }) }),
   });
+  const staleCreatureGroundOffsets = Object.freeze({
+    uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }), // Old master defaults; used for narrowly scoped autosave migration.
+    nelk: Object.freeze({ large: 0, medium: 0, small: 0 }),
+    nazgraku: Object.freeze({ large: 0, medium: 0, small: 0 }),
+  });
+  const staleCreatureChatheadFrames = Object.freeze({
+    uumkaoii: Object.freeze({ x: 0.009564166583519832, y: 0.2923510947804583, width: 0.4656387672084861, height: 0.47038721094834346 }),
+    nelk: Object.freeze({ x: 0, y: 0, width: 0.04, height: 0.04 }),
+    nazgraku: Object.freeze({ x: 0, y: 0, width: 0.04, height: 0.04 }),
+  }); // Exact obsolete crop fingerprints; changing animals must not resurrect an old editor crop.
+  const isStaleCreatureFrame = (kind, frame) => !!frame && !!staleCreatureChatheadFrames[kind]
+    && ['x','y','width','height'].every(key => sameNumber(frame[key], staleCreatureChatheadFrames[kind][key]));
+  const isStaleGroundOffsets = (kind, offsets) => !!offsets && !!staleCreatureGroundOffsets[kind]
+    && ['large','medium','small'].every(size => sameNumber(offsets[size], staleCreatureGroundOffsets[kind][size]));
   const creatureGroundOffsets = Object.freeze({
     drenkirra: Object.freeze({ large: 0.79, medium: 0.40, small: 0.17 }),
     grehlr: Object.freeze({ large: 0.50, medium: 0.26, small: 0.13 }),
     'gar-wolf': Object.freeze({ large: 0.50, medium: 0.33, small: 0.11 }),
     'dabinggi-hound': Object.freeze({ large: 0.50, medium: 0.27, small: 0.09 }),
-    uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }),
+    uumkaoii: Object.freeze({ large: 0.35, medium: 0.25, small: 0.05 }),
     puktuk: Object.freeze({ large: 0.40, medium: 0.24, small: 0.12 }),
     'voorg-ass': Object.freeze({ large: 0.312, medium: 0.325, small: 0.11 }), // Large lift follows the 20% visual-scale increase so the enlarged sprite remains floor-aligned.
+    nelk: Object.freeze({ large: 0.28, medium: 0.18, small: 0.065 }),
+    nazgraku: Object.freeze({ large: 0.31, medium: 0.2, small: 0.07 }),
   });
   const creatureChatheadFrames = Object.freeze({
     grehlr: Object.freeze({ x: 0.10721275741258315, y: 0.349719408702988, width: 0.2558259151491218, height: 0.35439898228896183, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'gar-wolf': Object.freeze({ x: 0, y: 0.2575, width: 0.25, height: 0.3575, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'dabinggi-hound': Object.freeze({ x: 0.05321196485715341, y: 0.2621006265961596, width: 0.17863723264419087, height: 0.350903183334192, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     drenkirra: Object.freeze({ x: 0.1925, y: 0.3575, width: 0.2078, height: 0.305, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
-    uumkaoii: Object.freeze({ x: 0.009564166583519832, y: 0.2923510947804583, width: 0.4656387672084861, height: 0.47038721094834346, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    uumkaoii: Object.freeze({ x: 0.022018283422815435, y: 0.180707251642218, width: 0.4241864686175028, height: 0.6442119462386413, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     puktuk: Object.freeze({ x: 0.17142091899942474, y: 0.11029044613093768, width: 0.27636019798104444, height: 0.601013493102534, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'voorg-ass': Object.freeze({ x: 0.1235, y: 0.14, width: 0.3074, height: 0.3325, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    nelk: Object.freeze({ x: 0.062069514805476525, y: 0.1705371019361113, width: 0.3448695403032319, height: 0.5212549290693803, coordinateSpace: 'sprite-normalized-top-left', version: 1 }), // Preserve export (21) despite stale Nelk frame in (23).
+    nazgraku: Object.freeze({ x: 0.23705208817610238, y: 0.0587346014031421, width: 0.22574006332431554, height: 0.5112796374724654, coordinateSpace: 'sprite-normalized-top-left', version: 1 }), // New authored crop from export (23).
   });
 
   const masterCharacters = {};
@@ -185,7 +206,8 @@
   for (const [kind, saddle, saddleSource, saddleOffset, saddlePixel, midlineSearchRadiusPx, shoulderGrip, scales, grehlrSizeScaleDefaultVersion] of creatureRecords) {
     const creatureAuthoredSource = kind === 'grehlr'
       ? 'animation-author-export-2026-09-16'
-      : ((kind === 'puktuk' || kind === 'voorg-ass') ? 'animation-author-export-2026-09-15' : 'authored-2026-08-28-attachpointsv1'); // New/current creature grip coordinates keep their actual authored pass instead of inheriting an older baseline label.
+      : ((kind === 'puktuk' || kind === 'voorg-ass') ? 'animation-author-export-2026-09-15'
+        : ((kind === 'nelk' || kind === 'nazgraku' || kind === 'uumkaoii') ? 'animation-author-export-2026-10-22' : 'authored-2026-08-28-attachpointsv1')); // New/current creature grip coordinates keep their actual authored pass instead of inheriting an older baseline label.
     const saddleRule = saddleSource === 'highest-opaque-pixel-along-idle-sprite-midline'
       ? { source: saddleSource, heightPercentOffset: saddleOffset, defaultRuleVersion: 3, sourcePixel: { x: saddlePixel[0], y: saddlePixel[1] }, midlineSearchRadiusPx, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false }
       : { source: saddleSource, defaultRuleVersion: 3, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false };
@@ -193,8 +215,8 @@
       large: { x: scales[0][0], y: scales[0][1] }, medium: { x: scales[1][0], y: scales[1][1] }, small: { x: scales[2][0], y: scales[2][1] },
     };
     masterCreatures[kind] = {
-      kind, chatheadFrame: { ...creatureChatheadFrames[kind] },
-      anchors: { saddle: identityAnchor(saddle), shoulderGrip: identityAnchor(shoulderGrip, -61) },
+      kind, chatheadFrame: creatureChatheadFrames[kind] ? { ...creatureChatheadFrames[kind] } : null,
+      anchors: { saddle: identityAnchor(saddle), shoulderGrip: identityAnchor(shoulderGrip, kind === 'uumkaoii' ? 0 : -61) }, // Uumkao'ii's Oct 22 grip has a neutral authored yaw.
       saddleRule,
       shoulderGripRule: { source: creatureAuthoredSource, coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
       sizeScales, groundOffsets: { ...(creatureGroundOffsets[kind] || { large:0, medium:0, small:0 }) },
@@ -445,6 +467,12 @@
       merged.anchors.saddle = reconcileAnchor(oldSaddle, canonical.anchors.saddle, staleCreatureSaddles[kind]);
       if (oldSaddle && !samePosition(oldSaddle.position, merged.anchors.saddle.position)) merged.saddleRule = clone(canonical.saddleRule);
       if (repairKnownCreatureSizeScale(kind, merged, canonical)) merged.sizeScaleRule = clone(canonical.sizeScaleRule);
+      if (isStaleGroundOffsets(kind, candidate.groundOffsets)) merged.groundOffsets = clone(canonical.groundOffsets); // Only known legacy rows are replaced; custom size classes remain untouched.
+      if (isStaleCreatureFrame(kind, candidate.chatheadFrame)) merged.chatheadFrame = clone(canonical.chatheadFrame);
+      if ((kind === 'nelk' || kind === 'nazgraku') && merged.saddleRule?.source === 'uncalibrated-defaults'
+          && samePosition(merged.anchors.saddle.position, canonical.anchors.saddle.position)) merged.saddleRule = clone(canonical.saddleRule);
+      if ((kind === 'nelk' || kind === 'nazgraku' || kind === 'uumkaoii') && merged.shoulderGripRule?.source === 'authored-2026-08-28-attachpointsv1'
+          && samePosition(merged.anchors.shoulderGrip.position, canonical.anchors.shoulderGrip.position)) merged.shoulderGripRule = clone(canonical.shoulderGripRule);
       output.creatures[kind] = merged;
     }
     output.characterTransformAliases = characterTransformAliases;
@@ -572,6 +600,12 @@
       for (const [kind, positions] of Object.entries(staleCreatureShoulderGrips)) {
         const position = live?.creatures?.[kind]?.anchors?.shoulderGrip?.position;
         if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.shoulderGrip`);
+      }
+      for (const kind of Object.keys(staleCreatureGroundOffsets)) {
+        const candidate = live?.creatures?.[kind]; // Checks known old editor rows for exactly matching obsolete values.
+        if (!candidate) continue;
+        if (isStaleGroundOffsets(kind, candidate.groundOffsets)) stale.push(`${kind}.groundOffsets`);
+        if (isStaleCreatureFrame(kind, candidate.chatheadFrame)) stale.push(`${kind}.chatheadFrame`);
       }
       for (const [kind, staleByClass] of Object.entries(staleCreatureSizeScales)) {
         for (const [sizeClass, staleScale] of Object.entries(staleByClass)) {

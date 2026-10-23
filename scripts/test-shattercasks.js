@@ -6,6 +6,8 @@ const vm = require('node:vm');
 const path = require('node:path');
 const root = path.resolve(__dirname,'..');
 const code = fs.readFileSync(path.join(root,'docs/js/shattercasks.js'),'utf8');
+const gameCode = fs.readFileSync(path.join(root,'docs/game.js'),'utf8'); // Native action bar should read the carry provider.
+const claimsCode = fs.readFileSync(path.join(root,'docs/js/world-action-input-claims.js'),'utf8'); // Exercises the production cross-device input owner.
 const html = fs.readFileSync(path.join(root,'docs/index.html'),'utf8');
 const ranged = fs.readFileSync(path.join(root,'docs/js/combat/ranged-weapons.js'),'utf8');
 const devSpawner = fs.readFileSync(path.join(root,'docs/js/dev-spawner.js'),'utf8');
@@ -98,10 +100,15 @@ assert(png.includes("skinnedPlane.name = config.name || 'npc_avatar_skinned_plan
   'regression covers the real player neck-rig layout, not just a rigid rear mesh');
 assert(code.includes('updateShatterThrow(dt)') &&
   code.includes('Math.sin(Math.PI*ratio)') &&
-  code.includes("['btnItemAction1','Throw Shattercask'") &&
-  code.includes("['btnItemAction2','Set Down Shattercask'") &&
+  code.includes("inputAction:'action1'") && code.includes("inputAction:'action2'") &&
+  code.includes("id!=='btnAction1'&&id!=='btnAction2'") &&
+  !code.includes('btnItemAction1') && !code.includes('btnItemAction2') &&
   code.includes('pointThrowFromDrag('),
-  'hold-release action 1 has terrain projection and flask arc; item action 2 drops');
+  'Shattercask throw and drop use only existing Action 1/2 slots');
+assert(gameCode.includes('window.Shattercasks?.actionButtons?.()') &&
+  gameCode.includes('if(carriedShattercaskActions)return carriedShattercaskActions;') &&
+  !code.includes('refreshCarriedArch'),
+  'normal action-bar computation renders the carry controls without extra mobile buttons');
 const flaskThrowCode=fs.readFileSync(path.join(root,'docs/js/alchemy-flasks.js'),'utf8');
 assert(flaskThrowCode.includes('function flightDuration(distanceTiles)') &&
   flaskThrowCode.includes('function flightPosition(origin,target,ratio,distanceTiles,out)') &&
@@ -300,6 +307,7 @@ async function scenario(reloading=false) {
   };
   game.window=game;
   vm.createContext(game);
+  vm.runInContext(claimsCode,game,{filename:'world-action-input-claims.js'});
   vm.runInContext(code,game,{filename:'shattercasks.js'});
   game.Combat.update(.18);
   // Furniture loading and the async spawn's continuation run on separate
@@ -376,6 +384,7 @@ async function arenaScenario() {
     DevSpawner:{init(){}},__farmLog(){}};
   game.window=game;
   vm.createContext(game);
+  vm.runInContext(claimsCode,game,{filename:'world-action-input-claims.js'});
   vm.runInContext(code,game,{filename:'shattercasks.js'});
   for(let i=0;i<4;i++){
     const p=await game.Shattercasks.spawnRandomInDevArena();
@@ -389,7 +398,7 @@ async function arenaScenario() {
   }
   assert.equal(modelBuilds,4,'each explicit spawn creates one authored Shattercask');
   // Tool Select is a pickup input even with equipment out; holding the
-  // physical object remaps Item Action 1/2 to charged Throw/Drop.
+  // physical object replaces standard Action 1/2 with charged Throw/Drop.
   const first=game.Shattercasks.debugSnapshot().vases[0];
   player.x=(first.col+.5)*64;player.y=(first.row+.5)*64;
   let heldMode='tool';
@@ -411,6 +420,14 @@ async function arenaScenario() {
   body.add(rearHeadwear);
   game.ProceduralHandAttachments={gameDeps:{playerMesh:body}};
   assert(game.Shattercasks.toolArchTap(),'contextual tool tap picks up and stows gear');
+  assert.equal(game.Shattercasks.actionButtons().map(button=>button.inputAction).join(','),'action1,action2',
+    'carrying populates exactly the two standard action slots');
+  assert.equal(game.WorldActionInputClaims.claimFor('action1')?.ownerId,'shattercask',
+    'standard Action 1 owns the hold-to-throw input');
+  assert.equal(game.WorldActionInputClaims.claimFor('action2')?.ownerId,'shattercask',
+    'standard Action 2 owns drop');
+  assert.equal(game.WorldActionInputClaims.claimFor('interact'),null,
+    'carrying never requires the extra Interact input');
   let rearState=game.Shattercasks.debugSnapshot().rearPortraitXray;
   assert.equal(rearState.skinnedBackOnlyPasses,1,'one skinned rear-only x-ray is generated while carrying');
   assert.equal(rearState.rearHeadwearOverlays,1,'the separately skinned back of the head is also included');
@@ -449,7 +466,8 @@ async function arenaScenario() {
   assert.equal(rebuilt.material[1].visible,false,'new rear group owns the overlay');
   assert.equal(game.Shattercasks.toolArchAction(),null,'while carrying, Tool Select is no longer the Drop action');
   deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64-2,y:1,z:player.y/64},direction:{x:1,y:-.5,z:0}});
-  assert(game.Shattercasks.startShatterAim(),'Item Action 1 starts hold-to-aim for the physically carried object');
+  assert(game.WorldActionInputClaims.dispatch('action1','press',{source:'desktop-mouse'}),
+    'Action 1 press starts aiming through the shared cross-device input claim');
   const aimSnapshot=game.Shattercasks.debugSnapshot().throwAim;
   assert(aimSnapshot.target.x>player.x/64+1,
     'low camera angle can hit ground behind the player, but the Shattercask reticle stays forward');
@@ -467,13 +485,23 @@ async function arenaScenario() {
   assert(ring.geometry.boundsUpdated,'terrain changes refresh culling bounds');
   assert.equal(game.Shattercasks.debugSnapshot().throwPreview.terrainProjected,true,'mobile diagnostics report projection');
   deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64,y:1,z:player.y/64},direction:{x:1,y:-.1,z:0}});
-  assert(game.Shattercasks.releaseShatterAim(),'releasing Item Action 1 starts the throw stage');
+  assert(game.WorldActionInputClaims.dispatch('action1','release',{source:'controller'}),
+    'Action 1 release completes the original claimed aim');
   assert.equal(ring.position.x,game.Shattercasks.debugSnapshot().throwAim.target.x,
     'release preview uses the final aim point rather than the preceding polling sample');
   assert.equal(ring.visible,true,'preview remains visible through release windup');
   game.Shattercasks.cancelShatterAim();
   assert.equal(ring.visible,false,'cancel hides the preview');
-  assert(game.Shattercasks.drop(),'Item Action 2 drops held Shattercask');
+  assert(game.WorldActionInputClaims.dispatch('action1','press',{source:'controller'}),
+    'Action 1 can aim again after a cancelled throw');
+  assert(game.WorldActionInputClaims.dispatch('action1','cancel',{source:'controller'}),
+    'Action 1 cancellation returns to the same owner');
+  assert.equal(game.Shattercasks.debugSnapshot().throwAim,null,'cancel leaves no ongoing aim');
+  assert(game.WorldActionInputClaims.dispatch('action2','press',{source:'desktop-mouse'}),
+    'standard Action 2 drops the physically carried cask');
+  assert.equal(game.Shattercasks.actionButtons(),null,'normal tool/item slots return on drop');
+  assert(game.WorldActionInputClaims.dispatch('action2','release',{source:'desktop-mouse'}),
+    'Action 2 release stays consumed even after dropping');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');
   assert.equal(rearHeadwear.renderOrder,2,'drop restores the native rear head render order');

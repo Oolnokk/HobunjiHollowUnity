@@ -2516,7 +2516,7 @@
       ],
       "attackTag": "blunt",
       "modelWidth": 1.6,
-      "spriteAspect": 0.43636363636363634,
+      "spriteAspect": 0.703588143525741,
       "tint": "#ffffff",
       "sprites": {
         "idle": "assets/creaturesprites/uumkao'ii_idle.png",
