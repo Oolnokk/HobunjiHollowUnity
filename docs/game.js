@@ -27051,7 +27051,7 @@
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
-      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
+      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0, contextPickup: false }; // Also pairs a Shattercask pickup with the matching Tool Select release, without recalling equipment.
       function potionSelectorAvailable(actionId) {
         return actionId === 'action3' && !window.WorldActionInputClaims?.hasClaim?.('action3')
           && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
@@ -27081,12 +27081,26 @@
             if (!toolSelectPress.down) return;
             toolSelectPress.down = false;
             if (toolSelectPress.timer) { clearTimeout(toolSelectPress.timer); toolSelectPress.timer = null; }
+            if (toolSelectPress.contextPickup) {
+              toolSelectPress.contextPickup = false; // Pickup already consumed this whole physical press.
+              toolSelectPress.held = false;
+              return;
+            }
             if (toolSelectPress.held) window._desktopSelectionArc?.commit();
             else window._desktopSelectionArc?.recallLastTool?.();
             toolSelectPress.held = false;
             return;
           }
           if (toolSelectPress.down) return;
+          // The controller gameplay loop independently resolves physical buttons:
+          // it does NOT consult ControllerInput.frame.pressed deletion. Claim
+          // pickup here so the same release cannot recall/re-equip a tool.
+          if (window.Shattercasks?.toolArchAction?.() === 'pickup' && window.Shattercasks?.toolArchTap?.()) {
+            toolSelectPress.down = true;
+            toolSelectPress.held = false;
+            toolSelectPress.contextPickup = true;
+            return;
+          }
           toolSelectPress.down = true; toolSelectPress.held = false;
           toolSelectPress.timer = setTimeout(() => {
             if (!toolSelectPress.down) return;
