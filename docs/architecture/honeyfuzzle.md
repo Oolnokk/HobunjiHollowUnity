@@ -7,6 +7,7 @@ A honeyfuzzle is a hummingbird-like animal that behaves differently from every o
 | Swarm renderer | `js/honeyfuzzle-swarm.js` (`window.HoneyfuzzleSwarm`) | One instanced draw call per swarm, the shared wing tick, deterministic member motion |
 | Species entry | `CREATURE_DB.honeyfuzzle` in `game.js` | Stats, `swarm` render config, `fixedSizeClass: 'medium'` |
 | Hive stumps | `js/honeyfuzzle-hives.js` (`window.HoneyfuzzleHives`) | Swarm spawn/return, long-hold harvest, collapse |
+| Colors | `js/honeyfuzzle-colors.js` (`window.HoneyfuzzleColors`) | Region palettes, per-stump color, egg color queue |
 | Honeyfuzzle House | `js/honeyfuzzle-house.js` (`window.HoneyfuzzleHouse`) | One-slot egg/swarm building on the farm |
 
 ## Swarm = one entity, drawn as a flock
@@ -17,6 +18,23 @@ The gameplay entity is a single creature (`honeyfuzzle`, labelled "Honeyfuzzle S
 - **Wing cycle.** `up -> mid -> down -> mid -> repeat`, all members stepping on the same `WING_TICK_MS` tick. Member `i` sits `i % 3` steps into the 4-step cycle, so a third of the swarm is at each of three different points at any moment.
 - **Motion (bees, not birds).** 24 small members per swarm (a multiple of 3 so the wing thirds stay even). `memberPose(seed, i, count, nowMs, speed01, spread, out)` is a pure function: each member hovers with a fast tiny buzz, zips to a new random point inside the cloud, hovers again, and mirrors itself to face the way it last darted. Dart periods and phases differ per member, so at any instant some are mid-zip and some hovering, and the cloud breathes. At speed the cloud tightens slightly and per-member `lead` values stretch it: `lead > 0` members run ahead of the heading and `lead < 0` members trail it.
 - **Performance.** One `InstancedMesh`, one atlas of the three frames shared by every swarm, the frame chosen per instance by an `aFrame` attribute (an `onBeforeCompile` UV shift on the shared PNG-plane material), and per-frame work that is only N matrix writes with no allocation. The `aFrame` buffer is uploaded only when the wing tick changes.
+
+## Where they live, and what color
+
+Honeyfuzzles live in every wilderness zone except the Western Slope (the generator places no hive stumps there, and `HoneyfuzzleColors.isExcludedZone` also makes any stump already in a saved Western Slope layout plain scenery). The Southern Cloud Forest asks the generator for extra stumps (`beehives: 30`) because its canopy leaves little clear ground.
+
+`HoneyfuzzleColors` builds one master palette from every body color an existing species can have (`SCRATCHBONES_CONFIG.game.creatureGenetics.palettes`) plus authored bird colors, and splits it by region:
+
+| Zone | Palette |
+| --- | --- |
+| Northern Cliffs | temperate bird colors: muted earth tones, robin/bluebird/goldfinch/cardinal-style colors |
+| Southern Cloud Forest | tropical bird colors: vivid parrot/macaw/toucan/quetzal colors (all of Drenkirra's palette) |
+| Eastern Mire | ominous colors: blacks, greys, whites and the darkest greens through violets |
+| any other zone | all three |
+
+Existing species colors are sorted into a region by HSL (`classify`); authored colors name their region. A stump's swarm color is a hash of its key, so it never changes. Harvesting queues one color per egg (per world, persisted), placing an egg in a house takes the oldest, the hatched record keeps `swarmColor`, and moving it to the Stable copies it, so the companion matches its stump.
+
+The swarm renderer recolors the authored mint body in the fragment shader (`uBody`/`uUse` per material): dark pixels (outline, beak, feet, pupil) are untouched and the body is remapped by brightness, which keeps the authored shading and pale wing highlights in any color. Every color shares one atlas texture and one shader program.
 
 ## Always Medium, always a "swarm"
 
