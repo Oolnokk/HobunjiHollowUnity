@@ -76,21 +76,28 @@
           restore(states); states.clear();
           rear.layers.mask = layers.get(rear) & ~(1 << DRAW_LAYER); // Exclude the mask source from the following weapon-color draw, even for enableAll() sources.
           for (const weapon of weapons) {
-            layers.set(weapon, weapon.layers.mask);
-            weapon.layers.set(DRAW_LAYER);
-            for (const material of materials(weapon)) {
-              if (!material) continue;
-              save(states, material);
-              material.depthTest = true; // World geometry still occludes normally.
-              material.stencilWrite = true;
-              material.stencilWriteMask = tint ? 1 : 0;
-              material.stencilFunc = THREE.EqualStencilFunc;
-              material.stencilRef = 1; // Compare only bit 1 to zero, while writing water coverage into bit 0 when needed.
-              material.stencilFuncMask = REAR_BIT;
-              material.stencilFail = material.stencilZFail = THREE.KeepStencilOp;
-              material.stencilZPass = THREE.ReplaceStencilOp;
-              if (tint) material.depthWrite = true;
-            }
+            const prepareVisibleWeaponPart = object => {
+              if (!object.isMesh && !object.isSprite) return;
+              layers.set(object, object.layers.mask);
+              object.layers.set(DRAW_LAYER); // Dual-wield children and enchantment sprites follow their masked parent into this pass.
+              for (const material of materials(object)) {
+                if (!material) continue;
+                save(states, material);
+                material.depthTest = true; // World geometry still occludes normally.
+                material.stencilWrite = true;
+                // Transparent sprite corners must never write water stencil
+                // or depth; only *read* the owner's rear-silhouette mask.
+                material.stencilWriteMask = object.isSprite ? 0 : (tint ? 1 : 0);
+                material.stencilFunc = THREE.EqualStencilFunc;
+                material.stencilRef = 1; // Compare only rear bit 1, optionally writing water bit 0 for blade meshes.
+                material.stencilFuncMask = REAR_BIT;
+                material.stencilFail = material.stencilZFail = THREE.KeepStencilOp;
+                material.stencilZPass = THREE.ReplaceStencilOp;
+                if (tint && !object.isSprite) material.depthWrite = true;
+              }
+            };
+            if (weapon.traverseVisible) weapon.traverseVisible(prepareVisibleWeaponPart);
+            else prepareVisibleWeaponPart(weapon); // Lightweight editor/test stand-ins may omit Three's traversal helper.
           }
           camera.layers.set(DRAW_LAYER);
           rawRender.call(renderer, scene, camera);
