@@ -859,7 +859,7 @@
   registerActivity('welcome', () => ({ ok: true }));
   registerActivity('remembrance', (payload, prop) => {
     if (!festivalHours() || festival()?.id!=='tzizkhanash') return fail('The remembrance gathering is not underway.');
-    if (remembrance) return fail('You are already remembering with the townsfolk.');
+    if (remembrance || dance || pendingDance || window.SocialActionWheel?.isDancing?.()) return fail('Finish your current activity before joining the remembrance.');
     remembrance={event:eventKey(),propId:prop.id,elapsed:0}; // Timer advances only during unpaused play inside this locale.
     return commit('You join the remembrance. Stay with the mourners for twelve seconds to complete the observance.');
   });
@@ -940,7 +940,7 @@
   });
   registerActivity('dance', (payload, prop) => {
     if (prop.festivalLocale && !festivalHours()) return fail('The dance gathering has not begun.');
-    if (dance) return fail('You are already dancing.');
+    if (dance || remembrance) return fail('Finish your current activity first.');
     if (!window.SocialActionWheel?.startDance?.('gentle-twirl', 'tpose-jiggle')) return fail('The dance could not start.');
     dance = { propId: prop.id, event: eventKey(), elapsed: 0, claimKey: 'dance' };
     window.FestivalUI.close();
