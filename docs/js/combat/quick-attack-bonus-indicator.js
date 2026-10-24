@@ -12,6 +12,10 @@
 (() => {
   'use strict';
 
+  // Keep one owner for scene sprites, hit listeners, and the scheduler callback.
+  // Replacing only the callback strands the previous instance's visible cues.
+  if (window.QuickAttackBonusIndicator) return;
+
   if (typeof THREE === 'undefined' || !window.Combat || !window.WorldPopupText?.avatarCentroidWorld) {
     console.error('quick-attack-bonus-indicator.js requires THREE, Combat, and WorldPopupText');
     return;
@@ -574,7 +578,7 @@
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Brighter layered affliction glows burst outward on confirmed Quick Attack bonus hits, including killing blows.',
+      latestChange: 'One cue owner survives repeated script loads so death cleanup removes every reticle and glow; confirmed bonus hits still briefly burst.',
       targetId: lastTarget?.id || null,
       visible: sights.size > 0,
       visibleCount: sights.size,

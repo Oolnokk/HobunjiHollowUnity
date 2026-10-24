@@ -10,7 +10,7 @@
   let deps = null;
   const ACTION_BUTTON_IDS = new Set(['action1', 'action2', 'action3', 'action4', 'action5']); // Used to give the five visible gameplay buttons player-facing names in Settings.
   const RUNTIME_HELPER_SCRIPTS = [ // Loaded only after game.js reaches this panel's init(), so helper requests cannot race core boot scripts such as water-system.js.
-    'js/combat/quick-attack-bonus-indicator.js',
+    // QuickAttackBonusIndicator is parser-loaded by index.html and owns its cue cleanup.
     // RangedHudReticle is parser-loaded by index.html; do not reload it here or a stale unversioned cache can replace the live module.
     'js/fullscreen-toggle.js',
     'js/mobile-combat-zoom.js',
