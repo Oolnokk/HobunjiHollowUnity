@@ -61,7 +61,7 @@
 <script>
 'use strict';
 const STORAGE_KEY='hobunjiWorldPopupSettings.v1';
-const EVENT_LABELS={damage:'Damage',healing:'Healing',skillXp:'Skill XP',masteryXp:'Tool Mastery XP',favor:'Favor changes',currency:'Currency acquisition/loss',loot:'Loot',interaction:'Contextual interaction prompts'};
+const EVENT_LABELS={damage:'Damage',healing:'Healing',skillXp:'Skill XP',masteryXp:'Tool Mastery XP',favor:'Favor changes',rapport:'Rapport gain',romance:'Romance gain',festivalFun:'Festival Fun gain',livestockFavor:'Livestock Favor gain',currency:'Currency acquisition/loss',loot:'Loot',interaction:'Contextual interaction prompts'};
 const NPC_DB_URL='../../config/npcs/hobunji-starter-npc-database.json';
 let repoSettings=null; // Used by resetSettings() to restore the checked-in configuration.
 let settings=null; // Editor model consumed by the controls and the real popup renderer.
@@ -167,6 +167,6 @@ $('download').onclick=()=>{collect();const blob=new Blob([JSON.stringify(setting
 $('reset').onclick=()=>{settings=popupRuntime.applySettings(repoSettings);localStorage.removeItem(STORAGE_KEY);renderControls();replayBurst();status('Restored repository settings.')};
 boot().catch(error=>status(error.stack||error.message,'bad'));
 </script>
-<script src="../../js/world-popup-relationship-editor.js?v=20261007h00e451d"></script>
+<script src="../../js/world-popup-relationship-editor.js?v=20261024h2efdbac"></script>
 </body>
 </html>

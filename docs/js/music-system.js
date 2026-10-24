@@ -1601,6 +1601,11 @@
   }
 
 
+  function weatherRegionForArea(area = deps?.getCurrentArea?.()) {
+    if (area !== 'interior' && !deps?._isBuildingArea?.(area)) return area;
+    return window.WildlifeSpawn?.denCavernZoneOf?.(area) || deps?.getWeatherExteriorArea?.(area) || area;
+  }
+
   function weatherAcousticsForArea(area) {
     const indoors = area === 'interior' || !!deps?._isBuildingArea?.(area); // Uses the same building classification as weather lighting and rain rendering.
     return {
@@ -1667,7 +1672,7 @@
         filterFallback: _weatherBgsFilters.get(snd)?.failed === true, // Mobile diagnostics distinguish an audible unfiltered fallback from a working low-pass.
       },
     ])); // Captures weather-layer actual/target levels without relying on desktop devtools.
-    return { area, indoors: acoustics.indoors, volumeScale: acoustics.volume, cutoffHz: acoustics.cutoffHz, contextState: _musicAudioCtx?.state || 'none', loops };
+    return { area, weatherRegion: weatherRegionForArea(area), precipitation: weatherRegionForArea(area) === 'map_western_slope' ? 'blizzard' : 'rain', indoors: acoustics.indoors, volumeScale: acoustics.volume, cutoffHz: acoustics.cutoffHz, contextState: _musicAudioCtx?.state || 'none', loops };
   }
 
   function setLoopingBgs(id, url, volume, indoors = false) {
@@ -1725,7 +1730,8 @@
     setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
     setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night && !rainy ? (bgs.nightbugsVolume ?? 0.34) : 0);
     const weatherAudible = exterior || acoustics.indoors; // Wind travels through buildings but never leaks into unrelated underground areas.
-    const wind01 = weatherAudible ? Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3)) : 0;
+    const blizzard = deps.calendar.isRaining && weatherRegionForArea(currentArea) === 'map_western_slope'; // Region remains the same inside its caves/buildings.
+    const wind01 = weatherAudible ? (blizzard ? 1 : Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3))) : 0;
     setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65 * acoustics.volume, acoustics.indoors);
     setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (weatherAudible ? Math.max(0.15, wind01 * 0.75) : 0) * acoustics.volume, acoustics.indoors);
   }
@@ -1764,7 +1770,7 @@
     }
     const outdoors = currentArea === 'farm' || currentArea === 'town' || deps._isZoneArea(currentArea);
     const acoustics = weatherAcousticsForArea(currentArea); // Keeps the outdoor rain mix alive, but muffled, throughout building interiors.
-    const intensity = ((outdoors || acoustics.indoors) && deps.calendar.isRaining)
+    const intensity = ((outdoors || acoustics.indoors) && deps.calendar.isRaining && weatherRegionForArea(currentArea) !== 'map_western_slope')
       ? Math.min(1, (deps.calendar.rainStrength || 0) / 3)
       : 0;
     const weights = rainLayerWeights(intensity);
@@ -1954,6 +1960,7 @@
     updateExteriorBgs,
     updateRainAudio,
     weatherAcousticsForArea,
+    weatherRegionForArea,
     getWeatherAudioDebugState,
     updateFurnitureSfxSources,
     resolveFurnitureSfx,

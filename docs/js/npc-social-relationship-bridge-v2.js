@@ -93,6 +93,7 @@
       window.__farmLog?.(`Romance with ${npcId} became ${romanceFavor} permanent favor at midnight.`);
     }
     if (favorGain) state.favor = num(state.favor, 0) + favorGain;
+    if (favorGain > 0) window.WorldPopupText?.queueSocialGain?.('favor', favorGain, npcId);
     return favorGain;
   }
   function relationship(npcId) {
@@ -119,6 +120,7 @@
     state.rapport = after;
     state.rapportDay = socialDay();
     if (after !== before && Array.isArray(state.memory)) state.memory.push({ type: 'rapport', day: socialDay(), amount: after - before, reason: String(reason || 'social') });
+    if (after > before) window.WorldPopupText?.queueSocialGain?.('rapport', after - before, npcId);
     return after - before;
   }
   function getRomance(npcId) {
@@ -133,6 +135,7 @@
     state.romance = after;
     state.rapportDay = socialDay();
     if (after !== before && Array.isArray(state.memory)) state.memory.push({ type: 'romance', day: socialDay(), amount: after - before, reason: String(reason || 'date') });
+    if (after > before) window.WorldPopupText?.queueSocialGain?.('romance', after - before, npcId);
     return after - before;
   }
   function canGiftToday(npcId) {

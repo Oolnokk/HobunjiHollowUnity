@@ -1122,10 +1122,12 @@
       const eatableKeys = feedKeysForDiet(dietFor(l.kind));
       const eatenSlot = trough?.slots ? trough.slots.findIndex(s => s && eatableKeys.includes(s)) : -1;
       if (l.heartLevel == null) l.heartLevel = HEART_DEFAULT;
+      const heartsBefore = l.heartLevel; // Reward feedback uses only the care gain that fits below the cap.
       if (eatenSlot >= 0) {
         trough.slots[eatenSlot] = null;
         troughsToRefresh.push({ barnId: l.barnId, troughIndex: l.troughIndex });
         l.heartLevel = Math.min(HEART_MAX, l.heartLevel + HEART_STEP);
+        if (l.heartLevel > heartsBefore) window.WorldPopupText?.queueSocialGain?.('livestockFavor', l.heartLevel - heartsBefore, l.name || l.kind, l.id);
       } else {
         l.heartLevel = Math.max(0, l.heartLevel - HEART_STEP);
       }
