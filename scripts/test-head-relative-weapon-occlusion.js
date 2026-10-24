@@ -39,7 +39,7 @@ function draw() {
     assert.equal(weaponMaterial.stencilWriteMask,1,'visible head weapons stamp the existing water bit');
     assert.equal(weaponMaterial.depthTest,true);
     assert.equal(particle.layers.mask,1<<24,'aura child renders on the dedicated head-relative layer');
-    assert.equal(particleMaterial.stencilWrite,true,'aura reads the owner's rear stencil');
+    assert.equal(particleMaterial.stencilWrite,true,'aura reads the owner rear stencil');
     assert.equal(particleMaterial.stencilWriteMask,0,'transparent aura must never write a rectangular water stencil');
     assert.equal(particleMaterial.stencilFunc,T.EqualStencilFunc,'aura is rear-mask tested');
     assert.equal(particleMaterial.depthWrite,false,'sprite transparency keeps depth writing off');
