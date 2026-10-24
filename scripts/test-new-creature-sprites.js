@@ -53,6 +53,38 @@ assert.equal(render.eyeStateKey('C'), 'eye-C');
 assert.equal(render.eyeStateKey(true), 'b');
 assert.equal(render.eyeStateKey(false), 'o');
 assert.equal(render.eyeStatesForKind('nelk').join(','), 'A,B,C,D');
+const nelkBodyColor = '#446688'; // Baseline skin color used to test spectacles overrides without modifying genetic data.
+const nelkSpectaclesColor = '#E07090'; // Visibly different inherited pattern color, used for the eye-skin override regression.
+const expressedSpectacles = { base: { color: nelkBodyColor },
+  spectacles: { color: nelkSpectaclesColor, copies: 2, enabled: true } }; // Matches active pattern-layer eligibility.
+assert.equal(render.SPECIES.nelk.eyes.skinColorPattern, 'spectacles', 'Nelk eye skin follows the spectacles layer');
+assert.equal(render.eyeSkinTintColor('nelk', expressedSpectacles, nelkBodyColor), nelkSpectaclesColor,
+  'expressed Nelk spectacles pigment overrides the body tint');
+assert.equal(render.eyeSkinTintColor('nelk', { ...expressedSpectacles,
+  spectacles: { ...expressedSpectacles.spectacles, copies: 1 } }, nelkBodyColor), nelkSpectaclesColor,
+  'one expressed pattern copy also changes the eye-skin color');
+assert.equal(render.eyeSkinTintColor('nelk', { ...expressedSpectacles,
+  spectacles: { color: nelkSpectaclesColor, copies: 1 } }, nelkBodyColor), nelkSpectaclesColor,
+  'legacy patterns without an enabled flag are rendered when they have a copy');
+for (const spectacles of [
+  null,
+  { color: nelkSpectaclesColor, copies: 0, enabled: true },
+  { color: nelkSpectaclesColor, copies: 1, enabled: false },
+  { copies: 2, enabled: true },
+  { color: nelkSpectaclesColor, copies: 0, carrier: true },
+]) {
+  assert.equal(render.eyeSkinTintColor('nelk', { base: { color: nelkBodyColor }, spectacles }, nelkBodyColor),
+    nelkBodyColor, 'unexpressed, disabled, or colorless spectacles retain the body tint');
+}
+assert.equal(render.eyeSkinTintColor('nelk', expressedSpectacles, null), nelkSpectaclesColor,
+  'expressed spectacles can tint eyes even if a legacy genotype lacks a base coat color');
+assert.equal(render.eyeSkinTintColor('nazgraku', expressedSpectacles, nelkBodyColor), nelkBodyColor,
+  'other species with spectacles do not inherit Nelk-specific eye tint behavior');
+assert.notEqual(render.genotypeSignature('nelk', expressedSpectacles),
+  render.genotypeSignature('nelk', { ...expressedSpectacles,
+    spectacles: { ...expressedSpectacles.spectacles, color: nelkBodyColor } }),
+  'the frame-texture cache must distinguish expressed spectacles pigments');
+
 const eyeKey = render.SPECIES.nelk.eyes.skinRecolorKey; // Used to verify the exact color-key predicate installed for all four eye poses.
 assert(eyeKey && render.SPECIES.nelk.eyes.variants.length === 4, 'Every Nelk eye pose uses one skin recolor rule');
 const eyePixels = new Uint8ClampedArray([
