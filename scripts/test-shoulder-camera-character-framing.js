@@ -118,7 +118,7 @@ console.log('Shoulder camera character framing tests passed.');
 scaleValues['mashtzarr::male']=1.255; // Canonical tall-species fixture controls the assisted framing target.
 api.refreshPlayerFraming(nuhonganRoot,{speciesId:'nuhongan',gender:'male'});
 let surfaceNearby=true, probePosition=null; // Deterministic authored surface probe records only character position; orientation and camera height are absent.
-windowObject.FurnitureTableSystem={nearbySurface(area,x,z){probePosition=[x,z];return {active:surfaceNearby,furnitureId:'serving-table'};}};
+windowObject.FurnitureTableSystem={nearbySurface(area,x,z){probePosition=[x,z];return {active:surfaceNearby,furnitureId:'serving-table',height:normalTarget+.1};}};
 const normalDistance=shoulderMode.distanceTiles, normalTarget=shoulderMode.targetYOffsetTiles; // Species settings must survive assisted framing unchanged.
 api.updateSurfaceView('town',0,0,true,0);
 const rising=api.updateSurfaceView('town',0,0,true,100);
@@ -160,3 +160,14 @@ for (const ratio of [.5, 1, 1.75]) {
  api.refreshPlayerFraming(root,{speciesId:'test-size',gender:'male'},'collision-limit-test');
  assert.ok(Math.abs(api.minimumCollisionSetback()-.8*ratio)<1e-9,'collision setback scales with the same cached body ratio as native shoulder distance');
 }
+
+windowObject.FurnitureTableSystem.nearbySurface=()=>({active:true,height:50,furnitureId:'high-pedestal'});
+assert.equal(api.updateSurfaceView('ruin',0,0,true,2500).active,false,'High basin rims cannot trigger tall-species assistance');
+windowObject.FurnitureTableSystem.nearbySurface=()=>({active:true,height:-5,furnitureId:'basin-floor'});
+assert.equal(api.updateSurfaceView('ruin',0,0,true,2600).active,false,'Floors below the player do not request a camera lift');
+const floorStart=gameSource.indexOf('function cameraSurfaceYAtWorld('),floorEnd=gameSource.indexOf('// Find the first terrain crossing',floorStart); // Execute the actual camera floor owner.
+const floorQuery=vm.runInNewContext('('+gameSource.slice(floorStart,floorEnd).trim()+')',{
+ currentArea:'map_i_dev_random_ruin',window:{DevRandomRuin:{getPlayerSupportY:()=>-3},DynamicSurfaces:{sampleSupport:(_x,_z,options)=>({y:options.maxY<0?-3:0})}},
+ activeSurfaceYAtWorld:()=>0,
+});
+assert.equal(floorQuery(4,4),-3,'Camera clearance follows the sunken floor rather than the zero-height map proxy');

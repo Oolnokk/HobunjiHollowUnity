@@ -496,6 +496,11 @@
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
     const ruinLanternScale = ruinTradition === 'kanthic' ? .375 : 1; // +50% versus Kanthic's prior quarter-radius lantern.
     const ctx = lightingDeps.lctx;
+    if(ruinTradition==='kanthic'){
+      const rect=lightingDeps.getThreeRect(); // Screen projection of the same camera-origin 60-degree repelling cone.
+      const radius=rect.height*.5*Math.tan(Math.PI/6)/Math.tan((lightingDeps.camera.fov||50)*Math.PI/360);
+      ctx.save();ctx.beginPath();ctx.arc(rect.width*.5,rect.height*.5,radius,0,Math.PI*2);ctx.clip();
+    }
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
@@ -530,6 +535,8 @@
       ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    if(ruinTradition==='kanthic')ctx.restore(); // Cone clipping is local to this lantern pass.
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.
     if (weatherTint) {
