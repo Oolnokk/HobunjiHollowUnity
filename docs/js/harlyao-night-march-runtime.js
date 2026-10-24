@@ -80,19 +80,13 @@
   }
 
   function roster(index) {
-    const gender = 'male'; // Army remains male-only until matching female Harlyao head art exists.
-    const cosmetics = [...(cfg?.equipment?.forcedCosmetics || ['rugged_poncho'])]; // Every marcher wears the rugged poncho.
-    return {
-      name: index === 0 ? 'Harlyao Commander' : `Harlyao Marcher ${index + 1}`,
-      appearance: { speciesId: SPECIES_ID, gender, cosmetics: {} },
-      equippedCosmetics: cosmetics,
-      appliedDyes: {},
-      cosmeticSlots: Object.fromEntries(cosmetics.map(id => [id, 'overwear'])),
-    };
+    return window.MinionCombat.rollRoster(SPECIES_ID,
+      index === 0 ? 'Harlyao Commander' : `Harlyao Marcher ${index + 1}`,
+      { gender: 'male', equipmentSpeciesId: cfg?.equipment?.loadoutSpeciesId || 'harlyao-skeleton' });
   }
 
   function weapon(index) {
-    const shapes = cfg?.equipment?.weaponShapes || ['daggerSword', 'hatchet', 'fishingspear']; // User-required weapon pool.
+    const shapes = window.MinionCombat.defaultWeaponShapes; // One weapon-pool authority for skeletons and the spectral army.
     const shapeKey = shapes[index % shapes.length]; // Even deterministic distribution.
     const shape = deps?.HELD_SHAPE_DEFS?.[shapeKey] || {}; // Existing damage/animation metadata.
     const metalKey = cfg?.equipment?.weaponMetalKey || 'nativeCopper'; // Existing crafted material key.
@@ -387,9 +381,9 @@
     state.builds++;
     buildPromise = (async () => {
       gangCfg ||= await window.BanditCombat?.loadGangConfig?.();
-      if (!gangCfg || generation !== buildGeneration || !shouldRender(agent)) return;
+      if (!gangCfg || !window.MinionCombat?.rollRoster || generation !== buildGeneration || !shouldRender(agent)) return;
       const w = weapon(agent.index); // Existing melee equipment pool.
-      const c = await window.BanditCombat.makeEntity({ ...gangCfg, speciesWeights: { [SPECIES_ID]: 1 }, rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 } }, 'grunt', 0, agent.x * deps.TILE, agent.y * deps.TILE, {
+      const c = await window.BanditCombat.makeEntity({ ...gangCfg, speciesWeights: { [SPECIES_ID]: 1 }, weaponShapePool: [w.shapeKey], weaponMetalKey: w.metalKey, rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 } }, 'grunt', 0, agent.x * deps.TILE, agent.y * deps.TILE, {
         zoneId: s.zoneId,
         rosterOverride: agent.roster || roster(agent.index),
         defOverride: { label: agent.index === state.commanderIndex ? 'Harlyao Commander' : 'Harlyao Marcher', weaponKey: w.weaponKey, weaponShapeKey: w.shapeKey, weaponMetalKey: w.metalKey, attackTag: w.attackTag, rangedWeaponKey: null },

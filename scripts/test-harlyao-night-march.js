@@ -30,8 +30,8 @@ assert.deepEqual(
   ],
   'daily wilderness cycle must be north W→E, east N→S, south E→W, west S→N',
 );
-assert.deepEqual(config.equipment.forcedCosmetics, ['rugged_poncho'], 'every marcher wears the rugged poncho');
-assert.deepEqual(config.equipment.weaponShapes, ['daggerSword', 'hatchet', 'fishingspear'], 'army weapon pool is dagger-sword, hatchet, or fishing spear only');
+assert.equal(config.equipment.loadoutSpeciesId, 'harlyao-skeleton', 'marchers share skeleton equipment generation');
+assert.equal(config.equipment.weaponShapes, undefined, 'army does not fork the skeleton weapon pool');
 assert.equal(config.activeHours.start, 0, 'march starts at civil midnight');
 assert.equal(config.activeHours.end, 6, 'march disappears at 06:00');
 assert.equal(config.activeHours.coarseStepHours, undefined, 'army movement is no longer interpolated to a clock deadline');

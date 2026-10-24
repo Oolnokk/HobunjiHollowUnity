@@ -764,7 +764,7 @@
     };
     handle.alignToRest();
     handles.add(handle);
-    handle.setAppearance({});
+    handle.readyPromise = handle.setAppearance({}); // Hostile builders wait for the garment before applying ghost or mine-light materials.
     if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});
     return handle;
   }
@@ -842,11 +842,11 @@
     return (cosmetics || []).find(id => !!rigConfig().garments?.[id]) || null;
   }
 
-  function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
+  function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false, preferSpeciesGarment = true } = {}) {
     if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.appearance?.speciesId || rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
     if (garmentForCosmetics(rec.equippedCosmetics)) return false;
-    if (garmentId === DEFAULT_GARMENT_ID && String(rec.appearance?.speciesId || rec.speciesId || rec.species).toLowerCase().replace(/_/g, '-') === 'mao-ao'
+    if (preferSpeciesGarment && garmentId === DEFAULT_GARMENT_ID && String(rec.appearance?.speciesId || rec.speciesId || rec.species).toLowerCase().replace(/_/g, '-') === 'mao-ao'
         && String(rec.appearance?.gender || rec.gender).toLowerCase() === 'female') garmentId = 'layered_skirt';
     rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
     if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
