@@ -1475,6 +1475,7 @@
       detachedIncubators: allAdditions().filter(addition => !owningBarnOfAddition(addition.id)), // Reports babies excluded from the visible barn list.
       reservedTroughs: [...reservedTroughMap().keys()],
       nurseryBabyCount: nurseryBabies().length,
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Incubator Debug reveals success animations and pending prompts.
       currentArea: currentArea(),
       sleepingVisuals: [...sleepingBabies.keys()],
       layoutEditor: window.FarmPanel?.layoutEditorDebug?.() || null,
