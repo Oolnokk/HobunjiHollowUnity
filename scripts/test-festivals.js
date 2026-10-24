@@ -33,7 +33,7 @@ window.FurnitureTableSystem={registerService:(id,provider)=>mealServices.set(id,
 const api = window.FestivalSystem, calendar = window.FestivalCalendar; // Production APIs under test.
 api.init({ getHeldMealChoice:()=>heldChoice, inventory, getItemDefs: () => defs, getNpcs: () => npcs, getWalkers: () => npcs.map(rec => ({ rec, area: 'town' })), getTownMap: () => town, getArea: () => area, getPlayerTile: () => position, getDecorSize: key => ({ fw: key === 'tableLong' ? 4 : key === 'rug' ? 2 : 1, fd: key === 'rug' ? 2 : 1 }), isBlocked: () => blocked, refresh() {}, save: () => { saved++; }, toast() {}, grantMask: () => true, tellStory: () => ({ ok: true }) });
 function visit(id, type) {
-  hour=id==='gorkunash'?17:12;
+  hour=17; // All joinable festival locales use the shared 15:00–01:00 gathering window.
   const def = calendar.get(id); // Move time and feet to the real authored interaction anchor.
   civilDay = calendar.ordinal(def.month, def.day);
   if(id==='gorkunash'&&type==='potluck')return {id:'gorkunash_feast',activity:{type:'potluck'},directMeal:true};
@@ -133,4 +133,30 @@ assert.equal(perform(prop).ok, true); position.c += 10; time += 200; api.update(
 assert.equal(perform(prop).ok, false, 'cannot activate distant prop via a stale menu');
 area = 'farm'; assert.equal(api.actionButton(), null);
 assert(saved >= 7);
-console.log('Festival calendar, layouts, quality rewards, annual persistence, costumes, and dance checks passed.');
+// Remembrance is a real interrupted/completed local observance, not a no-op menu item.
+area='town'; // The preceding stale-action assertion deliberately left the player in the farm.
+prop = visit('tzizkhanash', 'remembrance');
+assert.equal(perform(prop).ok,true);
+const favorBeforeRemembrance=deltas.length; // Completion grants an annual reward, entering the circle does not.
+for(let i=0;i<59;i++){time+=200;api.update();}
+assert.equal(api.claimed('remembrance'),false,'no reward before twelve full seconds');
+time+=400;api.update();
+assert.equal(api.claimed('remembrance'),true,'Tzizkhanash remembrance completes in the world');
+assert(deltas.length>favorBeforeRemembrance,'completed remembrance rewards the player for joining');
+year++;prop=visit('tzizkhanash','remembrance');
+assert.equal(perform(prop).ok,true);
+position.c+=10;time+=200;api.update();
+assert.equal(api.diagnostics().remembrance,null,'leaving a remembrance locale cancels completion');
+assert.equal(api.claimed('remembrance'),false,'canceled observance cannot claim its reward');
+// Playing along must sound a real note before the player earns the music participation bonus.
+window.MusicMinigame.beginPlayerSession=function(){this.state={active:true,announcedPlaying:false};};
+prop=visit('five_blossoms','music');
+assert.equal(perform(prop).ok,true);
+for(let i=0;i<105;i++){time+=200;api.update();}
+assert.equal(api.claimed('music'),false,'an idle instrument overlay never earns Favor');
+window.MusicMinigame.state.announcedPlaying=true;
+for(let i=0;i<105;i++){time+=200;api.update();}
+assert.equal(api.claimed('music'),true,'active music participation earns the annual reward');
+window.MusicMinigame.state.active=false;time+=200;api.update();
+assert.equal(api.diagnostics().musicParticipation,null,'closing the instrument session clears its activity');
+console.log('Festival calendar, layouts, quality rewards, annual persistence, costumes, dance and active locale participation passed.');
