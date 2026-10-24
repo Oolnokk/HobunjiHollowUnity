@@ -154,16 +154,45 @@
     return _atlasPromise;
   }
 
-  function makeSwarmMaterial(THREE, name) {
+  // Body recolor, done in the fragment shader so every color shares one atlas and
+  // one program (no per-color textures). Dark pixels (outline, beak, feet, pupil)
+  // are left alone; the mint body is remapped by its brightness so the authored
+  // shading and the pale wing highlights survive in any color. BODY_LUMINANCE is
+  // the source art's typical body brightness (measured from the three frames).
+  const BODY_LUMINANCE = 0.62;
+  const MAP_FRAGMENT = `
+#ifdef USE_MAP
+  vec4 texelColor = texture2D( map, vUv );
+  texelColor = mapTexelToLinear( texelColor );
+  if ( uUse > 0.5 ) {
+    float lum = dot( texelColor.rgb, vec3( 0.299, 0.587, 0.114 ) );
+    float body = smoothstep( 0.15, 0.35, lum );
+    float ratio = lum / ${BODY_LUMINANCE.toFixed(2)};
+    vec3 tinted = uBody * min( ratio, 1.0 ) + ( vec3( 1.0 ) - uBody ) * clamp( ( ratio - 1.0 ) * 0.9, 0.0, 1.0 );
+    tinted = max( tinted, vec3( 0.09 ) );
+    texelColor.rgb = mix( texelColor.rgb, tinted, body );
+  }
+  diffuseColor *= texelColor;
+#endif
+`;
+
+  function makeSwarmMaterial(THREE, name, color) {
     const surface = window.HobunjiSpritePngSurface;
     const overrides = { side: THREE.DoubleSide }; // A double-sided card reads as one physical card from either camera side.
     const material = surface?.makeMaterial
       ? surface.makeMaterial(THREE, _atlas?.texture || null, name, overrides)
       : new THREE.MeshBasicMaterial({ map: _atlas?.texture || null, transparent: true, alphaTest: 0.001, side: THREE.DoubleSide, name });
+    const uniforms = { uBody: { value: new THREE.Color(color || '#ffffff') }, uUse: { value: color ? 1 : 0 } };
+    material.userData.honeyfuzzle = uniforms;
     material.onBeforeCompile = shader => { // One atlas, three frames: the per-instance aFrame attribute picks a third of the texture.
+      shader.uniforms.uBody = uniforms.uBody;
+      shader.uniforms.uUse = uniforms.uUse;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aFrame;')
         .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_UV\nvUv.x = (vUv.x + aFrame) / 3.0;\n#endif');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uBody;\nuniform float uUse;')
+        .replace('#include <map_fragment>', MAP_FRAGMENT);
     };
     material.customProgramCacheKey = () => 'honeyfuzzle_swarm_atlas';
     if (!_atlas) _pendingMaterials.add(material);
@@ -172,7 +201,7 @@
 
   // ---- avatar --------------------------------------------------------------
 
-  // options: { name, seed, count, modelWidth, memberWidth }
+  // options: { name, seed, count, modelWidth, memberWidth, color }  (color: '#rrggbb' body color; omit for the authored mint)
   // modelWidth is the swarm's overall footprint; memberWidth one bird's width.
   function buildAvatar(THREE, options = {}) {
     const count = Math.max(3, Math.floor(options.count || DEFAULT_MEMBER_COUNT));
@@ -183,7 +212,7 @@
     const geometry = new THREE.PlaneGeometry(memberWidth, memberWidth * MEMBER_ASPECT);
     const frameAttr = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
     geometry.setAttribute('aFrame', frameAttr);
-    const material = makeSwarmMaterial(THREE, (options.name || 'honeyfuzzle') + '_swarm_mat');
+    const material = makeSwarmMaterial(THREE, (options.name || 'honeyfuzzle') + '_swarm_mat', options.color);
     const mesh = new THREE.InstancedMesh(geometry, material, count);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false; // Members drift outside the single-plane bounding sphere.
@@ -226,6 +255,12 @@
         }
         mesh.instanceMatrix.needsUpdate = true;
         if (stepChanged) { frameAttr.array.set(frames); frameAttr.needsUpdate = true; }
+      },
+      setColor(color) { // Recolors this swarm only (its own material uniforms).
+        const u = material.userData.honeyfuzzle;
+        if (!u) return;
+        u.uUse.value = color ? 1 : 0;
+        if (color) u.uBody.value.set(color);
       },
       dispose() {
         if (disposed) return;

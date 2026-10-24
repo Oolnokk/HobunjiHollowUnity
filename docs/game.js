@@ -4675,7 +4675,7 @@
         // A swarm species (honeyfuzzle) is one entity drawn as an instanced
         // flock — see js/honeyfuzzle-swarm.js; frontPlane is its yaw pivot.
         const avatarRef = def.swarm && window.HoneyfuzzleSwarm
-          ? window.HoneyfuzzleSwarm.buildAvatar(THREE, { name: c.id, seed: window.HoneyfuzzleSwarm.seedFromString(c.id), modelWidth, count: def.swarm.members, memberWidth: def.swarm.memberWidth, hoverY: def.swarm.hoverY })
+          ? window.HoneyfuzzleSwarm.buildAvatar(THREE, { name: c.id, seed: window.HoneyfuzzleSwarm.seedFromString(c.id), modelWidth, count: def.swarm.members, memberWidth: def.swarm.memberWidth, hoverY: def.swarm.hoverY, color: c.swarmColor })
           : window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
           name: c.id,
@@ -8359,7 +8359,7 @@
           // the legacy whistle.
           const activeStabled = activeId ? stable.find(s => s.id === activeId) : null;
           const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
+            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype, swarmColor: activeStabled.swarmColor }
             : null;
           // Only the companion slot honors the legacy whistle fallback —
           // mount/shoulder-pet have no equivalent item-based summon path.
@@ -8377,12 +8377,13 @@
           // two differently-bred gar-wolves) still needs a respawn so the new
           // one's genotype actually renders.
           if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
-            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) continue;
+            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)
+            && (existing.swarmColor || null) === (desired.swarmColor || null)) continue;
           despawnCompanions(master, role);
           const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
           const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
           const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
+            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, swarmColor: desired.swarmColor, stableRole: role,
           });
           if (companion) {
             companionObjects.add(companion);
@@ -30084,6 +30085,7 @@
         getGrid: () => window.GridTileAccessors.getActiveGrid(),
         getVegetationGroup: (zoneId, col, row) => _zoneVegetationMeshes.get(zoneId)?.get(`${col},${row}`) || null,
         isNightTime: () => window.Music?.isNightTime?.(),
+        getWorldId: _tothalWorldId,
         makeCreatureEntity, moveCreatureToward, updateCreatureMesh, updateCreatureAnimFrame,
         removeZoneVegetationVisual, buildInventoryGrid, refreshActionBar, saveMemberWorldData,
         refreshItemScroll: () => window.HudUpdate.refreshItemScroll(),
@@ -30939,7 +30941,7 @@
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
       // Honeyfuzzle House (1x1 egg/swarm slot on a FarmProduction entry) — js/honeyfuzzle-house.js.
-      window.HoneyfuzzleHouse?.init({ THREE, scene, getCamera: () => camera, getCurrentArea: () => currentArea, inventory,
+      window.HoneyfuzzleHouse?.init({ THREE, scene, getWorldId: _tothalWorldId, getCamera: () => camera, getCurrentArea: () => currentArea, inventory,
         loadWorldLivestock: _loadWorldLivestock, saveWorldLivestock: _saveWorldLivestock, hasFarmPermission, showToast,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData, surfaceY: farmSurfaceYAtWorld,
         refreshInventory: () => { buildInventoryGrid(); refreshActionBar(); } });

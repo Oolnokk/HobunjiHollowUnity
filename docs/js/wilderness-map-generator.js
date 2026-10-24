@@ -6682,7 +6682,7 @@
       // chooseTradeExit) — Slagothim caravans enter and leave by it.
       tradeExitSide: 'south',
     },
-    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, beehives: 0 }, // Honeyfuzzle hive stumps (and their swarms) live everywhere except here.
     map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
   };
 

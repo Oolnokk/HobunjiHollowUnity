@@ -11,7 +11,8 @@ const vm = require('node:vm');
 const read = file => fs.readFileSync(file, 'utf8');
 
 function sandbox(extra = {}) {
-  const context = { console, Math, Date, performance: { now: () => 0 }, setInterval: () => 1, clearInterval() {}, localStorage: { getItem: () => null, setItem() {} }, ...extra };
+  const storage = new Map(); // Stateful so the per-world egg color queue persists inside one test world.
+  const context = { console, Math, Date, performance: { now: () => 0 }, setInterval: () => 1, clearInterval() {}, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) }, ...extra };
   context.window = context;
   context.InventoryStacks = require('./lib/inventory-stacks');
   vm.createContext(context);
@@ -28,8 +29,9 @@ function fakeThree() {
     Group: class extends Obj {},
     PlaneGeometry: class { constructor() { this.attrs = {}; this.disposed = false; } setAttribute(name, attr) { this.attrs[name] = attr; } getAttribute(name) { return this.attrs[name]; } dispose() { this.disposed = true; } },
     InstancedBufferAttribute: class { constructor(array) { this.array = array; this.needsUpdate = false; } },
-    MeshBasicMaterial: class { constructor(options) { Object.assign(this, options); this.disposed = false; } dispose() { this.disposed = true; } },
+    MeshBasicMaterial: class { constructor(options) { Object.assign(this, options); this.userData = {}; this.disposed = false; } dispose() { this.disposed = true; } },
     CanvasTexture: class {},
+    Color: class { constructor(value) { this.value = value; } set(value) { this.value = value; } },
     InstancedMesh: class extends Obj { constructor(geometry, material, count) { super(); this.geometry = geometry; this.material = material; this.count = count; this.instanceMatrix = { array: new Float32Array(count * 16), needsUpdate: false, setUsage() {} }; } dispose() {} },
   };
 }
@@ -110,6 +112,13 @@ function fakeThree() {
   assert.equal(frameAttr.needsUpdate, false);
   avatar.update(0, 1000 + S.WING_TICK_MS, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, true, 'a new tick uploads the new frames once');
+  // Body color: uncolored swarms keep the authored mint; a colored one gets its own uniforms and can be recolored.
+  assert.equal(avatar.swarm.material.userData.honeyfuzzle.uUse.value, 0);
+  const tinted = S.buildAvatar(THREE, { name: 'tinted', modelWidth: 1.3, color: '#0b0b0e' });
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uUse.value, 1); assert.equal(tinted.swarm.material.userData.honeyfuzzle.uBody.value.value, '#0b0b0e');
+  assert.notEqual(tinted.swarm.material.userData.honeyfuzzle, avatar.swarm.material.userData.honeyfuzzle, 'swarms never share color uniforms');
+  tinted.setColor('#ece8e0'); assert.equal(tinted.swarm.material.userData.honeyfuzzle.uBody.value.value, '#ece8e0');
+  assert.equal(S.DEFAULT_MEMBER_COUNT, tinted.memberCount, 'default swarm size');
   avatar.dispose();
   assert.equal(avatar.swarm.geometry.disposed, true);
   assert.doesNotThrow(() => avatar.dispose());
@@ -129,10 +138,57 @@ function fakeThree() {
   assert.equal(context.CreatureGenetics.makeDefaultGenotype('honeyfuzzle'), null, 'no coat genes');
 }
 
+// ---- colors by region ---------------------------------------------------------------------------
+{
+  const context = sandbox();
+  load(context, 'docs/config/scratchbones-config.js');
+  load(context, 'docs/js/honeyfuzzle-colors.js');
+  const C = context.HoneyfuzzleColors;
+  const regions = C.regionPalettes();
+  const all = [...regions.temperate, ...regions.tropical, ...regions.ominous];
+  assert.equal(new Set(all).size, all.length, 'a color belongs to exactly one region');
+  // Every body color an existing species can have is somewhere in the master palette.
+  const speciesHex = Object.values(context.SCRATCHBONES_CONFIG.game.creatureGenetics.palettes).flat().map(entry => entry.hex.toLowerCase());
+  assert(speciesHex.length >= 40);
+  for (const hex of speciesHex) assert(all.includes(hex), `species color ${hex} is available to honeyfuzzles`);
+  for (const region of C.REGIONS) assert(regions[region].length >= 10, `${region} has a broad palette`);
+  // Northern Cliffs: temperate. Cloud Forest: tropical. Eastern Mire: ominous. Everything else: all three.
+  assert.deepEqual(Array.from(C.zonePalette('map_northern_cliffs')), Array.from(regions.temperate));
+  assert.deepEqual(Array.from(C.zonePalette('map_southern_cloud_forest')), Array.from(regions.tropical));
+  assert.deepEqual(Array.from(C.zonePalette('map_eastern_mire')), Array.from(regions.ominous));
+  assert.equal(C.zonePalette('map_dev_arena').length, all.length);
+  assert.equal(C.zonePalette('map_western_slope').length, 0, 'no honeyfuzzles on the Western Slope');
+  assert.equal(C.pickForKey('map_western_slope', 'x'), null);
+  const hsl = hex => C.hexToHsl(hex);
+  // Tropical: vivid parrot colors, nothing dull. The whole Drenkirra palette lands here.
+  for (const hex of regions.tropical) assert(hsl(hex).s >= 0.55 && hsl(hex).l > 0.3, `${hex} is a vivid tropical color`);
+  for (const entry of context.SCRATCHBONES_CONFIG.game.creatureGenetics.palettes.drenkirra) assert(regions.tropical.includes(entry.hex.toLowerCase()), `${entry.hex} (Drenkirra) is tropical`);
+  // Eastern Mire: blacks, greys, whites and the darkest greens through violets; no bright colors.
+  for (const hex of regions.ominous) {
+    const { h, s, l } = hsl(hex);
+    assert(s < 0.12 || l > 0.85 || l < 0.32 && (h >= 75 && h <= 300 || l < 0.25), `${hex} is an ominous color`);
+  }
+  assert(regions.ominous.some(hex => hsl(hex).l < 0.1), 'includes true blacks');
+  assert(regions.ominous.some(hex => hsl(hex).l > 0.85), 'includes whites');
+  assert(regions.ominous.some(hex => hsl(hex).s < 0.12 && hsl(hex).l > 0.3 && hsl(hex).l < 0.7), 'includes greys');
+  for (const [lo, hi] of [[75, 165], [165, 255], [255, 300]]) assert(regions.ominous.some(hex => { const c = hsl(hex); return c.s >= 0.12 && c.h >= lo && c.h <= hi && c.l < 0.32; }), `includes a darkest shade at hue ${lo}-${hi}`);
+  // Temperate: muted, earthy and classic songbird colors, no blacks/whites and no tropical neons.
+  for (const hex of regions.temperate) assert(hsl(hex).l >= 0.2 && hsl(hex).s >= 0.12 && !(hsl(hex).s >= 0.6 && hsl(hex).l >= 0.38 && hsl(hex).l <= 0.72 && !C.AUTHORED.temperate.includes(hex)), `${hex} is a temperate color`);
+  // One stump, one color, always; and different stumps vary.
+  assert.equal(C.pickForKey('map_northern_cliffs', 'a:hive:1,2'), C.pickForKey('map_northern_cliffs', 'a:hive:1,2'));
+  const picked = new Set(Array.from({ length: 200 }, (_, i) => C.pickForKey('map_eastern_mire', `hive:${i}`)));
+  assert(picked.size >= 8 && [...picked].every(hex => regions.ominous.includes(hex)), 'hives in one region vary within that region\'s palette');
+  // Egg colors queue per world and survive in order.
+  C.queueEggColors('w1', ['#111111', '#222222']); C.queueEggColors('w2', ['#333333']);
+  assert.equal(C.takeEggColor('w1'), '#111111'); assert.equal(C.takeEggColor('w2'), '#333333'); assert.equal(C.takeEggColor('w1'), '#222222'); assert.equal(C.takeEggColor('w1'), null);
+}
+
 // ---- hive stumps ----------------------------------------------------------------------------
 const TileType = { GRASS: 'grass', SHRUB: 'shrub' };
 function hiveWorld({ night = false } = {}) {
   const context = sandbox();
+  load(context, 'docs/config/scratchbones-config.js');
+  load(context, 'docs/js/honeyfuzzle-colors.js');
   load(context, 'docs/js/honeyfuzzle-hives.js');
   const grid = Array.from({ length: 12 }, () => Array.from({ length: 12 }, () => ({ type: TileType.GRASS })));
   grid[4][5] = { type: TileType.SHRUB, floraKind: 'beehive' };
@@ -144,7 +200,7 @@ function hiveWorld({ night = false } = {}) {
   context.HoneyfuzzleHives.init({
     TILE: 40, TileType, player, calendar: state.calendar, inventory: state.inventory, hostileObjects: state.hostile, rnd: () => 0.5,
     zoneLayouts: new Map([['map_test', { tiles }]]), felledPersist: state.felled,
-    getCurrentArea: () => state.area, isZoneArea: id => id.startsWith('map_'), getGrid: () => grid,
+    getCurrentArea: () => state.area, isZoneArea: id => id.startsWith('map_'), getGrid: () => grid, getWorldId: () => 'w1',
     getVegetationGroup: () => ({ name: 'stump' }), isNightTime: () => state.night,
     makeCreatureEntity: (kind, x, y, opts) => { const c = { kind, x, y, health: 10, def: { moveSpeed: 100 }, avatarRef: { group: { visible: true } }, ...opts }; state.created.push(c); return c; },
     // The stump tile is solid: movement toward its centre stops at its edge (0.6 tile out), like the real collision.
@@ -156,13 +212,14 @@ function hiveWorld({ night = false } = {}) {
   return { H: context.HoneyfuzzleHives, grid, state, player, context };
 }
 {
-  const { H, grid, state } = hiveWorld();
+  const { H, grid, state, context } = hiveWorld();
   assert.deepEqual(Array.from(H.hivesInLayout({ tiles: [{ c: 5, r: 4, floraKind: 'beehive' }, { c: 1, r: 1, floraKind: 'bush' }] }), h => `${h.col},${h.row}`), ['5,4'], 'only beehive stumps count');
   // A: by day, exactly one swarm comes out of the stump, near it, and it is not duplicated.
   H.ensureCurrentZone(); H.ensureCurrentZone();
   assert.equal(state.created.length, 1);
   const swarm = state.created[0];
   assert.equal(swarm.kind, 'honeyfuzzle'); assert.equal(swarm.hiveKey, 'map_test:hive:5,4');
+  assert(H && context.HoneyfuzzleColors.zonePalette('map_test').includes(swarm.swarmColor), 'the swarm gets a color from its zone palette');
   assert.equal(swarm.homeX, 5.5 * 40); assert.equal(swarm.homeY, 4.5 * 40);
   assert(Math.hypot(swarm.x - swarm.homeX, swarm.y - swarm.homeY) < 40 * 2);
   assert.equal(H.control(swarm, 0.1), false, 'by day the generic wildlife AI runs');
@@ -197,6 +254,9 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(result.ok, true, result.message);
   assert(result.eggs >= 1 && result.eggs <= 3, 'one to three fertile eggs');
   assert.equal(state.inventory.fertileHoneyfuzzleEgg, result.eggs);
+  const stumpColor = swarm.swarmColor;
+  for (let i = 0; i < result.eggs; i++) assert.equal(context.HoneyfuzzleColors.takeEggColor('w1'), stumpColor, 'each egg carries its stump\'s color');
+  assert.equal(context.HoneyfuzzleColors.takeEggColor('w1'), null, 'one queued color per egg');
   assert(state.inventory.honey >= H.HONEY_MIN && state.inventory.honey <= H.HONEY_MAX, 'honey arrives with the eggs');
   assert.equal(grid[4][5].type, TileType.GRASS, 'the stump collapses');
   assert.equal(grid[4][5].floraKind, 'beehive', 'the same stump is what regrows later');
@@ -215,6 +275,17 @@ function hiveWorld({ night = false } = {}) {
   // A full bag of eggs refuses rather than eating the stump.
   const full = hiveWorld(); full.state.inventory.fertileHoneyfuzzleEgg = full.context.InventoryStacks.MAX_TOTAL;
   assert.equal(full.H.harvest('map_test', 5, 4).ok, false); assert.equal(full.grid[4][5].type, TileType.SHRUB, 'a refused harvest leaves the stump standing');
+}
+
+{
+  // No honeyfuzzles on the Western Slope: no swarm spawns and its stumps are not harvestable hives.
+  const west = hiveWorld();
+  west.state.area = 'map_western_slope';
+  west.context.HoneyfuzzleHives.ensureCurrentZone();
+  assert.equal(west.state.created.length, 0);
+  assert.equal(west.context.HoneyfuzzleHives.getAimedHive(5, 4), null);
+  assert.equal(west.context.HoneyfuzzleHives.getHoldTarget(5, 4), null);
+  assert.equal(west.context.HoneyfuzzleColors.zonePalette('map_western_slope').length, 0);
 }
 
 // ---- Honeyfuzzle House (FarmProduction building) --------------------------------------------
@@ -271,6 +342,8 @@ function hiveWorld({ night = false } = {}) {
   load(context, 'docs/config/farm-specializations.js');
   load(context, 'docs/js/item-processing.js');
   load(context, 'docs/js/farm-production.js');
+  load(context, 'docs/config/scratchbones-config.js');
+  load(context, 'docs/js/honeyfuzzle-colors.js');
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   load(context, 'docs/js/honeyfuzzle-house.js');
   context.Image = class { set src(v) {} }; context.document = { createElement: () => ({ getContext: () => ({ drawImage() {} }) }) };
@@ -285,12 +358,13 @@ function hiveWorld({ night = false } = {}) {
   context.ItemProcessing.init({ ITEM_DEFS: shared.ITEM_DEFS, cropData: {}, getActiveInventoryItem: () => null });
   context.FarmProduction.init(shared);
   const added = [];
-  context.HoneyfuzzleHouse.init({ ...shared, THREE: fakeThree(), scene: { add: o => added.push(o), remove() {} }, getCamera: () => null, getCurrentArea: () => 'farm', loadWorldLivestock: () => livestock, saveWorldLivestock: list => { livestock = list; }, surfaceY: () => 0, refreshInventory() {} });
+  context.HoneyfuzzleHouse.init({ ...shared, getWorldId: () => 'w1', THREE: fakeThree(), scene: { add: o => added.push(o), remove() {} }, getCamera: () => null, getCurrentArea: () => 'farm', loadWorldLivestock: () => livestock, saveWorldLivestock: list => { livestock = list; }, surfaceY: () => 0, refreshInventory() {} });
   const house = context.HoneyfuzzleHouse;
   const save = [{ id: 'h1', key: 'honeyfuzzleHouse', col: 2, row: 2 }, { id: 'h2', key: 'honeyfuzzleHouse', col: 6, row: 2 }];
   context.FarmProduction.load(save);
   const [a, b] = context.FarmProduction.entries();
-  // Timed hatch.
+  // Timed hatch. The egg's color comes from the queue filled when its stump was harvested.
+  context.HoneyfuzzleColors.queueEggColors('w1', ['#123a22']);
   assert.equal(house.placeEgg(a).ok, true);
   calendar.day = 2; context.FarmProduction.tick();
   assert.equal(house.phase(a), 'egg', 'not hatched before its time');
@@ -300,6 +374,7 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(livestock.length, 1);
   assert.equal(livestock[0].kind, 'honeyfuzzle'); assert.equal(livestock[0].houseId, 'h1'); assert.equal(livestock[0].barnId, null);
   assert.equal(livestock[0].lifeStage, 'adult', 'a hatched swarm is not mistaken for a Nursery baby');
+  assert.equal(livestock[0].swarmColor, '#123a22', 'the hatched swarm keeps its egg\'s color');
   assert.equal(house.placeEgg(a).ok, false, 'the swarm fills the house');
   // The house survives a save/load round trip, keeping its swarm.
   const saved = JSON.parse(JSON.stringify(context.FarmProduction.serialize()));
@@ -310,6 +385,7 @@ function hiveWorld({ night = false } = {}) {
   // Growth Tonic hatches an egg at once; it needs a tonic.
   assert.equal(house.useTonic(b).ok, false, 'nothing to hatch in an empty house');
   assert.equal(house.placeEgg(b).ok, true);
+  assert(context.HoneyfuzzleColors.regionPalettes().temperate.concat(context.HoneyfuzzleColors.regionPalettes().tropical, context.HoneyfuzzleColors.regionPalettes().ominous).includes(b.house.egg.color), 'an egg with no queued color rolls one from the master palette');
   inventory.growthTonic = 0;
   assert.equal(house.useTonic(b).ok, false, 'no tonic, no instant hatch');
   inventory.growthTonic = 1;

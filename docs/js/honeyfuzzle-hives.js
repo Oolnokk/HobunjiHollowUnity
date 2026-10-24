@@ -55,6 +55,7 @@
   }
 
   function isLiveHiveTile(grid, col, row) { // True while the stump still stands (a collapsed one is plain grass).
+    if (window.HoneyfuzzleColors?.isExcludedZone(deps.getCurrentArea())) return false; // No honeyfuzzles on the Western Slope: its stumps are plain scenery.
     const tile = grid?.[row]?.[col];
     return !!tile && tile.type === deps.TileType.SHRUB && tile.floraKind === 'beehive';
   }
@@ -74,6 +75,7 @@
     const angle = deps.rnd() * Math.PI * 2;
     const c = deps.makeCreatureEntity(SPECIES, hx + Math.cos(angle) * T * 0.9, hy + Math.sin(angle) * T * 0.9, {
       homeX: hx, homeY: hy, state: 'idle', hiveKey: hive.key, wildlifeRole: 'prey',
+      swarmColor: window.HoneyfuzzleColors?.pickForKey(zoneId, hive.key) || undefined, // Each stump's swarm keeps one color from its region's palette.
     });
     if (!c) return null;
     deps.hostileObjects.add(c);
@@ -178,6 +180,8 @@
     const eggRoom = Math.max(0, (window.InventoryStacks?.MAX_TOTAL ?? 99) - (Number(deps.inventory[EGG_ITEM]) || 0));
     if (eggRoom < 1) return { ok: false, message: 'No room in your bag for fertile eggs.' };
     const gotEggs = addToBag(EGG_ITEM, Math.min(eggs, eggRoom));
+    const eggColor = window.HoneyfuzzleColors?.pickForKey(zoneId, hiveKeyFor(zoneId, col, row)); // The eggs hatch into this stump's color.
+    if (eggColor) window.HoneyfuzzleColors.queueEggColors(deps.getWorldId?.(), Array.from({ length: gotEggs }, () => eggColor));
     const gotHoney = addToBag(HONEY_ITEM, honey);
     collapseHive(zoneId, col, row);
     window.HobunjiActivityEvents?.emit?.('hive_harvested', { area: zoneId, eggs: gotEggs, honey: gotHoney });

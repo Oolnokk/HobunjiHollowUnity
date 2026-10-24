@@ -218,6 +218,7 @@
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
   <script src="js/creature-genetics-render.js?v=20261023nelkEye2"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261023hf1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
+  <script src="js/honeyfuzzle-colors.js?v=20261024hf1"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
   <script src="js/honeyfuzzle-hives.js?v=20261023hf1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
@@ -246,7 +247,7 @@
   <script src="js/map-boundary-guard.js?v=1"></script>
   <script src="js/terrain-preview.js?v=20261013he41c002"></script>
   <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
-  <script src="js/wilderness-map-generator.js?v=20261013h80d4318"></script>
+  <script src="js/wilderness-map-generator.js?v=20261024hbdcec3c"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>

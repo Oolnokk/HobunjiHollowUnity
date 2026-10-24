@@ -72,7 +72,9 @@
     if (bagCount(EGG_ITEM) < 1) return { ok: false, message: 'You have no fertile honeyfuzzle egg.' };
     const now = window.FarmProduction.now();
     deps.inventory[EGG_ITEM] = bagCount(EGG_ITEM) - 1;
-    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays() };
+    const colors = window.HoneyfuzzleColors;
+    const color = colors?.takeEggColor(deps.getWorldId?.()) || colors?.pickForKey('', 'egg' + Math.random()) || null; // The oldest harvested egg's color; a fresh roll if the bag held eggs from elsewhere.
+    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays(), color };
     persist();
     return { ok: true, message: `🥚 The egg is tucked into the house. It hatches in ${hatchDays()} days.` };
   }
@@ -86,7 +88,7 @@
     list.push({
       id, kind: KIND, barnId: null, houseId: entry.id, troughIndex: null, releasedAt: Date.now(),
       lifeStage: 'adult', // barnId:null alone reads as a Nursery baby (livestock-nursery.js isBaby); a hatched swarm is ready to live in its house or be taken as a companion.
-      name, genotype: null, daysUntilResource: null, resourceReady: false, heartLevel: 2,
+      name, genotype: null, swarmColor: house.egg.color || null, daysUntilResource: null, resourceReady: false, heartLevel: 2,
     });
     deps.saveWorldLivestock(list);
     house.egg = null;
@@ -160,7 +162,7 @@
     const w = size?.w ?? 1, h = size?.h ?? 1;
     const x = entry.col + w / 2, z = entry.row + h / 2;
     if (existing) { existing.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z); existing.entry = entry; return; }
-    const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.22, hoverY: 0 });
+    const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.22, hoverY: 0, color: record.swarmColor || undefined });
     avatar.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z);
     deps.scene.add(avatar.group);
     visuals.set(entry.id, { entry, avatar, group: avatar.group });

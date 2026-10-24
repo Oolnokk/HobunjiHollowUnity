@@ -1419,6 +1419,7 @@
     return {
       id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
       genotype: entry.genotype, aiType: deps.companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
+      ...(entry.swarmColor ? { swarmColor: entry.swarmColor } : {}), // A honeyfuzzle swarm keeps its color as a companion.
     };
   }
   function _addToOwnStable(stabledEntry) {
