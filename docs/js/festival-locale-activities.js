@@ -5,12 +5,13 @@
   let deps = null; // FestivalSystem supplies its cached active map and current gathering state.
   let layout = null; // Effective layout identity invalidates authored destinations when the map is edited.
   let phaseKey = ''; // Festival/date/shift key; NPC choices change only every 60 game minutes.
+  let rosterSize = -1; // Newly loaded residents trigger a refresh even within the same festival shift.
   const targets = new Map(); // Read in O(1) by the high-frequency NPC schedule override.
   const walkers = new Map(); // Refreshed during the existing low-frequency festival update.
   let lastError = ''; // Copied through FestivalSystem diagnostics on mobile.
 
   function clear() {
-    targets.clear(); walkers.clear(); layout = null; phaseKey = ''; lastError = '';
+    targets.clear(); walkers.clear(); layout = null; phaseKey = ''; rosterSize = -1; lastError = '';
   }
   function init(injected) { deps = injected; clear(); }
   function hash(value) {
@@ -42,8 +43,9 @@
     const key = festival.id + ':' + shift;
     walkers.clear(); // Walker instances change after scene transfers even when the locale itself has not moved.
     for (const walker of deps.getWalkers?.() || []) if (walker?.rec?.id) walkers.set(walker.rec.id, walker);
-    if (nextLayout === layout && phaseKey === key && !lastError) return;
-    layout = nextLayout; phaseKey = key; targets.clear(); lastError = '';
+    const roster = deps.residents?.() || []; // Handles late NPC database loading without waiting an in-game hour.
+    if (nextLayout === layout && phaseKey === key && !lastError && roster.length === rosterSize) return;
+    layout = nextLayout; phaseKey = key; rosterSize = roster.length; targets.clear(); lastError = '';
     const roots = (nextLayout.decor || []).filter(p => p.festivalLocale?.kind && p.activity?.type);
     const stations = new Map(); // Group expanded station IDs under their movable parent, not absolute coordinates.
     for (const station of nextLayout.npcStations || []) {
@@ -57,7 +59,7 @@
     })).filter(entry => entry.slots.length);
     if (!places.length) return;
     const reserved = new Set(); // Prevent two NPCs walking to the same authored position.
-    const residents = (deps.residents?.() || []).slice().sort((a,b) => String(a.id).localeCompare(String(b.id)));
+    const residents = roster.slice().sort((a,b) => String(a.id).localeCompare(String(b.id)));
     for (const rec of residents) {
       if (!rec?.id || rec.dead || rec.deceased) continue;
       // Dedicated storytellers, guards and musicians have first refusal on their own authored slot.
