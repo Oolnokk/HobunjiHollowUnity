@@ -944,25 +944,41 @@
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const near = Number(camera.near) || 0;
-    for (const mesh of meshes) {
-      const geometry = mesh?.geometry;
+    function includeBounds(mesh) {
+      const geometry = mesh?.geometry; // Used to project one held mesh or one visible child with a live enchantment emitter.
       if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) return false;
       if (!geometry.boundingBox) geometry.computeBoundingBox();
-      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) continue;
+      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
       scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
-      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Live enchantment billboards may drift and bloom beyond this held mesh's geometry.
-      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis()); // Expand the replay draw/cull rectangle without clipping those particles or disabling scissoring globally.
+      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Live sprite growth/drift can reach outside this plane's geometric rectangle.
+      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis());
       const { min, max } = scissorBox;
       for (let corner = 0; corner < 8; corner++) {
         scissorCorner.set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z);
         scissorCorner.applyMatrix4(camera.matrixWorldInverse);
-        if (camera.isPerspectiveCamera && scissorCorner.z > -near) return false; // At/behind the near plane: projection is unbounded.
+        if (camera.isPerspectiveCamera && scissorCorner.z > -near) return false; // Never clip uncertain near-plane projections.
         scissorCorner.applyMatrix4(camera.projectionMatrix);
         if (scissorCorner.x < minX) minX = scissorCorner.x;
         if (scissorCorner.x > maxX) maxX = scissorCorner.x;
         if (scissorCorner.y < minY) minY = scissorCorner.y;
         if (scissorCorner.y > maxY) maxY = scissorCorner.y;
       }
+      return true;
+    }
+    for (const mesh of meshes) {
+      if (!includeBounds(mesh)) return false;
+      // Dual wield copies live under an invisible source blade. Its registry
+      // entry defines the normal scissor, but its transformed child blades
+      // (and their emitters) can be far outside that source rectangle. Only
+      // project descendants with *live* aura padding; ordinary children add
+      // no replay work and hidden offhand copies must not enlarge the pass.
+      if (!mesh.children?.length || !mesh.traverseVisible) continue;
+      let valid = true; // Used to conservatively disable scissoring if a child emitter has unreliable bounds.
+      mesh.traverseVisible(child => {
+        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0)) return;
+        if (!includeBounds(child)) valid = false;
+      });
+      if (!valid) return false;
     }
     scissorTargetWidth = width;
     scissorTargetHeight = height;
