@@ -950,6 +950,8 @@
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) continue;
       scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Live enchantment billboards may drift and bloom beyond this held mesh's geometry.
+      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis()); // Expand the replay draw/cull rectangle without clipping those particles or disabling scissoring globally.
       const { min, max } = scissorBox;
       for (let corner = 0; corner < 8; corner++) {
         scissorCorner.set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z);
