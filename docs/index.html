@@ -223,7 +223,7 @@
   <script src="js/creature-genetics-render.js?v=20261024nelkSpectacles1"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261023hf1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
   <script src="js/honeyfuzzle-colors.js?v=20261024hf1"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
-  <script src="js/honeyfuzzle-hives.js?v=20261023hf1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
+  <script src="js/honeyfuzzle-hives.js?v=20261024h1c09ca3"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -252,7 +252,7 @@
   <script src="js/terrain-preview.js?v=20261013he41c002"></script>
   <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261024h0e38459"></script>
+  <script src="js/wilderness-map-generator.js?v=20261024hea1dd78"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -540,7 +540,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20260924poradenhunt2"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20261024h260248e"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -619,7 +619,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261023h9a41172"></script>
+  <script src="js/wildlife-spawn.js?v=20261024h4c8cc01"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at

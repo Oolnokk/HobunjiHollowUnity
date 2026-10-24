@@ -225,9 +225,24 @@
     };
   }
 
+  // Every hive stump in the active zone's layout: whether it still stands,
+  // and whether its swarm is out right now. Read by the AI snapshot.
+  function census() {
+    if (!deps) return null;
+    const zoneId = deps.getCurrentArea();
+    const grid = deps.getGrid();
+    const excluded = !!window.HoneyfuzzleColors?.isExcludedZone(zoneId);
+    const hives = hivesInLayout(deps.zoneLayouts.get(zoneId)).map(h => {
+      const key = hiveKeyFor(zoneId, h.col, h.row);
+      const swarm = swarmFor(key);
+      return { key, col: h.col, row: h.row, standing: isLiveHiveTile(grid, h.col, h.row), swarm: !!swarm, swarmState: swarm?.state || null, killedOnDay: killedOn.get(key) ?? null };
+    });
+    return { zoneId, excluded, night: isNight(), spawnRadiusTiles: SPAWN_RADIUS_TILES, hives };
+  }
+
   window.HoneyfuzzleHives = {
     SPECIES, EGG_ITEM, HONEY_ITEM, HOLD_SECONDS, HIVE_REGROW_DAYS, EGG_MIN, EGG_MAX, HONEY_MIN, HONEY_MAX,
-    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout,
+    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, census,
     debugSnapshot: () => ({ killedOn: [...killedOn], spawned: spawnedOnce.size }),
   };
 })();

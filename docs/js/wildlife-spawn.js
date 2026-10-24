@@ -1140,6 +1140,7 @@
     for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
     for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
     for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+    _denSpeciesAllocationCache.delete(zoneId);
     // Terrain regen also reshuffles which tiles have a shadewood tree with a
     // climbable branch — old nest-tree bookkeeping keyed by col,row would
     // otherwise wrongly apply to whatever unrelated tree ends up there now.
@@ -1334,11 +1335,73 @@
     }
   }
 
+  // Tie-break priority when a zone's dens don't divide evenly between its
+  // denSpecies (missing = 1): leftover dens go to higher values first, so
+  // Nazgraku end up at most one den behind the other species.
+  const DEN_SPECIES_WEIGHTS = Object.freeze({ nazgraku: 0.8 });
+  const _denSpeciesAllocationCache = new Map(); // zoneId -> { signature, byDenId }
+
+  // Splits a zone's dens across its denSpecies pool as evenly as possible
+  // (counts differ by at most one), so every species gets at least one den
+  // whenever there are enough dens. Which den gets which species is a seeded
+  // shuffle, stable per zone (den ids survive relocation) and shared with
+  // CavernGenerator through denSpeciesFor.
+  function denSpeciesAllocation(zoneId, pool) {
+    const dens = deps.zoneLayouts?.get(zoneId)?.dens || [];
+    const denIds = dens.map(den => String(den.id)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (!denIds.length) return null;
+    const signature = `${pool.join(',')}|${denIds.join(',')}`;
+    const cached = _denSpeciesAllocationCache.get(zoneId);
+    if (cached?.signature === signature) return cached.byDenId;
+    const base = Math.floor(denIds.length / pool.length);
+    const counts = pool.map(() => base);
+    const byPriority = pool.map((kind, i) => i).sort((a, b) => ((Number(DEN_SPECIES_WEIGHTS[pool[b]]) || 1) - (Number(DEN_SPECIES_WEIGHTS[pool[a]]) || 1)) || a - b);
+    for (let i = 0; i < denIds.length - base * pool.length; i++) counts[byPriority[i]]++;
+    const slots = [];
+    pool.forEach((kind, i) => { for (let n = 0; n < counts[i]; n++) slots.push(kind); });
+    const rng = window.WildernessMapGenerator.makeRng(`${zoneId}_denspecies_balance_${denIds.join(',')}`);
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+    const byDenId = new Map(denIds.map((id, i) => [id, slots[i] || null]));
+    _denSpeciesAllocationCache.set(zoneId, { signature, byDenId });
+    return byDenId;
+  }
+
   function denSpeciesFor(zoneId, cavernMapId) {
-    const pool = deps.EXTERIOR_ZONES[zoneId]?.denSpecies || [];
+    const pool = [...new Set(deps.EXTERIOR_ZONES[zoneId]?.denSpecies || [])];
     if (!pool.length) return null;
-    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denspecies'); // One stable exact species identity per den, shared by exterior and cavern generation.
+    const idPrefix = `map_i_den_${zoneId}_`; // denCavernMapId's shape; zoneId is known here, so the den id suffix parses cleanly.
+    const denId = _denCavernDenIdOf.get(cavernMapId) ?? (String(cavernMapId).startsWith(idPrefix) ? String(cavernMapId).slice(idPrefix.length) : null);
+    const allocated = denId != null ? denSpeciesAllocation(zoneId, pool)?.get(String(denId)) : null;
+    if (allocated) return allocated;
+    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denspecies'); // Fallback for a den not in the zone layout: one stable roll per den.
     return pool[Math.floor(rng() * pool.length)] || null;
+  }
+
+  // Per-den status for the active (or given) zone: species, turnover stage,
+  // and how many live pack members are registered. Read by the AI snapshot.
+  function denCensus(zoneId = deps.getCurrentArea()) {
+    const dens = deps.zoneLayouts?.get(zoneId)?.dens || [];
+    const aliveByKey = new Map();
+    for (const c of deps.hostileObjects) {
+      if (!c.denKey || c.health <= 0) continue;
+      aliveByKey.set(c.denKey, (aliveByKey.get(c.denKey) || 0) + 1);
+    }
+    return dens.map(den => {
+      const denKey = denKeyFor(zoneId, den);
+      const cavernMapId = denCavernMapId(zoneId, den.id);
+      return {
+        denId: String(den.id), denKey,
+        col: Number(den.x), row: Number(den.y),
+        species: denSpeciesFor(zoneId, cavernMapId) || null,
+        stage: den.collapsed ? 'collapsed' : (den.turnoverStage || 'active'),
+        alive: aliveByKey.get(denKey) || 0,
+        everSpawned: denEverSpawned.has(denKey),
+        pendingRespawn: pendingDenRespawn.has(denKey),
+      };
+    });
   }
 
   function spawnPackAtDen(zoneId, den, denKey) {
@@ -1785,6 +1848,7 @@
     denCavernMapId,
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
     denSpeciesFor,
+    denCensus,
     denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,
