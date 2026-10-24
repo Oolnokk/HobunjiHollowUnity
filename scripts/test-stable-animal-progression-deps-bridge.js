@@ -34,6 +34,7 @@ context.AnimalBabyArrival = { requestName() {}, celebrateMaturation() {} }; // S
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
 context.StableAnimalPerkAdjustments = {};
+context.CompanionResilience = { install() {} }; // Companion training perks are bridge-loaded right after the perk adjustments.
 context.StableAnimalTownFamiliarity = { install() {} }; // Pet Rapport is a parser-time Stable feature and must not trigger the dynamic-loader trap.
 context.StableAnimalTrainingRefinements = { install() {} };
 context.StableAnimalXpEvents = { install() { xpInstallCount++; } };

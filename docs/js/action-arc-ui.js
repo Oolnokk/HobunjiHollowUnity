@@ -160,6 +160,7 @@
             // Already in the right zone — just reposition onto the tile.
             const result = window.WildernessCampfire.returnToCampfire();
             deps.showToast(result.message, result.ok);
+            if (result.ok) window.CompanionDowned?.reviveAll?.({ reason: 'return-camp', teleport: true }); // Teleporting to camp revives a downed companion beside you.
             deps.refreshActionBar();
           } else {
             // A different zone (or the farm/town/a building) — travel there
@@ -168,6 +169,7 @@
             // (same fire-and-forget async-inside-startSceneTransition
             // pattern performTravel's own 'zone' case uses for an
             // ordinary authored zone transition).
+            window.CompanionDowned?.reviveAll?.({ reason: 'return-camp', teleport: 'deferred' }); // The destination scene respawns the companion standing; a deferred teleport covers the in-place case.
             if (window.TownMine?.floorFromMapId?.(campfire.mapId)) {
               window.WildernessCampfire?.requestReturnToCampfire?.();
               deps.startSceneTransition(() => deps.enterBuilding(campfire.mapId));
@@ -185,7 +187,10 @@
       {
         id: 'return-farm', icon: '🏡', label: deps.getCurrentArea() === 'farm' ? 'Already on Farm' : 'Return to Farm',
         disabled: deps.getCurrentArea() === 'farm',
-        onSelect: () => deps.startSceneTransition(() => deps.performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
+        onSelect: () => {
+          window.CompanionDowned?.reviveAll?.({ reason: 'return-farm', teleport: 'deferred' }); // Teleporting to the farm revives a downed companion beside you.
+          deps.startSceneTransition(() => deps.performTravel({ target: 'farm', targetCol: 17, targetRow: 0 }));
+        },
       },
     ]);
   }

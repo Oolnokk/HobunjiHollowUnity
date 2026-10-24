@@ -338,7 +338,7 @@
     const style = currentHeartStyle();
     const heartColor = relationshipHeartColor(kind);
     const numberColor = relationshipNumberColor(value);
-    const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
+    const label = `${value > 0 ? '+' : '-'}${Math.abs(value)} ${kind === 'favor' ? 'Favor' : kind === 'romance' ? 'Romance' : 'Rapport'}`;
     const heartPart = makeHeartPart(image, heartColor);
     const valuePart = makeValuePart(label, numberColor);
     const group = new THREE.Group();

@@ -235,7 +235,8 @@
       state.favor = roundPoint(finite(state.favor, 0) + appliedPoints);
       if (isSpillover) return appliedPoints;
 
-      window.WorldPopupText?.queueReward?.('favor', `${appliedPoints > 0 ? '+' : '−'}${formatCompact(Math.abs(appliedPoints))} Favor`);
+      if (appliedPoints > 0 && window.WorldPopupText?.queueSocialGain) window.WorldPopupText.queueSocialGain('favor', appliedPoints, npcId);
+      else window.WorldPopupText?.queueReward?.('favor', `${appliedPoints > 0 ? '+' : '−'}${formatCompact(Math.abs(appliedPoints))} Favor`);
       dialogue.recordNpcMemory?.(npcId, reason || (appliedPoints >= 0 ? 'favor_up' : 'favor_down'));
 
       for (const [relatedId, fraction] of relatedNpcBonds(npcId)) {

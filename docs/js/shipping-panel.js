@@ -151,7 +151,7 @@
       slot.className = 'ship-slot' + (shippingSelected.side === side && shippingSelected.key === key ? ' selected' : '') + (blocked ? ' blocked' : '');
       slot.dataset.side = side;
       slot.dataset.key = key;
-      slot.innerHTML = `<span class="ship-slot-icon">${def.icon}</span><span class="ship-slot-count">×${count}</span>${isBoxSide(side) ? `<span class="ship-slot-pending">${panel.boxBadge}</span>` : ''}`;
+      slot.innerHTML = `<span class="ship-slot-icon">${deps.itemIconForKey?.(key) || def.icon || panel.iconFallback}</span><span class="ship-slot-count">×${count}</span>${isBoxSide(side) ? `<span class="ship-slot-pending">${panel.boxBadge}</span>` : ''}`;
       slot.addEventListener('click', () => selectShippingItem(side, key));
       grid.appendChild(slot);
     });
@@ -186,13 +186,13 @@
     const blocked = key && !isBoxSide(shippingSelected.side) && !canShipKey(key);
     const direction = !key ? panel.directionEmpty : (!isBoxSide(shippingSelected.side) ? panel.directionToBox : panel.directionToBag);
 
-    setText('shipPreviewIcon', def ? def.icon : panel.iconFallback);
+    setText('shipPreviewIcon', def ? (deps.itemIconForKey?.(key) || def.icon || panel.iconFallback) : panel.iconFallback);
     setText('shipPreviewName', def ? `${def.label} ×${count}` : panel.text.selectItem);
     setText('shipDirection', blocked ? panel.blockedLabel : direction);
     setText('shipAmount', String(shippingAmount));
     setText('shipLeftFooter', !isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.selectPackItem);
     setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
-    setText('shipDetailIcon', def ? def.icon : panel.iconFallback);
+    setText('shipDetailIcon', def ? (deps.itemIconForKey?.(key) || def.icon || panel.iconFallback) : panel.iconFallback);
     setText('shipDetailName', def ? def.label : panel.text.detailName);
     setText('shipDetailValue', def && canShipKey(key) ? `${saleValue(getShipPrice(key))}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
     setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
@@ -285,7 +285,7 @@
       const price = Number(getShipPrice(key));
       const def = deps.ITEM_DEFS[key];
       if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
-      return [{ key, count, price: saleValue(price), icon: def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
+      return [{ key, count, price: saleValue(price), icon: deps.itemIconForKey?.(key) || def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
     });
   }
 

@@ -8,6 +8,7 @@
 
   const BODY_CHANNEL = 'ragdoll';
   const BODY_PRIORITY = 100;
+  const LEGS_LIFT_Y = 0.06; // Recorded foot centres sit ~0.04 above the floor, but the rendered foot mesh extends below its centre; this keeps the soles on the ground.
   const CREATURE_REFERENCE_HEIGHT = 0.9; // Converts player-authored body-height offsets to each animal plane's visible height in applyCreatureFrame.
   const CREATURE_DIRECTION_QUARTER_TURN = Object.freeze({ front: 'left', right: 'front', back: 'right', left: 'back' }); // Rotates the humanoid blend poles +90° for side-on animal planes.
   const CREATURE_BASIS_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); // Rotates humanoid-authored motion axes into the animal card's local basis.
@@ -86,10 +87,16 @@
     };
   }
 
-  function publishBodyPose(quaternion, yOffset = 0) {
+  // absoluteLegs: recorded clip frames carry floor-relative leg poses, so the
+  // composer must not tilt/lower the leg group along with the body again (that
+  // left the feet hanging in the air). Procedural recovery rolls keep the legs
+  // attached to the rolling body.
+  function publishBodyPose(quaternion, yOffset = 0, absoluteLegs = false) {
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
       mode: 'override',
+      absoluteLegs,
+      absoluteLegsLiftY: absoluteLegs ? LEGS_LIFT_Y : 0,
       quaternion,
       translation: { x: 0, y: Number(yOffset) || 0, z: 0 },
     });
@@ -99,7 +106,7 @@
     if (!frameA || !frameB) return;
 
     const body = sampleBody(frameA, frameB, t);
-    publishBodyPose(body.quaternion, body.y - baseBodyY);
+    publishBodyPose(body.quaternion, body.y - baseBodyY, true);
 
     if (!playerLegsRef) return;
     playerLegsRef.applyRecordedLegPose(
@@ -110,6 +117,7 @@
       'right',
       sampleLeg(frameA.ragdoll.ik.right, frameB.ragdoll.ik.right, t)
     );
+    playerLegsRef.pants?.update?.(); // legs.update() normally drives the pants; it is skipped while a recorded pose owns the legs, which left the garment on the old stance.
   }
 
   function holdHumanoidProne(walker, direction = 'front', blend = 1) {

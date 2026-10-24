@@ -20,17 +20,17 @@
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
-      masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
+      masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow', rapport: 'centeredFiveRow', romance: 'centeredFiveRow', festivalFun: 'centeredFiveRow', livestockFavor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow', interaction: 'centeredFiveRow',
     },
     floatPlus: { worldHeight: 0.36, xOffsetPercent: 10, yOffsetPercent: 13, lifetimeMs: 1150 },
     centeredFiveRow: { worldHeight: 0.32, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 3200, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
-      masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
+      masteryXp: '#78cfff', favor: '#ff9fd7', rapport: '#ffd84d', romance: '#ff3d73', festivalFun: '#b8f080', livestockFavor: '#ffb8d8', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
     },
   };
-  const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
+  const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, rapport: 2, romance: 2, festivalFun: 2, livestockFavor: 2, currency: 3, loot: 4 };
   const state = {
     deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false,
     interactionSignature: '', interactionClearTimer: null, conditionCallout: null, aimLabel: null,
@@ -398,6 +398,32 @@
     (entry.scene || state.deps.getActiveScene()).add(event.plane);
     state.active.push(event);
     return event.sequence;
+  }
+
+  const socialGains = new Map(); // Coalesces frequent social ticks into one readable player popup per kind.
+  let socialGainTimer = null; // One short event timer flushes all ongoing social gains together.
+  let lastSocialGains = []; // Exposed in debugSnapshot for mobile verification.
+  function queueSocialGain(kind, amount, subject = '', recipientId = subject) {
+    if (!['favor', 'rapport', 'romance', 'festivalFun', 'livestockFavor'].includes(kind) || !Number.isFinite(amount) || amount <= 0) return false;
+    const entry = socialGains.get(kind) || { amount: 0, subjects: new Map() }; // Accumulates actual applied gains, not requested amounts.
+    entry.amount += amount;
+    if (subject) entry.subjects.set(String(recipientId || subject), String(subject));
+    socialGains.set(kind, entry);
+    if (socialGainTimer === null) socialGainTimer = setTimeout(() => {
+      socialGainTimer = null;
+      lastSocialGains = [];
+      for (const [type, gain] of socialGains) {
+        const label = { favor: 'Favor', rapport: 'Rapport', romance: 'Romance', festivalFun: 'Festival Fun', livestockFavor: 'Livestock Favor' }[type]; // Player-facing labels distinguish the five progress types.
+        const value = Math.round(gain.amount * 100) / 100; // Preserve small continuous gains rather than rounding them to zero.
+        const subject = gain.subjects.values().next().value || ''; // Display label is independent of the unique recipient id.
+        const target = gain.subjects.size === 1 ? (type === 'livestockFavor' ? subject : state.deps?.getNpcName?.(subject) || subject) : gain.subjects.size > 1 ? `${gain.subjects.size} recipients` : ''; // Names a single target or summarizes a group.
+        const text = `${target ? target + ': ' : ''}+${value || '<0.01'} ${label}`; // Existing centered reward list supplies placement and fade.
+        queueReward(type, text);
+        lastSocialGains.push({ kind: type, amount: gain.amount, text, recipients: [...gain.subjects.keys()] });
+      }
+      socialGains.clear();
+    }, 1000);
+    return true;
   }
 
   function queueReward(kind, text, options = {}) {
@@ -821,6 +847,9 @@
 
   function clear() {
     cancelInteractionPromptClear();
+    if (socialGainTimer !== null) clearTimeout(socialGainTimer);
+    socialGainTimer = null;
+    socialGains.clear();
     state.active.splice(0).forEach(dispose);
     state.pending.length = 0;
     state.levelUpQueue.length = 0;
@@ -840,7 +869,7 @@
   }
 
   const api = {
-    init, update, showChange, queueReward, queueLevelUp,
+    init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
@@ -848,6 +877,9 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
+      latestChange: 'Social gain batches distinguish same-named livestock by record id; all five gain types are configurable in the popup editor.',
+      lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
+      pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,
       interactionClearPending: state.interactionClearTimer != null,
       interactionClearGraceMs: INTERACTION_CLEAR_GRACE_MS,

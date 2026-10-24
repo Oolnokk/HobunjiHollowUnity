@@ -118,12 +118,18 @@ const server=http.createServer((req,res)=>{
     const wildernessZones=await page.evaluate(()=>window.WildernessMapGenerator.zoneMapIds());
     await page.evaluate(()=>{window.__hobunjiPlayerProfile.isWorldOwner=false;}); // This test uses the debug travel seam, not the owner's opening-story gate.
     for(const zoneId of wildernessZones){
-      const entered=await page.evaluate(async id=>{
+      const zone=await page.evaluate(async id=>{
         await window.__hobunjiFurnitureDebug.enterZoneDebug(id);
-        return window.GridTileAccessors.getCurrentArea()===id&&window.Combat.deps.zoneLayouts.has(id);
+        const entered=window.GridTileAccessors.getCurrentArea()===id&&window.Combat.deps.zoneLayouts.has(id);
+        if(!entered)return {entered:false,porakaneki:false,omgurku:false};
+        window.PorakanekiCamps.ensureWorldCamps();
+        window.OmgurkuCamps.ensureWorldCamps();
+        return {entered:true,
+          porakaneki:!!window.PorakanekiCamps.debugSnapshot().zones[id],
+          omgurku:!!window.OmgurkuCamps.debugSnapshot().zones[id]};
       },zoneId);
-      assert(entered,`zone transition completes with its layout loaded (${zoneId})`);
-      await page.waitForFunction(id=>window.OmgurkuCamps.debugSnapshot().zones[id]&&window.PorakanekiCamps.debugSnapshot().zones[id],zoneId,{timeout:60000});
+      assert(zone.entered,`zone transition completes with its layout loaded (${zoneId})`);
+      assert(zone.porakaneki&&zone.omgurku,`both tribe camp networks initialize in ${zoneId}`);
     }
     await page.evaluate(()=>window.DevSpawner.teleportToDevArena());
     await page.waitForFunction(()=>window.GridTileAccessors.getCurrentArea()==='map_dev_arena',null,{timeout:60000});

@@ -291,13 +291,17 @@
     const chordParts = String(code).split('+').map(part => part.trim()).filter(Boolean);
     if (chordParts.length > 1) {
       const key = chordParts.pop();
-      return `${chordParts.join(' + ')} + ${buttonLabel(key)}`;
+      return `${chordParts.map(buttonLabel).join(' + ')} + ${buttonLabel(key)}`;
     }
     const labels = {
+      Button0: 'A', Button1: 'B', Button2: 'X', Button3: 'Y',
+      Button4: 'LB', Button5: 'RB', Button6: 'LT', Button7: 'RT',
+      Button8: 'Back', Button9: 'Start', Button10: 'LS Click', Button11: 'RS Click',
+      Button12: 'D-pad ↑', Button13: 'D-pad ↓', Button14: 'D-pad ←', Button15: 'D-pad →', Button16: 'Guide',
       LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓',
       Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse 4', Mouse4: 'Mouse 5',
     };
-    return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+    return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Button ');
   }
 
 
