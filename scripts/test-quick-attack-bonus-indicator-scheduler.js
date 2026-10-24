@@ -129,6 +129,10 @@ const originalIndicator = context.QuickAttackBonusIndicator; // Retain the owner
 vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator-reload.js' });
 assert.equal(context.QuickAttackBonusIndicator, originalIndicator, 'repeated loads retain the existing cue owner');
 assert.equal(registered.get('quick-attack-bonus-indicator').fn, scheduledFrame, 'repeated loads retain the existing cleanup callback');
+near.health = 0;
+scheduledFrame({ timestamp: 1018 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['behind-player', 'far'], 'one death removes only that NPC cue and preserves surviving targets');
+assert.equal(scene.children.size, 10, 'one death detaches all five of its layers');
 for (const target of [near, far, behindPlayer]) target.health = 0;
 registered.get('quick-attack-bonus-indicator').fn({ timestamp: 1020 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleCount, 0, 'ordinary deaths clear every readiness cue');
@@ -136,6 +140,13 @@ assert.equal(scene.children.size, 0, 'ordinary deaths detach the main sprite and
 for (const target of [near, far, behindPlayer]) target.health = 10;
 scheduledFrame({ timestamp: 1024 });
 assert.equal(scene.children.size, 15, 'pooled cues return with exactly five layers per living target');
+deps.hostileObjects = [far, behindPlayer];
+scheduledFrame({ timestamp: 1026 });
+assert.equal(scene.children.size, 10, 'removing a living target from the active collection also removes all its cue layers');
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleTargetIds.includes('near'), false, 'removed targets are no longer retained by the indicator');
+deps.hostileObjects = [near, far, behindPlayer];
+scheduledFrame({ timestamp: 1028 });
+assert.equal(scene.children.size, 15, 'returning targets reuse pooled layers without leaving duplicates');
 assert.doesNotMatch(fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'), /['"]js\/combat\/quick-attack-bonus-indicator\.js(?:\?[^'"]*)?['"]/, 'Settings must not reload the parser-owned indicator');
 
 // Per-target conditions: only hostiles whose own condition is met are cued.
@@ -235,6 +246,10 @@ scheduledFrame({ timestamp: clock.now });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'killing blow and cooldown preserve the burst');
 assert.ok(glowLayers[0].scale.x > initialPopSize * 2, 'impact expands dramatically');
 assert.ok(glowLayers[0].material.opacity < 1, 'impact fades as it expands');
+vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator-impact-reload.js' });
+assert.equal(context.QuickAttackBonusIndicator, originalIndicator, 'reloading during a killing-blow burst retains its cleanup owner');
+assert.equal(registered.get('quick-attack-bonus-indicator').fn, scheduledFrame, 'reloading during a burst cannot replace its animation callback');
+assert.equal(scene.children.size, 5, 'a killing-blow burst retains only its original five layers');
 clock.now += 400;
 scheduledFrame({ timestamp: clock.now });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'expired burst releases all layers');
