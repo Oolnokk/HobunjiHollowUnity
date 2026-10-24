@@ -11,7 +11,7 @@
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },
-    { globalKey: 'AnimalBabyArrival', src: 'js/animal-baby-arrival.js?v=20261024naming1' },
+    { globalKey: 'AnimalBabyArrival', src: 'js/animal-baby-arrival.js?v=20261024naming2' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20261024naming1' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261021h6d2db2d' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261021hdf1c0e2' },
