@@ -124,6 +124,20 @@ assert.deepEqual([...snap.visibleTargetIds], ['near', 'behind-player', 'far'], '
 assert.equal(meleeHitCalls, 0, 'the opportunity cue never consults the Quick Attack reach/aim collider');
 assert.equal(context.QuickAttackBonusIndicator.getReadyState().target, near, 'diagnostics focus the nearest cued hostile');
 
+// A second script load must not replace the owner of already-attached cues.
+const originalIndicator = context.QuickAttackBonusIndicator; // Retain the owner whose sights are currently in the scene.
+vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator-reload.js' });
+assert.equal(context.QuickAttackBonusIndicator, originalIndicator, 'repeated loads retain the existing cue owner');
+assert.equal(registered.get('quick-attack-bonus-indicator').fn, scheduledFrame, 'repeated loads retain the existing cleanup callback');
+for (const target of [near, far, behindPlayer]) target.health = 0;
+registered.get('quick-attack-bonus-indicator').fn({ timestamp: 1020 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleCount, 0, 'ordinary deaths clear every readiness cue');
+assert.equal(scene.children.size, 0, 'ordinary deaths detach the main sprite and every glow, including after a repeated load');
+for (const target of [near, far, behindPlayer]) target.health = 10;
+scheduledFrame({ timestamp: 1024 });
+assert.equal(scene.children.size, 15, 'pooled cues return with exactly five layers per living target');
+assert.doesNotMatch(fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'), /['"]js\/combat\/quick-attack-bonus-indicator\.js(?:\?[^'"]*)?['"]/, 'Settings must not reload the parser-owned indicator');
+
 // Per-target conditions: only hostiles whose own condition is met are cued.
 context.Combat.getQuickAttackConditions = (_, target) => ({ behind: target !== near });
 scheduledFrame({ timestamp: 1032 });
