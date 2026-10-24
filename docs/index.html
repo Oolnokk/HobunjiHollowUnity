@@ -157,7 +157,7 @@
   <script src="js/metal-armor-system.js?v=20261022hauditfix"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261022h23rig2"></script>
-  <link rel="stylesheet" href="style.css?v=20261024controllersubtabs1">
+  <link rel="stylesheet" href="style.css?v=20261024controllersubtabs2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -188,7 +188,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261023h2f6c183"></script>
+  <script src="js/character-action-locks.js?v=20261024h160e3f9"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -1231,7 +1231,7 @@
         </div>
 
         <!-- Key Items (Pack only): x:1/54 y:6/28 w:35 h:7 -->
-        <div class="inv-key-section" id="invKeySection">
+        <div class="inv-key-section" id="invKeySection" aria-label="Key Items">
           <div class="inv-key-header">🗝️ Key Items <span class="inv-key-badge">World unlocks</span></div>
           <div class="inv-key-list" id="invKeyList">
             <div class="inv-key-empty">No key items yet.</div>
@@ -1239,17 +1239,17 @@
         </div>
 
         <!-- Equipment slots (Gear only): x:1/54 y:6/28 w:35 h:7 -->
-        <div class="inv-equip-section" id="invEquipSection">
+        <div class="inv-equip-section" id="invEquipSection" aria-label="Equipment">
           <!-- Populated by buildEquipmentSlots() -->
         </div>
 
         <!-- Item grid (Pack only): x:1/54 y:13/28 w:33 h:14 -->
-        <div class="inv-grid-area inv-grid-area--short">
+        <div class="inv-grid-area inv-grid-area--short" aria-label="Pack">
           <div class="inv-grid" id="invGrid"></div>
         </div>
 
         <!-- Pack Clothing (Pack only) -->
-        <div class="inv-pack-clothing" id="invPackClothing">
+        <div class="inv-pack-clothing" id="invPackClothing" aria-label="Pack Clothing">
           <div class="inv-pcloth-empty">No clothing in pack.</div>
         </div>
 
@@ -1627,7 +1627,7 @@
             <span class="progress-section-title">Skills</span>
             <span class="progress-save-badge">Character-saved</span>
           </div>
-          <div class="progress-skills">
+          <div class="progress-skills" aria-label="Skills">
             <div class="skill-row"><span class="skill-icon">🌿</span><div class="skill-name">Foraging</div><div class="skill-level">Lv 0</div></div>
             <div class="skill-row"><span class="skill-icon">⛏️</span><div class="skill-name">Mining</div><div class="skill-level">Lv 0</div></div>
             <div class="skill-row"><span class="skill-icon">🌾</span><div class="skill-name">Farming</div><div class="skill-level">Lv 0</div></div>
@@ -1639,7 +1639,7 @@
             <span class="progress-section-title">Perks</span>
             <span class="progress-save-badge">Character-saved</span>
           </div>
-          <div class="perk-trees" id="perkTrees"></div>
+          <div class="perk-trees" id="perkTrees" aria-label="Perks"></div>
         </div>
       </div><!-- /mpProgress -->
 
@@ -2737,7 +2737,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261024h1c76f3a"></script>
+  <script src="js/controller-ui-nav.js?v=20261024h071747b"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

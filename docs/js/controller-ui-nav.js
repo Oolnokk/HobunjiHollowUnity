@@ -281,9 +281,9 @@
         break;
       }
       if (entry.node !== node) {
-        const selectedId = subtabsByGroup.get(entry.node)?.selected?.id; // Restores the same section after an owning container is rebuilt.
+        const selectedState = subtabsByGroup.get(entry.node); // Retains section identity or sibling index when its whole owner is rebuilt.
         restoreSubtabs(entry.node);
-        prepareSubtabs(node, panel, selectedId);
+        if (selectedState) prepareSubtabs(node, panel, selectedState.selected.id || null, selectedState.selected.id ? 0 : selectedState.sections.indexOf(selectedState.selected));
         entry.node.classList.remove('ctrl-nav-group-active');
         entry.node = node;
       }
@@ -337,7 +337,8 @@
     let index = sections.findIndex(section => section.id && section.id === selectedId); // Stable ids preserve the active section through a rebuild.
     if (index < 0) index = 0;
     const selected = sections[(index + offset + sections.length) % sections.length]; // Bumpers wrap within the borrowed local section set.
-    const transparent = directTargets(selected, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)).length < 2; // Nested multi-section pages remain enterable and can borrow the tab actions in turn.
+    const nestedState = subtabsByGroup.get(selected); // An entered child still owns multiple sections even while its inactive siblings are hidden.
+    const transparent = !nestedState && directTargets(selected, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)).length < 2; // Nested multi-section pages remain enterable and can borrow the tab actions in turn.
     subtabsByGroup.set(group, { sections, selected, transparent });
     group.classList.add('ctrl-nav-subtabs');
     selected.classList.add('ctrl-nav-subtab-selected');
@@ -753,7 +754,7 @@
     glyphs.forEach((glyph, index) => { if (glyph.textContent !== labels[index]) glyph.textContent = labels[index]; });
     const tabHint = el.querySelector('.ctrl-nav-hint-tabs'); // Include section position/name so hidden siblings remain discoverable.
     const state = local && subtabsByGroup.get(local.node); // Used only while updating menu hints, never on idle gameplay frames.
-    const sectionLabel = state && (state.selected.getAttribute('aria-label') || state.selected.querySelector('.settings-section-title, .menu-section-title, .progress-section-title')?.textContent || state.selected.id || 'Section'); // Prefer authored human-facing labels.
+    const sectionLabel = state && (state.selected.getAttribute('aria-label') || state.selected.querySelector('.settings-section-title, .menu-section-title, .progress-section-title, .farm-storage-col-title')?.textContent || state.selected.id || 'Section'); // Prefer authored human-facing labels.
     const hintText = state ? ` ${String(sectionLabel).trim()} (${state.sections.indexOf(state.selected) + 1}/${state.sections.length})` : ' Switch Tabs'; // Communicates the currently borrowed scope.
     if (tabHint.lastChild?.nodeType === 3 && tabHint.lastChild.textContent !== hintText) tabHint.lastChild.textContent = hintText;
     const bBtn = el.querySelectorAll('.ctrl-nav-hint')[1];
@@ -1089,7 +1090,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Xbox 360 prompt names; single-child sections skip automatically; entered large sections borrow tab buttons until Back.',
+        latestChange: 'Xbox 360 names across prompts and arch badges; nested subtabs survive live updates and whole-owner rebuilds.',
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,

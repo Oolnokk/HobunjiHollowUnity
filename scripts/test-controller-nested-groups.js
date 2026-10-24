@@ -405,11 +405,16 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(ui.focusedElement(), boxColumn.children[0], 'previous wraps within the deepest section owner');
   assert.equal(ui.debugState().subtab.id, 'box-column');
   assert.ok(bagColumn.classList.contains('ctrl-nav-subtab-hidden'));
+  await rebuild(storageSection);
+  assert.equal(ui.debugState().subtab.id, 'box-column', 'content mutations preserve the deepest active section');
   press('cancel');
   assert.equal(ui.focusedElement(), storageSection, 'Back restores the enclosing section owner');
   assert.ok(!bagColumn.classList.contains('ctrl-nav-subtab-hidden'));
   assert.ok(!boxColumn.classList.contains('ctrl-nav-subtab-hidden'));
   assert.equal(ui.debugState().subtab.id, 'storage-section');
+  press('confirm');
+  assert.equal(ui.debugState().groupId, 'storage-section', 'a rebuilt nested page owner remains enterable after Back');
+  press('cancel');
   press('tabNext');
   assert.equal(ui.focusedElement(), sectionA1, 'outer bumpers resume after leaving the nested owner');
   const rebuiltSection = new Element('div', { id: 'section-a', class: 'farm-section' }, [button('section-a1', 10, 40), button('section-a2', 110, 40)]); // Replaces the selected page without closing its owner.
@@ -428,6 +433,23 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('confirm');
   sectionPanel.hidden = true; await rebuild(sectionPanel);
   assert.ok(!storageSection.classList.contains('ctrl-nav-subtab-hidden'), 'closing the menu cannot leave section siblings hidden');
+  const unnamedPage = name => new Element('div', { class: 'farm-section' }, [button(name + '-one', 10, 40), button(name + '-two', 110, 40)]); // Authored sections are not required to have ids.
+  let unnamedOwner = new Element('div', { id: 'unnamed-owner', class: 'mp-pane' }, [unnamedPage('first'), unnamedPage('second')]); // Only the owner has a stable identity through replacement.
+  const unnamedPanel = new Element('div', { 'data-ctrl-panel': '', id: 'unnamed-panel' }, [unnamedOwner]); // Mirrors a fully rebuilt pane with id-less child columns.
+  body.append(unnamedPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [unnamedPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  press('confirm'); press('tabNext');
+  assert.equal(ui.debugState().subtab.index, 1);
+  const previousUnnamedOwner = unnamedOwner; // Keeps the detached node available for cleanup assertions.
+  unnamedOwner = new Element('div', { id: 'unnamed-owner', class: 'mp-pane' }, [unnamedPage('first'), unnamedPage('second')]);
+  unnamedPanel.children[0] = unnamedOwner; unnamedOwner.parentElement = unnamedPanel; previousUnnamedOwner.parentElement = null;
+  await rebuild(unnamedPanel);
+  assert.equal(ui.debugState().subtab.index, 1, 'whole-owner rebuild preserves the index of an id-less selected section');
+  assert.equal(ui.focusedElement().id, 'second-one');
+  assert.ok(unnamedOwner.children[0].classList.contains('ctrl-nav-subtab-hidden'));
+  assert.ok(!previousUnnamedOwner.children[0].classList.contains('ctrl-nav-subtab-hidden'), 'detached siblings do not retain presentation state');
+  unnamedPanel.hidden = true; await rebuild(unnamedPanel);
   const singleAction = button('single-action', 10, 40); // A chain of one-child wrappers must never become extra Confirm or Back steps.
   const singleInner = new Element('div', { 'data-ctrl-group': '' }, [singleAction]); // First redundant wrapper.
   const singleOuter = new Element('div', { 'data-ctrl-group': '' }, [singleInner]); // Second redundant wrapper.

@@ -3696,7 +3696,12 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
   width: 100%;
   box-sizing: border-box;
 }
-.ctrl-nav-subtabs.inv-mode-pack > .ctrl-nav-subtab-selected,
-.ctrl-nav-subtabs.inv-mode-gear > .ctrl-nav-subtab-selected { grid-column: 1 / 34 !important; grid-row: 6 / -1 !important; }
+/* Inventory uses absolute coordinates; keep the selected page left of item details. */
+#mpInventory.ctrl-nav-subtabs > .ctrl-nav-subtab-selected {
+  left: calc(1 * var(--inv-col));
+  top: calc(6 * var(--inv-row));
+  width: calc(33 * var(--inv-col));
+  height: calc(21 * var(--inv-row));
+}
 
 .ctrl-nav-subtabs .farm-pane { max-width: none; }
