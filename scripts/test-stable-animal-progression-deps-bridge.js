@@ -30,6 +30,7 @@ context.OutdoorLivestockPresence = { install() {} }; // Keeps outdoor world-pres
 context.LivestockNurseryObserverScope = {}; // Loaded before the legacy Nursery so its body-wide observer is scoped to Farm lists.
 context.LivestockNurseryOutdoorGrowth = { install() {} }; // Keeps full-barn outdoor maturation from becoming an unrelated dynamic-load dependency in this bridge regression.
 context.ANIMAL_GROWTH_CONFIG = {};
+context.AnimalBabyArrival = { requestName() {}, celebrateMaturation() {} }; // Shared newborn UI is parser-loaded; suppress unrelated script loading in this Stable dependency regression.
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
 context.StableAnimalPerkAdjustments = {};
