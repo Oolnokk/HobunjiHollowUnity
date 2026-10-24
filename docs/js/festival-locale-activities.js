@@ -40,9 +40,10 @@
     if (!nextLayout || !Number.isFinite(minute)) return;
     const shift = Math.floor(minute / 60); // One-hour phases leave time for guests to physically reach each locale.
     const key = festival.id + ':' + shift;
-    if (nextLayout === layout && phaseKey === key) return;
-    layout = nextLayout; phaseKey = key; targets.clear(); walkers.clear();
+    walkers.clear(); // Walker instances change after scene transfers even when the locale itself has not moved.
     for (const walker of deps.getWalkers?.() || []) if (walker?.rec?.id) walkers.set(walker.rec.id, walker);
+    if (nextLayout === layout && phaseKey === key && !lastError) return;
+    layout = nextLayout; phaseKey = key; targets.clear(); lastError = '';
     const roots = (nextLayout.decor || []).filter(p => p.festivalLocale?.kind && p.activity?.type);
     const stations = new Map(); // Group expanded station IDs under their movable parent, not absolute coordinates.
     for (const station of nextLayout.npcStations || []) {
