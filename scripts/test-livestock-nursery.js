@@ -152,6 +152,8 @@ const buildingDeps = {
   openMenu() {},
 };
 
+const namingRequests = []; // Captures deployment and natural-birth naming invitations.
+context.window.AnimalBabyArrival = { requestName(entry, options) { namingRequests.push({ entry, options }); } };
 context.window.FarmAnimals.init(animalDeps);
 context.window.FarmBuildings.init(buildingDeps);
 context.window.FarmTroughs.init({});
@@ -179,6 +181,10 @@ assert.equal(barnTiers.nursery.slots, 0, 'Nursery contributes no adult barn capa
 const added = context.window.FarmAnimals.addFromItem('grehlrCrate');
 assert.equal(added.entry.lifeStage, 'baby', 'new livestock enters the Nursery as a baby');
 assert.equal(added.entry.barnId, null, 'new babies are not assigned to barns');
+assert.equal(namingRequests.length, 1, 'Nursery deployment queues the focus-borrowing baby naming prompt');
+assert.equal(namingRequests[0].options.scope, 'nursery');
+assert.equal(namingRequests[0].options.commit('Nini'), true, 'accepting an edited Nursery name saves it');
+assert.equal(livestock.find(entry => entry.id === 'newbaby').name, 'Nini');
 
 let grow = context.window.LivestockNursery.growBaby('newbaby');
 assert.equal(grow.ok, false, 'Grow Up is blocked without adult barn capacity');
@@ -231,6 +237,9 @@ assert.equal(added.entry.barnId, null, 'demolishing a barn unhoused its adults i
 
 context.window.FarmAnimals.tickBreedingProgress(1);
 assert.equal(livestock.find(entry => entry.id === 'born').lifeStage, 'baby', 'newborns immediately become Nursery babies');
+assert.equal(namingRequests.length, 2, 'breeding-created Nursery babies receive a name prompt too');
+assert.equal(namingRequests[1].options.commit('Bobo'), true, 'newborn name edits persist to world livestock');
+assert.equal(livestock.find(entry => entry.id === 'born').name, 'Bobo');
 
 snapshot = context.window.LivestockNursery.debugSnapshot();
 assert.equal(snapshot.visibleLimit, 12, 'Nursery interior has a bounded visible swarm while storage stays unbounded');
