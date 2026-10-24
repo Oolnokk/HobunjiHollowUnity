@@ -28,8 +28,8 @@
   const FRAME_UP = 0, FRAME_MID = 1, FRAME_DOWN = 2;
   const WING_CYCLE = Object.freeze([FRAME_UP, FRAME_MID, FRAME_DOWN, FRAME_MID]); // up -> mid -> down -> mid
   const THIRD_STEP_OFFSETS = Object.freeze([0, 1, 2]); // Each third of the swarm sits at a different point of the 4-step cycle.
-  const WING_TICK_MS = 70; // One shared tick for every member of every swarm (~14 wing steps/s, ~3.6 full beats/s).
-  const DEFAULT_MEMBER_COUNT = 9; // Three members per cycle offset.
+  const WING_TICK_MS = 55; // One shared tick for every member of every swarm (~18 wing steps/s, ~4.5 full beats/s: a bee-like buzz).
+  const DEFAULT_MEMBER_COUNT = 24; // Many small members read as a swarm rather than a flock; a multiple of 3 keeps the wing-cycle thirds exactly even.
   // Source art is 500x500 with the bird in roughly x 75..404, y 170..451
   // across all three frames; crop to that union (plus margin) so members are
   // not mostly transparent padding.
@@ -62,27 +62,57 @@
     return WING_CYCLE[(((step + offset) % WING_CYCLE.length) + WING_CYCLE.length) % WING_CYCLE.length];
   }
 
-  // Fills out = {x, y, roll, scale} (pivot-local: -x is the swarm's heading,
-  // y is up). `spread` is the swarm radius in world units, `speed01` the
-  // swarm's smoothed travel speed (0 hover .. 1 full run).
+  // Bee-style motion. Each member is a darting hoverer, not a glider: it holds
+  // near a point, zips to a new random point inside the cloud, holds again, and
+  // faces whichever way it last darted. Every member has its own dart period and
+  // phase, so at any instant some are mid-zip and some are hovering, and the cloud
+  // as a whole stays put and breathes. Points come from a hash of
+  // (seed, member, dart index), so the motion is deterministic and needs no state.
+  const DART_MIN_S = 0.28, DART_SPAN_S = 0.5; // Per-member time between darts.
+  const DART_TRAVEL_FRACTION = 0.4; // Share of each period spent moving; the rest is a hover.
+
+  function dartPoint(seed, member, dartIndex, spread, out) {
+    const salt = member * 7919 + dartIndex * 104729;
+    const angle = hashUnit(seed, 1000 + salt) * TAU;
+    const radius = spread * Math.pow(hashUnit(seed, 2000 + salt), 0.75); // Biased toward the middle so the cloud reads dense.
+    out.x = Math.cos(angle) * radius;
+    out.y = Math.sin(angle) * radius * 0.7;
+    return out;
+  }
+
+  const _dartA = { x: 0, y: 0 }, _dartB = { x: 0, y: 0 };
+
+  // Fills out = {x, y, roll, scale, flip} (pivot-local: -x is the swarm's heading,
+  // y is up; flip is +1 when the member faces image-left, -1 when mirrored to face
+  // right). `spread` is the cloud radius in world units, `speed01` the swarm's
+  // smoothed travel speed (0 hover .. 1 full run).
   function memberPose(seed, memberIndex, count, nowMs, speed01, spread, out) {
     const i = memberIndex;
     const t = nowMs / 1000;
-    const ang = i * GOLDEN_ANGLE + hashUnit(seed, 11) * TAU;
-    const rad = spread * Math.sqrt((i + 0.5) / Math.max(1, count));
-    const homeX = Math.cos(ang) * rad;
-    const homeY = Math.sin(ang) * rad * 0.6;
-    const w1 = 0.7 + hashUnit(seed, 100 + i) * 0.9, w2 = 0.9 + hashUnit(seed, 200 + i) * 1.1, w3 = 1.3 + hashUnit(seed, 300 + i) * 1.4;
-    const p1 = hashUnit(seed, 400 + i) * TAU, p2 = hashUnit(seed, 500 + i) * TAU, p3 = hashUnit(seed, 600 + i) * TAU;
-    const wander = spread * (0.28 + 0.1 * hashUnit(seed, 700 + i));
+    const period = DART_MIN_S + DART_SPAN_S * hashUnit(seed, 100 + i);
+    const phase = hashUnit(seed, 200 + i);
+    const progress = t / period + phase;
+    const dartIndex = Math.floor(progress);
+    const f = progress - dartIndex;
+    const travel = Math.min(1, f / DART_TRAVEL_FRACTION);
+    const u = 1 - (1 - travel) * (1 - travel); // Fast start, soft stop: a zip then a hover.
+    const breathe = 1 + 0.12 * Math.sin(t * 1.7 + hashUnit(seed, 11) * TAU); // The whole cloud slowly swells and tightens.
+    dartPoint(seed, i, dartIndex, spread, _dartA);
+    dartPoint(seed, i, dartIndex + 1, spread, _dartB);
+    const buzz = spread * 0.035;
+    const buzzW = 38 + 22 * hashUnit(seed, 300 + i), buzzP = hashUnit(seed, 400 + i) * TAU;
     // lead in [-1, 1]: >0 runs ahead of the swarm's heading, <0 trails behind it.
     const lead = hashUnit(seed, 800 + i) * 2 - 1;
-    const spreadAlongHeading = spread * (1.0 + 0.7 * Math.abs(lead));
-    const hover = 1 - Math.min(1, speed01) * 0.15; // Tighten the cloud slightly while travelling; the lead/trail stagger below does the stretching.
-    out.x = (homeX + Math.sin(t * w1 + p1) * wander + Math.sin(t * w2 * 1.7 + p2) * wander * 0.35) * hover
-      - lead * speed01 * spreadAlongHeading; // -x is forward (the art faces image-left).
-    out.y = (homeY + Math.sin(t * w2 + p2) * wander * 0.8 + Math.sin(t * w3 * 1.3 + p3) * wander * 0.25) * hover;
-    out.roll = Math.sin(t * w3 + p3) * 0.32 + speed01 * 0.28 * (0.6 + 0.4 * lead);
+    const stretch = spread * (1.0 + 0.7 * Math.abs(lead));
+    const tight = 1 - Math.min(1, speed01) * 0.15; // Tighten the cloud slightly while travelling.
+    out.x = (_dartA.x + (_dartB.x - _dartA.x) * u) * breathe * tight + Math.sin(t * buzzW + buzzP) * buzz
+      - lead * speed01 * stretch; // -x is forward (the art faces image-left).
+    out.y = (_dartA.y + (_dartB.y - _dartA.y) * u) * breathe * tight + Math.cos(t * buzzW * 0.83 + buzzP) * buzz;
+    // Face the last dart's direction; a travelling swarm mostly faces forward.
+    const dx = _dartB.x - _dartA.x, dy = _dartB.y - _dartA.y;
+    out.flip = speed01 > 0.5 ? 1 : (dx < 0 ? 1 : -1);
+    const tilt = dy / (spread * 1.4 + 1e-6) * (1 - u * u); // Nose follows the zip, then levels off while hovering.
+    out.roll = -out.flip * tilt * 0.9 + Math.sin(t * 9 + buzzP) * 0.1 + out.flip * speed01 * 0.2;
     out.scale = 0.88 + hashUnit(seed, 900 + i) * 0.24;
     return out;
   }
@@ -149,7 +179,7 @@
     const modelWidth = options.modelWidth || 1.3;
     const memberWidth = options.memberWidth || modelWidth * 0.3;
     const seed = Number.isFinite(options.seed) ? options.seed | 0 : seedFromString(options.name);
-    const spread = modelWidth * 0.34;
+    const spread = modelWidth * 0.3;
     const geometry = new THREE.PlaneGeometry(memberWidth, memberWidth * MEMBER_ASPECT);
     const frameAttr = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
     geometry.setAttribute('aFrame', frameAttr);
@@ -168,8 +198,8 @@
     group.name = (options.name || 'honeyfuzzle') + '_group';
     group.add(pivot);
 
-    const pose = { x: 0, y: 0, roll: 0, scale: 1 };
-    const zStep = 0.004; // Tiny per-member depth separation so overlapping alpha-tested cards never z-fight.
+    const pose = { x: 0, y: 0, roll: 0, scale: 1, flip: 1 };
+    const zStep = 0.003; // Tiny per-member depth separation so overlapping alpha-tested cards never z-fight.
     let lastStep = -1, smoothSpeed = 0, lastNow = 0, disposed = false;
     const frames = new Float32Array(count);
     const avatar = {
@@ -188,7 +218,7 @@
         for (let i = 0; i < count; i++) {
           memberPose(seed, i, count, now, smoothSpeed, spread, pose);
           const c = Math.cos(pose.roll) * pose.scale, s = Math.sin(pose.roll) * pose.scale, o = i * 16;
-          arr[o] = c; arr[o + 1] = s; arr[o + 2] = 0; arr[o + 3] = 0;
+          arr[o] = c * pose.flip; arr[o + 1] = s * pose.flip; arr[o + 2] = 0; arr[o + 3] = 0; // flip mirrors the member to face right
           arr[o + 4] = -s; arr[o + 5] = c; arr[o + 6] = 0; arr[o + 7] = 0;
           arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = pose.scale; arr[o + 11] = 0;
           arr[o + 12] = pose.x; arr[o + 13] = pose.y; arr[o + 14] = (i - count / 2) * zStep; arr[o + 15] = 1;

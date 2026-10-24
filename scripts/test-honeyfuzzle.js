@@ -68,6 +68,22 @@ function fakeThree() {
   const shifts = run.map((x, i) => x - hover[i]);
   assert(shifts.some(shift => shift < -0.01) && shifts.some(shift => shift > 0.01), 'some members lead (-x) while others trail (+x)');
   assert(Number.isFinite(S.hashUnit(1, 2)) && S.hashUnit(1, 2) >= 0 && S.hashUnit(1, 2) < 1);
+
+  // Bee-style motion: a swarm of many small members, each a darting hoverer inside one tight cloud.
+  assert(S.DEFAULT_MEMBER_COUNT >= 18 && S.DEFAULT_MEMBER_COUNT % 3 === 0, 'enough members to read as a swarm, in even wing-cycle thirds');
+  const spreadR = 0.45, N = S.DEFAULT_MEMBER_COUNT;
+  const track = member => Array.from({ length: 400 }, (_, step) => { const p = {}; S.memberPose(9, member, N, step * 16, 0, spreadR, p); return { x: p.x, y: p.y, flip: p.flip }; });
+  for (let member = 0; member < N; member++) {
+    const path = track(member);
+    assert(path.every(p => Math.hypot(p.x, p.y) <= spreadR * 1.3), 'every member stays inside the cloud');
+    const steps = path.slice(1).map((p, k) => Math.hypot(p.x - path[k].x, p.y - path[k].y));
+    const still = steps.filter(d => d < 0.016).length, zipping = steps.filter(d => d > 0.03).length; // hovering is only the fast, tiny buzz
+    assert(still > 150 && zipping > 10, `member ${member} alternates hovering and zipping (still ${still}, zipping ${zipping})`);
+  }
+  assert(track(0).some(p => p.flip === 1) && track(0).some(p => p.flip === -1), 'members turn to face the way they dart');
+  // At any instant some members are mid-zip and others hovering, so the cloud never moves in lockstep.
+  const instant = Array.from({ length: N }, (_, member) => { const a = {}, b = {}; S.memberPose(9, member, N, 5000, 0, spreadR, a); S.memberPose(9, member, N, 5016, 0, spreadR, b); return Math.hypot(b.x - a.x, b.y - a.y); });
+  assert(instant.some(d => d > 0.03) && instant.some(d => d < 0.016), 'some members zip while others hover');
 }
 
 // ---- swarm: instanced avatar (stub THREE) -------------------------------------------

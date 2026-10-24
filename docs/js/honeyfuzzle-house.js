@@ -160,7 +160,7 @@
     const w = size?.w ?? 1, h = size?.h ?? 1;
     const x = entry.col + w / 2, z = entry.row + h / 2;
     if (existing) { existing.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z); existing.entry = entry; return; }
-    const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.4, hoverY: 0 });
+    const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.22, hoverY: 0 });
     avatar.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z);
     deps.scene.add(avatar.group);
     visuals.set(entry.id, { entry, avatar, group: avatar.group });

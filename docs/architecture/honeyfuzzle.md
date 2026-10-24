@@ -15,7 +15,7 @@ The gameplay entity is a single creature (`honeyfuzzle`, labelled "Honeyfuzzle S
 
 - **No idle/run states.** Hummingbirds never perch. `updateCreatureAnimFrame` hands the swarm one `update(speed, now, dt, moveSpeed)` call per frame.
 - **Wing cycle.** `up -> mid -> down -> mid -> repeat`, all members stepping on the same `WING_TICK_MS` tick. Member `i` sits `i % 3` steps into the 4-step cycle, so a third of the swarm is at each of three different points at any moment.
-- **Motion.** `memberPose(seed, i, count, nowMs, speed01, spread, out)` is a pure function: a deterministic drift/roll per member plus a per-member `lead` value. At speed, `lead > 0` members run ahead of the heading and `lead < 0` members trail it, so the swarm stretches rather than moving as one block.
+- **Motion (bees, not birds).** 24 small members per swarm (a multiple of 3 so the wing thirds stay even). `memberPose(seed, i, count, nowMs, speed01, spread, out)` is a pure function: each member hovers with a fast tiny buzz, zips to a new random point inside the cloud, hovers again, and mirrors itself to face the way it last darted. Dart periods and phases differ per member, so at any instant some are mid-zip and some hovering, and the cloud breathes. At speed the cloud tightens slightly and per-member `lead` values stretch it: `lead > 0` members run ahead of the heading and `lead < 0` members trail it.
 - **Performance.** One `InstancedMesh`, one atlas of the three frames shared by every swarm, the frame chosen per instance by an `aFrame` attribute (an `onBeforeCompile` UV shift on the shared PNG-plane material), and per-frame work that is only N matrix writes with no allocation. The `aFrame` buffer is uploaded only when the wing tick changes.
 
 ## Always Medium, always a "swarm"

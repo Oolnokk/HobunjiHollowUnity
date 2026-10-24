@@ -1313,7 +1313,7 @@
         // names the wing frames for UI/icon consumers — the swarm renderer owns
         // its own atlas and ignores idle/run switching.
         honeyfuzzle: {
-          label: 'Honeyfuzzle Swarm', hostile: false, diet: 'herbivore', liveBirth: false, swarm: { members: 9, memberWidth: 0.5, hoverY: 0.12 },
+          label: 'Honeyfuzzle Swarm', hostile: false, diet: 'herbivore', liveBirth: false, swarm: { members: 24, memberWidth: 0.26, hoverY: 0.12 },
           aggroRangePx: TILE * 3, leashRangePx: TILE * 8,
           maxHealth: 30, maxStamina: 30, moveSpeed: 150, chaseSpeed: 210,
           attackDamage: 5, attackRangePx: TILE * 0.8, attackHalfConeRad: 45 * Math.PI / 180,
