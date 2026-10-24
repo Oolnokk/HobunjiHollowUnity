@@ -30,4 +30,8 @@ api.samplePose(sample,{neutral:{headRelative:true}},api.STYLE_NEUTRAL_POSE.range
 assert.equal(sample.headRelative,true);
 api.samplePose(sample,{},api.STYLE_NEUTRAL_POSE.ranged,0,0.2,0.4,0.6);
 assert.equal(sample.headRelative,false);
+const game = fs.readFileSync('docs/game.js', 'utf8'); // Player ranged poses live in the game closure, so their head-frame wiring is checked from source.
+const neckPitch = game.match(/playerNeckJoint\.rotation\.x = activeCameraMode === SHOULDER_SURF_MODE\s*\?\s*-Math\.atan2/); // The head pitches by -elevation.
+assert(neckPitch, 'neck pitch is -elevation; head-relative weapon frames must follow that sign');
+assert.equal((game.match(/if \(headAnchored\) _qRangedAimPitch\.invert\(\)/g) || []).length, 2, 'both the loaded-pose and idle ranged branches must tilt a head-relative frame with the head, not against it');
 console.log('head-relative animation anchors and reused samples PASS');

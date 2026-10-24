@@ -23441,6 +23441,8 @@
           if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
+          const headAnchored = sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup); // Resolved before the orientation so a head-relative pose rotates with the head, not with the body orbit.
+          if (headAnchored) _qRangedAimPitch.invert(); // The neck pitches by -elevation (player-head-aim), so the whole head-relative frame must too; the body-orbit sign above would tilt it against the head.
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -23456,7 +23458,7 @@
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
+          if (headAnchored) {
             toolHolder.position.set(x, y, z).applyQuaternion(_qFac);
             if (reticleAligned) {
               toolHolder.position.set(x, y, z).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
@@ -23492,6 +23494,8 @@
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
+          const headAnchored = neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup); // Same head-frame rule as the pose-driven branch above.
+          if (headAnchored) _qRangedAimPitch.invert(); // Matches the neck's -elevation pitch instead of the body-orbit sign.
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -23504,7 +23508,7 @@
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
+          if (headAnchored) {
             toolHolder.position.set(neutral.x, neutral.y, neutral.z);
             if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
             toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
