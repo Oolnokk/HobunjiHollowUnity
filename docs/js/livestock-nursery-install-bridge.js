@@ -14,6 +14,7 @@
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261021h6d2db2d' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261021hdf1c0e2' },
+    { globalKey: 'CompanionResilience', src: 'js/stable-companion-resilience.js?v=20261024resil1' }, // Appends offense/defense/revival perks to the tree perk-adjustments just replaced.
     { globalKey: 'StableAnimalTownFamiliarity', src: 'js/stable-animal-town-familiarity.js?v=20260917rapport2' },
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
     { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260924perf1' },
@@ -51,6 +52,7 @@
         window.OutdoorLivestockPresence?.install?.();
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
+        window.CompanionResilience?.install?.();
         window.StableAnimalTownFamiliarity?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();

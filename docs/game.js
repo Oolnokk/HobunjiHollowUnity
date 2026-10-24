@@ -4924,6 +4924,7 @@
       function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
         if (c?.combatTutorialTarget) { c.health = c.maxHealth; return false; } // Sparring partners never produce kills, corpses, or loot.
         if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
+        if (window.CompanionDowned?.tryDown?.(c)) return false; // The player's animal companion is downed (js/companion-downed.js), never killed: no corpse, loot or removal.
         window.WildlifeFoodWeb?.abandon?.(c); // Release reserved bushes when an animal dies or is forcibly removed.
         c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
         // damageCreature's lethal branch returns before its "every hit cancels
@@ -4948,6 +4949,7 @@
         }
         // A killed wild creature is the starting source of Motes of Prowess;
         // companions never award kill progression.
+        window.PlayerDowned?.noteKill?.(c); // A kill by the player or their companion triggers Second Wind (js/player-downed.js).
         if (!c.isCompanion) {
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
@@ -4970,6 +4972,7 @@
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
+        if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
         if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
         if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
@@ -5002,6 +5005,8 @@
         if (!environmentalImpact) {
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
+          if (c.isCompanion) amount *= window.CompanionResilience?.damageTakenMultiplier?.(c) ?? 1; // Thick Hide / Guardian Fury companion training (js/stable-companion-resilience.js).
+          else window.PlayerDowned?.noteTeamHit?.(c, dmgOpts); // Remembers player/companion hits so their kills count toward Second Wind; ranged hits focus the companion.
           if (!actorAttacker) { // The player's skill, potion and perk multipliers only scale the player's own hits.
             amount *= window.SkillSystem?.attackMultiplier?.() || 1;
             amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
@@ -5079,6 +5084,10 @@
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
+        if (window.PlayerDowned?.isDowned?.()) { // A downed player takes no Health damage, knockback or stagger; each hit only shortens the bleed-out timer (js/player-downed.js).
+          if (!environmentalImpact) window.PlayerDowned.noteHitWhileDowned();
+          return environmentalImpact ? { applied: 0, lethal: false } : undefined;
+        }
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
         if (!environmentalImpact) {
           const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
@@ -5110,6 +5119,7 @@
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
         }
         if (player.health <= 0) {
+          if (!environmentalImpact && window.PlayerDowned?.tryDown?.('damage')) return; // Combat damage puts the player down (Second Wind) instead of killing them outright.
           respawnPlayer();
           if (environmentalImpact) return { applied: appliedImpactHealth, lethal: true };
         }
@@ -5137,12 +5147,14 @@
       }
 
       function respawnPlayer(reason = 'death') {
-        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
+        window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
+        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.CombatTutorial?.active?.()) {
           window.CombatTutorial.leave(true);
           showToast('Spearhead stops the exercise. Your progress is saved; talk to him to resume.', false);
           return;
         }
+        window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); // A downed companion rises and rejoins the owner once they have been moved by the branches below.
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
           window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
@@ -8040,6 +8052,8 @@
           if (!isBanditCompanion && master === player && c.stableRole === 'companion') {
             const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
             if (sicced && sicced.health > 0 && sicced.areaId === currentArea) target = sicced;
+            const downedFocus = window.PlayerDowned?.getFocusTarget?.(); // While the owner is down, the enemy they last shot with a ranged weapon is the companion's priority.
+            if (downedFocus && downedFocus.areaId === currentArea) target = downedFocus;
           }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
@@ -8360,14 +8374,14 @@
           // the legacy whistle.
           const activeStabled = activeId ? stable.find(s => s.id === activeId) : null;
           const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype, swarmColor: activeStabled.swarmColor }
+            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype, swarmColor: activeStabled.swarmColor, stableId: activeStabled.id }
             : null;
           // Only the companion slot honors the legacy whistle fallback —
           // mount/shoulder-pet have no equivalent item-based summon path.
           const whistle = (role === 'companion' && !activeStabled && equipmentSlots.whistle)
             ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
             : null;
-          const desired = stableCompanion || whistle;
+          const desired = stableCompanion || (whistle ? { ...whistle, stableId: `whistle:${whistle.id}` } : null); // stableId keys downed-companion state (js/companion-downed.js).
 
           const existing = [...companionObjects].find(c => c.master === master && c.stableRole === role);
           if (!desired) {
@@ -8384,10 +8398,11 @@
           const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
           const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
           const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, swarmColor: desired.swarmColor, stableRole: role,
+            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, swarmColor: desired.swarmColor, stableRole: role, stableId: desired.stableId,
           });
           if (companion) {
             companionObjects.add(companion);
+            if (role === 'companion') window.CompanionDowned?.onCompanionSpawned?.(companion); // A companion that was downed before an area change comes back down.
             window.__farmLog?.(`[companion] spawned ${role} ${desired.creatureKey} in ${currentArea}`, 'wildlife');
           }
         }
@@ -9434,6 +9449,7 @@
       }
 
       function performDodge() {
+        if (window.PlayerDowned?.isDowned?.()) return false; // A downed player can only crawl.
         if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false; // Mounted movement owns cliff leaps; on-foot rolls cannot finish while riding.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone, the automatic get-up owns the normal recovery. Keep
@@ -17713,7 +17729,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1) * (window.PlayerDowned?.speedMultiplier?.() ?? 1);
         // Tothal ice changes the *native* acceleration and ground friction,
         // exactly where keyboard/controller/mobile intent drives velocity.
         // This runs before ordinary player collision, footsteps and facing:
@@ -18976,6 +18992,7 @@
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
         if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
+        if (window.PlayerDowned?.allowsAction?.(heldMode, activeTool) === false) return; // Only the ranged weapon works while downed (js/player-downed.js).
         if (sitInteraction) {
           if (activeAction === 'obj_stand') endSitInteraction();
           else if (activeAction === 'obj_eat_meal') window.FestivalSystem?.toggleSeatedMeal?.();
@@ -24779,7 +24796,9 @@
           if (companionSceneReady) {
             syncCompanionFromWhistle();
             updateCompanions(dt);
+            window.CompanionDowned?.update?.(dt); // Downed-companion timers/pose and deferred revive teleports (js/companion-downed.js).
           }
+          window.PlayerDowned?.update?.(dt); // Bleed-out timer and Health pin while the player is down (js/player-downed.js).
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
@@ -25795,6 +25814,11 @@
         // (js/corpse-hold-loot.js owns the timer) takes its eggs and honey.
         const aimedHive = _isZoneArea(currentArea) ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
         if (aimedHive) return [{ icon: '🍯', label: 'Hold to Harvest Hive', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: aimedHive.promptRoot }];
+
+        // A downed companion beside the player, or a Root Totem while one is
+        // down: same hold contract as hives (js/companion-downed.js).
+        const companionReviveButton = window.CompanionDowned?.getHoldButton?.(reticle.col, reticle.row);
+        if (companionReviveButton) return [companionReviveButton];
 
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
@@ -30103,12 +30127,32 @@
         getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getAimedHoldCorpse: () => {
+          if (window.PlayerDowned?.isDowned?.()) return null; // A downed player cannot loot, harvest or revive.
           const reticle = getReticleTile(); // Same aimed/sticky corpse lookup the Loot button uses.
           const obj = getCorpseObjectForAction('obj_loot_corpse', reticle.col, reticle.row);
           if (obj?.holdSeconds > 0) return obj;
-          return window.HoneyfuzzleHives?.getHoldTarget(reticle.col, reticle.row) || null; // Hive stumps reuse the same hold contract (long hold -> eggs + honey -> collapse).
+          return window.HoneyfuzzleHives?.getHoldTarget(reticle.col, reticle.row) || window.CompanionDowned?.getHoldTarget?.(reticle.col, reticle.row) || null; // Hive stumps and downed companions / Root Totems reuse the same hold contract.
         },
         showToast,
+      });
+
+      window.CompanionDowned?.init({
+        player, companionObjects, TILE, showToast,
+        getCurrentArea: () => currentArea,
+        updateCreatureMesh, updateCreatureAnimFrame,
+        canOccupyAt,
+        getRootTotems: () => (_isZoneArea(currentArea)
+          ? (_zoneLayouts.get(currentArea)?.rootTotems || [])
+          : currentArea === 'farm' ? [window.TownMine?.farmRootTotem?.(COLS, ROWS)].filter(Boolean) : []),
+      });
+      window.PlayerDowned?.init({
+        player, showToast,
+        die: reason => respawnPlayer(reason),
+        forceRangedTool: () => {
+          if (!equipmentSlots.ranged) return false;
+          if (!(heldMode === 'tool' && activeTool === 'ranged')) setActiveTool('ranged', { silent: true });
+          return true;
+        },
       });
 
       window.CavernOreRocks.init({
@@ -30182,7 +30226,7 @@
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
         isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Burning extinguish follows permanent + visibly-wet dynamic water.
-        handlePlayerDeath: reason => respawnPlayer(reason),
+        handlePlayerDeath: reason => { if (!window.PlayerDowned?.interceptDeath?.(reason)) respawnPlayer(reason); }, // Bleeding/burning/poison ticks put the player down instead of killing them.
       });
 
       window.ItemProcessing?.init({
