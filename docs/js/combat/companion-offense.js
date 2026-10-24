@@ -76,7 +76,8 @@
   function damageCreature(damageFn, companion, target, amount, fromX, fromY, knockbackPxS, opts) {
     if (typeof damageFn !== 'function') return undefined;
     const scaled = scaleHit(companion, target, amount, opts);
-    return damageFn(target, scaled.amount, fromX, fromY, knockbackPxS, scaled.opts);
+    const hitOpts = scaled.opts?.fromCompanion ? scaled.opts : { ...(scaled.opts || {}), fromCompanion: companion }; // Lets kill-credit systems (Second Wind) know a companion landed the hit.
+    return damageFn(target, scaled.amount, fromX, fromY, knockbackPxS, hitOpts);
   }
 
   window.CompanionOffense = Object.freeze({

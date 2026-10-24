@@ -150,7 +150,7 @@
   // point, since a hold ability like Charged Breaker can still be staggered
   // AFTER startHold already passed this check but before it releases).
   function blockedByActionLock() {
-    return !!(window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools'));
+    return !!(window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools') || window.PlayerDowned?.isDowned?.()); // A downed player cannot start melee abilities (js/player-downed.js); the ranged weapon bypasses Combat.input.
   }
 
   function blockedByStagger() {
