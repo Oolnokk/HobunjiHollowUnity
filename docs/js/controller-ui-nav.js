@@ -46,6 +46,8 @@
   //                     tab rows are recognized without extra markup.
   //   data-ctrl-transparent on structural wrappers exposes their descendants
   //                     directly, without hiding or skipping those controls.
+  //   data-ctrl-auto-enter opens a sole content owner without a Confirm gate;
+  //                     Back releases it so outer menu tabs remain reachable.
   //   data-ctrl-detail  id of an associated detail group. Confirm selects the
   //                     item, enters that sibling, and Back returns to the item.
   //   data-ctrl-detail-panel on the associated group; excludes it from unrelated
@@ -146,6 +148,8 @@
   let stack = [];
   const lastFocusedByPanel = new WeakMap();
   const groupsByPanel = new WeakMap(); // Retains entered nests while a modal temporarily owns focus.
+  const releasedAutoGroup = new WeakMap(); // Prevents Back from immediately reentering the automatic content owner.
+  let automaticEntryEnabled = false; // Actual controller input enables automatic pages; pointer input restores the complete layout.
   const lastFocusedByGroup = new WeakMap(); // Remembers the control selected when leaving an entered section.
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
@@ -235,6 +239,7 @@
       || notCancel(remembered && belongsToNavigation(remembered, panel) && targets.includes(remembered) && remembered)
       || pickDefaultTarget(panel, targets);
     setFocus(startFocus || navigationRoot(panel), { scroll: false });
+    updateHintBar(panel);
   }
 
   function deactivateAll() {
@@ -264,6 +269,7 @@
 
 
   function clearGroups(panel) {
+    releasedAutoGroup.delete(panel);
     for (const entry of groupsByPanel.get(panel) || []) {
       restoreSubtabs(entry.node);
       entry.node.classList.remove('ctrl-nav-group-active');
@@ -321,7 +327,18 @@
   }
 
   function navigationTargets(panel) {
-    return directTargets(navigationRoot(panel), panel).map(target => projectSingleChild(target, panel));
+    let targets = directTargets(navigationRoot(panel), panel).map(target => projectSingleChild(target, panel)); // Projects structural one-child paths before checking content ownership.
+    if (automaticEntryEnabled && navigationRoot(panel) === panel) {
+      const automatic = targets.find(target => isGroup(target) && target.hasAttribute('data-ctrl-auto-enter') && releasedAutoGroup.get(panel) !== target); // Opt-in content owners still retain their sub-tabs and Back scope.
+      if (automatic) {
+        rememberFocusPath(automatic);
+        groupsByPanel.set(panel, [{ node: automatic, path: focusPath, explicit: true }]);
+        automatic.classList.add('ctrl-nav-group-active');
+        prepareSubtabs(automatic, panel, automatic.getAttribute('data-ctrl-initial-subtab'));
+        targets = directTargets(automatic, panel).map(target => projectSingleChild(target, panel));
+      }
+    }
+    return targets;
   }
 
   function restoreSubtabs(group) {
@@ -356,6 +373,7 @@
   }
 
   function enterGroup(group, panel, returnPath = null) {
+    releasedAutoGroup.delete(panel);
     const entries = enteredGroups(panel); // Nested groups unwind one level per Back press.
     rememberFocusPath(group);
     entries.push({ node: group, path: focusPath, returnPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
@@ -363,7 +381,7 @@
     group.classList.add('ctrl-nav-group-active');
     const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
     if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
-    prepareSubtabs(group, panel);
+    prepareSubtabs(group, panel, group.getAttribute('data-ctrl-initial-subtab'));
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
     const remembered = lastFocusedByGroup.get(group); // Re-entering a group returns to its last surviving control.
@@ -375,6 +393,7 @@
     const entries = enteredGroups(panel); // Recovers rebuilt groups before choosing the parent selection.
     const entry = entries.pop(); // Consumes Back before the panel's close button can run.
     if (!entry) return false;
+    if (entry.node.hasAttribute('data-ctrl-auto-enter')) releasedAutoGroup.set(panel, entry.node);
     lastFocusedByGroup.set(entry.node, currentTarget);
     restoreSubtabs(entry.node);
     entry.node.classList.remove('ctrl-nav-group-active');
@@ -830,6 +849,7 @@
     const pad = frame.pad; // Resolved once per frame by the shared polling authority.
     if (!pad) { resetActionEdges(); menuOpenEdge = false; resetStickState(); return; }
     padEverSeen = true;
+    if (pad.buttons?.some(button => button.pressed || Number(button.value) > 0.5) || pad.axes?.some(axis => Math.abs(Number(axis) || 0) > NAV_PRESS)) automaticEntryEnabled = true;
 
     if (window.InputSettingsPanel?.isControllerListening?.()) {
       resetActionEdges();
@@ -933,7 +953,7 @@
   // Keep the tracked focus target in sync with real mouse/touch clicks too,
   // so switching input devices mid-session (controller ↔ mouse) never
   // leaves the highlighted target pointing somewhere stale.
-  document.addEventListener('pointerdown', () => { const panel = activePanel(); if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } }, true);
+  document.addEventListener('pointerdown', () => { automaticEntryEnabled = false; const panel = activePanel(); if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } }, true);
 
   document.addEventListener('focusin', (event) => {
     const panel = activePanel();
@@ -1070,6 +1090,7 @@
     // Test/debug seams — let headless verification drive navigation without
     // faking the full Gamepad API.
     press(action) {
+      automaticEntryEnabled = true;
       reconcileStack();
       switch (action) {
         case 'up': case 'down': move(action); break;

@@ -343,6 +343,17 @@ const rapportIndex = companionTree.children.indexOf(rapportSections[0]);
 const trainingIndex = companionTree.children.findIndex(child => child.textContent === 'General Companion Training');
 assert(rapportIndex >= 0 && trainingIndex > rapportIndex, 'Pet Rapport appears above the perk sections');
 
+const purchasablePerk = descendantsByClass(companionTree, 'stable-perk-btn').find(button => !button.disabled); // Executes the native purchase handler and its full Stable rerender.
+assert.ok(purchasablePerk, 'an adult with a training point has a purchasable perk');
+const spentPerkId = purchasablePerk.getAttribute('data-key'); // Stable identity must match the progression owner's registered perk.
+const oldRank = progression.perkRank(stable.find(entry => entry.id === 'hound2'), spentPerkId); // Baseline for the single purchase.
+purchasablePerk.listeners.click({ stopPropagation() {} });
+companionRow = stableRowById(stableList, 'hound2');
+mountRow = stableRowById(stableList, 'mount1');
+assert.equal(progression.perkRank(stable.find(entry => entry.id === 'hound2'), spentPerkId), oldRank + 1, 'one perk activation purchases exactly one rank');
+assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'buying a perk keeps this animal tree expanded after rerender');
+assert.equal(descendantsByClass(companionRow, 'stable-training-toggle')[0].getAttribute('data-ctrl-detail'), 'stableTrainingDetail_hound2', 'purchase retains the exact controller return action');
+
 mountRow.listeners.click({ target: { closest: () => null } });
 companionRow = stableRowById(stableList, 'hound2');
 mountRow = stableRowById(stableList, 'mount1');
