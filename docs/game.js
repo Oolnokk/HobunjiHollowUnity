@@ -17729,7 +17729,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1) * (window.PlayerDowned?.speedMultiplier?.() ?? 1);
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
         // Tothal ice changes the *native* acceleration and ground friction,
         // exactly where keyboard/controller/mobile intent drives velocity.
         // This runs before ordinary player collision, footsteps and facing:
@@ -17737,7 +17737,14 @@
         const icePhysics = currentArea === 'map_i_dev_random_ruin'
           ? window.DevRandomRuinLichThemes?.movementPhysicsAt?.(player.x / TILE, player.y / TILE)
           : null;
-        if (inputStrength > 0.001) {
+        // A downed player crawls (js/player-crawl.js): velocity follows the
+        // pull of the left arm along its reach axis, and inputs outside that
+        // cone pivot the body instead of moving it.
+        const crawlMotion = window.PlayerCrawl?.isCrawling?.() ? window.PlayerCrawl.step(dt, ix, iy, inputStrength, speedMul) : null;
+        if (crawlMotion) {
+          player.vx = crawlMotion.vx;
+          player.vy = crawlMotion.vy;
+        } else if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
           const currentSpeed = Math.hypot(player.vx, player.vy);
@@ -23963,7 +23970,7 @@
           // the clamped rotation just applied and the raw unclamped
           // equivalent, so the legs' WORLD rotation always tracks
           // facingAngle directly regardless of what the sprite is doing.
-          if (playerLegs?.group) playerLegs.group.rotation.y = rawTargetRotY - playerMesh.rotation.y;
+          if (playerLegs?.group) playerLegs.group.rotation.y = window.PlayerCrawl?.isActive?.() ? 0 : rawTargetRotY - playerMesh.rotation.y; // The crawl legs live in the rolled body's own frame.
         }
 
         // Bob animation when moving — amplitude ramps continuously from the
@@ -24010,6 +24017,7 @@
         // (see that module's own update()), which would fight the recorded
         // ragdoll pose instead of stepping aside for it.
         if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
+        else if (window.PlayerCrawl?.isActive?.() && playerLegs) window.PlayerCrawl.applyLegs(playerLegs); // Downed crawl poses the legs itself (js/player-crawl.js).
         else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose, {
           combat: isPlayerInCombat() || player.lunging,
           allowSpeedRun: true,
@@ -24799,6 +24807,7 @@
             window.CompanionDowned?.update?.(dt); // Downed-companion timers/pose and deferred revive teleports (js/companion-downed.js).
           }
           window.PlayerDowned?.update?.(dt); // Bleed-out timer and Health pin while the player is down (js/player-downed.js).
+          window.PlayerCrawl?.update?.(dt); // Lean/lowering channels and blend for the downed crawl (js/player-crawl.js).
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
@@ -30144,6 +30153,11 @@
         getRootTotems: () => (_isZoneArea(currentArea)
           ? (_zoneLayouts.get(currentArea)?.rootTotems || [])
           : currentArea === 'farm' ? [window.TownMine?.farmRootTotem?.(COLS, ROWS)].filter(Boolean) : []),
+      });
+      window.PlayerCrawl?.init({
+        TILE,
+        getBaseYaw: () => playerMesh.rotation.y,
+        getPlayerMesh: () => playerMesh,
       });
       window.PlayerDowned?.init({
         player, showToast,

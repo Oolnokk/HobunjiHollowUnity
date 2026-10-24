@@ -434,6 +434,22 @@
     };
   }
 
+  // Gameplay states (e.g. the downed crawl) can take over one free hand by
+  // registering `HobunjiFreeHandPose.providers`: each provider(parent, side,
+  // modelHeight, record) returns a fallback-shaped { position:{x,y,z}, rotationDeg } or
+  // null. A claimed hand ignores held-item secondary/dual-wield grips so the
+  // pose is never fought over; the other hand is untouched.
+  function freeHandOverride(record, side, modelHeight) {
+    const providers = global.HobunjiFreeHandPose?.providers;
+    if (!providers?.size) return null;
+    const parent = record.rig?.parent;
+    for (const provider of providers.values()) {
+      const pose = provider(parent, side, modelHeight, record);
+      if (pose) return pose;
+    }
+    return null;
+  }
+
   function updateFallbackMotion(record, nowMs = performance.now()) {
     const state = ensureFallbackState(record);
     const sample = record.rig?.parent?.getWorldPosition?.(state.samplePosition) || null; // Includes NPC ancestor movement even when the hand parent itself stays local.
@@ -458,8 +474,9 @@
     const cadenceHz = state.speed > 0.035 ? Math.max(0.55, Math.min(3.2, state.speed * 0.62 / fullStride)) : 0;
     if (cadenceHz > 0 && elapsed > 0) state.phase = (state.phase + elapsed * cadenceHz * Math.PI * 2) % (Math.PI * 2);
     state.mode = state.gaitStrength > 0.04 ? 'walk' : 'idle';
-    state.poses.left = fallbackPose(state, 'left', nowMs);
-    state.poses.right = fallbackPose(state, 'right', nowMs);
+    state.poses.left = freeHandOverride(record, 'left', state.modelHeight) || fallbackPose(state, 'left', nowMs);
+    state.poses.right = freeHandOverride(record, 'right', state.modelHeight) || fallbackPose(state, 'right', nowMs);
+    state.overridden = { left: state.poses.left?.overridden === true, right: state.poses.right?.overridden === true };
     return state;
   }
 
@@ -618,7 +635,12 @@
       if (dualWield) owners.right = 'dual-wield-main-grip'; // Dual Wield refines that ownership to the lagged duplicate weapon.
 
       let secondaryGrip = null;
-      if (dualWield) {
+      const leftOverridden = ensureFallbackState(record).overridden?.left === true; // A gameplay pose owns the off hand: it neither mirrors a dual-wield weapon nor takes a two-hand grip.
+      if (leftOverridden) {
+        applyFallbackSide(record, 'left');
+        record.secondaryActive = false;
+        ensureFallbackState(record).owners.left = 'gameplay-pose';
+      } else if (dualWield) {
         const offhandGrip = toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip; // Same authored 1H grip point, minus the main hand's palm-side offset: the offhand holds its copy from the other side.
         const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip);
         const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) || offhandBaseSocket;

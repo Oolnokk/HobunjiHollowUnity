@@ -75,6 +75,7 @@
   <script src="js/corpse-hold-loot.js?v=20261010corpsehold1"></script>
   <script src="js/companion-downed.js?v=20261024downed1"></script> <!-- Downed animal companion: auto-revive timer, held revive, Root Totem recall. Initialised by game.js. -->
   <script src="js/player-downed.js?v=20261024downed1"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
+  <script src="js/player-crawl.js?v=20261024crawl1"></script> <!-- Procedural left-side lean crawl for the downed player; driven by player-downed.js. -->
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
        toolEmoji/actionName/formatClock, so must load after it and before
@@ -185,7 +186,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261022h372be04"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261024h912bc47"></script>
+  <script src="js/held-action-animations.js?v=20261024h62cb70d"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -308,7 +309,7 @@
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261019recordeddeath2"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261024h86ba6e6"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261024ha298297"></script>
   <script src="js/combat/combat-attach.js?v=20261024at1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
@@ -370,7 +371,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261024hd80c3da"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261024hfc18764"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->

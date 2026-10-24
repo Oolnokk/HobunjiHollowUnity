@@ -243,7 +243,7 @@
       const socket = socketFor(side); // Free-hand socket whose idle position follows shoulder X and posterior Y.
       const shoulder = shoulderInParent(side); // Resolved rig/manual/scanned shoulder point in the socket parent's local space.
       if (!socket || !shoulder) return false;
-      socket.position.x = shoulder.x;
+      socket.position.x = shoulder.x + (Number(fallbackPose?.position?.x) || 0); // Walk/idle poses author x = 0; gameplay poses (crawl) may reach sideways.
       socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);

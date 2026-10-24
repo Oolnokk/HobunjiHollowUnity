@@ -1,8 +1,9 @@
 // Downed ("Second Wind") state for the player.
 //
 // Lethal combat damage no longer kills outright: the player goes DOWN with a
-// bleed-out timer. While down they can still crawl (slowly) and use a ranged
-// weapon, nothing else. If the player or the player's animal companion kills an
+// bleed-out timer. While down they can still crawl (js/player-crawl.js: a
+// left-side lean crawl pulled by the left arm) and use a ranged weapon, nothing
+// else. If the player or the player's animal companion kills an
 // enemy before the timer runs out, the player gets back up with half Health;
 // otherwise they die through the normal respawn path.
 //
@@ -18,7 +19,6 @@
 
   const CONFIG = Object.freeze({
     bleedOutSeconds: 30,        // Time to land a kill before dying.
-    crawlSpeedMultiplier: 0.3,  // Movement speed while down.
     reviveHealthFraction: 0.5,  // Health restored by Second Wind.
     hitPenaltySeconds: 2,       // Bleed-out time lost per enemy hit taken while down.
     reviveInvulnSeconds: 1.5,
@@ -44,6 +44,7 @@
     if (state) return true;
     if (window.CombatTutorial?.active?.()) return false; // The tutorial has its own reset path in respawnPlayer.
     state = { remainingS: CONFIG.bleedOutSeconds, totalS: CONFIG.bleedOutSeconds, focus: null };
+    window.PlayerCrawl?.setActive(true);
     const player = deps.player;
     player.health = CONFIG.downedHealth;
     player.vx = 0; player.vy = 0;
@@ -72,6 +73,7 @@
     const player = deps.player;
     const max = window.ResourceSystem?.getEffectiveMax?.(player, 'health') || player.maxHealth || 100;
     state = null;
+    window.PlayerCrawl?.setActive(false);
     player.health = Math.max(1, Math.round(max * CONFIG.reviveHealthFraction));
     player.invulnUntil = now() + CONFIG.reviveInvulnSeconds * 1000;
     lastEvent = { type: 'second-wind', reason, at: Date.now() };
@@ -83,6 +85,7 @@
   function bleedOut() {
     if (!state) return;
     state = null;
+    window.PlayerCrawl?.setActive(false);
     lastEvent = { type: 'bleed-out', at: Date.now() };
     refreshHud();
     deps.die?.('bleed-out');
@@ -119,8 +122,6 @@
     if (!(focus.health > 0) || focus._deathTransitionStarted) { state.focus = null; return null; }
     return focus;
   }
-
-  function speedMultiplier() { return state ? CONFIG.crawlSpeedMultiplier : 1; }
 
   // Only the ranged weapon works while down.
   function allowsAction(heldMode, activeTool) {
@@ -175,6 +176,7 @@
   // Death/respawn, save load, or scripted resets clear the state silently.
   function reset() {
     state = null;
+    window.PlayerCrawl?.setActive(false);
     refreshHud();
   }
 
@@ -190,7 +192,6 @@
     noteTeamHit,
     noteKill,
     getFocusTarget,
-    speedMultiplier,
     allowsAction,
     reset,
     debugSnapshot: () => ({ downed: !!state, remainingS: state?.remainingS ?? 0, focus: state?.focus?.id || null, lastEvent }),

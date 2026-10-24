@@ -199,7 +199,7 @@ player.health = 0;
 assert.equal(PD.tryDown('damage'), true);
 assert.equal(PD.isDowned(), true);
 assert.equal(player.health, 1, 'Health is pinned above zero while down');
-assert.equal(PD.speedMultiplier(), 0.3, 'downed players crawl');
+assert.equal(PD.isDowned(), true);
 assert.equal(PD.allowsAction('tool', 'weapon'), false, 'melee is blocked while down');
 assert.equal(PD.allowsAction('tool', 'ranged'), true, 'the ranged weapon still works while down');
 assert.equal(PD.allowsAction('item', 'ranged'), false, 'held bag items are blocked while down');

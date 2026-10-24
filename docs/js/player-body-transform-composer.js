@@ -282,8 +282,10 @@
     const rotation = new THREE.Quaternion();
     const translation = new THREE.Vector3();
     const applied = [];
+    let absoluteYaw = null;
 
     for (const [name, channel] of ordered) {
+      if (Number.isFinite(channel.absoluteYaw)) absoluteYaw = channel.absoluteYaw;
       const q = channelQuaternion(channel);
       const t = channel.translation || channel.position || null;
       if (channel.mode === 'override') rotation.copy(q);
@@ -296,7 +298,36 @@
       }
       applied.push(name);
     }
-    return { rotation, translation, applied };
+    return { rotation, translation, applied, absoluteYaw };
+  }
+
+  let absoluteYawScratch = null; // Allocated on first use: { euler, axis, quaternion }.
+  // Turns an `absoluteYaw` channel into a plain yaw delta for this render by
+  // comparing it with the body's actual base yaw, then prepends it to the
+  // channel rotation (yaw first, then any lean/roll about the new forward axis).
+  function applyAbsoluteYaw(delta, baseWorldQuaternion) {
+    if (!Number.isFinite(delta?.absoluteYaw)) return false;
+    absoluteYawScratch ||= { euler: new THREE.Euler(0, 0, 0, 'YXZ'), axis: new THREE.Vector3(0, 1, 0), quaternion: new THREE.Quaternion() };
+    absoluteYawScratch.euler.setFromQuaternion(baseWorldQuaternion, 'YXZ');
+    const yawDelta = wrapSignedAngle(delta.absoluteYaw - absoluteYawScratch.euler.y);
+    delta.rotation.premultiply(absoluteYawScratch.quaternion.setFromAxisAngle(absoluteYawScratch.axis, yawDelta));
+    return true;
+  }
+
+  // Recorded ragdoll/impact leg poses are authored in avatar-local space: the
+  // thigh/calf rotations already describe the final limb directions while the
+  // hips drop with the body. The legs are children of playerMesh, so a channel
+  // that also TILTS the body would rotate them a second time and leave the feet
+  // pointing into the air. While any enabled player channel is flagged
+  // `absoluteLegs`, the leg group keeps its pre-delta world orientation and
+  // takes only the summed TRANSLATION of every channel (body lowering, terrain
+  // elevation). Returns null when no such channel is active.
+  function resolveAbsoluteLegsTranslation() {
+    let active = false, lift = 0;
+    for (const channel of channels.values()) {
+      if (channel && channel.enabled !== false && channel.space === 'local' && channel.includePlayer !== false && channel.absoluteLegs) { active = true; lift += channel.absoluteLegsLiftY || 0; }
+    }
+    return active ? resolveDelta('player').translation.add(new THREE.Vector3(0, lift, 0)) : null;
   }
 
   function hasResolvedDelta(delta) {
@@ -344,6 +375,9 @@
       mode: contribution.mode === 'override' ? 'override' : 'additive',
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
       enabled: contribution.enabled !== false,
+      absoluteYaw: Number.isFinite(contribution.absoluteYaw) ? contribution.absoluteYaw : undefined, // Final world yaw (rotation.y convention) of the body; the composer derives the delta from the live base yaw each render.
+      absoluteLegs: contribution.absoluteLegs === true, // Recorded/authored leg poses are avatar-local: the leg group ignores this channel's rotation and keeps only its translation (see resolveAbsoluteLegsTranslation).
+      absoluteLegsLiftY: finite(contribution.absoluteLegsLiftY), // Raises the legs relative to the body so authored foot centres do not sink the soles into the floor.
       includePlayer: contribution.includePlayer !== false,
       includeExternal: contribution.includeExternal !== false,
       excludeExternalProviders: Array.isArray(contribution.excludeExternalProviders) ? contribution.excludeExternalProviders.filter(name => typeof name === 'string') : [], // Checked for each scene-sibling attachment during render.
@@ -398,6 +432,20 @@
     }
     const neck = currentPlayerNeckJoint(); // Counter the body correction so physical neck limits operate on the original logical gaze.
     if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
+  }
+
+  const absoluteLegsParentQuaternion = new THREE.Quaternion(); // Reused by restoreAbsoluteLegs.
+  function restoreAbsoluteLegs(base, undo, renderDebug) {
+    if (!playerLegRoot?.parent) return;
+    const oldPosition = playerLegRoot.position.clone();
+    const oldQuaternion = playerLegRoot.quaternion.clone();
+    playerLegRoot.parent.updateWorldMatrix?.(true, false);
+    const worldPosition = base.position.clone().add(base.translation);
+    playerLegRoot.position.copy(playerLegRoot.parent.worldToLocal(worldPosition));
+    hierarchyWorldQuaternion(playerLegRoot.parent, absoluteLegsParentQuaternion).invert();
+    playerLegRoot.quaternion.copy(absoluteLegsParentQuaternion.multiply(base.quaternion));
+    undo.push(() => { playerLegRoot.position.copy(oldPosition); playerLegRoot.quaternion.copy(oldQuaternion); });
+    renderDebug.absoluteLegs = true;
   }
 
   const worldChannelPivot = new THREE.Vector3(); // Reused posterior pivot for movement-space contributions at each render.
@@ -485,6 +533,7 @@
         composedWorldEulerDeg: null,
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
+      let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
       if (playerMesh && !poseLocked) {
         const bodyDelta = resolveDelta('player');
@@ -494,7 +543,17 @@
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
           renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
+          applyAbsoluteYaw(bodyDelta, baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
+          const legsTranslation = playerLegRoot ? resolveAbsoluteLegsTranslation() : null;
+          if (legsTranslation) {
+            playerLegRoot.updateWorldMatrix?.(true, false);
+            absoluteLegsBase = {
+              position: playerLegRoot.getWorldPosition(new THREE.Vector3()),
+              quaternion: hierarchyWorldQuaternion(playerLegRoot),
+              translation: legsTranslation.applyQuaternion(baseWorldQuaternion),
+            };
+          }
           for (const entry of currentOwnedRootEntries()) {
             const delta = entry.kind === 'player' ? bodyDelta : externalDelta;
             if (!hasResolvedDelta(delta)) continue;
@@ -508,7 +567,7 @@
         }
       }
 
-      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
+      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
       lastRenderDebug = renderDebug;
 
       try {
@@ -567,7 +626,9 @@
   // ends up countering only playerMesh.rotation.y's pre-delta resting yaw
   // and the head renders off-target by whatever yaw a channel contributes.
   function resolvedYawDeltaRad() {
-    return new THREE.Euler().setFromQuaternion(resolveDelta('player').rotation, 'YXZ').y;
+    const delta = resolveDelta('player');
+    if (playerMesh && Number.isFinite(delta.absoluteYaw)) applyAbsoluteYaw(delta, hierarchyWorldQuaternion(playerMesh)); // Same base-yaw comparison the render hook makes.
+    return new THREE.Euler().setFromQuaternion(delta.rotation, 'YXZ').y;
   }
 
   window.PlayerBodyTransformComposer = {
