@@ -25,8 +25,25 @@
     },
     liveEasternMire: {
       label: 'LIVE — Eastern Mire exact',
-      settings: { entrySide:'west', preset:'greatBasin', boundaryMode:'followMapHeight', boundaryCliffBoost:2 },
+      settings: window.WildernessMapGenerator?.zoneSettings?.('map_eastern_mire') || {}, // One source for gameplay and Lab island controls.
     },
+  });
+
+  // Explicit achievable micro-archipelago, without default skerries
+  // inflating the landmass count beyond the user's selected 10–20 islands.
+  const TINY_ARCHIPELAGO_RECIPE = Object.freeze({
+    ...window.WildernessMapGenerator?.zoneSettings?.('map_eastern_mire'),
+    archipelagoEnabled:true,
+    islandCount:15,
+    islandSize:3.8,
+    islandSizeVariation:0.22,
+    islandHeight:3,
+    islandSteepness:1.55,
+    islandIrregularity:0.58,
+    islandCoastDetail:0.55,
+    islandSpacing:1.35,
+    islandClustering:0.45,
+    islandSatellites:0,
   });
 
   const HYBRID_RECIPE = Object.freeze({
@@ -203,6 +220,11 @@
       previewDebugLog(`Applied exact live wilderness recipe: ${LIVE_ZONE_RECIPES[value].label}.`);
       return true;
     }
+    if (value === 'tinyArchipelago') {
+      applyResolvedRecipe(TINY_ARCHIPELAGO_RECIPE, { enabled:false });
+      previewDebugLog('Applied 15 compact island landmasses, zero satellites and 3-tier peaks. Use 2D layout to count the islands.');
+      return true;
+    }
     if (value === 'hybridEscarpment') {
       applyResolvedRecipe(HYBRID_RECIPE.settings, HYBRID_RECIPE.hybrid);
       previewDebugLog('Applied incline → sheer cliff recipe and regenerated immediately.');
@@ -228,6 +250,12 @@
       const option = document.createElement('option');
       option.value = value;
       option.textContent = recipe.label;
+      select.insertBefore(option, anchor || null);
+    }
+    if (!select.querySelector('option[value="tinyArchipelago"]')) {
+      const option = document.createElement('option');
+      option.value = 'tinyArchipelago';
+      option.textContent = '15 Tiny Islands — 3 Tiers';
       select.insertBefore(option, anchor || null);
     }
     if (anchor) anchor.textContent = 'Incline → sheer cliff (spawn now)';
