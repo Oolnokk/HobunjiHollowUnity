@@ -284,6 +284,10 @@
     {
       "key": "bowlStack",
       "file": "config/furniture-authored/bowlStack.json"
+    },
+    {
+      "key": "honeyfuzzleHouse",
+      "file": "config/furniture-authored/honeyfuzzleHouse.json"
     }
   ]
 }

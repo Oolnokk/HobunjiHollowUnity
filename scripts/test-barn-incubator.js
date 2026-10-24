@@ -41,7 +41,9 @@ function firstFreeTrough(barnId, ignoreId = null) {
   return -1;
 }
 
+const evolutionReveals = []; // Captures completed incubations without requiring a browser screen.
 const window = {
+  AnimalBabyArrival: { celebrateMaturation(entry) { evolutionReveals.push({ id: entry.id, name: entry.name }); } },
   __hobunjiPlayerProfile: { worldId: 'world_test' },
   setInterval() { return 1; },
   addEventListener() {},
@@ -209,6 +211,7 @@ assert.notEqual(ordinary.troughIndex, 1, 'ordinary housing must not steal the in
 window.FarmAnimals.tickHearts();
 assert.equal(B.debugSnapshot().barns[0].additions[0].slots[0].daysRemaining, 1, 'first daily livestock tick advances incubation by one day');
 assert(!livestock.some(entry => entry.id === 'baby_1'), 'baby remains inside incubator after the first day');
+assert.equal(evolutionReveals.length, 0, 'no evolution animation before incubation finishes');
 
 window.FarmAnimals.tickHearts();
 const adult = livestock.find(entry => entry.id === 'baby_1');
@@ -218,6 +221,19 @@ assert.equal(adult.barnId, barn.id, 'matured animal is housed in the reserved ba
 assert.equal(adult.troughIndex, 1, 'matured animal receives the exact trough reserved before incubation');
 assert.equal(inventory.growthTonic, tonicBefore, 'two-day incubator completion consumes no Growth Tonic');
 assert(!B.debugSnapshot().reservedTroughs.includes('barn_test:1'), 'reservation clears after the adult occupies that trough');
+assert.deepEqual(evolutionReveals, [{ id: 'baby_1', name: 'Mallow' }], 'successful maturation requests exactly one reveal');
+
+const blockedBaby = { id: 'blocked_baby', kind: 'grehlr', name: 'Pippo', genotype: {}, lifeStage: 'baby', barnId: null, troughIndex: null }; // Exercises a trough obstruction during active incubation.
+livestock.push(blockedBaby);
+assert.equal(B.reserveTrough(placed.addition.id, 1, barn.id, 3).ok, true);
+assert.equal(B.startMaturation(placed.addition.id, 1, blockedBaby.id).ok, true);
+livestock.push({ id: 'unexpected_occupant', kind: 'grehlr', name: 'Occupant', lifeStage: 'adult', barnId: barn.id, troughIndex: 3 });
+B.advanceMaturationDay();
+B.advanceMaturationDay();
+assert.equal(evolutionReveals.length, 1, 'blocked maturation never falsely triggers the evolution reveal');
+assert.equal(B.getState().barns[barn.id].additions[0].slots[1].baby.id, blockedBaby.id, 'blocked baby stays in incubator');
+assert.equal(B.cancelMaturation(placed.addition.id, 1).ok, true, 'blocked slot can still return its baby to Nursery');
+livestock.splice(livestock.findIndex(entry => entry.id === 'unexpected_occupant'), 1);
 
 const map = window.FarmTroughs.synthesizeBarnInteriorMapData('map_i_barn_barn_test');
 assert(map.cols >= 8 && map.rows > 6, 'north incubator expands the synthesized barn interior beyond the base barn rectangle');

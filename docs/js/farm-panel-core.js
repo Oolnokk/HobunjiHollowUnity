@@ -1177,28 +1177,36 @@
       const extra = document.createElement('div');
       extra.className = 'farm-row-extra';
       if (canManage) {
-        const housingSelect = document.createElement('select');
-        housingSelect.className = 'settings-select farm-barn-select';
-        housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
-        const stasisOpt = document.createElement('option');
-        stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
-        housingSelect.appendChild(stasisOpt);
-        farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
-          const tier = BARN_TIERS[b.tier];
-          const occupants = livestock.filter(l => l.barnId === b.id).length;
-          const opt = document.createElement('option');
-          opt.value = b.id;
-          opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
-          opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
-          housingSelect.appendChild(opt);
-        });
-        housingSelect.value = entry.barnId || '';
-        housingSelect.addEventListener('change', () => {
-          const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
-          deps.showToast(result.message, result.ok);
-          renderFarmLivestock(); renderFarmGridGlance();
-        });
-        extra.appendChild(housingSelect);
+        const houseOnly = window.SCRATCHBONES_CONFIG?.game?.livestock?.housing?.[entry.kind]; // Honeyfuzzle swarms live in their own house, never a barn.
+        if (houseOnly) {
+          const houseNote = document.createElement('span');
+          houseNote.className = 'farm-note';
+          houseNote.textContent = '🍯 Lives in its Honeyfuzzle House — manage it from the house on the farm map.';
+          extra.appendChild(houseNote);
+        } else {
+          const housingSelect = document.createElement('select');
+          housingSelect.className = 'settings-select farm-barn-select';
+          housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
+          const stasisOpt = document.createElement('option');
+          stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
+          housingSelect.appendChild(stasisOpt);
+          farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
+            const tier = BARN_TIERS[b.tier];
+            const occupants = livestock.filter(l => l.barnId === b.id).length;
+            const opt = document.createElement('option');
+            opt.value = b.id;
+            opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
+            opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
+            housingSelect.appendChild(opt);
+          });
+          housingSelect.value = entry.barnId || '';
+          housingSelect.addEventListener('change', () => {
+            const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
+            deps.showToast(result.message, result.ok);
+            renderFarmLivestock(); renderFarmGridGlance();
+          });
+          extra.appendChild(housingSelect);
+        }
         if (entry.resourceReady) {
           const readyBadge = document.createElement('span');
           readyBadge.className = 'farm-note';
@@ -1410,13 +1418,27 @@
   function _stableEntryFromLivestock(entry) {
     return {
       id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
+      lifeStage: entry.lifeStage === 'baby' ? 'baby' : 'adult', // Farm-to-Stable transfers must preserve Nursery babies rather than silently aging them.
       genotype: entry.genotype, aiType: deps.companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
+      ...(entry.swarmColor ? { swarmColor: entry.swarmColor } : {}), // A honeyfuzzle swarm keeps its color as a companion.
     };
   }
   function _addToOwnStable(stabledEntry) {
     deps.getStable().push(stabledEntry);
-    deps._autoAssignStableRole(stabledEntry);
+    const isBaby = stabledEntry.lifeStage === 'baby'; // Transferred baby companions cannot be equipped until grown.
+    if (!isBaby) deps._autoAssignStableRole(stabledEntry);
     deps.saveStable();
+    if (isBaby) window.AnimalBabyArrival?.requestName?.(stabledEntry, {
+      scope: 'stable',
+      commit: name => {
+        const entry = deps.getStable()?.find(animal => animal.id === stabledEntry.id); // Character-scoped live Stable record may have been reloaded.
+        if (!entry) return false;
+        entry.name = name;
+        deps.saveStable();
+        return true;
+      },
+      refresh: () => window.FarmPanel?.renderStablePanel?.(),
+    });
   }
 
   function moveLivestockToStable(id) {
@@ -1619,7 +1641,7 @@
     }
   }
 
-  const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿' };
+  const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿', honeyfuzzle: '🐝' };
 
   // Which of the stable's 3 equip slots a given stable-entry role occupies,
   // and the icon/label its row button shows — see stableEntryRole.

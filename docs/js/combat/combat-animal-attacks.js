@@ -325,6 +325,7 @@
       if (p.STAMINA_COST_MAX_FRACTION != null) POUNCE_STAMINA_COST_MAX_FRACTION = Math.max(0, Number(p.STAMINA_COST_MAX_FRACTION) || 0);
       if (p.STAMINA_COST_MIN != null) POUNCE_STAMINA_COST_MIN = Math.max(0, Number(p.STAMINA_COST_MIN) || 0);
     }
+    window.Combat.attach?.applyConfig?.(cfg); // Attach attacks (Swarm) read their own sections of the same creatureAttacks block.
     const g = cfg.guardCharge;
     if (g) {
       if (g.DURATION_S != null) GUARD_CHARGE_DURATION_S = g.DURATION_S;

@@ -14,8 +14,8 @@
   // authoritative; no post-frame position override or accumulated hold timer.
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.22; // Match Western Slope snow's visibly raised cap and .22-wide curved perimeter lip.
-  const PLASM_EXPANSION_MS = 500; // Two growth beats per second while no plasm is visible.
-  const PLASM_TILES_PER_BEAT = 1; // Exactly one new tile per beat (2 tiles/s, capped by room geometry).
+  const PLASM_EXPANSION_MS = 3000; // One player-facing half of the frontier every three seconds.
+  const lanternDirection = new THREE.Vector3(); // Reused camera cone axis; no per-frame vector allocation.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
@@ -579,6 +579,11 @@
         for (const actor of actors) if (distance(pointOf(actor, kit.deps.TILE), spike) < 2) {
           window.ResourceSystem?.addAffliction?.(actor, 'shatteredStamina', 13);
           window.ResourceSystem?.spendFooting?.(actor, 10, 'falling icicle');
+          const fromX=spike.x*kit.deps.TILE,fromZ=spike.z*kit.deps.TILE; // Impact center produces outward canonical knockback.
+          const options={footingDamageMultiplier:0}; // Existing explicit footing cost remains the sole footing damage.
+          const sourceX=actor.x===fromX&&actor.y===fromZ?fromX-1:fromX; // Exact-center hits still have a defined outward direction.
+          if(actor===kit.deps.player)kit.deps.damagePlayer?.(18,sourceX,fromZ,220,options);
+          else kit.deps.damageCreature?.(actor,18,sourceX,fromZ,220,options);
         }
         lastEvent = 'tothal:icicle-shatter';
       }
@@ -604,7 +609,7 @@
         let fits=true;
         for(let dz=0;dz<side&&fits;dz++)for(let dx=0;dx<side;dx++){
           const x=origin.x+dx,z=origin.z+dz,cx=x+.5,cz=z+.5;
-          if(!clearAt(cx,cz,floorY(kit,cx,cz))){fits=false;break;}
+          if(protectedPlasmTile(kit,x,z)||!clearAt(cx,cz,floorY(kit,cx,cz))){fits=false;break;}
           cluster.push(x+','+z);
         }
         if(fits)return new Set(cluster);
@@ -766,21 +771,35 @@
     }
     return false;
   }
-  function visiblePlasmTile(kit,point,room) {
-    const configured=window.CloudForestFog?.getKanthicLanternRadiusTiles?.();
-    const radius=Number.isFinite(configured)&&configured>0?configured:.9;
-    const r2=radius*radius;
-    // The real lantern masks are omnidirectional radial gradients, NOT a
-    // head-facing cone. They also do not raycast against furniture/walls.
-    // Growth must pause whenever the illumination circle intersects any
-    // part of any plasm tile, regardless of where the avatar faces.
-    for(const key of room.plasm||[]){
-      const [x,z]=tileFromKey(key);
-      const px=between(point.x,x,x+1),pz=between(point.z,z,z+1);
-      const dx=px-point.x,dz=pz-point.z;
-      if(dx*dx+dz*dz<=r2)return true;
+  function protectedPlasmTile(kit,x,z) {
+    const checkpoints=kit.state?.checkpoints; // Read the live checkpoint owner, including later activations.
+    const points=[world.context.spawn,checkpoints?.active?.point]; // Entrance and any custom active respawn are always safe.
+    for(const point of points)if(point&&Math.abs(x+.5-point.x)<=1.5&&Math.abs(z+.5-point.z)<=1.5)return true;
+    for(const door of checkpoints?.doorways||[]){
+      const normal=door.axis==='x'?Math.abs(x+.5-door.x):Math.abs(z+.5-door.z); // Protect both doorway landing sides before they become checkpoints.
+      const across=door.axis==='x'?Math.abs(z+.5-door.z):Math.abs(x+.5-door.x);
+      if(normal<=1.5&&across<=door.width*.5+.8)return true;
     }
     return false;
+  }
+  function shrinkLitPlasm(kit,room) {
+    const camera=kit.deps.getActiveCamera?.(); // The real view direction, including pitch, owns the repelling cone.
+    if(!camera?.getWorldDirection||!camera.position)return false;
+    camera.getWorldDirection(lanternDirection);
+    const radius=Number(window.CloudForestFog?.getKanthicLanternRadiusTiles?.())||.9; // Retain existing lantern reach beyond the avatar.
+    const player=pointOf(kit.deps.player,kit.deps.TILE); // Third-person camera setback must not consume the lantern's useful reach.
+    const reach=Math.hypot(camera.position.x-player.x,camera.position.z-player.z)+radius+1;
+    let changed=false;
+    for(const key of room.plasm){
+      const [x,z]=tileFromKey(key);
+      const dx=x+.5-camera.position.x,dy=(room.plasmFloorY.get(key)??0)+PLASM_DEPTH-camera.position.y,dz=z+.5-camera.position.z;
+      const length=Math.hypot(dx,dy,dz); // A 60-degree cone shrinks illuminated cells, independently of the growth clock.
+      if(length<=reach&&length>0&&(dx*lanternDirection.x+dy*lanternDirection.y+dz*lanternDirection.z)/length>=Math.cos(Math.PI/6)
+        &&!obstructed({x:camera.position.x,z:camera.position.z},{x:x+.5,z:z+.5},kit)){
+        room.plasm.delete(key);changed=true;
+      }
+    }
+    return changed;
   }
   const PLASM_NEIGHBORS=[[1,0],[-1,0],[0,1],[0,-1]];
   function connectedWithoutPlasmTile(patch,exclude) {
@@ -823,32 +842,25 @@
   function growPlasmRoom(kit,room,point) {
     const patch=room.plasm;
     if(!patch?.size||!room.plasmCap)return false;
-    const occupiedKey=tileKey(point.x,point.z); // The player's current tile is inviolable when growth chooses a frontier.
-    let changed=false;
-    for(let count=0;count<PLASM_TILES_PER_BEAT;count++){
-      const frontier=new Map();
-      for(const key of patch){
-        const [x,z]=tileFromKey(key);
-        for(const [dx,dz] of PLASM_NEIGHBORS){
-          const px=x+dx,pz=z+dz,nk=px+','+pz;
-          if(nk===occupiedKey||patch.has(nk)||frontier.has(nk))continue; // Never expand into the tile currently supporting the player.
-          const n={x:px+.5,z:pz+.5};
-          if(n.x<=room.bounds.minX||n.x>=room.bounds.maxX||n.z<=room.bounds.minZ||n.z>=room.bounds.maxZ)continue;
-          if(!clearAt(n.x,n.z,floorY(kit,n.x,n.z)))continue;
-          // Favor the player-facing growth front with some deterministic roughness.
-          frontier.set(nk,{key:nk,rank:distance(n,point)+seeded(px*73+pz*41,room.index+0x882)*.25});
-        }
+    const frontier=new Map(); // Snapshot once so one beat cannot grow multiple rings.
+    for(const key of patch){
+      const [x,z]=tileFromKey(key);
+      for(const [dx,dz] of PLASM_NEIGHBORS){
+        const px=x+dx,pz=z+dz,nk=px+','+pz;
+        if(patch.has(nk)||frontier.has(nk)||protectedPlasmTile(kit,px,pz))continue;
+        const n={x:px+.5,z:pz+.5};
+        if(n.x<=room.bounds.minX||n.x>=room.bounds.maxX||n.z<=room.bounds.minZ||n.z>=room.bounds.maxZ)continue;
+        if(clearAt(n.x,n.z,floorY(kit,n.x,n.z)))frontier.set(nk,{key:nk,rank:distance(n,point)});
       }
-      if(!frontier.size)break;
-      const next=[...frontier.values()].sort((a,b)=>a.rank-b.rank)[0];
+    }
+    const nearest=[...frontier.values()].sort((a,b)=>a.rank-b.rank||a.key.localeCompare(b.key)); // Closest half of the outer ring, including the player's tile.
+    let changed=false;
+    for(const next of nearest.slice(0,Math.ceil(nearest.length/2))){
       patch.add(next.key);
       if(patch.size>room.plasmCap){
-        // Maximum size is half the traversable room, *not* a permanent stop.
-        // Old perimeter cells farthest from the player retract as the leading
-        // edge advances. Keep the remaining puddle a single connected patch.
         const removed=cullFarthestPlasmTile(room,point);
-        if(!removed){patch.delete(next.key);break;}
-        if(removed===next.key)continue; // A losing frontier tile causes no visual change.
+        if(!removed){patch.delete(next.key);continue;}
+        if(removed===next.key)continue;
       }
       changed=true;
     }
@@ -861,7 +873,9 @@
     if(!world)return;
     for(const room of world.rooms){
       room.plasm=room.plasmInitial ? new Set(room.plasmInitial) : null;
+      for(const key of room.plasm||[]){const [x,z]=tileFromKey(key);if(protectedPlasmTile(kit,x,z))room.plasm.delete(key);} // Newly activated custom checkpoints remain safe after death too.
       room.plasmElapsed=0;
+      room.plasmLightElapsed=0;
       room.plasmCulls=0;
     }
     world.sink=0;
@@ -873,7 +887,7 @@
     if(!player||!tile)return;
     const point=pointOf(player,tile),room=roomAt(point);
     // Every room preserves its live puddle across transitions, but only the
-    // occupied room grows in darkness. The visibility veto stays global.
+    // occupied room grows; the lantern independently clears its illuminated cells.
     if(!alive(player)){
       if(world.playerWasAlive!==false)resetPlasmOnDeath(kit); // Covers combat, drowning, and other non-plasm causes of death.
       world.playerWasAlive=false; // Reset only once until the actor respawns.
@@ -884,18 +898,16 @@
     // retain both their puddle tiles and their paused growth clocks unchanged.
     // Hallways/outside rooms cannot cause any puddle to advance.
     if(!room?.plasm?.size){world.sink=0;return;}
-    const anythingVisible=world.rooms.some(other=>visiblePlasmTile(kit,point,other));
-    if(anythingVisible){
-      room.plasmElapsed=0; // A visible puddle anywhere still vetoes local growth.
-    }else{
-      room.plasmElapsed+=dt*1000;
-      let changed=false;
-      for(let beat=0;beat<4&&room.plasmElapsed>=PLASM_EXPANSION_MS;beat++){
-        room.plasmElapsed-=PLASM_EXPANSION_MS;
-        if(growPlasmRoom(kit,room,point))changed=true;
-      }
-      if(changed){updatePlasmMesh(kit,room);lastEvent='kanthic:plasm-grow';} // Remap only the changed room, every grid update.
+    let changed=false; // Purge newly designated safe tiles before immersion or growth can run.
+    for(const key of room.plasm){const [x,z]=tileFromKey(key);if(protectedPlasmTile(kit,x,z)){room.plasm.delete(key);changed=true;}}
+    room.plasmElapsed+=dt*1000;
+    if(room.plasmElapsed>=PLASM_EXPANSION_MS){
+      room.plasmElapsed%=PLASM_EXPANSION_MS; // No catch-up burst after a long frame.
+      changed=growPlasmRoom(kit,room,point)||changed;
     }
+    room.plasmLightElapsed=(room.plasmLightElapsed||0)+dt;
+    if(room.plasmLightElapsed>=.2){room.plasmLightElapsed=0;changed=shrinkLitPlasm(kit,room)||changed;}
+    if(changed){updatePlasmMesh(kit,room);lastEvent='kanthic:grow-or-repel';}
     if(!room.plasm.has(tileKey(point.x,point.z))){
       world.sink=0;
       return; // Local growth can still occur while standing off-plasm.
@@ -1013,6 +1025,7 @@
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
       plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),
       plasmCulled:world.rooms.reduce((n,r)=>n+(r.plasmCulls||0),0),
+      plasmGrowthMs:PLASM_EXPANSION_MS, latestChange:'Checkpoint-safe half-ring growth; camera lantern repels; icicles deal 18 damage and outward knockback.',
       sinking:world.sink,lastEvent,
     } : {active:false,lastEvent};
   }

@@ -109,6 +109,8 @@ window.SCRATCHBONES_CONFIG = {
       // Diet classification, used by barn troughs to decide which fodder
       // (plantFodder/meatFodder) a housed animal will actually eat —
       // predator: meatFodder only, prey: plantFodder only, omnivore: either.
+      // Species that are never barn animals: kind -> the Farm production building that houses them.
+      "housing": { "honeyfuzzle": "honeyfuzzleHouse" },
       "diet": {
         "uumkaoii": "prey",
         "gar-wolf": "predator",
@@ -116,7 +118,8 @@ window.SCRATCHBONES_CONFIG = {
         "grehlr": "omnivore",
         "drenkirra": "prey",
         "nelk": "prey",
-        "nazgraku": "prey"
+        "nazgraku": "prey",
+        "honeyfuzzle": "prey"
       },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },

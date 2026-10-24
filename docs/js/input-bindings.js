@@ -240,6 +240,7 @@
   function resolveActionForButton(device, button, heldShift = null) {
     if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
     const bindings = getCurrentBindings()?.[device] || {}; // Uses the live map so game.js never needs to know how contextual controller actions are authored.
+    if (bindings.toolSelect === button && window.Shattercasks?.toolArchAction?.() === 'pickup') return 'toolSelect'; // Contextual pickup is dispatched by gameplay; ordinary selectors remain owned by ControllerSelectionUI.
     return Object.keys(bindings).find(actionId => bindings[actionId] === button && actionContext(actionId) === 'gameplay') || null;
   }
 

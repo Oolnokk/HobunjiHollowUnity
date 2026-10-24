@@ -1306,6 +1306,23 @@
           // Mounted animals deliberately use the regular whiskered sprites until rein deformation is designed.
           sprites: { idle: 'assets/creaturesprites/nazgraku_idle.png', run: ['assets/creaturesprites/nazgraku_run1.png', 'assets/creaturesprites/nazgraku_run2.png'] },
         },
+        // Honeyfuzzle SWARM: one gameplay entity drawn as an instanced flock of
+        // hummingbird-like members (js/honeyfuzzle-swarm.js). Hive-stump
+        // dwellers hatched from fertile eggs; always Medium (companion role),
+        // never a barn animal (needs a Honeyfuzzle House). `sprites` only
+        // names the wing frames for UI/icon consumers — the swarm renderer owns
+        // its own atlas and ignores idle/run switching.
+        honeyfuzzle: {
+          label: 'Honeyfuzzle Swarm', hostile: false, diet: 'herbivore', liveBirth: false, swarm: { members: 24, memberWidth: 0.26, hoverY: 0.12 },
+          aggroRangePx: TILE * 3, leashRangePx: TILE * 8,
+          maxHealth: 30, maxStamina: 30, moveSpeed: 150, chaseSpeed: 210,
+          attackDamage: 5, attackRangePx: TILE * 0.8, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 10, attackCooldownS: 1.2,
+          attacks: ['swarm'], attackTag: 'poison', realAttackEvery: 1, aiType: 'vigilantProtector', perceptionTiles: 6,
+          canClimb: true, canSwim: true, modelWidth: 1.5, spriteAspect: 0.5, tint: 0xffffff,
+          defaultSizeClass: 'medium', fixedSizeClass: 'medium', mountSpeed: 340,
+          sprites: { idle: 'assets/creaturesprites/honeyfuzzle_wings-mid.png', run: ['assets/creaturesprites/honeyfuzzle_wings-up.png', 'assets/creaturesprites/honeyfuzzle_wings-down.png'] },
+        },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true, liveBirth: true,
           maxHealth: 38, maxStamina: 30,
@@ -4571,54 +4588,10 @@
         return !!genoTex;
       }
 
-      // spriteUrl -> resolved bottom-opacity ratio (0..1, see
-      // creaturePlaneGroundOffset), or a Set of pending callbacks while
-      // the very first scan of that species' idle sprite is still loading.
-      const _creatureGroundAnchorCache = new Map();
-      window.HobunjiCacheAudit?.register('game.creatureGroundAnchorCache', () => _creatureGroundAnchorCache.size);
-      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
-
-      // Scans a species' idle sprite (cached per URL, so only the first
-      // creature of each species actually pays for it) for how far down its
-      // fully opaque pixels extend. All these sprites are nominally
-      // 1375×600, but if the art itself doesn't reach the canvas's bottom
-      // edge (transparent padding), anchoring on the raw rectangle leaves
-      // the visible creature hovering above the ground/its own shadow.
-      // Using alpha 255 deliberately ignores antialiased fringe pixels that
-      // would otherwise make the apparent foot line vary with faint padding.
-      function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
-        const cached = _creatureGroundAnchorCache.get(spriteUrl);
-        if (typeof cached === 'number') { onReady(cached); return; }
-        if (cached instanceof Set) { cached.add(onReady); return; }
-        const waiters = new Set([onReady]);
-        _creatureGroundAnchorCache.set(spriteUrl, waiters);
-        const finish = (ratio) => {
-          _creatureGroundAnchorCache.set(spriteUrl, ratio);
-          waiters.forEach(fn => fn(ratio));
-        };
-        const img = new Image();
-        img.onload = () => {
-          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD);
-          finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
-        };
-        img.onerror = () => finish(1);
-        img.src = spriteUrl;
-      }
-
-      // The prism (avatarRef.group — see updateCreatureMesh's "Prism (group)
-      // tracks the raw aim angle..." comment) keeps its true, unpadded size:
-      // its floor is local Y = -halfH exactly as CREATURE_DB's modelWidth/
-      // modelHeight define it, which is what places it correctly at surfY
-      // and is what any future hitbox/collision use of that size would
-      // expect. The correction belongs on the PLANE meshes themselves
-      // (children of the prism), not on the prism's own placement: shifting
-      // them down by the padding's share of modelHeight moves the art's
-      // real opaque bottom onto the prism's actual floor without changing
-      // the prism's own footprint at all. bottomRatio=1 (no padding) gives
-      // an offset of 0 — the plane stays exactly where it started.
-      function creaturePlaneGroundOffset(modelHeight, bottomRatio) {
-        return -modelHeight * (1 - bottomRatio);
-      }
+      // Ground-anchor scan/offset now live in js/creature-ground-anchor.js (window.CreatureGroundAnchor);
+      // these aliases keep every existing call site and dependency bag unchanged.
+      const resolveCreatureGroundAnchorRatio = window.CreatureGroundAnchor.resolveRatio;
+      const creaturePlaneGroundOffset = window.CreatureGroundAnchor.planeOffset;
 
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
@@ -4699,14 +4672,20 @@
         const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
         const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
         const groundLift = c.groundLift; // Authored floor lift remains unchanged.
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
+        // A swarm species (honeyfuzzle) is one entity drawn as an instanced
+        // flock — see js/honeyfuzzle-swarm.js; frontPlane is its yaw pivot.
+        const avatarRef = def.swarm && window.HoneyfuzzleSwarm
+          ? window.HoneyfuzzleSwarm.buildAvatar(THREE, { name: c.id, seed: window.HoneyfuzzleSwarm.seedFromString(c.id), modelWidth, count: def.swarm.members, memberWidth: def.swarm.memberWidth, hoverY: def.swarm.hoverY, color: c.swarmColor })
+          : window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
           name: c.id,
           creatureId: creatureKey,
           headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
-        avatarRef.frontPlane = avatarRef.group.children[0] || null;
-        avatarRef.backPlane  = avatarRef.group.children[1] || null;
+        if (!def.swarm) {
+          avatarRef.frontPlane = avatarRef.group.children[0] || null;
+          avatarRef.backPlane  = avatarRef.group.children[1] || null;
+        }
         window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Animal planes face along group Z, so visible width cannot use group X.
         // Skip the species-differentiation tint for genotype-bearing
         // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
@@ -4751,7 +4730,7 @@
         // prism's floor instead of on the raw sprite rectangle's edge.
         // Fires synchronously if this species' sprite was already scanned
         // by an earlier creature.
-        resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+        if (!def.swarm) resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => { // A hovering swarm has no feet to anchor.
           if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
           const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
@@ -4991,6 +4970,7 @@
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
+        if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
         if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
@@ -5051,6 +5031,7 @@
         // like Pounce) rather than just pausing it through the knockback
         // freeze below and letting it resume where it left off once knockback
         // decays.
+        if (dmgOpts?.noStagger || window.Combat?.attach?.suppressesStagger(c)) { c.lastAttackReceivedAt = performance.now(); return; } // Damage-over-time ticks and an attached rider take the damage without being staggered, knocked back or scared off.
         window.Combat?.telegraph?.cancel(c);
         window.Combat?.animalAttacks?.cancel(c);
         // Getting hit breaks a bandit's in-progress ability the same way it
@@ -5109,7 +5090,8 @@
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (!environmentalImpact && window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
-        if (!environmentalImpact) {
+        const staggerless = dmgOpts?.noStagger === true; // Damage-over-time ticks (a Swarm sitting on the player) do not interrupt or stagger.
+        if (!environmentalImpact && !staggerless) {
           _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
           player._nestTakeActive = false;
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
@@ -5119,7 +5101,7 @@
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
         const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(player.health) || 0)) : 0; // Reports actual clamped collision damage to the resolver.
-        if (player.health > 0 && !environmentalImpact) {
+        if (player.health > 0 && !environmentalImpact && !staggerless) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
@@ -5946,6 +5928,7 @@
           directionX: c._banditLungeDirX, directionZ: c._banditLungeDirY,
         });
         window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
+        if (c.avatarRef.swarm) c.avatarRef.update(Math.hypot(c.vx || 0, c.vy || 0), performance.now(), dt, c.def.moveSpeed, c._attachVisualSpread || 1); // Honeyfuzzle swarm (js/honeyfuzzle-swarm.js): runs even while a named attack (Swarm) owns the creature.
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -6023,6 +6006,7 @@
         // position/rotation/facing update via updateCreatureMesh, just no
         // idle/run frame swap.
         if (!c.def.sprites) return;
+        if (c.avatarRef?.swarm) return; // Honeyfuzzle swarm: no idle/run states; updateCreatureMesh drives its shared wing tick every frame.
         if (!moving) {
           const frameKey = 'idle';
           const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
@@ -6335,6 +6319,10 @@
           // damage can find them, but companionObjects owns their movement
           // and attacks so they can follow their bandit master.
           if (c.banditCompanion) continue;
+          // Honeyfuzzle swarms fly home to their hive stump at dusk and tuck
+          // inside it overnight (js/honeyfuzzle-hives.js) — hive-controlled
+          // frames skip the generic wildlife AI entirely.
+          if (c.hiveKey && window.HoneyfuzzleHives?.control(c, dt)) continue;
           // Tucked inside its den for the off-shift/overnight branch below
           // (see the denKey settle branch) — frozen and invisible rather
           // than idling in the open, so no AI/vocalization/stamina tick
@@ -8143,7 +8131,7 @@
                   // fires only once every 4 behavior actions; the other 3 use
                   // the short 0-damage/high-knockback guard charge instead.
                   c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
-                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
+                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
                   const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
                   const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
                   if (startedModular) {
@@ -8372,7 +8360,7 @@
           // the legacy whistle.
           const activeStabled = activeId ? stable.find(s => s.id === activeId) : null;
           const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
+            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype, swarmColor: activeStabled.swarmColor }
             : null;
           // Only the companion slot honors the legacy whistle fallback —
           // mount/shoulder-pet have no equivalent item-based summon path.
@@ -8390,12 +8378,13 @@
           // two differently-bred gar-wolves) still needs a respawn so the new
           // one's genotype actually renders.
           if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
-            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) continue;
+            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)
+            && (existing.swarmColor || null) === (desired.swarmColor || null)) continue;
           despawnCompanions(master, role);
           const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
           const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
           const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
+            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, swarmColor: desired.swarmColor, stableRole: role,
           });
           if (companion) {
             companionObjects.add(companion);
@@ -10615,7 +10604,7 @@
           const felledEntries = _zoneFelledTreePersist.get(mapId);
           if (felledEntries?.length) {
             const stillFelled = felledEntries.filter(entry => {
-              const due = calendar.day - entry.feltDay >= TREE_REGROWTH_DAYS;
+              const due = calendar.day - entry.feltDay >= (entry.regrowDays || TREE_REGROWTH_DAYS); // Collapsed hive stumps regrow on their own longer clock.
               if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
               return !due;
             });
@@ -15727,6 +15716,8 @@
         { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
         { key: 'grehlrBaby',          icon: '🐾', label: 'GREHLR BABY', max: 9  },
         { key: 'fertileDrenkirraEgg', icon: '🥚', label: 'FERTILE DRENKIRRA EGG', max: 9  },
+        { key: 'fertileHoneyfuzzleEgg', icon: '🥚', label: 'FERTILE HONEYFUZZLE EGG', max: 9 },
+        { key: 'honey', icon: '🍯', label: 'HONEY', max: 99 },
         { key: 'drenkirraEgg',        icon: '🥚', label: 'DRENKIRRA EGG', max: 99 },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
@@ -15790,6 +15781,8 @@
         dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
         fertileDrenkirraEgg: { icon: '🥚', label: 'Fertile Drenkirra Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a southern-cloud-forest den. Add it to a farm or stable to hatch the drenkirra inside.' },
+        fertileHoneyfuzzleEgg: { icon: '🥚', label: 'Fertile Honeyfuzzle Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a hive stump. Place it in an empty Honeyfuzzle House and wait for it to hatch, or feed it a Growth Tonic to hatch it at once.' },
+        honey: { icon: '🍯', label: 'Honey', cat: 'material', sellPrice: 12, tags: ['Ingredient', 'Food', 'Sweet'], desc: 'Thick golden honey scraped from a hollow hive stump.' },
         drenkirraEgg: { icon: '🥚', label: 'Drenkirra Egg', cat: 'material', sellPrice: 8, tags: ['Ingredient', 'Egg', 'Food'], desc: 'A regular unfertilized egg laid by a farmed drenkirra, suitable for eating or cooking.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
@@ -20553,6 +20546,12 @@
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
       function cameraSurfaceYAtWorld(x, z) {
+        if (currentArea === 'map_i_dev_random_ruin') {
+          const supportY = window.DevRandomRuin?.getPlayerSupportY?.(); // Bound the camera floor query to the player's current ruin level, excluding overhead bridges.
+          const surface = window.DynamicSurfaces?.sampleSupport?.(x, z, { minY:-60, maxY:(Number.isFinite(supportY) ? supportY : 0) + .45, pad:.02 }); // Real basin floors replace the flat interior-grid proxy.
+          if (Number.isFinite(surface?.y)) return surface.y;
+          if (Number.isFinite(supportY)) return supportY;
+        }
         const ground = activeSurfaceYAtWorld(x, z); // Gameplay ground remains the authority for movement and uncovered tiles.
         const cover = window.EnvironmentSurfaceMicroPlateau?.cameraSurfaceYAt?.(x, z); // Exact rendered snow/slush height, exclusively for camera clearance.
         const support = window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, ground, currentArea); // Porch decks and walkable furniture (inn stage) are rendered above the gameplay ground.
@@ -25792,6 +25791,11 @@
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
         }
 
+        // A standing honeyfuzzle hive stump under the reticle: one long hold
+        // (js/corpse-hold-loot.js owns the timer) takes its eggs and honey.
+        const aimedHive = _isZoneArea(currentArea) ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
+        if (aimedHive) return [{ icon: '🍯', label: 'Hold to Harvest Hive', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: aimedHive.promptRoot }];
+
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
         // the shared actionHeldDown flag consumed by BanditCamps.
@@ -29752,6 +29756,7 @@
         makeCreatureEntity,
         hostileObjects, companionObjects,
         damageCreature,
+        damagePlayer, // Ruin environmental impacts use the canonical damage/knockback/death route.
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         tileSurfaceYInArea,
         markOutline: _markOutline,
@@ -30079,13 +30084,29 @@
         DEN_MOTHER_DEFS,
       });
 
+      window.HoneyfuzzleHives?.init({
+        TILE, TileType, player, calendar, inventory, hostileObjects, rnd,
+        zoneLayouts: _zoneLayouts,
+        felledPersist: _zoneFelledTreePersist,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getGrid: () => window.GridTileAccessors.getActiveGrid(),
+        getVegetationGroup: (zoneId, col, row) => _zoneVegetationMeshes.get(zoneId)?.get(`${col},${row}`) || null,
+        isNightTime: () => window.Music?.isNightTime?.(),
+        getWorldId: _tothalWorldId,
+        makeCreatureEntity, moveCreatureToward, updateCreatureMesh, updateCreatureAnimFrame,
+        removeZoneVegetationVisual, buildInventoryGrid, refreshActionBar, saveMemberWorldData,
+        refreshItemScroll: () => window.HudUpdate.refreshItemScroll(),
+      });
+
       window.CorpseHoldLoot?.init({
         getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getAimedHoldCorpse: () => {
           const reticle = getReticleTile(); // Same aimed/sticky corpse lookup the Loot button uses.
           const obj = getCorpseObjectForAction('obj_loot_corpse', reticle.col, reticle.row);
-          return obj?.holdSeconds > 0 ? obj : null;
+          if (obj?.holdSeconds > 0) return obj;
+          return window.HoneyfuzzleHives?.getHoldTarget(reticle.col, reticle.row) || null; // Hive stumps reuse the same hold contract (long hold -> eggs + honey -> collapse).
         },
         showToast,
       });
@@ -30927,6 +30948,11 @@
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
+      // Honeyfuzzle House (1x1 egg/swarm slot on a FarmProduction entry) — js/honeyfuzzle-house.js.
+      window.HoneyfuzzleHouse?.init({ THREE, scene, getWorldId: _tothalWorldId, getCamera: () => camera, getCurrentArea: () => currentArea, inventory,
+        loadWorldLivestock: _loadWorldLivestock, saveWorldLivestock: _saveWorldLivestock, hasFarmPermission, showToast,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData, surfaceY: farmSurfaceYAtWorld,
+        refreshInventory: () => { buildInventoryGrid(); refreshActionBar(); } });
       // Whole-farm structure layout editor now lives in js/farm-layout-editor.js.
       window.FarmLayoutEditor?.init({ getHousePieces: () => housePieces, getFarmBuildings: () => farmBuildings, hasFarmPermission, showToast, COLS, ROWS });
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
