@@ -468,7 +468,7 @@
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
     state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0}, potluckContests:{} };
-    heldBowl=null; seatedMeal=null; feastCache=null;
+    heldBowl=null; seatedMeal=null; feastCache=null; remembrance=null; musicParticipation=null;
     window.NpcSharedMeals?.clear?.();
     window.FestivalLocaleActivities?.clear?.();
     if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.max(0,points);
@@ -668,7 +668,7 @@
       const prop=activityProps().find(p=>p.id===musicParticipation.propId);
       if (eventKey()!==musicParticipation.event || !festivalHours() || !atProp(prop)
           || !window.MusicMinigame?.state?.active) musicParticipation=null;
-      else if (!document.hidden && !deps?.socialPaused?.()) {
+      else if (!document.hidden && !deps?.socialPaused?.() && window.MusicMinigame.state.announcedPlaying) {
         musicParticipation.elapsed+=elapsed;
         if (musicParticipation.elapsed>=20) {
           musicParticipation=null;
@@ -930,7 +930,13 @@
     const walker = deps.getWalkers().find(w => w.rec?.id === 'father_hunundi_hodu' && w.area === 'town');
     if (!walker) return fail('Father Hunundi tells the story here between 10:00 and 22:00.');
     window.FestivalUI.close();
-    return deps.tellStory(walker, STORY);
+    const started=deps.tellStory(walker, STORY);
+    if (started && !claimed('story')) { // Reward attending Hunundi, using the same yearly-claim ledger as other activities.
+      mark('story');
+      giveFavor('father_hunundi_hodu',2,'story');
+      deps.save?.();
+    }
+    return started;
   });
   registerActivity('dance', (payload, prop) => {
     if (prop.festivalLocale && !festivalHours()) return fail('The dance gathering has not begun.');
@@ -945,7 +951,8 @@
     if (!festivalHours()) return fail('The music gathering is not underway.');
     window.FestivalUI.close();
     window.MusicMinigame?.beginPlayerSession();
-    musicParticipation={event:eventKey(),propId:prop.id,elapsed:0}; // Tracks only actual active playing, not menu time.
+    if (!window.MusicMinigame?.state?.active) return fail('Equip a Kurraya before joining the musicians.');
+    musicParticipation={event:eventKey(),propId:prop.id,elapsed:0}; // Count active time after the player actually sounds a note.
     return {ok:true};
   });
   registerActivity('liquor', () => takeOrRefillCup()); // The festival keg: a free temporary cup, not a bottle for the bag.
