@@ -11,7 +11,7 @@ const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8')
 assert.match(loader, /ranged-camera-focus\.js\?v=[A-Za-z0-9_.-]+[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 12/, 'loader requires camera-focus v12 with frozen melee endpoint reuse');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
-assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
+assert.match(source, /intersectSurfaceCandidates\(root, ignoredRoots, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
 assert.match(source, /invalidateAimTarget/, 'aim cache has explicit event-driven invalidation');
 assert.doesNotMatch(source, /SURFACE_RAY_CACHE_MS/, 'time-based per-frame surface-cache expiry is gone');
 assert.match(source, /Deliberately do not resolve\/raycast the combat target here/, 'per-frame focus update explicitly does not resolve the 3D target');
@@ -85,7 +85,7 @@ const targetActor = { x: 400, y: 192, id: 'dummy' };
 const avatarRoot = { name: 'player-avatar', parent: null, visible: true, userData: { handAttachY: 0.45 } };
 const playerMesh = { isMesh: true, name: 'player-body', parent: avatarRoot, visible: true, material: { visible: true, opacity: 1 } };
 const debugMesh = { isMesh: true, name: 'debug-helper-plane', parent: null, visible: true, material: { visible: true, opacity: 1 } };
-const badRoot = { name: 'broken-root', parent: null, visible: true, throwRaycast: true };
+const badRoot = { isMesh: true, name: 'broken-root', parent: null, visible: true, throwRaycast: true };
 const wallMesh = { isMesh: true, name: 'farm-wall', parent: null, visible: true, material: { visible: true, opacity: 1 } };
 const scene = { children: [debugMesh, avatarRoot, badRoot, wallMesh] };
 sceneHits = [
@@ -262,11 +262,39 @@ perf = windowStub.HobunjiRangedCameraFocus.aimPerformance();
 assert.equal(perf.surfaceRaycasts, scansBeforePlayerMove, 'player movement reuses unchanged camera-ray surface hits');
 assert.equal(perf.targetResolves, resolvesBeforePlayerMove + 1, 'player movement rebuilds only muzzle-to-target convergence');
 
-// A scene-root change invalidates surface geometry naturally without a timer.
+// A ray that keeps moving right after a scan reuses that scan until the
+// rescan interval passes, instead of a full scene scan every frame.
+{
+  now += 1000;
+  const scansBefore = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
+  interactionDirection = { x: 0.97, y: 0.24, z: 0 };
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBefore + 1, 'moved ray scans once');
+  interactionDirection = { x: 0.96, y: 0.28, z: 0 };
+  now += 1000 / 60;
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  let p = windowStub.HobunjiRangedCameraFocus.aimPerformance();
+  assert.equal(p.surfaceRaycasts, scansBefore + 1, 'ray moving again within the rescan interval reuses the last scan');
+  assert(p.surfaceRescansDeferred >= 1, 'deferred rescans are visible in aimPerformance');
+  now += windowStub.HobunjiRangedCameraFocus.tuning.surfaceRescanMinIntervalMs;
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBefore + 2, 'moved ray rescans once the interval has passed');
+  interactionDirection = { x: 0.95, y: 0.31, z: 0 };
+  dispatchWindow('hobunji-world-object-change');
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBefore + 3, 'explicit invalidation bypasses the rescan interval');
+  interactionDirection = { x: 1, y: 0, z: 0 };
+  now += 1000;
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+}
+
+// A scene-root change invalidates surface geometry once the rescan interval allows.
+const scansBeforePlayerMove2 = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
+now += 1000;
 const extraRoot = { name: 'new-world-root', parent: null, visible: true };
 scene.children.push(extraRoot);
 windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
-assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePlayerMove + 1, 'scene root-count change performs one new scene scan');
+assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePlayerMove2 + 1, 'scene root-count change performs one new scene scan');
 
 // Explicit world mutation invalidation is also event-driven and forces one surface refresh.
 const scansBeforeWorldEvent = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
@@ -454,6 +482,48 @@ assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'range
   scene.children.splice(scene.children.indexOf(grassMesh), 2);
   sceneHits = savedHits;
   windowStub.HobunjiRangedCameraFocus.invalidateAimTarget('test-ranged-convergence-restore', true);
+}
+
+// The surface walk prunes subtrees validSurfaceHit would reject anyway, so
+// hidden groups, billboards and non-mesh sprites are never raycast at all.
+{
+  const raycastObjects = [];
+  const hiddenChild = { isMesh: true, name: 'hidden-wall', visible: true, material: { visible: true, opacity: 1 } };
+  const hiddenGroup = { name: 'cached-other-area', parent: null, visible: false, children: [hiddenChild] };
+  hiddenChild.parent = hiddenGroup;
+  const billboardChild = { isMesh: true, name: 'weed', visible: true, material: { visible: true, opacity: 1 } };
+  const billboardGroup = { name: 'grass-field', parent: null, visible: true, userData: { isBillboard: true }, children: [billboardChild] };
+  billboardChild.parent = billboardGroup;
+  const sprite = { isSprite: true, name: 'lantern-glow', visible: true, material: { visible: true, opacity: 1 } };
+  const nestedWall = { isMesh: true, name: 'nested-wall', visible: true, material: { visible: true, opacity: 1 } };
+  const propGroup = { name: 'prop-group', parent: null, visible: true, children: [sprite, nestedWall] };
+  sprite.parent = propGroup; nestedWall.parent = propGroup;
+  const savedHits = sceneHits;
+  scene.children.push(hiddenGroup, billboardGroup, propGroup);
+  sceneHits = [
+    { object: hiddenChild, distance: 3, point: new Vector3(3, 1, 3) },
+    { object: billboardChild, distance: 3.5, point: new Vector3(3.5, 1, 3) },
+    { object: sprite, distance: 4, point: new Vector3(4, 1, 3) },
+    { object: nestedWall, distance: 5.5, point: new Vector3(5.5, 1, 3) },
+    { object: wallMesh, distance: 6, point: new Vector3(6, 3, 3) },
+  ];
+  const originalIntersect = Raycaster.prototype.intersectObject;
+  Raycaster.prototype.intersectObject = function (object, recursive, target) {
+    raycastObjects.push(object);
+    assert.equal(recursive, false, 'surface walk owns recursion');
+    return originalIntersect.call(this, object, recursive, target);
+  };
+  windowStub.HobunjiRangedCameraFocus.invalidateAimTarget('test-prune', true);
+  const pruned = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  Raycaster.prototype.intersectObject = originalIntersect;
+  assert.equal(pruned.surfaceName, 'nested-wall', 'visible meshes inside groups are still found');
+  assert(!raycastObjects.includes(hiddenChild), 'hidden subtrees are not raycast');
+  assert(!raycastObjects.includes(billboardChild), 'billboard subtrees are not raycast');
+  assert(!raycastObjects.includes(sprite), 'non-mesh sprites are not raycast (r128 Sprite.raycast needs a camera)');
+  assert(!raycastObjects.includes(playerMesh), 'player avatar is not raycast');
+  scene.children.splice(scene.children.indexOf(hiddenGroup), 3);
+  sceneHits = savedHits;
+  windowStub.HobunjiRangedCameraFocus.invalidateAimTarget('test-prune-restore', true);
 }
 
 activeTool = 'weapon';
