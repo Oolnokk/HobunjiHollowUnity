@@ -414,6 +414,7 @@
         shoulderPet: activeStableIdForRole('shoulderPet'),
       },
       nursery: window.LivestockNursery?.debugSnapshot?.() || null,
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Already-copyable Stable growth debug now includes name-prompt and animation status.
     };
   }
 
