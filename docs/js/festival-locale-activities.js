@@ -24,7 +24,7 @@
     return {
       socialDance: {
         stimulusId: 'festival-locale:' + id,
-        style: kind === 'blossom-dance' ? 'gentle-twirl' : 'loose-sway',
+        style: kind === 'blossom-dance' ? 'side-step' : 'loose-sway', // Existing NPC presentation supports side-step; gentle-twirl is a player preset.
         armStyle: kind === 'blossom-dance' ? 'overhead-punch' : 'tpose-jiggle'
       },
       socialLookAt: focus, socialWatching: false
