@@ -830,6 +830,9 @@
   // this game already closes correctly on Escape via its own handler.
   window.addEventListener('keydown', (event) => {
     if (!isActive()) return;
+    // The baby-name popup is a true form, not a game tab strip: allow native Tab/Shift+Tab
+    // to move among its text field and buttons. Its own focus trap keeps focus inside.
+    if (event.key === 'Tab' && activePanel()?.id === 'animalBabyArrivalOverlay') return;
     if (isTextEditable(document.activeElement)) return;
     switch (event.key) {
       case 'ArrowUp': move('up'); break;

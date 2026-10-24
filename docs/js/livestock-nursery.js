@@ -997,6 +997,7 @@
       adultCapacity: adultCapacity(),
       overCapacityBy: Math.max(0, adultRecords.length - adultCapacity()),
       farmMenu: farmMenuDebugSnapshot(records),
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Nursery Debug copies active/queued naming dialogs on mobile.
       visibleLimit: NURSERY_VISIBLE_LIMIT,
       visibleIds: [...swarmVisibleIds],
       babyScale: BABY_SCALE,
@@ -1066,6 +1067,18 @@
         animalDeps.saveWorldLivestock?.(list);
       }
       ensureNurseryBuilding();
+      if (entry) window.AnimalBabyArrival?.requestName?.(entry, {
+        scope: 'nursery',
+        commit: name => {
+          const records = currentLivestock(); // Re-read the world-scoped Nursery state before changing a name.
+          const target = records.find(record => record.id === entry.id); // No edits to stale records after world switches.
+          if (!target) return false;
+          target.name = name;
+          animalDeps?.saveWorldLivestock?.(records);
+          return true;
+        },
+        refresh: () => { window.FarmPanel?.render?.(); queuePanelDecoration(); },
+      });
       queuePanelDecoration();
       return { ...result, entry, message: `${entry?.name || 'The baby'} moved into the Nursery and will stay a baby until you choose Grow Up.` };
     };
@@ -1148,7 +1161,24 @@
           entry.assignedVatId = null;
           changed = true;
         }
-        if (changed) animalDeps.saveWorldLivestock?.(list);
+        if (changed) {
+          animalDeps.saveWorldLivestock?.(list);
+          for (const baby of list) {
+            if (before.has(baby.id) || !isBaby(baby)) continue;
+            window.AnimalBabyArrival?.requestName?.(baby, {
+              scope: 'nursery',
+              commit: name => {
+                const records = currentLivestock(); // Fresh world records, not the gestation tick's temporary array.
+                const target = records.find(record => record.id === baby.id); // Newborn must still exist when named.
+                if (!target) return false;
+                target.name = name;
+                animalDeps?.saveWorldLivestock?.(records);
+                return true;
+              },
+              refresh: () => { window.FarmPanel?.render?.(); queuePanelDecoration(); },
+            });
+          }
+        }
         queuePanelDecoration();
       }
     };
