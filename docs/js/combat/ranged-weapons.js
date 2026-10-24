@@ -488,6 +488,7 @@
       action.fired = true;
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
+      window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('ranged-release', true); // Release solves against a fresh reticle surface, not a rate-limited one.
       const heldTransform = deps.getHeldRangedWorldTransform?.(action.itemKey) || null; // Single release-frame sample reused by both trajectory solving and projectile spawning.
       const aim = playerAimSolution(action.itemKey, heldTransform?.position);
       const angle = aim?.angle ?? deps.getPlayerAimAngle();

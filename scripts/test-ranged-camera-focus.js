@@ -262,11 +262,39 @@ perf = windowStub.HobunjiRangedCameraFocus.aimPerformance();
 assert.equal(perf.surfaceRaycasts, scansBeforePlayerMove, 'player movement reuses unchanged camera-ray surface hits');
 assert.equal(perf.targetResolves, resolvesBeforePlayerMove + 1, 'player movement rebuilds only muzzle-to-target convergence');
 
-// A scene-root change invalidates surface geometry naturally without a timer.
+// A ray that keeps moving right after a scan reuses that scan until the
+// rescan interval passes, instead of a full scene scan every frame.
+{
+  now += 1000;
+  const scansBefore = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
+  interactionDirection = { x: 0.97, y: 0.24, z: 0 };
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBefore + 1, 'moved ray scans once');
+  interactionDirection = { x: 0.96, y: 0.28, z: 0 };
+  now += 1000 / 60;
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  let p = windowStub.HobunjiRangedCameraFocus.aimPerformance();
+  assert.equal(p.surfaceRaycasts, scansBefore + 1, 'ray moving again within the rescan interval reuses the last scan');
+  assert(p.surfaceRescansDeferred >= 1, 'deferred rescans are visible in aimPerformance');
+  now += windowStub.HobunjiRangedCameraFocus.tuning.surfaceRescanMinIntervalMs;
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBefore + 2, 'moved ray rescans once the interval has passed');
+  interactionDirection = { x: 0.95, y: 0.31, z: 0 };
+  dispatchWindow('hobunji-world-object-change');
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+  assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBefore + 3, 'explicit invalidation bypasses the rescan interval');
+  interactionDirection = { x: 1, y: 0, z: 0 };
+  now += 1000;
+  windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
+}
+
+// A scene-root change invalidates surface geometry once the rescan interval allows.
+const scansBeforePlayerMove2 = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
+now += 1000;
 const extraRoot = { name: 'new-world-root', parent: null, visible: true };
 scene.children.push(extraRoot);
 windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
-assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePlayerMove + 1, 'scene root-count change performs one new scene scan');
+assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePlayerMove2 + 1, 'scene root-count change performs one new scene scan');
 
 // Explicit world mutation invalidation is also event-driven and forces one surface refresh.
 const scansBeforeWorldEvent = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts;
