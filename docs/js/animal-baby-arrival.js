@@ -88,8 +88,7 @@
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        if (active?.type === 'name') finish();
-        else finish();
+        finish();
       } else if (event.key === 'Tab') {
         const focusables = [...root.querySelectorAll('button:not([disabled]),input:not([disabled])')]; // Focus trap excludes the game underneath.
         const first = focusables[0], last = focusables[focusables.length - 1];
