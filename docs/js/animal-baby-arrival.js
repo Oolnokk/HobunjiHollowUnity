@@ -16,6 +16,7 @@
   let active = null; // Modal currently borrowing input focus, if any.
   let root = null; // Lazily created overlay so feature loading never touches the opening screen.
   let expiry = null; // The automatic end timer for an incubation reveal.
+  let wakeTimer = null; // Only one deferred wake is needed when many babies arrive in a single tick.
   let actionLock = null; // Prevents player movement and attacks while the modal is active.
   let previousFocus = null; // Restores keyboard focus on completing the queue.
   let lastEvent = null; // Most recent arrival/celebration for mobile diagnostics.
@@ -180,7 +181,7 @@
   function enqueue(item) {
     if (!item?.id || typeof document === 'undefined' || queue.length >= 64) return false;
     queue.push(item);
-    if (!active) setTimeout(showNext, 0); // Complete the Farm save/render first, then borrow focus.
+    if (!active && !wakeTimer) wakeTimer = setTimeout(() => { wakeTimer = null; showNext(); }, 0); // Complete saves first and coalesce same-tick arrivals.
     return true;
   }
 
