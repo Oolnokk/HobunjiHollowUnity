@@ -20,7 +20,7 @@ const profile={fighter:{speciesId:'omgurku',gender:'male'},bodyColors:{}};
 const context={window:{NpcAvatarPreview:{ensurePortraitCosmetics:async()=>{},buildProfileFromNpcExport:()=>profile,renderProfileToCanvas:async()=>{}},
   PNGPlaneAvatar:{buildSinglePlaneAvatarModel:()=>portrait,disposeAvatarModel:value=>disposed.push(value)}},
   document:{createElement:()=>({getContext:()=>({drawImage(){}})})},THREE:{Group},COMBAT_FROWN_COMPOSER:{},
-  characterBuildStatus:{},applyRosterDyesToProfile:()=>({})};
+  characterBuildStatus:{},ensureEnemyPants:()=>null,applyRosterDyesToProfile:()=>({})};
 vm.createContext(context);vm.runInContext(factory+';this.build=buildBanditAvatar;this.mount=applyRiderMount;',context);
 (async()=>{
   const ref=await context.build({appearance:{speciesId:'omgurku',gender:'male'}});

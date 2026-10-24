@@ -10,7 +10,7 @@ const window = { THREE: { Color, CanvasTexture, Vector3: class {} } }; // Only t
 vm.runInNewContext(fs.readFileSync('docs/js/ghostify.js', 'utf8'), { window, document, console });
 const image = { width: 1, height: 1 }; // Shared authored source image, as with species hand/foot textures.
 function actor() {
-  const original = { map: { image }, dispose() {}, clone() { return { map: this.map, color: { set() {}, copy() {} }, dispose() {} }; } }; // Source material must remain owned by the normal avatar disposer.
+  const original = { map: { image }, onBeforeCompile() {}, customProgramCacheKey() { return "pantsOverlayMask"; }, dispose() {}, clone() { return { map: this.map, color: { set() {}, copy() {} }, dispose() {} }; } }; // Source material must remain owned by the normal avatar disposer.
   const mesh = { isMesh: true, material: original }; // Mesh whose material is replaced and restored.
   const root = { userData: {}, traverse(callback) { callback(mesh); } }; // Independent actor render root.
   return { original, mesh, root };
@@ -18,6 +18,8 @@ function actor() {
 const a = actor(), b = actor(); // Two characters share the recolored map but not materials.
 window.Ghostify.apply(a.root); window.Ghostify.apply(b.root);
 assert.equal(textures.length, 1); assert.equal(a.mesh.material.map, b.mesh.material.map);
+assert.equal(a.mesh.material.onBeforeCompile, a.original.onBeforeCompile, "spectral clothes preserve garment shaders");
+assert.equal(a.mesh.material.customProgramCacheKey, a.original.customProgramCacheKey);
 window.Ghostify.restore(a.root, { disposeTextures: true });
 assert.equal(textures[0].disposals, 0, 'another ghost still owns the generated texture');
 assert.equal(a.mesh.material, a.original);

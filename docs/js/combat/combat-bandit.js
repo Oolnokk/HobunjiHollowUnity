@@ -122,7 +122,7 @@
   // a colorRange and no `appearance` block -> CLOTH), which is why this is a
   // flat slot->tintSlot map instead of a per-item JSON fetch. Confirmed
   // against the appliedDyes samples in config/npcs/hobunji-starter-npc-database.json.
-  const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD' };
+  const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD', pants: 'PANTS' };
 
   const BANDIT_NAME_PARTS = {
     first: ['Nakku', 'Tobri', 'Hesk', 'Vurra', 'Ommi', 'Dagat', 'Renji', 'Sulko', 'Pahru', 'Marek', 'Iggo', 'Yavra'],
@@ -154,8 +154,10 @@
     const allowed = new Set(genderData?.allowedCosmetics || []);
     const exclusive = new Set(exclusiveIds || []);
     const weights = genderData?.cosmeticWeights?.[slot] || null;
+    const slotRestriction = genderData?.exclusiveSlotCosmetics?.[slot]; // Species restrictions also apply to bandit-exclusive facewraps.
     const out = {};
     for (const id of (poolIds || [])) {
+      if (Array.isArray(slotRestriction) && slotRestriction.length && !slotRestriction.includes(id)) continue;
       if (!allowed.has(id) && !exclusive.has(id)) continue;
       const bare = id.split('::').pop();
       out[id] = Number(weights?.[bare]) > 0 ? Number(weights[bare]) : 1;
@@ -257,6 +259,8 @@
         lit.polygonOffsetFactor = source.polygonOffsetFactor;
         lit.polygonOffsetUnits = source.polygonOffsetUnits;
         lit.toneMapped = source.toneMapped;
+        lit.onBeforeCompile = source.onBeforeCompile;
+        lit.customProgramCacheKey = source.customProgramCacheKey;
         lit.userData = { ...(source.userData || {}), hobunjiMineLitGhoul: true };
         source.dispose?.();
         return lit;
@@ -290,10 +294,27 @@
     return resolved;
   }
 
+  function ensureEnemyPants(roster) {
+    const speciesId = String(roster?.appearance?.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Both excluded lower-body anatomies bypass the hostile garment fallback.
+    if (!roster || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
+    const renderer = window.PantsGarmentRenderer; // Existing garment registry and NPC dye fallback.
+    if (!renderer) return null;
+    if (!renderer.garmentForCosmetics(roster.equippedCosmetics)) {
+      renderer.ensureNpcPants(roster, { garmentId: deps.rnd() < 0.5 ? 'pants_basic' : 'draped_pants', preferSpeciesGarment: false });
+    }
+    const garmentId = renderer.garmentForCosmetics(roster.equippedCosmetics); // Loot and the avatar read the same garment and PANTS dye.
+    if (garmentId) {
+      roster.cosmeticSlots ||= {};
+      roster.cosmeticSlots[garmentId] = 'pants';
+    }
+    return garmentId;
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) throw new Error('Humanoid portrait modules are unavailable.');
     characterBuildStatus.stage = 'cosmetics';
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+    characterBuildStatus.garmentId = ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
     characterBuildStatus.stage = 'profile';
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
@@ -455,6 +476,19 @@
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
     }) || null;
+
+    const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
+    if (legs && enemyPants) {
+      frontPivot.userData.portraitModelWidth = modelWidth;
+      frontPivot.userData.portraitModelHeight = modelHeight;
+      const pants = window.PantsGarmentRenderer.attachToLegs(THREE, legs, { // Finish creating the mesh before downstream ghost/ghoul material conversion.
+        avatarGroup: frontPivot, speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, // Follow the portrait's facing/death pivot while sampling the sibling leg rig in world space.
+        name: roster.name || 'enemy', garmentId: enemyPants,
+        appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors),
+        overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+      });
+      characterBuildStatus.pantsAttached = !!pants && await pants.readyPromise;
+    }
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
@@ -2609,6 +2643,7 @@
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
     setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
+    ensureEnemyPants, // Shared hostile wardrobe fallback, including explicit skeleton/ghoul/lich/ghost rosters.
     // Rolls a name the same way a fresh gang member's roster does (see
     // rollBanditRoster) — used standalone by game.js's generateBountyTask
     // when no live camp exists yet to adopt a captain's real identity from.
