@@ -166,3 +166,40 @@ check(mediaCaptures === failedCaptures && failedFilterRequests === 5,
   'subsequent weather ticks do not retry permanently captured recordings');
 graph.createBiquadFilter = priorCreateFilter;
 console.log('Indoor weather audio tests passed:', { weatherFilters: count, indoorHeavyRain: 0.325, mediaCaptures });
+
+// The same regional route applies to caves, ordinary structures and nested rooms.
+let weatherRegion = 'map_western_slope'; // Simulates the exterior retained by building entry.
+deps.getWeatherExteriorArea = () => weatherRegion;
+area = 'map_i_slope_cave';
+deps._isBuildingArea = id => id.startsWith('map_i_');
+deps.calendar.rainStrength = 0.5;
+for (const interior of ['map_i_slope_cave', 'map_i_slope_house', 'map_i_slope_nested_room']) {
+  area = interior;
+  music.updateExteriorBgs(); music.updateRainAudio();
+  const slopeMix = music.getWeatherAudioDebugState(); // Actual mixer targets, independent of sound-element fade progress.
+  check(slopeMix.indoors && slopeMix.precipitation === 'blizzard', 'slope interiors inherit blizzard weather');
+  check(slopeMix.loops.rainheavy.target === 0 && slopeMix.loops.raingentle.target === 0 && slopeMix.loops.rainmid.target === 0, 'no liquid rain inside slope structures');
+  check(Math.abs(slopeMix.loops.wind1.target - 0.20 * slopeMix.volumeScale) < 1e-9, 'blizzard uses full-strength wind with indoor attenuation');
+  check(slopeMix.loops.wind1.filtered && slopeMix.loops.wind2.filtered, 'blizzard wind stays muffled indoors');
+}
+weatherRegion = 'map_northern_cliffs';
+music.updateRainAudio();
+check(music.getWeatherAudioDebugState().loops.raingentle.target > 0, 'leaving the slope restores ordinary interior rain');
+weatherRegion = 'map_western_slope'; deps.calendar.isRaining = false;
+music.updateExteriorBgs(); music.updateRainAudio();
+check(music.getWeatherAudioDebugState().loops.wind1.target === 0, 'dry slope weather stops storm wind');
+console.log('Western Slope interior weather routing passed.');
+
+// A supplied area must resolve itself, even when the player is in another region.
+area = 'map_i_slope_house';
+weatherRegion = 'map_western_slope';
+check(music.weatherRegionForArea('town') === 'town', 'current interior cannot override an explicitly queried exterior');
+check(music.weatherRegionForArea('map_northern_cliffs') === 'map_northern_cliffs', 'explicit wilderness regions remain independent of current location');
+musicWindow.WildlifeSpawn = { denCavernZoneOf: id => id === 'map_i_northern_cave' ? 'map_northern_cliffs' : null };
+check(music.weatherRegionForArea('map_i_northern_cave') === 'map_northern_cliffs', 'registered cave parent wins over the current building return point');
+check(music.weatherRegionForArea() === 'map_western_slope', 'omitted area queries the current scene');
+const regionalCalendar = Object.freeze({ isRaining: true, rainStrength: 0.5 }); // Weather rendering must never rewrite the shared calendar to route audio.
+deps.calendar = regionalCalendar;
+music.updateExteriorBgs(); music.updateRainAudio();
+check(regionalCalendar.isRaining && regionalCalendar.rainStrength === 0.5, 'native blizzard mixer uses read-only calendar state');
+console.log('Area-specific weather lookups and read-only calendar routing passed.');

@@ -7,7 +7,11 @@
     "favor": "centeredFiveRow",
     "currency": "centeredFiveRow",
     "loot": "centeredFiveRow",
-    "interaction": "centeredFiveRow"
+    "interaction": "centeredFiveRow",
+    "rapport": "centeredFiveRow",
+    "romance": "centeredFiveRow",
+    "festivalFun": "centeredFiveRow",
+    "livestockFavor": "centeredFiveRow"
   },
   "floatPlus": {
     "worldHeight": 0.13,
@@ -33,7 +37,11 @@
     "currency": "#76a58e",
     "loot": "#ffffff",
     "interaction": "#ffffff",
-    "conditionReady": "#fff4e2"
+    "conditionReady": "#fff4e2",
+    "rapport": "#ffd84d",
+    "romance": "#ff3d73",
+    "festivalFun": "#b8f080",
+    "livestockFavor": "#ffb8d8"
   },
   "relationshipHeart": {
     "opacity": 0.9,
