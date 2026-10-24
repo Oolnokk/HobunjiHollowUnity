@@ -44,9 +44,9 @@
     const style = document.createElement('style'); // Scoped animation/modal rules apply to both overlay modes.
     style.id = STYLE_ID;
     style.textContent = [
-      '#'+ROOT_ID+'{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:rgba(12,10,21,.78);backdrop-filter:blur(5px);padding:18px;box-sizing:border-box;color:#fff;overscroll-behavior:contain}',
+      '#'+ROOT_ID+'{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:rgba(12,10,21,.78);backdrop-filter:blur(5px);padding:18px;box-sizing:border-box;color:#fff;overflow-y:auto;overscroll-behavior:contain}',
       '#'+ROOT_ID+'[hidden]{display:none!important}',
-      '#'+ROOT_ID+' .aba-card{position:relative;box-sizing:border-box;width:min(440px,100%);padding:24px 22px 20px;text-align:center;background:linear-gradient(155deg,#30253e,#161a25);border:2px solid #e7bf88;border-radius:20px;box-shadow:0 22px 80px #000c,0 0 38px #f6cf9e30}',
+      '#'+ROOT_ID+' .aba-card{position:relative;box-sizing:border-box;width:min(440px,100%);max-height:calc(100dvh - 36px);overflow-y:auto;margin:auto;padding:24px 22px 20px;text-align:center;background:linear-gradient(155deg,#30253e,#161a25);border:2px solid #e7bf88;border-radius:20px;box-shadow:0 22px 80px #000c,0 0 38px #f6cf9e30}',
       '#'+ROOT_ID+' .aba-kicker{color:#ffdfad;letter-spacing:.12em;text-transform:uppercase;font-size:12px;font-weight:800}',
       '#'+ROOT_ID+' h2{font-size:clamp(22px,5vw,30px);margin:10px 0;line-height:1.15}',
       '#'+ROOT_ID+' p{font-size:14px;line-height:1.5;opacity:.9;margin:8px 0 16px}',
