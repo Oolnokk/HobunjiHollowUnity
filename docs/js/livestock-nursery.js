@@ -915,19 +915,8 @@
 
   function decoratePanelNow() {
     if (panelDecorating || typeof document === 'undefined') return;
-    // installPanelObserver watches the WHOLE document.body subtree for any
-    // mutation at all, so this fires on essentially every HUD/UI update in
-    // the game, not just ones inside the Farm panel. Both #farmLivestockList
-    // and #farmBuildingsList only exist inside the Farm tab's .mp-pane,
-    // which -- like every other menu pane in this game -- stays mounted in
-    // the DOM while closed rather than being removed, so without this check
-    // decoratePanelNow() ran its full rebuild (including a real,
-    // uncached save-blob parse via currentLivestock()) on every one of those
-    // mutations for as long as the game was open, regardless of whether the
-    // player had the Farm tab open at all. Found via direct call-frequency
-    // instrumentation: thousands of calls even while sitting completely idle
-    // away from any menu. classList checks here are cheap (no forced
-    // layout), unlike a getBoundingClientRect()/getComputedStyle() check.
+    // Farm panes stay mounted while closed. Explicit render hooks may queue
+    // decoration in the background; defer the rebuild until the Farm is open.
     const menuOpen = document.getElementById('menuPanel')?.classList.contains('open');
     const farmPaneActive = document.getElementById('mpFarm')?.classList.contains('active');
     if (!menuOpen || !farmPaneActive) return;
@@ -955,18 +944,21 @@
   function installPanelObserver() {
     if (panelObserver || typeof MutationObserver === 'undefined' || !document.body) return;
     panelObserver = new MutationObserver(records => {
+      const lists = '#farmLivestockList, #farmBuildingsList'; // Only the core Farm lists and their replacements invalidate decoration.
       const relevant = records.some(record => {
-        if (record.target?.closest?.('[data-nursery-incubation]')) return false;
-        if (record.target?.closest?.('.nursery-grid-disclosure')) return false; // Header label updates belong to the grid and must not rebuild their own section.
-        const changed = [...record.addedNodes, ...record.removedNodes]; // The grid owns its inline incubation controls; their updates must not recreate the Nursery.
-        return changed.some(node => !node.matches?.('[data-nursery-incubation]'));
+        // Grid selection, async portraits, paging and select-stepper wrapping
+        // own their DOM. Recreating it here loses focus and incubation choice.
+        if (record.target?.closest?.('#livestockNurserySection')) return false;
+        const changed = [...record.addedNodes, ...record.removedNodes]; // Includes detached list replacements as well as new rows.
+        if (record.target?.closest?.(lists)) {
+          return changed.some(node => !node.matches?.('#livestockNurserySection'));
+        }
+        return changed.some(node => node.matches?.(lists) || node.querySelector?.(lists));
       });
       if (relevant) queuePanelDecoration();
     });
-    // #farmLivestockList/#farmBuildingsList only ever exist inside #menuPanel
-    // (see decoratePanelNow's comment), so watching document.body's entire
-    // subtree meant any HUD/UI mutation anywhere queued this check for no
-    // reason, even with the menu fully closed.
+    // Keep ancestor replacement detection, but unrelated menu updates must
+    // never rebuild the Nursery while the player is navigating its actions.
     panelObserver.observe(document.getElementById('menuPanel') || document.body, { childList: true, subtree: true });
     queuePanelDecoration();
   }
@@ -999,7 +991,7 @@
     const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
     const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Nursery is a controller focus nest: A enters baby details; B returns to that baby, then exits the Nursery.',
+      mostRecentChange: 'Nursery navigation preserves focus and incubation destination during grid, stepper and unrelated menu updates.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),

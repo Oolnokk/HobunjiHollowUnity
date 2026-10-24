@@ -65,7 +65,7 @@
   // idempotent and the bridge deliberately tolerates a repeated handoff.
   (function loadStableAnimalFeatureBridge() {
     if (typeof document === 'undefined') return;
-    const src = 'js/livestock-nursery-install-bridge.js?v=20261024h9544ce8';
+    const src = 'js/livestock-nursery-install-bridge.js?v=20261024h7a9a26d';
     if (document.querySelector('script[data-stable-animal-feature-bridge]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-stable-animal-feature-bridge="1"><\/script>`);

@@ -7,8 +7,6 @@
   // flatter full-height workspace and preserves Nursery controller continuity.
   const STYLE_ID = 'farmMenuLayoutStyles';
   const WORKSPACE_ID = 'farmMenuWorkspace';
-  const ANIMALS_COLUMN_ID = 'farmMenuAnimalsColumn';
-  const OPERATIONS_COLUMN_ID = 'farmMenuOperationsColumn';
   const BREEDING_ACTIONS_ID = 'farmBreedingPrimaryActions';
   const ACTIVE_BREEDING_ID = 'farmActiveBreedingGroup';
   const WORLD_HEADING_ID = 'farmWorldLivestockHeading';
@@ -51,45 +49,17 @@
         flex: 1 1 auto;
         min-height: 0;
         height: 0;
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
-        gap: 16px;
-        align-items: stretch;
-        box-sizing: border-box;
-      }
-      #${ANIMALS_COLUMN_ID}, #${OPERATIONS_COLUMN_ID} {
-        min-width: 0;
-        min-height: 0;
-        height: 100%;
         display: flex;
         flex-direction: column;
-        gap: 0;
         overflow-y: auto;
         overflow-x: hidden;
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
-        padding-right: 5px;
+        gap: 8px;
+        align-items: stretch;
+        box-sizing: border-box;
       }
-      .farm-menu-column-label {
-        flex: 0 0 auto;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 0 2px 10px;
-        color: var(--accent, #d9ad65);
-        font-size: 16px;
-        line-height: 1.1;
-        font-weight: 800;
-        letter-spacing: .055em;
-        text-transform: uppercase;
-      }
-      .farm-menu-column-label::after {
-        content: '';
-        flex: 1 1 auto;
-        height: 1px;
-        background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #d9ad65) 65%, transparent), transparent);
-      }
-      #${WORKSPACE_ID} > .farm-menu-column > .farm-section {
+      #${WORKSPACE_ID} > .farm-section {
         flex: 0 0 auto;
         min-width: 0;
         box-sizing: border-box;
@@ -99,11 +69,11 @@
         border-radius: 0;
         background: transparent;
       }
-      #${WORKSPACE_ID} > .farm-menu-column > .farm-menu-column-label + .farm-section {
+      #${WORKSPACE_ID} > .farm-section:first-child {
         border-top: 0;
         padding-top: 2px;
       }
-      #${WORKSPACE_ID} > .farm-menu-column > .farm-section > .settings-section-title {
+      #${WORKSPACE_ID} > .farm-section > .settings-section-title {
         display: flex;
         align-items: center;
         gap: 9px;
@@ -114,13 +84,13 @@
         font-weight: 800;
         letter-spacing: .025em;
       }
-      #${WORKSPACE_ID} > .farm-menu-column > .farm-section > .settings-section-title::after {
+      #${WORKSPACE_ID} > .farm-section > .settings-section-title::after {
         content: '';
         flex: 1 1 auto;
         height: 1px;
         background: linear-gradient(90deg, color-mix(in srgb, var(--border-bright, #777) 92%, transparent), transparent);
       }
-      #${ANIMALS_COLUMN_ID} > .farm-section[data-farm-menu-kind="livestock"] {
+      #${WORKSPACE_ID} > .farm-section[data-farm-menu-kind="livestock"] {
         padding-bottom: 18px;
         background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #d9ad65) 4%, transparent), transparent 58%);
       }
@@ -265,6 +235,32 @@
       #farmLivestockList > .farm-note[data-farm-menu-empty="world"] {
         margin: 5px 0;
       }
+      /* The Nursery's existing local sub-tab gets the whole Farm workspace.
+         CSS follows navigator state, so Back/pointer input restore the overview. */
+      #mpFarm .farm-pane:has(#livestockNurserySection.ctrl-nav-subtab-selected) > .farm-header,
+      #farmSectionLivestock:has(#livestockNurserySection.ctrl-nav-subtab-selected) > :not(#farmLivestockList),
+      #farmLivestockList:has(> #livestockNurserySection.ctrl-nav-subtab-selected) > :not(#livestockNurserySection) {
+        display: none !important;
+      }
+      #${WORKSPACE_ID} > .farm-section.ctrl-nav-subtab-selected {
+        width: 100%;
+        flex: 1 0 auto;
+        min-height: 100%;
+      }
+      #farmSectionLivestock:has(#livestockNurserySection.ctrl-nav-subtab-selected) {
+        display: flex;
+        flex-direction: column;
+        padding-top: 0;
+      }
+      #farmLivestockList:has(> #livestockNurserySection.ctrl-nav-subtab-selected) {
+        flex: 1 0 auto;
+      }
+      #farmLivestockList > #livestockNurserySection.ctrl-nav-subtab-selected {
+        flex: 1 0 auto;
+        width: 100%;
+        margin: 0 !important;
+        border: 0 !important;
+      }
       @media (max-width: 900px) {
         #mpFarm { overflow-y: auto; overflow-x: hidden; }
         #mpFarm .farm-pane { height: auto; min-height: 100%; }
@@ -272,30 +268,12 @@
           flex: 0 0 auto;
           height: auto;
           min-height: 0;
-          grid-template-columns: minmax(0, 1fr);
           gap: 8px;
-        }
-        #${ANIMALS_COLUMN_ID}, #${OPERATIONS_COLUMN_ID} {
-          height: auto;
-          overflow: visible;
-          padding-right: 0;
-          scrollbar-gutter: auto;
         }
         #${BREEDING_ACTIONS_ID} { grid-template-columns: minmax(0, 1fr); }
       }
     `;
     document.head.appendChild(style);
-  }
-
-  function makeColumn(id, label) {
-    const column = document.createElement('div'); // Used as one of the two top-level Farm workspace columns.
-    column.id = id;
-    column.className = 'farm-menu-column';
-    const heading = document.createElement('div'); // Used as a low-noise orientation label rather than another nested panel.
-    heading.className = 'farm-menu-column-label';
-    heading.textContent = label;
-    column.appendChild(heading);
-    return column;
   }
 
   function sectionTitle(section) {
@@ -318,23 +296,18 @@
     if (!pane) return null;
     let workspace = document.getElementById(WORKSPACE_ID);
     if (!workspace) {
-      workspace = document.createElement('div'); // Used to fill the Farm pane below its header instead of leaving the right side unused.
+      workspace = document.createElement('div'); // Full-width host for the Farm section pages below the header.
       workspace.id = WORKSPACE_ID;
-      workspace.appendChild(makeColumn(ANIMALS_COLUMN_ID, 'Animals & breeding'));
-      workspace.appendChild(makeColumn(OPERATIONS_COLUMN_ID, 'Farm & facilities'));
       const header = pane.querySelector(':scope > .farm-header');
       if (header?.nextSibling) pane.insertBefore(workspace, header.nextSibling);
       else pane.appendChild(workspace);
     }
 
-    const animals = document.getElementById(ANIMALS_COLUMN_ID);
-    const operations = document.getElementById(OPERATIONS_COLUMN_ID);
-    if (!animals || !operations) return workspace;
     const directSections = [...pane.children].filter(child => child.classList?.contains('farm-section')); // Fresh core sections start as direct Farm-pane children.
     for (const section of directSections) {
       const kind = classifySection(section); // Used to preserve the real section nodes/listeners while changing only their presentation hierarchy.
       section.dataset.farmMenuKind = kind;
-      (kind === 'livestock' ? animals : operations).appendChild(section);
+      workspace.appendChild(section);
     }
     return workspace;
   }
@@ -571,11 +544,11 @@
     const roster = document.getElementById('farmLivestockList');
     const directRows = roster ? [...roster.querySelectorAll(':scope > .farm-row.livestock-trait-row')].filter(row => row.id !== WORLD_IDENTITY_SENTINEL_ID) : [];
     return {
-      mostRecentChange: 'Farm animal UI is flat: one full-height scrolling animal column, direct Farm/Stable roster rows, prominent breeding actions, and Nursery controller focus/scroll continuity.',
+      mostRecentChange: 'Farm sections use the full width; the selected Nursery page hides breeding controls and fills the Farm content area.',
       installed,
       workspace: !!document.getElementById(WORKSPACE_ID),
-      animalsColumnSections: [...document.querySelectorAll('#' + ANIMALS_COLUMN_ID + ' > .farm-section')].map(section => section.dataset.farmMenuKind || classifySection(section)),
-      operationsColumnSections: [...document.querySelectorAll('#' + OPERATIONS_COLUMN_ID + ' > .farm-section')].map(section => section.dataset.farmMenuKind || classifySection(section)),
+      sections: [...document.querySelectorAll('#' + WORKSPACE_ID + ' > .farm-section')].map(section => section.dataset.farmMenuKind || classifySection(section)),
+      nurseryPageActive: !!nurserySection?.classList.contains('ctrl-nav-subtab-selected'),
       rosterDirectRows: directRows.length,
       worldCandidateRows: directRows.filter(row => row.dataset.nurseryWorldLivestockId).length,
       stableCandidateRows: directRows.filter(row => !row.dataset.nurseryWorldLivestockId).length,

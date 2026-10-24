@@ -32,7 +32,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261024h379e445"></script>
+  <script src="js/format-utils.js?v=20261024h772de28"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261017a"></script>
@@ -444,7 +444,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261024hb97b14e"></script>
+  <script src="js/farm-troughs.js?v=20261024he01dfa5"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -716,7 +716,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261024h17abc7d"></script>
+  <script src="js/farm-panel.js?v=20261024ha73cf34"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -1446,13 +1446,13 @@
       <!-- ── Stable pane: the character's personal, untradeable companion
            collection — separate from any farm's livestock. See
            renderStablePanel() in game.js. ──────────────────────────────── -->
-      <div class="mp-pane" id="mpStable">
+      <div class="mp-pane" id="mpStable" data-ctrl-transparent>
         <div class="farm-pane">
           <div class="farm-header">
             <div class="settings-section-title">🐾 Your Stable</div>
             <div class="farm-note">Companions travel with you between farms. Stabled animals can't be placed on any farm and don't produce goods, but can still be paired to breed new tradeable livestock. Add one from an undeployed creature item in your Inventory.</div>
           </div>
-          <div id="stableList" class="farm-list"></div>
+          <div id="stableList" class="farm-list" data-ctrl-auto-enter data-ctrl-initial-subtab="stableAgeAdultAnimals"></div>
         </div>
       </div><!-- /mpStable -->
 
@@ -2740,7 +2740,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261024h071747b"></script>
+  <script src="js/controller-ui-nav.js?v=20261024hb8ea2e5"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
