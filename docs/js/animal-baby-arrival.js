@@ -174,6 +174,9 @@
     acquireFocus();
     if (active.type === 'name') renderName(active);
     else renderMaturation(active);
+    // The controller's panel discovery runs on a MutationObserver. Claim this
+    // dialog now so a delayed reconcile cannot steal focus back to the Farm tab.
+    window.ControllerUI?.focusPanel?.(root);
     lastEvent = { type: active.type, id: active.id, scope: active.scope || 'incubator' };
     window.__farmLog?.('[animal-arrival] ' + active.type + ' ' + active.id, 'farm');
   }
