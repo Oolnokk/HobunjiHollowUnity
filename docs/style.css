@@ -3687,3 +3687,21 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
 #btnPerceptionMode:active { transform: translate(50%,50%) scale(0.92); }
 #btnPerceptionMode .abt-icon { font-size: 0.85em; }
 #btnPerceptionMode.active { background: rgba(220,235,255,0.32); border-color: rgba(220,235,255,0.9); box-shadow: 0 0 10px rgba(220,235,255,0.55); }
+
+/* Controller section pages borrow the existing tab actions only while entered. */
+.ctrl-nav-subtab-hidden { display: none !important; }
+.ctrl-nav-subtabs > .ctrl-nav-subtab-selected,
+.ctrl-nav-subtabs .farm-pane > .ctrl-nav-subtab-selected {
+  grid-column: 1 / -1 !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+/* Inventory uses absolute coordinates; keep the selected page left of item details. */
+#mpInventory.ctrl-nav-subtabs > .ctrl-nav-subtab-selected {
+  left: calc(1 * var(--inv-col));
+  top: calc(6 * var(--inv-row));
+  width: calc(33 * var(--inv-col));
+  height: calc(21 * var(--inv-row));
+}
+
+.ctrl-nav-subtabs .farm-pane { max-width: none; }

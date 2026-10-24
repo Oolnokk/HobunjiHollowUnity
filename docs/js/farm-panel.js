@@ -248,6 +248,9 @@
   function stableAgeSection(title, note, options = {}) {
     const section = document.createElement('div'); // Used as the native Stable age-group container.
     section.className = 'stable-age-section';
+    section.id = 'stableAge' + String(title).replace(/[^a-zA-Z]/g, '');
+    section.setAttribute('data-ctrl-subtab', '');
+    section.setAttribute('aria-label', title);
     const heading = options.onToggle ? document.createElement('button') : makeText('div', title); // Used as a collapse control only for inventories that opt in.
     heading.className = options.onToggle ? 'settings-section-title stable-inventory-toggle' : 'settings-section-title';
     if (options.onToggle) {
@@ -255,6 +258,7 @@
       heading.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer;';
       heading.textContent = `${options.collapsed ? '▸' : '▾'} ${title}`;
       heading.setAttribute('aria-expanded', options.collapsed ? 'false' : 'true');
+      heading.setAttribute('data-ctrl-group-open', '');
       heading.addEventListener('click', options.onToggle);
     }
     section.appendChild(heading);
