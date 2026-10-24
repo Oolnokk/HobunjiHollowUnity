@@ -151,7 +151,10 @@
 
   function syncVisual(entry, size) {
     if (!deps || !isHouse(entry) || !window.HoneyfuzzleSwarm || !deps.THREE) return;
-    const wants = !!entry.house?.livestockId && !!swarmRecord(entry);
+    let record = null;
+    try { record = entry.house?.livestockId ? swarmRecord(entry) : null; } // A visual must never break loading the building itself.
+    catch (error) { window.__farmLog?.(`[honeyfuzzle] house ${entry.id} livestock lookup failed: ${error?.message || error}`, 'warn'); }
+    const wants = !!record;
     const existing = visuals.get(entry.id);
     if (!wants) { if (existing) removeVisual(entry); return; }
     const w = size?.w ?? 1, h = size?.h ?? 1;

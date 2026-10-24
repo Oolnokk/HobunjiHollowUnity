@@ -30,7 +30,7 @@
   const SPAWN_RADIUS_TILES = 24; // Hives farther than this from the player stay empty until approached.
   const REACH_TILES = 2.6; // How close the player must stand to harvest.
   const RESPAWN_DAYS = 2; // A killed swarm is replaced this many days later.
-  const TUCK_DISTANCE_TILES = 0.55;
+  const TUCK_DISTANCE_TILES = 1.2; // The stump tile is solid, so a swarm can only ever reach its edge: tuck when it gets there.
 
   let deps = null;
   const hiveCache = new WeakMap(); // layout -> [{col,row}] — scanned once per generated layout.
@@ -116,10 +116,10 @@
     const T = deps.TILE;
     if (c._hiveTucked) {
       if (night) { if (c.avatarRef?.group?.visible) c.avatarRef.group.visible = false; return true; }
-      c._hiveTucked = false; // Morning: pour out of the stump.
+      c._hiveTucked = false; // Morning: pour out of the stump, from the open ground beside it where it tucked in.
       if (c.avatarRef?.group) c.avatarRef.group.visible = true;
       if (c.groundShadow) c.groundShadow.visible = true;
-      c.x = c.homeX; c.y = c.homeY; c.state = 'idle';
+      c.state = 'idle';
       return false;
     }
     if (!night) return false;

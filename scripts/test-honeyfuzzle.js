@@ -131,7 +131,8 @@ function hiveWorld({ night = false } = {}) {
     getCurrentArea: () => state.area, isZoneArea: id => id.startsWith('map_'), getGrid: () => grid,
     getVegetationGroup: () => ({ name: 'stump' }), isNightTime: () => state.night,
     makeCreatureEntity: (kind, x, y, opts) => { const c = { kind, x, y, health: 10, def: { moveSpeed: 100 }, avatarRef: { group: { visible: true } }, ...opts }; state.created.push(c); return c; },
-    moveCreatureToward: (c, tx, ty, speed, dt) => { const d = Math.hypot(tx - c.x, ty - c.y); const s = Math.min(d, speed * dt); c.x += (tx - c.x) / d * s; c.y += (ty - c.y) / d * s; },
+    // The stump tile is solid: movement toward its centre stops at its edge (0.6 tile out), like the real collision.
+    moveCreatureToward: (c, tx, ty, speed, dt) => { const d = Math.hypot(tx - c.x, ty - c.y); const s = Math.max(0, Math.min(d - 0.6 * 40, speed * dt)); c.x += (tx - c.x) / d * s; c.y += (ty - c.y) / d * s; },
     updateCreatureMesh() {}, updateCreatureAnimFrame() {},
     removeZoneVegetationVisual: () => { state.removedVisual++; return true; },
     buildInventoryGrid() {}, refreshActionBar() {}, refreshItemScroll() {}, saveMemberWorldData() { state.saves++; },
@@ -158,7 +159,9 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(H.control(swarm, 0.1), true, 'tucked swarm stays frozen overnight');
   // Dawn: out it comes again.
   state.night = false;
+  const tuckedAt = [swarm.x, swarm.y];
   assert.equal(H.control(swarm, 0.1), false); assert.equal(swarm._hiveTucked, false); assert.equal(swarm.avatarRef.group.visible, true);
+  assert.deepEqual([swarm.x, swarm.y], tuckedAt, 'it emerges where it tucked in (beside the solid stump), not inside it');
   // No spawns at night.
   const night = hiveWorld({ night: true }); night.H.ensureCurrentZone();
   assert.equal(night.state.created.length, 0);
