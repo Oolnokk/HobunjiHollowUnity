@@ -997,6 +997,7 @@
       adultCapacity: adultCapacity(),
       overCapacityBy: Math.max(0, adultRecords.length - adultCapacity()),
       farmMenu: farmMenuDebugSnapshot(records),
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Nursery Debug copies active/queued naming dialogs on mobile.
       visibleLimit: NURSERY_VISIBLE_LIMIT,
       visibleIds: [...swarmVisibleIds],
       babyScale: BABY_SCALE,
