@@ -33,7 +33,7 @@ window.FurnitureTableSystem={registerService:(id,provider)=>mealServices.set(id,
 const api = window.FestivalSystem, calendar = window.FestivalCalendar; // Production APIs under test.
 api.init({ getHeldMealChoice:()=>heldChoice, inventory, getItemDefs: () => defs, getNpcs: () => npcs, getWalkers: () => npcs.map(rec => ({ rec, area: 'town' })), getTownMap: () => town, getArea: () => area, getPlayerTile: () => position, getDecorSize: key => ({ fw: key === 'tableLong' ? 4 : key === 'rug' ? 2 : 1, fd: key === 'rug' ? 2 : 1 }), isBlocked: () => blocked, refresh() {}, save: () => { saved++; }, toast() {}, grantMask: () => true, tellStory: () => ({ ok: true }) });
 function visit(id, type) {
-  hour=id==='gorkunash'?17:12;
+  hour=17; // All joinable festival locales use the shared 15:00–01:00 gathering window.
   const def = calendar.get(id); // Move time and feet to the real authored interaction anchor.
   civilDay = calendar.ordinal(def.month, def.day);
   if(id==='gorkunash'&&type==='potluck')return {id:'gorkunash_feast',activity:{type:'potluck'},directMeal:true};
