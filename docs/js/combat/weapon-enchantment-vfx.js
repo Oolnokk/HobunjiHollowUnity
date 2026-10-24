@@ -14,6 +14,8 @@
   const SOURCE_ALPHA_MIN = 4; // Verdigris-compatible alpha floor used by buildMetalMask().
   const SCAN_INTERVAL_MS = 180; // Used by update() to avoid traversing held-weapon state every render frame.
   const MAX_PARTICLES_PER_PLANE = 24; // Used by spawnParticle() to cap draw-call growth, including dual-wield copies.
+  const FREE_DRIFT_FACTOR = 3.5; // Used by spawnParticle() to let emitted effects travel noticeably beyond the originating metal silhouette.
+  const BILLBOARD_RADIUS_FACTOR = 0.75; // Used by updateEmitters() to conservatively include any rotated sprite corners in held-overlay scissoring.
   const LICH_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Used by lichDyeIds() to mirror combat-lich.js wardrobe possibilities.
   const FALLBACK_VISUALS = {}; // Used only in isolated tools/tests where a live gear inventory is unavailable.
   const MASK_CACHE = new Map(); // Used by metalMaskForSprite() so each source PNG is decoded/scanned once per page load.
@@ -384,7 +386,10 @@
 
   function clearEmitter(emitter) {
     for (const particle of emitter?.particles || []) retireParticle(emitter, particle);
-    if (emitter) emitter.particles.length = 0;
+    if (emitter) {
+      emitter.particles.length = 0;
+      if (emitter.plane?.userData) emitter.plane.userData.hobunjiHeldOverlayVfxPadding = 0; // Clear the live overdraw envelope when the aura is reset.
+    }
   }
 
   function disposeEmitter(emitter) {
@@ -394,6 +399,7 @@
     for (const sprite of emitter.pool || []) disposeParticle({ sprite });
     if (emitter.pool) emitter.pool.length = 0;
     emitter.group?.parent?.remove?.(emitter.group);
+    if (emitter.plane?.userData) delete emitter.plane.userData.hobunjiHeldOverlayVfxPadding; // No stale scissor enlargement after unequipping.
   }
 
   function makeEmitter(plane) {
@@ -403,6 +409,8 @@
     group.userData.weaponEnchantmentVfx = true;
     group.position.z = 0.012;
     plane.add(group);
+    plane.userData = plane.userData || {};
+    plane.userData.hobunjiHeldOverlayVfxPadding = 0; // Read by HeldObjectRenderOrder's scissor bounds for only this emitting weapon plane.
     return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now() };
   }
 
@@ -461,7 +469,7 @@
     emitter.group.add(sprite);
 
     const angle = random() * Math.PI * 2; // Used by radial/swirling plane-local motion families.
-    const speed = effect.speed * Math.max(size.width, size.height) * (0.65 + random() * 0.7); // Used as weapon-scale-relative particle drift.
+    const speed = effect.speed * Math.max(size.width, size.height) * FREE_DRIFT_FACTOR * (0.65 + random() * 0.7); // Metal is only the birth mask; motion is free to leave its boundary.
     emitter.particles.push({
       sprite,
       age: 0,
@@ -529,8 +537,10 @@
     sprite.position.x = x;
     sprite.position.y = y;
     sprite.material.opacity = Math.max(0.6, particle.maxOpacity * Math.sin(Math.PI * t)); // Keep live particles at least 60% opaque; scale still eases their birth/death.
-    const scalePulse = 0.78 + 0.36 * Math.sin(Math.PI * t); // Used to make particles bloom slightly away from the metal source.
-    sprite.scale.set(particle.baseSize * scalePulse, particle.baseSize * scalePulse, 1);
+    const scalePulse = 0.65 + 1.65 * Math.sin(Math.PI * t); // Used to bloom well beyond the source pixel without clipping to the metal mask.
+    const stretchX = particle.motion === 'crosswind' ? 1.25 + 1.2 * t : (particle.motion === 'thread' || particle.motion === 'wisp' ? 0.66 : 1); // Used to lengthen traveling streaks and thin spectral trails.
+    const stretchY = particle.motion === 'crosswind' ? 0.62 : (particle.motion === 'thread' || particle.motion === 'wisp' ? 1.35 + 0.7 * t : 1); // Used to stretch threads and wisps vertically as they drift.
+    sprite.scale.set(particle.baseSize * scalePulse * stretchX, particle.baseSize * scalePulse * stretchY, 1);
     sprite.material.rotation = particle.phase + particle.spin * particle.age;
     return true;
   }
@@ -575,6 +585,23 @@
         emitter.accumulator -= 1;
         spawnParticle(emitter, snapshot.mask, snapshot);
       }
+      // Sprites are independent children of the plane, not texture-masked to its metal.
+      // The held-weapon x-ray pass scissored to the mesh box, however, so grow
+      // that *rendering* box around all live billboards, including their growth
+      // and rotation. This changes draw coverage, never the particle positions.
+      const size = geometrySize(emitter.plane); // Used to measure how far live particle sprites extend outside the plane rectangle.
+      let padding = 0; // Used by HeldObjectRenderOrder to expand the replay scissor around live particle overdraw.
+      for (const particle of emitter.particles) {
+        const sprite = particle.sprite; // Used to measure current motion and sprite growth, not its original metal pixel.
+        const radius = Math.max(sprite.scale.x, sprite.scale.y) * BILLBOARD_RADIUS_FACTOR; // Includes rotated billboard corners in every view.
+        const outside = Math.max(
+          Math.abs(sprite.position.x) - size.width * 0.5,
+          Math.abs(sprite.position.y) - size.height * 0.5,
+          Math.abs(sprite.position.z) + Math.abs(emitter.group.position.z),
+        ); // Used to retain front/back face clearance even when the blade turns edge-on.
+        padding = Math.max(padding, outside + radius);
+      }
+      if (emitter.plane.userData) emitter.plane.userData.hobunjiHeldOverlayVfxPadding = padding;
     }
   }
 
@@ -801,9 +828,10 @@
       visibleParticlePlanes: activeSnapshot?.weaponKey === key ? (activeSnapshot.planes?.length || 0) : 0,
       emitters: EMITTERS.size,
       particles: [...EMITTERS.values()].reduce((sum, emitter) => sum + emitter.particles.length, 0),
+      overlayPadding: [...EMITTERS.values()].map(emitter => Number((emitter.plane?.userData?.hobunjiHeldOverlayVfxPadding || 0).toFixed(4))), // Reveals the live out-of-weapon overdraw envelope on mobile.
       dualWield: window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.() || null,
       metalDetection: { sourceHex: SOURCE_HEX, hueToleranceDeg: SOURCE_HUE_TOL_DEG, saturationTolerance: SOURCE_SAT_TOL, alphaMin: SOURCE_ALPHA_MIN },
-      latestChange: 'Particle form and color origins are independent; live particle opacity is at least 60%.',
+      latestChange: 'Metal pixels restrict spawning only; drifting/growing sprites expand the held-overlay scissor beyond the blade.',
       lastEvent,
     };
   }
