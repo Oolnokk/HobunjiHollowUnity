@@ -181,7 +181,7 @@
       // down from the default "wide enough to clear the border escarpment
       // cleanly" footprint, for a zone that wants a thin entrance instead.
       entryGateWidthMul: 1,
-      animalDens: 5,
+      animalDens: 8, // ~200x200 zones had room to spare at 5; cliff-backed sites are tried first, free-standing dens only fill the shortfall.
       // Permanent respawn checkpoints spread one-per-quadrant across the
       // zone (see placeRootTotems) so a death anywhere in the zone always
       // has a reasonably close totem to fall back to.

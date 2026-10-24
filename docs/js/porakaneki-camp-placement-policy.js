@@ -8,8 +8,8 @@
   // view labels procedural clutter with porakaneki_clutter_* ids; this adapter
   // converts only those records into TemporaryLocales-clearable clutter before
   // the camp runtime asks for a site.
-  const PORAKANEKI_PREFIX = 'porakaneki_'; // Used only for this feature's runtime locale instance ids.
-  const CLUTTER_PREFIX = 'porakaneki_clutter_'; // buildZoneView's ordinary procedural shrub/rock occupancy records.
+  const TRIBE_PREFIXES = ['porakaneki_', 'omgurku_']; // Runtime locale instance ids of every tribe built by createTribeCamps (Omgurku shares the Porakaneki camp footprints and needs the same fallbacks).
+  const CLUTTER_SUFFIX = 'clutter_'; // buildZoneView's ordinary procedural shrub/rock occupancy records are `${tribe}_clutter_*`.
   const WILDERNESS_ZONES = [
     'map_northern_cliffs',
     'map_southern_cloud_forest',
@@ -22,7 +22,8 @@
   const gridRefByZone = new Map(); // Detects a rebuilt/re-entered zone grid so active camp clearings are re-applied.
 
   function isPorakanekiInstance(instanceId) {
-    return String(instanceId || '').startsWith(PORAKANEKI_PREFIX);
+    const text = String(instanceId || '');
+    return TRIBE_PREFIXES.some(prefix => text.startsWith(prefix));
   }
 
   function zoneIdFromInstanceId(instanceId) {
@@ -33,7 +34,8 @@
   function prepareClutter(zone) {
     let converted = 0;
     for (const object of (zone?.objects || [])) {
-      if (!String(object?.id || '').startsWith(CLUTTER_PREFIX)) continue;
+      const id = String(object?.id || '');
+      if (!TRIBE_PREFIXES.some(prefix => id.startsWith(prefix + CLUTTER_SUFFIX))) continue;
       const tile = zone?.tiles?.[object.y]?.[object.x];
       object.type = 'shrub'; // TemporaryLocales' clearable-type vocabulary; source terrain is retained separately below.
       object.localeMeta = false;
@@ -155,8 +157,12 @@
 
   function activeCampIdsForZone(zoneId) {
     let debug = null;
-    try { debug = window.PorakanekiCamps?.debugSnapshot?.() || null; } catch (_) {}
-    return new Set((debug?.zones?.[zoneId]?.camps || []).map(camp => camp?.id).filter(Boolean));
+    const ids = new Set();
+    for (const runtime of (window.TribeCamps?.list?.() || [window.PorakanekiCamps])) {
+      try { debug = runtime?.debugSnapshot?.() || null; } catch (_) { debug = null; }
+      for (const camp of (debug?.zones?.[zoneId]?.camps || [])) if (camp?.id) ids.add(camp.id);
+    }
+    return ids;
   }
 
   function setSnapshotType(grid, snapshot, restore) {
