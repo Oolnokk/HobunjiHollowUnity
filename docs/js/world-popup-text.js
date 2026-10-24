@@ -403,11 +403,11 @@
   const socialGains = new Map(); // Coalesces frequent social ticks into one readable player popup per kind.
   let socialGainTimer = null; // One short event timer flushes all ongoing social gains together.
   let lastSocialGains = []; // Exposed in debugSnapshot for mobile verification.
-  function queueSocialGain(kind, amount, subject = '') {
+  function queueSocialGain(kind, amount, subject = '', recipientId = subject) {
     if (!['favor', 'rapport', 'romance', 'festivalFun', 'livestockFavor'].includes(kind) || !Number.isFinite(amount) || amount <= 0) return false;
-    const entry = socialGains.get(kind) || { amount: 0, subjects: new Set() }; // Accumulates actual applied gains, not requested amounts.
+    const entry = socialGains.get(kind) || { amount: 0, subjects: new Map() }; // Accumulates actual applied gains, not requested amounts.
     entry.amount += amount;
-    if (subject) entry.subjects.add(String(subject));
+    if (subject) entry.subjects.set(String(recipientId || subject), String(subject));
     socialGains.set(kind, entry);
     if (socialGainTimer === null) socialGainTimer = setTimeout(() => {
       socialGainTimer = null;
@@ -415,10 +415,11 @@
       for (const [type, gain] of socialGains) {
         const label = { favor: 'Favor', rapport: 'Rapport', romance: 'Romance', festivalFun: 'Festival Fun', livestockFavor: 'Livestock Favor' }[type]; // Player-facing labels distinguish the five progress types.
         const value = Math.round(gain.amount * 100) / 100; // Preserve small continuous gains rather than rounding them to zero.
-        const target = gain.subjects.size === 1 ? (type === 'livestockFavor' ? [...gain.subjects][0] : state.deps?.getNpcName?.([...gain.subjects][0]) || [...gain.subjects][0]) : gain.subjects.size > 1 ? `${gain.subjects.size} recipients` : ''; // Names a single target or summarizes a group.
+        const subject = gain.subjects.values().next().value || ''; // Display label is independent of the unique recipient id.
+        const target = gain.subjects.size === 1 ? (type === 'livestockFavor' ? subject : state.deps?.getNpcName?.(subject) || subject) : gain.subjects.size > 1 ? `${gain.subjects.size} recipients` : ''; // Names a single target or summarizes a group.
         const text = `${target ? target + ': ' : ''}+${value || '<0.01'} ${label}`; // Existing centered reward list supplies placement and fade.
         queueReward(type, text);
-        lastSocialGains.push({ kind: type, amount: gain.amount, text, recipients: [...gain.subjects] });
+        lastSocialGains.push({ kind: type, amount: gain.amount, text, recipients: [...gain.subjects.keys()] });
       }
       socialGains.clear();
     }, 1000);
@@ -876,7 +877,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Named Favor, Rapport, Romance, Festival Fun and Livestock Favor gains batch once per second.',
+      latestChange: 'Social gain batches distinguish same-named livestock by record id; all five gain types are configurable in the popup editor.',
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,

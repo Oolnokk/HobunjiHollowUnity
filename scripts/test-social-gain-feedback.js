@@ -67,3 +67,21 @@ assert.equal(festivalState.festivalFun.a, 25);
 const funFlush = [...callbacks.values()][0]; callbacks.clear(); funFlush();
 assert.equal(api.debugSnapshot().lastSocialGains.find(g => g.kind === 'festivalFun').amount, 25);
 console.log('Livestock care caps and Festival Fun mutation feedback passed.');
+
+api.queueSocialGain('livestockFavor', 0.2, 'Uumkao’ii', 'animal-a');
+api.queueSocialGain('livestockFavor', 0.2, 'Uumkao’ii', 'animal-b');
+api.queueSocialGain('livestockFavor', 0.1, 'Uumkao’ii', 'animal-a');
+const sameNameFlush = [...callbacks.values()][0]; callbacks.clear(); sameNameFlush(); // Repeated care for the same record shares one recipient; another identically named record remains separate.
+const sameNameGain = api.debugSnapshot().lastSocialGains.find(g => g.kind === 'livestockFavor');
+assert.equal(sameNameGain.text, '2 recipients: +0.5 Livestock Favor');
+assert.deepEqual(Array.from(sameNameGain.recipients), ['animal-a', 'animal-b']);
+const settings = JSON.parse(fs.readFileSync('docs/config/ui/world-popup-settings.json', 'utf8')); // Authored defaults are used by both gameplay and the mobile editor.
+const editor = fs.readFileSync('docs/tools/world-popup-editor/index.html', 'utf8'); // Execute the editor event-label table so new kinds cannot silently vanish from its controls.
+const labelStart = editor.indexOf('const EVENT_LABELS=');
+const editorLabels = new Function(editor.slice(labelStart, editor.indexOf(';', labelStart) + 1) + ';return EVENT_LABELS;')();
+for (const kind of ['favor', 'rapport', 'romance', 'festivalFun', 'livestockFavor']) {
+  assert.equal(settings.assignments[kind], api.defaults.assignments[kind]);
+  assert.equal(settings.colors[kind], api.defaults.colors[kind]);
+  assert(editorLabels[kind], `${kind} has an editor control`);
+}
+console.log('Same-named livestock identities and social popup editor configuration passed.');

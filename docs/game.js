@@ -28431,9 +28431,9 @@
         isPlayerInCombat,
         MORNING_HOUR,
         getWorkspaceMaps: () => _workspaceMaps,
-        getWeatherExteriorArea: () => _isBuildingArea(currentArea)
-          ? (window.WildlifeSpawn?.denCavernZoneOf?.(currentArea) || farmPlayerSave?.area || '')
-          : currentArea, // Door entry preserves the exterior through nested rooms; caves also resolve directly after loading a save.
+        getWeatherExteriorArea: (area = currentArea) => _isBuildingArea(area)
+          ? (window.WildlifeSpawn?.denCavernZoneOf?.(area) || (area === currentArea ? farmPlayerSave?.area : '') || '')
+          : area, // Door entry preserves the current exterior through nested rooms; queried caves resolve their own parent region.
         _isZoneArea,
         _isBuildingArea,
         EXTERIOR_ZONES,

@@ -1601,8 +1601,9 @@
   }
 
 
-  function weatherRegionForArea(area) {
-    return deps?.getWeatherExteriorArea?.() || window.WildlifeSpawn?.denCavernZoneOf?.(area) || area;
+  function weatherRegionForArea(area = deps?.getCurrentArea?.()) {
+    if (area !== 'interior' && !deps?._isBuildingArea?.(area)) return area;
+    return window.WildlifeSpawn?.denCavernZoneOf?.(area) || deps?.getWeatherExteriorArea?.(area) || area;
   }
 
   function weatherAcousticsForArea(area) {

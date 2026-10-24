@@ -1127,7 +1127,7 @@
         trough.slots[eatenSlot] = null;
         troughsToRefresh.push({ barnId: l.barnId, troughIndex: l.troughIndex });
         l.heartLevel = Math.min(HEART_MAX, l.heartLevel + HEART_STEP);
-        if (l.heartLevel > heartsBefore) window.WorldPopupText?.queueSocialGain?.('livestockFavor', l.heartLevel - heartsBefore, l.name || l.kind);
+        if (l.heartLevel > heartsBefore) window.WorldPopupText?.queueSocialGain?.('livestockFavor', l.heartLevel - heartsBefore, l.name || l.kind, l.id);
       } else {
         l.heartLevel = Math.max(0, l.heartLevel - HEART_STEP);
       }

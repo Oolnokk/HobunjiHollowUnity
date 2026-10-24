@@ -426,7 +426,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261023hf1"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261013h27ea706"></script>
-  <script src="js/farm-animals.js?v=20261024hf233abd"></script>
+  <script src="js/farm-animals.js?v=20261024h5d672e8"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -685,7 +685,7 @@
   <script src="js/house-window-linkage.js?v=20261013h3535ff0"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
-  <script src="js/rain-planes.js?v=20261024h7e8cd20"></script>
+  <script src="js/rain-planes.js?v=20261024hc28aecf"></script>
   <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
        — owns both Western Slope's permanent snow and seasonal Coldmuck
        slush on every other outdoor zone, reading tile height straight from
@@ -2522,7 +2522,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261024h4dce18e"></script>
+  <script src="js/music-system.js?v=20261024h2f6aeda"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2565,7 +2565,7 @@
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261024h32567e4"></script>
+  <script src="js/world-popup-text.js?v=20261024h6db587e"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2707,7 +2707,7 @@
        load before game.js, which calls window.ToolMastery.init(...). -->
   <script src="js/tool-mastery.js?v=20261016a"></script>
   <script src="js/farm-access.js?v=20261016a"></script>
-  <script src="game.js?v=20261024h7807eec"></script>
+  <script src="game.js?v=20261024hb9be5aa"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

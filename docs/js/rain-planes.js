@@ -68,55 +68,6 @@
     };
   }
 
-  function isWesternSlopeBlizzardActive() {
-    return Boolean(
-      deps
-      && (window.Music?.weatherRegionForArea?.(deps.getCurrentArea?.()) || deps.getCurrentArea?.()) === WESTERN_SLOPE_ID
-      && deps.calendar?.isRaining
-    );
-  }
-
-  function installBlizzardAudioRouting() {
-    const music = window.Music;
-    if (!music || music.__westernSlopeBlizzardAudioRoutingInstalled) return;
-    if (typeof music.updateRainAudio !== 'function' || typeof music.updateExteriorBgs !== 'function') return;
-
-    const priorUpdateRainAudio = music.updateRainAudio;
-    const priorUpdateExteriorBgs = music.updateExteriorBgs;
-
-    music.updateRainAudio = function (...args) {
-      if (!isWesternSlopeBlizzardActive()) return priorUpdateRainAudio.apply(this, args);
-
-      // Reuse the rain audio mixer's own fade/stop path by presenting this one
-      // precipitation case as dry. This fades gentle/mid/heavy rain to zero
-      // without reaching into music-system.js's private looping-BGS registry.
-      const priorRaining = deps.calendar.isRaining;
-      deps.calendar.isRaining = false;
-      try {
-        return priorUpdateRainAudio.apply(this, args);
-      } finally {
-        deps.calendar.isRaining = priorRaining;
-      }
-    };
-
-    music.updateExteriorBgs = function (...args) {
-      if (!isWesternSlopeBlizzardActive()) return priorUpdateExteriorBgs.apply(this, args);
-
-      // The ordinary exterior mixer already owns the real wind recordings and
-      // smooth BGS fades. Feed it full weather strength so blizzard wind sits
-      // at the same storm-scale mix level used by rain instead of a quiet bed.
-      const priorRainStrength = deps.calendar.rainStrength;
-      deps.calendar.rainStrength = BLIZZARD_AUDIO_RAIN_STRENGTH;
-      try {
-        return priorUpdateExteriorBgs.apply(this, args);
-      } finally {
-        deps.calendar.rainStrength = priorRainStrength;
-      }
-    };
-
-    music.__westernSlopeBlizzardAudioRoutingInstalled = true;
-  }
-
   function createRainSourceTexture() {
     const THREE = deps.THREE;
     cameraForward = new THREE.Vector3(0, 0, -1);
@@ -296,7 +247,6 @@
       // Scene transitions should never rebuild the precipitation pool. Refreshing
       // deps is sufficient and avoids orphaning the old layer meshes if init is
       // accidentally reached again while entering/leaving an interior.
-      installBlizzardAudioRouting();
       return;
     }
     const THREE = deps.THREE;
@@ -308,7 +258,6 @@
     group.name = 'world_rain_planes';
     group.userData.isBillboard = true;
     ensureLayerCount(3);
-    installBlizzardAudioRouting();
   }
 
   function advanceTexture(layer, dt, speedMultiplier) {
@@ -567,7 +516,8 @@
       layerCount: layers.filter(layer => layer.mesh.visible).length,
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
-      blizzardAudioRouting: Boolean(window.Music?.__westernSlopeBlizzardAudioRoutingInstalled),
+      blizzardAudioRouting: typeof window.Music?.weatherRegionForArea === 'function',
+      blizzardAudioOwner: 'Music',
       blizzardAudioRainStrength: BLIZZARD_AUDIO_RAIN_STRENGTH,
       settings: getSettings(),
       renderer: deps?.renderer?.info?.render ? { ...deps.renderer.info.render } : null,
