@@ -16097,7 +16097,7 @@
       function itemIconForKey(key) {
         const def = ITEM_DEFS[key]; // Shared fallback for incomplete item metadata in Pack, shipping and reward text.
         const icon = def?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon; // Preserve authored placeholders when present.
-        if (icon && !['□', '[]'].includes(icon.trim())) return icon;
+        if (typeof icon === 'string' && icon.trim() && !['□', '[]'].includes(icon.trim())) return icon;
         return ({ seed: '🌱', crop: '🌾', food: '🍲', ingredient: '🥣', material: '🔩', tool: '🔧', livestock: '🐾', furniture: '🏠', buildingPlan: '📜', instrument: '🎵' })[def?.cat] || '📦';
       }
 
@@ -29693,6 +29693,7 @@
       });
 
       window.ShippingPanel?.init({
+        itemIconForKey, // Reuses Pack's category fallback for shipping and merchant presentations.
         inventory,
         ITEM_DEFS,
         BASE_PRICES,
@@ -29881,6 +29882,7 @@
       });
 
       window.HudUpdate.init({
+        itemIconForKey, // Keeps wheel previews and the desktop item pill consistent with Pack.
         getGrid: () => grid,
         getWorldObjectAt,
         equipmentSlots,

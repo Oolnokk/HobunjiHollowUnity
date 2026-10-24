@@ -30,9 +30,36 @@
     '🪓': ['🔨', 'none'], '🪃': ['🌙', 'sepia(1)'],
     '🪺': ['🥚', 'sepia(.3)'], '🪿': ['🐦', 'grayscale(1) brightness(1.4)'],
     '🫏': ['🐴', 'grayscale(1)'], '🫐': ['🍇', 'hue-rotate(25deg)'],
+    '🪈': ['🎵', 'none'], '🪬': ['✋', 'hue-rotate(160deg)'], '🪷': ['🌸', 'none'],
+    '🪖': ['⛑️', 'sepia(1)'], '🪟': ['🔲', 'none'], '🫕': ['🍲', 'none'],
+    '🩸': ['💧', 'hue-rotate(140deg)'], '🩹': ['🏥', 'none'], '🫁': ['🌬️', 'none'],
     '🪶': ['🍂', 'grayscale(.6)'], '🪜': ['🔧', 'sepia(1)'], '🪧': ['📋', 'sepia(1)'],
   });
-  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕|💰|🪵|🪨|🟫|🪙|🫙|🫗|🪣|🪑|🪓|🪃|🪺|🪿|🫏|🫐|🪶|🪜|🪧)/gu; // Used to split visible runtime text into text and icon fragments.
+  const ITEM_EMOJI_FONT_FAMILY = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; // Keeps the glyph probe and visible placeholders on the same font stack.
+  const itemGlyphSupport = new Map(); // Probes each newer glyph once, keeping working native emoji instead of replacing them.
+
+  function supportsItemGlyph(token) {
+    if (itemGlyphSupport.has(token)) return itemGlyphSupport.get(token);
+    let supported = true; // If canvas access fails, preserve the device's existing native presentation.
+    try {
+      const canvas = document.createElement('canvas'); // Tiny offscreen surface compares the glyph with a missing-character box.
+      canvas.width = canvas.height = 48;
+      const context = canvas.getContext('2d'); // Uses platform emoji fonts before the ordinary fallback font.
+      context.font = `32px ${ITEM_EMOJI_FONT_FAMILY}`;
+      context.textBaseline = 'top';
+      context.fillText(token, 0, 0);
+      const glyph = context.getImageData(0, 0, 48, 48).data; // Captures the actual native glyph, including color emoji pixels.
+      context.clearRect(0, 0, 48, 48);
+      context.fillText('\u{10FFFF}', 0, 0);
+      const missing = context.getImageData(0, 0, 48, 48).data; // This permanently unassigned code point provides the platform's missing-glyph raster.
+      supported = glyph.some((value, index) => index % 4 === 3 && value > 0)
+        && glyph.some((value, index) => value !== missing[index]);
+    } catch {}
+    itemGlyphSupport.set(token, supported);
+    return supported;
+  }
+
+  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕|💰|🪵|🪨|🟫|🪙|🫙|🫗|🪣|🪑|🪓|🪃|🪺|🪿|🫏|🫐|🪶|🪜|🪧|🪈|🪬|🪷|🪖|🪟|🫕|🩸|🩹|🫁)/gu; // Used to split visible runtime text into text and icon fragments.
   const TEXT_SKIP_SELECTOR = 'script,style,textarea,input,select,option,[data-generic-hud-icon]'; // Used to keep icon substitution out of editable/source-like DOM.
   const X_CONTROL_HINT = /(close|cancel|delete|remove|unequip|unassign|dismiss|clear)/i; // Used to distinguish a semantic × close/remove control from multiplication text.
   const RELATIONSHIPS_TAB_SELECTOR = '[data-mpanel="relationships"]'; // Used to make the Relationships tab a heart-only affordance.
@@ -77,6 +104,7 @@
         line-height: 1;
         pointer-events: none;
       }
+      .generic-item-placeholder { font-family: ${ITEM_EMOJI_FONT_FAMILY}; }
       img.generic-hud-icon {
         object-fit: contain;
         object-position: center;
@@ -113,9 +141,10 @@
     if (ITEM_PLACEHOLDERS[token]) {
       const placeholder = document.createElement('span'); // Isolated child allows tinting without changing item names or counts.
       placeholder.className = 'generic-hud-icon generic-item-placeholder';
-      placeholder.dataset.genericHudIcon = 'item';
-      placeholder.textContent = ITEM_PLACEHOLDERS[token][0];
-      placeholder.style.filter = ITEM_PLACEHOLDERS[token][1];
+      const useSubstitute = token === '🟫' || !supportsItemGlyph(token); // A hide should resemble a leather pouch even when the old plain brown square renders.
+      placeholder.dataset.genericHudIcon = useSubstitute ? 'item' : 'item-native';
+      placeholder.textContent = useSubstitute ? ITEM_PLACEHOLDERS[token][0] : token;
+      if (useSubstitute) placeholder.style.filter = ITEM_PLACEHOLDERS[token][1];
       placeholder.setAttribute('aria-hidden', 'true');
       return placeholder;
     }
@@ -624,7 +653,8 @@
     return {
       version: 1,
       icons: { ...ICONS },
-      mostRecentChange: 'Money bag UI glyphs use the coin pile sprite at the surrounding text height.',
+      mostRecentChange: 'Preserve supported native item emoji; substitute tinted older glyphs when a character is missing.',
+      itemGlyphSupport: Object.fromEntries(itemGlyphSupport), // Mobile diagnostics identify exactly which native glyphs needed a substitute.
       relationshipColors: {
         rapportHeart: RAPPORT_HEART_COLOR,
         favorHeart: FAVOR_HEART_COLOR,
