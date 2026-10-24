@@ -463,6 +463,32 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(ui.debugState().groupDepth, 0);
   press('cancel'); assert.equal(singleClose.clicks, 1);
   singlePanel.hidden = true; await rebuild(singlePanel);
+  const stableMarkup = fs.readFileSync('docs/index.html', 'utf8'); // Uses shipped wrapper metadata so missing HTML wiring fails the regression.
+  assert.match(stableMarkup, /id="mpStable" data-ctrl-transparent/);
+  assert.match(stableMarkup, /id="stableList" class="farm-list" data-ctrl-transparent/);
+  const stablePerk = button('stable-perk-speed', 10, 100, { 'data-key': 'speed' }); // Real purchase controls must be reachable after opening the tree.
+  const stableTree = new Element('div', { id: 'stableTrainingDetail_pet', 'data-ctrl-detail-panel': '' }, [stablePerk]); // Hidden from sibling navigation until its disclosure is confirmed.
+  const stableTraining = button('stableTrainingToggle_pet', 10, 40, { 'data-ctrl-detail': stableTree.id }); // Same association emitted by the native Stable renderer.
+  const stableAdult = new Element('div', { id: 'stableAgeAdultAnimals', 'data-ctrl-subtab': '' }, [stableTraining, button('stable-stow', 110, 40)], 10, 30); // Adult section is a real choice rather than a redundant structural nest.
+  stableTraining.onclick = () => stableAdult.append(stableTree);
+  const stableBaby = new Element('div', { id: 'stableAgeBabyAnimals', 'data-ctrl-subtab': '' }, [button('stable-baby-toggle', 10, 180)], 10, 170); // Baby inventory stays reachable as a separate section.
+  const stableList = new Element('div', { id: 'stableList', 'data-ctrl-transparent': '' }, [stableAdult, stableBaby]); // Structural roster must not consume Confirm or Back.
+  const stablePane = new Element('div', { id: 'mpStable', class: 'mp-pane', 'data-ctrl-transparent': '' }, [stableList]); // Selected Stable tab has no extra outer gate.
+  const stableClose = button('stable-close', 300, 0, { 'data-ctrl-cancel': '' }); // Tests that Back skips the same transparent wrappers.
+  const stablePanel = new Element('div', { 'data-ctrl-panel': '' }, [stablePane, stableClose]); // Mirrors the mounted pause-menu ownership boundary.
+  body.append(stablePanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [stablePanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement(), stableAdult, 'Stable starts on an actual age section, skipping its sole structural list');
+  press('confirm');
+  assert.equal(ui.focusedElement(), stableTraining, 'one Confirm reaches the animal actions');
+  press('confirm');
+  assert.equal(ui.focusedElement(), stablePerk, 'Confirm on Training opens and enters the perk tree');
+  press('confirm'); assert.equal(stablePerk.clicks, 1, 'controller activates the chosen level-up perk');
+  press('cancel'); assert.equal(ui.focusedElement(), stableTraining, 'Back returns to this animal training action');
+  press('cancel'); assert.equal(ui.focusedElement(), stableAdult, 'Back leaves the actual section without structural wrapper stops');
+  press('cancel'); assert.equal(stableClose.clicks, 1, 'next Back closes the menu');
+  stablePanel.hidden = true; await rebuild(stablePanel);
   const handled = []; // Opt-in readers own A/B/bumpers without taking over controller polling.
   panel.setAttribute('data-ctrl-actions', '');
   panel.dispatchEvent = event => { handled.push(event.detail.action); return false; };

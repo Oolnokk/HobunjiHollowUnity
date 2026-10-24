@@ -716,7 +716,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261024h17abc7d"></script>
+  <script src="js/farm-panel.js?v=20261024ha73cf34"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -1446,13 +1446,13 @@
       <!-- ── Stable pane: the character's personal, untradeable companion
            collection — separate from any farm's livestock. See
            renderStablePanel() in game.js. ──────────────────────────────── -->
-      <div class="mp-pane" id="mpStable">
+      <div class="mp-pane" id="mpStable" data-ctrl-transparent>
         <div class="farm-pane">
           <div class="farm-header">
             <div class="settings-section-title">🐾 Your Stable</div>
             <div class="farm-note">Companions travel with you between farms. Stabled animals can't be placed on any farm and don't produce goods, but can still be paired to breed new tradeable livestock. Add one from an undeployed creature item in your Inventory.</div>
           </div>
-          <div id="stableList" class="farm-list"></div>
+          <div id="stableList" class="farm-list" data-ctrl-transparent></div>
         </div>
       </div><!-- /mpStable -->
 
@@ -2740,7 +2740,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261024h071747b"></script>
+  <script src="js/controller-ui-nav.js?v=20261024h195b6ae"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

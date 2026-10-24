@@ -44,6 +44,8 @@
   //                     Confirm enters; Back returns to the whole section.
   //                     Existing menu sections, inventories, perk trees and
   //                     tab rows are recognized without extra markup.
+  //   data-ctrl-transparent on structural wrappers exposes their descendants
+  //                     directly, without hiding or skipping those controls.
   //   data-ctrl-detail  id of an associated detail group. Confirm selects the
   //                     item, enters that sibling, and Back returns to the item.
   //   data-ctrl-detail-panel on the associated group; excludes it from unrelated
@@ -243,6 +245,7 @@
   // ── target discovery ────────────────────────────────────────────────
   function isNavTarget(el) {
     if (!el || el.nodeType !== 1) return false;
+    if (el.hasAttribute('data-ctrl-transparent')) return false;
     if (el.closest('[data-ctrl-skip]')) return false;
     if (isDisabled(el) && !el.hasAttribute('data-ctrl-inspect')) return false;
     if (el.hasAttribute('tabindex') && Number(el.getAttribute('tabindex')) < 0 && !el.hasAttribute('data-ctrl-item') && !el.matches(GROUP_SELECTOR)) return false;
@@ -256,7 +259,7 @@
 
   function isGroup(el) {
     // An actionable card remains an action even when it also uses a section's styling class.
-    return el.matches(GROUP_SELECTOR) && !el.matches('button, a[href], input, select, textarea, summary, [role="button"], [data-ctrl-item]');
+    return !el.hasAttribute('data-ctrl-transparent') && el.matches(GROUP_SELECTOR) && !el.matches('button, a[href], input, select, textarea, summary, [role="button"], [data-ctrl-item]');
   }
 
 
