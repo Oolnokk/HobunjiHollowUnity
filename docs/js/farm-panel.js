@@ -200,6 +200,7 @@
     const points = availablePoints(entry);
     const button = document.createElement('button');
     button.className = 'settings-small-btn stable-perk-btn';
+    button.setAttribute('data-key', def.id);
     button.style.cssText = 'white-space:normal;text-align:left;min-height:54px;line-height:1.25;';
     button.disabled = entry.lifeStage === 'baby' || points <= 0 || rank >= def.maxRank;
     button.textContent = `${def.name} ${rank}/${def.maxRank}\n${def.desc}`;
@@ -372,6 +373,9 @@
     const role = stableRole(entry);
     const panel = document.createElement('div');
     panel.className = 'stable-entry-perk-tree';
+    panel.id = 'stableTrainingDetail_' + encodeURIComponent(String(entry.id));
+    panel.setAttribute('data-ctrl-detail-panel', '');
+    panel.setAttribute('aria-label', `${entry.name || speciesLabel(entry)} training perks`);
     panel.style.cssText = 'flex:1 0 100%;width:100%;box-sizing:border-box;margin-top:7px;padding:9px;border-top:1px solid rgba(255,255,255,.13);display:flex;flex-direction:column;gap:7px;cursor:default;';
     panel.addEventListener('click', event => event.stopPropagation());
 
@@ -488,6 +492,19 @@
         expandedStableId = isExpanded ? null : entry.id;
         renderStablePanelNative();
       });
+      const trainingButton = document.createElement('button'); // Exposes the row's perk disclosure to controller, keyboard and touch navigation.
+      trainingButton.className = 'settings-small-btn stable-training-toggle';
+      trainingButton.id = 'stableTrainingToggle_' + encodeURIComponent(String(entry.id));
+      trainingButton.textContent = isExpanded ? 'Hide Training / Perks' : `Training / Perks${points > 0 ? ` · ${points}` : ''}`;
+      trainingButton.setAttribute('aria-expanded', String(isExpanded));
+      trainingButton.setAttribute('aria-controls', 'stableTrainingDetail_' + encodeURIComponent(String(entry.id)));
+      trainingButton.setAttribute('data-ctrl-detail', 'stableTrainingDetail_' + encodeURIComponent(String(entry.id)));
+      trainingButton.addEventListener('click', event => {
+        event.stopPropagation();
+        expandedStableId = isExpanded ? null : entry.id;
+        renderStablePanelNative();
+      });
+      row.appendChild(trainingButton);
       const stowButton = document.createElement('button'); // Moves this animal between the accessible roster and indefinite Stable storage.
       stowButton.className = 'settings-small-btn stable-stow-btn';
       stowButton.textContent = entry.stowed ? 'Take Out' : 'Stow';
@@ -563,7 +580,7 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'Stable animals can be stowed indefinitely; eight remain outside storage, and the Baby inventory collapses by default.',
+        mostRecentChange: 'Stable navigation skips structural wrappers; Training / Perks opens each animal tree with controller Confirm and Back support.',
         expandedStableId,
         maxLevel: stableMaxLevel(),
         babyCount: stable.filter(stableIsBaby).length,

@@ -52,7 +52,7 @@ assert.equal(rewards.fishCatchViewEls.rewards.hidden, true, 'next cast cannot sh
 const main = { name: 'main' }, child = { name: 'submenu' }; // Represents a submenu opened while its main menu remains visible.
 const mainButton = { closest: () => main, hasAttribute: () => false }, childButton = { closest: () => child, hasAttribute: () => false }; // Each target resolves to its registered owner.
 const panels = { PANEL_SELECTOR: 'panel', knownPanels: new Set([main, child]), targetsInPanel: panel => panel === main ? [mainButton, childButton] : [childButton] }; // Main descendants include the nested submenu for exclusion coverage.
-Object.assign(panels, { navigationRoot: panel => panel, groupTarget: element => element, isGroup: () => false, subtabsByGroup: new Map(), clearGroups() {} }); // This ownership-only fixture has no entered groups; nested confinement is exercised by test-controller-nested-groups.
+Object.assign(panels, { automaticEntryEnabled: false, navigationRoot: panel => panel, groupTarget: element => element, isGroup: () => false, subtabsByGroup: new Map(), clearGroups() {} }); // This ownership-only fixture has no controller input or entered groups; nested confinement is exercised by test-controller-nested-groups.
 vm.runInNewContext(['owningRegisteredPanel', 'belongsToNavigation', 'directTargets', 'projectSingleChild', 'navigationTargets'].map(name => ownerFunction(nav, name)).join('\n'), panels);
 assert.equal(panels.belongsToNavigation(mainButton, child), false, 'submenu rejects underlying main menu focus');
 assert.equal(panels.navigationTargets(child).length, 1);

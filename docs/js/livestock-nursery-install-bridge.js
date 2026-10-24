@@ -23,7 +23,7 @@
     { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261006h1a27ed3' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261012h24b6e66' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261024evolution1' },
-    { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
+    { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20261024h2e98e2a' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261023hc437da7' },
     { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
