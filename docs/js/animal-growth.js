@@ -172,6 +172,18 @@
         result.entry.lifeStage = CONFIG.stages.newStableDefault;
         clearBabyFromActiveRoles(result.entry);
         stableDeps()?.saveStable?.();
+        window.AnimalBabyArrival?.requestName?.(result.entry, {
+          scope: 'stable',
+          commit: name => {
+            const entries = stableDeps()?.getStable?.() || []; // Re-fetch the current character-scoped Stable after any intervening saves.
+            const target = entries.find(entry => entry.id === result.entry.id); // Prevent naming an animal removed while the prompt was open.
+            if (!target) return false;
+            target.name = name;
+            stableDeps()?.saveStable?.();
+            return true;
+          },
+          refresh: () => window.FarmPanel?.renderStablePanel?.(),
+        });
         return {
           ...result,
           message: `${result.entry.name || 'Animal'} added to your Stable as a baby. Use a ${CONFIG.item.label} when you want to grow it.`,
