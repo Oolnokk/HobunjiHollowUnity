@@ -285,6 +285,7 @@
   function addFestivalFun(id,amount) {
     if (!id || !Number.isFinite(amount)||amount<=0) return;
     state.festivalFun[id]=(Number(state.festivalFun[id])||0)+amount;
+    window.WorldPopupText?.queueSocialGain?.('festivalFun',amount,id);
   }
   function settleFestivalFun() {
     if (!deps || !window.CalendarSystem?.isInitialized?.()) return;

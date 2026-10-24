@@ -71,8 +71,7 @@
   function isWesternSlopeBlizzardActive() {
     return Boolean(
       deps
-      && deps.getCurrentArea?.() === WESTERN_SLOPE_ID
-      && deps.isOutdoorArea?.()
+      && (window.Music?.weatherRegionForArea?.(deps.getCurrentArea?.()) || deps.getCurrentArea?.()) === WESTERN_SLOPE_ID
       && deps.calendar?.isRaining
     );
   }

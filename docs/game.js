@@ -10385,18 +10385,22 @@
               // (fruitBush/mushroomPatch/unknown/hand-authored data with no
               // floraKind at all — which also covers every other zone that
               // has no dedicated tree species).
+              const isDeadTree = mapId === 'map_western_slope' && (tile.floraKind === 'copse' || !tile.floraKind); // Existing slope copses become harvestable dead trees, including saved layouts.
+              const isDeadBush = mapId === 'map_western_slope' && !isDeadTree; // All other slope ground vegetation uses bare woody bushes.
               const isTreeZone = mapId === 'map_northern_cliffs' || EXTERIOR_ZONES[mapId]?.cloudForest;
               const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
               const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
-              const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
+              const vegGroup = isDeadTree ? window.FoliageGenerator.buildDeadTreeMesh(c, r)
+                             : isDeadBush ? window.FoliageGenerator.buildDeadBushMesh(c, r)
+                             : isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
-              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
-              if (isCrownedPine || isShadewood) {
+              const isNativeBuild = isDeadTree || isDeadBush || isCrownedPine || isShadewood || isBush || isStump;
+              if (isDeadTree || isCrownedPine || isShadewood) {
                 // Their visible trunk base is centered on this solid SHRUB
                 // tile. Projectile cover can therefore use the existing tile
                 // collision instead of raycasting the full procedural tree.
@@ -10420,7 +10424,7 @@
               // not because they were occluding one another, but because
               // shrubs everywhere kept getting flagged as the "blocking
               // tree" for one or both of them.
-              if (isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
+              if (isDeadBush || isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
               const groundY = tileSurfaceY(TileType.GRASS) + tierY;
               vegGroup.position.set(cx, groundY, cz);
               if (isShadewood) {
@@ -17998,11 +18002,12 @@
       // metadata) defaults to "is a tree", matching _buildZoneFloorMeshes'
       // own fallback.
       function isChoppableTreeTile(col, row) {
-        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
+        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest' && currentArea !== 'map_western_slope') return false;
         const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
         return tile.floraKind === 'copse' || !tile.floraKind;
       }
+      // Dead slope trees yield the existing pineLog: every any-wood consumer already accepts it.
       function treeLogItemKey() {
         return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
       }
@@ -21769,6 +21774,7 @@
         THREE,
         camera,
         playerRoot: playerMesh,
+        getNpcName: id => scheduledNpcRecords.get(id)?.name || npcWalkers.find(walker => walker.rec?.id === id)?.rec?.name || id, // Gain popups resolve readable names even for offscreen NPCs.
         getActiveScene: window.GridTileAccessors.getActiveScene,
       });
       // Perception Mode (eagle-vision highlights, crop/livestock info lists,
@@ -28425,6 +28431,9 @@
         isPlayerInCombat,
         MORNING_HOUR,
         getWorkspaceMaps: () => _workspaceMaps,
+        getWeatherExteriorArea: () => _isBuildingArea(currentArea)
+          ? (window.WildlifeSpawn?.denCavernZoneOf?.(currentArea) || farmPlayerSave?.area || '')
+          : currentArea, // Door entry preserves the exterior through nested rooms; caves also resolve directly after loading a save.
         _isZoneArea,
         _isBuildingArea,
         EXTERIOR_ZONES,

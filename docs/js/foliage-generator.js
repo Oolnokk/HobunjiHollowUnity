@@ -1085,6 +1085,15 @@ window.FoliageGenerator = (() => {
     }
   };
 
+  // Leafless variants share the normal procedural geometry and instance cache.
+  TREE_PRESETS.deadBush = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: 0x71675e };
+  TREE_PRESETS.deadTree = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: 0x71675e,
+    trunkLength: 4.2, trunkRadius: 0.25, trunkBend: 0.2, trunkTaper: 0.85,
+    knotAt: 0.58, knotTiers: 4, knotTierSpacing: 0.18, knotCount: 5,
+    knotLength: 1.6, knotRadius: 0.11, knotUpDownBias: 0.6,
+    rootsEnabled: true, rootCount: 5, rootLength: 0.7, rootRadius: 0.13,
+    rootTaper: 0.78, rootSpread: 0.8, rootCurl: 0.35, rootWonk: 0.45, variantCount: 4 };
+
   function buildConiferTreeGroup(preset, seedU32) {
     const rand = mulberry32(seedU32);
     const DOWN = new T.Vector3(0, -1, 0);
@@ -1355,7 +1364,7 @@ window.FoliageGenerator = (() => {
       // banked toward a single fixed point near the trunk base (not each
       // branch's own local tangent), so the whole canopy reads consistently
       // instead of every leaf picking an arbitrary local frame.
-      if (branchSegs.length) {
+      if (branchSegs.length && !preset.leafless) {
         const rollBiasDist = preset.trunkRollBiasDist ?? 0.25;
         const firstOrigin = branchSegs[0].a;
         let nearestIdx = 0, bestD2 = Infinity;
@@ -1881,6 +1890,12 @@ window.FoliageGenerator = (() => {
     buildShadewoodMesh(col, row, opts) {
       const seedU32 = xfnv1a(`sw_${col}_${row}`);
       return buildTreeInstance('shadewood', TREE_PRESETS.shadewood, seedU32, opts);
+    },
+    buildDeadTreeMesh(col, row) {
+      return buildTreeInstance('deadTree', TREE_PRESETS.deadTree, xfnv1a(`dt_${col}_${row}`));
+    },
+    buildDeadBushMesh(col, row) {
+      return buildTreeInstance('deadBush', TREE_PRESETS.deadBush, xfnv1a(`db_${col}_${row}`));
     },
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);
