@@ -57,3 +57,7 @@ The house is a 1x1 `FarmProduction` building (`config/farm-specializations.js`, 
 - **empty** -> place a fertile egg from the bag.
 - **egg** -> hatches after `hatchDays` of world time (`HoneyfuzzleHouse.tick`, driven by FarmProduction's existing one-second timer), or immediately with a Growth Tonic.
 - **swarm** -> an ordinary world-livestock record (`kind: 'honeyfuzzle'`, `houseId`), shown hovering over the house by a scheduler subscriber (`honeyfuzzle-house-swarms`). It can be moved to the personal Stable from the Farm tab's Livestock list; the house is then empty again.
+
+## Combat
+
+Honeyfuzzles fight with **Swarm**, built on the reusable attach mechanic described in [combat-attach.md](combat-attach.md): one chosen target, the swarm sits on top of it for 6 s, deals little direct damage but stacks a lot of Poisoned Health, is immune to that target's attacks, and can still be hurt by anyone else. They are territorial (warning first, then a fight) around their hive, and as a companion they use Swarm on every attack.

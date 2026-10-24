@@ -112,6 +112,12 @@
       "DURATION_S": 0.12, "KNOCKBACK_PX_S": 450,
       "TARGET_ANGLE_WEIGHT": 0.55, "AWAY_FROM_MASTER_WEIGHT": 0.45
     },
+    "swarm": {
+      "durationS": 6, "cooldownS": 5, "tickIntervalS": 0.5,
+      "heightAboveHost": 0.1, "visualSpreadScale": 0.9, "maxPerHost": 3,
+      "tick": { "damageScale": 0.3, "playerScale": 0.6, "tag": "poison", "afflictionBonuses": { "poisonedHealth": 3 } },
+      "hostReaction": { "kind": "flail", "intervalS": 1.1, "radiusTiles": 1.4, "damageScale": 0.5, "hitsAllies": true, "hitsOpponents": false }
+    },
     "grehlrBurrow": {
       "DIVE_S": 0.22,
       "BURROW_MIN_S": 0.7,
@@ -189,7 +195,7 @@
 
   "creatureBehaviors": {
     "territorial": {
-      "species": ["grehlr", "grehlr-den-mother", "drenkirra", "drenkirra-den-mother"],
+      "species": ["grehlr", "grehlr-den-mother", "drenkirra", "drenkirra-den-mother", "honeyfuzzle"],
       "WARNING_RANGE_TILES": 6.5,
       "WARNING_DURATION_S": 4.5,
       "TOO_CLOSE_TILES": 1.75,

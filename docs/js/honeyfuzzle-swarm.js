@@ -229,23 +229,24 @@
 
     const pose = { x: 0, y: 0, roll: 0, scale: 1, flip: 1 };
     const zStep = 0.003; // Tiny per-member depth separation so overlapping alpha-tested cards never z-fight.
-    let lastStep = -1, smoothSpeed = 0, lastNow = 0, disposed = false;
+    let lastStep = -1, smoothSpeed = 0, smoothSpread = 1, lastNow = 0, disposed = false;
     const frames = new Float32Array(count);
     const avatar = {
       group, frontPlane: pivot, backPlane: null, swarm: mesh, memberCount: count, seed,
-      update(speedPxPerS, nowMs, dtSeconds, moveSpeedPx) {
+      update(speedPxPerS, nowMs, dtSeconds, moveSpeedPx, spreadScale) {
         if (disposed) return;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
         const dt = Number.isFinite(dtSeconds) ? dtSeconds : Math.max(0, (now - lastNow) / 1000);
         lastNow = now;
         const target = Math.min(1.4, (Number(speedPxPerS) || 0) / Math.max(1, Number(moveSpeedPx) || 120));
         smoothSpeed += (target - smoothSpeed) * Math.min(1, dt * 4);
+        smoothSpread += ((Number(spreadScale) || 1) - smoothSpread) * Math.min(1, dt * 6); // Eases between the free cloud and a tight blanket over an attack target.
         const step = wingStep(now);
         const stepChanged = step !== lastStep;
         lastStep = step;
         const arr = mesh.instanceMatrix.array;
         for (let i = 0; i < count; i++) {
-          memberPose(seed, i, count, now, smoothSpeed, spread, pose);
+          memberPose(seed, i, count, now, smoothSpeed, spread * smoothSpread, pose);
           const c = Math.cos(pose.roll) * pose.scale, s = Math.sin(pose.roll) * pose.scale, o = i * 16;
           arr[o] = c * pose.flip; arr[o + 1] = s * pose.flip; arr[o + 2] = 0; arr[o + 3] = 0; // flip mirrors the member to face right
           arr[o + 4] = -s; arr[o + 5] = c; arr[o + 6] = 0; arr[o + 7] = 0;

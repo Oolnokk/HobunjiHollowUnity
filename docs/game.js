@@ -1318,7 +1318,7 @@
           maxHealth: 30, maxStamina: 30, moveSpeed: 150, chaseSpeed: 210,
           attackDamage: 5, attackRangePx: TILE * 0.8, attackHalfConeRad: 45 * Math.PI / 180,
           attackStaminaCost: 10, attackCooldownS: 1.2,
-          attacks: ['pounce'], attackTag: 'sharp', aiType: 'vigilantProtector', perceptionTiles: 6,
+          attacks: ['swarm'], attackTag: 'poison', realAttackEvery: 1, aiType: 'vigilantProtector', perceptionTiles: 6,
           canClimb: true, canSwim: true, modelWidth: 1.5, spriteAspect: 0.5, tint: 0xffffff,
           defaultSizeClass: 'medium', fixedSizeClass: 'medium', mountSpeed: 340,
           sprites: { idle: 'assets/creaturesprites/honeyfuzzle_wings-mid.png', run: ['assets/creaturesprites/honeyfuzzle_wings-up.png', 'assets/creaturesprites/honeyfuzzle_wings-down.png'] },
@@ -4970,6 +4970,7 @@
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
+        if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
         if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
@@ -5030,6 +5031,7 @@
         // like Pounce) rather than just pausing it through the knockback
         // freeze below and letting it resume where it left off once knockback
         // decays.
+        if (dmgOpts?.noStagger || window.Combat?.attach?.suppressesStagger(c)) { c.lastAttackReceivedAt = performance.now(); return; } // Damage-over-time ticks and an attached rider take the damage without being staggered, knocked back or scared off.
         window.Combat?.telegraph?.cancel(c);
         window.Combat?.animalAttacks?.cancel(c);
         // Getting hit breaks a bandit's in-progress ability the same way it
@@ -5088,7 +5090,8 @@
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (!environmentalImpact && window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
-        if (!environmentalImpact) {
+        const staggerless = dmgOpts?.noStagger === true; // Damage-over-time ticks (a Swarm sitting on the player) do not interrupt or stagger.
+        if (!environmentalImpact && !staggerless) {
           _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
           player._nestTakeActive = false;
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
@@ -5098,7 +5101,7 @@
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
         const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(player.health) || 0)) : 0; // Reports actual clamped collision damage to the resolver.
-        if (player.health > 0 && !environmentalImpact) {
+        if (player.health > 0 && !environmentalImpact && !staggerless) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
@@ -5925,6 +5928,7 @@
           directionX: c._banditLungeDirX, directionZ: c._banditLungeDirY,
         });
         window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
+        if (c.avatarRef.swarm) c.avatarRef.update(Math.hypot(c.vx || 0, c.vy || 0), performance.now(), dt, c.def.moveSpeed, c._attachVisualSpread || 1); // Honeyfuzzle swarm (js/honeyfuzzle-swarm.js): runs even while a named attack (Swarm) owns the creature.
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -6002,10 +6006,7 @@
         // position/rotation/facing update via updateCreatureMesh, just no
         // idle/run frame swap.
         if (!c.def.sprites) return;
-        if (c.avatarRef?.swarm) { // Honeyfuzzle swarm: no idle/run states — one shared wing tick drives every member (js/honeyfuzzle-swarm.js).
-          c.avatarRef.update(Math.hypot(c.vx || 0, c.vy || 0), performance.now(), dt, c.def.moveSpeed);
-          return;
-        }
+        if (c.avatarRef?.swarm) return; // Honeyfuzzle swarm: no idle/run states; updateCreatureMesh drives its shared wing tick every frame.
         if (!moving) {
           const frameKey = 'idle';
           const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
@@ -8130,7 +8131,7 @@
                   // fires only once every 4 behavior actions; the other 3 use
                   // the short 0-damage/high-knockback guard charge instead.
                   c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
-                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
+                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
                   const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
                   const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
                   if (startedModular) {
