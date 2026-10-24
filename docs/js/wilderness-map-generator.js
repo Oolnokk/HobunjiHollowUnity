@@ -6730,8 +6730,11 @@
       // The region's southern road out of the playable world (see
       // chooseTradeExit) — Slagothim caravans enter and leave by it.
       tradeExitSide: 'south',
+      // The dense canopy leaves little clear ground for stumps (the base 7 often placed 0-4): ask for
+      // more so the rainforest reliably has honeyfuzzle hives like every other zone.
+      beehives: 30,
     },
-    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
+    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, beehives: 0 }, // Honeyfuzzle hive stumps (and their swarms) live everywhere except here.
     map_eastern_mire: {
       entrySide: 'west', preset: 'custom', boundaryMode: 'entrySideDistantLandscape',
       boundaryCliffBoost: 0, entryGateWidthMul: 0.4,

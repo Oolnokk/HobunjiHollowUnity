@@ -1,4 +1,4 @@
-// Territorial wildlife behavior for Grehlr and Drenkirra families.
+// Territorial wildlife behavior for Grehlr, Drenkirra and Honeyfuzzle (hive defense) families.
 (() => {
   'use strict';
 
@@ -11,7 +11,7 @@
     WARNING_UTTERANCE_MIN_S: 1.15,
     WARNING_UTTERANCE_MAX_S: 2.1,
   });
-  const DEFAULT_SPECIES = Object.freeze(['grehlr', 'grehlr-den-mother', 'drenkirra', 'drenkirra-den-mother']); // Used until attack-values.json supplies the authored territorial species list.
+  const DEFAULT_SPECIES = Object.freeze(['grehlr', 'grehlr-den-mother', 'drenkirra', 'drenkirra-den-mother', 'honeyfuzzle']); // Used until attack-values.json supplies the authored territorial species list.
   const tuning = { ...DEFAULTS }; // Used by every territorial phase and refreshed from authored config.
   let territorialSpecies = new Set(DEFAULT_SPECIES); // Used to identify wild actors whose player encounter is warning-first instead of predator/prey aggro.
   let deps = null; // Captured from WildlifeSpawn.init and used by the per-frame territorial pre-pass.

@@ -176,6 +176,10 @@ Town Value (raised by extending the mine ladder, `docs/js/town-mine.js`) now pay
 - **Carpentry tiers.** Larger barn plans, incubator additions and Medium/Large processor plans need Town Value 1/2 at Dzibim's (`minTownValue` in `config/shops/shop-stock.json` and `config/farm-specializations.js`). Farm presets still grant any tier.
 - **Sale prices** rise +3% per Town Value, capped at +30% (`TownMine.salePriceMultiplier`/`applySaleBonus`). This covers the shipping box, store sales, and livestock and Nursery sales.
 
+## Honeyfuzzle swarms, hive stumps and the Honeyfuzzle House
+
+Honeyfuzzles are hummingbird-like swarms: one creature entity drawn as an instanced flock whose members share a wing tick (up, mid, down, mid) at staggered offsets. They are always Medium (companions), live in hollow hive stumps in the wild (one long hold gives 1-3 fertile eggs and honey, then the stump collapses) and, on the farm, in a 1x1 Honeyfuzzle House bought from the carpenter instead of a barn or incubator. See [docs/architecture/honeyfuzzle.md](docs/architecture/honeyfuzzle.md).
+
 ## Dev Companion window
 
 Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens

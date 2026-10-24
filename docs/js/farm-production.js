@@ -24,13 +24,14 @@
   function serialize() {
     if (!loaded) return null;
     return buildings.map(entry => ({ id: entry.id, key: entry.key, col: entry.col, row: entry.row, rot: entry.rot || 0,
-      queue: copy(entry.queue), ready: copy(entry.ready), nextAt: entry.nextAt, water: entry.water }));
+      queue: copy(entry.queue), ready: copy(entry.ready), nextAt: entry.nextAt, water: entry.water, ...(entry.house ? { house: copy(entry.house) } : {}) }));
   }
   function clear() {
     for (const entry of buildings) removeVisual(entry);
     buildings = []; placement = null; loaded = false;
   }
   function removeVisual(entry) {
+    window.HoneyfuzzleHouse?.removeVisual(entry);
     const size = footprint(entry.key, entry.rot); // Occupied tiles follow the building's current rotation.
     for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) {
       if (deps.worldObjects.get(col + ',' + row) === entry.object) deps.worldObjects.delete(col + ',' + row);
@@ -56,6 +57,7 @@
       getButtons: () => [{ icon: definition.icon, label: 'Manage ' + definition.label, action: 'obj_farmproduction_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('storage') }],
       onAction: action => { if (action !== 'obj_farmproduction_' + entry.id) return { ok: false, message: 'Unknown action.' }; open(entry.id); return { ok: true, message: 'Opened building.' }; } };
     for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) deps.worldObjects.set(col + ',' + row, entry.object);
+    window.HoneyfuzzleHouse?.syncVisual(entry, size); // Hovering swarm over an occupied Honeyfuzzle House.
     window.AuthoredFurniture.load(entry.key).then(data => {
       if (generation !== entry.visualGeneration || !buildings.includes(entry)) return;
       if (!data) { lastError = 'Missing authored building: ' + entry.key; deps.debugLog(lastError, 'warn'); return; }
@@ -79,7 +81,8 @@
       const entry = { id: String(record.id || 'production_' + record.key + '_' + record.col + '_' + record.row), key: record.key, col: record.col, row: record.row, rot,
         queue: (record.queue || []).filter(batch => Number.isSafeInteger(batch.count) && batch.count > 0 && Array.isArray(batch.outputs)).map(copy),
         ready: (record.ready || []).filter(batch => Number.isSafeInteger(batch.count) && batch.count > 0).map(copy),
-        nextAt: Number.isFinite(record.nextAt) ? record.nextAt : null, water: Math.min(definition.waterCapacity, Math.max(0, Number(record.water) || 0)) }; // World-scoped durable queue and tank state.
+        nextAt: Number.isFinite(record.nextAt) ? record.nextAt : null, water: Math.min(definition.waterCapacity, Math.max(0, Number(record.water) || 0)),
+        ...(record.house && typeof record.house === 'object' ? { house: copy(record.house) } : {}) }; // World-scoped durable queue and tank state; a Honeyfuzzle House also keeps its egg/swarm slot.
       buildings.push(entry); spawn(entry);
     }
     loaded = true;
@@ -221,6 +224,7 @@
       }
     }
     if (changed) { deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
+    window.HoneyfuzzleHouse?.tick(buildings, now()); // Hatches due eggs; same low-frequency timer, no extra loop.
   }
   function collect(id) {
     if (!deps.hasFarmPermission('storage')) return { ok: false, message: 'Storage permission required.' };
@@ -244,6 +248,7 @@
     const entry = buildings.find(candidate => candidate.id === id); // Modal reads actual persisted queue and output buffer.
     if (!entry) return;
     const definition = catalog[entry.key]; // Label/tier and silo capacity for this building.
+    if (definition.family === 'honeyfuzzleHouse') { window.HoneyfuzzleHouse?.open(entry); return; } // One-slot egg/swarm house with its own panel (js/honeyfuzzle-house.js).
     document.getElementById('farmProductionModal')?.remove();
     const modal = document.createElement('div'); // Touch-friendly in-file management and diagnostics.
     modal.id = 'farmProductionModal'; modal.style.cssText = 'position:fixed;inset:0;background:#000b;z-index:11000;display:grid;place-items:center;padding:12px';

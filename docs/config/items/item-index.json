@@ -833,6 +833,12 @@
     "icon": "🥚",
     "cat": "livestock"
   },
+  "fertileHoneyfuzzleEgg": {
+    "key": "fertileHoneyfuzzleEgg",
+    "label": "Fertile Honeyfuzzle Egg",
+    "icon": "🥚",
+    "cat": "livestock"
+  },
   "fishingmace": {
     "key": "fishingmace",
     "label": "Fishing Mace",
@@ -976,6 +982,12 @@
     "label": "Heftroot Seeds",
     "icon": "🟡",
     "cat": "seed"
+  },
+  "honey": {
+    "key": "honey",
+    "label": "Honey",
+    "icon": "🍯",
+    "cat": "material"
   },
   "impureCopper": {
     "key": "impureCopper",
