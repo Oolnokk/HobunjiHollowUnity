@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 12;
+  const VERSION = 13;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
   const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
@@ -262,6 +262,23 @@
     return true;
   }
 
+  // Three's recursive intersectObject ignores `visible` and tests every
+  // node, so a whole-scene cast paid for hidden groups, billboards, sprites,
+  // popups and projectiles that validSurfaceHit then discarded - per frame
+  // while a ranged weapon was out, scaling with every actor/arrow in a fight.
+  // Prune exactly the subtrees validSurfaceHit would reject and only ask
+  // surface-capable meshes to raycast, so hits are unchanged but cheaper.
+  function intersectSurfaceCandidates(object, ignoredRoots, out) {
+    if (!object || object.visible === false) return;
+    if (SURFACE_NAME_IGNORE_RE.test(String(object.name || ''))) return;
+    const data = object.userData;
+    if (data && (data.interactionAimIgnore === true || data.debugOnly === true || data.isBillboard === true)) return;
+    if (ignoredRoots.includes(object)) return;
+    if (object.isMesh && materialCanBeSurface(object)) surfaceRaycaster.intersectObject(object, false, out); // Non-recursive: this walk owns the descent.
+    const children = object.children;
+    if (children) for (let i = 0; i < children.length; i++) intersectSurfaceCandidates(children[i], ignoredRoots, out);
+  }
+
   function activeScene() {
     try {
       return combatDeps()?.getActiveScene?.()
@@ -311,7 +328,7 @@
       if (!root || ignoredRoots.some(owned => isDescendantOf(owned, root))) continue;
       const localHits = [];
       try {
-        surfaceRaycaster.intersectObject(root, true, localHits);
+        intersectSurfaceCandidates(root, ignoredRoots, localHits);
       } catch (error) {
         noteAimError('surface-ray-root', error, root);
         continue;
