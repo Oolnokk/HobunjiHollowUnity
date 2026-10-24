@@ -134,6 +134,7 @@ assert.equal(perform(prop).ok, false, 'cannot activate distant prop via a stale 
 area = 'farm'; assert.equal(api.actionButton(), null);
 assert(saved >= 7);
 // Remembrance is a real interrupted/completed local observance, not a no-op menu item.
+area='town'; // The preceding stale-action assertion deliberately left the player in the farm.
 prop = visit('tzizkhanash', 'remembrance');
 assert.equal(perform(prop).ok,true);
 const favorBeforeRemembrance=deltas.length; // Completion grants an annual reward, entering the circle does not.
