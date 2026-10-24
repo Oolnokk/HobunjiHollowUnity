@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/animal-baby-arrival.js', 'utf8'); // Full production module under test.
 const timers = []; // Simulated browser timers for asynchronous queue order and automatic reveal close.
 const lockState = { acquired: 0, released: 0 }; // Checks that game input focus is always restored.
+let controllerClaims = 0; // Checks explicit focus handoff instead of relying on a delayed DOM observer.
 const document = {
   activeElement: null,
   head: null,
@@ -46,6 +47,7 @@ document.activeElement = element('button');
 document.activeElement.isConnected = true;
 
 const window = {
+  ControllerUI: { focusPanel(root) { assert.equal(root.id, 'animalBabyArrivalOverlay'); controllerClaims++; return true; } }, // Simulates the universal controller navigator's explicit modal claim.
   CREATURE_DB: { puktuk: { label: 'Puktuk' } },
   CharacterActionLocks: {
     acquire() {
@@ -93,6 +95,7 @@ const form = root.children[0];
 const input = form.querySelector('input');
 assert.match(input.value, /^[A-Z][a-z]+$/, 'input is prefilled with a suggested name');
 assert.equal(document.activeElement, input, 'input receives keyboard focus');
+assert.equal(controllerClaims, 1, 'naming dialog explicitly takes controller focus');
 input.value = '  Pudding   ';
 form.listeners.submit({ preventDefault() {} });
 assert.equal(saved, 'Pudding', 'confirmed baby name is trimmed and saved');
@@ -115,4 +118,5 @@ assert(root.hidden, 'last incubation animation closes automatically');
 assert.equal(lockState.acquired, 2, 'incubation uses a fresh input lock');
 assert.equal(lockState.released, 2, 'automatic dismissal also releases the input lock');
 assert.equal(feature.debugSnapshot().queued.length, 0, 'no stale work remains in the modal queue');
+assert.equal(controllerClaims, 4, 'each queued screen claims controller focus independently');
 console.log('Animal baby arrival/naming/animation tests passed.');
