@@ -17,6 +17,66 @@
   const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
+  const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
+  const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
+
+  function squareToolIcon(source) {
+    const width = source.width; // Source dimensions bound the alpha scan.
+    const height = source.height; // Source dimensions bound the alpha scan.
+    const canvas = document.createElement('canvas'); // Reads the already loaded sprite without changing held/world art.
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d'); // Used only once for each cached sprite source.
+    context.drawImage(source, 0, 0);
+    const pixels = context.getImageData(0, 0, width, height).data; // Alpha bytes identify the visible frame.
+    let left = width, right = -1, top = height, bottom = -1; // Inclusive bounds of all nontransparent pixels.
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!pixels[(y * width + x) * 4 + 3]) continue;
+        left = Math.min(left, x); right = Math.max(right, x);
+        top = Math.min(top, y); bottom = Math.max(bottom, y);
+      }
+    }
+    if (right < left) throw new Error('Tool sprite contains no opaque pixels');
+    const side = right - left + 1; // Opaque width determines the square; tall sprites crop above its bottom edge.
+    const visibleHeight = Math.min(side, bottom - top + 1); // Short sprites receive transparent padding above.
+    const output = document.createElement('canvas'); // A small square limits retained thumbnail memory.
+    output.width = output.height = 128;
+    const outputContext = output.getContext('2d'); // Draws an undistorted crop anchored to the opaque bottom edge.
+    outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
+      0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
+    toolIconDebug.lastFrame = { left, top, right, bottom, side };
+    return output.toDataURL('image/png');
+  }
+
+  function renderToolIcon(parent, def) {
+    const source = deps.metalToolImgSrc(def); // Includes the authoritative metal, plating and verdigris finish.
+    const image = document.createElement('img'); // Preserves existing inventory sizing and accessibility.
+    image.className = 'ies-sprite'; image.alt = def.label;
+    image.crossOrigin = 'anonymous';
+    parent.appendChild(image);
+    if (!source) { image.replaceWith(document.createTextNode(def.icon || '🔧')); return; }
+    let pending = toolIconFrames.get(source); // Shares in-flight work across equipped and owned-tool cells.
+    if (!pending) {
+      pending = new Promise(resolve => {
+        const loader = new Image(); // Separate loader prevents thumbnail src updates from retriggering the scan.
+        loader.crossOrigin = 'anonymous';
+        loader.onload = () => {
+          try { const url = squareToolIcon(loader); toolIconDebug.ready++; resolve(url); }
+          catch (error) { toolIconDebug.failed++; window.__farmLog?.(`[inventory-icon] ${def.label}: ${error.message}`, 'warn'); resolve(source); }
+        };
+        loader.onerror = () => { toolIconDebug.failed++; resolve(null); };
+        loader.src = source;
+      });
+      toolIconFrames.set(source, pending);
+      if (toolIconFrames.size > 128) toolIconFrames.delete(toolIconFrames.keys().next().value);
+    }
+    pending.then(url => {
+      if (url) image.src = url;
+      else image.replaceWith(document.createTextNode(def.icon || '🔧'));
+    });
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     window.DevCompanion?.registerCheatPanel?.({
@@ -992,9 +1052,7 @@
       cell.tabIndex = 0;
       cell.setAttribute('data-key', slot); // Restores the same tool slot after its card rebuilds.
       if (def) {
-        const img = document.createElement('img');
-        img.src = deps.metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
-        cell.appendChild(img);
+        renderToolIcon(cell, def);
         const unBtn = document.createElement('button');
         unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unassign ' + def.label;
         unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
@@ -1032,9 +1090,7 @@
         cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
         cell.setAttribute('data-item-key', key);
-        const img = document.createElement('img');
-        img.src = deps.metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
-        cell.appendChild(img);
+        renderToolIcon(cell, def);
         const lbl = document.createElement('span');
         lbl.className = 'ies-label';
         lbl.textContent = def.label.split(' ')[0] + ' Lv' + deps.toolMasteryLevel(key);
@@ -1142,6 +1198,8 @@
 
   window.EquipmentPanel = {
     init,
+    squareToolIcon,
+    getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
     setEquipmentSlot,
     equipItem,
     unequipItem,

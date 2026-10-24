@@ -22,7 +22,17 @@
     '🩶': '#9e9a96',
     '🤍': '#f4eee8',
   });
-  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕|💰)/gu; // Used to split visible runtime text into text and icon fragments.
+  const ITEM_PLACEHOLDERS = Object.freeze({ // Older emoji and CSS tint keep newer item glyphs readable on mobile fonts.
+    '🪵': ['🌳', 'sepia(1) saturate(1.5)'], '🪨': ['🔘', 'grayscale(1)'],
+    '🟫': ['👝', 'sepia(1)'], '🪙': ['💰', 'sepia(1)'],
+    '🫙': ['🍯', 'grayscale(.5)'], '🫗': ['💧', 'sepia(1) saturate(2)'],
+    '🪣': ['🛢️', 'grayscale(1)'], '🪑': ['💺', 'sepia(1)'],
+    '🪓': ['🔨', 'none'], '🪃': ['🌙', 'sepia(1)'],
+    '🪺': ['🥚', 'sepia(.3)'], '🪿': ['🐦', 'grayscale(1) brightness(1.4)'],
+    '🫏': ['🐴', 'grayscale(1)'], '🫐': ['🍇', 'hue-rotate(25deg)'],
+    '🪶': ['🍂', 'grayscale(.6)'], '🪜': ['🔧', 'sepia(1)'], '🪧': ['📋', 'sepia(1)'],
+  });
+  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕|💰|🪵|🪨|🟫|🪙|🫙|🫗|🪣|🪑|🪓|🪃|🪺|🪿|🫏|🫐|🪶|🪜|🪧)/gu; // Used to split visible runtime text into text and icon fragments.
   const TEXT_SKIP_SELECTOR = 'script,style,textarea,input,select,option,[data-generic-hud-icon]'; // Used to keep icon substitution out of editable/source-like DOM.
   const X_CONTROL_HINT = /(close|cancel|delete|remove|unequip|unassign|dismiss|clear)/i; // Used to distinguish a semantic × close/remove control from multiplication text.
   const RELATIONSHIPS_TAB_SELECTOR = '[data-mpanel="relationships"]'; // Used to make the Relationships tab a heart-only affordance.
@@ -100,6 +110,15 @@
   }
 
   function iconElement(kind, token = '') {
+    if (ITEM_PLACEHOLDERS[token]) {
+      const placeholder = document.createElement('span'); // Isolated child allows tinting without changing item names or counts.
+      placeholder.className = 'generic-hud-icon generic-item-placeholder';
+      placeholder.dataset.genericHudIcon = 'item';
+      placeholder.textContent = ITEM_PLACEHOLDERS[token][0];
+      placeholder.style.filter = ITEM_PLACEHOLDERS[token][1];
+      placeholder.setAttribute('aria-hidden', 'true');
+      return placeholder;
+    }
     const icon = kind === 'heart' ? document.createElement('span') : document.createElement('img'); // Used as the concrete PNG-backed replacement node.
     icon.className = `generic-hud-icon generic-hud-icon-${kind}`;
     icon.dataset.genericHudIcon = kind;
@@ -116,6 +135,7 @@
   }
 
   function tokenKind(token) {
+    if (ITEM_PLACEHOLDERS[token]) return 'item';
     if (Object.prototype.hasOwnProperty.call(HEART_COLORS, token)) return 'heart';
     if (token === '❗') return 'exclamation';
     if (token === '❓') return 'question';

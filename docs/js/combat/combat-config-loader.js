@@ -115,7 +115,7 @@
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20261001cf37282d', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20261013h9b7e0bc', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20261020h09030ac', () => !!window.NpcRapport?.eventDriven],
-    ['js/generic-hud-icons.js?v=20261016had44f5b', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
+    ['js/generic-hud-icons.js?v=20261024h921f4f3', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
     ['js/hud-x-control-polish.js?v=20260915a', () => Number(window.HudXControlPolish?.version) >= 1],
     ['js/favor-popup-points-bridge.js?v=20261007h99b53f8', () => Number(window.FavorPopupPointsBridge?.version) >= 2],
     ['js/sleep-passage-action-bridge.js?v=20261017hea36e23', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 3],
