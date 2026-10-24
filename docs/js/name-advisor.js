@@ -117,6 +117,14 @@
   function expandTokens(tokens, validOnsets) {
     return tokens.flatMap(t => t.length > 1 && !validOnsets.has(t) ? [...t] : [t]);
   }
+  function collapseConsonantCluster(cluster, allowedSingles, mappings = {}) {
+    const raw = cluster.join('');
+    if (mappings[raw] && allowedSingles.includes(mappings[raw])) return mappings[raw];
+    const legal = [...raw].filter(char => allowedSingles.includes(char));
+    if (legal.length) return legal.find(char => ['r','l','m','n','w','y'].includes(char)) || legal[0];
+    return [...raw].find(char => ['r','l','m','n','w','y'].includes(char)) || [...raw][0] || '';
+  }
+
   function makeBlock(text) { return { text: String(text).toLowerCase() }; }
 
   function uniqueOptions(opts) {
@@ -189,46 +197,34 @@
     v = v || 0;
     const allowed = getSpecies().kenkari.onsets.filter(Boolean);
     const allowedVowels = ['a', 'i', 'u', 'o', 'e'];
-    // keep source digraphs (ch, th, gh, ng, ph) intact so mapKenkariConsonant can map them as units
     const expandSet = new Set([...allowed, 'ch', 'th', 'gh', 'ng', 'ph']);
+    const clusterSingles = ['b','g','h','k','m','n','p','r','t'];
+    const clusterMap = { bl:'b', br:'b', cl:'k', cr:'k', dr:'t', fl:'p', fr:'p', gl:'g', gr:'g', pl:'p', pr:'p', sl:'h', sm:'m', sn:'n', sp:'p', st:'t', str:'t', sw:'h', tr:'t', tw:'t', sk:'k', scr:'k', spr:'p', spl:'p', skw:'k' };
     const tokens = expandTokens(tokenizeIdeaSounds(text), expandSet);
     const ideaVows = ideaVowels(text);
     const blocks = [];
     let pending = [];
-    // before any vowel: use input's first vowel; after a vowel: use last seen
     let lastVowel = ideaVows.length > 0 ? nearestVowel(ideaVows[0], allowedVowels[0]) : 'i';
     const defaults = ['h','k','n','m'];
-
     function mapC(token) { return mapKenkariConsonant(token, v + blocks.length + pending.length); }
+    function flushCluster(vowel) {
+      const cluster = pending.splice(0);
+      const consonant = cluster.length === 1 ? mapC(cluster[0]) : collapseConsonantCluster(cluster, clusterSingles, clusterMap);
+      blocks.push(makeBlock(consonant + vowel));
+    }
     function nearV(raw) { return nearestVowel(raw, allowedVowels[0]); }
-
     for (const token of tokens) {
       if (/^[aeiouy]$/.test(token)) {
         const mappedV = nearV(token);
-        if (pending.length) {
-          // mid-word cluster: insert last-seen vowel between stacked consonants
-          while (pending.length > 1) blocks.push(makeBlock(mapC(pending.shift()) + lastVowel));
-          blocks.push(makeBlock(mapC(pending.shift()) + mappedV));
-        } else if (blocks.length === 0 && v % 3 === 1) {
-          blocks.push(makeBlock(mappedV));
-        } else if (blocks.length > 0) {
-          blocks.push(makeBlock("'" + mappedV));
-        } else {
-          blocks.push(makeBlock(defaults[v % 4] + mappedV));
-        }
-        lastVowel = mappedV; // update AFTER resolving cluster so epenthesis uses prior vowel
-      } else {
-        pending.push(token);
-      }
+        if (pending.length) flushCluster(mappedV);
+        else if (blocks.length === 0 && v % 3 === 1) blocks.push(makeBlock(mappedV));
+        else if (blocks.length > 0) blocks.push(makeBlock("'" + mappedV));
+        else blocks.push(makeBlock(defaults[v % 4] + mappedV));
+        lastVowel = mappedV;
+      } else pending.push(token);
     }
-    // trailing consonants: mid-cluster ones get lastVowel, final one gets 'u'
-    while (pending.length > 1) blocks.push(makeBlock(mapC(pending.shift()) + lastVowel));
-    if (pending.length === 1) blocks.push(makeBlock(mapC(pending.shift()) + 'u'));
-
-    if (!blocks.length) {
-      blocks.push(makeBlock(defaults[v % 4] + (ideaVows[0] ? nearV(ideaVows[0]) : 'a')));
-    }
-    // apostrophe before any vowel-initial block after the first
+    if (pending.length) flushCluster('u');
+    if (!blocks.length) blocks.push(makeBlock(defaults[v % 4] + (ideaVows[0] ? nearV(ideaVows[0]) : 'a')));
     return blocks.map((b, i) => (i > 0 && /^[aeiou]/.test(b.text)) ? makeBlock("'" + b.text) : b);
   }
 
@@ -281,6 +277,8 @@
     const births = (ctx && ctx.births) || {};
     const allowed = getSpecies().mao.onsets.filter(Boolean);
     const expandSet = new Set([...allowed, 'ch', 'th', 'gh', 'ng', 'ph']);
+    const clusterSingles = allowed.filter(onset => onset.length === 1);
+    const clusterMap = { bl:'b', br:'b', cl:'k', cr:'k', dr:'d', fl:'f', fr:'f', gl:'g', gr:'g', pl:'p', pr:'p', sl:'s', sm:'m', sn:'n', sp:'s', st:'t', str:'t', sw:'s', tr:'t', tw:'t', sk:'s', scr:'k', spr:'p', spl:'s', skw:'k' };
     const tokens = expandTokens(tokenizeIdeaSounds(text), expandSet);
     const ideaVows = ideaVowels(text);
     const blocks = [];
@@ -288,6 +286,7 @@
     let vi = 0;
     // first/last-vowel epenthesis: before any vowel seen use first input vowel
     let lastVowel = ideaVows.length > 0 ? nearestVowel(ideaVows[0], 'a') : 'a';
+    function collapseOnset(cluster) { return collapseConsonantCluster(cluster, clusterSingles, clusterMap); }
     function addBlock(onset, vowel, coda) {
       if (slot === 'first' && gender === 'female' && !married && blocks.length === 0) onset = '';
       if (slot === 'surname' && gender === 'male' && blocks.length === 0) onset = maoFirstOnset(births) || onset;
@@ -301,8 +300,8 @@
             const mc = new Set(getSpecies().mao.codas.filter(Boolean));
             while (pending.length > 1 && mc.has(pending[0])) blocks[blocks.length - 1].text += pending.shift();
           }
-          while (pending.length > 1) { addBlock(mapMaoOnset(pending.shift(), v + blocks.length), lastVowel); vi++; }
-          addBlock(mapMaoOnset(pending.shift(), v + blocks.length), vow);
+          if (pending.length > 1) addBlock(collapseOnset(pending.splice(0)), vow);
+          else addBlock(mapMaoOnset(pending.shift(), v + blocks.length), vow);
         } else if (blocks.length === 0) {
           addBlock(['n','m','k','t','p','w'][0], vow);
         }
@@ -312,6 +311,10 @@
       } else pending.push(token);
     }
     const validCodas = new Set(getSpecies().mao.codas.filter(Boolean));
+    if (pending.length > 1) {
+      addBlock(collapseOnset(pending.splice(0)), 'u');
+      vi++;
+    }
     while (pending.length) {
       const c = pending.shift();
       const isLast = pending.length === 0;
@@ -420,23 +423,92 @@
 
   function makeSlagothimIdeaOptions(text, slot, ctx) {
     const gender = (ctx && ctx.gender) || 'male';
+    const species = getSpecies().slagothim;
     if (slot === 'surname') {
-      const q = normalizeIdea(text).replace(/'/g, '');
-      const locs = getSpecies().slagothim.locations
-        .map(loc => ({ loc, score: scoreEnghName(loc.toLowerCase().replace(/[^a-z]/g, ''), q) }))
-        .filter(x => x.score > 0).sort((a, b) => b.score - a.score);
-      const list = (locs.length ? locs : getSpecies().slagothim.locations.map(loc => ({ loc }))).slice(0, 8);
-      return list.map(x => ({ label: `${x.loc}-Doro`, type: 'slagPlace', place: x.loc }));
+      const query = normalizeIdea(text).replace(/'/g, '');
+      const matches = species.locations
+        .map(loc => ({ loc, score: scoreEnghName(loc.toLowerCase().replace(/[^a-z]/g, ''), query) }))
+        .filter(entry => entry.score > 0)
+        .sort((a, b) => b.score - a.score);
+      const list = (matches.length ? matches : species.locations.map(loc => ({ loc }))).slice(0, 8);
+      return list.map(entry => ({ label: `${entry.loc}-Doro`, type: 'slagPlace', place: entry.loc }));
     }
-    const suffix = gender === 'female' ? getSpecies().slagothim.femaleSuffix : getSpecies().slagothim.maleSuffix;
-    const clean = expandedIdeaText(text).replace(/'/g, '');
-    const repaired = clean.replace(/[bcdfghjklmnpqrstvwxyz]{4,}/g, m => m.slice(0, 2) + 'a' + m.slice(2));
-    const base = repaired.replace(/^(sl)+/, '').replace(new RegExp(`${suffix}a?$`), '');
-    const starts = base.replace(/^[bcdfghjklmnpqrstvwxyz]+/, '');
-    const variants = [base, 'sl' + starts, base + suffix, 'sl' + starts + suffix];
-    return uniqueOptions(variants.map(v => ({ label: tc(v), type: 'slagGiven', value: v.toLowerCase() })));
-  }
 
+    const rules = species;
+    const suffix = gender === 'female' ? rules.femaleSuffix : rules.maleSuffix;
+    const vowels = [...rules.vowels];
+    const firstPool = rules.firstConsonants;
+    const secondPool = [...rules.secondConsonants, 'mn'];
+    const allowedLetters = new Set([...vowels, ...firstPool.join(''), ...rules.secondConsonants.join(''), 'm']);
+    const singleConsonants = [...new Set([...firstPool.filter(value => value.length === 1), ...rules.secondConsonants.filter(value => value.length === 1), 'm'])];
+    const onsetOptions = [...firstPool].sort((a, b) => b.length - a.length);
+    const replacement = { c:'k', f:'p', j:'g', q:'k', v:'b', w:'b', x:'k', y:'i', z:'d' };
+    const collapse = cluster => {
+      const map = {
+        bl:'b', br:'b', cl:'k', cr:'k', dr:'t', fl:'p', fr:'b', gl:'g', gr:'g',
+        pl:'p', pr:'b', sl:'s', sm:'m', sn:'n', sp:'p', st:'t', str:'t',
+        sw:'s', tr:'t', tw:'t', sk:'k', scr:'g', spr:'p', spl:'s', skw:'k',
+      };
+      if (map[cluster] && singleConsonants.includes(map[cluster])) return map[cluster];
+      for (const char of cluster) {
+        const mapped = replacement[char] || char;
+        if (singleConsonants.includes(mapped)) return mapped;
+      }
+      return singleConsonants[0] || '';
+    };
+    const repairLetters = raw => [...raw].map(char => {
+      if (allowedLetters.has(char)) return char;
+      return replacement[char] || '';
+    }).join('');
+    const repairClusters = raw => {
+      const chars = [...repairLetters(raw)];
+      let output = '';
+      let index = 0;
+      let hasVowel = false;
+      while (index < chars.length) {
+        if (vowels.includes(chars[index])) {
+          output += chars[index++];
+          hasVowel = true;
+          continue;
+        }
+        let end = index;
+        while (end < chars.length && !vowels.includes(chars[end])) end++;
+        const run = chars.slice(index, end).join('');
+        if (!hasVowel && firstPool.includes(run)) output += run;
+        else if (secondPool.includes(run)) output += run;
+        else output += collapse(run);
+        index = end;
+      }
+      return output;
+    };
+    const clean = expandedIdeaText(text).replace(/'/g, '');
+    if (!clean) return [];
+    const source = repairClusters(clean);
+    const sourceWithoutEnding = source.endsWith(suffix) ? source.slice(0, -suffix.length) : source;
+    // Replacing the source's final letters with the culture's suffix preserves spelling length when possible.
+    const sameLength = sourceWithoutEnding.slice(0, Math.max(0, sourceWithoutEnding.length - suffix.length)) + suffix;
+    const alternatives = [
+      sameLength,
+      sourceWithoutEnding + suffix,
+      'sl' + sourceWithoutEnding.replace(/^[bcdfghjklmnpqrstvwxyz]+/, '') + suffix,
+    ];
+    const isValid = value => {
+      const lower = String(value || '').toLowerCase();
+      if (!lower.endsWith(suffix)) return false;
+      if (![...lower].every(char => allowedLetters.has(char))) return false;
+      const onset = onsetOptions.find(candidate => lower.startsWith(candidate));
+      if (!onset) return false;
+      const stem = lower.slice(onset.length, -suffix.length);
+      if (!stem || !vowels.includes(stem[0])) return false;
+      const runs = stem.slice(1).match(/[bcdfghjklmnpqrstvwxyz]+/g) || [];
+      return runs.every(run => secondPool.includes(run));
+    };
+    return uniqueOptions(alternatives.filter(isValid).map(value => ({
+      label: tc(value),
+      type: 'slagGiven',
+      value: value.toLowerCase(),
+    })));
+  }
   // ── Main entry ────────────────────────────────────────────────────────────
 
   function makeIdeaOptions(sp, slot, text, ctx) {
