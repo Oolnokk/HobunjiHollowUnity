@@ -328,7 +328,7 @@
   const DISPLAY_LABELS = Object.freeze({ puktuk: 'Puktuk', 'voorg-ass': 'Vorg-Ass' }); // Used only when the picker needs an option appended before its ordinary population pass.
   const EXTENSION_SCRIPTS = Object.freeze([ // Loaded in dependency order so gameplay genetics can delegate Voorg-Ass registration to its canonical owner.
     Object.freeze({ name: 'voorg-ass-registration', path: '../../js/voorg-ass-registration.js?v=20261015h47a3826' }),
-    Object.freeze({ name: 'creature-genetics', path: '../../js/creature-genetics.js?v=20261002h5fdf0c4' }),
+    Object.freeze({ name: 'creature-genetics', path: '../../js/creature-genetics.js?v=20261023hade7571' }),
   ]);
   const STATUS_KEY = 'animationAuthorCreatureRegistrySync'; // Used by the mobile-safe debug object exposed below.
   const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {}; // Stores picker diagnostics beside the existing Rig Coordinates diagnostics.

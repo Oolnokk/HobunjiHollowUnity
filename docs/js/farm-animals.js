@@ -936,6 +936,7 @@
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
+    if (window.SCRATCHBONES_CONFIG?.game?.livestock?.housing?.[rec.kind]) return { ok: false, message: `A ${window.CreatureGenetics.defaultLivestockName(rec.kind)} cannot live in a barn — it needs its own Honeyfuzzle House.` };
     if (rec.barnId === barnId) return { ok: true, message: `${rec.name} is already housed there.` };
     const tier = deps.getBarnTiers()[barn.tier];
     const occupants = list.filter(l => l.barnId === barnId).length;

@@ -1735,6 +1735,7 @@
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
+    window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;

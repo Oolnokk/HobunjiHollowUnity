@@ -23,7 +23,7 @@
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261022ratio1' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
-    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261017h73d9ab4' },
+    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261023hc437da7' },
     { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
     { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20260916uifix1' },
   ];

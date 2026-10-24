@@ -25,6 +25,7 @@ context.globalThis = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'), context);
 
+(async () => {
 const width = 2; // Tiny synthetic idle-frame width for the alpha-bound scan.
 const height = 4; // Tiny synthetic idle-frame height for the alpha-bound scan.
 const pixels = new Uint8ClampedArray(width * height * 4); // RGBA buffer with controlled solid/fringe rows.
@@ -42,17 +43,32 @@ assert.deepEqual(
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Confirms the shared gameplay call sites use the intended tuning.
 assert.match(gameSource, /const MOVE_BOB_WALK_AMP = 0\.0075;/, 'walking bob is reduced by half');
 assert.match(gameSource, /const MOVE_BOB_RUN_AMP\s+= 0\.015;/, 'full-effort bob is reduced by half');
-assert.match(gameSource, /const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254;/, 'animal ground scan selects only alpha-255 pixels');
-assert.match(
-  gameSource,
-  /scanOpaqueVerticalBoundsOfImage\?\.\(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD\)/,
-  'the cached idle-frame grounding scan uses the fully opaque threshold',
-);
+// The grounding scan/offset live in js/creature-ground-anchor.js: run them for real against the
+// synthetic image above (fringe row ignored, so the opaque bottom is row 2 of 4) and check the cache.
+{
+  const anchorContext = { console, window: null, Image: class { set src(value) { this.requested = value; queueMicrotask(() => { Object.assign(this, image); this.onload(); }); } } };
+  anchorContext.window = anchorContext;
+  anchorContext.PNGPlaneAvatar = context.PNGPlaneAvatar; // The real scan helper.
+  vm.createContext(anchorContext);
+  vm.runInContext(fs.readFileSync('docs/js/creature-ground-anchor.js', 'utf8'), anchorContext);
+  const anchor = anchorContext.CreatureGroundAnchor;
+  const ratios = [];
+  anchor.resolveRatio('a.png', ratio => ratios.push(ratio));
+  anchor.resolveRatio('a.png', ratio => ratios.push(ratio)); // A second caller waits on the same scan.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(ratios, [3 / height, 3 / height], 'animal ground scan selects only alpha-255 pixels and shares one load per sprite');
+  anchor.resolveRatio('a.png', ratio => ratios.push(ratio));
+  assert.equal(ratios.length, 3, 'a resolved sprite answers synchronously from the cache');
+  assert.equal(anchor.planeOffset(2, 1), -0, 'no padding means no offset');
+  assert.equal(anchor.planeOffset(2, 0.75), -0.5, 'padding shifts the plane down by its share of the model height');
+}
+assert.match(gameSource, /const resolveCreatureGroundAnchorRatio = window\.CreatureGroundAnchor\.resolveRatio;/, 'game.js delegates the grounding scan to the extracted module');
 
 const frameSwapStart = gameSource.indexOf('function setCreatureFrame('); // Isolates texture swapping from the following grounding code.
-const frameSwapEnd = gameSource.indexOf('// spriteUrl -> resolved bottom-opacity ratio', frameSwapStart); // Ends at the next helper section.
+const frameSwapEnd = gameSource.indexOf('// Ground-anchor scan/offset now live in', frameSwapStart); // Ends at the next helper section.
 const frameSwapSource = gameSource.slice(frameSwapStart, frameSwapEnd); // Verifies animation frames preserve the plane offset.
 assert(frameSwapStart >= 0 && frameSwapEnd > frameSwapStart, 'creature frame-swap helper is present');
 assert.doesNotMatch(frameSwapSource, /position\.y/, 'changing idle/run textures does not reset the idle-derived Y offset');
 
 console.log('character bob and creature grounding checks passed');
+})();

@@ -336,6 +336,8 @@
     return CREATURE_SIZE_CLASSES.includes(value) ? value : 'medium';
   }
   function creatureSizeClass(kind, genotype) {
+    const fixedSize = deps.CREATURE_DB[kind]?.fixedSizeClass; // Honeyfuzzle swarms are always Medium: no Size gene, no mutation, no other role.
+    if (fixedSize) return normalizeCreatureSizeClass(fixedSize);
     const fallbackSize = deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'; // Used for legacy/no-genotype creatures.
     return normalizeCreatureSizeClass(genotype?.sizeClass || fallbackSize);
   }
@@ -457,7 +459,7 @@
       genotype[id].carrier = false;
       if (index < rank && _patternPalette(kind, id).length) genotype[id].color = rareColor(_patternPalette(kind, id));
     }
-    if (rank >= 3) genotype.sizeClass = mutateSizeClassStep(genotype.sizeClass); // Top ordinary animal rewards also have an unusual inherited size.
+    if (rank >= 3 && !deps.CREATURE_DB[kind]?.fixedSizeClass) genotype.sizeClass = mutateSizeClassStep(genotype.sizeClass); // Top ordinary animal rewards also have an unusual inherited size.
     return genotype;
   }
   function stableEntryRole(entry) {
@@ -476,6 +478,7 @@
   // a pre-Size save), with the same flat LIVESTOCK_MUTATION_CHANCE roll
   // crossOffspring's coat genes use to instead step it by one.
   function inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance = LIVESTOCK_MUTATION_CHANCE) {
+    if (deps.CREATURE_DB[kind]?.fixedSizeClass) return normalizeCreatureSizeClass(deps.CREATURE_DB[kind].fixedSizeClass); // Fixed-size species never mutate.
     const fallback = deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium';
     const parentSize = Math.random() < 0.5
       ? normalizeCreatureSizeClass(genotypeA?.sizeClass || fallback)
