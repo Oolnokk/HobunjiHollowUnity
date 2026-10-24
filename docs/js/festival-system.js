@@ -5,6 +5,8 @@
   let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0 }, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
   let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
+  let remembrance = null; // Active Tzizkhanash observance; completing twelve played seconds earns an annual reward.
+  let musicParticipation = null; // Active local music session; only actual playing earns the once-yearly music reward.
   let heldBowl = null; // Temporary ten-portion festival bowl: never added to real inventory or character saves.
   let heldCup = null; // Temporary keg cup ({swigs,capacity}): like the bowl it is never in the inventory, cannot be gifted, and refills free from the keg.
   let socialParticipationS = 0; // Counts played wheel dance/music seconds, independent of marked festival activity regions.
@@ -384,10 +386,15 @@
     return activityProps().filter(atProp).sort((a, b) => distance(a) - distance(b))[0] || null;
   }
   function actionButton() {
-    if (dance||pendingDance) return { icon: '■', label: pendingDance?'Cancel invitation':'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
+    if (dance||pendingDance||remembrance) return { icon: '■', label: remembrance?'Stop remembering':pendingDance?'Cancel invitation':'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
     if (festival()?.id === 'gorkunash') return null; // Schedules and ordinary objects provide the event; there is no event/activity input.
     const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
-    return prop ? { icon: festival().icon, label: prop.activity.label || window.FestivalCalendar.activityLabels[prop.activity.type], action: 'festival_activity', allowed: true, style: 'primary' } : null;
+    if (prop?.festivalLocale && ['dance','story','duel','music','remembrance'].includes(prop.activity.type)
+        && (!festivalHours() || (['story','duel'].includes(prop.activity.type) && Number(window.CalendarSystem?.getHour?.()) >= 22))) return null;
+    return prop ? { icon: festival().icon, label: prop.festivalLocale && ['dance','story','duel','music','remembrance'].includes(prop.activity.type)
+      ? 'Join ' + (prop.activity.label || window.FestivalCalendar.activityLabels[prop.activity.type])
+      : prop.activity.label || window.FestivalCalendar.activityLabels[prop.activity.type],
+      action: 'festival_activity', allowed: true, style: 'primary' } : null;
   }
   function npcRewardAction(walker) {
     if (!walker?.rec?.id || deps?.isBlocked?.()) return null;
@@ -461,8 +468,9 @@
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
     state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0}, potluckContests:{} };
-    heldBowl=null; seatedMeal=null; feastCache=null;
+    heldBowl=null; seatedMeal=null; feastCache=null; remembrance=null; musicParticipation=null;
     window.NpcSharedMeals?.clear?.();
+    window.FestivalLocaleActivities?.clear?.();
     if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.max(0,points);
     if(Number.isFinite(saved?.funDay))state.funDay=saved.funDay;
     if(Number.isFinite(saved?.fullness?.expiresHour)&&Number.isFinite(saved?.fullness?.stacks))state.fullness={stacks:Math.max(0,Math.min(10,saved.fullness.stacks)),expiresHour:saved.fullness.expiresHour};
@@ -550,6 +558,10 @@
       }
     }
     if (festival()?.id === 'gorkunash' && window.NpcSharedMeals) return window.NpcSharedMeals.targetFor(rec); // Cached multi-step meals still use ordinary scheduler/pathfinding targets.
+    if (festival()?.id !== 'gorkunash') {
+      const localeTarget = window.FestivalLocaleActivities?.targetFor?.(rec); // Cached, role-specific festival stations instead of generic standing still.
+      if (localeTarget) return localeTarget;
+    }
     const stations=layout()?.npcStations||[], index=residents().findIndex(npc=>npc.id===rec.id);
     if(index<0)return release();
     const hour=Number(window.CalendarSystem.getHour())||0, shift=hour>=15?hour-15:hour+9;
@@ -598,6 +610,7 @@
     return {area:walker?.area||'town',c:x-.5,r:z-.5,pose:'stand',activity:festival().name};
   }
   function cancelDance() {
+    remembrance = null; // The existing Stop activity input also cancels an unfinished observance.
     clearPendingDance();
     if(dance?.targetNpcId)window.FestivalWheelDanceRuntime?.stop?.('festival-ended');
     else if(dance)window.SocialActionWheel?.stopDance?.('festival-ended');
@@ -628,6 +641,7 @@
     registerCupProvider();
     watchStage();
     window.NpcSharedMeals?.update?.(); // Existing low-frequency gathering tick owns meal decisions; no extra frame loop.
+    window.FestivalLocaleActivities?.update?.(); // Same 200ms tick drives other festivals; schedule reads stay cached.
     const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
     if (festival()?.id === 'gorkunash' && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {
       socialParticipationS += elapsed;
@@ -637,6 +651,31 @@
         for (const walker of deps.getWalkers()) if (walker.area === 'town' && !walker.rec?.dead && Math.hypot(walker.root.position.x-position.c, walker.root.position.z-position.r) <= 3) addFestivalFun(walker.rec.id, seconds * 15);
       }
     } else socialParticipationS = 0;
+    if (remembrance) {
+      const prop = activityProps().find(p=>p.id===remembrance.propId);
+      if (eventKey()!==remembrance.event || !festivalHours() || !atProp(prop) || deps?.isBlocked?.()) {
+        remembrance=null; // Leaving the ceremony or entering combat cancels an unfinished observance.
+      } else if (!document.hidden && !deps?.socialPaused?.()) {
+        remembrance.elapsed+=elapsed;
+        if (remembrance.elapsed>=12) {
+          remembrance=null;
+          if (!claimed('remembrance')) { mark('remembrance'); allFavor(2,'remembrance'); commit('Remembrance observed with the townsfolk: +2 Favor once this Tzizkhanash.'); }
+          else deps.toast?.('You shared a moment of remembrance.',true);
+        }
+      }
+    }
+    if (musicParticipation) {
+      const prop=activityProps().find(p=>p.id===musicParticipation.propId);
+      if (eventKey()!==musicParticipation.event || !festivalHours() || !atProp(prop)
+          || !window.MusicMinigame?.state?.active) musicParticipation=null;
+      else if (!document.hidden && !deps?.socialPaused?.() && window.MusicMinigame.state.announcedPlaying) {
+        musicParticipation.elapsed+=elapsed;
+        if (musicParticipation.elapsed>=20) {
+          musicParticipation=null;
+          if (!claimed('music')) { mark('music'); allFavor(2,'festival_music'); commit('You played along with the festival musicians: +2 Favor with the townsfolk.'); }
+        }
+      }
+    }
     if (deps && now - lastCostumeTick >= 2000) {
       lastCostumeTick = now;
       for (const walker of deps.getWalkers()) {
@@ -684,6 +723,7 @@
       claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
       dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
+      remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
       latestChange:'Shops pause only during active festival hours and resume their normal schedules afterward.' };
@@ -725,6 +765,12 @@
       drunkFraction: id => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(id),
       likesDancing: id => (window.SCRATCHBONES_CONFIG?.game?.romance?.likes?.[id] || []).includes('dancing'),
       playerSpouseId: () => window.RomanceSystem?.getSpouse?.()?.npcId || null,
+    });
+    window.FestivalLocaleActivities?.init?.({
+      festival, active:()=>festivalHours()&&!deps.isFestivalSuspended?.(),
+      getLayout:layout, getWalkers:deps.getWalkers, residents,
+      minutes:()=>worldHour()*60, paused:deps.socialPaused,
+      resolve:id=>window.NpcScheduling?.resolveNpcStationTarget?.(id),
     });
     window.NpcSharedMeals?.init?.({
       enabled: () => festival()?.id === 'gorkunash' && festivalHours() && !deps.isFestivalSuspended?.(),
@@ -811,7 +857,12 @@
     window.CookingSystem?.registerExternalFoodProvider?.('gorkunash-feast', festivalFoodStacks);
   }
   registerActivity('welcome', () => ({ ok: true }));
-  registerActivity('remembrance', () => ({ ok: true }));
+  registerActivity('remembrance', (payload, prop) => {
+    if (!festivalHours() || festival()?.id!=='tzizkhanash') return fail('The remembrance gathering is not underway.');
+    if (remembrance || dance || pendingDance || window.SocialActionWheel?.isDancing?.()) return fail('Finish your current activity before joining the remembrance.');
+    remembrance={event:eventKey(),propId:prop.id,elapsed:0}; // Timer advances only during unpaused play inside this locale.
+    return commit('You join the remembrance. Stay with the mourners for twelve seconds to complete the observance.');
+  });
   registerActivity('potluck', payload => {
     if(claimed('potluck'))return fail('You have already contributed a meal to this Gorkunash.');
     if(!consumeChoice('potluck',payload))return fail('Choose a cooked meal and a quality you still have.');
@@ -874,23 +925,39 @@
     mark('mask');
     return commit('Your silly animal mask is in your clothing inventory. Equip it from the item panel.');
   });
-  registerActivity('story', () => {
+  registerActivity('story', (payload, prop) => {
+    if (prop.festivalLocale && (!festivalHours() || Number(window.CalendarSystem?.getHour?.()) >= 22)) return fail('The storyteller has finished for today.');
     const walker = deps.getWalkers().find(w => w.rec?.id === 'father_hunundi_hodu' && w.area === 'town');
     if (!walker) return fail('Father Hunundi tells the story here between 10:00 and 22:00.');
     window.FestivalUI.close();
-    return deps.tellStory(walker, STORY);
+    const started=deps.tellStory(walker, STORY);
+    if (started && !claimed('story')) { // Reward attending Hunundi, using the same yearly-claim ledger as other activities.
+      mark('story');
+      giveFavor('father_hunundi_hodu',2,'story');
+      deps.save?.();
+    }
+    return started;
   });
   registerActivity('dance', (payload, prop) => {
-    if (dance) return fail('You are already dancing.');
+    if (prop.festivalLocale && !festivalHours()) return fail('The dance gathering has not begun.');
+    if (dance || remembrance) return fail('Finish your current activity first.');
     if (!window.SocialActionWheel?.startDance?.('gentle-twirl', 'tpose-jiggle')) return fail('The dance could not start.');
     dance = { propId: prop.id, event: eventKey(), elapsed: 0, claimKey: 'dance' };
     window.FestivalUI.close();
     deps.toast('Dance inside the marked court for 20 seconds. Leaving cancels; the Favor reward is once per festival.', true);
     return { ok: true };
   });
-  registerActivity('music', () => { window.FestivalUI.close(); window.MusicMinigame?.beginPlayerSession(); return { ok: true }; });
+  registerActivity('music', (payload, prop) => {
+    if (!festivalHours()) return fail('The music gathering is not underway.');
+    window.FestivalUI.close();
+    window.MusicMinigame?.beginPlayerSession();
+    if (!window.MusicMinigame?.state?.active) return fail('Equip a Kurraya before joining the musicians.');
+    musicParticipation={event:eventKey(),propId:prop.id,elapsed:0}; // Count active time after the player actually sounds a note.
+    return {ok:true};
+  });
   registerActivity('liquor', () => takeOrRefillCup()); // The festival keg: a free temporary cup, not a bottle for the bag.
   registerActivity('duel', (payload, prop) => {
+    if (prop.festivalLocale && (!festivalHours() || Number(window.CalendarSystem?.getHour?.()) >= 22)) return fail('The sparring exhibition is over for today.');
     const walker = deps.getWalkers().find(w => w.rec?.id === 'spearhead_unumanuk' && w.area === 'town');
     if (!walker) return fail('Spearhead supervises the friendly duels here between 10:00 and 22:00.');
     if (window.CombatTutorial?.active()) return fail('Finish your current practice first.');

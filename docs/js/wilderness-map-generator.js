@@ -149,6 +149,11 @@
       boundaryMode: 'legacyFullRing',
       boundaryModeLabel: 'Legacy full boundary cliff ring',
       boundaryCliffBoost: 0,
+      archipelagoEnabled: false, // Opt-in island chain; other zones retain their exact old generator.
+      islandCount: 11, islandSize: 11.5, islandSizeVariation: 0.52,
+      islandHeight: 6, islandSteepness: 1.1, islandIrregularity: 0.72,
+      islandCoastDetail: 0.65, islandSpacing: 1.05,
+      islandClustering: 0.65, islandSatellites: 15,
       stepCurve: 'northernCliffs',
       stepCurveLabel: 'Northern Cliffs',
       plateaus: 76,
@@ -364,6 +369,7 @@
       preselectedEntrySide: null,
       boundaryHeightScan: null,
       distantBoundaryLandscapes: [],
+      archipelago: null,
       width: settings.width,
       height: settings.height,
       sourceWidth: settings.width,
@@ -568,6 +574,45 @@
       return { x, y };
     }
     return null;
+  }
+
+  // Eastern Mire's water-and-islands layout is shared by the browser Lab
+  // and the live Tothal Shift; no cosmetic-only island rendering shortcut.
+  function archipelagoGeneratorApi() {
+    if (typeof require === 'function') {
+      try { return require('./wilderness-archipelago.js'); } catch (_) {}
+    }
+    if (typeof window !== 'undefined') return window.WildernessArchipelago;
+    if (typeof globalThis !== 'undefined') return globalThis.WildernessArchipelago;
+    return null;
+  }
+
+  function generateArchipelagoTerrain() {
+    const generator = archipelagoGeneratorApi();
+    if (!generator?.generate) throw new Error('WildernessArchipelago was not loaded before wilderness-map-generator.js');
+    const result = generator.generate(settings.width, settings.height, settings.seed, settings);
+    for (const tile of allTiles()) {
+      const index = tile.y * settings.width + tile.x;
+      const land = result.land[index] === 1;
+      const tier = land ? result.elevation[index] : 0;
+      tile.terrain = land ? (tier > 0 ? 'plateau' : 'grass') : 'stream';
+      tile.water = !land;
+      tile.elevation = tier;
+      tile.height = tier;
+      tile.archipelagoSea = !land;
+      tile.archipelagoIslandId = land ? result.islandIndex[index] : null;
+      tile.archipelagoShoreDistance = land ? result.shoreDistance[index] : null;
+      tile.generatedPlateauBlobId = land && tier > 0 ? 'archipelago_island_' + tile.archipelagoIslandId : null;
+      tile.plateauGroupId = null;
+      tile.plateauRing = false;
+      tile.plateauInterior = false;
+    }
+    map.archipelago = result.stats;
+    logDebug('Eastern Mire archipelago: ' + result.stats.islandCount
+      + ' major islands, ' + result.stats.skerries + ' skerries; '
+      + result.stats.landTiles + ' land, ' + result.stats.waterTiles
+      + ' sea, ' + result.stats.coastlineTiles
+      + ' coastline tiles, peak tier ' + result.stats.peakTier);
   }
 
   function generatePlateaus() {
@@ -2588,10 +2633,10 @@
     ];
 
     for (const tile of allTiles()) {
-      if (!tile || tile.ramp || tile.distantBoundaryLandscape) continue;
+      if (!tile || tile.ramp || tile.distantBoundaryLandscape || tile.archipelagoSea) continue;
       for (const dir of dirs) {
         const neighbor = tileAt(tile.x + dir.x, tile.y + dir.y);
-        if (!neighbor || neighbor.ramp || neighbor.distantBoundaryLandscape) continue;
+        if (!neighbor || neighbor.ramp || neighbor.distantBoundaryLandscape || neighbor.archipelagoSea) continue;
         const diff = tileHeight(neighbor) - tileHeight(tile);
         if (diff < 0.75) continue;
         const before = tile.cliffSkirt;
@@ -2610,7 +2655,7 @@
         : [{ x: 0, y: 1 }, { x: 0, y: -1 }];
       for (const side of sideDirs) {
         const skirt = tileAt(tile.x + side.x, tile.y + side.y);
-        if (!skirt || skirt.ramp || skirt.water || skirt.distantBoundaryLandscape) continue;
+        if (!skirt || skirt.ramp || skirt.water || skirt.distantBoundaryLandscape || skirt.archipelagoSea) continue;
         const before = skirt.cliffSkirt;
         markCliffSkirtTile(skirt, 'ramp', tile, Math.abs(tileHeight(tile) - tileHeight(skirt)));
         skirt.rampSkirt = true;
@@ -3036,6 +3081,7 @@
         if (!tile) continue;
         if (clearBorderEscarpmentTile(tile, replacementHeight, 'borderEntryGate')) cleared++;
         tile.water = false;
+        tile.archipelagoSea = false; // Entrance approach is dry shoreline terrain.
         tile.terrain = replacementHeight > 0 ? 'plateau' : 'grass';
         tile.elevation = Math.round(replacementHeight);
         tile.height = replacementHeight;
@@ -6068,6 +6114,8 @@
       if (tile.borderEscarpmentSide) output.borderEscarpmentSide = tile.borderEscarpmentSide;
       if (tile.borderEscarpmentHeightBonus != null) output.borderEscarpmentHeightBonus = tile.borderEscarpmentHeightBonus;
     }
+    if (tile.archipelagoSea) output.archipelagoSea = true;
+    if (tile.archipelagoIslandId != null) output.archipelagoIslandId = tile.archipelagoIslandId;
     if (tile.distantBoundaryLandscape) {
       output.distantBoundaryLandscape = true;
       if (tile.distantBoundaryLandscapeSide) output.distantBoundaryLandscapeSide = tile.distantBoundaryLandscapeSide;
@@ -6355,6 +6403,7 @@
       boundaryHeightScan: map.boundaryHeightScan || null,
       distantBoundaryLandscapes: map.distantBoundaryLandscapes || [],
       greatBasinEntry: map.greatBasinEntry || null,
+      archipelago: map.archipelago || null,
       note: `Flattened from WildernessMapGeneratorV44 after ${map.generationScale || 1}x tile-density expansion. Unsupported generated object types are encoded as supported editor tile types plus generatedObject metadata. Every non-empty plateau paint group is retained so generated elevation ownership survives export exactly.`
     };
 
@@ -6683,7 +6732,19 @@
       tradeExitSide: 'south',
     },
     map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
-    map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
+    map_eastern_mire: {
+      entrySide: 'west', preset: 'custom', boundaryMode: 'entrySideDistantLandscape',
+      boundaryCliffBoost: 0, entryGateWidthMul: 0.4,
+      archipelagoEnabled: true,
+      islandCount: 11, islandSize: 11.5, islandSizeVariation: 0.52,
+      islandHeight: 6, islandSteepness: 1.1, islandIrregularity: 0.72,
+      islandCoastDetail: 0.65, islandSpacing: 1.05,
+      islandClustering: 0.65, islandSatellites: 15,
+      plateaus: 0, maxTier: 6, ramps: 28,
+      ponds: 0, plateauPonds: 0, plateauStreams: 0, rivers: 0,
+      pathAnchors: 3, structures: 3, caves: 3, animalDens: 2,
+      rootTotems: 2, statues: 4, pillars: 12
+    },
   };
 
   // ---------------------------------------------------------------------
@@ -8412,39 +8473,53 @@
       boundaryModeLabel: boundaryModeConfig.label,
       stepCurve: stepCurveConfig.id,
       stepCurveLabel: stepCurveConfig.label,
-      maxTier: resolvedMaxTier,
+      maxTier: merged.archipelagoEnabled ? clamp(Number(merged.islandHeight) || 6, 1, 20) : resolvedMaxTier,
       generationScale: GENERATION_TILE_SCALE
     };
     rng = makeRng(settings.seed);
     sightBlockerKeyCache = null;
     initMap();
-    generatePlateaus();
-    applyManualPlateauPaintingRules();
-    generatePonds();
-    generateRivers();
-    generatePlateauHydrology();
-    applyManualPlateauPaintingRules(); // refresh painting after canyon cuts
-    syncTileHeights();
-    enforceNorthwardRowScanner(); // post-playable plateau height scanner
-    applyManualPlateauPaintingRules(); // refresh painting after playable scanner
-    syncTileHeights();
-    enforceNorthwardRowScanner(); // boundary-feedback plateau height scanner
-    syncTileHeights();
-    applyGreatInclineMountainsideProfile();
-    applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
-    syncTileHeights();
-    map.preselectedEntrySide = resolveGenerationEntrySide();
-    generateBorderEscarpments();
-    generateRamps();
-    applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
-    syncTileHeights();
-    generateCliffSkirts();
-    chooseEntry();
-    chooseTradeExit();
-    if (usesGreatBasinPreset()) generateCliffSkirts(); // refresh after Great Basin entry road
-    generateLatePaintedRivers();
-    generateCliffSkirts(); // refresh after late-painted rivers
-    applyManualPlateauPaintingRules(); // refresh after late-painted rivers
+    if (settings.archipelagoEnabled) {
+      generateArchipelagoTerrain();
+      applyManualPlateauPaintingRules();
+      map.preselectedEntrySide = settings.entrySide === 'random' ? 'west' : settings.entrySide;
+      syncTileHeights();
+      generateRamps();
+      generateCliffSkirts(); // Open sea is exempt from plateau waterfalls.
+      chooseEntry();
+      chooseTradeExit();
+      generateCliffSkirts();
+      applyManualPlateauPaintingRules();
+    } else {
+      initMap();
+      generatePlateaus();
+      applyManualPlateauPaintingRules();
+      generatePonds();
+      generateRivers();
+      generatePlateauHydrology();
+      applyManualPlateauPaintingRules(); // refresh painting after canyon cuts
+      syncTileHeights();
+      enforceNorthwardRowScanner(); // post-playable plateau height scanner
+      applyManualPlateauPaintingRules(); // refresh painting after playable scanner
+      syncTileHeights();
+      enforceNorthwardRowScanner(); // boundary-feedback plateau height scanner
+      syncTileHeights();
+      applyGreatInclineMountainsideProfile();
+      applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
+      syncTileHeights();
+      map.preselectedEntrySide = resolveGenerationEntrySide();
+      generateBorderEscarpments();
+      generateRamps();
+      applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
+      syncTileHeights();
+      generateCliffSkirts();
+      chooseEntry();
+      chooseTradeExit();
+      if (usesGreatBasinPreset()) generateCliffSkirts(); // refresh after Great Basin entry road
+      generateLatePaintedRivers();
+      generateCliffSkirts(); // refresh after late-painted rivers
+      applyManualPlateauPaintingRules(); // refresh after late-painted rivers
+    }
     stampLocales(); // hand-authored locales get first pick of open ground
     placeStructures();
     placeCaves();
@@ -8463,6 +8538,7 @@
     scaleGeneratedTileDensity(settings.generationScale);
     buildAnimalActivity();
     const workspace = buildHobunjiMapExport();
+    if (map.archipelago) workspace.archipelago = clonePlain(map.archipelago);
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.tradeExit = map.tradeExit ? { col: map.tradeExit.x, row: map.tradeExit.y, side: map.tradeExit.side } : null;
     workspace.warnings = map.warnings.slice();

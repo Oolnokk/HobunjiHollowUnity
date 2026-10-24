@@ -29,6 +29,12 @@
   }
   function open(anchor = system().nearestActivity()) {
     if (!anchor || !system().atProp(anchor) || !system().festival()) return false;
+    // A joinable locale begins through the ordinary Action input, without another festival menu.
+    // Offerings, masks and gift selection retain their necessary inventory/choice menus.
+    if (anchor.festivalLocale && ['dance','duel','story','music','remembrance'].includes(anchor.activity?.type)) {
+      const result = system().perform(anchor.activity.type,{propId:anchor.id});
+      return result === true || result?.ok === true;
+    }
     ensure();
     close();
     prop = anchor; eventId = `${system().year()}:${system().festival().id}`; selection = {}; previousFocus = document.activeElement;
