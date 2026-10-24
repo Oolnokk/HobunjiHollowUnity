@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 12;
+  const VERSION = 13;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
   const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
@@ -22,6 +22,12 @@
   // grass, a companion or the player's own gear sat just past the hand.
   // Nearer hits are skipped for ranged targeting only; melee still uses them.
   const RANGED_MIN_CONVERGENCE_WORLD = 2;
+  // An easing shoulder camera changes the reticle ray every frame while the
+  // player walks or turns, and each change used to cost a full scene scan
+  // (triangle tests against whole terrain meshes). Moving rays now refresh at
+  // most this often; explicit invalidations (area/world changes, the
+  // ranged-release frame) still scan immediately so shots stay exact.
+  const SURFACE_RESCAN_MIN_INTERVAL_MS = 60;
 
   let baseUpdate = null; // Preserves the ranged system's existing update before lightweight focus bookkeeping runs.
   let baseRangedInit = null; // Preserves RangedWeapons.init while replacing only its player aim ray.
@@ -45,6 +51,8 @@
   let lastAimInvalidation = 'boot'; // Mobile-readable reason the cached combat aim was last invalidated.
   let surfaceRaycastCount = 0; // Mobile-readable count of actual expensive scene raycasts since module load.
   let surfaceCacheHitCount = 0; // Mobile-readable count of surface queries satisfied without reraycasting the scene.
+  let lastSurfaceHitsDeferred = false; // True when the latest cachedSurfaceHits answer came from an older ray; such targets are never persisted.
+  let surfaceRescanDeferredCount = 0; // Mobile-readable count of moved-ray queries served from the last scan inside SURFACE_RESCAN_MIN_INTERVAL_MS.
   let targetResolveCount = 0; // Mobile-readable count of actual resolved-target rebuilds since module load.
   let targetCacheHitCount = 0; // Mobile-readable count of target queries satisfied from the persistent cache.
   let lastAimError = null; // Mobile-readable record of the latest caught aim resolver error.
@@ -262,6 +270,23 @@
     return true;
   }
 
+  // Three's recursive intersectObject ignores `visible` and tests every
+  // node, so a whole-scene cast paid for hidden groups, billboards, sprites,
+  // popups and projectiles that validSurfaceHit then discarded - per frame
+  // while a ranged weapon was out, scaling with every actor/arrow in a fight.
+  // Prune exactly the subtrees validSurfaceHit would reject and only ask
+  // surface-capable meshes to raycast, so hits are unchanged but cheaper.
+  function intersectSurfaceCandidates(object, ignoredRoots, out) {
+    if (!object || object.visible === false) return;
+    if (SURFACE_NAME_IGNORE_RE.test(String(object.name || ''))) return;
+    const data = object.userData;
+    if (data && (data.interactionAimIgnore === true || data.debugOnly === true || data.isBillboard === true)) return;
+    if (ignoredRoots.includes(object)) return;
+    if (object.isMesh && materialCanBeSurface(object)) surfaceRaycaster.intersectObject(object, false, out); // Non-recursive: this walk owns the descent.
+    const children = object.children;
+    if (children) for (let i = 0; i < children.length; i++) intersectSurfaceCandidates(children[i], ignoredRoots, out);
+  }
+
   function activeScene() {
     try {
       return combatDeps()?.getActiveScene?.()
@@ -279,6 +304,7 @@
     if (!THREE?.Raycaster || !scene?.children || !ray) return [];
     const raySignature = interactionRaySignature(ray);
     const rootCount = scene.children.length;
+    lastSurfaceHitsDeferred = false;
     if (
       surfaceRayCache
       && surfaceRayCache.scene === scene
@@ -287,6 +313,16 @@
       && surfaceRayCache.serial === surfaceInvalidationSerial
     ) {
       surfaceCacheHitCount++;
+      return surfaceRayCache.hits;
+    }
+    if (
+      surfaceRayCache
+      && surfaceRayCache.scene === scene
+      && surfaceRayCache.serial === surfaceInvalidationSerial
+      && nowMs() - surfaceRayCache.at < SURFACE_RESCAN_MIN_INTERVAL_MS
+    ) {
+      surfaceRescanDeferredCount++;
+      lastSurfaceHitsDeferred = true;
       return surfaceRayCache.hits;
     }
 
@@ -299,7 +335,7 @@
       surfaceRaycaster.far = SURFACE_RAY_MAX_WORLD;
     } catch (error) {
       noteAimError('surface-ray-setup', error);
-      surfaceRayCache = { scene, raySignature, rootCount, serial: surfaceInvalidationSerial, hits };
+      surfaceRayCache = { scene, raySignature, rootCount, serial: surfaceInvalidationSerial, hits, at: nowMs() };
       return hits;
     }
 
@@ -311,7 +347,7 @@
       if (!root || ignoredRoots.some(owned => isDescendantOf(owned, root))) continue;
       const localHits = [];
       try {
-        surfaceRaycaster.intersectObject(root, true, localHits);
+        intersectSurfaceCandidates(root, ignoredRoots, localHits);
       } catch (error) {
         noteAimError('surface-ray-root', error, root);
         continue;
@@ -325,7 +361,7 @@
       }
     }
     hits.sort((a, b) => Number(a.distance) - Number(b.distance));
-    surfaceRayCache = { scene, raySignature, rootCount, serial: surfaceInvalidationSerial, hits };
+    surfaceRayCache = { scene, raySignature, rootCount, serial: surfaceInvalidationSerial, hits, at: nowMs() };
     return hits;
   }
 
@@ -441,7 +477,7 @@
         attackDistance: distanceBetween(attackOrigin, point),
         surfaceName: hit ? surfaceLabel(hit.object) : null,
       };
-      aimTargetCache = { scene, surfaceSerial: surfaceInvalidationSerial, key: targetKey, target };
+      aimTargetCache = lastSurfaceHitsDeferred ? null : { scene, surfaceSerial: surfaceInvalidationSerial, key: targetKey, target }; // A deferred (older-ray) answer must refresh once the rescan interval passes.
       lastResolvedAimTarget = plainAimTarget(target);
       return target;
     } catch (error) {
@@ -796,6 +832,7 @@
     return {
       surfaceRaycasts: surfaceRaycastCount,
       surfaceCacheHits: surfaceCacheHitCount,
+      surfaceRescansDeferred: surfaceRescanDeferredCount,
       targetResolves: targetResolveCount,
       targetCacheHits: targetCacheHitCount,
       surfaceInvalidationSerial,
@@ -896,6 +933,7 @@
       surfaceRayMaxWorld: SURFACE_RAY_MAX_WORLD,
       rayOriginQuantumWorld: RAY_ORIGIN_QUANTUM_WORLD,
       rayDirectionQuantum: RAY_DIRECTION_QUANTUM,
+      surfaceRescanMinIntervalMs: SURFACE_RESCAN_MIN_INTERVAL_MS,
       attackOriginQuantumWorld: ATTACK_ORIGIN_QUANTUM_WORLD,
     },
   };

@@ -289,7 +289,7 @@
   // Cache versions below are bumped whenever their held-item authoring contract changes.
   // This matters on the stable game/editor URLs where the parent held-action script URL itself may be cached.
   const handScripts = [
-    new URL('js/head-relative-weapon-occlusion.js?v=20261022a', docsBase).href,
+    new URL('js/head-relative-weapon-occlusion.js?v=20261023hparticles1', docsBase).href,
     new URL('config/hand-model-profiles.js?v=20260919handreview1', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
@@ -304,7 +304,7 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261022pantsFallback1', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261024hfd2115a', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261019h8ec8350', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261021h0ad9507', docsBase).href,

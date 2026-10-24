@@ -7,7 +7,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 5; // Exposed in mobile diagnostics to identify this framing contract.
+  const VERSION = 6; // Exposed in mobile diagnostics to identify this framing contract.
   const SHOULDER_MODE = 'shoulderSurf'; // Used to resolve the existing native over-the-shoulder camera config.
   const REFERENCE_SPECIES = 'tletingan'; // Defines the full-height reference used for species-relative camera distance.
   const FALLBACK_DISTANCE_TILES = 2.6; // Used only if the authored Shoulder Cam distance is unavailable when this module installs.
@@ -300,7 +300,9 @@
     const dt=surfaceTime==null ? 0 : Math.max(0,Math.min(.1,(now-surfaceTime)/1000)); // Frame-rate-independent easing also tolerates pause/resume.
     surfaceTime=now;
     const probe=enabled && surfaceTargetLift>0 && window.FurnitureTableSystem?.nearbySurface?.(area,x,z); // Proximity alone controls assistance; no camera or character orientation enters the probe.
-    surfaceFrame.active=!!probe?.active; surfaceFrame.furnitureId=probe?.furnitureId || null;
+    const heightAboveFeet = Number(probe?.height) - Number(playerRoot?.position?.y || 0); // Reject basin rims and pedestals beyond the taller species' useful reach.
+    const headHeight = Number(lastSnapshot?.resolvedTargetYOffsetTiles) || .62; // Current species head target defines which surfaces need help.
+    surfaceFrame.active=!!probe?.active && heightAboveFeet > headHeight && heightAboveFeet <= headHeight + surfaceTargetLift + .35; surfaceFrame.furnitureId=probe?.furnitureId || null;
     surfaceFrame.blend+=(Number(surfaceFrame.active)-surfaceFrame.blend)*(1-Math.exp(-6*dt));
     if (surfaceFrame.blend<.0001) surfaceFrame.blend=0;
     surfaceFrame.lift=surfaceTargetLift*surfaceFrame.blend;

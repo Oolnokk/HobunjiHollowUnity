@@ -11,6 +11,8 @@ const path = require('path');
 const vm = require('vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'weapon-enchantment-vfx.js'), 'utf8');
+const heldOrderSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'held-object-render-order.js'), 'utf8'); // Used to guard the overlay renderer against reintroducing weapon-bound clipping.
+assert(heldOrderSource.includes('mesh.userData?.hobunjiHeldOverlayVfxPadding') && heldOrderSource.includes('scissorBox.expandByScalar(vfxPadding'), 'held replay scissor must account for live enchantment particles beyond the metal geometry.');
 
 const counts = { materials: 0, disposed: 0, adds: 0 };
 class Obj {
@@ -78,12 +80,32 @@ assert.ok(counts.materials <= 24, `materials are pooled per slot, not per partic
 assert.ok(counts.materials < spawned / 2, 'most spawns reuse a retired sprite');
 assert.strictEqual(counts.disposed, 0, 'retired particles are parked, not disposed, while the emitter lives');
 
+assert.ok(plane.userData.hobunjiHeldOverlayVfxPadding > 0, 'a live billboard must extend the held overlay scissor envelope even when born inside metal bounds');
 clearEmitter(emitter);
+assert.strictEqual(plane.userData.hobunjiHeldOverlayVfxPadding, 0, 'clearing particles resets the additional replay coverage');
 assert.strictEqual(emitter.particles.length, 0, 'clearing the emitter retires every live particle');
 assert.ok(emitter.pool.every(sprite => sprite.visible === false), 'parked sprites are hidden');
 disposeEmitter(emitter);
 assert.strictEqual(counts.disposed, counts.materials, 'disposing the emitter releases every material it ever created');
 assert.strictEqual(emitter.group.parent, null, 'the emitter group leaves the weapon plane');
+assert.strictEqual(plane.userData.hobunjiHeldOverlayVfxPadding, undefined, 'disposing an aura leaves no stale replay padding');
+
+// The sampled metal determines the origin only: a crosswind streak can leave
+// the blade in local XY and expand its billboard independently of that mask.
+const edgePlane = new THREE.Group(); // Used to test a thin blade that cannot contain the entire animated effect.
+edgePlane.geometry = { parameters: { width: 0.2, height: 0.6 } };
+const edgeEmitter = makeEmitter(edgePlane); // Used to verify free motion and growing replay coverage on the same live sprite.
+const edgeSnapshot = { ...snapshot, mask: { indices: [0], width: 2, height: 2 } }; // Forces the metal origin to the upper-left source pixel.
+updateEmitters(0.15, edgeSnapshot, [edgeEmitter]);
+const freeParticle = edgeEmitter.particles[0]; // Used to drive a deterministic crosswind across the blade's left edge.
+assert.ok(freeParticle, 'the metal source pixel still emits a particle');
+assert.strictEqual(freeParticle.baseX, -0.05, 'the particle starts on the selected source-metal pixel');
+freeParticle.motion = 'crosswind'; freeParticle.speed = 0.45; freeParticle.vx = -0.45; freeParticle.life = 2;
+updateEmitters(0.45, edgeSnapshot, [edgeEmitter]);
+assert.ok(freeParticle.sprite.position.x < -0.1, 'a particle may move outside the blade instead of being constrained to metal pixels');
+assert.ok(freeParticle.sprite.scale.x > freeParticle.baseSize, 'growth is not limited to the originating metal pixel');
+assert.ok(edgePlane.userData.hobunjiHeldOverlayVfxPadding > 0.1, 'screen-space replay coverage tracks the complete out-of-blade streak');
+disposeEmitter(edgeEmitter);
 
 // HeldObjectRenderOrder redraws held planes in its own overlay pass (layer 29);
 // particles on such a plane must render in that pass, or the blade covers them.

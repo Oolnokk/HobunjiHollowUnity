@@ -52,6 +52,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   let impactCount = 0; // Tracks shared collision impact calls when an ice slide is obstructed.
   let afflictionCount = 0; // Confirms area hazards affect the same ResourceSystem as normal combat.
   let footprint = null; // Captures a Hronal column's live collision enabled gate.
+  const damageEvents=[]; // Captures canonical direct-damage and outward-knockback arguments.
   const audioEvents=[]; // Verifies release plays the existing rock sample at double speed/pitch.
   const mappedPatches=[]; // Verify connected nine-slice remapping occurs whenever a puddle's grid changes.
   const presentationHeights=[]; // Detect hazards stealing rope/bridge presentation height.
@@ -95,18 +96,18 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const floorSet = new Set();
   for(let x=2;x<(options.maxX||12);x++)for(let z=2;z<12;z++)floorSet.add(x+','+z);
   const context = {
-    theme, seed:123, root:new Node(), ceilingY:3, floorSet,
+    theme, spawn:options.spawn, seed:123, root:new Node(), ceilingY:3, floorSet,
     meta:{floorSurfaceY:0,wallHeight:3,rooms:options.rooms||[{id:'test',col:0,row:0,w:10,h:10}]},
   };
   const kit = {
-    deps:{TILE:64,player,hostileObjects:new Set(),playerMesh:{position:{y:0},userData:{portraitModelHeight:1.8}},handlePlayerDeath() {}},
-    root:new Node(),state:{context},group(){return this.root;},sampleSupport(){return {y:0};},
+    deps:{getActiveCamera:()=>options.camera,damagePlayer:(...args)=>damageEvents.push(args),damageCreature:(...args)=>damageEvents.push(args),TILE:64,player,hostileObjects:new Set(),playerMesh:{position:{y:0},userData:{portraitModelHeight:1.8}},handlePlayerDeath() {}},
+    root:new Node(),state:{context,checkpoints:options.checkpoints},group(){return this.root;},sampleSupport(){return {y:0};},
     roomBounds(_meta,room){return room.bounds||{minX:2,maxX:12,minZ:2,maxZ:12};},makeBasic(){return new Material({color:0x777777});},
   }; // The 10×10 fixture plus shared floorSet verifies the entire room is iced.
   composer.buildRooms(kit, context);
   const api = window.DevRandomRuinLichThemes;
   const tick = (frames, seconds = .25) => {for (let index = 0; index < frames; index++) composer.update(kit, index * seconds * 1000, seconds);};
-  return {api,kit,context,composer,player,tick,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches,presentationHeights};
+  return {api,kit,context,composer,player,tick,damageEvents,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches,presentationHeights};
 }
 
 function assertPlasmSeams(t) {
@@ -125,12 +126,12 @@ function assertPlasmSeams(t) {
 
 {
   const t=setup('kanthic',3,3,{lanternRadius:.02}); // Grow a nonrectangular puddle, which exposes concave-corner cracks absent from square seed tests.
-  t.tick(8,.25);
+  t.tick(12,.25);
   assertPlasmSeams(t);
   const initialKeys=[]; // Recover exact seeded positions after the synchronous checkpoint lifecycle.
   t.composer.onPlayerDeath(t.kit);
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initialKeys.push(x+','+z);
-  t.tick(8,.25);
+  t.tick(12,.25);
   assert.ok(t.api.snapshot().plasmTiles>initialKeys.length,'Fixture grows before ordinary combat death');
   const start=puzzlesSource.indexOf('  function respawnAtCheckpoint('),end=puzzlesSource.indexOf('\n  function buildCheckpoints(',start); // Execute the actual recovery owner rather than imitating its callback ordering.
   const recovery={checkpoints:{active:{point:{x:3,y:0,z:3}},respawnCount:0},context:t.context,kit:t.kit}; // Minimal native checkpoint state.
@@ -230,6 +231,7 @@ function assertPlasmSeams(t) {
   t.tick(20, .25);
   assert.ok(t.api.snapshot().fallenIcicles >= 1, 'Icicles triggered by a passing actor eventually shatter');
   assert.ok(t.afflictionCount > 0, 'Shatter damage uses ordinary status and Footing APIs');
+  assert.ok(t.damageEvents.some(args=>args[0]===18&&args[3]===220),'Icicles route 18 direct damage and outward knockback through canonical damagePlayer');
   assert.ok(t.audioEvents.some(event=>event.rate===2&&event.url.includes('sfx_break_rock')),'Icicles drop with the break-rock sample at double pitch and speed');
   assert.ok(t.audioEvents.some(event=>event.rate===1&&event.url.includes('sfx_break_rock')),'If WebAudio is unavailable, impact keeps the original-length break-rock sound');
   assert.match(themeSource,/pitchRockWithoutSpeedChange\(decoded,audioContext,1\.5\)/,'Supported WebAudio uses an offline 1.5x pitch transform at the original duration');
@@ -286,44 +288,17 @@ function assertPlasmSeams(t) {
                                Math.min(...seed.map(p=>Math.hypot(a[0]-p.x-.5,a[1]-p.z-.5))))[0];
   t.player.x=far[0]*64;t.player.y=far[1]*64;
   t.player.facing=Math.atan2(seed[0].z+.5-far[1],seed[0].x+.5-far[0]);
-  t.tick(4,.25);
+  t.tick(12,.25);
   const grown=t.api.snapshot().plasmTiles;
-  assert.equal(grown,initial+2,'A fully unseen local puddle grows exactly two cells per second');
+  assert.ok(grown>initial,'A local puddle grows a half ring after three seconds');
   assert.ok(initialGeometry.disposed,'Retexturing after plasm growth must dispose the previous GPU geometry');
-  assert.equal(t.mappedPatches.length,3,'Every one-cell grid edit must regenerate connected nine-slice UVs');
-  assert.equal(t.mappedPatches[2].settings.edgeSourceFraction,.32,'Plasm must preserve source-PNG nine-slice borders');
+  assert.equal(t.mappedPatches.length,2,'One half-ring beat rebuilds the mesh only once');
+  assert.equal(t.mappedPatches[1].settings.edgeSourceFraction,.32,'Plasm must preserve source-PNG nine-slice borders');
   // Step out of the chamber; no room transition may grow or cull the patch.
   t.player.x=30*64;t.player.y=30*64;
   t.tick(2,.25);
   assert.equal(t.api.snapshot().plasmTiles,grown,
     'When the player stands outside every room, even unseen plasm must not grow');
-  // Re-enter with an illuminated edge within .6 tiles: even unseen outer
-  // edges must stop growing if ANY puddle tile is currently visible.
-  const boundary=[];
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))boundary.push({x,z});
-  let observer=null;
-  for(const p of boundary){
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const px=p.x+dx,pz=p.z+dz;
-      if(px<2||px>=12||pz<2||pz>=12||t.api.isPlasmAt(px+.5,pz+.5))continue;
-      // Stand 0.82 tiles from the nearest puddle edge, inside the new 0.9 radius but outside the old 0.6 radius.
-      observer={x:dx>0?p.x+1.8:dx<0?p.x-.8:p.x+.5,
-        z:dz>0?p.z+1.8:dz<0?p.z-.8:p.z+.5, target:{x:p.x+.5,z:p.z+.5}};
-      break;
-    }
-    if(observer)break;
-  }
-  assert.ok(observer,'A clear 10x10 room must have at least one dry neighbour of the puddle');
-  t.player.x=observer.x*64;t.player.y=observer.z*64;
-  t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x)+Math.PI;
-  const seenCount=t.api.snapshot().plasmTiles;
-  t.tick(4,.25);
-  assert.equal(t.api.snapshot().plasmTiles,seenCount,
-    'A puddle inside the omni-directional lantern cannot spread even when the avatar faces AWAY');
-  t.player.facing=Math.atan2(observer.target.z-observer.z,observer.target.x-observer.x);
-  t.tick(4,.25);
-  assert.equal(t.api.snapshot().plasmTiles,seenCount,
-    'A puddle inside lantern radius remains frozen while the player looks directly at it');
   t.composer.clear();
   assert.equal(t.api.snapshot().active,false,'Only leaving/clearing the entire ruin removes the puddle');
   // Teardown is idempotent; repeated clear is safe.
@@ -361,7 +336,7 @@ function assertPlasmSeams(t) {
   };
   const farEast=pickFarthestCorner(12,22,seedEast);
   t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;
-  t.tick(4,.25);
+  t.tick(12,.25);
   const eastAfterGrowth=[];
   for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterGrowth.push(x+','+z);
   assert.ok(eastAfterGrowth.length>seedEast.length,
@@ -390,7 +365,7 @@ function assertPlasmSeams(t) {
     'East-room plasm must not advance when the player leaves that room');
   const farWest=pickFarthestCorner(2,12,seedWest);
   t.player.x=farWest[0]*64;t.player.y=farWest[1]*64;
-  t.tick(4,.25);
+  t.tick(12,.25);
   const westAfterReturn=[];
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))westAfterReturn.push(x+','+z);
   assert.ok(westAfterReturn.length>seedWest.length,
@@ -399,26 +374,6 @@ function assertPlasmSeams(t) {
   for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterWestReturn.push(x+','+z);
   assert.equal(eastAfterWestReturn.length,eastAfterGrowth.length,
     'Returning to west leaves east frozen at its exact former size');
-  // Seeing a west-room puddle must veto growth in the occupied room.
-  let observer=null;
-  for(let z=2;z<12&&!observer;z++)for(let x=2;x<12&&!observer;x++){
-    if(!t.api.isPlasmAt(x+.5,z+.5))continue;
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nx=x+dx,nz=z+dz;
-      if(nx<2||nx>=12||nz<2||nz>=12||t.api.isPlasmAt(nx+.5,nz+.5))continue;
-      observer={x:dx>0?x+1.8:dx<0?x-.8:x+.5,
-                z:dz>0?z+1.8:dz<0?z-.8:z+.5,
-                targetX:x+.5,targetZ:z+.5};
-      break;
-    }
-  }
-  assert.ok(observer,'The two-room fixture has a dry vantage point beside the west puddle');
-  t.player.x=observer.x*64;t.player.y=observer.z*64;
-  t.player.facing=Math.atan2(observer.targetZ-observer.z,observer.targetX-observer.x);
-  const globallySeen=t.api.snapshot().plasmTiles;
-  t.tick(4,.25);
-  assert.equal(t.api.snapshot().plasmTiles,globallySeen,
-    'Seeing ANY puddle tile prevents further growth in the occupied room');
   // Fatal immersion resets ALL rooms to the original seeded puddle clusters,
   // rather than leaving the previous unseen expansion behind.
   const [sx,sz]=seedWest[0].split(',').map(Number);
@@ -435,7 +390,7 @@ function assertPlasmSeams(t) {
   assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,'A dead player must not restart unseen plasm growth');
   // An unrelated cause of death must trigger exactly the same reset.
   t.player.health=100;
-  t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;t.tick(4,.25);
+  t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;t.tick(12,.25);
   assert.ok(t.api.snapshot().plasmTiles>initialSeed.size,
     'Plasm can resume growing when a respawned player enters an unseen room');
   t.player.health=0;t.tick(1,.25);
@@ -461,9 +416,9 @@ function assertPlasmSeams(t) {
   assert.ok(playerTile,'Fixture seed provides a dry tile next to a growing puddle');
   t.player.x=(playerTile.x+.5)*64;t.player.y=(playerTile.z+.5)*64;
   const originalSize=t.api.snapshot().plasmTiles;
-  t.tick(8,.25);
-  assert.equal(t.api.isPlasmAt(playerTile.x+.5,playerTile.z+.5),false,
-    'Plasm can never select the current player tile as a growth candidate');
+  t.tick(12,.25);
+  assert.equal(t.api.isPlasmAt(playerTile.x+.5,playerTile.z+.5),true,
+    'Plasm can now grow beneath the player');
   assert.ok(t.api.snapshot().plasmTiles>originalSize,'Other, unoccupied frontier tiles must still grow');
   t.composer.clear();
 }
@@ -568,4 +523,42 @@ function assertPlasmSeams(t) {
     'Friction decay must be frame-rate-independent at 30 and 60 fps');
   t.composer.clear();
 }
-console.log('Harlyao ruin lich-theme tests passed: stable theme, entire icy floor with Minecraft-style native friction, clustered icicles, Kanthic player-safe growth at 2 tiles/s, teardown.');
+console.log('Harlyao ruin lich-theme tests passed: stable theme, entire icy floor with Minecraft-style native friction, clustered icicles, Kanthic half-ring growth every 3 seconds, teardown.');
+
+{
+  const checkpoints={active:{point:{x:8.5,z:8.5}},doorways:[{axis:'x',x:6,z:7,width:2}]}; // Protect both inactive doorway landings and the current respawn.
+  const t=setup('kanthic',3,3,{spawn:{x:3.5,z:3.5},checkpoints});
+  const check=()=>{for(let z=2;z<12;z++)for(let x=2;x<12;x++){
+    const safe=(Math.abs(x+.5-3.5)<=1.5&&Math.abs(z+.5-3.5)<=1.5)||(Math.abs(x+.5-8.5)<=1.5&&Math.abs(z+.5-8.5)<=1.5)||(Math.abs(x+.5-6)<=1.5&&Math.abs(z+.5-7)<=1.8);
+    if(safe)assert.equal(t.api.isPlasmAt(x+.5,z+.5),false,'No plasm on entry/checkpoint landing '+x+','+z);
+  }};
+  check();t.tick(240,.25);check();t.composer.onPlayerDeath(t.kit);check();
+  t.composer.clear();
+}
+{
+  const camera={position:{x:0,y:1,z:0},getWorldDirection(out){out.set(this.dx,this.dy,this.dz);}}; // Controlled real-camera cone, independent of actor facing.
+  const t=setup('kanthic',3,3,{camera});
+  let target=null;
+  for(let z=2;z<12&&!target;z++)for(let x=2;x<12&&!target;x++)if(t.api.isPlasmAt(x+.5,z+.5))target={x:x+.5,z:z+.5};
+  camera.position={x:target.x-1,y:1,z:target.z};
+  const length=Math.hypot(1,.78);camera.dx=1/length;camera.dy=-.78/length;camera.dz=0;
+  t.player.x=(target.x-1)*64;t.player.y=target.z*64;
+  t.tick(1,.25);
+  assert.equal(t.api.isPlasmAt(target.x,target.z),false,'Camera cone actively removes lit plasm before a growth beat');
+  t.composer.onPlayerDeath(t.kit);camera.dx=-camera.dx;
+  t.tick(1,.25);
+  assert.equal(t.api.isPlasmAt(target.x,target.z),true,'Looking away does not clear plasm behind the camera');
+  t.composer.clear();
+}
+
+{
+  const t=setup('kanthic',3,3); // One isolated growth beat proves both cadence and half-frontier size.
+  const seed=new Set(),frontier=new Set();
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))seed.add(x+','+z);
+  for(const key of seed){const [x,z]=key.split(',').map(Number);for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nx=x+dx,nz=z+dz,k=nx+','+nz;if(nx>=2&&nx<12&&nz>=2&&nz<12&&!seed.has(k))frontier.add(k);
+  }}
+  t.tick(11,.25);assert.equal(t.api.snapshot().plasmTiles,seed.size,'No growth before three seconds');
+  t.tick(1,.25);assert.equal(t.api.snapshot().plasmTiles,seed.size+Math.ceil(frontier.size/2),'One beat adds exactly half of the pre-beat frontier');
+  t.composer.clear();
+}

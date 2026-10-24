@@ -20546,6 +20546,12 @@
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
       function cameraSurfaceYAtWorld(x, z) {
+        if (currentArea === 'map_i_dev_random_ruin') {
+          const supportY = window.DevRandomRuin?.getPlayerSupportY?.(); // Bound the camera floor query to the player's current ruin level, excluding overhead bridges.
+          const surface = window.DynamicSurfaces?.sampleSupport?.(x, z, { minY:-60, maxY:(Number.isFinite(supportY) ? supportY : 0) + .45, pad:.02 }); // Real basin floors replace the flat interior-grid proxy.
+          if (Number.isFinite(surface?.y)) return surface.y;
+          if (Number.isFinite(supportY)) return supportY;
+        }
         const ground = activeSurfaceYAtWorld(x, z); // Gameplay ground remains the authority for movement and uncovered tiles.
         const cover = window.EnvironmentSurfaceMicroPlateau?.cameraSurfaceYAt?.(x, z); // Exact rendered snow/slush height, exclusively for camera clearance.
         const support = window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, ground, currentArea); // Porch decks and walkable furniture (inn stage) are rendered above the gameplay ground.
@@ -29750,6 +29756,7 @@
         makeCreatureEntity,
         hostileObjects, companionObjects,
         damageCreature,
+        damagePlayer, // Ruin environmental impacts use the canonical damage/knockback/death route.
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         tileSurfaceYInArea,
         markOutline: _markOutline,
