@@ -12,6 +12,10 @@
   // TOOL_ITEM_DEFS/inventory/tileStyles/calendar/ITEM_DEFS are `const`s only
   // ever mutated in place, so they're passed by direct reference.
   let deps = null;
+  function itemIcon(entry) {
+    return deps.itemIconForKey?.(entry.key) || entry.icon || '📦';
+  }
+
   const BRONZE_BAR_SELL_FLOORS = Object.freeze({ // Used by applyLoreEconomy() to keep every ordinary bronze alloy dramatically more valuable than common gold.
     bar_lowTinBronze: 400,
     bar_tinBronze: 500,
@@ -274,7 +278,7 @@
       parts.push(
         `<div class="kh-group">` +
         `<span class="kh-key">,</span><span class="kh-label"> </span>` +
-        `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
+        `<span class="kh-item"><span class="kh-item-icon">${itemIcon(item)}</span> ${item.label} ×${count}</span>` +
         `<span class="kh-label"> </span><span class="kh-key">.</span>` +
         `</div>`
       );
@@ -358,9 +362,9 @@
     if (key === _lastItemScrollKey) return;
     _lastItemScrollKey = key;
     // Current item
-    deps.itemIcon.textContent  = curr.icon;
+    deps.itemIcon.textContent  = itemIcon(curr);
     deps.itemName.textContent  = curr.label;
-    if (iBtnEl) iBtnEl.textContent = curr.icon;
+    if (iBtnEl) iBtnEl.textContent = itemIcon(curr);
     deps.applyItemSpriteIcon(deps.itemIcon, deps.ITEM_DEFS[curr.key], curr.key);
     deps.applyItemSpriteIcon(iBtnEl, deps.ITEM_DEFS[curr.key], curr.key);
     deps.itemCount.textContent = `×${count}`;
@@ -369,11 +373,11 @@
     const prevEl = deps.isPrevIconEl;
     const nextEl = deps.isNextIconEl;
     if (prevEl) {
-      prevEl.textContent = prev.icon;
+      prevEl.textContent = itemIcon(prev);
       deps.applyItemSpriteIcon(prevEl, deps.ITEM_DEFS[prev.key], prev.key);
     }
     if (nextEl) {
-      nextEl.textContent = next.icon;
+      nextEl.textContent = itemIcon(next);
       deps.applyItemSpriteIcon(nextEl, deps.ITEM_DEFS[next.key], next.key);
     }
   }
@@ -454,7 +458,7 @@
       if (deps.spItem && item) {
         deps.spItem.style.display = '';
         deps.spItemDiv.style.display = '';
-        const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (deps.inventory[item.key] || 0);
+        const itemText = '[Tab] ' + itemIcon(item) + ' ' + item.label + ' ×' + (deps.inventory[item.key] || 0);
         if (itemText !== _hud.item) { _hud.item = itemText; deps.spItem.textContent = itemText; }
       }
     }

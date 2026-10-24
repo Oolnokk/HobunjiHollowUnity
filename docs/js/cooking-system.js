@@ -5,7 +5,7 @@
   const ITEM_ALIASES = { uumkaoiiEggs: 'uumkaoiiEgg', drenkirraEggs: 'drenkirraEgg' }; // Used to reuse existing singular inventory items from the prototype's plural ids.
   const NON_INGREDIENT_CATEGORIES = new Set(['wool', 'mineral', 'material']); // Used to omit prototype reference materials that are not edible/cookable ingredients.
   const CATEGORY_ICONS = {
-    sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', teaBlend: '🍃', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
+    mineral: '💎', material: '🔩', wool: '🧶', sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', teaBlend: '🍃', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
   }; // Used to give every prototype ingredient an inventory and picker icon.
   const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', clarity: '🧠', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
 
@@ -80,12 +80,13 @@
     const recipe = data().recipes.find(candidate => candidate.id === recipeId); // Used to restore recipe-owned ingredient categories.
     const normalized = {
       ...definition,
+      icon: definition.icon || recipe?.icon || '🍲', // Restores useful placeholders for legacy saved foods without an icon.
       ...(recipeId ? { recipeId } : {}),
       cookingCategories: definition.cookingCategories || recipe?.inventoryCategories || [],
     }; // Used to make noodles, mayonnaise, bread, and future bases reusable after reload.
     cookedDefinitions[key] = { ...normalized }; // Used to serialize the generated name, effects, and quality.
     deps.ITEM_DEFS[key] = { ...normalized, isCookedFood: true };
-    if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon: definition.icon || '🍲', label: definition.label.toUpperCase(), max: 99 });
+    if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon: normalized.icon, label: definition.label.toUpperCase(), max: 99 });
   }
 
   function reconcileQuality(key) {

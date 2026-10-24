@@ -16099,7 +16099,10 @@
       });
 
       function itemIconForKey(key) {
-        return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+        const def = ITEM_DEFS[key]; // Shared fallback for incomplete item metadata in Pack, shipping and reward text.
+        const icon = def?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon; // Preserve authored placeholders when present.
+        if (typeof icon === 'string' && icon.trim() && !['□', '[]'].includes(icon.trim())) return icon;
+        return ({ seed: '🌱', crop: '🌾', food: '🍲', ingredient: '🥣', material: '🔩', tool: '🔧', livestock: '🐾', furniture: '🏠', buildingPlan: '📜', instrument: '🎵' })[def?.cat] || '📦';
       }
 
       // Upgrades an already-rendered emoji icon element to a recolored PNG
@@ -16186,6 +16189,7 @@
         return {
           key: active?.key || null,
           spriteIcon: def?.spriteIcon || null,
+          equipmentThumbnails: window.EquipmentPanel?.getIconDebug?.() || null, // Pixel Probe exposes thumbnail bounds/failures without a desktop console.
           targetColor: def?.spriteColor ?? null,
           wheelCache: { reads: inventoryWheelCache.reads, builds: inventoryWheelCache.builds, frame: inventoryWheelCache.frame },
           swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
@@ -16354,7 +16358,7 @@
           box.dataset.stackId = stack.stackId;
           box.setAttribute('data-ctrl-detail', 'invInfo');
           box.innerHTML =
-            `<span class="iib-icon">${def.icon}</span>` +
+            `<span class="iib-icon">${itemIconForKey(key)}</span>` +
             `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;
           // Corner badge listing every slot this item is assigned to
           const badges = Object.entries(equipmentSlots)
@@ -16490,7 +16494,7 @@
         if (detailEl) detailEl.style.display  = '';
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        set('iiIcon',  def.icon);
+        set('iiIcon',  itemIconForKey(key));
         const iiIconEl = document.getElementById('iiIcon');
         if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
         if (iiIconEl) delete iiIconEl.dataset.animalHeadRequest;
@@ -29698,6 +29702,7 @@
       });
 
       window.ShippingPanel?.init({
+        itemIconForKey, // Reuses Pack's category fallback for shipping and merchant presentations.
         inventory,
         ITEM_DEFS,
         BASE_PRICES,
@@ -29886,6 +29891,7 @@
       });
 
       window.HudUpdate.init({
+        itemIconForKey, // Keeps wheel previews and the desktop item pill consistent with Pack.
         getGrid: () => grid,
         getWorldObjectAt,
         equipmentSlots,
