@@ -221,6 +221,7 @@
           legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
       }
     }
+    legs?.pants?.update?.(); // Recorded deaths bypass legs.update(); refresh the garment after both authored leg poses are applied.
     return true;
   }
 

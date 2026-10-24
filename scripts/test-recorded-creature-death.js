@@ -38,6 +38,8 @@ class Color {
 }
 class Material {
   constructor() { this.color = new Color(); }
+  onBeforeCompile() {}
+  customProgramCacheKey() { return 'corpse-clothing-mask'; }
   clone() { const material = new Material(); material.color = this.color.clone(); return material; }
   dispose() {}
 }
@@ -75,6 +77,7 @@ windowStub.CreatureDeath.init({
   characterGroundShadowSurfaceOffset: () => 0,
 });
 function makeActor(cause) {
+  const legEvents = []; // Recorded-pose application must precede the garment refresh in each death sample.
   const scene = new Group(); const group = new Group(); scene.add(group);
   group.position.set(1.5, 0.5, 1.5);
   const frontPlane = new Group(), backPlane = new Group();
@@ -82,6 +85,8 @@ function makeActor(cause) {
   for (const part of [frontPlane, backPlane, handsPivot, legsPivot]) group.add(part);
   const pieces = [frontPlane, handsPivot, legsPivot].map(parent => {
     const mesh = new Group(); mesh.isMesh = true; mesh.material = new Material();
+    mesh.material.onBeforeCompile = () => {}; // Instance shader hooks are lost by material.clone() unless explicitly retained.
+    mesh.material.customProgramCacheKey = () => 'pants-mask';
     parent.add(mesh);
     return mesh;
   });
@@ -89,9 +94,9 @@ function makeActor(cause) {
     id: cause, x: 96, y: 96, areaId: 'farm', halfHeight: 0.5,
     health: 0, groupRot: 0, _lethalDamageCause: cause,
     avatarRef: { group, frontPlane, backPlane, handsPivot, legsPivot,
-      legs: { applyRecordedLegPose() {} } },
+      legs: { applyRecordedLegPose(side) { legEvents.push(side); }, pants: { update() { legEvents.push('pants'); } } } },
   };
-  return { actor, scene, pieces };
+  return { actor, scene, pieces, legEvents };
 }
 
 for (const [input, expected] of [
@@ -99,7 +104,7 @@ for (const [input, expected] of [
   ['bleedingHealth', 'sharp'], ['poisonedHealth', 'poison'],
   ['burningHealth', 'fire'], ['kindlingHealth', 'fire'], ['frost', 'frost'],
 ]) {
-  const { actor, scene, pieces } = makeActor(input);
+  const { actor, scene, pieces, legEvents } = makeActor(input);
   const originalMaterials = pieces.map(mesh => mesh.material); // Compares shared asset safety after a scorch.
   const phases = []; // Records playback phases to verify blunt recoil is absent from non-blunt deaths.
   const originalSample = windowStub.ImpactRagdollPlayback.sampleCreatureDeath;
@@ -121,6 +126,8 @@ for (const [input, expected] of [
   } else assert.equal(emission, undefined, 'blunt/fire kills emit no blood');
   for (let i = 0; i < 40; i++) windowStub.CreatureDeath.updateCorpses(0.04);
   assert.equal(actor.state, 'corpse');
+  assert(legEvents.length > 0 && legEvents.length % 3 === 0, 'every recorded leg-pose pair refreshes pants');
+  for (let i = 0; i < legEvents.length; i += 3) assert.deepEqual(legEvents.slice(i, i + 3), ['left', 'right', 'pants']);
   assert.ok(Math.hypot(actor.x - 96, actor.y - 96) <= 64 * 1.5, 'ground slide remains short');
   assert.equal(scene.children.filter(child => child instanceof Points).length, 0, 'spray disposes after lifetime');
   const decreases = phases.some((p, index) => index && p < phases[index - 1] - 1e-6);
@@ -130,6 +137,8 @@ for (const [input, expected] of [
       assert.notEqual(pieces[i].material, originalMaterials[i], 'scorch isolates materials per actor');
       assert.ok(pieces[i].material.color.value <= 0.061, 'portrait, hands, and feet turn near-black');
       assert.equal(originalMaterials[i].color.value, 1, 'shared original material is not scorched');
+      assert.equal(pieces[i].material.onBeforeCompile, originalMaterials[i].onBeforeCompile, 'scorched clothes preserve the garment mask shader');
+      assert.equal(pieces[i].material.customProgramCacheKey, originalMaterials[i].customProgramCacheKey);
     }
   }
   windowStub.ImpactRagdollPlayback.sampleCreatureDeath = originalSample;

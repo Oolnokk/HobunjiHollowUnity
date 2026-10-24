@@ -309,7 +309,7 @@
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261024h86ba6e6"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261024ha298297"></script>
   <script src="js/combat/combat-attach.js?v=20261024at1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
@@ -352,7 +352,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261024hbf19ccd"></script>
+  <script src="js/combat/combat-bandit.js?v=20261024h47507eb"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -458,7 +458,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261019recordeddeath2"></script>
+  <script src="js/creature-death.js?v=20261024h8b1749f"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load

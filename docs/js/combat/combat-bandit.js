@@ -417,6 +417,8 @@
     group.name = 'bandit_avatar_group';
     const frontPivot = new THREE.Group(); frontPivot.name = 'bandit_front_plane';
     const backPivot = new THREE.Group(); backPivot.name = 'bandit_back_plane';
+    frontPivot.rotation.y = Math.PI / 2; // Bind pants in the same rest orientation used by gameplay and corpse rendering.
+    backPivot.rotation.y = -Math.PI / 2;
     frontPivot.add(renderedFrontMesh);
     backPivot.add(renderedBackMesh);
     // Keeps the portrait's own species/gender grounding offset (the
@@ -456,6 +458,10 @@
     legsPivot.name = 'bandit_legs_pivot';
     legsPivot.position.y = -(modelHeight / 2);
     group.add(legsPivot);
+    const legsFrame = new THREE.Group(); // Converts the NPC leg rig's portrait-local axes into the enemy's side-facing convention.
+    legsFrame.name = 'bandit_legs_frame';
+    legsFrame.rotation.y = Math.PI / 2;
+    legsPivot.add(legsFrame);
     const handsPivot = new THREE.Group(); // Floor-relative parent for procedural hands, matching the leg rig's center-anchored-hostile correction.
     handsPivot.name = 'bandit_hands_pivot';
     handsPivot.position.y = -(modelHeight / 2);
@@ -470,7 +476,7 @@
     // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
     // same clipping fix applied to the mounted-rider case.
     characterBuildStatus.stage = 'leg-rig';
-    const legs = window.ProceduralLegAnimation?.attach(THREE, legsPivot, {
+    const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,

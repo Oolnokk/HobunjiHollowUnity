@@ -14,6 +14,7 @@ class Group {
   remove(child) { this.children = this.children.filter(value => value !== child); child.parent = null; }
 }
 let attachment = null, ready = false, disposed = false; // Captures garment hierarchy, asynchronous completion and lifecycle.
+let legParent = null; // Captures the procedural rig's native coordinate frame before garment binding.
 const profile = { bodyColors: { PANTS: { hex: '#336699' } } }; // Profile produced after roster dye reconciliation.
 const legs = { dispose() { disposed = true; } }; // The existing leg lifecycle is the sole owner of pants teardown.
 const portrait = new Group(), assembly = new Group(); // Hostile builder extracts these source portrait meshes.
@@ -23,6 +24,7 @@ const renderer = {
   appearanceFromBodyColors: colors => ({ primaryHex: colors.PANTS.hex }),
   buildOverlayMask: () => 'cloth-mask',
   attachToLegs(_THREE, handle, options) {
+    assert.equal(options.avatarGroup.rotation.y, legParent.rotation.y, 'portrait and legs share a rest frame before pants bind');
     attachment = { handle, options };
     handle.pants = { readyPromise: Promise.resolve().then(() => { ready = true; return true; }) };
     return handle.pants;
@@ -32,7 +34,7 @@ const context = {
   window: {
     NpcAvatarPreview: { ensurePortraitCosmetics: async () => {}, buildProfileFromNpcExport: () => profile, renderProfileToCanvas: async () => {} },
     PNGPlaneAvatar: { buildSinglePlaneAvatarModel: () => portrait, disposeAvatarModel() {} },
-    ProceduralLegAnimation: { attach: () => legs }, PantsGarmentRenderer: renderer,
+    ProceduralLegAnimation: { attach: (_THREE, parent) => { legParent = parent; return legs; } }, PantsGarmentRenderer: renderer,
   },
   document: { createElement: () => ({ getContext: () => ({ drawImage() {} }) }) },
   THREE: { Group }, COMBAT_FROWN_COMPOSER: {}, characterBuildStatus: {},
@@ -43,6 +45,15 @@ vm.runInNewContext(factory + ';this.build = buildBanditAvatar;', context);
   const ref = await context.build({ name: 'Ghoul', appearance: { speciesId: 'ghoul', gender: 'male' }, equippedCosmetics: ['draped_pants'] }); // Same path used by bandits, ghouls, skeletons, liches and ghosts.
   assert.equal(attachment.options.avatarGroup, ref.frontPlane, 'pants follow the same facing/death pivot as the portrait');
   assert.equal(attachment.handle, ref.legs);
+  assert.equal(legParent.parent, ref.legsPivot, 'native leg frame remains under the existing facing/death pivot');
+  assert.equal(legParent.rotation.y, Math.PI / 2, 'NPC leg axes rotate into the enemy portrait convention');
+  for (const yaw of [0, 0.5, Math.PI]) {
+    ref.frontPlane.rotation.y = yaw + Math.PI / 2;
+    ref.legsPivot.rotation.y = yaw;
+    const relativeYaw = ref.legsPivot.rotation.y + legParent.rotation.y - ref.frontPlane.rotation.y; // Project the native stance into the displayed portrait plane.
+    assert(Math.abs(Math.cos(relativeYaw) * 0.144 - 0.144) < 1e-10, 'leg spacing stays lateral at every facing angle');
+    assert(Math.abs(Math.sin(relativeYaw) * 0.144) < 1e-10, 'feet and pants do not separate along portrait depth');
+  }
   assert.equal(attachment.options.garmentId, 'draped_pants');
   assert.equal(attachment.options.appearance.primaryHex, '#336699');
   assert.equal(attachment.options.overlayMask, 'cloth-mask');
