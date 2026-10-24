@@ -133,4 +133,29 @@ assert.equal(perform(prop).ok, true); position.c += 10; time += 200; api.update(
 assert.equal(perform(prop).ok, false, 'cannot activate distant prop via a stale menu');
 area = 'farm'; assert.equal(api.actionButton(), null);
 assert(saved >= 7);
-console.log('Festival calendar, layouts, quality rewards, annual persistence, costumes, and dance checks passed.');
+// Remembrance is a real interrupted/completed local observance, not a no-op menu item.
+prop = visit('tzizkhanash', 'remembrance');
+assert.equal(perform(prop).ok,true);
+const favorBeforeRemembrance=deltas.length; // Completion grants an annual reward, entering the circle does not.
+for(let i=0;i<59;i++){time+=200;api.update();}
+assert.equal(api.claimed('remembrance'),false,'no reward before twelve full seconds');
+time+=400;api.update();
+assert.equal(api.claimed('remembrance'),true,'Tzizkhanash remembrance completes in the world');
+assert(deltas.length>favorBeforeRemembrance,'completed remembrance rewards the player for joining');
+year++;prop=visit('tzizkhanash','remembrance');
+assert.equal(perform(prop).ok,true);
+position.c+=10;time+=200;api.update();
+assert.equal(api.diagnostics().remembrance,null,'leaving a remembrance locale cancels completion');
+assert.equal(api.claimed('remembrance'),false,'canceled observance cannot claim its reward');
+// Playing along must sound a real note before the player earns the music participation bonus.
+window.MusicMinigame.beginPlayerSession=function(){this.state={active:true,announcedPlaying:false};};
+prop=visit('five_blossoms','music');
+assert.equal(perform(prop).ok,true);
+for(let i=0;i<105;i++){time+=200;api.update();}
+assert.equal(api.claimed('music'),false,'an idle instrument overlay never earns Favor');
+window.MusicMinigame.state.announcedPlaying=true;
+for(let i=0;i<105;i++){time+=200;api.update();}
+assert.equal(api.claimed('music'),true,'active music participation earns the annual reward');
+window.MusicMinigame.state.active=false;time+=200;api.update();
+assert.equal(api.diagnostics().musicParticipation,null,'closing the instrument session clears its activity');
+console.log('Festival calendar, layouts, quality rewards, annual persistence, costumes, dance and active locale participation passed.');
