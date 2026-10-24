@@ -103,3 +103,11 @@ assert.deepEqual(live.desktop, { sentinelDesktop: 'KeyZ' }, 'controller reset le
 assert.ok(live.modeShifts.some(shift => shift.id === 'desktop-custom-preserved'), 'controller reset preserves desktop-only mode shifts');
 
 console.log('Controller default layout checks passed.');
+
+// Prompt labels are shared by gameplay, menus, and the binding editor.
+for (const [index, label] of ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'Back', 'Start', 'LS Click', 'RS Click', 'D-pad ↑', 'D-pad ↓', 'D-pad ←', 'D-pad →', 'Guide'].entries()) {
+  assert.equal(api.buttonLabel('Button' + index), label);
+}
+assert.equal(api.buttonLabel('Button4+Button0'), 'LB + A');
+assert.equal(api.buttonLabel('Ctrl+KeyF'), 'Ctrl + F');
+assert.equal(api.buttonLabel('Button20'), 'Button 20');

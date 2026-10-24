@@ -741,6 +741,8 @@
     const section = document.createElement('div');
     section.id = 'livestockNurserySection';
     section.setAttribute('data-ctrl-group', '');
+    section.setAttribute('data-ctrl-subtab', '');
+    section.setAttribute('aria-label', 'Nursery Babies');
     section.style.cssText = 'border:1px solid var(--border,#4b443a);border-radius:8px;padding:7px 8px;margin:0 0 8px;background:rgba(255,220,160,.055);';
     section.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
       <strong><button type="button" class="livestock-nursery-toggle" data-ctrl-group-open aria-expanded="${farmBabyInventoryCollapsed ? 'false' : 'true'}" style="border:0;background:transparent;color:inherit;padding:0;text-align:left;font:inherit;font-weight:800;cursor:pointer;">${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies</button></strong>
@@ -842,6 +844,16 @@
       toggleFarmInventory();
     });
     section.appendChild(gridToggle);
+    let adults = container.querySelector('#livestockNurseryAdults'); // Reuse the adult section across repeat decoration instead of nesting wrappers.
+    if (!adults) {
+      adults = document.createElement('div');
+      adults.id = 'livestockNurseryAdults';
+      adults.setAttribute('data-ctrl-subtab', '');
+      adults.setAttribute('aria-label', 'Adult Livestock');
+      while (container.firstChild) adults.appendChild(container.firstChild);
+      container.appendChild(adults);
+    }
+    container.setAttribute('data-ctrl-group', '');
     container.prepend(section);
   }
 

@@ -54,7 +54,7 @@ const button = (id, x, y, attrs = {}) => new Element('button', { id, ...attrs },
 const a = button('a', 10, 40); // First control inside the outer group.
 const b = button('b', 110, 40); // Sibling selected by Right inside that group.
 const innerButton = button('inner-button', 10, 100); // Control that requires entering the second nesting level.
-const inner = new Element('div', { id: 'inner', 'data-ctrl-group': '' }, [innerButton], 10, 100); // Explicit nested-menu contract.
+const inner = new Element('div', { id: 'inner', 'data-ctrl-group': '' }, [innerButton, button('inner-second', 10, 140)], 10, 100); // Explicit nested-menu contract.
 const group = new Element('div', { id: 'group', 'data-ctrl-group': '' }, [a, b, inner], 10, 40); // Parent sections are single candidates before Confirm.
 const outside = button('outside', 250, 40); // Tempting spatial neighbor that must never steal selection inside a nest.
 const tabA = button('tab-a', 250, 100); // A sibling tab group tests bumper confinement.
@@ -136,7 +136,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   modal.hidden = true; await rebuild(modal);
   assert.equal(ui.activePanel(), panel);
   assert.equal(ui.focusedElement(), replacementA, 'modal handoff returns to the same nested control');
-  press('cancel'); assert.equal(ui.focusedElement(), replacementGroup);
+  press('cancel'); assert.equal(ui.focusedElement(), replacementA, 'Back skips the now single-child replacement group');
   replacementA.disabled = true; await rebuild(replacementGroup);
   assert.equal(ui.focusedElement(), replacementGroup, 'a section remains reachable for reading when all its actions are disabled');
   press('confirm');
@@ -214,7 +214,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   scrollPanel.hidden = true; await rebuild(scrollPanel);
 
   const treeToggle = button('tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // The authored toggle opens just its own collapsible tree.
-  const perkRow = new Element('div', { class: 'perk-row', 'data-perk': 'health' }, [button('perk-plus', 10, 100)], 10, 90);
+  const perkRow = new Element('div', { class: 'perk-row', 'data-perk': 'health' }, [button('perk-plus', 10, 100), button('perk-minus', 10, 140)], 10, 90);
   const hiddenToggle = button('legacy-tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // Enhanced Nursery retains a hidden legacy toggle before its visible disclosure.
   hiddenToggle.hidden = true;
   const tree = new Element('div', { class: 'perk-tree', 'data-tree': 'combat' }, [hiddenToggle, treeToggle, perkRow], 10, 40);
@@ -224,9 +224,8 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   body.append(perkPanel);
   for (const observer of observers) observer([{ target: body, addedNodes: [perkPanel], removedNodes: [] }]);
   await Promise.resolve();
-  assert.equal(ui.focusedElement(), treeList, 'Perks is a selectable section');
-  press('confirm'); assert.equal(ui.focusedElement(), tree);
-  assert.equal(treeToggle.clicks, 0, 'entering the Perks section does not open a child tree');
+  assert.equal(ui.focusedElement(), tree, 'a one-tree Perks container skips directly to its tree');
+  assert.equal(treeToggle.clicks, 0, 'skipping the Perks wrapper does not activate its tree');
   press('confirm'); assert.equal(treeToggle.clicks, 1, 'entering an individual tree opens its existing toggle');
   assert.equal(hiddenToggle.clicks, 0, 'entering a nest ignores its hidden legacy disclosure');
   assert.equal(ui.focusedElement(), perkRow, 'opening a tree starts on its contents');
@@ -234,7 +233,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('confirm'); assert.equal(perkRow.children[0].clicks, 1);
   press('cancel'); assert.equal(ui.focusedElement(), perkRow);
   press('cancel'); assert.equal(ui.focusedElement(), tree);
-  press('cancel'); assert.equal(ui.focusedElement(), treeList);
+  assert.equal(ui.debugState().groupDepth, 0, 'Back skips the redundant one-tree wrapper');
   perkPanel.hidden = true; await rebuild(perkPanel);
 
   // Execute the actual mastery picker builder against the navigator, including rank rebuilds and locked-effect inspection.
@@ -266,7 +265,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('left'); press('confirm'); assert.equal(choices, 1, 'Confirm chooses the available effect through the normal progression API');
   masteryPanel.hidden = true; await rebuild(masteryPanel);
   const detailAction = button('detail-use', 320, 80); // Item actions live in a sibling panel rather than inside the grid's DOM.
-  const detailNest = new Element('div', { id: 'detail-nest', 'data-ctrl-group': '' }, [button('detail-nested-action', 320, 120)], 320, 120);
+  const detailNest = new Element('div', { id: 'detail-nest', 'data-ctrl-group': '' }, [button('detail-nested-action', 320, 120), button('detail-nested-second', 320, 160)], 320, 120);
   const detailPanel = new Element('div', { id: 'item-detail', 'data-ctrl-detail-panel': '' }, [detailAction, detailNest], 320, 40);
   const itemCard = button('item-a', 10, 40, { 'data-stack-id': 'stack-a', 'data-ctrl-detail': 'item-detail' }); // Exact stack identity is retained through list rebuilds.
   const itemOther = button('item-b', 110, 40, { 'data-stack-id': 'stack-b', 'data-ctrl-detail': 'item-detail' });
@@ -360,12 +359,12 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   body.append(nurseryPanel);
   for (const observer of observers) observer([{ target: body, addedNodes: [nurseryPanel], removedNodes: [] }]);
   await Promise.resolve();
-  assert.equal(ui.focusedElement().id, 'livestockNurserySection', 'Nursery itself is a selectable nest');
+  assert.equal(ui.focusedElement().id, 'farmLivestockList', 'Nursery and adults share one selectable inventory owner');
   // Real DOM click listeners receive an event; supply one on this HTML-parser stand-in.
   nurseryList.querySelector('.livestock-nursery-toggle').click = function () { for (const callback of this.events.get('click') || []) callback({ stopPropagation() {} }); };
   press('confirm');
   await Promise.resolve(); await Promise.resolve();
-  assert.equal(ui.debugState().groupId, 'livestockNurserySection', 'entering opens the collapsed Nursery and survives its asynchronous rebuild');
+  assert.equal(ui.debugState().groupId, 'farmLivestockList', 'entering opens the Nursery subtab and survives its asynchronous rebuild');
   const nurseryCard = nurseryList.querySelector('[data-key="baby-two"]'); // Select a non-first baby so Back cannot pass by defaulting to the first.
   nurseryCard.focus(); press('confirm');
   await Promise.resolve(); await Promise.resolve();
@@ -374,9 +373,74 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('right'); assert.ok(nurseryList.querySelector('#livestockNurseryDetail').contains(ui.focusedElement()), 'baby detail navigation stays within its actions');
   press('cancel');
   assert.equal(ui.focusedElement().getAttribute('data-key'), 'baby-two', 'Back returns to the same baby after the actual Nursery renderer replaces every row');
-  press('cancel'); assert.equal(ui.focusedElement().id, 'livestockNurserySection', 'second Back exits the Nursery as one nest');
+  press('cancel'); assert.equal(ui.focusedElement().id, 'farmLivestockList', 'second Back exits the Nursery inventory owner');
   assert.equal(ui.debugState().groupDepth, 0);
   nurseryPanel.hidden = true; await rebuild(nurseryPanel);
+  // Execute nested section pages, rather than asserting their source markup.
+  const sectionA1 = button('section-a1', 10, 40); // First page action must be highlighted without being clicked.
+  const sectionA2 = button('section-a2', 110, 40); // Provides a meaningful two-control section.
+  const sectionA = new Element('div', { id: 'section-a', class: 'farm-section' }, [sectionA1, sectionA2]); // A normal Farm-sized section.
+  const column = (id, x) => new Element('div', { id, class: 'farm-storage-col' }, [button(id + '-one', x, 80), button(id + '-two', x + 100, 80)], x, 80); // Two columns exercise nested bumper ownership.
+  const bagColumn = column('bag-column', 10); // Starts as the first page inside Storage.
+  const boxColumn = column('box-column', 210); // Becomes visible with the local next-tab action.
+  const storageSection = new Element('div', { id: 'storage-section', class: 'farm-section' }, [bagColumn, boxColumn]); // Outer and inner page owners share the same configured tab actions.
+  const sectionOwner = new Element('div', { id: 'section-owner', class: 'mp-pane' }, [sectionA, storageSection]); // Mirrors the real pause-menu pane boundary.
+  const sectionPanel = new Element('div', { id: 'section-panel', 'data-ctrl-panel': '' }, [sectionOwner]); // Isolated topmost modal for section navigation.
+  body.append(sectionPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [sectionPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement(), sectionOwner);
+  press('confirm');
+  assert.equal(ui.focusedElement(), sectionA1, 'entering the owner skips its selected page wrapper');
+  assert.equal(sectionA1.clicks, 0, 'entering does not activate the highlighted action');
+  assert.ok(storageSection.classList.contains('ctrl-nav-subtab-hidden'));
+  assert.equal(ui.debugState().subtab.count, 2);
+  press('tabNext');
+  assert.equal(ui.focusedElement(), storageSection, 'a nested multi-section page remains enterable');
+  assert.ok(sectionA.classList.contains('ctrl-nav-subtab-hidden'));
+  press('confirm');
+  assert.equal(ui.focusedElement(), bagColumn.children[0]);
+  assert.ok(boxColumn.classList.contains('ctrl-nav-subtab-hidden'));
+  press('tabPrev');
+  assert.equal(ui.focusedElement(), boxColumn.children[0], 'previous wraps within the deepest section owner');
+  assert.equal(ui.debugState().subtab.id, 'box-column');
+  assert.ok(bagColumn.classList.contains('ctrl-nav-subtab-hidden'));
+  press('cancel');
+  assert.equal(ui.focusedElement(), storageSection, 'Back restores the enclosing section owner');
+  assert.ok(!bagColumn.classList.contains('ctrl-nav-subtab-hidden'));
+  assert.ok(!boxColumn.classList.contains('ctrl-nav-subtab-hidden'));
+  assert.equal(ui.debugState().subtab.id, 'storage-section');
+  press('tabNext');
+  assert.equal(ui.focusedElement(), sectionA1, 'outer bumpers resume after leaving the nested owner');
+  const rebuiltSection = new Element('div', { id: 'section-a', class: 'farm-section' }, [button('section-a1', 10, 40), button('section-a2', 110, 40)]); // Replaces the selected page without closing its owner.
+  sectionOwner.children[0] = rebuiltSection; rebuiltSection.parentElement = sectionOwner; sectionA.parentElement = null;
+  await rebuild(sectionOwner);
+  assert.equal(ui.debugState().subtab.id, 'section-a');
+  assert.equal(ui.focusedElement(), rebuiltSection.children[0]);
+  assert.ok(storageSection.classList.contains('ctrl-nav-subtab-hidden'), 'rebuild retains one-page presentation');
+  press('cancel');
+  assert.equal(ui.focusedElement(), sectionOwner);
+  assert.ok(!storageSection.classList.contains('ctrl-nav-subtab-hidden'), 'Back restores every sibling page');
+  press('confirm');
+  for (const callback of listeners.get('pointerdown') || []) callback({ target: rebuiltSection });
+  assert.equal(ui.debugState().groupDepth, 0, 'mouse/touch returns to the normal multi-section layout');
+  assert.ok(!storageSection.classList.contains('ctrl-nav-subtab-hidden'));
+  press('confirm');
+  sectionPanel.hidden = true; await rebuild(sectionPanel);
+  assert.ok(!storageSection.classList.contains('ctrl-nav-subtab-hidden'), 'closing the menu cannot leave section siblings hidden');
+  const singleAction = button('single-action', 10, 40); // A chain of one-child wrappers must never become extra Confirm or Back steps.
+  const singleInner = new Element('div', { 'data-ctrl-group': '' }, [singleAction]); // First redundant wrapper.
+  const singleOuter = new Element('div', { 'data-ctrl-group': '' }, [singleInner]); // Second redundant wrapper.
+  const singleClose = button('single-close', 300, 0, { 'data-ctrl-cancel': '' }); // Back should reach this immediately from a transparent chain.
+  const singlePanel = new Element('div', { 'data-ctrl-panel': '' }, [singleOuter, singleClose]); // Exercises the complete owner/activation path.
+  body.append(singlePanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [singlePanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement(), singleAction);
+  press('confirm'); assert.equal(singleAction.clicks, 1);
+  assert.equal(ui.debugState().groupDepth, 0);
+  press('cancel'); assert.equal(singleClose.clicks, 1);
+  singlePanel.hidden = true; await rebuild(singlePanel);
   const handled = []; // Opt-in readers own A/B/bumpers without taking over controller polling.
   panel.setAttribute('data-ctrl-actions', '');
   panel.dispatchEvent = event => { handled.push(event.detail.action); return false; };

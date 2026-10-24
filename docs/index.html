@@ -45,7 +45,7 @@
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20261024h6000c42"></script>
+  <script src="js/input-bindings.js?v=20261024h2313970"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <script src="js/activity-events.js?v=20261007romance1"></script>
@@ -157,7 +157,7 @@
   <script src="js/metal-armor-system.js?v=20261022hauditfix"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261022h23rig2"></script>
-  <link rel="stylesheet" href="style.css?v=20261019instrumentfeedback1">
+  <link rel="stylesheet" href="style.css?v=20261024controllersubtabs1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -441,7 +441,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261024babyname3"></script>
+  <script src="js/farm-troughs.js?v=20261024hb97b14e"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -713,7 +713,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261024babyname1"></script>
+  <script src="js/farm-panel.js?v=20261024h17abc7d"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -1368,13 +1368,13 @@
             <div class="farm-owner-row">Owned by <span id="farmOwnerName">—</span></div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionLayout">
             <div class="settings-section-title">Layout</div>
             <div class="farm-grid-wrap"><canvas id="farmGlanceCanvas" width="480" height="480"></canvas></div>
             <div class="farm-grid-legend" id="farmGridLegend"></div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionBuildings">
             <div class="settings-section-title">Buildings</div>
             <div id="farmBuildingsNote" class="farm-note"></div>
             <div id="farmBuildingsList" class="farm-list"></div>
@@ -1383,26 +1383,26 @@
             </div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionFoodProcessing">
             <div class="settings-section-title">Food Processing</div>
             <div id="farmProcessorsNote" class="farm-note"></div>
             <div id="farmProcessorsSummary" class="farm-note"></div>
             <div id="farmProcessorsGrid" class="farm-processor-grid"></div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionDew">
             <div class="settings-section-title">Dew</div>
             <div id="farmDewNote" class="farm-note"></div>
             <div id="farmDewList" class="farm-list"></div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionFurniture">
             <div class="settings-section-title">Furniture</div>
             <div id="farmFurnitureNote" class="farm-note"></div>
             <div id="farmFurnitureList" class="farm-list"></div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionLivestock">
             <div class="settings-section-title">Livestock</div>
             <div class="farm-toolbar">
               <button id="farmAddLivestockBtn" class="settings-small-btn">Add Livestock ▾</button>
@@ -1414,7 +1414,7 @@
             <div id="farmLivestockList" class="farm-list"></div>
           </div>
 
-          <div class="farm-section">
+          <div class="farm-section" id="farmSectionStorage">
             <div class="settings-section-title">Storage</div>
             <div id="farmStorageLocked" class="farm-note" hidden>🔒 Storage access hasn't been granted to you on this farm.</div>
             <div id="farmStorageBody" class="farm-storage">
@@ -1683,6 +1683,7 @@
       <!-- ── Settings pane ──────────────────────────────── -->
       <div class="mp-pane" id="mpSettings">
         <div class="settings-pane">
+          <div data-ctrl-subtab id="settingsSection0" aria-label="Visual Effects">
           <div class="settings-section-title">Visual Effects</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -1691,6 +1692,8 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingOutlines" checked><span class="toggle-slider"></span></span>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection1" aria-label="Billboard Sprites">
           <div class="settings-section-title" style="margin-top:10px">Billboard Sprites</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -1706,6 +1709,8 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingBillWind" checked><span class="toggle-slider"></span></span>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection2" aria-label="Weeds" data-dev-only>
           <div data-dev-only class="settings-section-title" style="margin-top:10px">Weeds</div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -1714,6 +1719,8 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingWeed3D"><span class="toggle-slider"></span></span>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection3" aria-label="Cloud Forest (perf testing) Set to Defaults" data-dev-only>
           <div data-dev-only class="settings-section-title" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
             <span>Cloud Forest (perf testing)</span>
             <button id="settingCloudForestResetDefaults" type="button" style="font-size:11px;padding:3px 9px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#9bc2ff;cursor:pointer;white-space:nowrap">Set to Defaults</button>
@@ -1829,6 +1836,8 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingCloudForestBgForest" checked><span class="toggle-slider"></span></span>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection4" aria-label="Nearby Projectile Cover (perf testing)" data-dev-only>
           <div data-dev-only class="settings-section-title" style="margin-top:10px">Nearby Projectile Cover (perf testing)</div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -1858,6 +1867,8 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingBanditCamps" checked><span class="toggle-slider"></span></span>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection5" aria-label="Audio calibration" data-dev-only>
           <div data-dev-only class="settings-section-title" style="margin-top:10px">Audio calibration</div>
           <div data-dev-only class="settings-row settings-row--stacked">
             <div class="settings-label">
@@ -1871,6 +1882,8 @@
               <button type="button" id="settingMusicTrackGainReset" class="settings-small-btn">Reference</button>
             </div>
           </div>
+          </div>
+          <div data-ctrl-subtab id="settingsSection6" aria-label="Camera">
           <div class="settings-section-title" style="margin-top:10px">Camera</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -1906,6 +1919,8 @@
               <span id="settingShoulderSurfOffsetVValue" class="settings-slider-value">0.05</span>
             </div>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection7" aria-label="Input">
           <div class="settings-section-title" style="margin-top:10px">Input</div>
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
@@ -1968,6 +1983,8 @@
             </div>
             <div class="input-bindings-grid" id="lyreFreeplayKeySettings"></div>
           </div>
+          </div>
+          <div data-ctrl-subtab id="settingsSection8" aria-label="Performance">
           <div class="settings-section-title" style="margin-top:10px">Performance</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -1995,6 +2012,8 @@
             <input id="settingWildlifeDistance" type="number" min="8" max="64" step="1" aria-label="Wildlife activation distance in tiles" style="width:64px;align-self:center" value="14">
             <span style="font-size:11px;align-self:center">tiles</span>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection9" aria-label="Painterly">
           <div class="settings-section-title" style="margin-top:10px">Painterly</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -2009,6 +2028,8 @@
               <option value="high">High</option>
             </select>
           </label>
+          </div>
+          <div data-ctrl-subtab id="settingsSection10" aria-label="Local Save Folder">
           <div class="settings-section-title" style="margin-top:10px">Local Save Folder</div>
           <div class="settings-row settings-row--stacked" id="localSaveFolderRow">
             <div class="settings-label">
@@ -2024,6 +2045,8 @@
               <button type="button" id="localSaveFolderLoadBtn" class="settings-small-btn" style="display:none">Load From Folder</button>
             </div>
           </div>
+          </div>
+          <div data-ctrl-subtab id="settingsSection11" aria-label="Dev Tools">
           <div class="settings-section-title" style="margin-top:10px">Dev Tools</div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -2132,6 +2155,7 @@
             <button type="button" id="devRegenerateWildernessLabBtn" class="settings-small-btn">Regenerate</button>
           </div>
         </div>
+          </div>
       </div><!-- /mpSettings -->
 
       <!-- ── Debug log pane ────────────────────────────────── -->
@@ -2713,7 +2737,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261024babytab2"></script>
+  <script src="js/controller-ui-nav.js?v=20261024h1c76f3a"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
