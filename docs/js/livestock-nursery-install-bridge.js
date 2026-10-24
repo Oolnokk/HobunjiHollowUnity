@@ -11,7 +11,8 @@
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },
-    { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
+    { globalKey: 'AnimalBabyArrival', src: 'js/animal-baby-arrival.js?v=20261024naming3' },
+    { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20261024naming1' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261021h6d2db2d' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261021hdf1c0e2' },
     { globalKey: 'CompanionResilience', src: 'js/stable-companion-resilience.js?v=20261024resil1' }, // Appends offense/defense/revival perks to the tree perk-adjustments just replaced.
@@ -21,7 +22,7 @@
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
     { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261006h1a27ed3' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261012h24b6e66' },
-    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261022ratio1' },
+    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261024evolution1' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261023hc437da7' },

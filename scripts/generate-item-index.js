@@ -9,6 +9,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm'); // Reads the runtime category icon table without duplicating its mapping.
 
 const DOCS = path.join(__dirname, '..', 'docs');
 
@@ -72,7 +73,8 @@ function extractToolItemDefs(gameJsSource) {
     .map(item => ({ ...item, cat: item.cat || 'tool' }));
 }
 
-function extractCookingIngredients(cookingDataSource) {
+function extractCookingIngredients(cookingDataSource, cookingSystemSource) {
+  const categoryIcons = vm.runInNewContext('(' + findBlock(cookingSystemSource, 'const CATEGORY_ICONS = {') + ')'); // Same placeholders as runtime ingredients.
   const block = findBlock(cookingDataSource, 'window.HobunjiCookingData = {');
   if (!block) return [];
   let parsed;
@@ -83,7 +85,7 @@ function extractCookingIngredients(cookingDataSource) {
   return Object.entries(parsed.items || {}).map(([key, def]) => ({
     key,
     label: def.name || key,
-    icon: '',
+    icon: categoryIcons[def.categories?.[0]] || '🥣',
     cat: 'ingredient',
   }));
 }
@@ -109,12 +111,13 @@ function extractCosmetics(cosmeticsIndexJson) {
 function main() {
   const gameJsSource = fs.readFileSync(path.join(DOCS, 'game.js'), 'utf8');
   const cookingDataSource = fs.readFileSync(path.join(DOCS, 'js', 'cooking-data.js'), 'utf8');
+  const cookingSystemSource = fs.readFileSync(path.join(DOCS, 'js', 'cooking-system.js'), 'utf8'); // Supplies canonical ingredient placeholders.
   const cosmeticsIndexJson = fs.readFileSync(path.join(DOCS, 'config', 'cosmetics', 'index.json'), 'utf8');
 
   const items = {};
   for (const item of extractItemDefs(gameJsSource)) items[item.key] = item;
   for (const item of extractToolItemDefs(gameJsSource)) if (!items[item.key]) items[item.key] = item;
-  for (const item of extractCookingIngredients(cookingDataSource)) if (!items[item.key]) items[item.key] = item;
+  for (const item of extractCookingIngredients(cookingDataSource, cookingSystemSource)) if (!items[item.key]) items[item.key] = item;
   for (const item of extractCosmetics(cosmeticsIndexJson)) if (!items[item.key]) items[item.key] = item;
 
   const sortedKeys = Object.keys(items).sort((a, b) => a.localeCompare(b));

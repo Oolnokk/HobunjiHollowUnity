@@ -1418,14 +1418,27 @@
   function _stableEntryFromLivestock(entry) {
     return {
       id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
+      lifeStage: entry.lifeStage === 'baby' ? 'baby' : 'adult', // Farm-to-Stable transfers must preserve Nursery babies rather than silently aging them.
       genotype: entry.genotype, aiType: deps.companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
       ...(entry.swarmColor ? { swarmColor: entry.swarmColor } : {}), // A honeyfuzzle swarm keeps its color as a companion.
     };
   }
   function _addToOwnStable(stabledEntry) {
     deps.getStable().push(stabledEntry);
-    deps._autoAssignStableRole(stabledEntry);
+    const isBaby = stabledEntry.lifeStage === 'baby'; // Transferred baby companions cannot be equipped until grown.
+    if (!isBaby) deps._autoAssignStableRole(stabledEntry);
     deps.saveStable();
+    if (isBaby) window.AnimalBabyArrival?.requestName?.(stabledEntry, {
+      scope: 'stable',
+      commit: name => {
+        const entry = deps.getStable()?.find(animal => animal.id === stabledEntry.id); // Character-scoped live Stable record may have been reloaded.
+        if (!entry) return false;
+        entry.name = name;
+        deps.saveStable();
+        return true;
+      },
+      refresh: () => window.FarmPanel?.renderStablePanel?.(),
+    });
   }
 
   function moveLivestockToStable(id) {

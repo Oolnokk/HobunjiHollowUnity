@@ -5,7 +5,7 @@
   // training is rendered here directly instead of post-processing whatever
   // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20261023h0465061';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20261024babyname1';
 
   const MAX_OUT_OF_STORAGE_STABLE_ANIMALS = 8; // Caps the Stable roster kept accessible outside indefinite stowage.
   let stableDeps = null; // Holds the live Stable save and UI dependencies.
@@ -248,6 +248,9 @@
   function stableAgeSection(title, note, options = {}) {
     const section = document.createElement('div'); // Used as the native Stable age-group container.
     section.className = 'stable-age-section';
+    section.id = 'stableAge' + String(title).replace(/[^a-zA-Z]/g, '');
+    section.setAttribute('data-ctrl-subtab', '');
+    section.setAttribute('aria-label', title);
     const heading = options.onToggle ? document.createElement('button') : makeText('div', title); // Used as a collapse control only for inventories that opt in.
     heading.className = options.onToggle ? 'settings-section-title stable-inventory-toggle' : 'settings-section-title';
     if (options.onToggle) {
@@ -255,6 +258,7 @@
       heading.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer;';
       heading.textContent = `${options.collapsed ? '▸' : '▾'} ${title}`;
       heading.setAttribute('aria-expanded', options.collapsed ? 'false' : 'true');
+      heading.setAttribute('data-ctrl-group-open', '');
       heading.addEventListener('click', options.onToggle);
     }
     section.appendChild(heading);

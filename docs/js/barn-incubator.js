@@ -630,12 +630,13 @@
     slot.blockedReason = null;
     slot.troughBarnId = null;
     slot.troughIndex = null; // The newly adult animal now occupies that trough, so this incubator slot must reserve another unused one next time.
-    return { ok: true, message: `${name} matured and moved into its reserved barn trough.` };
+    return { ok: true, entry: baby, message: `${name} matured and moved into its reserved barn trough.` };
   }
 
   function advanceMaturationDay() {
     normalizeState();
     const completed = []; // Successful maturation messages returned for diagnostics/tests.
+    const maturedAnimals = []; // Records to celebrate only after successful placement and the incubator save.
     const blocked = []; // Failed ready-slot messages retained for diagnostics.
     for (const addition of allAdditions()) {
       for (const slot of addition.slots || []) {
@@ -644,10 +645,12 @@
         if (slot.daysRemaining > 0) continue;
         const result = completeSlot(addition, slot); // Reuses existing FarmAnimals barn/trough placement at the end of the timer.
         (result.ok ? completed : blocked).push(result.message);
+        if (result.ok && result.entry) maturedAnimals.push(result.entry);
       }
     }
     saveState(`Incubator day advanced: ${completed.length} matured, ${blocked.length} blocked.`);
     if (completed.length) animalDeps?.showToast?.(`🪺 ${completed.join(' ')}`, true);
+    for (const animal of maturedAnimals) window.AnimalBabyArrival?.celebrateMaturation?.(animal); // A blocked/rolled-back slot never gets a false evolution screen.
     refreshAllUi();
     syncSleepingBabies(true);
     return { completed, blocked };
@@ -1472,6 +1475,7 @@
       detachedIncubators: allAdditions().filter(addition => !owningBarnOfAddition(addition.id)), // Reports babies excluded from the visible barn list.
       reservedTroughs: [...reservedTroughMap().keys()],
       nurseryBabyCount: nurseryBabies().length,
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Incubator Debug reveals success animations and pending prompts.
       currentArea: currentArea(),
       sleepingVisuals: [...sleepingBabies.keys()],
       layoutEditor: window.FarmPanel?.layoutEditorDebug?.() || null,

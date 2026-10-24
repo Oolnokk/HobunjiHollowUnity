@@ -66,13 +66,15 @@
   const PANEL_SELECTOR = `${EXPLICIT_PANEL_SELECTOR}, ${SEMANTIC_PANEL_SELECTOR}`;
   const TABS_SELECTOR = '[data-ctrl-tabs]';
   const GROUP_SELECTOR = [
-    '[data-ctrl-group]', '[data-ctrl-detail-panel]', '[data-ctrl-tabs]', '[role="tablist"]', 'details',
+    '.mp-pane', '[data-ctrl-subtab]', '[data-ctrl-group]', '[data-ctrl-detail-panel]', '[data-ctrl-tabs]', '[role="tablist"]', 'details',
     '.menu-section', '.progress-skills', '.perk-trees', '.perk-row', '.skill-row', '.farm-section', '.farm-storage-col', '.ship-pane',
     '.inv-grid-area', '.inv-info', '.inv-equip-section', '.inv-key-section',
     '.inv-pack-clothing', '.inv-gear-extra-section', '.perk-tree',
     '.loadout-slot', '.loadout-options', '.cooking-layout > aside', '.cooking-slot', '.cooking-picker', '.cooking-footer',
     '#stableList', '#desktopInputBindings', '#controllerInputBindings',
   ].join(', '); // Reuses authored section boundaries instead of guessing nests from geometric proximity.
+  const SUBTAB_SELECTOR = '.menu-section, .farm-section, .farm-storage-col, .progress-skills, .perk-trees, .inv-grid-area, .inv-equip-section, .inv-key-section, .inv-pack-clothing, .inv-gear-extra-section, [data-ctrl-subtab]'; // Large authored sections qualify; individual cards, perk rows and tab bars do not.
+  const subtabsByGroup = new Map(); // Active section ownership also keeps hidden siblings restorable after rebuilds and modal handoffs.
   const NAV_SELECTOR = [
     'button', 'a[href]', 'input', 'select', 'textarea', 'summary',
     '[role="button"]', '[tabindex]', '[data-ctrl-item]',
@@ -114,7 +116,7 @@
   // same technique ui-element-editor.js already uses to see through a
   // closed-but-still-laid-out modal.
   function isVisible(el) {
-    if (!el || !el.isConnected) return false;
+    if (!el || !el.isConnected || el.closest('.ctrl-nav-subtab-hidden')) return false;
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
     let node = el;
@@ -259,7 +261,10 @@
 
 
   function clearGroups(panel) {
-    for (const entry of groupsByPanel.get(panel) || []) entry.node.classList.remove('ctrl-nav-group-active');
+    for (const entry of groupsByPanel.get(panel) || []) {
+      restoreSubtabs(entry.node);
+      entry.node.classList.remove('ctrl-nav-group-active');
+    }
     groupsByPanel.delete(panel);
   }
 
@@ -272,10 +277,13 @@
       const origin = entry.returnPath ? resolveFocusPath(entry.returnPath).container : null; // Associated siblings belong logically to the source item's current nest.
       const associated = origin && parent.contains(origin) && panel.contains(node) && node?.hasAttribute('data-ctrl-detail-panel');
       if (!node || node === parent || (!parent.contains(node) && !associated) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
-        for (const removed of entries.splice(index)) removed.node.classList.remove('ctrl-nav-group-active');
+        for (const removed of entries.splice(index)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
         break;
       }
       if (entry.node !== node) {
+        const selectedState = subtabsByGroup.get(entry.node); // Retains section identity or sibling index when its whole owner is rebuilt.
+        restoreSubtabs(entry.node);
+        if (selectedState) prepareSubtabs(node, panel, selectedState.selected.id || null, selectedState.selected.id ? 0 : selectedState.sections.indexOf(selectedState.selected));
         entry.node.classList.remove('ctrl-nav-group-active');
         entry.node = node;
       }
@@ -293,15 +301,55 @@
   function groupTarget(el, root, panel) {
     let target = el; // Outermost unentered section becomes the single spatial candidate for its descendants.
     for (let node = el; node && node !== root; node = node.parentElement) {
-      if (isGroup(node) && isNavTarget(node) && belongsToNavigation(node, panel)) target = node;
+      if (isGroup(node) && isNavTarget(node) && belongsToNavigation(node, panel) && !(subtabsByGroup.get(root)?.selected === node && subtabsByGroup.get(root)?.transparent)) target = node;
     }
     return target;
   }
 
+  function directTargets(root, panel) {
+    const targets = targetsInPanel(root).filter(el => belongsToNavigation(el, panel)); // Only this panel's own controls participate.
+    return [...new Set(targets.map(el => groupTarget(el, root, panel)))].filter(target => !(target === subtabsByGroup.get(root)?.selected && subtabsByGroup.get(root)?.transparent) && !target.hasAttribute('data-ctrl-detail-panel'));
+  }
+
+  function projectSingleChild(target, panel) {
+    if (!isGroup(target)) return target;
+    const children = directTargets(target, panel); // A single route is transparent; read-only sections remain selectable for inspection.
+    return children.length === 1 && !children[0].hasAttribute('data-ctrl-group-open') ? projectSingleChild(children[0], panel) : target;
+  }
+
   function navigationTargets(panel) {
-    const root = navigationRoot(panel); // Only descendants of this nest can compete for directional focus.
-    const targets = targetsInPanel(root).filter(el => belongsToNavigation(el, panel)); // Readable sections remain inspectable even without an enabled action.
-    return [...new Set(targets.map(el => groupTarget(el, root, panel)))].filter(target => !target.hasAttribute('data-ctrl-detail-panel')); // Detail panes are reached through their owning item, never as unrelated sibling sections.
+    return directTargets(navigationRoot(panel), panel).map(target => projectSingleChild(target, panel));
+  }
+
+  function restoreSubtabs(group) {
+    const state = subtabsByGroup.get(group); // All presentation changes are reversible, including detached/rebuilt nodes.
+    if (!state) return;
+    for (const section of state.sections) section.classList.remove('ctrl-nav-subtab-hidden');
+    group.classList.remove('ctrl-nav-subtabs');
+    state.selected.classList.remove('ctrl-nav-subtab-selected');
+    subtabsByGroup.delete(group);
+  }
+
+  function prepareSubtabs(group, panel, selectedId = null, offset = 0) {
+    restoreSubtabs(group);
+    const sections = directTargets(group, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)); // Existing layout wrappers do not require new tab-button markup.
+    if (sections.length < 2) return false;
+    let index = sections.findIndex(section => section.id && section.id === selectedId); // Stable ids preserve the active section through a rebuild.
+    if (index < 0) index = 0;
+    const selected = sections[(index + offset + sections.length) % sections.length]; // Bumpers wrap within the borrowed local section set.
+    const nestedState = subtabsByGroup.get(selected); // An entered child still owns multiple sections even while its inactive siblings are hidden.
+    const transparent = !nestedState && directTargets(selected, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)).length < 2; // Nested multi-section pages remain enterable and can borrow the tab actions in turn.
+    subtabsByGroup.set(group, { sections, selected, transparent });
+    group.classList.add('ctrl-nav-subtabs');
+    selected.classList.add('ctrl-nav-subtab-selected');
+    for (const section of sections) if (section !== selected) section.classList.add('ctrl-nav-subtab-hidden');
+    const opener = Array.from(selected.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, selected, panel) === control && control.getAttribute('aria-expanded') === 'false'); // Open a collapsed baby inventory on selection without requiring another Confirm.
+    if (opener) opener.click();
+    return true;
+  }
+
+  function localSubtabs(panel) {
+    return [...enteredGroups(panel)].reverse().find(entry => subtabsByGroup.has(entry.node));
   }
 
   function enterGroup(group, panel, returnPath = null) {
@@ -312,6 +360,7 @@
     group.classList.add('ctrl-nav-group-active');
     const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
     if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
+    prepareSubtabs(group, panel);
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
     const remembered = lastFocusedByGroup.get(group); // Re-entering a group returns to its last surviving control.
@@ -324,20 +373,21 @@
     const entry = entries.pop(); // Consumes Back before the panel's close button can run.
     if (!entry) return false;
     lastFocusedByGroup.set(entry.node, currentTarget);
+    restoreSubtabs(entry.node);
     entry.node.classList.remove('ctrl-nav-group-active');
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Return to the original item or its nearest surviving neighbor after a consume/equip rebuild.
-    const origin = entry.returnPath ? recoverFocusTarget(panel, targets, entry.returnPath) : entry.node;
+    const origin = entry.returnPath ? recoverFocusTarget(panel, targets, entry.returnPath) : projectSingleChild(entry.node, panel);
     setFocus(origin || pickDefaultTarget(panel, targets) || navigationRoot(panel));
     return true;
   }
 
   function adoptFocusedGroups(el, panel) {
-    if (currentTarget === el) return; // Programmatic focus already has an explicit scope; mouse/native focus may choose another section.
+    if (currentTarget === el || navigationTargets(panel).includes(el)) return; // Programmatic focus already has an explicit scope; mouse/native focus may choose another section.
     clearGroups(panel);
     const ancestors = []; // Reconstructs nesting when switching from mouse/touch or another native focus owner.
     for (let node = el.parentElement; node && node !== panel; node = node.parentElement) {
-      if (isGroup(node) && belongsToNavigation(node, panel)) ancestors.unshift(node);
+      if (isGroup(node) && belongsToNavigation(node, panel) && projectSingleChild(node, panel) === node) ancestors.unshift(node);
     }
     const previousPath = focusPath; // Scope paths must not overwrite the selected control's recovery path.
     const entries = ancestors.map(node => {
@@ -644,6 +694,20 @@
   function cycleTabs(delta) {
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
+    const local = localSubtabs(panel); // The deepest entered section borrows configured tab actions until Back leaves it.
+    if (local) {
+      const entries = enteredGroups(panel); // Switching sections drops only descendants of the local owner.
+      const state = subtabsByGroup.get(local.node); // Retains index even for authored sections without ids.
+      const nextIndex = (state.sections.indexOf(state.selected) + delta + state.sections.length) % state.sections.length; // Wraps negative/positive bumper direction.
+      const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
+      for (const removed of entries.splice(entries.indexOf(local) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
+      prepareSubtabs(local.node, panel, next.id || null, next.id ? 0 : nextIndex);
+      scrolledSelection = null;
+      const targets = navigationTargets(panel); // Fresh controls may have appeared since the last section switch.
+      setFocus(pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: false });
+      updateHintBar(panel);
+      return;
+    }
     const group = findTabGroup(panel);
     if (!group) return;
     const items = Array.from(group.children).filter(el => isNavTarget(el) || (el.matches?.(NAV_SELECTOR) && isVisible(el) && !isDisabled(el)));
@@ -679,9 +743,20 @@
     if (!panel || !padEverSeen) { hideHintBar(); return; }
     const el = ensureHintEl();
     el.classList.toggle('ctrl-nav-hint-bar-visible', true);
-    const hasTabs = !!findTabGroup(panel); // The hint advertises bumpers wherever the menu has a visible tab bar.
+    const local = localSubtabs(panel); // Also advertises local sections while the outer tab bar is borrowed.
+    const hasTabs = !!local || !!findTabGroup(panel); // The hint advertises bumpers wherever the menu has a visible tab bar.
     const hasCancel = true; // B always works: explicit close button first, universal Escape fallback otherwise.
     el.querySelector('.ctrl-nav-hint-tabs').style.display = hasTabs ? '' : 'none';
+    const bindings = window.InputBindings; // Hints follow remapped controls rather than hardcoding the physical Xbox defaults.
+    const glyphs = el.querySelectorAll('.ctrl-nav-glyph'); // Reuse the existing hint elements.
+    const label = action => bindings?.buttonLabel?.(configuredControllerBinding(action)) || ({ uiConfirm: 'A', uiCancel: 'B', uiTabPrev: 'LB', uiTabNext: 'RB' })[action]; // Fallback is only for startup before binding initialization.
+    const labels = [label(UI_ACTIONS.confirm), label(UI_ACTIONS.cancel), `${label(UI_ACTIONS.tabPrev)}/${label(UI_ACTIONS.tabNext)}`]; // Same configured actions drive polling and the on-screen hints.
+    glyphs.forEach((glyph, index) => { if (glyph.textContent !== labels[index]) glyph.textContent = labels[index]; });
+    const tabHint = el.querySelector('.ctrl-nav-hint-tabs'); // Include section position/name so hidden siblings remain discoverable.
+    const state = local && subtabsByGroup.get(local.node); // Used only while updating menu hints, never on idle gameplay frames.
+    const sectionLabel = state && (state.selected.getAttribute('aria-label') || state.selected.querySelector('.settings-section-title, .menu-section-title, .progress-section-title, .farm-storage-col-title')?.textContent || state.selected.id || 'Section'); // Prefer authored human-facing labels.
+    const hintText = state ? ` ${String(sectionLabel).trim()} (${state.sections.indexOf(state.selected) + 1}/${state.sections.length})` : ' Switch Tabs'; // Communicates the currently borrowed scope.
+    if (tabHint.lastChild?.nodeType === 3 && tabHint.lastChild.textContent !== hintText) tabHint.lastChild.textContent = hintText;
     const bBtn = el.querySelectorAll('.ctrl-nav-hint')[1];
     if (bBtn) bBtn.style.display = hasCancel ? '' : 'none';
   }
@@ -830,6 +905,9 @@
   // this game already closes correctly on Escape via its own handler.
   window.addEventListener('keydown', (event) => {
     if (!isActive()) return;
+    // The baby-name popup is a true form, not a game tab strip: allow native Tab/Shift+Tab
+    // to move among its text field and buttons. Its own focus trap keeps focus inside.
+    if (event.key === 'Tab' && activePanel()?.id === 'animalBabyArrivalOverlay') return;
     if (isTextEditable(document.activeElement)) return;
     switch (event.key) {
       case 'ArrowUp': move('up'); break;
@@ -852,6 +930,8 @@
   // Keep the tracked focus target in sync with real mouse/touch clicks too,
   // so switching input devices mid-session (controller ↔ mouse) never
   // leaves the highlighted target pointing somewhere stale.
+  document.addEventListener('pointerdown', () => { const panel = activePanel(); if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } }, true);
+
   document.addEventListener('focusin', (event) => {
     const panel = activePanel();
     if (panel && isNavTarget(event.target) && belongsToNavigation(event.target, panel)) {
@@ -886,7 +966,15 @@
     queueMicrotask(() => {
       reconcileQueued = false;
       reconcileStack();
-      if (activePanel()) refreshFocusIfStale();
+      const panel = activePanel(); // Refresh section pages only when menu content changed, not from controller idle polling.
+      if (panel) {
+        for (const entry of enteredGroups(panel)) {
+          const state = subtabsByGroup.get(entry.node); // Reapply presentation after dynamic section/list rebuilds.
+          if (state) prepareSubtabs(entry.node, panel, state.selected.id || null, state.selected.id ? 0 : state.sections.indexOf(state.selected));
+        }
+        refreshFocusIfStale();
+        updateHintBar(panel);
+      }
     });
   }
   function scheduleVisibilitySettle() {
@@ -928,7 +1016,7 @@
       }
     }
     const panel = activePanel(); // A target-less panel retries only when its own content changes, not on every HUD text update.
-    const panelContentChanged = !!panel && !currentTarget && records.some(record => panel.contains(record.target));
+    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0) && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target));
     if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || panelContentChanged) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {
@@ -1002,7 +1090,8 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Scrolling preserves the entered container until B. Selecting tabs releases the chooser; nursery focus preserves detail portraits.',
+        latestChange: 'Xbox 360 names across prompts and arch badges; nested subtabs survive live updates and whole-owner rebuilds.',
+        subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),

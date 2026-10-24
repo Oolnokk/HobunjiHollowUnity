@@ -10401,18 +10401,22 @@
               // (fruitBush/mushroomPatch/unknown/hand-authored data with no
               // floraKind at all — which also covers every other zone that
               // has no dedicated tree species).
+              const isDeadTree = mapId === 'map_western_slope' && (tile.floraKind === 'copse' || !tile.floraKind); // Existing slope copses become harvestable dead trees, including saved layouts.
+              const isDeadBush = mapId === 'map_western_slope' && !isDeadTree; // All other slope ground vegetation uses bare woody bushes.
               const isTreeZone = mapId === 'map_northern_cliffs' || EXTERIOR_ZONES[mapId]?.cloudForest;
               const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
               const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
-              const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
+              const vegGroup = isDeadTree ? window.FoliageGenerator.buildDeadTreeMesh(c, r)
+                             : isDeadBush ? window.FoliageGenerator.buildDeadBushMesh(c, r)
+                             : isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
-              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
-              if (isCrownedPine || isShadewood) {
+              const isNativeBuild = isDeadTree || isDeadBush || isCrownedPine || isShadewood || isBush || isStump;
+              if (isDeadTree || isCrownedPine || isShadewood) {
                 // Their visible trunk base is centered on this solid SHRUB
                 // tile. Projectile cover can therefore use the existing tile
                 // collision instead of raycasting the full procedural tree.
@@ -10436,7 +10440,7 @@
               // not because they were occluding one another, but because
               // shrubs everywhere kept getting flagged as the "blocking
               // tree" for one or both of them.
-              if (isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
+              if (isDeadBush || isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
               const groundY = tileSurfaceY(TileType.GRASS) + tierY;
               vegGroup.position.set(cx, groundY, cz);
               if (isShadewood) {
@@ -16111,7 +16115,10 @@
       });
 
       function itemIconForKey(key) {
-        return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+        const def = ITEM_DEFS[key]; // Shared fallback for incomplete item metadata in Pack, shipping and reward text.
+        const icon = def?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon; // Preserve authored placeholders when present.
+        if (typeof icon === 'string' && icon.trim() && !['□', '[]'].includes(icon.trim())) return icon;
+        return ({ seed: '🌱', crop: '🌾', food: '🍲', ingredient: '🥣', material: '🔩', tool: '🔧', livestock: '🐾', furniture: '🏠', buildingPlan: '📜', instrument: '🎵' })[def?.cat] || '📦';
       }
 
       // Upgrades an already-rendered emoji icon element to a recolored PNG
@@ -16198,6 +16205,7 @@
         return {
           key: active?.key || null,
           spriteIcon: def?.spriteIcon || null,
+          equipmentThumbnails: window.EquipmentPanel?.getIconDebug?.() || null, // Pixel Probe exposes thumbnail bounds/failures without a desktop console.
           targetColor: def?.spriteColor ?? null,
           wheelCache: { reads: inventoryWheelCache.reads, builds: inventoryWheelCache.builds, frame: inventoryWheelCache.frame },
           swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
@@ -16366,7 +16374,7 @@
           box.dataset.stackId = stack.stackId;
           box.setAttribute('data-ctrl-detail', 'invInfo');
           box.innerHTML =
-            `<span class="iib-icon">${def.icon}</span>` +
+            `<span class="iib-icon">${itemIconForKey(key)}</span>` +
             `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;
           // Corner badge listing every slot this item is assigned to
           const badges = Object.entries(equipmentSlots)
@@ -16502,7 +16510,7 @@
         if (detailEl) detailEl.style.display  = '';
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        set('iiIcon',  def.icon);
+        set('iiIcon',  itemIconForKey(key));
         const iiIconEl = document.getElementById('iiIcon');
         if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
         if (iiIconEl) delete iiIconEl.dataset.animalHeadRequest;
@@ -18021,11 +18029,12 @@
       // metadata) defaults to "is a tree", matching _buildZoneFloorMeshes'
       // own fallback.
       function isChoppableTreeTile(col, row) {
-        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
+        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest' && currentArea !== 'map_western_slope') return false;
         const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
         return tile.floraKind === 'copse' || !tile.floraKind;
       }
+      // Dead slope trees yield the existing pineLog: every any-wood consumer already accepts it.
       function treeLogItemKey() {
         return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
       }
@@ -21793,6 +21802,7 @@
         THREE,
         camera,
         playerRoot: playerMesh,
+        getNpcName: id => scheduledNpcRecords.get(id)?.name || npcWalkers.find(walker => walker.rec?.id === id)?.rec?.name || id, // Gain popups resolve readable names even for offscreen NPCs.
         getActiveScene: window.GridTileAccessors.getActiveScene,
       });
       // Perception Mode (eagle-vision highlights, crop/livestock info lists,
@@ -28458,6 +28468,9 @@
         isPlayerInCombat,
         MORNING_HOUR,
         getWorkspaceMaps: () => _workspaceMaps,
+        getWeatherExteriorArea: (area = currentArea) => _isBuildingArea(area)
+          ? (window.WildlifeSpawn?.denCavernZoneOf?.(area) || (area === currentArea ? farmPlayerSave?.area : '') || '')
+          : area, // Door entry preserves the current exterior through nested rooms; queried caves resolve their own parent region.
         _isZoneArea,
         _isBuildingArea,
         EXTERIOR_ZONES,
@@ -29722,6 +29735,7 @@
       });
 
       window.ShippingPanel?.init({
+        itemIconForKey, // Reuses Pack's category fallback for shipping and merchant presentations.
         inventory,
         ITEM_DEFS,
         BASE_PRICES,
@@ -29910,6 +29924,7 @@
       });
 
       window.HudUpdate.init({
+        itemIconForKey, // Keeps wheel previews and the desktop item pill consistent with Pack.
         getGrid: () => grid,
         getWorldObjectAt,
         equipmentSlots,
