@@ -20,7 +20,7 @@
   const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261005nuhonganreview2', src).href; // Supplies Mammakhbuur plus full Nuhongan/Tletingan inheritance before Character Studio initializes.
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   const isWallBuilder = /\/tools\/wall-builder\/(?:index\.html)?$/.test(location.pathname); // Used to isolate log-cabin authoring controls to the Wall Builder page.
-  const logWallExtension = new URL('./log-wall-extension.js?v=20261014logwall1', src).href; // Shared deterministic generated/baked log-wall authority used by runtime and the Wall Builder tool.
+  const logWallExtension = new URL('./log-wall-extension.js?v=20261023h81e6928', src).href; // Shared deterministic generated/baked log-wall authority used by runtime and the Wall Builder tool.
   const woodCutSurfaces = new URL('./wood-cut-surfaces.js?v=20261014woodcaps1', src).href; // Shared wavy_surface.png bark + log.png cut-face repair used by walls and in-game foliage wood.
   const logWallMaterials = new URL('./log-wall-materials.js?v=20261014logwallmat2', src).href; // One-material PNG atlas layer loaded after base geometry + shared wood helpers.
   const wallBuilderLogTool = new URL('./wall-builder-log-tool.js?v=20261014logwall3', src).href; // Wall Builder-only UI that exports the generated log GLB and paired live/baked recipes.
