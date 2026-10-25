@@ -659,7 +659,7 @@
       try { source.disconnect(); } catch (_) {}
       try { master.disconnect(); } catch (_) {}
       try { panner?.disconnect(); } catch (_) {}
-      try { spatialRoute?.node?.disconnect?.(); } catch (_) {}
+      try { spatialRoute?.dispose?.(); } catch (_) {}
       try { lowpass?.disconnect(); } catch (_) {}
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
@@ -951,6 +951,7 @@
         area: c?.areaId || null,
         panX: spatial.panX,
         position3d: spatial.position3d, // Wildlife warning/growl calls share front-back/vertical positioning with combat strikes.
+        sourceActor: spatial.sourceActor, // A moving animal remains in the correct ear until its call ends.
         extraWetBoost: spatial.extraWetBoost,
         onStarted: opts.onStarted,
         onError: error => complete(error),
