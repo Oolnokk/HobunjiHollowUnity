@@ -6,6 +6,7 @@ const TILE = 64; // Shared in-game pixel-to-tile scaling.
 const area = 'map_western_slope'; // Rejects cues from inactive areas.
 const player = { x: 0, y: 0, height: 0 }; // Listener remains on the player.
 const events = { native: [], panners: [], starts: [], fetches: [] }; // Captures audio starts and directional node coordinates.
+let fakeNow = 1000; // Simulated wall clock to verify bounded retry without slowing the entire regression suite.
 const n = () => ({ connect(to) { return to; }, disconnect() {} });
 class FakeContext {
   constructor() { this.state = 'running'; this.destination = n(); this.currentTime = 0; this.sampleRate = 44100; }
@@ -42,10 +43,15 @@ const cues = {
 let audioTick = null; // Captures the real shared frame-scheduler callback for moving emitters.
 const window = { AudioContext: FakeContext, addEventListener() {},
   RuntimeFrameScheduler: { register(id, callback) { if (id === 'combat-spatial-listener') audioTick = callback; } },
+  HobunjiDrenkirraPellet: { sfx: { spit: { url: 'spit.mp3', volume: 0.9 }, splat: { url: 'splat.mp3', volume: 0.9 } } }, // These cues do not belong to the main manifest.
   SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx: cues } } } }; // Browser audio configuration.
 const camera = { matrixWorld: { elements: [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1] }, updateMatrixWorld() {} }; // Identity camera faces negative Z.
-const fetcher = url => { events.fetches.push(url); return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(1)) }); };
-vm.runInNewContext(fs.readFileSync('docs/js/audio-system.js', 'utf8'), { window, Audio: FakeAudio, fetch: fetcher, performance: { now: () => 100 }, setTimeout() {}, Math });
+const fetcher = url => {
+  events.fetches.push(url);
+  if (url === 'splat.mp3' && events.fetches.filter(v => v === 'splat.mp3').length === 1) return Promise.reject(new Error('offline transient'));
+  return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(1)) });
+};
+vm.runInNewContext(fs.readFileSync('docs/js/audio-system.js', 'utf8'), { window, Audio: FakeAudio, fetch: fetcher, performance: { now: () => fakeNow }, Date: { now: () => fakeNow }, setTimeout() {}, Math });
 window.AudioSystem.init({
   TILE, player, camera, getCurrentArea: () => area, worldSurfaceY: x => x >= 5 * TILE ? -3 : 0,
   getActorWorldY: c => c.height ?? (c.x >= 5 * TILE ? -3 : 0),
@@ -60,7 +66,9 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   for (let i = 0; i < 65; i++) await Promise.resolve(); // Flush the bounded preload/decode queue.
   assert(events.fetches.includes('fire.mp3'), 'non-preloaded ranged recordings warm in advance');
   assert(events.fetches.includes('claw.mp3'), 'creature attack recordings warm in advance');
-  assert(audio.combatSfxDebugSnapshot().decoded >= 5, 'positional combat buffers finished decoding');
+  assert(audio.combatSfxDebugSnapshot().decoded >= 6, 'configured and special positional combat samples finished decoding');
+  assert(events.fetches.includes('spit.mp3'), 'bespoke Drenkirra spit must be predecoded before its first combat action');
+  assert.equal(audio.combatSfxDebugSnapshot().decodeFailures, 1, 'initial failed splat remains observable and retryable');
 
   audio.playWeaponSlashSfx(1, 0, right);
   assert.equal(events.native.length, 0, 'remote weapon does not use the centered native fallback');
@@ -102,6 +110,18 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   assert(events.starts.length >= 7, 'multiple categories emitted Web Audio sources');
   audio.playWeaponSlashSfx(1, 0);
   assert.equal(events.native.length, 1, 'player local swing remains immediate');
+  const pelletSpatial = audio.combatAudioSpatial(right, { earshotTiles: 9 });
+  audio.playOneShotSfx(window.HobunjiDrenkirraPellet.sfx.splat, pelletSpatial.gain, 1, pelletSpatial);
+  assert.equal(events.fetches.filter(v => v === 'splat.mp3').length, 1, 'failed asset respects retry cooldown, no fetch storm');
+  assert.equal(events.native.length, 2, 'a transient decoding failure falls back to immediate native sound');
+  fakeNow += 4500; // Exceed initial four-second retry backoff.
+  audio.playOneShotSfx(window.HobunjiDrenkirraPellet.sfx.splat, pelletSpatial.gain, 1, pelletSpatial);
+  assert.equal(events.native.length, 3, 'retrying decode does not block this combat sound');
+  for (let i = 0; i < 32; i++) await Promise.resolve();
+  assert.equal(events.fetches.filter(v => v === 'splat.mp3').length, 2, 'the next attack retries transiently failed decoding');
+  audio.playOneShotSfx(window.HobunjiDrenkirraPellet.sfx.splat, pelletSpatial.gain, 1, pelletSpatial);
+  assert.equal(audio.combatSfxDebugSnapshot().specialCombatDecoded, 2, 'Drenkirra splat switches to real HRTF after retry');
+  assert.equal(events.native.length, 3, 'recovered positional sound avoids the centered native transport');
 
   const human = fs.readFileSync('docs/js/combat/combat-vocalizations.js', 'utf8'); // Shared HRTF path is used by charge grunts too.
   assert.match(human, /connectCombatSpatialDry\?\.\(ctx, dryOutput, spatial\)/);
