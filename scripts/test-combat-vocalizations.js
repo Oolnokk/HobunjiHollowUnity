@@ -294,7 +294,7 @@ assert(played.at(-1).pitchSemitones > 7.5, 'NPC pain uses the NPC species/gender
 assert.equal(played.at(-1).panX, 0.5, 'NPC voice uses world-position stereo panning');
 assert.equal(played.at(-1).extraWetBoost, 0.2, 'NPC voice uses distance-aware environmental wet boost');
 assert.equal(played.at(-1).area, 'test-area', 'NPC voice forwards its physical area to reverb');
-assert.equal(played.at(-1).volume, 0.9 * 0.25, 'distant NPC pain uses its 3D attenuation, not the player's loudness');
+assert.equal(played.at(-1).volume, 0.9 * 0.25, 'distant NPC pain uses 3D attenuation instead of full local volume');
 assert(played.at(-1).lowpassHz < 18000, 'far NPC pain loses direct high frequencies');
 played.at(-1).handle.finish();
 
