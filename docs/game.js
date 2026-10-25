@@ -186,6 +186,16 @@
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
+      // Menu-tab letter hotkeys (M/I/K/J/N/P/L/O), the F1 controls cheat
+      // sheet and the H message log live in js/qol-hotkeys.js
+      // (window.QolHotkeys); the keydown handler below forwards to it.
+      window.QolHotkeys.init({
+        openMenu: panel => openMenu(panel),
+        closeMenu: () => closeMenu(),
+        switchMenuPanel: panel => switchMenuPanel(panel),
+        isMenuOpen: () => menuOpen,
+        isBlocked: () => !!window.MusicMinigame?.state?.active || dialogueOpen,
+      });
       spDay.addEventListener('click', () => {
         const onCalendarTab = document.querySelector('.mp-tab[data-mpanel="calendar"]')?.classList.contains('active');
         if (menuOpen && onCalendarTab) closeMenu();
@@ -298,39 +308,16 @@
 
       // ── Legend + old legend toggle removed — handled by menu now
       // ── Toast ──────────────────────────────────────────────
-      let _toastTimer = null;
-      // `silent` skips the "can't do that" error chime while still showing
-      // the visual toast — used by per-swing combat hit/miss results (combo/
-      // quick attacks/Charged Breaker/basic weapon tap), which fire on
-      // *every* attack and already have their own dedicated combat sfx
-      // (weaponSlash/creatureClawHit).
-      //
-      // Deliberately no sound on ok===true here: a ding on every successful
-      // action (dig, till, plant, harvest, process...) was just noise that
-      // meant "you pressed something and it worked" — no actual information
-      // beyond what the player already knows from doing the thing. The
-      // error chime survives because a *blocked* action is the one case
-      // that's actually worth a distinct "that didn't work" cue.
+      // showToast/showZoneBanner (plus the recent-message history behind the
+      // Message Log overlay) now live in js/toast-notifications.js
+      // (window.ToastNotifications). These hoisted wrappers keep every
+      // existing call site in this file unchanged.
+      window.ToastNotifications.init({ toastEl, zoneBannerEl });
       function showToast(msg, ok = true, silent = false) {
-        toastEl.textContent = msg;
-        toastEl.className = 'show ' + (ok ? 'ok' : 'fail');
-        clearTimeout(_toastTimer);
-        _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
-        if (!silent && !ok) window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().error);
+        return window.ToastNotifications.showToast(msg, ok, silent);
       }
-
-      // A location title card -- fades in near the top of the screen and
-      // holds, then fades out, same genre convention as an "Entering X"
-      // banner. Separate from showToast (a small ok/fail status ping):
-      // this holds noticeably longer (a title card is meant to be READ,
-      // not just glanced at) and has no ok/fail styling since it's never
-      // reporting an outcome.
-      let _zoneBannerTimer = null;
       function showZoneBanner(text) {
-        zoneBannerEl.textContent = text;
-        zoneBannerEl.classList.add('show');
-        clearTimeout(_zoneBannerTimer);
-        _zoneBannerTimer = setTimeout(() => zoneBannerEl.classList.remove('show'), 4200);
+        return window.ToastNotifications.showZoneBanner(text);
       }
 
       // gameAudioConfig() and the whole footstep/one-shot SFX layer now live
@@ -16225,6 +16212,7 @@
       let invActiveCat   = 'all';
       const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
+      window.InventorySearch.init({ rebuild: () => buildInventoryGrid(), getItemDefs: () => ITEM_DEFS });
       function getInventoryStackKeys(cat = 'all') {
         // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
         const ranks = new Map(); // Resolves catalog order once instead of scanning it in every sort comparison.
@@ -16358,7 +16346,8 @@
         const grid = document.getElementById('invGrid');
         if (!grid) return;
         grid.innerHTML = '';
-        const keys = getInventoryStackKeys(invActiveCat);
+        // The Pack search box (js/inventory-search.js) narrows the active category further.
+        const keys = window.InventorySearch ? window.InventorySearch.filterKeys(getInventoryStackKeys(invActiveCat)) : getInventoryStackKeys(invActiveCat);
         // A count past InventoryStacks.STACK_SIZE spills into extra boxes of
         // the same item (250 -> 99, 99, 52) rather than one oversized stack.
         const boxStacks = keys.flatMap(key => window.InventoryStacks.variants(key, inventory[key] || 0, isQualityTrackedItem(ITEM_DEFS[key])));
@@ -16410,7 +16399,7 @@
           if (selected) selectInventoryItem(invSelectedKey, false, selected);
           else clearInventoryDetail();
         }
-        else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
+        else clearInventoryDetail(keys.length ? '← Select an item' : window.InventorySearch?.query ? 'No items match your search' : 'Bag is empty');
         window.EquipmentPanel.buildPackClothingSection();
       }
 
@@ -27550,15 +27539,9 @@
           menuOpen ? closeMenu() : openMenu();
           return;
         }
-        // M: wilderness map — closes if already open on the map tab (mirrors
-        // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
-        if (key === 'm') {
-          event.preventDefault();
-          const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active');
-          if (menuOpen && onMapTab) closeMenu();
-          else openMenu('map');
-          return;
-        }
+        // M (map) and the other menu-tab hotkeys, F1/? (controls cheat sheet)
+        // and H (message log) now live in js/qol-hotkeys.js.
+        if (window.QolHotkeys?.handleKey(event)) return;
         if (menuOpen) return;
         if (key === 'z') {
           event.preventDefault();

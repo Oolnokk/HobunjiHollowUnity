@@ -332,6 +332,7 @@
       const fallback = new Audio(resolved); // Used only when decodeAudioData cannot service this authored loop.
       fallback.loop = true;
       fallback.preload = 'auto';
+      window.HobunjiAudioMix?.markMusic(fallback); // Scaled by the player's Music volume, not Effects.
       fallback.volume = Math.max(0, Math.min(1, Number(snd._musicTarget) || state.displayVolume || 0));
       fallback.addEventListener('ended', event => emit('ended', event));
       fallback.addEventListener('error', event => emit('error', event));
@@ -445,7 +446,7 @@
 
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    gain.connect(ctx.destination);
+    gain.connect(window.HobunjiAudioMix?.musicDestination(ctx) || ctx.destination); // Player Music volume (js/audio-mix.js).
     _musicGainNodes.set(snd, { ctx, source: null, gain, target: 0, gaplessBuffer: true });
     _gameAudioElements.add(snd);
     state.bufferPromise = loadGaplessMusicBuffer(url);
@@ -485,7 +486,7 @@
       // would make a >100% song jump straight to full gain and skip fade-in.
       const initialTarget = Math.max(0, Math.min(1, Number(snd.volume) || 0));
       gain.gain.value = initialTarget;
-      source.connect(gain).connect(ctx.destination);
+      source.connect(gain).connect(window.HobunjiAudioMix?.musicDestination(ctx) || ctx.destination); // Player Music volume (js/audio-mix.js).
       snd._fadeToken = null;
       snd.volume = 1;
       const node = { ctx, source, gain, target: initialTarget };
@@ -651,6 +652,7 @@
     // uninterrupted playhead instead of restarting/overlapping the track.
     const gaplessSnd = !existingAudio && loop && gaplessLoopSpec ? makeGaplessLoopAudio(url, gaplessLoopSpec) : null; // Used only by explicitly-authored sample-accurate loops; all ordinary music keeps the existing media-element path.
     const snd = existingAudio || gaplessSnd || makeGameAudio(url, { loop });
+    window.HobunjiAudioMix?.markMusic(snd); // BGM songs and ambient cues follow the player's Music volume (js/audio-mix.js).
     if (existingAudio) {
       snd.loop = !!loop;
       snd.preload = 'auto';
