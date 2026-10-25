@@ -71,6 +71,14 @@
     if (areaId != null && currentArea != null && areaId !== currentArea) return false;
     const px = Number(x), py = Number(y), playerX = Number(deps.player?.x), playerY = Number(deps.player?.y);
     if (![px, py, playerX, playerY].every(Number.isFinite)) return false;
+    const spatialAudio = window.AudioSystem;
+    if (spatialAudio?.combatAudioSpatial && spatialAudio?.playOneShotSfx) {
+      const spatial = spatialAudio.combatAudioSpatial({ x: px, y: py, areaId }, { earshotTiles: 9 }); // Spit, splat and acid sizzle share the exact 3D weapon/impact listener.
+      if (spatial.gain <= 0.002) return false;
+      if (!spatialAudio.playOneShotSfx(cfg, spatial.gain, 1, spatial)) return false;
+      if (state) state.lastSfx = `${key}@${(px / (deps.TILE || 64)).toFixed(1)},${(py / (deps.TILE || 64)).toFixed(1)} HRTF gain=${spatial.gain.toFixed(2)}`;
+      return true;
+    }
     const earshot = Math.max(deps.TILE || 64, Number(window.AudioSystem?.FOOTSTEP_EARSHOT_PX) || (deps.TILE || 64) * 9);
     const distance = Math.hypot(px - playerX, py - playerY);
     if (distance > earshot) return false;
