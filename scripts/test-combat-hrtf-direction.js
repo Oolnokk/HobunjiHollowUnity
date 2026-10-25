@@ -69,6 +69,16 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   assert.equal(p.rolloffFactor, 0, 'falloff is already handled by world distance calculation');
   assert.equal(p.positionX.value, 3, 'source on right emits from right');
   assert.equal(p.positionY.value, -2, 'ravine sound retains lower world position');
+  assert.equal(typeof audioTick, 'function', 'live positions are updated from the shared frame scheduler');
+  assert.equal(audio.combatSfxDebugSnapshot().activeRoutes, 1, 'active attack owns one tracked directional route');
+  right.x = 4 * TILE;
+  audioTick({ timestamp: 1000 });
+  assert.equal(p.positionX.value, 4, 'already-playing audio follows its emitting enemy');
+  right.x = 3 * TILE;
+  audioTick({ timestamp: 1100 });
+  assert.equal(p.positionX.value, 3, 'source moves back without waiting for another sound event');
+  events.starts[0].onended();
+  assert.equal(audio.combatSfxDebugSnapshot().activeRoutes, 0, 'finished sound releases its live positional route');
   audio.playWeaponSlashSfx(1, 0, front);
   assert.equal(events.panners.at(-1).positionZ.value, -4, 'front and back remain distinguishable');
   audio.playWeaponSlashSfx(1, 0, rear);
