@@ -5,13 +5,17 @@ const assert = require('node:assert/strict');
 const TILE = 64; // Shared in-game pixel-to-tile scaling.
 const area = 'map_western_slope'; // Rejects cues from inactive areas.
 const player = { x: 0, y: 0, height: 0 }; // Listener remains on the player.
-const events = { native: [], panners: [], starts: [], fetches: [] }; // Captures audio starts and directional node coordinates.
+const events = { native: [], panners: [], starts: [], fetches: [], gains: [] }; // Capture decoder starts and the live distance gain graph.
 let fakeNow = 1000; // Simulated wall clock to verify bounded retry without slowing the entire regression suite.
 let interruptNextStart = false; // AudioContext can interrupt between node allocation and start, especially on mobile.
 const n = () => ({ connect(to) { return to; }, disconnect() {} });
 class FakeContext {
   constructor() { this.state = 'running'; this.destination = n(); this.currentTime = 0; this.sampleRate = 44100; }
-  createGain() { return { ...n(), gain: { value: 1, setValueAtTime() {}, exponentialRampToValueAtTime() {} } }; }
+  createGain() {
+    const item = { ...n(), gain: { value: 1, setValueAtTime() {}, exponentialRampToValueAtTime() {} } };
+    events.gains.push(item);
+    return item;
+  }
   createPanner() {
     const p = { ...n(), positionX: { value: 0 }, positionY: { value: 0 }, positionZ: { value: 0 } };
     events.panners.push(p);
@@ -81,14 +85,18 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   assert.equal(p.rolloffFactor, 0, 'falloff is already handled by world distance calculation');
   assert.equal(p.positionX.value, 3, 'source on right emits from right');
   assert.equal(p.positionY.value, -2, 'ravine sound retains lower world position');
+  const firstWeaponLevel = events.gains.at(-1).gain; // Last freshly allocated GainNode belongs to this decoded combat swing.
+  const nearVolume = firstWeaponLevel.value;
   assert.equal(typeof audioTick, 'function', 'live positions are updated from the shared frame scheduler');
   assert.equal(audio.combatSfxDebugSnapshot().activeRoutes, 1, 'active attack owns one tracked directional route');
   right.x = 4 * TILE;
   audioTick({ timestamp: 1000 });
   assert.equal(p.positionX.value, 4, 'already-playing audio follows its emitting enemy');
+  assert(firstWeaponLevel.value < nearVolume, 'moving an active sound farther away reduces its volume without restarting it');
   right.x = 3 * TILE;
   audioTick({ timestamp: 1100 });
   assert.equal(p.positionX.value, 3, 'source moves back without waiting for another sound event');
+  assert(Math.abs(firstWeaponLevel.value - nearVolume) < 1e-9, 'moving the sound back restores its original distance gain');
   events.starts[0].onended();
   assert.equal(audio.combatSfxDebugSnapshot().activeRoutes, 0, 'finished sound releases its live positional route');
   audio.playWeaponSlashSfx(1, 0, front);
@@ -136,6 +144,8 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   const human = fs.readFileSync('docs/js/combat/combat-vocalizations.js', 'utf8'); // Shared HRTF path is used by charge grunts too.
   assert.match(human, /connectCombatSpatialDry\?\.\(ctx, dryOutput, spatial\)/);
   assert.match(human, /position3d: spatial\.position3d/);
+  assert.match(human, /__combatVocalDistanceGain = distanceGain/, 'long grunts have a dedicated distance gain independent from charge fade');
+  assert.match(human, /connectWetNode\?\.\(ctx, distanceGain/, 'wet charge reflections also attenuate with source distance');
   const wildlife = fs.readFileSync('docs/js/animal-voice-independent-playback.js', 'utf8'); // Animal voices share front/back and height.
   assert.match(wildlife, /if \(opts\.position3d\) spatialRoute/);
   const pellet = fs.readFileSync('docs/js/combat/combat-drenkirra-pellet.js', 'utf8'); // Bespoke Drenkirra attacks cannot bypass HRTF.
