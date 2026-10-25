@@ -20,9 +20,9 @@ for (const id of ['sprite-cutter','cut-canvas','cut-existing','cut-load-existing
 assert(html.includes('sprite-cutter.js?'), 'The existing modular editor must load its cutter extension.');
 
 const source = fs.readFileSync(scriptPath, 'utf8'); // Read shipped built-in sprite picker entries for asset coverage.
-const list = source.match(/const builtins = \\[([\\s\\S]*?)\\];/); // Extract the literal catalog without running a DOM editor.
+const list = source.match(/const builtins = \[([\s\S]*?)\];/); // Extract the literal catalog without running a DOM editor.
 assert(list, 'The full-weapon source picker must exist.');
-const spriteFiles = [...list[1].matchAll(/,\\s*['"]([^'"]+\\.png)['"]\\]/g)].map(match => match[1]); // Filenames of stock PNG choices.
+const spriteFiles = [...list[1].matchAll(/,\s*['"]([^'"]+\.png)['"]\]/g)].map(match => match[1]); // Filenames of stock PNG choices.
 assert(spriteFiles.length >= 24, 'Stock full-weapon picker should include all shipped weapon/shield art.');
 for (const filename of spriteFiles) {
   assert(fs.existsSync('docs/assets/toolsprites/' + filename), 'Missing built-in source sprite: ' + filename);
