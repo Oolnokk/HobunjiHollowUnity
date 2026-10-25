@@ -611,6 +611,12 @@
     // echo itself sounds (a real distant jungle echo reads as diffuse, not
     // pinned to one side).
     const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+    const lowpassHz = Number(opts.lowpassHz); // Optional distance EQ for NPC combat voices; ordinary wildlife and player audio keep their current frequency response.
+    const lowpass = Number.isFinite(lowpassHz) && lowpassHz < 18000 && typeof context.createBiquadFilter === 'function' ? context.createBiquadFilter() : null;
+    if (lowpass) {
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = Math.max(600, lowpassHz);
+    }
     const startAt = context.currentTime + 0.012;
     const pitchRatio = Math.pow(2, clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
     const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
@@ -623,12 +629,14 @@
     source.playbackRate.value = pitchRatio;
     master.gain.value = clamp(finite(opts.volume, 0.7), 0, 1);
     source.connect(master);
+    if (lowpass) master.connect(lowpass); // Dry direct path alone is rolled off; reflections still receive the original master signal.
+    const dryOutput = lowpass || master;
     if (panner) {
       panner.pan.value = clamp(finite(opts.panX, 0), -1, 1);
-      master.connect(panner);
+      dryOutput.connect(panner);
       panner.connect(context.destination);
     } else {
-      master.connect(context.destination);
+      dryOutput.connect(context.destination);
     }
     // extraWetBoost (see audio-system.js's creatureAudioSpatial) grows with
     // distance on top of the fixed baseline — "farther away sounds more
@@ -647,6 +655,7 @@
       try { source.disconnect(); } catch (_) {}
       try { master.disconnect(); } catch (_) {}
       try { panner?.disconnect(); } catch (_) {}
+      try { lowpass?.disconnect(); } catch (_) {}
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
     }
