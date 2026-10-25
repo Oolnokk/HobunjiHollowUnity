@@ -2263,6 +2263,22 @@
     }
     .inv-cat.active { color: var(--accent); border-color: rgba(249,226,138,0.4); background: rgba(249,226,138,0.08); }
 
+    /* Pack search box (js/inventory-search.js): sub x:27/54 y:3/28 w:9 h:3,
+       carved off the right end of the category tab row. */
+    #mpInventory .inv-cats { width: calc(26 * var(--inv-col)); }
+    .inv-search {
+      position: absolute; display: none; box-sizing: border-box;
+      left: calc(27 * var(--inv-col)); top: calc(3.575 * var(--inv-row));
+      width: calc(9 * var(--inv-col)); height: calc(1.85 * var(--inv-row));
+      padding: 0 var(--inv-pad); border-radius: calc(0.92 * var(--inv-row));
+      font: inherit; font-size: var(--inv-font-xs); color: var(--text);
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      outline: none; min-width: 0;
+    }
+    .inv-search:focus { border-color: rgba(249,226,138,0.5); }
+    .inv-search.has-query { color: var(--accent); border-color: rgba(249,226,138,0.4); background: rgba(249,226,138,0.08); }
+    #mpInventory.inv-mode-pack .inv-search { display: block; }
+
     /* Equipment slots: sub x:1/54 y:6/28 w:35 h:7 */
     .inv-equip-section {
       position: absolute;

@@ -258,6 +258,26 @@ when, render, onAction })` adds a context panel to **Now** with no companion
 changes; `registerCommand`, `registerStateProvider` and `trace` are the lower
 level hooks the built-in tabs use.
 
+## Quality-of-life layer: volume, hotkeys, message log, pack search
+
+- **Audio mix** (`js/audio-mix.js`, Settings → Audio): Master / Music /
+  Effects sliders and *Mute in Background*. Loaded before every other audio
+  module: it gives each `AudioContext` an effects → master bus (so existing
+  `connect(ctx.destination)` calls land on Effects) and wraps
+  `HTMLMediaElement.volume` (the getter still returns the requested value).
+  Music code routes to `HobunjiAudioMix.musicDestination(ctx)` and tags its
+  elements with `markMusic`.
+- **Keyboard** (`js/qol-hotkeys.js`, called from game.js's keydown handler):
+  menu tabs on I/K/M/N/P/J/L/O (press again to close; a key bound to a
+  gameplay action in Settings → Input wins), F1 or `?` for a controls cheat
+  sheet built from the live bindings, H for the Message Log, F2 to save a
+  PNG screenshot of the 3D view.
+- **Message log** (`js/toast-notifications.js`): `showToast` /
+  `showZoneBanner` moved out of game.js and keep the last 80 messages, with
+  repeated identical toasts collapsed into one row.
+- **Pack search** (`js/inventory-search.js`): a search box beside the
+  inventory category tabs narrows the grid by item name.
+
 ## Future plans: multiplayer
 
 Eventual multiplayer support (one world-owner host + guest players joining
