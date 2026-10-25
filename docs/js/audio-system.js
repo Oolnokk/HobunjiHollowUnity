@@ -1432,7 +1432,7 @@
     return {
       last: lastCombatSfxDebug ? { ...lastCombatSfxDebug } : null,
       spatial: lastCombatSpatialDebug ? { ...lastCombatSpatialDebug } : null, // Mobile diagnostics compare horizontal vs ravine depth.
-      backend: combatSpatialBackend, spatialStarts: combatSpatialStarts, nativeFallbacks: combatSpatialFallbacks, // Browser-specific directional audio diagnostics.
+      backend: combatSpatialBackend, spatialStarts: combatSpatialStarts, nativeFallbacks: combatSpatialFallbacks, activeRoutes: activeDirectionalRoutes.size, // Mobile reports live HRTF routes to diagnose cleanup.
       decoded: [...combatDecodedByUrl.values()].filter(v => v.state === 'ready').length,
       decoding: combatDecodeInFlight, queued: combatDecodeQueue.length,
       decodeFailures: [...combatDecodedByUrl.values()].filter(v => v.state === 'failed').length,
