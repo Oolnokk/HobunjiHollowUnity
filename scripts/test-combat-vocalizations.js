@@ -114,6 +114,12 @@ context.window.AnimalVoiceIndependentPlayback = {
 context.window.AudioSystem = {
   gameAudioConfig: () => ({ enabled: true, sfxVolume: 1 }),
   creatureAudioSpatial: entity => ({ panX: entity === player ? 0 : 0.5, extraWetBoost: entity === player ? 0 : 0.2, distance: entity === player ? 0 : 100 }),
+  combatAudioSpatial: entity => ({ // Test the real voice engine's behavior when AudioSystem reports a distant, vertically separated NPC.
+    panX: entity === player ? 0 : 0.5,
+    extraWetBoost: entity === player ? 0 : 0.2,
+    distance: entity === player ? 0 : 100,
+    gain: entity?.id === 'npc-voice-test' ? 0.25 : 1,
+  }),
   playOneShotSfx(cfg, volumeScale, pitch) {
     played.push({ url: cfg.url, volumeScale, pitch });
     return { url: cfg.url };
@@ -288,6 +294,8 @@ assert(played.at(-1).pitchSemitones > 7.5, 'NPC pain uses the NPC species/gender
 assert.equal(played.at(-1).panX, 0.5, 'NPC voice uses world-position stereo panning');
 assert.equal(played.at(-1).extraWetBoost, 0.2, 'NPC voice uses distance-aware environmental wet boost');
 assert.equal(played.at(-1).area, 'test-area', 'NPC voice forwards its physical area to reverb');
+assert.equal(played.at(-1).volume, 0.9 * 0.25, 'distant NPC pain uses its 3D attenuation, not the player's loudness');
+assert(played.at(-1).lowpassHz < 18000, 'far NPC pain loses direct high frequencies');
 played.at(-1).handle.finish();
 
 scheduledBreath({ timestamp: 51000 });
