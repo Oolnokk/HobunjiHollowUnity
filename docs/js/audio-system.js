@@ -793,10 +793,11 @@
     const entry = combatDecodedByUrl.get(cfgEntry.url);
     const ctx = combatPositionalContext;
     if (!entry?.buffer || ctx?.state !== 'running') return null;
+    let source = null, gain = null, lowpass = null, route = null, wet = null; // A mobile AudioContext can interrupt between graph setup and start; unwind partial graphs before native fallback.
     try {
-      const source = ctx.createBufferSource();
-      const gain = ctx.createGain();
-      const lowpass = typeof ctx.createBiquadFilter === 'function' && spatial.gain < 0.92 ? ctx.createBiquadFilter() : null; // Distant attacks lose direct treble without silencing their echoes.
+      source = ctx.createBufferSource();
+      gain = ctx.createGain();
+      lowpass = typeof ctx.createBiquadFilter === 'function' && spatial.gain < 0.92 ? ctx.createBiquadFilter() : null; // Distant attacks lose direct treble without silencing their echoes.
       source.buffer = entry.buffer; source.playbackRate.value = rate;
       gain.gain.value = Math.max(0, volume * Math.max(1, Number(cfgEntry.gainBoost) || 1));
       source.connect(gain);
@@ -805,8 +806,8 @@
         lowpass.frequency.value = 3500 + 16500 * Math.pow(spatial.gain, 0.7);
         gain.connect(lowpass);
       }
-      const route = connectCombatSpatialDry(ctx, lowpass || gain, spatial);
-      const wet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.areaId || null }) || null;
+      route = connectCombatSpatialDry(ctx, lowpass || gain, spatial);
+      wet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.areaId || null }) || null;
       const handle = {
         pause() { try { source.stop(); } catch (_) {} cleanup(); },
         get paused() { return finished; },
@@ -828,7 +829,16 @@
       combatSpatialBackend = route.backend;
       combatSpatialStarts++;
       return handle;
-    } catch (error) { combatSpatialLastError = String(error?.message || error); return null; }
+    } catch (error) {
+      combatSpatialLastError = String(error?.message || error);
+      try { source?.stop?.(); } catch (_) {} // Source creation/start can fail after native context suspension.
+      try { source?.disconnect?.(); } catch (_) {}
+      try { gain?.disconnect?.(); } catch (_) {}
+      try { lowpass?.disconnect?.(); } catch (_) {}
+      try { route?.dispose?.(); } catch (_) {} // Avoid retaining the actor and PannerNode in the live-update set after a failed start.
+      try { wet?.send?.disconnect?.(); } catch (_) {}
+      return null; // The caller performs the immediate mobile-compatible native fallback.
+    }
   }
 
   const COMBAT_SFX_POOL_SIZE = 2;
