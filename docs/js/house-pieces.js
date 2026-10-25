@@ -13,7 +13,7 @@
     ['SurfaceTint', 'surface-tint.js?v=20261007hec88e1c'],
     ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
     ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260915perf1'],
-    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20260812a'],
+    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261025westernbark1'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
