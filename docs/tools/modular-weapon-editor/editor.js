@@ -73,6 +73,12 @@
     byId('remove').disabled = shaft.attachments.length <= 1;
     byId('add').disabled = shaft.attachments.length >= (shaft.maxAttachments || 8);
     byId('disallow').checked = api.isDisallowed(byId('shaft').value, headKey);
+    byId('allow-shaft').checked = shaft.editorOnly !== true;
+    byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This uploaded shaft has no known gameplay donor yet.
+    byId('allow-head').checked = selectedHead().editorOnly !== true;
+    byId('part-readiness').textContent = shaft.sourceShape === 'bgungku'
+      ? "B'gungku's full-weapon donor has no gameplay shape definition; its shaft remains editor-only until mapped."
+      : (shaft.editorOnly || selectedHead().editorOnly) ? 'One or both selected parts are provisional. Calibrate attachment points and tick Allow before using in Foundry.' : 'Both selected parts are enabled for Foundry.';
     byId('attach-controls').replaceChildren();
     for (const key of ['x', 'y', 'rotation']) {
       const label = document.createElement('label'), input = document.createElement('input'); // Numeric alternative to tapping, including per-socket rotation.
@@ -126,6 +132,13 @@
   byId('shaft').onchange = () => { socketIndex = 0; render(); };
   byId('head').onchange = render; byId('mode').onchange = render;
   byId('socket').onchange = () => { socketIndex = Number(byId('socket').value); render(); };
+  byId('allow-shaft').onchange = () => {
+    if (selectedShaft().sourceShape === 'bgungku') return; // Unknown donor would silently inherit incorrect grip/animations.
+    selectedShaft().editorOnly = !byId('allow-shaft').checked; save();
+  };
+  byId('allow-head').onchange = () => {
+    selectedHead().editorOnly = !byId('allow-head').checked; save();
+  };
   byId('disallow').onchange = () => {
     const shaft = selectedShaft(), head = byId('head').value; // Pair policy is independent of which transform editing mode is selected.
     if (!shaft.overrides[head]) shaft.overrides[head] = {};
