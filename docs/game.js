@@ -22910,11 +22910,13 @@
         if (_attachSaved.held) { heldItemHolder.position.copy(_attachSaved.heldPos); heldItemHolder.quaternion.copy(_attachSaved.heldQuat); heldItemHolder.scale.setScalar(_attachSaved.heldScale); _attachSaved.held = false; }
       }
       // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
-      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.(undo => {
+      SharedAttackPose.setCameraProvider(() => camera); // Edge-on avoidance judges the flat tool sprite against the live gameplay camera.
+      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.((undo, _renderDebug, renderCamera) => {
         const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
         const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
         if (!toolActive && !heldActive) return;
         if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) return;
+        _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
         if (toolActive) {
           _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true;
           SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
@@ -22923,6 +22925,7 @@
           _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true;
           SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
         }
+        _headFrame.cameraPosition = null;
         undo.push(_restoreHeadAttachments);
       });
       const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.

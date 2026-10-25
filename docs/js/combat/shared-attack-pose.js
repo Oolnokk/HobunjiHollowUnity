@@ -362,7 +362,7 @@
   function createHeadFrame(THREE) {
     return {
       position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: 1,
-      _v: new THREE.Vector3(), _w: new THREE.Vector3(), _q: new THREE.Quaternion(), _r: new THREE.Quaternion(), _q2: new THREE.Quaternion(), _q3: new THREE.Quaternion(), _e: new THREE.Euler(),
+      _v: new THREE.Vector3(), _w: new THREE.Vector3(), _q: new THREE.Quaternion(), _r: new THREE.Quaternion(), _q3: new THREE.Quaternion(), _e: new THREE.Euler(), cameraPosition: null,
     };
   }
 
@@ -374,50 +374,51 @@
     return window.HobunjiPortraitMouthPoints?.pixelFor?.(data.speciesId, data.gender, rig, data.sourceCanvas) || rig.headCentroidPx || null;
   }
 
-  // Tool haft-roll deadzone. For ranged/thrust-style tools the holder's z axis is the haft (the sprite's long axis and the grip spans
-  // run along it; "Tool Z rotation" is spin about it). Head tilt would otherwise spin the staff about its own length, so the part of
-  // that spin caused by the head stays put while it is within this many degrees and only trails the edge beyond it. The authored pose
-  // roll, yaw and pitch are never filtered, the mouth position still tracks exactly, and the roll is pivoted about the aperture.
-  // 0 disables it (the attack editor must show exact poses).
-  let toolRollDeadzoneRad = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.movement?.toolRollDeadzoneDeg ?? 10)) * DEG_TO_RAD;
-  const DEADZONE_STALE_MS = 250; // A gap this long (weapon re-equipped, tab switched) snaps to the head instead of easing from an old roll.
+  // Edge-on deadzone. Tools are flat sprites, so a tool seen edge-on vanishes. For a head-anchored tool the holder's z axis is the haft (the
+  // sprite's long axis; grip spans and "Tool Z rotation" are about it) and its y axis is the sprite normal. When the camera would see the
+  // sprite within this many degrees of edge-on, the tool is rolled about its OWN haft, by the least rotation, until it is just outside
+  // that zone. The one case it cannot help is a haft pointing along the camera ray (any roll is then edge-on), so it leaves the tool alone.
+  // The aperture/mouth attach, haft direction and everything else are untouched. 0 disables it (the attack editor shows exact poses).
+  let toolEdgeOnDeadzoneRad = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.movement?.toolEdgeOnDeadzoneDeg ?? 10)) * DEG_TO_RAD;
+  const DEADZONE_STALE_MS = 250; // A gap this long (weapon re-equipped, tab switched) forgets which side of edge-on the sprite was on.
   const TWO_PI = Math.PI * 2;
   const wrapAngle = angle => angle - TWO_PI * Math.round(angle / TWO_PI);
-  function setToolRollDeadzone(deg) { toolRollDeadzoneRad = Math.max(0, Number(deg) || 0) * DEG_TO_RAD; }
-  function toolRollDeadzoneDeg() { return toolRollDeadzoneRad / DEG_TO_RAD; }
+  let cameraProvider = null; // () => THREE.Camera|null: the camera the sprite is judged against (the game registers its live camera).
+  function setToolEdgeOnDeadzone(deg) { toolEdgeOnDeadzoneRad = Math.max(0, Number(deg) || 0) * DEG_TO_RAD; }
+  function toolEdgeOnDeadzoneDeg() { return toolEdgeOnDeadzoneRad / DEG_TO_RAD; }
+  function setCameraProvider(provider) { cameraProvider = typeof provider === 'function' ? provider : null; }
 
-  // Roll of `q` about its own +z axis measured from the horizon: the signed angle (about z) from the level "up" for that z direction
-  // to q's +y. Unlike a swing-twist split this does not blow up when z points along any world axis; NaN only when z is vertical.
-  function levelRoll(q) {
+  // frame._q is the tool's world rotation, frame._v the world point the camera ray is cast to (the mouth). Rolls frame._q about its own
+  // z by the minimum angle that takes the sprite out of the deadzone; returns the roll applied (radians, 0 when none).
+  function applyEdgeOnDeadzone(holder, frame) {
+    if (!(toolEdgeOnDeadzoneRad > 0)) return 0;
+    const camera = frame.cameraPosition || cameraProvider?.()?.position;
+    if (!camera) return 0;
+    const q = frame._q;
     const { x, y, z, w } = q;
-    const fx = 2 * (x * z + w * y), fy = 2 * (y * z - w * x), fz = 1 - 2 * (x * x + y * y); // q * +z
-    const ux = 2 * (x * y - w * z), uy = 1 - 2 * (x * x + z * z), uz = 2 * (y * z + w * x); // q * +y
-    let lx = -fy * fx, ly = 1 - fy * fy, lz = -fy * fz; // World up with its component along z removed.
-    const length = Math.hypot(lx, ly, lz);
-    if (length < 0.05) return NaN;
-    lx /= length; ly /= length; lz /= length;
-    const sine = (ly * uz - lz * uy) * fx + (lz * ux - lx * uz) * fy + (lx * uy - ly * ux) * fz; // ((level x up) . z)
-    return Math.atan2(sine, lx * ux + ly * uy + lz * uz);
-  }
-
-  // Filters the haft roll that head tilt contributes. frame._q holds the tool's world rotation (head * authored pose) and
-  // frame._r the authored pose rotation; both are left intact apart from the correction about the tool's own z.
-  function applyHaftRollDeadzone(holder, frame) {
-    if (!(toolRollDeadzoneRad > 0)) return;
-    const state = (holder.userData ||= {}).__haftRollDeadzone ||= { held: 0, t: -Infinity };
+    const hx = 2 * (x * z + w * y), hy = 2 * (y * z - w * x), hz = 1 - 2 * (x * x + y * y); // Haft: q * +z
+    const nx = 2 * (x * y - w * z), ny = 1 - 2 * (x * x + z * z), nz = 2 * (y * z + w * x); // Sprite normal: q * +y
+    let cx = frame._v.x - camera.x, cy = frame._v.y - camera.y, cz = frame._v.z - camera.z; // Camera ray through the tool.
+    const length = Math.hypot(cx, cy, cz);
+    if (!(length > 1e-6)) return 0;
+    cx /= length; cy /= length; cz /= length;
+    const a = nx * cx + ny * cy + nz * cz; // Sprite normal . ray: +-1 face-on, 0 edge-on.
+    const b = (hy * nz - hz * ny) * cx + (hz * nx - hx * nz) * cy + (hx * ny - hy * nx) * cz; // (haft x normal) . ray: how the roll changes it.
+    const reach = Math.hypot(a, b); // Best |normal . ray| any roll can give = sin(angle between haft and ray).
+    const state = (holder.userData ||= {}).__edgeOnDeadzone ||= { side: 0, t: -Infinity };
     const now = performance.now();
-    const toolRoll = levelRoll(frame._q), headRoll = levelRoll(frame.quaternion);
-    if (Number.isNaN(toolRoll) || Number.isNaN(headRoll)) { state.t = -Infinity; return; } // Haft or head vertical: roll is undefined, so do not guess.
-    frame._q2.copy(frame.quaternion).multiply(frame._q3.set(0, 0, -Math.sin(headRoll / 2), Math.cos(headRoll / 2))).multiply(frame._r); // The same tool with the head's tilt removed.
-    const nominalRoll = levelRoll(frame._q2);
-    if (Number.isNaN(nominalRoll)) { state.t = -Infinity; return; }
-    const tilt = wrapAngle(toolRoll - nominalRoll); // Haft spin caused by the head, not by the authored pose.
-    if (now - state.t > DEADZONE_STALE_MS) state.held = tilt;
+    if (now - state.t > DEADZONE_STALE_MS) state.side = 0;
     state.t = now;
-    const delta = wrapAngle(tilt - state.held);
-    if (Math.abs(delta) > toolRollDeadzoneRad) state.held = tilt - Math.sign(delta) * toolRollDeadzoneRad; // Idempotent within a frame: repeat render passes find the head already inside the zone.
-    const correction = state.held - tilt;
-    if (Math.abs(correction) > 1e-9) frame._q.multiply(frame._q3.set(0, 0, Math.sin(correction / 2), Math.cos(correction / 2)));
+    const limit = Math.sin(toolEdgeOnDeadzoneRad); // |normal . ray| must stay at or above this.
+    if (Math.abs(a) >= limit) { state.side = Math.sign(a) || 1; return 0; } // Outside the zone: nothing to do, and remember which face is showing.
+    if (reach < 1e-3) return 0; // Haft along the camera ray: every roll is edge-on, nothing to rotate to.
+    if (!state.side) state.side = Math.sign(a) || 1; // Hysteresis: stay on the face that was showing rather than popping across edge-on.
+    const target = state.side * Math.min(limit, reach);
+    const base = Math.atan2(b, a), spread = Math.acos(Math.max(-1, Math.min(1, target / reach))); // a(alpha) = reach * cos(alpha - base)
+    const one = wrapAngle(base + spread), two = wrapAngle(base - spread);
+    const roll = Math.abs(one) <= Math.abs(two) ? one : two; // Least rotation.
+    q.multiply(frame._q3.set(0, 0, Math.sin(roll / 2), Math.cos(roll / 2))); // Rotate about the tool's own z (the haft).
+    return roll;
   }
 
   // Fills `frame` (WORLD space) with the mouth position, the head's world rotation and its uniform scale ratio vs the
@@ -447,8 +448,8 @@
     frame._e.set((pose.pitch || 0) * DEG_TO_RAD, (pose.yaw || 0) * DEG_TO_RAD, (pose.roll || 0) * DEG_TO_RAD, 'YXZ');
     frame._r.setFromEuler(frame._e);
     frame._q.copy(frame.quaternion).multiply(frame._r); // World rotation: head rotation, then the authored tool rotation.
-    applyHaftRollDeadzone(holder, frame); // Head tilt may not spin the haft until it passes the deadzone.
-    frame._v.set((pose.x || 0) * frame.scale, (pose.y || 0) * frame.scale, (pose.z || 0) * frame.scale).applyQuaternion(frame.quaternion).add(frame.position);
+    frame._v.set((pose.x || 0) * frame.scale, (pose.y || 0) * frame.scale, (pose.z || 0) * frame.scale).applyQuaternion(frame.quaternion).add(frame.position); // World point the aperture sits on.
+    applyEdgeOnDeadzone(holder, frame); // Roll about the haft if the camera would see the sprite edge-on; the aperture stays on that point.
     if (aperture) frame._v.sub(frame._w.set(aperture.x, aperture.y, aperture.z).multiplyScalar(scale).applyQuaternion(frame._q));
     if (localRoot) {
       localRoot.updateWorldMatrix(true, false);
@@ -488,7 +489,7 @@
   }
 
   window.SharedAttackPose = Object.freeze({
-    headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, setToolRollDeadzone, toolRollDeadzoneDeg, createHeadFrame, mouthPixel, referenceHeadScale,
+    headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, setToolEdgeOnDeadzone, toolEdgeOnDeadzoneDeg, setCameraProvider, createHeadFrame, mouthPixel, referenceHeadScale,
     version: 1,
     POSE_KEYS,
     MIRRORED_POSE_KEYS,

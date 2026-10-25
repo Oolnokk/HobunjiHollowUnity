@@ -39,7 +39,7 @@ assert.doesNotMatch(game, /_qRangedAimPitch\.invert\(\)/, 'camera pitch must not
 const composerSource = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Head attachments must follow the drawn (aimed + clamped) head, not the gameplay-time neck.
 assert.match(composerSource, /applyPlayerHeadAim\(undo, renderDebug\); applyPlayerNeckYawLimit\(renderDebug, camera\); for \(const hook of postHeadAimHooks\)/, 'composer runs post-head-aim hooks right after the head aim and neck limit');
 assert.match(composerSource, /addPostHeadAimHook,/, 'composer exports the hook registration');
-assert.match(game, /addPostHeadAimHook\?\.\(undo =>[\s\S]*placeAtMouth\(toolHolder, _headFrame, _toolAttachJob\.pose[\s\S]*placeAtMouth\(heldItemHolder, _headFrame, _heldAttachJob\.pose[\s\S]*undo\.push\(_restoreHeadAttachments\)/, 'game re-seats the head-anchored tool and held bottle on the drawn head and restores gameplay transforms after the draw');
+assert.match(game, /addPostHeadAimHook\?\.\(\(undo[^)]*\) =>[\s\S]*placeAtMouth\(toolHolder, _headFrame, _toolAttachJob\.pose[\s\S]*placeAtMouth\(heldItemHolder, _headFrame, _heldAttachJob\.pose[\s\S]*undo\.push\(_restoreHeadAttachments\)/, 'game re-seats the head-anchored tool and held bottle on the drawn head and restores gameplay transforms after the draw');
 // Mouth/aperture attach math, with a small THREE-compatible vector/quaternion/euler stand-in.
 let fakeNow = 1000; // Controllable clock for the deadzone's stale-gap reset.
 const mathContext = { window: {}, Math, performance: { now: () => fakeNow } };
@@ -82,51 +82,68 @@ const scaledRoot = { updateWorldMatrix() {}, worldToLocal(v) { return v.sub(new 
 const parented = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1) };
 attach.placeAtMouth(parented, frame, offsetPose, 1.3, aperture, scaledRoot);
 assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled parent receives the compensating local scale');
-// Haft-roll deadzone: head tilt may not spin a head-anchored tool about its own z axis (the haft) until it passes the deadzone;
-// the haft's direction, authored pose changes, yaw and pitch are never filtered, and it works while facing any world direction.
+// Edge-on deadzone: a flat tool sprite (normal = holder y, haft = holder z) is rolled about its OWN haft, by the least rotation, until the
+// camera sees it at least 10 degrees away from edge-on. Nothing else moves, and a haft along the camera ray (unfixable) is left alone.
 {
-  const blowgun = { x: 0, y: 0, z: 0, pitch: -180, yaw: 21, roll: 4 }; // The blowgun's authored stance: haft 21 degrees off the head's forward axis.
-  const aligned = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Haft parallel to the head's forward axis: tilt is exactly haft spin.
-  const flipped = { x: 0, y: 0, z: 0, pitch: -180, yaw: 0, roll: 0 }; // Haft anti-parallel to it.
-  const headFrame = (yawDeg, tiltDeg) => { const f = attach.createHeadFrame(THREE); f.position.set(0, 1, 0); f.quaternion.setFromEuler({ x: 0, y: yawDeg * Math.PI / 180, z: tiltDeg * Math.PI / 180 }); return f; };
-  const place = (holder, yawDeg, tiltDeg, pose) => { fakeNow += 16; attach.placeAtMouth(holder, headFrame(yawDeg, tiltDeg), pose, 1.3, null); return new Q4().copy(holder.quaternion); };
-  const exactly = (yawDeg, tiltDeg, pose) => { attach.setToolRollDeadzone(0); const q = place(newHolder(), yawDeg, tiltDeg, pose); attach.setToolRollDeadzone(10); return q; };
+  const aligned = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Haft = +z, sprite normal = +y at the head's rest rotation.
+  const mouth = new V3(0, 1, 0);
+  const frameFor = (cameraDirection, headEuler = { x: 0, y: 0, z: 0 }) => { // Camera placed so the ray through the mouth runs along `cameraDirection`.
+    const f = attach.createHeadFrame(THREE); f.position.copy(mouth); f.quaternion.setFromEuler(headEuler);
+    const length = Math.hypot(cameraDirection.x, cameraDirection.y, cameraDirection.z);
+    f.cameraPosition = new V3(mouth.x - 5 * cameraDirection.x / length, mouth.y - 5 * cameraDirection.y / length, mouth.z - 5 * cameraDirection.z / length);
+    return f;
+  };
   const newHolder = () => ({ position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1), userData: {} });
+  const place = (holder, frame, pose = aligned, aperture = null) => { fakeNow += 16; attach.placeAtMouth(holder, frame, pose, 1, aperture); return new Q4().copy(holder.quaternion); };
+  const normalDotRay = (holder, cameraDirection) => { const n = new V3(0, 1, 0).applyQuaternion(holder.quaternion), l = Math.hypot(cameraDirection.x, cameraDirection.y, cameraDirection.z); return (n.x * cameraDirection.x + n.y * cameraDirection.y + n.z * cameraDirection.z) / l; };
+  const hasHaft = (holder, expected) => { const h = new V3(0, 0, 1).applyQuaternion(holder.quaternion); return Math.hypot(h.x - expected.x, h.y - expected.y, h.z - expected.z) < 1e-9; };
   const degBetween = (a, b) => a.angleTo(b) * 180 / Math.PI;
-  const spinAbout = (from, to) => { const r = new Q4().copy(from).invert().multiply(to); return { pure: Math.abs(r.x) < 1e-6 && Math.abs(r.y) < 1e-6, deg: degBetween(new Q4(), r) }; }; // Relative rotation in the tool's own frame.
-  assert.equal(attach.toolRollDeadzoneDeg(), 10, 'default deadzone is 10 degrees');
-  for (const [label, pose] of [['aligned', aligned], ['flipped', flipped]]) for (const yaw of [0, 90, 180, -135]) { // 180 faces world -z, where a swing-twist split about a fixed axis is singular.
-    const holder = newHolder();
-    const baseline = place(holder, yaw, 0, pose);
-    assert.ok(degBetween(place(holder, yaw, 6, pose), baseline) < 1e-3, `${label}: tilt inside the deadzone leaves the haft roll alone (yaw ${yaw})`);
-    const beyond = place(holder, yaw, 25, pose);
-    assert.ok(Math.abs(degBetween(beyond, baseline) - 15) < 1e-3, `${label}: beyond the deadzone the haft trails the tilt by exactly the deadzone (yaw ${yaw}): ${degBetween(beyond, baseline)}`);
-    const spin = spinAbout(baseline, beyond);
-    assert.ok(spin.pure, `${label}: the correction is a pure spin about the haft (yaw ${yaw})`);
-    place(holder, yaw, 25, pose);
-    assert.ok(degBetween(holder.quaternion, beyond) < 1e-4, `${label}: repeat render passes are idempotent (yaw ${yaw})`);
+  const limit = Math.sin(10 * Math.PI / 180);
+  assert.equal(attach.toolEdgeOnDeadzoneDeg(), 10, 'default edge-on deadzone is 10 degrees');
+  { // Exactly edge-on from the side: needs a 10 degree roll to reach the 10 degree limit.
+    const ray = { x: -1, y: 0, z: 0 }, holder = newHolder(), exact = (() => { attach.setToolEdgeOnDeadzone(0); const q = place(newHolder(), frameFor(ray)); attach.setToolEdgeOnDeadzone(10); return q; })();
+    const q = place(holder, frameFor(ray));
+    assert.ok(Math.abs(Math.abs(normalDotRay(holder, ray)) - limit) < 1e-9, 'the sprite is rolled to just outside the edge-on zone');
+    assert.ok(hasHaft(holder, { x: 0, y: 0, z: 1 }), 'the haft direction is untouched');
+    const relative = new Q4().copy(exact).invert().multiply(q);
+    assert.ok(Math.abs(relative.x) < 1e-9 && Math.abs(relative.y) < 1e-9, 'the correction is a pure roll about the tool\'s own z');
+    assert.ok(Math.abs(degBetween(exact, q) - 10) < 1e-6, 'it is the least roll that does the job: exactly the deadzone from a perfectly edge-on sprite');
+    place(holder, frameFor(ray));
+    assert.ok(degBetween(holder.quaternion, q) < 1e-6, 'repeat render passes are idempotent');
   }
-  for (const yaw of [0, 180, 77]) { // The real stance: only the spin about the haft is filtered; its direction follows the head exactly.
-    const holder = newHolder(); place(holder, yaw, 0, blowgun);
-    for (const tilt of [6, 25, -18]) {
-      const filtered = place(holder, yaw, tilt, blowgun), exact = exactly(yaw, tilt, blowgun);
-      const spin = spinAbout(exact, filtered);
-      assert.ok(spin.pure, `blowgun: the haft direction is untouched, only its spin differs (yaw ${yaw}, tilt ${tilt})`);
-      assert.ok(spin.deg > 1 && spin.deg < Math.abs(tilt) + 1e-6, `blowgun: some of the head's tilt is held back (yaw ${yaw}, tilt ${tilt}): ${spin.deg}`);
-    }
+  { // Already clearly facing the camera: untouched.
+    const ray = { x: 0, y: -1, z: 0 }, holder = newHolder(); attach.setToolEdgeOnDeadzone(0); const exact = place(newHolder(), frameFor(ray)); attach.setToolEdgeOnDeadzone(10);
+    assert.ok(degBetween(place(holder, frameFor(ray)), exact) < 1e-9, 'outside the zone nothing moves');
   }
-  { // Yaw follows exactly, and so does an authored roll change.
-    const holder = newHolder(); place(holder, 0, 0, blowgun);
-    assert.ok(degBetween(place(holder, 40, 0, blowgun), exactly(40, 0, blowgun)) < 1e-6, 'head yaw is never filtered');
-    assert.ok(degBetween(place(holder, 40, 0, { ...blowgun, roll: 30 }), exactly(40, 0, { ...blowgun, roll: 30 })) < 1e-6, 'an authored pose roll change is never filtered');
+  { // Partway into the zone: only just enough roll.
+    const ray = { x: -Math.sqrt(1 - 0.01), y: 0.1, z: 0 }, holder = newHolder(); place(holder, frameFor(ray));
+    assert.ok(Math.abs(normalDotRay(holder, ray) - limit) < 1e-9, 'a sprite 5.7 degrees off edge-on is rolled just out to 10');
   }
-  { // A long gap snaps to the head; a zero deadzone follows exactly.
-    const holder = newHolder(); place(holder, 0, 0, aligned); place(holder, 0, 25, aligned);
-    fakeNow += 5000;
-    assert.ok(degBetween(place(holder, 0, 25, aligned), exactly(0, 25, aligned)) < 1e-6, 'after a long gap the tool snaps to the head instead of easing from a stale roll');
-    attach.setToolRollDeadzone(0);
-    assert.ok(degBetween(place(newHolder(), 0, 8, aligned), exactly(0, 8, aligned)) < 1e-5, 'a zero deadzone follows the head exactly');
-    attach.setToolRollDeadzone(10);
+  { // Haft along the camera ray: no roll helps, so the tool is left alone (the stated exception).
+    const ray = { x: 0, y: 0, z: -1 }, holder = newHolder(); attach.setToolEdgeOnDeadzone(0); const exact = place(newHolder(), frameFor(ray)); attach.setToolEdgeOnDeadzone(10);
+    assert.ok(degBetween(place(holder, frameFor(ray)), exact) < 1e-12, 'haft parallel to the ray is left untouched');
+  }
+  { // Hysteresis: the sprite stays on the face it was showing instead of popping across edge-on.
+    const holder = newHolder(), ray = a => ({ x: -Math.sqrt(1 - a * a), y: a, z: 0 });
+    place(holder, frameFor(ray(0.4)));
+    place(holder, frameFor(ray(0.05)));
+    assert.ok(normalDotRay(holder, ray(0.05)) > 0, 'a face that was showing keeps showing as it enters the zone');
+    place(holder, frameFor(ray(-0.05)));
+    assert.ok(Math.abs(normalDotRay(holder, ray(-0.05)) - limit) < 1e-9, 'crossing edge-on still lands on the same face');
+    attach.setToolEdgeOnDeadzone(0); const exactFar = place(newHolder(), frameFor(ray(-0.4))); attach.setToolEdgeOnDeadzone(10);
+    assert.ok(degBetween(place(holder, frameFor(ray(-0.4))), exactFar) < 1e-9, 'once clearly past the zone on the other side it follows the head exactly');
+  }
+  { // The aperture stays on the mouth through the correction.
+    const holder = newHolder(), ray = { x: -1, y: 0, z: 0 }, aperture = { x: 0, y: 0, z: 0.8 };
+    place(holder, frameFor(ray), aligned, aperture);
+    const world = new V3(aperture.x, aperture.y, aperture.z).multiplyScalar(holder.scale.x).applyQuaternion(holder.quaternion).add(holder.position);
+    for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(world[axis] - mouth[axis]) < 1e-9, `aperture still on the mouth (${axis})`);
+  }
+  { // No camera, no deadzone: nothing to judge against.
+    const holder = newHolder(), frame = frameFor({ x: -1, y: 0, z: 0 }); frame.cameraPosition = null;
+    attach.setCameraProvider(null);
+    attach.setToolEdgeOnDeadzone(0); const exact = place(newHolder(), frame); attach.setToolEdgeOnDeadzone(10);
+    assert.ok(degBetween(place(holder, frame), exact) < 1e-9, 'without a camera the pose is exact');
   }
 }
 // Hand-aligned scaling pivots on the main-hand grip: the grip's position must not depend on the holder's scale.
