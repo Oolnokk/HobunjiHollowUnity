@@ -738,6 +738,16 @@
         if (typeof route.node.pan?.setTargetAtTime === 'function') route.node.pan.setTargetAtTime(pan, route.ctx.currentTime, 0.025);
         else if (route.node.pan) route.node.pan.value = pan;
       }
+      const followed = route.followGain;
+      if (followed?.param && followed.initialGain > 0 && followed.earshotPx > 0) {
+        const actorArea = route.actor?.areaId || route.actor?.area || null;
+        const sameArea = !actorArea || actorArea === deps?.getCurrentArea?.();
+        const distance = animalVoiceAcousticDistancePx(route.actor); // Re-evaluate true horizontal+vertical separation, not merely pan.
+        const nextGain = sameArea ? Math.pow(Math.max(0, 1 - distance / followed.earshotPx), 1.5) : 0;
+        const value = Math.max(0, Math.min(4, followed.base * nextGain / followed.initialGain)); // Isolated attenuation avoids undoing charge-stop fades.
+        if (typeof followed.param.setTargetAtTime === 'function') followed.param.setTargetAtTime(value, route.ctx.currentTime, 0.025);
+        else followed.param.value = value;
+      }
     }
   }
 
@@ -768,7 +778,7 @@
           panner.positionX.value = pos.x; panner.positionY.value = pos.y; panner.positionZ.value = pos.z;
         } else panner.setPosition(pos.x, pos.y, pos.z);
         input.connect(panner); panner.connect(ctx.destination);
-        const route = { node: panner, backend: 'hrtf', actor: spatial.sourceActor, ctx,
+        const route = { node: panner, backend: 'hrtf', actor: spatial.sourceActor, followGain: spatial.followGain || null, ctx,
           dispose() { activeDirectionalRoutes.delete(route); try { panner.disconnect(); } catch (_) {} },
         }; // One live route per active attack/voice, disposed when playback ends.
         if (spatial.sourceActor) activeDirectionalRoutes.add(route);
@@ -779,7 +789,7 @@
     if (stereo) {
       stereo.pan.value = Math.max(-1, Math.min(1, Number(spatial?.panX) || 0));
       input.connect(stereo); stereo.connect(ctx.destination);
-      const route = { node: stereo, backend: 'stereo-fallback', actor: spatial?.sourceActor, ctx,
+      const route = { node: stereo, backend: 'stereo-fallback', actor: spatial?.sourceActor, followGain: spatial?.followGain || null, ctx,
         dispose() { activeDirectionalRoutes.delete(route); try { stereo.disconnect(); } catch (_) {} },
       };
       if (spatial?.sourceActor) activeDirectionalRoutes.add(route);
@@ -806,7 +816,9 @@
         lowpass.frequency.value = 3500 + 16500 * Math.pow(spatial.gain, 0.7);
         gain.connect(lowpass);
       }
-      route = connectCombatSpatialDry(ctx, lowpass || gain, spatial);
+      route = connectCombatSpatialDry(ctx, lowpass || gain, { ...spatial,
+        followGain: { param: gain.gain, initialGain: spatial.gain, base: gain.gain.value, earshotPx: spatial.earshotPx },
+      }); // One-shot volume also updates if a lunge crosses a major elevation/earshot boundary while playing.
       wet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.areaId || null }) || null;
       const handle = {
         pause() { try { source.stop(); } catch (_) {} cleanup(); },
