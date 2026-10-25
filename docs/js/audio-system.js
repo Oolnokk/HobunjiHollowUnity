@@ -1358,7 +1358,8 @@
   function playCreatureTreasureAlert(c) {
     const cfg = combatSfxConfig().creatureBark;
     if (!cfg || !deps || c?.areaId !== deps.getCurrentArea()) return;
-    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const spatial = combatAudioSpatial(c, { earshotTiles: 12 }); // Alerts share the caller's 3D origin, including ravine elevation and camera direction.
+    const distance = spatial.distance;
     const earshot = deps.TILE * 12;
     if (distance > earshot) return;
     const speciesCfg = cfg.species?.[c.creatureKey] || {};
@@ -1369,7 +1370,7 @@
       volume: Math.min(1, (Number(cfg.volume) || 0.8) * 1.15),
       gainBoost: Math.max(1.8, Number(cfg.gainBoost) || 1),
     };
-    playOneShotSfx(alertCfg, falloff, Number(speciesCfg.pitch) || 1);
+    playOneShotSfx(alertCfg, falloff, Number(speciesCfg.pitch) || 1, spatial);
   }
 
   function playCreatureClawHit(c) {
