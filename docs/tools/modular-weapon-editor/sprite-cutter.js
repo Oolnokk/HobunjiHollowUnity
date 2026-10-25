@@ -115,6 +115,8 @@
     byId('cut-debug').textContent = JSON.stringify({
       source, sourceSize, workingFrame: FRAME, selectedPoints: path.length,
       remainingOpaquePixels: opaqueCount(pixels), undoDepth: history.length,
+      outlineThickness: Number(byId('cut-outline-thickness').value), // Last requested black-border radius.
+      uploadedPart: byId('cut-uploaded').value, uploadedPartCount: byId('cut-uploaded').querySelectorAll('option').length, // Mobile diagnostics for current repo-asset browsing.
       output: byId('cut-output').textContent
     }, null, 2);
   }
@@ -284,6 +286,7 @@
     if (stillAvailable) uploadedPicker.value = last;
     uploadedPicker.disabled = uploadedPicker.querySelectorAll('option').length === 0;
     byId('cut-load-uploaded').disabled = uploadedPicker.disabled;
+    diagnostics(); // Keep the mobile diagnostics up to date after manually refreshing uploaded assets.
   }
   fillUploadedParts(uploadedPartFiles);
   byId('cut-load-uploaded').onclick = async () => {
