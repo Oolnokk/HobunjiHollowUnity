@@ -390,7 +390,7 @@ let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid
 let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
-const editorHeadFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale of the previewed avatar (head-anchored actions).
+const editorHeadFrame = window.SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale of the previewed avatar (head-anchored actions).
 const editorApertureScratch = new THREE.Vector3();
 // The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
 function editorToolAperture() {
