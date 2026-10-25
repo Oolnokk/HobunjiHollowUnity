@@ -716,7 +716,7 @@
   function fireStagedStrike(action) {
     if (action.strikeFired) return;
     action.strikeFired = true;
-    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep);
+    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep, action.data?.attacker || deps?.player); // NPC swings inherit their attacker's 3D audio origin.
     if (action.onStrike) action.onStrike(action);
   }
 
