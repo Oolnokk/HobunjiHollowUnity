@@ -39,7 +39,10 @@ const cues = {
   weaponHitSharpMedium: { url: 'hit.mp3', volume: 1, preload: true },
   counterShieldBlock: { url: 'block.mp3', volume: 1, preload: true },
 };
-const window = { AudioContext: FakeContext, addEventListener() {}, SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx: cues } } } }; // Browser audio configuration.
+let audioTick = null; // Captures the real shared frame-scheduler callback for moving emitters.
+const window = { AudioContext: FakeContext, addEventListener() {},
+  RuntimeFrameScheduler: { register(id, callback) { if (id === 'combat-spatial-listener') audioTick = callback; } },
+  SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx: cues } } } }; // Browser audio configuration.
 const camera = { matrixWorld: { elements: [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1] }, updateMatrixWorld() {} }; // Identity camera faces negative Z.
 const fetcher = url => { events.fetches.push(url); return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(1)) }); };
 vm.runInNewContext(fs.readFileSync('docs/js/audio-system.js', 'utf8'), { window, Audio: FakeAudio, fetch: fetcher, performance: { now: () => 100 }, setTimeout() {}, Math });
