@@ -916,6 +916,7 @@ function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y
 // The game's own rest poses (js/combat/shared-attack-pose.js), copied so the editor can edit them
 // freely; 'drink' is editor-only (held-item action previews).
 const SharedAttackPose = window.SharedAttackPose;
+SharedAttackPose.setToolRollDeadzone(0); // Authoring shows exact poses; the roll deadzone is gameplay-only.
 const STYLE_NEUTRAL_POSE = {
   ...Object.fromEntries(Object.entries(SharedAttackPose.STYLE_NEUTRAL_POSE).map(([style, pose]) => [style, { ...pose }])),
   drink:  { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },

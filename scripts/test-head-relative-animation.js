@@ -41,13 +41,18 @@ assert.match(composerSource, /applyPlayerHeadAim\(undo, renderDebug\); applyPlay
 assert.match(composerSource, /addPostHeadAimHook,/, 'composer exports the hook registration');
 assert.match(game, /addPostHeadAimHook\?\.\(undo =>[\s\S]*placeAtMouth\(toolHolder, _headFrame, _toolAttachJob\.pose[\s\S]*placeAtMouth\(heldItemHolder, _headFrame, _heldAttachJob\.pose[\s\S]*undo\.push\(_restoreHeadAttachments\)/, 'game re-seats the head-anchored tool and held bottle on the drawn head and restores gameplay transforms after the draw');
 // Mouth/aperture attach math, with a small THREE-compatible vector/quaternion/euler stand-in.
-const mathContext = { window: {}, Math };
+let fakeNow = 1000; // Controllable clock for the deadzone's stale-gap reset.
+const mathContext = { window: {}, Math, performance: { now: () => fakeNow } };
 vm.createContext(mathContext);
 class V3 { constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} copy(v){return this.set(v.x,v.y,v.z);} add(v){return this.set(this.x+v.x,this.y+v.y,this.z+v.z);} sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);} multiplyScalar(k){return this.set(this.x*k,this.y*k,this.z*k);} setScalar(k){return this.set(k,k,k);}
   applyQuaternion(q){const {x,y,z}=this,qx=q.x,qy=q.y,qz=q.z,qw=q.w;const ix=qw*x+qy*z-qz*y,iy=qw*y+qz*x-qx*z,iz=qw*z+qx*y-qy*x,iw=-qx*x-qy*y-qz*z;return this.set(ix*qw+iw*-qx+iy*-qz-iz*-qy,iy*qw+iw*-qy+iz*-qx-ix*-qz,iz*qw+iw*-qz+ix*-qy-iy*-qx);} }
 class Q4 { constructor(x=0,y=0,z=0,w=1){this.x=x;this.y=y;this.z=z;this.w=w;} copy(q){this.x=q.x;this.y=q.y;this.z=q.z;this.w=q.w;return this;} invert(){this.x=-this.x;this.y=-this.y;this.z=-this.z;return this;}
   multiply(b){const a=this;const x=a.x*b.w+a.w*b.x+a.y*b.z-a.z*b.y,y=a.y*b.w+a.w*b.y+a.z*b.x-a.x*b.z,z=a.z*b.w+a.w*b.z+a.x*b.y-a.y*b.x,w=a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z;this.x=x;this.y=y;this.z=z;this.w=w;return this;}
   premultiply(b){const t=new Q4().copy(b).multiply(this);return this.copy(t);}
+  angleTo(q){return 2*Math.acos(Math.min(1,Math.abs(this.x*q.x+this.y*q.y+this.z*q.z+this.w*q.w)));}
+  slerp(q,t){let d=this.x*q.x+this.y*q.y+this.z*q.z+this.w*q.w;const s=d<0?-1:1;d=Math.abs(d);if(d>0.99999){return this;}const th=Math.acos(d),sn=Math.sin(th),a=Math.sin((1-t)*th)/sn,b=Math.sin(t*th)/sn*s;this.x=a*this.x+b*q.x;this.y=a*this.y+b*q.y;this.z=a*this.z+b*q.z;this.w=a*this.w+b*q.w;return this;}
+  rotateTowards(q,step){const a=this.angleTo(q);if(a===0)return this;return this.slerp(q,Math.min(1,step/a));}
+  set(x,y,z,w){this.x=x;this.y=y;this.z=z;this.w=w;return this;}
   setFromEuler(e){const c1=Math.cos(e.x/2),c2=Math.cos(e.y/2),c3=Math.cos(e.z/2),s1=Math.sin(e.x/2),s2=Math.sin(e.y/2),s3=Math.sin(e.z/2);this.x=s1*c2*c3+c1*s2*s3;this.y=c1*s2*c3-s1*c2*s3;this.z=c1*c2*s3-s1*s2*c3;this.w=c1*c2*c3+s1*s2*s3;return this;} }
 class Eu { constructor(){this.x=0;this.y=0;this.z=0;} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
   setFromQuaternion(q){const {x,y,z,w}=q;const m13=2*(x*z+y*w),m23=2*(y*z-x*w),m33=1-2*(x*x+y*y),m21=2*(x*y+z*w),m22=1-2*(x*x+z*z);this.x=Math.asin(-Math.max(-1,Math.min(1,m23)));if(Math.abs(m23)<0.9999999){this.y=Math.atan2(m13,m33);this.z=Math.atan2(m21,m22);}else{this.y=Math.atan2(-(2*(x*z-y*w)),1-2*(y*y+z*z));this.z=0;}return this;} }
@@ -77,6 +82,53 @@ const scaledRoot = { updateWorldMatrix() {}, worldToLocal(v) { return v.sub(new 
 const parented = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1) };
 attach.placeAtMouth(parented, frame, offsetPose, 1.3, aperture, scaledRoot);
 assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled parent receives the compensating local scale');
+// Haft-roll deadzone: head tilt may not spin a head-anchored tool about its own z axis (the haft) until it passes the deadzone;
+// the haft's direction, authored pose changes, yaw and pitch are never filtered, and it works while facing any world direction.
+{
+  const blowgun = { x: 0, y: 0, z: 0, pitch: -180, yaw: 21, roll: 4 }; // The blowgun's authored stance: haft 21 degrees off the head's forward axis.
+  const aligned = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Haft parallel to the head's forward axis: tilt is exactly haft spin.
+  const flipped = { x: 0, y: 0, z: 0, pitch: -180, yaw: 0, roll: 0 }; // Haft anti-parallel to it.
+  const headFrame = (yawDeg, tiltDeg) => { const f = attach.createHeadFrame(THREE); f.position.set(0, 1, 0); f.quaternion.setFromEuler({ x: 0, y: yawDeg * Math.PI / 180, z: tiltDeg * Math.PI / 180 }); return f; };
+  const place = (holder, yawDeg, tiltDeg, pose) => { fakeNow += 16; attach.placeAtMouth(holder, headFrame(yawDeg, tiltDeg), pose, 1.3, null); return new Q4().copy(holder.quaternion); };
+  const exactly = (yawDeg, tiltDeg, pose) => { attach.setToolRollDeadzone(0); const q = place(newHolder(), yawDeg, tiltDeg, pose); attach.setToolRollDeadzone(10); return q; };
+  const newHolder = () => ({ position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1), userData: {} });
+  const degBetween = (a, b) => a.angleTo(b) * 180 / Math.PI;
+  const spinAbout = (from, to) => { const r = new Q4().copy(from).invert().multiply(to); return { pure: Math.abs(r.x) < 1e-6 && Math.abs(r.y) < 1e-6, deg: degBetween(new Q4(), r) }; }; // Relative rotation in the tool's own frame.
+  assert.equal(attach.toolRollDeadzoneDeg(), 10, 'default deadzone is 10 degrees');
+  for (const [label, pose] of [['aligned', aligned], ['flipped', flipped]]) for (const yaw of [0, 90, 180, -135]) { // 180 faces world -z, where a swing-twist split about a fixed axis is singular.
+    const holder = newHolder();
+    const baseline = place(holder, yaw, 0, pose);
+    assert.ok(degBetween(place(holder, yaw, 6, pose), baseline) < 1e-3, `${label}: tilt inside the deadzone leaves the haft roll alone (yaw ${yaw})`);
+    const beyond = place(holder, yaw, 25, pose);
+    assert.ok(Math.abs(degBetween(beyond, baseline) - 15) < 1e-3, `${label}: beyond the deadzone the haft trails the tilt by exactly the deadzone (yaw ${yaw}): ${degBetween(beyond, baseline)}`);
+    const spin = spinAbout(baseline, beyond);
+    assert.ok(spin.pure, `${label}: the correction is a pure spin about the haft (yaw ${yaw})`);
+    place(holder, yaw, 25, pose);
+    assert.ok(degBetween(holder.quaternion, beyond) < 1e-4, `${label}: repeat render passes are idempotent (yaw ${yaw})`);
+  }
+  for (const yaw of [0, 180, 77]) { // The real stance: only the spin about the haft is filtered; its direction follows the head exactly.
+    const holder = newHolder(); place(holder, yaw, 0, blowgun);
+    for (const tilt of [6, 25, -18]) {
+      const filtered = place(holder, yaw, tilt, blowgun), exact = exactly(yaw, tilt, blowgun);
+      const spin = spinAbout(exact, filtered);
+      assert.ok(spin.pure, `blowgun: the haft direction is untouched, only its spin differs (yaw ${yaw}, tilt ${tilt})`);
+      assert.ok(spin.deg > 1 && spin.deg < Math.abs(tilt) + 1e-6, `blowgun: some of the head's tilt is held back (yaw ${yaw}, tilt ${tilt}): ${spin.deg}`);
+    }
+  }
+  { // Yaw follows exactly, and so does an authored roll change.
+    const holder = newHolder(); place(holder, 0, 0, blowgun);
+    assert.ok(degBetween(place(holder, 40, 0, blowgun), exactly(40, 0, blowgun)) < 1e-6, 'head yaw is never filtered');
+    assert.ok(degBetween(place(holder, 40, 0, { ...blowgun, roll: 30 }), exactly(40, 0, { ...blowgun, roll: 30 })) < 1e-6, 'an authored pose roll change is never filtered');
+  }
+  { // A long gap snaps to the head; a zero deadzone follows exactly.
+    const holder = newHolder(); place(holder, 0, 0, aligned); place(holder, 0, 25, aligned);
+    fakeNow += 5000;
+    assert.ok(degBetween(place(holder, 0, 25, aligned), exactly(0, 25, aligned)) < 1e-6, 'after a long gap the tool snaps to the head instead of easing from a stale roll');
+    attach.setToolRollDeadzone(0);
+    assert.ok(degBetween(place(newHolder(), 0, 8, aligned), exactly(0, 8, aligned)) < 1e-5, 'a zero deadzone follows the head exactly');
+    attach.setToolRollDeadzone(10);
+  }
+}
 // Hand-aligned scaling pivots on the main-hand grip: the grip's position must not depend on the holder's scale.
 {
   const grip = { x: 0.1, y: -0.05, z: 0.5 };
