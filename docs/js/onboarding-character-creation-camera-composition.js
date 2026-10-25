@@ -164,7 +164,7 @@
   // In-game creator sessions (HobunjiOnboarding.openCreator) re-arm the same
   // composition for the life of the session only.
   document.addEventListener('hobunji-creator-session', event => {
-    if (event.detail?.phase === 'close') { setTimeout(() => { active = false; }, 500); return; }
+    if (event.detail?.phase === 'close') { setTimeout(() => { if (!window.HobunjiOnboarding?.creatorSessionInfo?.()) active = false; }, 500); return; }
     if (event.detail?.phase !== 'open' || active) return;
     active = true;
     requestAnimationFrame(frame);

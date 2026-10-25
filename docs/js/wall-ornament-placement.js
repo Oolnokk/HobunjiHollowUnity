@@ -29,6 +29,7 @@
   let playerAttachment = null;
   let playerPickWall = false;
   let playerMode = null; // null | new | move
+  let playerArmGeneration = 0; // Invalidates unfinished wall-metadata loads when placement is cancelled or another piece is selected.
   let playerStockSource = 'bag'; // Wall furniture uses the same delayed bag/storage debit as floor furniture.
   let playerArmedItemKey = null;
   let playerOriginalPlacement = null;
@@ -438,6 +439,7 @@
   }
 
   function clearPlayerAimState() {
+    playerArmGeneration++;
     playerObject = null; playerPlacement = null; playerAttachment = null;
     playerMode = null; playerArmedItemKey = null;
     playerOriginalPlacement = null; playerOriginalTransform = null;
@@ -588,6 +590,9 @@
   }
 
   async function armNewPlayerFurniture(itemKey, source = 'bag') {
+    const generation = ++playerArmGeneration; // Only the newest still-authorized placement request may publish a preview.
+    const area = farmDeps?.getCurrentArea?.(); // Keep the original location across the asynchronous authored-metadata load.
+    if (area !== 'farm' && area !== 'interior') return false;
     const defs = placerDeps?.getDecorativeFurnitureDefs?.() || farmDeps?.DECORATIVE_FURNITURE_DEFS || {};
     const entry = Object.entries(defs).find(([, def]) => def?.itemKey === itemKey);
     const key = entry?.[0], def = entry?.[1];
@@ -595,7 +600,9 @@
     if ((placerDeps?.furnitureStock ? placerDeps.furnitureStock(itemKey, source) : placerDeps?.inventory?.[itemKey] || 0) < 1) { toast(`No ${def.name || 'wall furniture'} in inventory.`, false); return false; }
     const attachment = await loadAttachment(key, def);
     if (!attachment) { toast('Wall attachment metadata could not be loaded.', false); return false; }
-    const area = farmDeps?.getCurrentArea?.();
+    if (generation !== playerArmGeneration) return false;
+    if (farmDeps?.getCurrentArea?.() !== area || placerDeps?.isPaused?.() || placerDeps?.hasFarmPermission?.('placeFurniture') === false
+      || (placerDeps?.furnitureStock ? placerDeps.furnitureStock(itemKey, source) : placerDeps?.inventory?.[itemKey] || 0) < 1) return false;
     if (isHouseWindowKey(key) && area !== 'farm') {
       toast('Windows can only be placed from outside the farmhouse.', false);
       return false;
@@ -636,8 +643,14 @@
       const scene = area === 'interior' ? farmDeps?.getInteriorScene?.() : farmDeps?.getScene?.();
       const result = farmDeps?.makeDecorativeFurnitureMesh?.(anchor.col, anchor.row, playerObject.key, scene, area, 0);
       if (!result) { scene?.add?.(preview); playerObject.mesh = preview; toast('Could not place wall furniture there.', false); return false; }
-      if (placerDeps.consumeFurnitureStock) placerDeps.consumeFurnitureStock(itemKey, playerStockSource);
-      else { placerDeps.inventory[itemKey]--; placerDeps.clampInventoryStack?.(itemKey); }
+      if (placerDeps.consumeFurnitureStock) {
+        if (!placerDeps.consumeFurnitureStock(itemKey, playerStockSource)) {
+          placerDeps.disposeDecorativeFurniture?.({ ...result, key: playerObject.key, col: anchor.col, row: anchor.row, area });
+          scene?.add?.(preview); playerObject.mesh = preview;
+          toast('Could not save furniture consumption. Nothing was placed.', false);
+          return false;
+        }
+      } else { placerDeps.inventory[itemKey]--; placerDeps.clampInventoryStack?.(itemKey); }
       const owner = area === 'interior' ? (farmDeps?.furnitureOwnerFields?.(anchor.col, anchor.row) || {}) : {};
       const object = { id:'decor_'+Math.random().toString(36).slice(2,10), key:playerObject.key, col:anchor.col, row:anchor.row,
         mesh:result.mesh, light:result.light, sfxSource:result.sfxSource, area, rotYDeg:0, ...owner };

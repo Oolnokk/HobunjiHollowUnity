@@ -3055,7 +3055,10 @@
         if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) return { ok: false, message: 'No available ' + def.name + ' or furniture permission.' };
         const obj = makeProcessingFurniture(col, row, furnitureKey);
         if (!obj) return { ok: false, message: 'Could not make furniture object.' };
-        consumeFurnitureStock(def.itemKey, source);
+        if (!consumeFurnitureStock(def.itemKey, source)) {
+          obj.reset(); // Dispose the new processor/VFX before it can enter the world when storage cannot be debited.
+          return { ok: false, message: 'Could not save furniture consumption. Nothing was placed.' };
+        }
         worldObjects.set(col + ',' + row, obj);
         processingFurnitureObjects.add(obj);
         return { ok: true, message: 'Placed ' + def.icon + ' ' + def.name + '.' };
@@ -3692,7 +3695,10 @@
         const targetScene = isInInterior ? interiorScene : scene;
         const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
-        consumeFurnitureStock(itemKey, source);
+        if (!consumeFurnitureStock(itemKey, source)) {
+          disposeDecorativeFurniture({ ...result, key: furnitureKey, col, row, area: currentArea });
+          return { ok: false, message: 'Could not save furniture consumption. Nothing was placed.' };
+        }
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
         const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner }; // Stable save record also owns editable table membership.
@@ -3946,7 +3952,7 @@
           const store = _loadWorldStorage(); // Read at commit time so intervening storage changes cannot be overwritten.
           store[itemKey]--;
           if (store[itemKey] <= 0) delete store[itemKey];
-          _saveWorldStorage(store);
+          if (!_saveWorldStorage(store)) return false;
         } else {
           inventory[itemKey]--;
           clampInventoryStack(itemKey);
@@ -4419,10 +4425,14 @@
             const profile = _playerData || window.__hobunjiPlayerProfile; // Preserve current identity, equipment, progression and live world data.
             if (!profile?.appearance) return { ok: false, message: 'Appearance is not ready.' };
             const previewProfile = window.EquipmentPanel?.applyGearClothingToPlayerData?.(profile) || profile; // Preview the actual worn clothing while editing only appearance cosmetics.
+            let resolvedProfile = null; // Canonical rendered cosmetic choices, including legacy randomized defaults omitted from the saved selections.
+            try { resolvedProfile = window.NpcAvatarPreview?.buildProfileFromNpcExport?.(previewProfile); }
+            catch (error) { return { ok: false, message: 'Your appearance is still loading. Please try again.' }; }
+            if (!resolvedProfile) return { ok: false, message: 'Your appearance is still loading. Please try again.' };
             const started = window.HobunjiOnboarding?.openCreator({
               title: 'Grooming Kit', confirmLabel: 'Apply Appearance', hideName: true, cosmeticsOnly: true, mode: 'grooming',
               speciesId: profile.appearance.speciesId, gender: profile.appearance.gender,
-              appearance: previewProfile.appearance, equippedCosmetics: previewProfile.equippedCosmetics, appliedDyes: previewProfile.appliedDyes,
+              resolvedProfile, appearance: previewProfile.appearance, equippedCosmetics: previewProfile.equippedCosmetics, appliedDyes: previewProfile.appliedDyes,
               onCancel: closeMenu,
               onComplete(result) {
                 closeMenu();
@@ -8577,7 +8587,7 @@
       function _loadWorldBreedingPairs() { return window.WorldMetaStore.loadBreedingPairs(_tothalWorldId()); }
       function _saveWorldBreedingPairs(list) { window.WorldMetaStore.saveBreedingPairs(_tothalWorldId(), list); }
       function _loadWorldStorage() { return window.WorldMetaStore.loadStorage(_tothalWorldId()); }
-      function _saveWorldStorage(store) { window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
+      function _saveWorldStorage(store) { return window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
 
       // Jubmir's daily trader stock/shop page now lives in
       // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
@@ -30048,7 +30058,7 @@
       });
 
       window.FurniturePlacer?.init({
-        furnitureStock, consumeFurnitureStock, closeMenu,
+        furnitureStock, consumeFurnitureStock, disposeDecorativeFurniture, closeMenu,
         getCurrentArea: () => currentArea,
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
         getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,

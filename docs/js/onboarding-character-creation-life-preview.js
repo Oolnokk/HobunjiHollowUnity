@@ -438,7 +438,7 @@
     // In-game creator sessions (HobunjiOnboarding.openCreator) re-arm the
     // living preview for the life of the session only.
     document.addEventListener('hobunji-creator-session', event => {
-      if (event.detail?.phase === 'close') { setTimeout(teardown, 500); return; }
+      if (event.detail?.phase === 'close') { setTimeout(() => { if (!window.HobunjiOnboarding?.creatorSessionInfo?.()) teardown(); }, 500); return; }
       if (event.detail?.phase !== 'open') return;
       const wasActive = active;
       active = true;

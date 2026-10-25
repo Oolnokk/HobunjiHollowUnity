@@ -16,6 +16,8 @@ let storage = { groomingKitFurniture: 2, pestleFurniture: 1 }; // Fresh copies s
 let permitted = true; // Permission revocation must block placement even after selecting a stored item.
 let clearTile = true; // Invalid placement must leave both stock sources untouched.
 let meshAvailable = true; // A failed furniture build must also retain stock.
+let storageWritable = true; // Failed metadata writes must abort placement, leaving the stored item available.
+let discarded = 0; // Failed transactions must dispose the uncommitted mesh and VFX.
 const noop = () => {};
 const context = vm.createContext({
   console, inventory, currentArea: 'farm', scene: {}, interiorScene: {},
@@ -23,10 +25,11 @@ const context = vm.createContext({
   DECORATIVE_FURNITURE_DEFS: { groomingKit: { itemKey: 'groomingKitFurniture', name: 'Grooming Kit' } },
   PROCESSING_FURNITURE_DEFS: { pestle: { itemKey: 'pestleFurniture', name: 'Pestle' } },
   hasFarmPermission: () => permitted,
-  _loadWorldStorage: () => ({ ...storage }), _saveWorldStorage: value => { storage = { ...value }; },
+  _loadWorldStorage: () => ({ ...storage }), _saveWorldStorage: value => { if (!storageWritable) return false; storage = { ...value }; return true; },
   clampInventoryStack: noop, canPlaceDecorativeFurnitureAt: () => clearTile, canPlaceFurnitureAt: () => clearTile,
   makeDecorativeFurnitureMesh: () => meshAvailable ? { mesh: {} } : null,
-  makeProcessingFurniture: () => meshAvailable ? { id: 'pestle' } : null,
+  makeProcessingFurniture: () => meshAvailable ? { id: 'pestle', reset() { discarded++; } } : null,
+  disposeDecorativeFurniture() { discarded++; },
   furnitureOwnerFields: () => ({}), normalizeNpcArea: value => value,
   registerChairNpcStation: noop, registerSitWorldObject: noop,
   window: { HudUpdate: { refreshItemScroll: noop }, FarmEditor: { saveFarmLayout: noop } },
@@ -51,6 +54,30 @@ clearTile = meshAvailable = permitted = true;
 assert.equal(context.placeDecorativeFurniture(3, 4, 'groomingKit').ok, true);
 assert.equal(inventory.groomingKitFurniture, 6, 'ordinary bag placement retains its source');
 assert.equal(storage.groomingKitFurniture, 1);
+storageWritable = false;
+const placedBefore = context.interiorFurnitureObjects.length; // A rejected debit must not append a saved placed object.
+assert.equal(context.placeDecorativeFurniture(5, 6, 'groomingKit', 'storage').ok, false, 'metadata write failure blocks floor placement');
+assert.equal(context.interiorFurnitureObjects.length, placedBefore);
+assert.equal(discarded, 1);
+assert.equal(storage.groomingKitFurniture, 1);
+storage.pestleFurniture = 1;
+const processorsBefore = context.processingFurnitureObjects.size; // Processor registration must also wait for successful consumption.
+assert.equal(context.placeProcessingFurniture(7, 8, 'pestle', 'storage').ok, false, 'metadata write failure blocks processor placement');
+assert.equal(context.processingFurnitureObjects.size, processorsBefore);
+assert.equal(discarded, 2);
+assert.equal(storage.pestleFurniture, 1);
+storageWritable = true;
+
+// Exercise the actual metadata owner so a quota exception cannot look like a successful debit.
+let storedMeta = JSON.stringify({ worlds: [{ id: 'farm', storage: { groomingKitFurniture: 1 } }] }); // Test persisted metadata independently of the placement seam.
+let rejectWrite = false; // Simulates a full browser store or unavailable active world.
+const metadata = vm.createContext({ window: {}, localStorage: { getItem: () => storedMeta, setItem(key, value) { if (rejectWrite) throw new Error('quota'); storedMeta = value; } } });
+vm.runInContext(fs.readFileSync('docs/js/world-meta-store.js', 'utf8'), metadata);
+assert.equal(metadata.window.WorldMetaStore.saveStorage('missing', {}), false);
+assert.equal(metadata.window.WorldMetaStore.saveStorage('farm', { groomingKitFurniture: 2 }), true);
+rejectWrite = true;
+assert.equal(metadata.window.WorldMetaStore.saveStorage('farm', {}), false);
+assert.equal(metadata.window.WorldMetaStore.loadStorage('farm').groomingKitFurniture, 2);
 
 // Startup grants exactly one kit to each existing or new world, including worlds with prior starter grants.
 const farm = vm.createContext({ window: {}, console }); // Farm hub's startup API owns the persistent grant sentinel.
@@ -74,8 +101,8 @@ function creatorHarness() {
     body: { appendChild(node) { overlay = node; } },
     getElementById: () => overlay, dispatchEvent: noop,
     createElement() {
-      return { start: button(), cancel: button(), classList: { add: noop },
-        querySelectorAll: () => [], querySelector(selector) { return selector === '#ob-start-btn' ? this.start : selector === '#ob-cancel-btn' ? this.cancel : null; },
+      return { start: button(), cancel: button(), cosmetic: { ...button(), dataset: { obSlot: 'facialHair' }, value: '' }, classList: { add: noop },
+        querySelectorAll(selector) { return selector === '[data-ob-slot]' ? [this.cosmetic] : []; }, querySelector(selector) { return selector === '#ob-start-btn' ? this.start : selector === '#ob-cancel-btn' ? this.cancel : null; },
         remove() { overlay = null; },
       };
     },
@@ -101,6 +128,24 @@ cancel.root().cancel.click();
 assert.equal(canceled, 1);
 assert.equal(cancel.api.creatorSessionInfo(), null);
 assert.equal(cancel.root(), null);
+const hairEditor = creatorHarness(); // Grooming prefills the same effective defaults that the live avatar currently displays.
+let hairResult = null; // Receives appearance after selecting None for the current beard.
+hairEditor.api.openCreator({ appearance, speciesId: 'mao-ao', gender: 'male', cosmeticsOnly: true,
+  resolvedProfile: { hairFront: { id: 'appearance::Mao-ao_M::mao-ao_tuft' }, facialHair: { id: appearance.cosmetics.facialHair } },
+  onComplete: value => { hairResult = value; } });
+hairEditor.root().cosmetic.listeners.change();
+hairEditor.root().start.click();
+assert.equal(hairResult.appearance.cosmetics.facialHair, null, 'None explicitly clears beard instead of rerolling a random one');
+assert.equal(hairResult.appearance.cosmetics.hairFront, 'appearance::Mao-ao_M::mao-ao_tuft', 'editing beard preserves the actual previously implicit hairstyle');
+assert.equal(hairResult.appearance.cosmetics.hairBack, null, 'an empty rendered slot stays explicitly empty');
+const legacyEditor = creatorHarness(); // Sparse old saves still need a complete editable appearance state.
+let legacyResult = null; // Confirms optional maps are initialized without inventing a replacement identity.
+legacyEditor.api.openCreator({ appearance: { speciesId: 'mao-ao', gender: 'male' }, cosmeticsOnly: true,
+  resolvedProfile: { hairFront: { id: 'appearance::Mao-ao_M::mao-ao_tuft' }, bodyColors: appearance.bodyColors }, onComplete: value => { legacyResult = value; } });
+legacyEditor.root().start.click();
+assert.equal(legacyResult.appearance.cosmetics.hairFront, 'appearance::Mao-ao_M::mao-ao_tuft');
+assert.equal(legacyResult.appearance.bodyColors.A.h, appearance.bodyColors.A.h);
+
 
 // A station edit persists only cosmetics/body colors and refreshes the live player.
 const liveProfile = { characterId: 'farmer', appearance: JSON.parse(JSON.stringify(appearance)), equippedCosmetics: ['actual-hat'], equipmentSlots: { weapon: 'sword' } }; // Character identity/equipment must survive grooming.
@@ -113,6 +158,7 @@ const station = vm.createContext({
   refreshPlayerAvatar() { avatarRefreshes++; }, saveMemberWorldData: noop, showToast: noop, releaseShoulderSurfPointerLock: noop,
   window: { __hobunjiPlayerProfile: liveProfile,
     CharacterMetaSave: { update(fn) { fn(savedCharacter); return true; } },
+    NpcAvatarPreview: { buildProfileFromNpcExport: () => ({ facialHair: { id: appearance.cosmetics.facialHair } }) },
     HobunjiOnboarding: { openCreator(options) { sessionOptions = options; return true; } },
   },
 });
@@ -129,6 +175,10 @@ assert.equal(liveProfile.appearance.bodyColors.HAT, undefined, 'grooming cannot 
 assert.equal(savedCharacter.equipmentSlots.weapon, 'sword');
 assert.equal(liveProfile.equippedCosmetics[0], 'actual-hat');
 assert.equal(avatarRefreshes, 1);
+assert.equal(station.paused, false);
+assert.equal(station.menuOpen, false);
+station.window.NpcAvatarPreview.buildProfileFromNpcExport = () => null;
+assert.equal(station.makeGroomingInteractable().onAction('obj_interact').ok, false, 'unresolved live appearance cannot be replaced by random defaults');
 assert.equal(station.paused, false);
 assert.equal(station.menuOpen, false);
 

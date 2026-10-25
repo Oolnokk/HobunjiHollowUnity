@@ -1666,7 +1666,7 @@
       const slot = sel.dataset.obSlot;
       const val  = sel.value || undefined;
       if (val) { _state.appearance.cosmetics[slot] = val; }
-      else     { delete _state.appearance.cosmetics[slot]; }
+      else     { _state.appearance.cosmetics[slot] = null; } // Explicit None must clear the slot instead of re-enabling randomized defaults.
       schedulePreviewRender();
     }));
 
@@ -2014,9 +2014,21 @@
     };
     _flowStep = 'char-create';
     _state = makeDefaultState(options.speciesId || 'mao-ao', options.gender || 'male');
-    if (options.appearance) _state.appearance = JSON.parse(JSON.stringify(options.appearance));
+    if (options.appearance) {
+      const initialAppearance = JSON.parse(JSON.stringify(options.appearance)); // Old/imported appearances may omit cosmetic or color maps.
+      _state.appearance = { ..._state.appearance, ...initialAppearance,
+        cosmetics: { ...(initialAppearance.cosmetics || {}) },
+        bodyColors: { ...(initialAppearance.bodyColors || options.resolvedProfile?.bodyColors || _state.appearance.bodyColors) },
+      };
+    }
     if (Array.isArray(options.equippedCosmetics)) _state.equippedCosmetics = [...options.equippedCosmetics];
     if (options.appliedDyes) _state.appliedDyes = JSON.parse(JSON.stringify(options.appliedDyes));
+    if (_creatorSession.cosmeticsOnly && options.resolvedProfile) {
+      for (const { slot } of currentGenderData()?.slots || []) {
+        const cosmetic = options.resolvedProfile[slot]; // Freeze current visible defaults so editing one cosmetic cannot reroll untouched slots.
+        _state.appearance.cosmetics[slot] = cosmetic?.id && cosmetic.id !== 'none' ? cosmetic.id : null;
+      }
+    }
     _activeTab = 'appearance';
     const palette = currentGenderData()?.colorOptions || []; // Find active grooming swatches without replacing custom body colors.
     const colorIndex = key => palette.findIndex(color => ['h', 's', 'v'].every(component => color[component] === _state.appearance.bodyColors?.[key]?.[component])); // Custom colors remain unselected but preserved.

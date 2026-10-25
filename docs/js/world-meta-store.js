@@ -26,13 +26,14 @@
   }
 
   function writeField(worldId, field, value) {
-    if (!worldId) return;
+    if (!worldId) return false;
     try {
       const { meta, world } = readWorld(worldId);
-      if (!world) return;
+      if (!world) return false;
       world[field] = value;
       localStorage.setItem(META_KEY, JSON.stringify(meta));
-    } catch {}
+      return true;
+    } catch { return false; }
   }
 
   // Caller tracing for livestock cache misses. Capturing a stack is far from
