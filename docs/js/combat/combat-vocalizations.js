@@ -433,7 +433,6 @@
       0,
       1,
     );
-    if (volume <= 0.002) { window.CharacterVoiceOwner?.release?.(claim); return { suppressed: true, reason: 'outside-combat-earshot', voiceKind, ...detail }; }
     const finish = () => window.CharacterVoiceOwner?.release?.(claim);
     let snd = null;
     try {
