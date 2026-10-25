@@ -11,7 +11,7 @@
        the document parser is still loading the main module list. -->
   <!-- Must load before any save/localStorage writer: evicts browser recovery-checkpoint mirrors when the quota is full. -->
   <script src="js/storage-quota-guard.js?v=20261022h4715074"></script>
-  <script src="js/audio-mix.js?v=20261025qol1"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
+  <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
   <script src="js/tap-reliability.js?v=20261010a"></script>
   <!-- Bag stack sizing (99 per box, overflow spills into another box).
