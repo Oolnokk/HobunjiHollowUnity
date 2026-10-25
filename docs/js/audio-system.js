@@ -38,6 +38,7 @@
   let lastFootstepDebugSurface = null; // Prevents the mobile-readable debug log from receiving one line for every individual footfall.
   function init(injectedDeps) {
     deps = injectedDeps;
+    installCombatGestureUnlock(); // Warm audio unlock happens on a trusted gesture, before the next wilderness attack.
     preloadConfiguredObjectSfx();
     preloadConfiguredCombatSfx();
     preloadAnimalVoices();
@@ -414,10 +415,25 @@
   // applied as a native volume multiplier after measurement. The native
   // volume ceiling is exposed in diagnostics if an unusually quiet source
   // would require >1.0 after the normal footstep/master attenuation.
-  function playRecordedFootstepClip(snd, url, surfaceKey, volume, gainMul = 1, heavy = false) {
-    trackActiveSfx(snd);
+  function playRecordedFootstepClip(snd, url, surfaceKey, volume, gainMul = 1, heavy = false, spatial = null) {
     const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0) * (heavy ? 1.15 : 1));
     const nativeVolume = Math.min(1, adjustedVolume);
+    if (spatial?.position3d) {
+      prepareCombatPositionalClip(url); // Reuse the same decoded-buffer HRTF path for hostile footfalls.
+      resumeCombatPositionalContext();
+      const rendered = playDecodedCombatSfx({ url, gainBoost: 1 }, nativeVolume, snd.playbackRate, spatial);
+      if (rendered) {
+        footstepPlayRequestCount++; footstepPlayStartedCount++; // Maintain the existing mobile cadence diagnostics.
+        if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
+          lastFootstepSfxDebug.playState = 'spatial-hrtf';
+          lastFootstepSfxDebug.requestedLinearVolume = adjustedVolume;
+          lastFootstepSfxDebug.nativeVolume = 0; // This cue rendered via a buffer, not its reserved native pool voice.
+        }
+        return;
+      }
+      combatSpatialFallbacks++; // Native recorded footstep until the decoded HRTF clip becomes available.
+    }
+    trackActiveSfx(snd);
     snd.volume = nativeVolume;
     if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
       lastFootstepSfxDebug.nativeVolume = nativeVolume;
@@ -438,7 +454,7 @@
   // lowpass was intentionally dropped from this path because reliable dry
   // playback matters more than an optional filter on devices where the
   // MediaElementSource destination has already proven unreliable.
-  function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
+  function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false, spatial = null) {
     // A non-finite volume (NaN/Infinity — e.g. from a caller's distance
     // falloff math going through a NaN position) throws a hard
     // Uncaught TypeError the instant it's assigned to <audio>.volume,
@@ -461,7 +477,7 @@
         lastFootstepSfxDebug.normalizationTargetDbfs = surfaceKey === 'hard' ? HARD_FOOTSTEP_TARGET_DBFS : null;
         lastFootstepSfxDebug.sourcePeakDbfs = normalization?.sourcePeakDbfs ?? null;
       }
-      playRecordedFootstepClip(snd, url, surfaceKey, finalVolume, normalizationGain, heavy);
+      playRecordedFootstepClip(snd, url, surfaceKey, finalVolume, normalizationGain, heavy, spatial);
       return;
     }
 
@@ -477,12 +493,17 @@
     const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
     const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
 
-    const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    const panNode = !spatial && typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    const spatialInput = spatial?.position3d ? ctx.createGain() : null; // Both synthesized noise and oscillator steps share one listener-relative HRTF route.
+    const spatialRoute = spatialInput ? connectCombatSpatialDry(ctx, spatialInput, spatial) : null;
     if (panNode) {
       panNode.pan.value = Math.max(-1, Math.min(1, pan));
       panNode.connect(ctx.destination);
     }
-    const outNode = panNode || ctx.destination;
+    const outNode = spatialInput || panNode || ctx.destination;
+    if (spatialInput) setTimeout(() => {
+      try { spatialInput.disconnect(); spatialRoute?.node?.disconnect?.(); } catch (_) {}
+    }, Math.ceil(durationS * 1000) + 40); // Detached when the short procedural footfall is complete.
 
     if (noiseMix < 1) {
       const osc = ctx.createOscillator();
@@ -568,10 +589,11 @@
     const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
     const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume ?? 1))
       * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
-    playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
+    const spatial = opts.source && opts.source !== deps.player ? combatAudioSpatial(opts.source, { earshotTiles: 9 }) : null; // NPC/hostile footfalls come from their real location.
+    playFootstepSurface(surfaceKey, footstepCfg, volume, spatial?.panX ?? pan, heavy, spatial);
 
     if (surfaceKey !== 'water' && surfaceKey !== 'snow') {
-      playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
+      playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, spatial?.panX ?? pan, heavy, spatial);
     }
   }
 
@@ -621,6 +643,16 @@
     try { combatPositionalContext = new AudioCtx(); }
     catch (error) { combatSpatialLastError = String(error?.message || error); return null; }
     return combatPositionalContext;
+  }
+
+  let combatGestureUnlockInstalled = false; // Ensures one set of trusted input handlers even if the game reinits the AudioSystem.
+  function installCombatGestureUnlock() {
+    if (combatGestureUnlockInstalled || typeof window.addEventListener !== 'function') return;
+    combatGestureUnlockInstalled = true;
+    const unlock = () => resumeCombatPositionalContext();
+    for (const event of ['pointerdown', 'touchstart', 'keydown']) {
+      window.addEventListener(event, unlock, { capture: true, passive: true });
+    }
   }
 
   function resumeCombatPositionalContext() {
@@ -756,6 +788,16 @@
       combatSfxPreloads.set(cfgEntry.url, pool);
       if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
         prepareCombatPositionalClip(cfgEntry.url); // Decode common weapon cues ahead of their first attack.
+      }
+    }
+    // Non-preloaded ranged loading/fire and animal claw cues need the same
+    // directional readiness as the preloaded swings/hits. Exclude the
+    // player-owned bandage loops: those retain their stop/restart semantics.
+    if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
+      for (const [key, cfgEntry] of Object.entries(combatSfxConfig())) {
+        if (!cfgEntry?.url || key.startsWith('bandage')) continue;
+        prepareCombatPositionalClip(cfgEntry.url);
+        for (const species of Object.values(cfgEntry.species || {})) if (species?.url) prepareCombatPositionalClip(species.url);
       }
     }
   }
