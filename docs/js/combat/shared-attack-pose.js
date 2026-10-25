@@ -416,6 +416,17 @@
     return holder;
   }
 
+  // Hand-aligned poses scale around the main-hand grip: with the holder's position/rotation already final and its scale set to
+  // `scale`, shifts it so `grip` (a holder-space point measured at scale 1) stays where it was at scale 1. Head-aligned poses
+  // get the same guarantee from placeAtMouth, which pivots on the aperture.
+  function anchorScaleAtPoint(holder, grip, scale) {
+    const k = (Number(scale) || 1) - 1;
+    if (!grip || Math.abs(k) < 1e-9) return holder;
+    const shift = holder.__anchorShift ||= new holder.position.constructor();
+    holder.position.sub(shift.set(grip.x, grip.y, grip.z).multiplyScalar(k).applyQuaternion(holder.quaternion));
+    return holder;
+  }
+
   // Inverse of placeAtMouth for an editor drag: given the holder's WORLD transform, writes the head-frame pose
   // (x/y/z in baseline units, pitch/yaw/roll in degrees) that would reproduce it.
   function poseFromHolderWorld(out, frame, worldPosition, worldQuaternion, worldScale, aperture) {
@@ -430,7 +441,7 @@
   }
 
   window.SharedAttackPose = Object.freeze({
-    headAnchor, headFrame, placeAtMouth, poseFromHolderWorld, createHeadFrame, mouthPixel, referenceHeadScale,
+    headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, createHeadFrame, mouthPixel, referenceHeadScale,
     version: 1,
     POSE_KEYS,
     MIRRORED_POSE_KEYS,

@@ -1660,6 +1660,14 @@
     c._rangedPoseCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     c._rangedPoseHeightScale = height?.heightRatio ?? 1; // Debug proof that ranged bandits share player/editor authored-Y semantics.
     holder.rotation.set(THREE.MathUtils.degToRad(pose.pitch), vθ + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll), 'YXZ');
+    if (attach && Math.abs(holder.scale.x - 1) > 1e-9) { // Hand-aligned: scale pivots on the main-hand grip, matching the player and the editor.
+      const weaponKey = c.def.rangedWeaponKey, userData = group.userData || {};
+      if (c._banditGripKey !== weaponKey) {
+        c._banditGripKey = weaponKey;
+        c._banditGrip = window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(weaponKey, 'ranged', { speciesId: userData.speciesId, gender: userData.gender }) || null;
+      }
+      attach.anchorScaleAtPoint(holder, c._banditGrip, holder.scale.x);
+    }
     window.BanditCombat?.applyRiderMount?.(c, holder); // Compound mounted riders hold the weapon from their saddle.
   }
 

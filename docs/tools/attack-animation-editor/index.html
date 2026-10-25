@@ -392,6 +392,11 @@ let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently pre
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
 const editorHeadFrame = window.SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale of the previewed avatar (head-anchored actions).
 const editorApertureScratch = new THREE.Vector3();
+// The main-hand grip in holder space: hand-aligned poses scale around it (head-aligned ones around the aperture).
+function editorToolGrip() {
+  const grips = window.HobunjiHandToolGrips;
+  return grips?.primaryGripHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender }) || null;
+}
 // The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
 function editorToolAperture() {
   const grips = window.HobunjiHandToolGrips;
@@ -771,6 +776,7 @@ transformControls.addEventListener('objectChange', () => {
     refreshJsonView();
     return;
   }
+  SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), 2 - toolHolder.scale.x); // Undo the grip-pivot shift (exact inverse: same shift with the sign flipped) before reading the authored origin.
   poseOrbitScratch.set(
     toolBase.position.x + toolHolder.position.x,
     toolBase.position.y + toolHolder.position.y,
@@ -1483,6 +1489,7 @@ function applyPoseToRig(pose) {
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
+  SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
 }
 
 // ── Unified gameplay Action registry + practical effects ─────────────────

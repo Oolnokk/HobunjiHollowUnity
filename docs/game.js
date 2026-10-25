@@ -22878,6 +22878,18 @@
         if (!_headApertureCache.has(key)) _headApertureCache.set(key, window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(itemKey, context, identity) || null);
         return _headApertureCache.get(key);
       }
+      const _gripAnchorCache = new Map(); // `${itemKey}|${context}|${species}|${gender}` -> holder-space main-hand grip, cleared with the aperture cache.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _gripAnchorCache.clear());
+      // Hand-aligned poses scale around the main-hand grip, so the hand stays put while the weapon grows or shrinks.
+      function anchorPlayerToolScaleAtGrip(scale, context) {
+        if (!(Math.abs((Number(scale) || 1) - 1) > 1e-9)) return;
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        if (!itemKey) return;
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_gripAnchorCache.has(key)) _gripAnchorCache.set(key, window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(itemKey, context, identity) || null);
+        SharedAttackPose.anchorScaleAtPoint(toolHolder, _gripAnchorCache.get(key), scale);
+      }
       // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
       // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
       function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
@@ -23484,8 +23496,11 @@
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
           if (headAnchored) placePlayerToolAtMouth(sampled.x, sampled.y, sampled.z, pitchRad, yawRad, rollRad, sampled.scale);
-          else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+          else {
+            if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+            anchorPlayerToolScaleAtGrip(sampled.scale, activeTool === 'ranged' ? 'ranged' : 'melee'); // Weapon scale pivots on the main-hand grip, not the holder origin.
+          }
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -23528,8 +23543,11 @@
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
           if (headAnchored) placePlayerToolAtMouth(neutral.x, neutral.y, neutral.z, THREE.MathUtils.degToRad(neutral.pitch), THREE.MathUtils.degToRad(neutral.yaw), THREE.MathUtils.degToRad(neutral.roll), neutral.scale);
-          else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+          else {
+            if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+            anchorPlayerToolScaleAtGrip(neutral.scale, 'ranged'); // Idle ranged scale (e.g. the 1.77 crossbow stance) pivots on the main-hand grip.
+          }
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral

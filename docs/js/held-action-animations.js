@@ -134,13 +134,13 @@
     "strikeFrac": 0.62,
     "holdFrac": 0.78,
     "durationS": 0.95,
-    "headRelative": true, // Head-anchored: x/y/z are the B'shuakauitl's aperture (mouthpiece end) measured from the species mouth point, in the head's frame.
+    "headRelative": true, // Head-anchored: x/y/z are the B'shuakauitl's aperture (mouthpiece end) measured from the species mouth point, in the head's frame; 0 seats the mouthpiece exactly on the mouth.
     "toolEndFlip": false,
     "poses": {
       "neutral": {
-        "x": -0.461,
-        "y": 0.002,
-        "z": -0.785,
+        "x": 0,
+        "y": 0,
+        "z": 0,
         "pitch": -180,
         "yaw": 21,
         "roll": 4,
@@ -162,9 +162,9 @@
       },
       "windup": {
         "headRelative": true,
-        "x": -0.013,
-        "y": -0.03,
-        "z": -0.206,
+        "x": 0,
+        "y": 0,
+        "z": 0,
         "pitch": -180,
         "yaw": 0,
         "roll": 0,
@@ -185,9 +185,9 @@
       },
       "strike": {
         "headRelative": true,
-        "x": -0.461,
-        "y": 0.002,
-        "z": -0.785,
+        "x": 0,
+        "y": 0,
+        "z": 0,
         "pitch": -180,
         "yaw": 21,
         "roll": 4,

@@ -73,6 +73,19 @@ const scaledRoot = { updateWorldMatrix() {}, worldToLocal(v) { return v.sub(new 
 const parented = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1) };
 attach.placeAtMouth(parented, frame, offsetPose, 1.3, aperture, scaledRoot);
 assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled parent receives the compensating local scale');
+// Hand-aligned scaling pivots on the main-hand grip: the grip's position must not depend on the holder's scale.
+{
+  const grip = { x: 0.1, y: -0.05, z: 0.5 };
+  const turned = new Q4().setFromEuler({ x: 0.4, y: 1.1, z: -0.3 });
+  const gripWorld = h => new V3(grip.x, grip.y, grip.z).multiplyScalar(h.scale.x).applyQuaternion(h.quaternion).add(h.position);
+  const atOne = { position: new V3(1, 2, 3), quaternion: new Q4().copy(turned), scale: new V3(1, 1, 1) };
+  const scaled = { position: new V3(1, 2, 3), quaternion: new Q4().copy(turned), scale: new V3(1.77, 1.77, 1.77) };
+  attach.anchorScaleAtPoint(scaled, grip, 1.77);
+  for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(gripWorld(scaled)[axis] - gripWorld(atOne)[axis]) < 1e-9, `grip stays put when the weapon scales (${axis})`);
+  const unchanged = { position: new V3(1, 2, 3), quaternion: new Q4().copy(turned), scale: new V3(1, 1, 1) };
+  attach.anchorScaleAtPoint(unchanged, grip, 1);
+  assert.deepEqual([unchanged.position.x, unchanged.position.y, unchanged.position.z], [1, 2, 3], 'scale 1 leaves the holder untouched');
+}
 assert.equal(attach.createHeadFrame !== undefined && typeof attach.mouthPixel, 'function', 'mouth pixel resolver is exported for tools');
 mathContext.window.HobunjiPortraitMouthPoints = undefined;
 assert.deepEqual({ ...attach.mouthPixel({ userData: { neckRig: { available: true, headCentroidPx: { x: 7, y: 9 } }, speciesId: 'mao-ao', gender: 'male' } }) }, { x: 7, y: 9 }, 'with no authored mouth the head centroid is used');
