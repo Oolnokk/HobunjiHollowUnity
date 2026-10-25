@@ -45,6 +45,7 @@
     installCombatDirectionalUpdates(); // Turn the camera mid-grunt without leaving an enemy pinned to an old ear.
     preloadConfiguredObjectSfx();
     preloadConfiguredCombatSfx();
+    preloadSpecialCombatSfx(); // Drenkirra projectile sounds are authored separately from the shared combat manifest.
     preloadAnimalVoices();
     preloadConfiguredFootstepSfx();
     installFootstepAudioUnlock();
@@ -423,7 +424,7 @@
     const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0) * (heavy ? 1.15 : 1));
     const nativeVolume = Math.min(1, adjustedVolume);
     if (spatial?.position3d) {
-      prepareCombatPositionalClip(url); // Reuse the same decoded-buffer HRTF path for hostile footfalls.
+      prepareCombatPositionalClip(url, true); // Urgent hostile footsteps take decode priority over background preloads.
       resumeCombatPositionalContext();
       const rendered = playDecodedCombatSfx({ url, gainBoost: 1 }, nativeVolume, snd.playbackRate, spatial);
       if (rendered) {
@@ -679,6 +680,7 @@
       }
       combatDecodeInFlight++;
       entry.state = 'loading';
+      entry.attempts = (entry.attempts || 0) + 1;
       Promise.resolve().then(() => fetch(entry.url))
         .then(response => { if (!response.ok) throw new Error('combat audio HTTP ' + response.status); return response.arrayBuffer(); })
         .then(bytes => ctx.decodeAudioData(bytes))
@@ -686,17 +688,34 @@
           if (!buffer?.duration) throw new Error('combat audio decoded an empty clip');
           entry.buffer = buffer; entry.state = 'ready';
         })
-        .catch(error => { entry.state = 'failed'; combatSpatialLastError = `${entry.url}: ${error?.message || error}`; })
+        .catch(error => {
+          entry.state = 'failed';
+          entry.nextRetryAt = Date.now() + Math.min(60000, 4000 * Math.pow(2, Math.min(4, entry.attempts - 1)));
+          combatSpatialLastError = `${entry.url}: ${error?.message || error}`;
+        })
         .finally(() => { combatDecodeInFlight--; pumpCombatDecodeQueue(); });
     }
   }
 
-  function prepareCombatPositionalClip(url) {
-    if (!url || combatDecodedByUrl.has(url)) return;
-    const entry = { url, buffer: null, state: 'queued' }; // One decode task per URL, including repeated cue variants.
-    combatDecodedByUrl.set(url, entry);
-    combatDecodeQueue.push(entry);
+  function prepareCombatPositionalClip(url, priority = false) {
+    if (!url) return;
+    let entry = combatDecodedByUrl.get(url);
+    if (entry?.state === 'ready' || entry?.state === 'loading') return;
+    if (entry?.state === 'failed' && Date.now() < (entry.nextRetryAt || 0)) return; // Transient network failures can retry later without a request storm.
+    if (!entry) {
+      entry = { url, buffer: null, state: 'queued', attempts: 0, nextRetryAt: 0 }; // Shared entry survives bounded cooldown retries.
+      combatDecodedByUrl.set(url, entry);
+    } else if (entry.state !== 'queued') entry.state = 'queued'; // Retry a previously failed or unsupported decode when the browser can play it.
+    const queuedAt = combatDecodeQueue.indexOf(entry);
+    if (queuedAt >= 0) combatDecodeQueue.splice(queuedAt, 1); // A newly requested attack should not wait behind unrelated background preloads.
+    if (priority) combatDecodeQueue.unshift(entry);
+    else combatDecodeQueue.push(entry);
     pumpCombatDecodeQueue();
+  }
+
+  function preloadSpecialCombatSfx() {
+    const pelletCues = window.HobunjiDrenkirraPellet?.sfx || {};
+    for (const cfg of Object.values(pelletCues)) if (cfg?.url) prepareCombatPositionalClip(cfg.url);
   }
 
   function updateCombatDirectionalRoutes(frame = {}) {
@@ -896,7 +915,7 @@
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     const rate = Math.max(0.3, (Number(pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
     if (spatial?.position3d) {
-      prepareCombatPositionalClip(cfgEntry.url); // Non-preloaded combat assets still get decoded the first time they are needed.
+      prepareCombatPositionalClip(cfgEntry.url, true); // Prioritize sounds actually needed in combat above the low-priority warmup queue.
       resumeCombatPositionalContext();
       const rendered = playDecodedCombatSfx(cfgEntry, volume, rate, spatial);
       if (rendered) return rendered;
@@ -1436,6 +1455,7 @@
       decoded: [...combatDecodedByUrl.values()].filter(v => v.state === 'ready').length,
       decoding: combatDecodeInFlight, queued: combatDecodeQueue.length,
       decodeFailures: [...combatDecodedByUrl.values()].filter(v => v.state === 'failed').length,
+      specialCombatDecoded: Object.values(window.HobunjiDrenkirraPellet?.sfx || {}).filter(v => combatDecodedByUrl.get(v.url)?.state === 'ready').length,
       spatialError: combatSpatialLastError,
       maxStartDelayMs: COMBAT_SFX_MAX_START_DELAY_MS,
       preloads: [...combatSfxPreloads.entries()].flatMap(([url, pool]) => pool.map(snd => ({
