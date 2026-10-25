@@ -28549,6 +28549,7 @@
         clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
+        camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
         getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
         _isBuildingArea,
