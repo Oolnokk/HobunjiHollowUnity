@@ -7,6 +7,7 @@ const area = 'map_western_slope'; // Rejects cues from inactive areas.
 const player = { x: 0, y: 0, height: 0 }; // Listener remains on the player.
 const events = { native: [], panners: [], starts: [], fetches: [] }; // Captures audio starts and directional node coordinates.
 let fakeNow = 1000; // Simulated wall clock to verify bounded retry without slowing the entire regression suite.
+let interruptNextStart = false; // AudioContext can interrupt between node allocation and start, especially on mobile.
 const n = () => ({ connect(to) { return to; }, disconnect() {} });
 class FakeContext {
   constructor() { this.state = 'running'; this.destination = n(); this.currentTime = 0; this.sampleRate = 44100; }
@@ -19,7 +20,10 @@ class FakeContext {
   createStereoPanner() { return { ...n(), pan: { value: 0 } }; }
   createBiquadFilter() { return { ...n(), frequency: { value: 0 }, Q: { value: 0 } }; }
   createBufferSource() {
-    const source = { ...n(), playbackRate: { value: 1 }, start() { events.starts.push(source); }, stop() {} };
+    const source = { ...n(), playbackRate: { value: 1 }, start() {
+      if (interruptNextStart) { interruptNextStart = false; throw new Error('AudioContext interrupted while starting'); }
+      events.starts.push(source);
+    }, stop() {} };
     return source;
   }
   decodeAudioData() { return Promise.resolve({ duration: 0.2 }); }
@@ -122,6 +126,12 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   audio.playOneShotSfx(window.HobunjiDrenkirraPellet.sfx.splat, pelletSpatial.gain, 1, pelletSpatial);
   assert.equal(audio.combatSfxDebugSnapshot().specialCombatDecoded, 2, 'Drenkirra splat switches to real HRTF after retry');
   assert.equal(events.native.length, 3, 'recovered positional sound avoids the centered native transport');
+  const routesBeforeInterruption = audio.combatSfxDebugSnapshot().activeRoutes;
+  interruptNextStart = true;
+  audio.playWeaponSlashSfx(1, 0, right);
+  assert.equal(events.native.length, 4, 'interrupted Web Audio falls back to immediate native combat playback');
+  assert.equal(audio.combatSfxDebugSnapshot().activeRoutes, routesBeforeInterruption, 'failed Web Audio start disposes its HRTF route');
+  assert.match(audio.combatSfxDebugSnapshot().spatialError, /interrupted while starting/, 'diagnostics disclose failed 3D start');
 
   const human = fs.readFileSync('docs/js/combat/combat-vocalizations.js', 'utf8'); // Shared HRTF path is used by charge grunts too.
   assert.match(human, /connectCombatSpatialDry\?\.\(ctx, dryOutput, spatial\)/);
