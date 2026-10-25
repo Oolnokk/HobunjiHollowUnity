@@ -73,19 +73,22 @@ for (const axes of [{ x: 0.5, y: 0.8, z: 2 }, { x: 1.3, y: 1, z: 0.4 }, 0.65]) {
 const legacy = api.scalePointAroundCentroid({ ...raw }, 0, 0.3, 0, 9, { x: 0.5, y: 0.5, z: 2 });
 near(legacy.x, 0.3, 'legacy X'); near(legacy.z, -1, 'legacy Z'); near(legacy.y, 0.3 + (0.7 - 0.3) * 0.5, 'legacy Y around the centroid');
 
-// Head-relative offsets map like hand-relative displacements (X/Z by the orbit axes, Y by body height x orbit Y),
-// in the pose's own frame, and unscaleHeadOffset is the exact inverse so the editor keeps authoring baseline units.
+// Head-relative offsets follow body size (the actual-height ratio vs Mao'ao male), uniformly on every axis: the species
+// orbit axes are an arm-reach limit and must not shorten a forward head offset. unscaleHeadOffset is the exact inverse.
 {
   const headOpts = { speciesId: 'mao-ao', gender: 'male', modelHeight: 0.9, rigScaleY: 1, armLength: 99, poseOrbitScale: { x: 0.5, y: 0.8, z: 0.3 } };
   const authored = { x: -0.05, y: 0.1, z: 0.88 };
+  const ratio = api.heightMetrics('mao-ao', 'male', 0.9, 1).heightRatio;
+  assert.ok(ratio > 0);
   const scaled = api.scaleHeadOffset({ ...authored }, headOpts);
-  near(scaled.x, -0.05 * 0.5, 'head offset X follows the lateral orbit');
-  near(scaled.y, 0.1 * 0.8, 'head offset Y follows the height ratio times the orbit Y');
-  near(scaled.z, 0.88 * 0.3, 'head offset Z follows the forward orbit');
-  const back = api.unscaleHeadOffset({ ...scaled }, headOpts);
+  near(scaled.x, authored.x * ratio, 'head offset X follows body size, not the lateral orbit');
+  near(scaled.y, authored.y * ratio, 'head offset Y follows body size');
+  near(scaled.z, authored.z * ratio, 'head offset Z follows body size, not the forward reach orbit');
+  const shorter = api.scaleHeadOffset({ ...authored }, { ...headOpts, modelHeight: 0.45 });
+  assert.ok(shorter.z < scaled.z && shorter.z > 0, 'a shorter body shortens the offset proportionally');
+  near(shorter.z / authored.z, shorter.x / authored.x, 'all axes share one factor');
+  const back = api.unscaleHeadOffset({ ...shorter }, { ...headOpts, modelHeight: 0.45 });
   near(back.x, authored.x, 'inverse X'); near(back.y, authored.y, 'inverse Y'); near(back.z, authored.z, 'inverse Z');
-  const identity = api.scaleHeadOffset({ ...authored }, { ...headOpts, poseOrbitScale: 1 });
-  near(identity.x, authored.x, 'Mao\'ao male is the unscaled baseline'); near(identity.y, authored.y, 'baseline Y'); near(identity.z, authored.z, 'baseline Z');
 }
 
 console.log('species pose orbit axes ok');

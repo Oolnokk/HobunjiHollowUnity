@@ -279,21 +279,20 @@
     return point;
   }
 
-  // Head-relative poses are authored on the same Mao'ao-male baseline as hand-relative ones, but their origin is the
-  // visible head instead of the hand anchor, so only the displacement is mapped: lateral/forward by the species orbit
-  // axes, vertical by the rigger body-height ratio (times the orbit's own Y multiplier). The offset is in the pose's
-  // own frame (before any facing/aim rotation), so no yaw is needed. `inverse` maps a concrete offset back to authored.
+  // Head-relative poses are authored on the Mao'ao-male baseline from the visible head, so they follow the character's
+  // BODY SIZE (the same actual-height / Mao'ao-male-height ratio the weapon sprite and the pose Y mapping use), uniformly
+  // on every axis. The species orbit axes are an arm-reach limit for hand-relative poses and must not cap a head offset:
+  // they would cut a forward offset to e.g. half on Tletingan. The offset is in the pose's own frame (before any
+  // facing/aim rotation), so no yaw is needed. `inverse` maps a concrete offset back to authored baseline units.
   function scaleHeadOffset(offset, options = {}, inverse = false) {
     if (!offset) return offset;
     const x = Number(offset.x), y = Number(offset.y), z = Number(offset.z);
     if (![x, y, z].every(Number.isFinite)) return offset;
-    const axes = axesForPose(options.poseOrbitScale, options.armLength);
-    const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
-    const sy = metrics.heightRatio * axes.y;
-    if (![axes.x, axes.z, sy].every(v => v > 0)) return offset;
-    const [fx, fy, fz] = inverse ? [1 / axes.x, 1 / sy, 1 / axes.z] : [axes.x, sy, axes.z];
-    if (typeof offset.set === 'function') offset.set(x * fx, y * fy, z * fz);
-    else { offset.x = x * fx; offset.y = y * fy; offset.z = z * fz; }
+    const ratio = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY).heightRatio;
+    if (!(ratio > 0)) return offset;
+    const k = inverse ? 1 / ratio : ratio;
+    if (typeof offset.set === 'function') offset.set(x * k, y * k, z * k);
+    else { offset.x = x * k; offset.y = y * k; offset.z = z * k; }
     return offset;
   }
   function unscaleHeadOffset(offset, options = {}) { return scaleHeadOffset(offset, options, true); }
