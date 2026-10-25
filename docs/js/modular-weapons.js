@@ -31,9 +31,13 @@
   function replace(data, persist = false) {
     if (data?.schema !== SCHEMA || !data.heads || !data.shafts) throw new Error('Invalid modular weapon attachment file.');
     const next = JSON.parse(JSON.stringify(global.MODULAR_WEAPON_CONFIG)); // Catalog paths/ownership cannot be changed by a placement import.
-    for (const [key, head] of Object.entries(next.heads)) head.attach = point(data.heads[key]?.attach || head.attach);
+    for (const [key, head] of Object.entries(next.heads)) {
+      head.attach = point(data.heads[key]?.attach || head.attach);
+      if (typeof data.heads[key]?.editorOnly === 'boolean') head.editorOnly = data.heads[key].editorOnly; // Explicit Foundry-enable setting for provisional uploaded parts.
+    }
     for (const [key, shaft] of Object.entries(next.shafts)) {
       const raw = data.shafts[key] || shaft; // Missing imported entries retain committed defaults.
+      if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly; // Save author approval without accepting arbitrary catalog paths.
       shaft.attachments = (Array.isArray(raw.attachments) && raw.attachments.length ? raw.attachments : shaft.attachments).slice(0, shaft.maxAttachments || 8).map(value => ({ ...point(value), rotation: finite(value.rotation, 0, -360, 360) }));
       shaft.defaults = cleanTransform(raw.defaults, false, shaft.defaults.animation || 'sweep');
       const committedOverrides = shaft.overrides; // Missing legacy flags inherit the committed pair restrictions.
@@ -178,8 +182,10 @@
   }
   function registerDefinitions(defs, shapes, metals, metalKeys) {
     for (const [shaftKey, shaft] of Object.entries(config.shafts)) {
+      if (shaft.editorOnly) continue; // Incomplete upload previews cannot create forgeable weapon items.
       const source = shapes[shaft.sourceShape] || { animStyle: 'sweep', weaponIdleClass: 'heavy' }; // Future/relic source shapes still get a usable baseline.
       for (const [headKey, head] of Object.entries(config.heads)) for (const metalKey of metalKeys) {
+        if (head.editorOnly) continue; // Uncalibrated uploaded head has no gameplay definition.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
@@ -200,8 +206,8 @@
       if (record.shape === 'warhammer') sources.add('warhammer');
       if (record.shape === 'broadsword') sources.add('harlyaoBroadsword');
     }
-    return { heads: Object.keys(config.heads).filter(key => sources.has(config.heads[key].sourceShape)),
-      shafts: Object.keys(config.shafts).filter(key => sources.has(config.shafts[key].sourceShape)) };
+    return { heads: Object.keys(config.heads).filter(key => !config.heads[key].editorOnly && sources.has(config.heads[key].sourceShape)),
+      shafts: Object.keys(config.shafts).filter(key => !config.shafts[key].editorOnly && sources.has(config.shafts[key].sourceShape)) };
   }
   try { const draft = global.localStorage?.getItem(DRAFT_KEY); if (draft) replace(JSON.parse(draft)); } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts,
