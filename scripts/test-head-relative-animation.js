@@ -36,6 +36,10 @@ assert.match(game, /SharedAttackPose\.placeAtMouth\(heldItemHolder, _headFrame/,
 assert.doesNotMatch(game, /headAnchor\(_headPoseAnchor/, 'no head-centroid offset path may remain in the player poses');
 assert.doesNotMatch(game, /_qRangedAimPitch\.invert\(\)/, 'camera pitch must not drive a head-anchored tool; the head does');
 
+const composerSource = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Head attachments must follow the drawn (aimed + clamped) head, not the gameplay-time neck.
+assert.match(composerSource, /applyPlayerHeadAim\(undo, renderDebug\); applyPlayerNeckYawLimit\(renderDebug, camera\); for \(const hook of postHeadAimHooks\)/, 'composer runs post-head-aim hooks right after the head aim and neck limit');
+assert.match(composerSource, /addPostHeadAimHook,/, 'composer exports the hook registration');
+assert.match(game, /addPostHeadAimHook\?\.\(undo =>[\s\S]*placeAtMouth\(toolHolder, _headFrame, _toolAttachJob\.pose[\s\S]*placeAtMouth\(heldItemHolder, _headFrame, _heldAttachJob\.pose[\s\S]*undo\.push\(_restoreHeadAttachments\)/, 'game re-seats the head-anchored tool and held bottle on the drawn head and restores gameplay transforms after the draw');
 // Mouth/aperture attach math, with a small THREE-compatible vector/quaternion/euler stand-in.
 const mathContext = { window: {}, Math };
 vm.createContext(mathContext);

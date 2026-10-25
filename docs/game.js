@@ -22892,11 +22892,39 @@
       }
       // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
       // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
+      const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
       function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
         _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
         _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
-        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, playerToolAperture(equipmentSlots.ranged));
+        const aperture = playerToolAperture(equipmentSlots.ranged);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture);
+        Object.assign(_toolAttachJob.pose, _headPlacePose);
+        _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
       }
+      let _heldAttachStamp = 0; // Bumped once per updateHeldItemHolder.
+      const _heldAttachJob = { stamp: -1, scale: 0.5, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
+      const _attachSaved = { toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1, tool: false, held: false };
+      function _restoreHeadAttachments() { // Restores gameplay-time transforms after the draw so logic never reads the render-time pose.
+        if (_attachSaved.tool) { toolHolder.position.copy(_attachSaved.toolPos); toolHolder.quaternion.copy(_attachSaved.toolQuat); toolHolder.scale.setScalar(_attachSaved.toolScale); _attachSaved.tool = false; }
+        if (_attachSaved.held) { heldItemHolder.position.copy(_attachSaved.heldPos); heldItemHolder.quaternion.copy(_attachSaved.heldQuat); heldItemHolder.scale.setScalar(_attachSaved.heldScale); _attachSaved.held = false; }
+      }
+      // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
+      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.(undo => {
+        const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
+        const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
+        if (!toolActive && !heldActive) return;
+        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) return;
+        if (toolActive) {
+          _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true;
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+        }
+        if (heldActive) {
+          _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true;
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+        }
+        undo.push(_restoreHeadAttachments);
+      });
       const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
       // The bottle's opening: the plane's top edge (the first opaque row of an upright held sprite) in holder space.
       function heldItemAperture() {
@@ -22911,6 +22939,8 @@
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
         if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
           SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
+          Object.assign(_heldAttachJob.pose, { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll });
+          _heldAttachJob.stamp = _heldAttachStamp; // Replayed against the drawn head by the composer's post-head-aim hook.
         } else {
           heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
           heldItemHolder.scale.setScalar(0.5);
@@ -23027,6 +23057,7 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
           || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
@@ -23364,6 +23395,7 @@
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
+        _toolAttachStamp++; // A head-anchored placement this frame re-stamps _toolAttachJob; an older stamp means the tool is no longer head-anchored.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
