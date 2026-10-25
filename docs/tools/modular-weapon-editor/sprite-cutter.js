@@ -53,6 +53,42 @@
     ['Crossbow', 'ranged_crossbow.png'], ['Loaded Crossbow', 'ranged_crossbow_loaded.png'],
     ['Scatterbow', 'ranged_scatterbow.png'], ['Loaded Scatterbow', 'ranged_scatterbow_loaded.png']
   ]; // Verified full-weapon sprite paths shared with the animation editor and relic definitions.
+  const uploadedPartFiles = [
+    "weaponhead_bshuakauitl.png",
+    "weaponhead_dagger-sword.png",
+    "weaponhead_dagger.png",
+    "weaponhead_fishing_mace.png",
+    "weaponhead_fishing_spear.png",
+    "weaponhead_harlyao_broadsword.png",
+    "weaponhead_harlyao_longsword.png",
+    "weaponhead_hatchet.png",
+    "weaponhead_hoe.png",
+    "weaponhead_kylie.png",
+    "weaponhead_pick-shovel_pick.png",
+    "weaponhead_pickshovel_scoop.png",
+    "weaponhead_plains-blade.png",
+    "weaponhead_porakaneki_greatclub.png",
+    "weaponhead_war-cleaver.png",
+    "weaponhead_warhammer.png",
+    "weaponhead_work_hammer.png",
+    "weaponshaft_b'shuakauitl.png",
+    "weaponshaft_bgungku.png",
+    "weaponshaft_dagger-sword.png",
+    "weaponshaft_dagger.png",
+    "weaponshaft_fishing_mace.png",
+    "weaponshaft_fishing_spear.png",
+    "weaponshaft_harlyao_broadsword.png",
+    "weaponshaft_harlyao_longsword.png",
+    "weaponshaft_hatchet.png",
+    "weaponshaft_hoe.png",
+    "weaponshaft_kylie.png",
+    "weaponshaft_pick-shovel.png",
+    "weaponshaft_plains_sword.png",
+    "weaponshaft_war-cleaver.png",
+    "weaponshaft_warhammer.png"
+]; // Bundled main-branch exports; refresh can discover later uploads.
+  const uploadedBase = 'assets/toolsprites/modular_pieces/'; // Canonical Foundry part folder.
+  const rawMainBase = 'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/main/docs/'; // Latest artwork on main, also usable from pinned previews.
   let pixels = null; // Current editable RGBA frame, exported without the selection outline.
   let original = null; // Unmodified loaded frame used by Reset.
   let history = []; // RGBA snapshots used by Undo.
@@ -117,7 +153,10 @@
     original = new Uint8ClampedArray(next); pixels = new Uint8ClampedArray(next);
     source = description; sourceSize = { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
     history = []; path = []; activePointer = null;
-    byId('cut-name').value = stem(suggestedName);
+    const inputName = String(suggestedName || ''); // Keep head/shaft export type when reloading an existing part PNG.
+    if (/^weaponhead[_-]/i.test(inputName)) byId('cut-kind').value = 'head';
+    if (/^weaponshaft[_-]/i.test(inputName)) byId('cut-kind').value = 'shaft';
+    byId('cut-name').value = stem(inputName);
     updateOutputName(); renderNow();
     status('Loaded ' + description + '. Draw a closed lasso, then Remove inside or Keep inside.' +
       (sourceSize.width !== FRAME.width || sourceSize.height !== FRAME.height
@@ -194,6 +233,18 @@
     status((mode === 'isolate' ? 'Kept lasso area.' : 'Removed lasso area.') +
       ' Deleted ' + outcome.affected + ' visible pixels; ' + outcome.remaining + ' remain.');
   }
+  byId('cut-outline').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite and finish any active lasso first.'); return; }
+    try {
+      const thickness = Number(byId('cut-outline-thickness').value); // Black border radius in authored source pixels.
+      const outcome = global.ModularWeaponOutline.outlinePixels(pixels, FRAME.width, FRAME.height, thickness); // Expand into transparent areas only.
+      if (!outcome.added && !outcome.edgeDarkened) { status('No transparent edges need additional black outline.'); return; }
+      pushUndo(); pixels = outcome.pixels; path = []; renderNow();
+      status('Added ' + outcome.added + ' opaque black outline pixels at thickness ' + thickness +
+        (outcome.edgeDarkened ? '; blackened ' + outcome.edgeDarkened + ' colored pixels on the export-frame edge.' : '.') +
+        ' Undo restores the previous image.');
+    } catch (error) { status('Outline failed: ' + error.message); }
+  };
   byId('cut-remove').onclick = () => commitSelection('remove');
   byId('cut-isolate').onclick = () => commitSelection('isolate');
   byId('cut-clear-selection').onclick = () => { path = []; activePointer = null; renderNow(); status('Selection cleared.'); };
@@ -214,6 +265,68 @@
     option.value = 'assets/toolsprites/' + filename; option.textContent = label;
     picker.appendChild(option);
   }
+  const uploadedPicker = byId('cut-uploaded'); // Existing full-parts browser separate from full-weapon source selector.
+  function fillUploadedParts(files) {
+    const last = uploadedPicker.value; // Retain selection after a successful online refresh.
+    uploadedPicker.replaceChildren();
+    for (const [prefix, label] of [['weaponhead_', 'Heads'], ['weaponshaft_', 'Shafts']]) {
+      const group = document.createElement('optgroup'); // Group assets by the intended modular part type.
+      group.label = label;
+      for (const name of files.filter(name => name.startsWith(prefix)).sort()) {
+        const option = document.createElement('option'); // Filename is the exact GitHub path, not an inferred catalog ID.
+        option.value = name;
+        option.textContent = name.replace(/^weapon(?:head|shaft)_/, '').replace(/\.png$/i, '');
+        group.appendChild(option);
+      }
+      uploadedPicker.appendChild(group);
+    }
+    const stillAvailable = Array.from(uploadedPicker.querySelectorAll('option')).some(option => option.value === last); // Avoid selecting a deleted asset.
+    if (stillAvailable) uploadedPicker.value = last;
+    uploadedPicker.disabled = uploadedPicker.querySelectorAll('option').length === 0;
+    byId('cut-load-uploaded').disabled = uploadedPicker.disabled;
+  }
+  fillUploadedParts(uploadedPartFiles);
+  byId('cut-load-uploaded').onclick = async () => {
+    const name = uploadedPicker.value; // Filename of the currently selected uploaded part.
+    if (!/^weapon(?:head|shaft)_[a-z0-9_'. -]+\.png$/i.test(name) || name.includes('..')) {
+      status('Select a valid uploaded modular part.'); return;
+    }
+    const ticket = ++loadSerial; // Protect against out-of-order loads, including local-device imports.
+    try {
+      const image = new Image(); // Fetch main-branch artwork even if the preview is pinned to an earlier commit.
+      image.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error('Could not load latest main-branch sprite.'));
+        image.src = rawMainBase + uploadedBase + encodeURIComponent(name);
+      });
+      if (ticket !== loadSerial) return;
+      await acceptImage(image, 'main/' + uploadedBase + name, name.replace(/\.png$/i, ''));
+    } catch (error) {
+      if (ticket !== loadSerial) return;
+      try {
+        const image = await global.ModularWeapons.loadImage(uploadedBase + name, '../../'); // Local snapshot fallback for offline/CDN failures.
+        if (ticket === loadSerial) await acceptImage(image, uploadedBase + name, name.replace(/\.png$/i, ''));
+      } catch (fallbackError) {
+        if (ticket === loadSerial) status('Uploaded part unavailable: ' + error.message + ' ' + fallbackError.message);
+      }
+    }
+  };
+  byId('cut-refresh-uploaded').onclick = async () => {
+    const button = byId('cut-refresh-uploaded'); // Prevent repeated GitHub API requests on mobile.
+    button.disabled = true;
+    try {
+      const response = await fetch('https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/contents/docs/assets/toolsprites/modular_pieces?ref=main', { cache: 'no-store' }); // Public listing; no authentication or user credentials.
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const entries = await response.json(); // GitHub directory listing of current uploaded PNGs.
+      if (!Array.isArray(entries)) throw new Error('GitHub did not return a file list.');
+      const files = entries.filter(entry => entry.type === 'file' && /^weapon(?:head|shaft)_[a-z0-9_'. -]+\.png$/i.test(entry.name)).map(entry => entry.name);
+      fillUploadedParts(files);
+      status('Refreshed from main: ' + files.length + ' uploaded modular sprites available.');
+    } catch (error) {
+      status('Could not refresh main uploads (' + error.message + '). The bundled list still works.');
+    } finally { button.disabled = false; }
+  };
   byId('cut-load-existing').onclick = () => {
     const option = picker.options[picker.selectedIndex]; // Default export stem follows selected stock weapon's label.
     loadRepoSprite(option.value, option.textContent);
