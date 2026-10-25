@@ -30,9 +30,50 @@ api.samplePose(sample,{neutral:{headRelative:true}},api.STYLE_NEUTRAL_POSE.range
 assert.equal(sample.headRelative,true);
 api.samplePose(sample,{},api.STYLE_NEUTRAL_POSE.ranged,0,0.2,0.4,0.6);
 assert.equal(sample.headRelative,false);
-const game = fs.readFileSync('docs/game.js', 'utf8'); // Player ranged poses live in the game closure, so their head-frame wiring is checked from source.
-const neckPitch = game.match(/playerNeckJoint\.rotation\.x = activeCameraMode === SHOULDER_SURF_MODE\s*\?\s*-Math\.atan2/); // The head pitches by -elevation.
-assert(neckPitch, 'neck pitch is -elevation; head-relative weapon frames must follow that sign');
-assert.equal((game.match(/if \(headAnchored\) _qRangedAimPitch\.invert\(\)/g) || []).length, 2, 'both the loaded-pose and idle ranged branches must tilt a head-relative frame with the head, not against it');
-assert.equal((game.match(/playerHeadOffset\(/g) || []).length >= 5, true, 'player drink and ranged head-relative poses all map their offset through the species scaler');
+const game = fs.readFileSync('docs/game.js', 'utf8'); // Player ranged/drink poses live in the game closure, so their wiring is checked from source.
+assert.equal((game.match(/placePlayerToolAtMouth\(/g) || []).length, 3, 'both ranged branches and the helper itself route head-anchored placement through the mouth frame');
+assert.match(game, /SharedAttackPose\.placeAtMouth\(heldItemHolder, _headFrame/, 'the held drink bottle mates its opening with the mouth');
+assert.doesNotMatch(game, /headAnchor\(_headPoseAnchor/, 'no head-centroid offset path may remain in the player poses');
+assert.doesNotMatch(game, /_qRangedAimPitch\.invert\(\)/, 'camera pitch must not drive a head-anchored tool; the head does');
+
+// Mouth/aperture attach math, with a small THREE-compatible vector/quaternion/euler stand-in.
+const mathContext = { window: {}, Math };
+vm.createContext(mathContext);
+class V3 { constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} copy(v){return this.set(v.x,v.y,v.z);} add(v){return this.set(this.x+v.x,this.y+v.y,this.z+v.z);} sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);} multiplyScalar(k){return this.set(this.x*k,this.y*k,this.z*k);} setScalar(k){return this.set(k,k,k);}
+  applyQuaternion(q){const {x,y,z}=this,qx=q.x,qy=q.y,qz=q.z,qw=q.w;const ix=qw*x+qy*z-qz*y,iy=qw*y+qz*x-qx*z,iz=qw*z+qx*y-qy*x,iw=-qx*x-qy*y-qz*z;return this.set(ix*qw+iw*-qx+iy*-qz-iz*-qy,iy*qw+iw*-qy+iz*-qx-ix*-qz,iz*qw+iw*-qz+ix*-qy-iy*-qx);} }
+class Q4 { constructor(x=0,y=0,z=0,w=1){this.x=x;this.y=y;this.z=z;this.w=w;} copy(q){this.x=q.x;this.y=q.y;this.z=q.z;this.w=q.w;return this;} invert(){this.x=-this.x;this.y=-this.y;this.z=-this.z;return this;}
+  multiply(b){const a=this;const x=a.x*b.w+a.w*b.x+a.y*b.z-a.z*b.y,y=a.y*b.w+a.w*b.y+a.z*b.x-a.x*b.z,z=a.z*b.w+a.w*b.z+a.x*b.y-a.y*b.x,w=a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z;this.x=x;this.y=y;this.z=z;this.w=w;return this;}
+  premultiply(b){const t=new Q4().copy(b).multiply(this);return this.copy(t);}
+  setFromEuler(e){const c1=Math.cos(e.x/2),c2=Math.cos(e.y/2),c3=Math.cos(e.z/2),s1=Math.sin(e.x/2),s2=Math.sin(e.y/2),s3=Math.sin(e.z/2);this.x=s1*c2*c3+c1*s2*s3;this.y=c1*s2*c3-s1*c2*s3;this.z=c1*c2*s3-s1*s2*c3;this.w=c1*c2*c3+s1*s2*s3;return this;} }
+class Eu { constructor(){this.x=0;this.y=0;this.z=0;} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+  setFromQuaternion(q){const {x,y,z,w}=q;const m13=2*(x*z+y*w),m23=2*(y*z-x*w),m33=1-2*(x*x+y*y),m21=2*(x*y+z*w),m22=1-2*(x*x+z*z);this.x=Math.asin(-Math.max(-1,Math.min(1,m23)));if(Math.abs(m23)<0.9999999){this.y=Math.atan2(m13,m33);this.z=Math.atan2(m21,m22);}else{this.y=Math.atan2(-(2*(x*z-y*w)),1-2*(y*y+z*z));this.z=0;}return this;} }
+mathContext.window.SharedAttackPose = undefined;
+vm.runInContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), mathContext);
+const attach = mathContext.window.SharedAttackPose;
+const THREE = { Vector3: V3, Quaternion: Q4, Euler: Eu };
+const frame = attach.createHeadFrame(THREE);
+frame.position.set(1, 2, 3); frame.quaternion.copy(new Q4().setFromEuler({ x: 0.3, y: -0.8, z: 0.1 })); frame.scale = 1.25; // A turned, pitched, larger-than-baseline head.
+const holder = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1) };
+const aperture = { x: -0.02, y: 0.01, z: 0.84 }; // Holder-space opening.
+const posePose = { x: 0, y: 0, z: 0, pitch: 25, yaw: -40, roll: 10 };
+attach.placeAtMouth(holder, frame, posePose, 1.3, aperture);
+const apertureWorld = new V3(aperture.x, aperture.y, aperture.z).multiplyScalar(holder.scale.x).applyQuaternion(holder.quaternion).add(holder.position);
+for (const [axis, expected] of [['x', 1], ['y', 2], ['z', 3]]) assert.ok(Math.abs(apertureWorld[axis] - expected) < 1e-9, `with a zero offset the aperture sits exactly on the mouth (${axis})`);
+assert.ok(Math.abs(holder.scale.x - 1.3 * 1.25) < 1e-9, 'tool scale is the authored scale times the head scale');
+const offsetPose = { x: 0.2, y: -0.1, z: 0.5, pitch: -170, yaw: 33, roll: 5 };
+attach.placeAtMouth(holder, frame, offsetPose, 1.3, aperture);
+const solved = attach.poseFromHolderWorld({}, frame, holder.position, holder.quaternion, holder.scale.x, aperture);
+for (const key of ['x', 'y', 'z']) assert.ok(Math.abs(solved[key] - offsetPose[key]) < 1e-6, `editor drag inverse recovers ${key}: ${solved[key]} vs ${offsetPose[key]}`);
+const replay = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1) }; // Euler angles are ambiguous by a half turn, so the recovered pose must reproduce the same holder, not the same numbers.
+attach.placeAtMouth(replay, frame, solved, 1.3, aperture);
+for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(replay.position[axis] - holder.position[axis]) < 1e-6, `recovered pose reproduces the holder position (${axis})`);
+assert.ok(Math.abs(Math.abs(replay.quaternion.x * holder.quaternion.x + replay.quaternion.y * holder.quaternion.y + replay.quaternion.z * holder.quaternion.z + replay.quaternion.w * holder.quaternion.w) - 1) < 1e-9, 'recovered pose reproduces the holder rotation');
+// A parented holder (bodies carry their own rotation/scale) lands in the same world place.
+const scaledRoot = { updateWorldMatrix() {}, worldToLocal(v) { return v.sub(new V3(5, 0, 0)).multiplyScalar(0.5); }, getWorldQuaternion(q) { return q.copy(new Q4()); }, getWorldScale(v) { return v.set(2, 2, 2); } };
+const parented = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1) };
+attach.placeAtMouth(parented, frame, offsetPose, 1.3, aperture, scaledRoot);
+assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled parent receives the compensating local scale');
+assert.equal(attach.createHeadFrame !== undefined && typeof attach.mouthPixel, 'function', 'mouth pixel resolver is exported for tools');
+mathContext.window.HobunjiPortraitMouthPoints = undefined;
+assert.deepEqual({ ...attach.mouthPixel({ userData: { neckRig: { available: true, headCentroidPx: { x: 7, y: 9 } }, speciesId: 'mao-ao', gender: 'male' } }) }, { x: 7, y: 9 }, 'with no authored mouth the head centroid is used');
 console.log('head-relative animation anchors and reused samples PASS');

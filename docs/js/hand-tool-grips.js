@@ -93,6 +93,7 @@
       },
       bshuakauitl: {
         toolScale: 1.3,
+        aperture: { x: -0.0139, y: 0, z: 0.6426 }, // Mouthpiece end: first opaque sprite pixel (row 1179, col 212) toward the head side of the current head-anchored poses, in item-local units.
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
         gripMode: null,
         primaryGripSpan: { enabled: true, startZ: 0.0394, endZ: 0.1594 }, // Main-hand range translated around the measured tan-section center.
@@ -243,6 +244,14 @@
     return Math.max(0, Math.min(3, resolved));
   }
 
+  // A tool's aperture is the 3D point (item-local, before toolScale) that mates with the portrait's mouth in head-anchored poses.
+  // Absent means the tool is not head-anchored; a partial/invalid value is dropped rather than silently becoming the origin.
+  function normalizeAperture(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const x = Number(raw.x), y = Number(raw.y), z = Number(raw.z);
+    return [x, y, z].every(Number.isFinite) ? { x, y, z } : null;
+  }
+
   function normalizeTransform(raw) {
     return {
       position: {
@@ -328,6 +337,8 @@
       if (!entry || typeof entry !== 'object') continue;
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
+      entry.aperture = normalizeAperture(entry.aperture ?? fallbackEntry.aperture);
+      if (!entry.aperture) delete entry.aperture;
       entry.heightMultiplier = resetHeightMultipliers
         ? (fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER)
         : normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
@@ -450,6 +461,8 @@
     const entry = data.tools[key];
     const fallbackEntry = DEFAULT_DATA.tools[key] || {}; // Used when older data does not yet carry the shape's base scale.
     entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
+    entry.aperture = normalizeAperture(entry.aperture ?? fallbackEntry.aperture);
+    if (!entry.aperture) delete entry.aperture;
     entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
     entry.primaryGrip = normalizeTransform(entry.primaryGrip);
     entry.secondaryGripSpan = inferredSpan(entry);
@@ -469,6 +482,18 @@
     const key = toolKeyFor(value);
     const entry = key ? ensureTool(key) : null;
     return normalizeToolScale(entry?.toolScale, DEFAULT_DATA.tools[key]?.toolScale ?? 1);
+  }
+
+  function apertureForTool(value) {
+    const key = toolKeyFor(value);
+    const entry = key ? ensureTool(key) : null;
+    return entry?.aperture ? { ...entry.aperture } : null;
+  }
+
+  // The aperture in tool-holder space (toolScale, calculated-height placement and all), or null when the tool defines none.
+  function apertureHolderPointForTool(value, context = currentGripContext(), identity = null) {
+    const aperture = apertureForTool(value);
+    return aperture ? itemPointToHolder(value, aperture, context, identity) : null;
   }
 
   function heightMultiplierForTool(value) {
@@ -1319,7 +1344,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,

@@ -30,19 +30,30 @@
     };
   }
 
+  // The bottle's opening: its plane's top edge in holder space (reused vector; null without a plane).
+  function bottleAperture(interaction) {
+    const plane = interaction.bottlePlane;
+    const height = Number(plane?.geometry?.parameters?.height);
+    if (!(height > 0)) return null;
+    plane.updateMatrix();
+    return (interaction.apertureScratch ||= new deps.THREE.Vector3()).set(0, height * (plane.scale.y || 1) / 2, 0).applyMatrix4(plane.matrix);
+  }
+
   function applyHolderPose(interaction, pose) {
     const { THREE } = deps;
     const { holder, bottlePlane, hand, poseQuaternion } = interaction;
-    holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
     const avatar = interaction.avatarGroup || interaction.walker?.avatarGroup;
-    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, avatar, holder.parent)) {
-      const data = avatar?.userData || {}; // Same species mapping as the player/editor, from the same head centroid NPC gaze tracks.
-      const offset = window.HobunjiSpeciesPoseScale?.scaleHeadOffset?.({ x: pose.x, y: pose.y, z: pose.z }, {
-        speciesId: data.speciesId, gender: data.gender || 'male', modelHeight: Number(data.portraitModelHeight) || null,
-        armLength: Number(data.armLength), poseOrbitScale: data.poseOrbitAxes ?? Number(data.poseOrbitScale),
-      }) || pose;
-      holder.position.x += offset.x; holder.position.y += offset.y; holder.position.z += offset.z;
+    const attach = window.SharedAttackPose;
+    if (pose.headRelative && attach && avatar) {
+      interaction.headFrame ||= attach.createHeadFrame(THREE);
+      if (bottlePlane) bottlePlane.rotation.x = Math.PI / 2;
+      // Head-anchored: the bottle's opening mates with the species mouth point and the head supplies rotation and scale.
+      if (attach.headFrame(interaction.headFrame, avatar)) {
+        attach.placeAtMouth(holder, interaction.headFrame, pose, 0.5, bottleAperture(interaction), holder.parent);
+        return;
+      }
     }
+    holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
     holder.scale.setScalar(0.5);
     poseQuaternion.yaw.setFromAxisAngle(poseQuaternion.up, THREE.MathUtils.degToRad(pose.yaw));
     poseQuaternion.pitch.setFromAxisAngle(poseQuaternion.right, THREE.MathUtils.degToRad(pose.pitch));

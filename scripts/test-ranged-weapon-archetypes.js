@@ -373,7 +373,7 @@ for (const phase of ['neutral', 'windup', 'strike']) {
   assert.equal(pose.headRelative, true);
   for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) assert.equal(pose[key], windowObject.HeldActionAnimations.blowgunReady.poses[phase][key]);
 }
-assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.z, 0.88);
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.z, -0.206); // Aperture-from-mouth offset converted from the former centroid-anchored 0.88 so Mao'ao placement is unchanged.
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.yaw, 0);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.95);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);

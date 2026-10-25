@@ -302,7 +302,8 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/held-action-animations.js?v=20261024hd8d9255"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
-<script src="../../js/combat/shared-attack-pose.js?v=20261022h3e71602"></script>
+<script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261025h1491360"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -389,9 +390,18 @@ let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid
 let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
-const headOffsetScratch = new THREE.Vector3(); // Scaled head-relative offset for the previewed species.
-function headOffsetScaleOptions() {
-  return { speciesId: currentSpeciesId, gender: currentGender, modelHeight: currentAvatarModelHeight, armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale };
+const editorHeadFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale of the previewed avatar (head-anchored actions).
+const editorApertureScratch = new THREE.Vector3();
+// The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
+function editorToolAperture() {
+  const grips = window.HobunjiHandToolGrips;
+  const authored = grips?.apertureHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+  if (authored) return authored;
+  const plane = toolPlaneMesh?.userData?.toolPlane;
+  const height = Number(plane?.geometry?.parameters?.height);
+  if (!(height > 0)) return null;
+  plane.updateMatrix(); toolPlaneMesh.updateMatrix();
+  return editorApertureScratch.set(0, height / 2, 0).applyMatrix4(plane.matrix).applyMatrix4(toolPlaneMesh.matrix);
 }
 const poseOrbitScratch = new THREE.Vector3(); // Reused by forward/inverse centroid transforms so playback does not allocate every frame.
 const poseWorldDebugScratch = new THREE.Vector3(); // Reused when recording final world position for visible diagnostics.
@@ -718,6 +728,8 @@ transformControls.setSpace('local'); // The proxy supplies the orientation: rig 
 const proxyPivotOffset = new THREE.Vector3(); // Visible weapon's origin in the holder's own local frame (constant while the pose rotates).
 const proxyScratch = new THREE.Vector3();
 const headGizmoScratch = new THREE.Vector3(); // Reused to invert head-origin translations during gizmo edits.
+const editorGizmoQuat = new THREE.Quaternion(); // Reused holder world rotation while inverting a head-anchored gizmo edit.
+const editorGizmoScale = new THREE.Vector3(); // Reused holder world scale while inverting a head-anchored gizmo edit.
 const IDENTITY_QUATERNION = new THREE.Quaternion();
 function gizmoPivotVisual() {
   const dual = window.HobunjiDualWieldWeaponVisuals;
@@ -751,21 +763,26 @@ transformControls.addEventListener('objectChange', () => {
     toolHolder.position.copy(gizmoProxy.position).sub(proxyPivotWorldOffset(toolHolder.quaternion));
   }
   const p = anim.poses[editPhase];
+  if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
+    toolHolder.updateWorldMatrix(true, false);
+    toolHolder.getWorldPosition(headGizmoScratch); toolHolder.getWorldQuaternion(editorGizmoQuat); toolHolder.getWorldScale(editorGizmoScale);
+    SharedAttackPose.poseFromHolderWorld(p, editorHeadFrame, headGizmoScratch, editorGizmoQuat, editorGizmoScale.x, editorToolAperture()); // Head-anchored poses are offsets in the head's frame from the aperture/mouth connection.
+    syncPosePanelFromState(editPhase);
+    refreshJsonView();
+    return;
+  }
   poseOrbitScratch.set(
     toolBase.position.x + toolHolder.position.x,
     toolBase.position.y + toolHolder.position.y,
     toolBase.position.z + toolHolder.position.z
   ); // Concrete selected-species point in rig space.
-  if (!anim.headRelative) window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
+  window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
   }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
-  if (anim.headRelative && SharedAttackPose.headAnchor(headGizmoScratch, avatarModel, rig)) {
-    poseOrbitScratch.sub(headGizmoScratch);
-    window.HobunjiSpeciesPoseScale?.unscaleHeadOffset?.(poseOrbitScratch, headOffsetScaleOptions()); // Exact inverse of the preview mapping, so authored values stay baseline units.
-  } else poseOrbitScratch.sub(toolBase.position);
+  poseOrbitScratch.sub(toolBase.position);
   p.x = poseOrbitScratch.x;
   p.y = poseOrbitScratch.y;
   p.z = poseOrbitScratch.z;
@@ -1439,11 +1456,16 @@ function applyPoseToRig(pose) {
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
-  if (anim.headRelative && SharedAttackPose.headAnchor(poseOrbitScratch, avatarModel, rig)) {
-    headOffsetScratch.set(lastAuthoredPose.x, lastAuthoredPose.y, lastAuthoredPose.z);
-    window.HobunjiSpeciesPoseScale?.scaleHeadOffset?.(headOffsetScratch, headOffsetScaleOptions()); // Authored on the Mao'ao-male baseline; the selected species scales it like the game does.
-    poseOrbitScratch.add(headOffsetScratch);
-  } else window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
+  if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
+    // Head-anchored: the tool's aperture mates with the species mouth point; the head alone supplies rotation and scale.
+    SharedAttackPose.placeAtMouth(toolHolder, editorHeadFrame, pose, safeNum(anim.poses.neutral.scale, 1), editorToolAperture(), toolBase);
+    toolHolder.updateWorldMatrix?.(true, false);
+    toolHolder.getWorldPosition(poseWorldDebugScratch);
+    lastScaledWorldPose.x = poseWorldDebugScratch.x; lastScaledWorldPose.y = poseWorldDebugScratch.y; lastScaledWorldPose.z = poseWorldDebugScratch.z;
+    lastScaledRigPose.x = toolBase.position.x + toolHolder.position.x; lastScaledRigPose.y = toolBase.position.y + toolHolder.position.y; lastScaledRigPose.z = toolBase.position.z + toolHolder.position.z;
+    return;
+  }
+  window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,

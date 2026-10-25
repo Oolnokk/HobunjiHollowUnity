@@ -346,8 +346,91 @@
     return true;
   }
 
+  // ── Head attach frame ──────────────────────────────────────────────────────────────────────────
+  // Head-anchored poses (blowgun, drink) hang off the portrait's species "mouth" point, not off the camera or a
+  // body orbit: the head already takes its yaw/pitch from the camera, so the tool takes its rotation, position and
+  // scale from the head alone. A tool's "aperture" (a point in its own holder space) is mated with the mouth and the
+  // pose x/y/z/pitch/yaw/roll/scale are an offset in the head's frame.
+
+  // Reference head size: the Mao'ao male head world scale every head-anchored pose was authored against.
+  function referenceHeadScale() {
+    const head = Number(window.HobunjiCharacterRigScale?.scaleFor?.('mao-ao', 'male')?.head);
+    return head > 0 ? head : 0.726;
+  }
+
+  // Caller-owned scratch for headFrame/placeAtMouth, built once from the host's THREE so this module stays dependency-free.
+  function createHeadFrame(THREE) {
+    return {
+      position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: 1,
+      _v: new THREE.Vector3(), _w: new THREE.Vector3(), _q: new THREE.Quaternion(), _r: new THREE.Quaternion(), _e: new THREE.Euler(),
+    };
+  }
+
+  // Mouth pixel for this avatar's species/gender (the head centroid until a real one is authored).
+  function mouthPixel(avatar) {
+    const rig = avatar?.userData?.neckRig;
+    if (!rig?.available) return null;
+    const data = avatar.userData;
+    return window.HobunjiPortraitMouthPoints?.pixelFor?.(data.speciesId, data.gender, rig) || rig.headCentroidPx || null;
+  }
+
+  // Fills `frame` (WORLD space) with the mouth position, the head's world rotation and its uniform scale ratio vs the
+  // Mao'ao-male baseline. False when the avatar has no skinned head to attach to.
+  function headFrame(frame, avatar) {
+    const rig = avatar?.userData?.neckRig;
+    const pixel = mouthPixel(avatar);
+    const resolver = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition;
+    const joint = rig?.headScaleJoint || rig?.neckJoint;
+    if (!pixel || !joint || !resolver) return false;
+    const mouth = resolver(avatar, pixel, frame.position);
+    if (!mouth) return false;
+    if (mouth !== frame.position) frame.position.copy(mouth);
+    joint.updateWorldMatrix(true, false);
+    joint.getWorldQuaternion(frame.quaternion);
+    joint.getWorldScale(frame._v);
+    const headScale = (frame._v.x + frame._v.y) / 2; // Head size is x/y; z mirrors the body and must not feed back into the tool.
+    frame.scale = headScale > 0 ? headScale / referenceHeadScale() : 1;
+    return true;
+  }
+
+  // Places `holder` so its aperture meets the head frame's mouth. `pose` is an offset in the head frame (units scale with
+  // the head), `poseScale` the holder's own uniform scale, `aperture` the mating point in HOLDER space (null = holder
+  // origin). With `localRoot` the result is expressed in that parent's space (a scaled/rotated body root).
+  function placeAtMouth(holder, frame, pose, poseScale, aperture, localRoot = null) {
+    const scale = Math.max(0.0001, (Number(poseScale) || 1) * frame.scale); // World scale of the tool, inherited from the head.
+    frame._e.set((pose.pitch || 0) * DEG_TO_RAD, (pose.yaw || 0) * DEG_TO_RAD, (pose.roll || 0) * DEG_TO_RAD, 'YXZ');
+    frame._r.setFromEuler(frame._e);
+    frame._q.copy(frame.quaternion).multiply(frame._r); // World rotation: head rotation, then the authored tool rotation.
+    frame._v.set((pose.x || 0) * frame.scale, (pose.y || 0) * frame.scale, (pose.z || 0) * frame.scale).applyQuaternion(frame.quaternion).add(frame.position);
+    if (aperture) frame._v.sub(frame._w.set(aperture.x, aperture.y, aperture.z).multiplyScalar(scale).applyQuaternion(frame._q));
+    if (localRoot) {
+      localRoot.updateWorldMatrix(true, false);
+      localRoot.worldToLocal(frame._v);
+      localRoot.getWorldQuaternion(frame._r).invert();
+      frame._q.premultiply(frame._r);
+      localRoot.getWorldScale(frame._w);
+      holder.scale.setScalar(scale / Math.max(0.0001, frame._w.x));
+    } else holder.scale.setScalar(scale);
+    holder.position.copy(frame._v);
+    holder.quaternion.copy(frame._q);
+    return holder;
+  }
+
+  // Inverse of placeAtMouth for an editor drag: given the holder's WORLD transform, writes the head-frame pose
+  // (x/y/z in baseline units, pitch/yaw/roll in degrees) that would reproduce it.
+  function poseFromHolderWorld(out, frame, worldPosition, worldQuaternion, worldScale, aperture) {
+    const scale = Math.max(0.0001, Number(worldScale) || 1);
+    frame._v.copy(worldPosition);
+    if (aperture) frame._v.add(frame._w.set(aperture.x, aperture.y, aperture.z).multiplyScalar(scale).applyQuaternion(worldQuaternion));
+    frame._v.sub(frame.position).applyQuaternion(frame._r.copy(frame.quaternion).invert()).multiplyScalar(1 / Math.max(0.0001, frame.scale));
+    out.x = frame._v.x; out.y = frame._v.y; out.z = frame._v.z;
+    frame._e.setFromQuaternion(frame._q.copy(frame._r).multiply(worldQuaternion), 'YXZ'); // _r still holds the inverse head rotation.
+    out.pitch = frame._e.x / DEG_TO_RAD; out.yaw = frame._e.y / DEG_TO_RAD; out.roll = frame._e.z / DEG_TO_RAD;
+    return out;
+  }
+
   window.SharedAttackPose = Object.freeze({
-    headAnchor,
+    headAnchor, headFrame, placeAtMouth, poseFromHolderWorld, createHeadFrame, mouthPixel, referenceHeadScale,
     version: 1,
     POSE_KEYS,
     MIRRORED_POSE_KEYS,

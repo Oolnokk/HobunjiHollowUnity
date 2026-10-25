@@ -22867,33 +22867,47 @@
         };
       }
 
-      const _headPoseAnchor = new THREE.Vector3(); // Reused by drink and ranged poses; no per-frame head-vector allocation.
-      const _headOffsetScratch = new THREE.Vector3(); // Reused scaled head-relative offset.
-      // Head-relative poses are authored on the Mao'ao-male baseline from the same head centroid NPC gaze tracks
-      // (SharedAttackPose.headAnchor), so their offset follows this player's species/gender proportions.
-      function playerHeadOffset(x, y, z) {
+      const _headFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale, refreshed each head-anchored frame.
+      const _headPlacePose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Reused authored offset handed to SharedAttackPose.placeAtMouth.
+      const _headApertureCache = new Map(); // `${itemKey}|${species}|${gender}` -> holder-space aperture, cleared whenever grip data changes.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _headApertureCache.clear());
+      // The tool-holder-space aperture that mates with the portrait mouth (null when the tool defines none).
+      function playerToolAperture(itemKey, context = 'ranged') {
         const identity = playerPoseIdentity();
-        _headOffsetScratch.set(x, y, z);
-        return window.HobunjiSpeciesPoseScale?.scaleHeadOffset?.(_headOffsetScratch, {
-          speciesId: identity.speciesId, gender: identity.gender,
-          modelHeight: playerAvatarModelHeight, armLength: playerArmLength, poseOrbitScale: playerPoseOrbitScale,
-        }) ?? _headOffsetScratch;
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_headApertureCache.has(key)) _headApertureCache.set(key, window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(itemKey, context, identity) || null);
+        return _headApertureCache.get(key);
+      }
+      // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
+      // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
+        _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
+        _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, playerToolAperture(equipmentSlots.ranged));
+      }
+      const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
+      // The bottle's opening: the plane's top edge (the first opaque row of an upright held sprite) in holder space.
+      function heldItemAperture() {
+        if (!_heldItemPlane?.geometry?.parameters) return null;
+        _heldItemPlane.updateMatrix();
+        const height = (Number(_heldItemPlane.geometry.parameters.height) || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1);
+        return _heldAperture.set(0, height / 2, 0).applyMatrix4(_heldItemPlane.matrix);
       }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
-        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
-        if (pose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          const offset = playerHeadOffset(pose.x, pose.y, pose.z);
-          heldItemHolder.position.set(_headPoseAnchor.x + offset.x, _headPoseAnchor.y + offset.y, _headPoseAnchor.z + offset.z);
-        }
-        heldItemHolder.scale.setScalar(0.5);
-        _heldItemHandMode = 'bottle';
-        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
-        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
-        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
-        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw); // Before the head frame reads the skinned head, so the mouth and rotation include this body turn.
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
-        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+        if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
+        } else {
+          heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+          heldItemHolder.scale.setScalar(0.5);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+          heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        }
+        _heldItemHandMode = 'bottle';
       }
 
       // Begins the shared drink-style windup animation on press. Plays forward
@@ -22955,12 +22969,11 @@
         const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
         playerMesh.add(sourceProbe);
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
-        if (neutralPose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          const offset = playerHeadOffset(neutralPose.x, neutralPose.y, neutralPose.z);
-          sourceProbe.position.set(_headPoseAnchor.x + offset.x, _headPoseAnchor.y + offset.y, _headPoseAnchor.z + offset.z);
-        }
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        if (neutralPose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(sourceProbe, _headFrame, neutralPose, 0.5, heldItemAperture(), playerMesh); // Same mouth attach as the live held bottle.
+        }
         const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
         sourceObject.updateWorldMatrix(true, false);
         const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
@@ -23454,8 +23467,7 @@
           if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
-          const headAnchored = sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup); // Resolved before the orientation so a head-relative pose rotates with the head, not with the body orbit.
-          if (headAnchored) _qRangedAimPitch.invert(); // The neck pitches by -elevation (player-head-aim), so the whole head-relative frame must too; the body-orbit sign above would tilt it against the head.
+          const headAnchored = sampled.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Head-anchored poses take rotation, position and scale from the head's mouth frame alone; the camera only drives the head.
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -23471,13 +23483,8 @@
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (headAnchored) {
-            toolHolder.position.copy(playerHeadOffset(x, y, z)).applyQuaternion(_qFac);
-            if (reticleAligned) {
-              toolHolder.position.copy(playerHeadOffset(x, y, z)).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
-            }
-            toolHolder.position.add(_headPoseAnchor);
-          } else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+          if (headAnchored) placePlayerToolAtMouth(sampled.x, sampled.y, sampled.z, pitchRad, yawRad, rollRad, sampled.scale);
+          else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
           else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'ranged') {
@@ -23507,8 +23514,7 @@
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
-          const headAnchored = neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup); // Same head-frame rule as the pose-driven branch above.
-          if (headAnchored) _qRangedAimPitch.invert(); // Matches the neck's -elevation pitch instead of the body-orbit sign.
+          const headAnchored = neutral.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Same mouth-frame rule as the pose-driven branch above.
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -23521,11 +23527,8 @@
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (headAnchored) {
-            toolHolder.position.copy(playerHeadOffset(neutral.x, neutral.y, neutral.z));
-            if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
-            toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
-          } else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+          if (headAnchored) placePlayerToolAtMouth(neutral.x, neutral.y, neutral.z, THREE.MathUtils.degToRad(neutral.pitch), THREE.MathUtils.degToRad(neutral.yaw), THREE.MathUtils.degToRad(neutral.roll), neutral.scale);
+          else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
           else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
 
         } else if (anim === 'thrust') {

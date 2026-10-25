@@ -279,24 +279,6 @@
     return point;
   }
 
-  // Head-relative poses are authored on the Mao'ao-male baseline from the visible head, so they follow the character's
-  // BODY SIZE (the same actual-height / Mao'ao-male-height ratio the weapon sprite and the pose Y mapping use), uniformly
-  // on every axis. The species orbit axes are an arm-reach limit for hand-relative poses and must not cap a head offset:
-  // they would cut a forward offset to e.g. half on Tletingan. The offset is in the pose's own frame (before any
-  // facing/aim rotation), so no yaw is needed. `inverse` maps a concrete offset back to authored baseline units.
-  function scaleHeadOffset(offset, options = {}, inverse = false) {
-    if (!offset) return offset;
-    const x = Number(offset.x), y = Number(offset.y), z = Number(offset.z);
-    if (![x, y, z].every(Number.isFinite)) return offset;
-    const ratio = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY).heightRatio;
-    if (!(ratio > 0)) return offset;
-    const k = inverse ? 1 / ratio : ratio;
-    if (typeof offset.set === 'function') offset.set(x * k, y * k, z * k);
-    else { offset.x = x * k; offset.y = y * k; offset.z = z * k; }
-    return offset;
-  }
-  function unscaleHeadOffset(offset, options = {}) { return scaleHeadOffset(offset, options, true); }
-
   function repoConfigUrl() {
     if (typeof document === 'undefined' || typeof URL === 'undefined') return CONFIG_PATH;
     const scriptUrl = document.currentScript?.src || '';
@@ -346,8 +328,6 @@
     resolveRigScaleY,
     portraitModelHeightFor,
     heightMetrics,
-    scaleHeadOffset,
-    unscaleHeadOffset,
     setScale,
     replaceConfig,
     getConfig,
