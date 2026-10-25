@@ -1842,8 +1842,137 @@ window.FoliageGenerator = (() => {
 
   function degToRad(d) { return d * Math.PI / 180; }
 
+  // Surface growth uses real triangles, so authored walls, gables and furniture
+  // share the same tube/noise generation as the foliage generator's own vines.
+  function normalizeSurfaceGrowth(value = {}) {
+    value = value && typeof value === 'object' ? value : {}; // Malformed imported layers use safe defaults.
+    const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
+    return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
+      count: Math.floor(finite('count', 12, 1, 80)), length: finite('length', 3, .05, 30),
+      radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
+      curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : (value.kind === 'roots' ? '#705039' : '#3a5f3a'),
+      target: ['all', 'walls', 'floors', 'ceilings', 'selected'].includes(value.target) ? value.target : 'all',
+      targetIds: Array.isArray(value.targetIds) ? value.targetIds.filter(id => typeof id === 'string').slice(0, 200) : [] };
+  }
+
+  function surfaceTargets(parent, settings) {
+    const targets = []; // Only authored surface meshes enter the sampler; generated growth and editor helpers are excluded.
+    parent.traverse(object => {
+      if (!object.isMesh || !object.geometry?.attributes?.position) return;
+      let node = object, role = '', selected = false, excluded = false; // Ancestor tags keep grouped brick/log gables and multi-mesh furniture selectable.
+      while (node) {
+        const data = node.userData || {}; // Shared metadata is read without mutating the source definitions.
+        excluded ||= !!data.surfaceFoliage || !!data.surfaceFoliageExclude;
+        role ||= data.surfaceFoliageRole || (data.interiorGable || data.interiorGableBricks || data.interiorGableLogs ? 'walls' : data.interiorCeilingSurface ? 'ceilings' : '');
+        selected ||= settings.targetIds.includes(String(data.authoredPartId ?? data.partId ?? data.faceId ?? data.surfaceFoliageId ?? ''));
+        if (node === parent) break;
+        node = node.parent;
+      }
+      if (!excluded && (settings.target === 'all' || (settings.target === 'selected' ? selected : role === settings.target))) targets.push(object);
+    });
+    return targets;
+  }
+
+  function buildSurfaceGrowth(parent, input = {}) {
+    const settings = normalizeSurfaceGrowth(input); // Same sanitized recipe is stored by every authoring tool.
+    const group = new T.Group(); // Geometry is expressed in the target parent's local space and follows its later transform.
+    group.name = 'Surface ' + settings.kind;
+    group.userData.surfaceFoliage = true;
+    const targets = surfaceTargets(parent, settings), triangles = [], large = [], cells = new Map(); // Spatial buckets avoid scanning all brick triangles for every growth step.
+    parent.updateWorldMatrix(true, true);
+    const inverse = parent.matrixWorld.clone().invert(), cellSize = .5, point = new T.Vector3(); // Source vertices are converted once, outside runtime frame work.
+    let totalArea = 0; // Area weighting avoids crowding densely tessellated meshes.
+    const keyOf = (x, y, z) => x + ',' + y + ',' + z; // Shared key format for triangle insertion and nearby queries.
+    for (const mesh of targets) {
+      const geometry = mesh.geometry, position = geometry.attributes.position, index = geometry.index; // Supports indexed and non-indexed imported GLBs.
+      const matrix = inverse.clone().multiply(mesh.matrixWorld); // Includes nonuniform scale and nested furniture transforms.
+      const end = Math.min(index ? index.count : position.count, geometry.drawRange.start + geometry.drawRange.count); // Honor partial draw ranges.
+      for (let i = geometry.drawRange.start; i + 2 < end; i += 3) {
+        const vertices = [0, 1, 2].map(j => new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + j) : i + j).applyMatrix4(matrix)); // Triangle coordinates used by sampling and projection.
+        if (vertices.some(v => !Number.isFinite(v.x + v.y + v.z))) continue;
+        const triangle = new T.Triangle(...vertices), area = triangle.getArea(); // Degenerate faces never become growth anchors.
+        if (area < 1e-10) continue;
+        const faceNormal = triangle.getNormal(new T.Vector3()); // Floor growth stays on top; ceiling growth stays on the room-facing underside.
+        if (settings.target === 'floors' && faceNormal.y < .5) continue;
+        if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
+        totalArea += area;
+        const record = { triangle, normal: triangle.getNormal(new T.Vector3()), area: totalArea }; // Cumulative area permits binary-search seed placement.
+        triangles.push(record);
+        const min = vertices.reduce((a, v) => a.min(v), vertices[0].clone()).divideScalar(cellSize).floor(); // Bucket range includes the full triangle, not only its centroid.
+        const max = vertices.reduce((a, v) => a.max(v), vertices[0].clone()).divideScalar(cellSize).floor();
+        if ((max.x-min.x+1)*(max.y-min.y+1)*(max.z-min.z+1) > 256) { large.push(record); continue; }
+        for (let x=min.x; x<=max.x; x++) for (let y=min.y; y<=max.y; y++) for (let z=min.z; z<=max.z; z++) {
+          const key = keyOf(x,y,z); // Triangle references are shared across overlapped buckets.
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push(record);
+        }
+      }
+    }
+    if (!triangles.length) { group.userData.diagnostics = 'No eligible surface triangles.'; return group; }
+    const seed = xfnv1a(settings.seed), random = mulberry32(seed), geometries = []; // Deterministic recipes regenerate on import and in gameplay.
+    const steps = Math.min(400, Math.ceil(settings.length / Math.min(.15, Math.max(.025, settings.radius * 3)))), step = settings.length / steps; // Bounded density protects mobile previews.
+    for (let strand=0; strand<settings.count; strand++) {
+      const area = random()*totalArea; // Binary search picks an area-weighted starting face.
+      let lo=0, hi=triangles.length-1;
+      while (lo<hi) { const mid=(lo+hi)>>1; if (triangles[mid].area<area) lo=mid+1; else hi=mid; }
+      let current=triangles[lo], normal=current.normal.clone(); // Each step keeps the surface normal for corner following.
+      const u=Math.sqrt(random()), v=random(), start=current.triangle.a.clone().multiplyScalar(1-u).addScaledVector(current.triangle.b,u*(1-v)).addScaledVector(current.triangle.c,u*v); // Uniform barycentric seed.
+      let anchor=start, direction=new T.Vector3(random()-.5, settings.kind==='roots' ? -.7 : .7, random()-.5).normalize(); // Gravity bias is projected onto each encountered surface.
+      const points=[anchor.clone().addScaledVector(normal,settings.radius+settings.offset)]; // Radius-aware clearance keeps tubes outside the source.
+      for (let segment=0; segment<steps; segment++) {
+        direction.addScaledVector(normal,-direction.dot(normal));
+        if (direction.lengthSq()<1e-8) direction.crossVectors(normal,new T.Vector3(1,.3,.2));
+        direction.normalize().applyAxisAngle(normal,(random()-.5)*settings.curl*.65);
+        const candidate=anchor.clone().addScaledVector(direction,step), bucket=candidate.clone().divideScalar(cellSize).floor(), candidates=new Set(large); // Query adjacent cells so seams and perpendicular corners remain connected.
+        for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++)for(const record of cells.get(keyOf(bucket.x+x,bucket.y+y,bucket.z+z))||[])candidates.add(record);
+        let best=null, distance=step*step*.85, closest=null; // Reject gaps larger than a growth step instead of bridging empty windows.
+        for(const record of candidates){
+          if(record.normal.dot(normal)<-.25)continue;
+          record.triangle.closestPointToPoint(candidate,point);
+          const d=point.distanceToSquared(candidate); // Nearest actual surface point, never an object's bounding box.
+          if(d<distance){distance=d;best=record;closest=point.clone();}
+        }
+        if(!best)break;
+        if(closest.distanceToSquared(anchor)<step*step*.02){
+          // At a shared edge, transport the tangent onto an adjacent face;
+          // closest-point projection alone would strand every vine at corners.
+          let crossed=false; // A seam is crossed only when both faces touch the current anchor.
+          for(const record of candidates){
+            const dot=record.normal.dot(normal); // Backfaces and near-parallel duplicates do not define a new corner.
+            if(dot<-.25||dot>.95)continue;
+            record.triangle.closestPointToPoint(anchor,point);
+            if(point.distanceToSquared(anchor)>step*step*.01)continue;
+            const turn=direction.clone().applyQuaternion(new T.Quaternion().setFromUnitVectors(normal,record.normal)); // Parallel transport across a convex or concave seam.
+            record.triangle.closestPointToPoint(anchor.clone().addScaledVector(turn,step),point);
+            if(point.distanceToSquared(anchor)<step*step*.2)continue;
+            closest=point.clone();best=record;crossed=true;break;
+          }
+          if(!crossed)break;
+        }
+        direction.copy(closest).sub(anchor).normalize();anchor=closest;current=best;normal=current.normal.clone();
+        points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset));
+      }
+      if(points.length<2)continue;
+      geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2}));
+    }
+    if(geometries.length){
+      const mesh=new T.Mesh(mergeGeoms(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Reuses the canonical foliage tube/material path.
+      mesh.geometry.computeVertexNormals();geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
+    }
+    group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes (' + triangles.length + ' triangles).';
+    return group;
+  }
+
+  function applySurfaceGrowth(parent, recipes) {
+    // Regeneration is event-driven; replacing only owned geometry preserves source meshes/materials.
+    for(const child of [...parent.children])if(child.userData?.surfaceFoliage){parent.remove(child);child.traverse(object=>{object.geometry?.dispose();if(object.material&&!Array.isArray(object.material))object.material.dispose();});}
+    for(const recipe of (Array.isArray(recipes)?recipes:[]).slice(0,32))parent.add(buildSurfaceGrowth(parent,recipe));
+    return parent.children.filter(child=>child.userData?.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
+    normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);

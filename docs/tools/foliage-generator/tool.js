@@ -54,6 +54,7 @@
   const grid = new T.GridHelper(12, 24, 0x3e5566, 0x203140); grid.material.transparent = true; grid.material.opacity = 0.45; scene.add(grid);
 
   let currentModel = null, rebuildTimer = null, lastRecipe = null, lastStats = null, hasAutoFramed = false;
+  let surfaceGrowth = [], externalSurface = null; // Shared saved recipes and imported non-foliage geometry for this preview.
   const sliderIds = [
     ['height','heightOut',2], ['turns','turnsOut',2], ['radiusStart','radiusStartOut',2],
     ['radiusEnd','radiusEndOut',2], ['crossStart','crossStartOut',2], ['crossEnd','crossEndOut',2], ['hostSway','hostSwayOut',2],
@@ -64,7 +65,7 @@
 
   function readRecipe() {
     const type = $('plantType').value, seed = numericValue('seed') >>> 0;
-    if (type !== 'rootTotem') return { version: 1, type, seed };
+    if (type !== 'rootTotem') return { version: 1, type, seed, surfaceGrowth, ...(type==='externalSurface'&&externalSurface?{sourceObject:externalSurface.toJSON()}: {}) };
     const rootTotemPlant = window.RootTotemPlants.normalizeConfig({
       ...defaults,
       sourceTree: $('sourceTree').value,
@@ -72,10 +73,12 @@
       radiusStart: numericValue('radiusStart'), radiusEnd: numericValue('radiusEnd'),
       crossSectionScaleStart: numericValue('crossStart'), crossSectionScaleEnd: numericValue('crossEnd'), hostSway: numericValue('hostSway'),
     });
-    return { version: 1, type, seed, rootTotemPlant };
+    return { version: 1, type, seed, rootTotemPlant, surfaceGrowth };
   }
 
   function buildOrdinaryPlant(type, seed) {
+    if(type==='externalSurface'){if(!externalSurface)throw new Error('Import a self-contained GLB first.');return externalSurface.clone(true);}
+    if(type==='surfaceBox'){const group=new T.Group();const mesh=new T.Mesh(new T.BoxGeometry(2,3,2),new T.MeshLambertMaterial({color:0x9e917a}));mesh.position.y=1.5;group.add(mesh);return group;}
     const col = seed % 100003, row = ((seed ^ 0x9e3779b9) >>> 0) % 100019;
     if (type === 'crownedPine') return window.FoliageGenerator.buildCrownedPineMesh(col, row);
     if (type === 'shadewood') return window.FoliageGenerator.buildShadewoodMesh(col, row);
@@ -120,6 +123,7 @@
     updateSliderOutputs(); rootControls.style.display = $('plantType').value === 'rootTotem' ? '' : 'none'; errorBox.style.display = 'none';
     try {
       const recipe = readRecipe(), started = performance.now(), object = buildFromRecipe(recipe);
+      window.FoliageGenerator.applySurfaceGrowth(object,recipe.surfaceGrowth);
       clearCurrentModel(); currentModel = object; lastRecipe = recipe; scene.add(currentModel);
       if (!hasAutoFramed || options.frameCamera === true) fitCameraToObject(currentModel);
       renderDiagnostics(recipe, currentModel);
@@ -143,6 +147,8 @@
   }
   function resize() { const r=viewport.getBoundingClientRect(),w=Math.max(1,Math.floor(r.width)),h=Math.max(1,Math.floor(r.height));renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix(); }
 
+  window.SurfaceFoliageAuthoring.mount($('surfaceGrowthControls'),{targets:[['all','All source surfaces']],read:()=>surfaceGrowth,selectedIds:()=>[],write:recipes=>{surfaceGrowth=recipes;rebuild();return currentModel?.children.filter(child=>child.userData.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');}});
+  $('surfaceGlb').onchange=async event=>{try{const file=event.target.files?.[0];if(!file)return;const bytes=await file.arrayBuffer();const gltf=await new Promise((resolve,reject)=>new T.GLTFLoader().parse(bytes,'',resolve,reject));externalSurface=gltf.scene;$('plantType').value='externalSurface';rebuild({frameCamera:true});}catch(error){errorBox.style.display='block';errorBox.textContent='GLB import failed: '+error.message;}finally{event.target.value='';}};
   $('plantType').addEventListener('change', rebuild); $('sourceTree').addEventListener('change', rebuild); $('seed').addEventListener('change', rebuild); $('treeCount').addEventListener('change', rebuild);
   for (const [inputId] of sliderIds) $(inputId).addEventListener('input', scheduleRebuild);
   $('rebuild').addEventListener('click', rebuild); $('randomizeSeed').addEventListener('click',()=>{$('seed').value=String((window.crypto?.getRandomValues?.(new Uint32Array(1))?.[0]??Math.floor(Math.random()*0xffffffff))>>>0);rebuild();});

@@ -726,6 +726,7 @@
     }
 
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
+    global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
     return group;
   }
 

@@ -379,10 +379,11 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/foliage-generator.js"></script>
+<script src="../../js/surface-foliage-authoring.js?v=20261025surface1"></script>
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js?v=20261018h3d30302"></script>
+<script src="../../js/interior-scene-builder.js?v=20261025h71ebe3a"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
@@ -393,7 +394,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
      nested tool pages the same wall/window runtime as the game. -->
 <script src="../../js/wall-ornament-placement.js?v=20261015hd5cba5f"></script>
 <script src="../../js/daylight-window-runtime.js?v=20261013h3b89898"></script>
-<script src="../../js/building-interior-wall-ornament-editor.js?v=20261022h4a5f752"></script>
+<script src="../../js/building-interior-wall-ornament-editor.js?v=20261025habb545b"></script>
 
 <script>
 (function () {
@@ -1514,7 +1515,7 @@ function rebuild3D(){
   floorSet.forEach(function(key){
     var p=key.split(','), c=+p[0], r=+p[1];
     var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),activeFloorMat);
-    fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
+    fl.userData.surfaceFoliageRole="floors"; fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
   });
 
   // Exit zone overlays
@@ -1569,11 +1570,11 @@ function rebuild3D(){
   if(panels.length){
     try{
       var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady,wallOpenings:windowOpenings,logWall:interior.logWall||{}});
-      wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
+      wallGroup.userData.surfaceFoliageRole="walls";wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
     } catch(e){
       log('Wall build error: '+e.message,'warn');
       var fallbackWallGroup=InteriorSceneBuilder.buildFallbackBoxWalls(THREE, panels, 0x8b7055);
-      fallbackWallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(fallbackWallGroup);
+      fallbackWallGroup.userData.surfaceFoliageRole="walls";fallbackWallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(fallbackWallGroup);
     }
   }
 
@@ -1583,9 +1584,12 @@ function rebuild3D(){
   if(window.InteriorCeilings){
     var previewWallH=Number(window.__hobunjiInteriorWallHeightOverride)||Number(interior.wallHeight)||WALL_H;
     var showCeiling=$('ceilingPreview').checked;
-    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]},logWall:interior.logWall||{}});
+    var needsGrowthCeiling=(interior.surfaceGrowth||[]).some(recipe=>recipe.target==='ceilings'); // Build hidden overhead surfaces when ceiling growth needs a real target.
+
+    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling||needsGrowthCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]},logWall:interior.logWall||{}});
     // Gable ends are wall: let wall-ornament placement (windows) click onto them.
     ceilingPreviewGroup.children.forEach(function(child){ if(child.userData.interiorGable||child.userData.interiorGableBricks||child.userData.interiorGableLogs) child.userData.biaInteriorWallGroup=true; });
+    if(!showCeiling)ceilingPreviewGroup.traverse(function(mesh){if(mesh.userData.interiorCeilingSurface)mesh.visible=false;});
     previewGroup.add(ceilingPreviewGroup);
   }
 
@@ -1599,10 +1603,13 @@ function rebuild3D(){
     grp.position.set(cx,(visual.postY||0),cz);
     grp.rotation.y=(visual.rotY||0)*Math.PI/180;
     grp.scale.set(scX,scY,scZ);
+    grp.userData.surfaceFoliageId=f.id;
     furnMeshes[f.id]=grp;
     previewGroup.add(grp);
   });
 
+  var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same geometry used by the scene.
+  if(growthReport)log(growthReport);
   scene3.add(previewGroup);
   syncTC();
 
@@ -1823,6 +1830,8 @@ function afterLoad(){
   syncFloorSet(); selectFurn(null); drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
   renderExitList(); renderVendorList(); renderEntryList(); renderLayoutsPanel();
 }
+
+SurfaceFoliageAuthoring.mount($('biaLeftPanel'),{targets:[['walls','Walls + generated gables'],['floors','Floors'],['ceilings','Ceilings'],['selected','Selected furniture']],read:()=>state.interior.surfaceGrowth,selectedIds:()=>state.selectedId?[state.selectedId]:[],write:recipes=>{pushUndo();state.interior.surfaceGrowth=recipes;rebuild3D();refreshExport();return previewGroup.children.filter(child=>child.userData.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');},log});
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadLib();

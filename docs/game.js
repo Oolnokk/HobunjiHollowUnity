@@ -13672,6 +13672,7 @@
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.userData.surfaceFoliageRole = "floors";
               fl.position.set(c + 0.5, -0.05, r + 0.5);
               if (farmNaturalColors) fl.userData.farmMaterialRole = 'wood';
               bScene.add(fl);
@@ -13837,6 +13838,7 @@
             }
             window.FurnitureTableSystem?.registerPlacement(mapId, { ...f, key:furnitureKey }, renderedFurniture, def); // Interior records use the same explicit chair-to-table ids as exterior and locale furniture.
             if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
+            renderedFurniture.userData.surfaceFoliageId = f.id; // Captured per-instance growth targets from the interior editor.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
@@ -13890,6 +13892,7 @@
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(seatFurnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
+          window.FoliageGenerator?.applySurfaceGrowth(bScene, mapData.surfaceGrowth); // Includes completed walls, generated gables, ceiling and selected furniture.
           // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
           await window.InteriorDoorTiles?.build({
             THREE, scene: bScene, mapId, mapData, floorSet,

@@ -12,7 +12,7 @@
   });
 
   (async () => {
-    await loadClassicScript('foliage-furniture-mode-core.js?v=20260907a');
+    await loadClassicScript('foliage-furniture-mode-core.js?v=20261025h2a9d51a');
     await loadClassicScript('../../js/furniture-piece-animation-runtime.js?v=20260907a');
     await loadClassicScript('../../js/tankan-script-layout.js?v=20260915tankan8');
     await loadClassicScript('furniture-decals.js?v=20261003h7cf2f60');
