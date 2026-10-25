@@ -364,13 +364,14 @@
   }
 
   function voiceSpatialOptions(entity) {
-    if (!entity || entity === player()) return { panX: 0, position3d: null, extraWetBoost: 0, gain: 1, lowpassHz: 20000, area: entity?.areaId || entity?.area || null };
+    if (!entity || entity === player()) return { panX: 0, position3d: null, extraWetBoost: 0, gain: 1, sourceActor: null, lowpassHz: 20000, area: entity?.areaId || entity?.area || null };
     const spatial = window.AudioSystem?.combatAudioSpatial?.(entity, { earshotTiles: 14 })
       || window.AudioSystem?.creatureAudioSpatial?.(entity, {}) || {};
     const gain = clamp(spatial.gain ?? 1, 0, 1); // NPC voice volume follows actual 3D separation rather than the player's full-volume mix.
     return {
       panX: clamp(spatial.panX ?? 0, -1, 1),
       position3d: spatial.position3d || null, // Shared listener-local X/Y/Z gives enemy voices the same front/back and ravine depth as weapons.
+      sourceActor: spatial.sourceActor || entity, // Keeps prolonged charge grunts attached to the moving combatant.
       extraWetBoost: Math.max(0, Number(spatial.extraWetBoost) || 0),
       gain,
       lowpassHz: Math.round(4000 + 16000 * Math.pow(gain, 0.7)), // Distant NPC direct voices lose treble while the environmental reflections remain present.
@@ -449,6 +450,7 @@
           extraWetBase: 0, // Character combat voices use the area's normal wet profile; NPC distance contributes only the shared distance wet boost.
           panX: spatial.panX,
           position3d: spatial.position3d, // Shared independent-pitch renderer builds a true HRTF PannerNode for NPCs.
+          sourceActor: spatial.sourceActor,
           extraWetBoost: spatial.extraWetBoost,
           lowpassHz: spatial.lowpassHz, // Web Audio dry-path filtering makes distant ravine shouts read as remote.
           area: spatial.area,
@@ -772,7 +774,7 @@
     }
     const dryOutput = filter || gain;
     const routed = window.AudioSystem?.connectCombatSpatialDry?.(ctx, dryOutput, spatial);
-    if (routed) gain.__combatVocalPanner = routed.node; // Timed charge/release voice uses the same HRTF spatial mixer as hits.
+    if (routed) { gain.__combatVocalPanner = routed.node; gain.__combatVocalRoute = routed; } // Route tracks the source while a charge is held.
     else {
       const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
       if (panner) {
@@ -840,6 +842,7 @@ function finishChargeToken(token) {
   activeChargeTokens.delete(token);
   window.CharacterVoiceOwner?.release?.(token.voiceClaim);
   try { token.output?.__combatVocalWet?.send?.disconnect?.(); } catch (_) {}
+  try { token.output?.__combatVocalRoute?.dispose?.(); } catch (_) {}
   try { token.output?.__combatVocalPanner?.disconnect?.(); } catch (_) {}
   try { token.output?.__combatVocalFilter?.disconnect?.(); } catch (_) {}
   try { token.output?.disconnect?.(); } catch (_) {}
