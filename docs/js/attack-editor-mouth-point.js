@@ -81,7 +81,9 @@
     const data = avatar.userData, size = sourceSize(avatar);
     const resolver = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition;
     if (!resolver || !size.width) return null;
-    const THREE = context.THREE, local = avatar.worldToLocal(world.clone());
+    const THREE = context.THREE, plane = data.neckRig.skinnedPlane; // The resolver maps pixels through the skinned plane's own space, so invert in that space.
+    plane.updateWorldMatrix(true, false);
+    const local = plane.worldToLocal(world.clone());
     const renderedU = (local.x + data.portraitModelWidth / 2) / data.portraitModelWidth;
     const v = (data.portraitModelHeight / 2 - local.y) / data.portraitModelHeight;
     const left = resolver(avatar, { x: size.width * 0.25, y: size.height * 0.5 }, new THREE.Vector3());

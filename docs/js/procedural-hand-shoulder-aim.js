@@ -399,6 +399,9 @@
       guide.elbow.position.copy(elbow);
       guide.shoulder.position.copy(shoulder);
       guide.wrist.position.copy(socket.position);
+      const elbowAuthored = elbowSolve.source === 'pose-authored';
+      guide.elbow.visible = elbowAuthored; // With no authored elbow the arm aims straight at the shoulder: drawing an elbow there would just sit on top of the shoulder sphere.
+      if (!elbowAuthored) guide.upper.visible = false;
       guide.root.userData.armLength = elbowSolve.diagnosticArmLength;
       guide.root.userData.armLengthSource = avatarRoot.userData?.armLengthSource || 'fallback';
       guide.root.userData.upperArmLength = elbowSolve.upperArmLength;
