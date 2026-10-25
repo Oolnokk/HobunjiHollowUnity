@@ -24,6 +24,7 @@
   let lastFootstepPlayErrorKey = null; // Suppresses repeated identical footstep failure lines in the in-game debug log.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
   let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
+  let lastCombatSpatialDebug = null; // Retains source distance/elevation/gain for the mobile-copyable combat audio report.
   let lastFootstepSfxDebug = null; // Exposed by footstepSfxDebugSnapshot and mirrored into the in-game debug log on surface changes.
   let lastFootstepDebugSurface = null; // Prevents the mobile-readable debug log from receiving one line for every individual footfall.
   function init(injectedDeps) {
@@ -862,16 +863,13 @@
     };
   }
 
-  // Distance falloff for a creature-originated combat sound (bark/claw
-  // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
+  // Creature combat cues share the same three-dimensional earshot as NPC
+  // vocalizations. A cliff's vertical separation must count as distance.
   function playCreatureSfxAt(c, cfgEntry, pitch) {
-    if (!cfgEntry || c.areaId !== deps.getCurrentArea()) return;
-    const distToPlayer = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    // Linear, not squared — squared falloff made anything past ~30% of
-    // earshot drop to near-silence, which was most of the usable range.
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-    playOneShotSfx(cfgEntry, falloff, pitch);
+    if (!cfgEntry || !c || c.areaId !== deps?.getCurrentArea?.()) return;
+    const spatial = combatAudioSpatial(c, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    playOneShotSfx(cfgEntry, spatial.gain, pitch);
   }
 
   // Species-keyed pitch lets every creature reuse the same bark asset
@@ -959,20 +957,65 @@
   // facing tightly enough for a facing-relative pan to read as more
   // correct, and every other panned sound in this file already uses raw
   // world X.
+  // Read the same rendered terrain/actor height used by ranged combat.
+  // The caller supplies world Y (Three.js units); map x/y remain pixels.
+  function audioActorWorldY(actor) {
+    if (!actor || !deps) return null;
+    const explicitY = actor.avatarRef?.group?.position?.y ?? actor.root?.position?.y;
+    if (typeof explicitY === 'number' && Number.isFinite(explicitY)) return explicitY;
+    const sampled = deps.getActorWorldY?.(actor);
+    if (typeof sampled === 'number' && Number.isFinite(sampled)) return sampled;
+    if (!Number.isFinite(actor.x) || !Number.isFinite(actor.y)) return null;
+    const surface = deps.worldSurfaceY?.(actor.x, actor.y);
+    return typeof surface === 'number' && Number.isFinite(surface) ? surface : null;
+  }
+
+  function acousticVerticalSeparationPx(c) {
+    const sourceY = audioActorWorldY(c);
+    const listenerY = audioActorWorldY(deps?.player);
+    return sourceY == null || listenerY == null ? 0 : Math.abs(sourceY - listenerY) * deps.TILE;
+  }
+
   function animalVoiceAcousticDistancePx(c, opts = {}) {
-    const overridePx = Number(opts?.acousticDistancePx); // Used by fixed world emitters such as Banubu's cave entrance when elevation must contribute to loudness.
+    const overridePx = Number(opts?.acousticDistancePx); // Authored emitters (Banubu) already supply a complete elevation-aware distance.
     if (Number.isFinite(overridePx) && overridePx >= 0) return overridePx;
     if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return 0;
-    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y, acousticVerticalSeparationPx(c));
   }
 
   function creatureAudioSpatial(c, opts = {}) {
-    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return { panX: 0, extraWetBoost: 0, distance: 0 };
-    const distance = animalVoiceAcousticDistancePx(c, opts); // Feeds elevation-aware distance into attenuation/reverb while keeping stereo origin tied to the source's real X position.
+    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return { panX: 0, extraWetBoost: 0, distance: 0, verticalDistancePx: 0 };
+    const distance = animalVoiceAcousticDistancePx(c, opts); // True 3D distance makes the bottom of a ravine sound below/far away, not beside the listener.
     const panX = Math.max(-1, Math.min(1, (c.x - deps.player.x) / Math.max(1, ANIMAL_VOICE_PAN_RANGE_PX)));
     const chunkPx = (window.WildernessChunks?.constants?.CHUNK_TILES || 16) * deps.TILE;
     const wetT = Math.max(0, Math.min(1, distance / Math.max(1, chunkPx)));
-    return { panX, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance };
+    return { panX, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance,
+      verticalDistancePx: acousticVerticalSeparationPx(c) };
+  }
+
+  // Weapon/impact cues and humanoid grunts must share the same source-based
+  // distance curve. Expose gain separately: native combat SFX cannot reliably
+  // use MediaElementSource panners on all supported mobile browsers.
+  function combatAudioSpatial(c, opts = {}) {
+    const spatial = creatureAudioSpatial(c, opts);
+    const earshotTiles = Math.max(1, Number(opts.earshotTiles) || 12); // Voices can carry farther than short weapon impacts.
+    const rangePx = Math.max(1, (deps?.TILE || 64) * earshotTiles);
+    const power = Math.max(1, Number(opts.power) || 1.5); // More depth contrast than a flat linear volume ramp.
+    const validPosition = Number.isFinite(c?.x) && Number.isFinite(c?.y);
+    const otherArea = (c?.areaId || c?.area) && c.areaId !== deps?.getCurrentArea?.() && c.area !== deps?.getCurrentArea?.();
+    const gain = otherArea ? 0 : validPosition ? Math.pow(Math.max(0, 1 - spatial.distance / rangePx), power) : 1;
+    const result = { ...spatial, gain, earshotPx: rangePx };
+    if (validPosition) {
+      lastCombatSpatialDebug = {
+        source: c?.id || c?.npcId || c?.name || c?.creatureKey || 'world impact',
+        area: c?.areaId || c?.area || null,
+        horizontalTiles: Math.hypot(c.x - deps.player.x, c.y - deps.player.y) / (deps.TILE || 64),
+        verticalTiles: spatial.verticalDistancePx / (deps.TILE || 64),
+        distanceTiles: spatial.distance / (deps.TILE || 64),
+        gain: Number(gain.toFixed(3)),
+      };
+    }
+    return result;
   }
 
   // A zone that was just entered is still doing its own expensive
@@ -1078,13 +1121,15 @@
 
   // Combo steps are zero-based and map exactly to swing files 1/2/3.
   // Every other melee attack deliberately chooses one of the three anew.
-  function playWeaponSlashSfx(pitch, comboStep) {
+  function playWeaponSlashSfx(pitch, comboStep, attacker = null) {
     const step = Number.isInteger(comboStep) && comboStep >= 0 && comboStep < 3
       ? comboStep : Math.floor(Math.random() * 3);
     const key = `weaponSwing${step + 1}`;
     const cfgEntry = combatSfxConfig()[key];
-    recordCombatSfx(key, cfgEntry, { comboStep: Number.isInteger(comboStep) ? comboStep : null });
-    playOneShotSfx(cfgEntry, 1, pitch);
+    const spatial = attacker && attacker !== deps?.player ? combatAudioSpatial(attacker, { earshotTiles: 9 }) : null;
+    if (spatial && spatial.gain <= 0.002) return;
+    recordCombatSfx(key, cfgEntry, { comboStep: Number.isInteger(comboStep) ? comboStep : null, gain: spatial?.gain ?? 1 });
+    playOneShotSfx(cfgEntry, spatial?.gain ?? 1, pitch);
   }
 
   // Sized impact sound for any WEAPON hit landing (player Combo/Quick Attack/
@@ -1107,9 +1152,9 @@
     const key = `weaponHit${family}${normalizedSize[0].toUpperCase()}${normalizedSize.slice(1)}`;
     const cfgEntry = combatSfxConfig()[key];
     if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const falloff = spatial.gain;
     recordCombatSfx(key, cfgEntry, { tag: family.toLowerCase(), size: normalizedSize });
     playOneShotSfx(cfgEntry, falloff, pitch);
   }
@@ -1118,9 +1163,9 @@
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().counterShieldBlock;
     if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const falloff = spatial.gain;
     recordCombatSfx('counterShieldBlock', cfgEntry, { block: true });
     playOneShotSfx(cfgEntry, falloff);
   }
@@ -1129,9 +1174,9 @@
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().rangedImpact;
     if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const falloff = spatial.gain;
     recordCombatSfx('rangedImpact', cfgEntry, { rangedImpact: true });
     playOneShotSfx(cfgEntry, falloff);
   }
@@ -1139,6 +1184,7 @@
   function combatSfxDebugSnapshot() {
     return {
       last: lastCombatSfxDebug ? { ...lastCombatSfxDebug } : null,
+      spatial: lastCombatSpatialDebug ? { ...lastCombatSpatialDebug } : null, // Mobile diagnostics compare horizontal vs ravine depth.
       maxStartDelayMs: COMBAT_SFX_MAX_START_DELAY_MS,
       preloads: [...combatSfxPreloads.entries()].flatMap(([url, pool]) => pool.map(snd => ({
         key: snd.dataset.combatSfxKey || '?', url, poolIndex: Number(snd.dataset.combatPoolIndex) || 0,
@@ -1252,6 +1298,7 @@
     playCreatureBark,
     hasAnimalVoice,
     creatureAudioSpatial,
+    combatAudioSpatial,
     playAnimalVoiceUtterance,
     playCreatureTreasureAlert,
     playCreatureClawHit,
