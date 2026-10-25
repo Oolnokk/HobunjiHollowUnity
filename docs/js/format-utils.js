@@ -84,7 +84,7 @@
   // reaches direct procedural stumps and V27-authored fallen logs/stumps.
   (function loadLogWallExtension() {
     if (typeof document === 'undefined') return;
-    const extensionSrc = 'js/log-wall-extension.js?v=20261014logwall1'; // Base generated/baked log-cabin wall runtime authority.
+    const extensionSrc = 'js/log-wall-extension.js?v=20261023h81e6928'; // Base generated/baked log-cabin wall runtime authority.
     const woodSrc = 'js/wood-cut-surfaces.js?v=20261014woodcaps1'; // Shared wavy_surface.png bark + log.png end-cap repair across walls/stumps/logs.
     const materialsSrc = 'js/log-wall-materials.js?v=20261014logwallmat2'; // One-material PNG atlas bridge layered over generated log geometry.
     const hasExtension = !!window.LogWallExtension || !!document.querySelector('script[data-log-wall-extension]'); // Existing base bridge state used to avoid duplicate script insertion.
@@ -131,7 +131,7 @@
   // a house/interior actually asks it to build, after normal game boot.
   (function loadStackedLogWalls() {
     if (typeof document === 'undefined') return;
-    const src = 'js/stacked-log-walls.js?v=20261015hc9982b1'; // Shared exact-span architecture renderer for exterior/interior log walls.
+    const src = 'js/stacked-log-walls.js?v=20261023hbaf9a0b'; // Shared exact-span architecture renderer for exterior/interior log walls.
     if (window.StackedLogWalls || document.querySelector('script[data-stacked-log-walls]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-stacked-log-walls="1"><\/script>`);

@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..'); // Repository root used for source-wiring assertions below.
 const api = require(path.join(repoRoot, 'docs/js/log-wall-extension.js')); // Pure recipe/runtime extension API under test.
-assert.equal(api.DEFAULTS.barkColor, '#372f18', 'default cabin-log bark uses the approved dark-olive swatch');
+assert.equal(api.DEFAULTS.barkColor, '#6e5e30', 'default cabin-log bark keeps the approved dark-olive hue, lifted so the painterly filter does not flatten it');
 
 const liveMeta = api.normalizeLogMeta({ // Representative authored settings used to verify stable generated/baked serialization.
   sourceMode: 'generated',

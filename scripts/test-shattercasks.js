@@ -528,8 +528,10 @@ async function arenaScenario() {
   assert(game.Shattercasks.startShatterAim(),'aim can restart with the same preview');
   assert.equal(groundProjectionBinds,1,'repeated aiming reuses the same projected mesh');
   const carried=game.Shattercasks.debugSnapshot().vases.find(vase=>vase.carried); // Locates the actual held charge through the public diagnostics.
-  const impact=game.Shattercasks.projectileHit({x:carried.col-.5,y:.4,z:carried.row+.5},
-    {x:carried.col+1.5,y:.4,z:carried.row+.5},0,1,currentArea); // Uses the real incoming projectile path.
+  const rayAt=(sx,sy,sz,ex,ey,ez)=>game.Shattercasks.projectileHit({x:sx,y:sy,z:sz},{x:ex,y:ey,z:ez},0,1,currentArea);
+  const cx=carried.col+.5,cz=carried.row+.5; // Randomly placed neighbours can shadow one approach, so take the first ray that reaches the carried charge.
+  const impact=[rayAt(cx-1,.4,cz,cx+1,.4,cz),rayAt(cx+1,.4,cz,cx-1,.4,cz),rayAt(cx,.4,cz-1,cx,.4,cz+1),rayAt(cx,.4,cz+1,cx,.4,cz-1)]
+    .find(hit=>hit?.vase?.carried); // Uses the real incoming projectile path.
   assert(impact,'a projectile can hit a charge during aiming');
   assert(game.Shattercasks.hitProjectile(impact),'incoming projectile detonates the held charge');
   assert.equal(ring.visible,false,'a charge destroyed while aiming cannot leave its preview behind');
