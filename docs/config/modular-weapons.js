@@ -177,6 +177,17 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 912
       },
       "dmgType": "blunt"
+    },
+    "bshuakauitl": {
+      "label": "B'shuakauitl",
+      "sourceShape": "bshuakauitl",
+      "sprite": "assets/toolsprites/modular_pieces/weaponhead_bshuakauitl.png",
+      "attach": {
+        "x": 189,
+        "y": 1003
+      },
+      "dmgType": "blunt",
+      "editorOnly": true
     }
   },
   "shafts": {
@@ -266,6 +277,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "fishing-spear": {
+          "disallow": true
+        },
+        "bshuakauitl": {
           "disallow": true
         }
       }
@@ -955,6 +969,173 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         }
       }
+    },
+    "bgungku": {
+      "label": "B'gungku (donor not yet mapped)",
+      "sourceShape": "bgungku",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_bgungku.png",
+      "attachments": [
+        {
+          "x": 225,
+          "y": 602,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "sweep"
+      },
+      "overrides": {},
+      "editorOnly": true
+    },
+    "hatchet": {
+      "label": "Hatchet",
+      "sourceShape": "hatchet",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_hatchet.png",
+      "attachments": [
+        {
+          "x": 206,
+          "y": 1004,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "sweep"
+      },
+      "overrides": {
+        "hatchet": {
+          "disallow": true
+        }
+      },
+      "editorOnly": true
+    },
+    "hoe": {
+      "label": "Hoe",
+      "sourceShape": "hoe",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_hoe.png",
+      "attachments": [
+        {
+          "x": 187,
+          "y": 1170,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "sweep"
+      },
+      "overrides": {
+        "hoe": {
+          "disallow": true
+        }
+      },
+      "editorOnly": true
+    },
+    "kylie": {
+      "label": "Kylie",
+      "sourceShape": "kylie",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_kylie.png",
+      "attachments": [
+        {
+          "x": 203,
+          "y": 736,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "sweep"
+      },
+      "overrides": {
+        "kylie": {
+          "disallow": true
+        }
+      },
+      "editorOnly": true
+    },
+    "pick-shovel": {
+      "label": "Pick-Shovel",
+      "sourceShape": "pickshovel",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_pick-shovel.png",
+      "attachments": [
+        {
+          "x": 207,
+          "y": 319,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "thrust"
+      },
+      "overrides": {
+        "pick-shovel-pick": {
+          "disallow": true
+        },
+        "pickshovel-scoop": {
+          "disallow": true
+        }
+      },
+      "editorOnly": true
+    },
+    "plains-sword": {
+      "label": "Plains Sword",
+      "sourceShape": "plainsSword",
+      "sprite": "assets/toolsprites/modular_pieces/weaponshaft_plains_sword.png",
+      "attachments": [
+        {
+          "x": 187,
+          "y": 408,
+          "rotation": 0
+        }
+      ],
+      "defaults": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "flipX": false,
+        "flipY": false,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "animation": "sweep"
+      },
+      "overrides": {
+        "plains-blade": {
+          "disallow": true
+        }
+      },
+      "editorOnly": true
     }
   }
 };
