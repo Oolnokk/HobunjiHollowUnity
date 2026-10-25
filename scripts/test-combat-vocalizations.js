@@ -543,7 +543,8 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
         for (let turn = 0; turn < 20 && !token.ready && !token.done; turn++) await Promise.resolve();
         assert.equal(token.ready, true, `${speciesId}/${gender}/${category} renders`);
         assert(Math.abs(token.pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${speciesId}/${gender}/${category} modulation`);
-        assert.equal(outputs.at(-1).gain.value, 0.86 * profile.gain);
+        assert.equal(token.output.gain.value, 0.86 * profile.gain, 'the original voice master retains species volume and charge fade');
+        assert.equal(token.output.__combatVocalDistanceGain?.gain.value, 1, 'distance-following attenuation is a separate gain node');
         assert.equal(renders.at(-1).pitchSemitones, token.pitchSemitones);
         assert.equal(token.normalTempo, profile.tempo);
         if (category === 'charge') {
