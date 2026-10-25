@@ -372,6 +372,7 @@
       panX: clamp(spatial.panX ?? 0, -1, 1),
       position3d: spatial.position3d || null, // Shared listener-local X/Y/Z gives enemy voices the same front/back and ravine depth as weapons.
       sourceActor: spatial.sourceActor || entity, // Keeps prolonged charge grunts attached to the moving combatant.
+      earshotPx: spatial.earshotPx || null, // Shared combat-volume range, reused by the live attenuation update.
       extraWetBoost: Math.max(0, Number(spatial.extraWetBoost) || 0),
       gain,
       lowpassHz: Math.round(4000 + 16000 * Math.pow(gain, 0.7)), // Distant NPC direct voices lose treble while the environmental reflections remain present.
@@ -765,15 +766,22 @@
       0,
       3,
     );
+    const distanceGain = ctx.createGain(); // Keep spatial attenuation separate from the existing master fade that ends a held charge.
+    distanceGain.gain.value = 1;
+    gain.connect(distanceGain);
+    gain.__combatVocalDistanceGain = distanceGain;
     const filter = spatial.lowpassHz < 18000 && typeof ctx.createBiquadFilter === 'function' ? ctx.createBiquadFilter() : null; // Filters distant dry grunts but leaves their acoustic reverb send unfiltered.
     if (filter) {
       filter.type = 'lowpass';
       filter.frequency.value = spatial.lowpassHz;
-      gain.connect(filter);
+      distanceGain.connect(filter);
       gain.__combatVocalFilter = filter;
     }
-    const dryOutput = filter || gain;
-    const routed = window.AudioSystem?.connectCombatSpatialDry?.(ctx, dryOutput, spatial);
+    const dryOutput = filter || distanceGain;
+    const routed = window.AudioSystem?.connectCombatSpatialDry?.(ctx, dryOutput, {
+      ...spatial,
+      followGain: { param: distanceGain.gain, initialGain: spatial.gain, base: 1, earshotPx: spatial.earshotPx },
+    });
     if (routed) { gain.__combatVocalPanner = routed.node; gain.__combatVocalRoute = routed; } // Route tracks the source while a charge is held.
     else {
       const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
@@ -784,7 +792,7 @@
         gain.__combatVocalPanner = panner;
       } else dryOutput.connect(ctx.destination);
     }
-    gain.__combatVocalWet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.area }) || null; // NPC charge grunts originate from their world position and still use the current physical acoustic space.
+    gain.__combatVocalWet = window.EnvironmentalReverb?.connectWetNode?.(ctx, distanceGain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.area }) || null; // Distance gain affects direct grunts and their reflected energy equally without interrupting the charge's master fade.
     return gain;
   }
 
@@ -845,6 +853,7 @@ function finishChargeToken(token) {
   try { token.output?.__combatVocalRoute?.dispose?.(); } catch (_) {}
   try { token.output?.__combatVocalPanner?.disconnect?.(); } catch (_) {}
   try { token.output?.__combatVocalFilter?.disconnect?.(); } catch (_) {}
+  try { token.output?.__combatVocalDistanceGain?.disconnect?.(); } catch (_) {}
   try { token.output?.disconnect?.(); } catch (_) {}
 }
 
