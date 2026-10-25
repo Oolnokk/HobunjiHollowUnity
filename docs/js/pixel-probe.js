@@ -1115,6 +1115,8 @@
       const ready = combatSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
       const ageMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null;
       lines.push(`Combat SFX: preload ready=${ready}/${combatSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${ageMs}ms ago detail=${JSON.stringify(lastCue.detail)} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+      const spatial = combatSfxDebug.spatial; // Copyable world-origin evidence for mobile testing at cliffs/ravines.
+      if (spatial) lines.push(`Combat origin: ${spatial.source} area=${spatial.area || '-'} horizontal=${Number(spatial.horizontalTiles).toFixed(1)} tiles vertical=${Number(spatial.verticalTiles).toFixed(1)} tiles 3D=${Number(spatial.distanceTiles).toFixed(1)} tiles gain=${spatial.gain}`);
     }
     const chargedBreakerDebug = window.Combat?.chargedBreakerDebug?.snapshot?.(); // Used to verify visible pose charge and its derived lunge/control stats on mobile.
     if (chargedBreakerDebug) {
