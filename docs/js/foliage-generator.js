@@ -1085,9 +1085,10 @@ window.FoliageGenerator = (() => {
     }
   };
 
-  // Leafless variants share the normal procedural geometry and instance cache.
-  TREE_PRESETS.deadBush = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: 0x71675e };
-  TREE_PRESETS.deadTree = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: 0x71675e,
+  // Western Slope's leafless variants keep their own silhouettes but use the
+  // crowned pine bark tint; NaturalSurfaceMaterials applies the same stretched PNG.
+  TREE_PRESETS.deadBush = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex };
+  TREE_PRESETS.deadTree = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex,
     trunkLength: 4.2, trunkRadius: 0.25, trunkBend: 0.2, trunkTaper: 0.85,
     knotAt: 0.58, knotTiers: 4, knotTierSpacing: 0.18, knotCount: 5,
     knotLength: 1.6, knotRadius: 0.11, knotUpDownBias: 0.6,
