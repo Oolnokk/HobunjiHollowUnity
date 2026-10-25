@@ -21,6 +21,36 @@
     deps = injectedDeps;
   }
 
+  function canPlaceFromStorage(itemKey) {
+    if (!deps?.hasFarmPermission('storage') || !deps.hasFarmPermission('placeFurniture')) return false;
+    const area = deps.getCurrentArea(); // Storage can only place in the farm or farmhouse currently occupied by this player.
+    if (area !== 'farm' && area !== 'interior') return false;
+    const defs = deps.getDecorativeFurnitureDefs(); // Include extension-registered windows through the ordinary furniture registry.
+    window.DaylightWindowRuntime?.registerDecorDefs?.(defs);
+    const entry = Object.entries(defs).find(([, def]) => def.itemKey === itemKey); // Resolve only actual registered player furniture.
+    if (entry) {
+      const [key, def] = entry; // Wall/window restrictions match the normal selector.
+      return !def.fixture && !def.customPlace && !def.playerFurnitureDisabled
+        && (area === 'farm' || def.area === 'any' || def.area === area)
+        && (area !== 'interior' || !window.HouseWindowLinkage?.isWindowKey?.(key));
+    }
+    return area === 'farm' && Object.values(deps.getProcessingFurnitureDefs()).some(def => def.itemKey === itemKey);
+  }
+
+  async function placeFromStorage(itemKey) {
+    if (!canPlaceFromStorage(itemKey) || !(deps.furnitureStock(itemKey, 'storage') > 0)) return false;
+    deps.closeMenu();
+    const defs = deps.getDecorativeFurnitureDefs(); // Wall furniture keeps its authored wall-slot preview and validation.
+    const key = Object.keys(defs).find(key => defs[key].itemKey === itemKey);
+    if (key && window.WallOrnamentPlacement?.isWallOrnamentKey?.(key, defs[key])) {
+      return window.WallOrnamentPlacement.armNewPlayerFurniture(itemKey, 'storage');
+    }
+    window.WallOrnamentPlacement?.finishPlayerAdjustment?.();
+    deps.armFurniturePlacement(itemKey, 'storage');
+    deps.showToast('Aim and press Action 1 to place from farm storage. Action 2 cancels.', true);
+    return true;
+  }
+
   function _ownedPlaceableHere() {
     const area = deps.getCurrentArea();
     if (area !== 'farm' && area !== 'interior') return [];
@@ -243,5 +273,5 @@
     });
   }
 
-  window.FurniturePlacer = { init, open, close, toggle, canOpen, refreshVisibility, render, isOpen: () => _open };
+  window.FurniturePlacer = { canPlaceFromStorage, placeFromStorage, init, open, close, toggle, canOpen, refreshVisibility, render, isOpen: () => _open };
 })();

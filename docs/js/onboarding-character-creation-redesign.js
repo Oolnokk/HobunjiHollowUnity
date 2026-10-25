@@ -326,6 +326,7 @@
   }
 
   function randomizeCreationLook(overlay, speciesId, gender) {
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // Grooming begins with the current character, never a randomized replacement.
     const identityKey = `${speciesId}::${gender}`;
     if (randomizingLook || !speciesId || identityKey === lastRandomizedIdentity) return;
     randomizingLook = true;

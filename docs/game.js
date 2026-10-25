@@ -1692,7 +1692,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
-        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
+        // Campfire Kit is automatically known; no permanent blueprint item occupies the bag.
         gold: 100, // Covers a first seed order at SUPPLY_CATALOG prices on day 1.
       };
 
@@ -2447,6 +2447,7 @@
       // These are placed inside the house. Each has a GLB model in assets/models/furniture/.
       // area: 'interior' = house only, 'farm' = farm only, 'any' = either
       const DECORATIVE_FURNITURE_DEFS = {
+        groomingKit: { itemKey: 'groomingKitFurniture', icon: '🪞', name: 'Grooming Kit', price: 20, fw: 1, fd: 1, color: 0x8b6540, area: 'any', alwaysKnown: true, desc: 'A basin of water on a short table. Change your appearance cosmetics.' },
         basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
         doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
@@ -2535,6 +2536,7 @@
         .map(([, def]) => ({
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
           price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture',
+          alwaysKnown: !!def.alwaysKnown || def.itemKey === 'campfireKitFurniture', // Starter designs need no physical recipe.
           moteOnly: !!def.moteOnly, masteryUnlockId: def.masteryUnlockId || null, // Preserve mastery gates when projecting definitions into shop/blueprint catalogs.
         }));
 
@@ -2606,6 +2608,7 @@
         bedrollFurniture: { puktukWool: 3 },
         benchFurniture: { wood: 3 },
         bookshelfFurniture: { wood: 5 },
+        groomingKitFurniture: { wood: 3, bar_tin: 1 },
         bucketFurniture: { bar_tin: 2 },
         candleTableFurniture: { wood: 2, bar_nativeCopper: 1 },
         chairSimpleFurniture: { wood: 2 },
@@ -2646,13 +2649,13 @@
         desc: item.desc,
         moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
         masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
-        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
-        // building from a blueprint only ever spends materials, never the
-        // blueprint itself), so it's priced above the finished piece's own
+        // Reading consumes the paper and permanently learns the design;
+        // building then spends only materials. Price the lesson above the finished piece's own
         // price rather than a fraction of it.
         price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item),
         category,
+        alwaysKnown: !!item.alwaysKnown, // Preserves automatically known starter designs in CraftingPanel.
       }));
 
       const LIVESTOCK_CATALOG = [
@@ -3045,15 +3048,14 @@
         return obj;
       }
 
-      function placeProcessingFurniture(col, row, furnitureKey) {
+      function placeProcessingFurniture(col, row, furnitureKey, source = 'bag') {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture.' };
         if (!canPlaceFurnitureAt(col, row)) return { ok: false, message: 'Place furniture on an empty grass, tilled, or raised tile.' };
-        if ((inventory[def.itemKey] || 0) < 1) return { ok: false, message: 'No ' + def.name + ' in your bag.' };
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) return { ok: false, message: 'No available ' + def.name + ' or furniture permission.' };
         const obj = makeProcessingFurniture(col, row, furnitureKey);
         if (!obj) return { ok: false, message: 'Could not make furniture object.' };
-        inventory[def.itemKey]--;
-        clampInventoryStack(def.itemKey);
+        consumeFurnitureStock(def.itemKey, source);
         worldObjects.set(col + ',' + row, obj);
         processingFurnitureObjects.add(obj);
         return { ok: true, message: 'Placed ' + def.icon + ' ' + def.name + '.' };
@@ -3609,6 +3611,7 @@
           return col >= f.col && col < f.col + size.fw && row >= f.row && row < f.row + size.fd;
         });
         if (!o) return null;
+        if (o.key === 'groomingKit') return makeGroomingInteractable();
         if (o.key === 'hearth') return makeCookingInteractable();
         if (o.key === 'loom') return makeLoomInteractable(false); // Simple Loom keeps the ordinary one-pattern weaving rules.
         if (o.key === 'advancedLoom') return makeLoomInteractable(true); // Advanced Loom opts the shared panel into overpass authoring and doubled overpass costs.
@@ -3676,7 +3679,7 @@
         }));
       }
 
-      function placeDecorativeFurniture(col, row, furnitureKey) {
+      function placeDecorativeFurniture(col, row, furnitureKey, source = 'bag') {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture type.' };
         const isInInterior = currentArea === 'interior';
@@ -3685,12 +3688,11 @@
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
         if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
-        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return { ok: false, message: `No available ${def.name} or furniture permission.` };
         const targetScene = isInInterior ? interiorScene : scene;
         const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
+        consumeFurnitureStock(itemKey, source);
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
         const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner }; // Stable save record also owns editable table membership.
@@ -3922,15 +3924,34 @@
       // item instead of a terrain/crop type. Set by the Furniture Placer
       // panel (js/furniture-placer.js), consumed by the pointerdown handler
       // right after the farm editor's own.
+      let furniturePlacementSource = 'bag'; // Armed placements debit this source only after a successful placement.
       let furniturePlacementArmedKey = null;
       let furnitureMoveArmedId = null;
       let furniturePlacementGhost = null;
-      function armFurniturePlacement(itemKey) {
+      function armFurniturePlacement(itemKey, source = 'bag') {
+        furniturePlacementSource = source === 'storage' ? 'storage' : 'bag';
         furniturePlacementArmedKey = itemKey || null;
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
         refreshActionBar(); // Placement mode owns the mobile action arch immediately after the selector closes.
+      }
+      function furnitureStock(itemKey, source = 'bag') {
+        if (source === 'storage' && !hasFarmPermission('storage')) return 0;
+        return Math.max(0, Number((source === 'storage' ? _loadWorldStorage() : inventory)?.[itemKey]) || 0);
+      }
+      function consumeFurnitureStock(itemKey, source = 'bag') {
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return false;
+        if (source === 'storage') {
+          const store = _loadWorldStorage(); // Read at commit time so intervening storage changes cannot be overwritten.
+          store[itemKey]--;
+          if (store[itemKey] <= 0) delete store[itemKey];
+          _saveWorldStorage(store);
+        } else {
+          inventory[itemKey]--;
+          clampInventoryStack(itemKey);
+        }
+        return true;
       }
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
@@ -4385,6 +4406,47 @@
           onAction(action) {
             if (action !== 'obj_sit' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
             return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0);
+          },
+        };
+      }
+
+      function makeGroomingInteractable() {
+        return {
+          interactIcon: '🪞', interactLabel: 'Groom',
+          getButtons: () => [{ icon: '🪞', label: 'Change Appearance', action: 'obj_interact', style: 'primary', allowed: !isPlayerInCombat() }],
+          onAction(action) {
+            if (action !== 'obj_interact' || isPlayerInCombat()) return { ok: false, message: 'Cannot groom right now.' };
+            const profile = _playerData || window.__hobunjiPlayerProfile; // Preserve current identity, equipment, progression and live world data.
+            if (!profile?.appearance) return { ok: false, message: 'Appearance is not ready.' };
+            const previewProfile = window.EquipmentPanel?.applyGearClothingToPlayerData?.(profile) || profile; // Preview the actual worn clothing while editing only appearance cosmetics.
+            const started = window.HobunjiOnboarding?.openCreator({
+              title: 'Grooming Kit', confirmLabel: 'Apply Appearance', hideName: true, cosmeticsOnly: true, mode: 'grooming',
+              speciesId: profile.appearance.speciesId, gender: profile.appearance.gender,
+              appearance: previewProfile.appearance, equippedCosmetics: previewProfile.equippedCosmetics, appliedDyes: previewProfile.appliedDyes,
+              onCancel: closeMenu,
+              onComplete(result) {
+                closeMenu();
+                const bodyColors = { ...profile.appearance.bodyColors }; // Preserve equipment tints and change only the creator's body palette channels.
+                for (const key of ['A', 'B', 'C']) if (result.appearance.bodyColors[key]) bodyColors[key] = { ...result.appearance.bodyColors[key] };
+                const appearance = { ...profile.appearance, cosmetics: { ...result.appearance.cosmetics }, bodyColors }; // Species and gender remain the saved values.
+                if (!window.CharacterMetaSave?.update(character => { character.appearance = appearance; })) {
+                  showToast('Could not save your appearance. Please try again.', false);
+                  return;
+                }
+                profile.appearance = appearance;
+                if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = appearance;
+                refreshPlayerAvatar();
+                saveMemberWorldData();
+                showToast('Appearance updated.', true);
+              },
+            });
+            if (started) {
+              menuOpen = true; paused = true; // Ordinary modal gates stop world time, movement and world actions during grooming.
+              player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+              releaseShoulderSurfPointerLock();
+              window.WorldPopupText?.clearInteractionPrompts?.();
+            }
+            return { ok: !!started, message: started ? 'Choose your appearance.' : 'Appearance editor is already open.' };
           },
         };
       }
@@ -8563,6 +8625,7 @@
         member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
         member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
+        member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
         member.cookingState = window.CookingSystem.serialize();
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
@@ -9935,6 +9998,7 @@
       // itemKey -> () => { getButtons(), onAction() } factory, for furniture
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
+        groomingKitFurniture: () => makeGroomingInteractable(),
         hearthFurniture: () => makeCookingInteractable(),
         loomFurniture: () => makeLoomInteractable(false), // Map-authored Simple Looms share the same ordinary interaction object as player-placed ones.
         advancedLoomFurniture: () => makeLoomInteractable(true), // Map-authored Advanced Looms opt into overpass weaving through the same interaction path.
@@ -15627,6 +15691,8 @@
         // they are never collected by a proximity tick or registered on the farm.
         if (_isCavernBuildingArea(currentArea)) return window.CaveSiteSystem?.objectAt?.(currentArea, col, row) || null;
         if (currentArea !== 'farm') return null;
+        const groomingKit = interiorFurnitureObjects.find(obj => obj.area === 'farm' && obj.key === 'groomingKit' && obj.col === col && obj.row === row); // Lookup from placed records also covers restored/moved furniture without another registry.
+        if (groomingKit) return makeGroomingInteractable();
         return worldObjects.get(col + ',' + row) || null;
       }
 
@@ -15969,7 +16035,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `Read from your bag to consume this blueprint and permanently learn ${bp.name} for this character in this world. Build it from the Crafting tab using the listed materials.`,
           };
         }
       });
@@ -27023,6 +27089,7 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
@@ -27503,6 +27570,10 @@
       window.addEventListener('keydown', (event) => {
         if (window.__mapEditorGizmoActive) { event.preventDefault(); return; }
         const key = event.key.toLowerCase();
+        if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) {
+          if (key === 'escape') { event.preventDefault(); window.HobunjiOnboarding.cancelCreator(); }
+          return; // Text/select navigation remains with the creator; gameplay/menu shortcuts cannot unpause it.
+        }
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
           const fishingBoundAction = getActionForButton('desktop', event.code);
@@ -28183,18 +28254,18 @@
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
           const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
           result = decorKey
-            ? placeDecorativeFurniture(col, row, decorKey)
+            ? placeDecorativeFurniture(col, row, decorKey, furniturePlacementSource)
             : processingKey
-              ? placeProcessingFurniture(col, row, processingKey)
+              ? placeProcessingFurniture(col, row, processingKey, furniturePlacementSource)
               : { ok: false, message: 'Furniture not found.' };
           showToast(result.message, result.ok);
           window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
-          if (result.ok && processingKey) {
+          if (result.ok) {
             window.HudUpdate.refreshItemScroll();
             window.FarmEditor.saveFarmLayout();
             saveMemberWorldData();
           }
-          if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
+          if (result.ok && furnitureStock(itemKey, furniturePlacementSource) <= 0) furniturePlacementArmedKey = null;
         }
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -28244,6 +28315,8 @@
           return {
             armed: furniturePlacementModeArmed(),
             itemKey: furniturePlacementArmedKey,
+            source: furniturePlacementSource,
+            remaining: furnitureStock(furniturePlacementArmedKey, furniturePlacementSource),
             moveId: furnitureMoveArmedId,
             reticle: { col: furniturePlacementReticle.col, row: furniturePlacementReticle.row },
             ghost: furniturePlacementGhost ? { col: furniturePlacementGhost.col, row: furniturePlacementGhost.row, valid: !!furniturePlacementGhost.valid } : null,
@@ -29975,6 +30048,7 @@
       });
 
       window.FurniturePlacer?.init({
+        furnitureStock, consumeFurnitureStock, closeMenu,
         getCurrentArea: () => currentArea,
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
         getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
@@ -31133,11 +31207,10 @@
         Object.assign(inventory, playerData.isNewWorld
           ? { ...STARTING_INVENTORY }
           : { ...(playerData.nonGearInventory || {}) });
-        // Worlds saved before the Campfire Kit blueprint joined
-        // STARTING_INVENTORY never picked it up — backfill it for free,
-        // once, same as existing characters getting the crossbow/scatterbow
-        // slots below, so it's available without a carpenter trip either way.
-        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
+        // Learned designs belong to this world's active member; starter designs are automatically known.
+        window.CraftingPanel?.restoreBlueprints?.(playerData.knownFurnitureBlueprints);
+        delete inventory.campfireKitFurnitureBlueprint; // Retire the old immortal starter paper now that Campfire Kit is automatically known.
+        window.FarmPanel?.ensureStarterFurnitureStorage?.();
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         window.NpcWardrobe?.restore?.(playerData.npcWardrobeState);

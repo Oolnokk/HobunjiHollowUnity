@@ -29,6 +29,7 @@
   let playerAttachment = null;
   let playerPickWall = false;
   let playerMode = null; // null | new | move
+  let playerStockSource = 'bag'; // Wall furniture uses the same delayed bag/storage debit as floor furniture.
   let playerArmedItemKey = null;
   let playerOriginalPlacement = null;
   let playerOriginalTransform = null;
@@ -586,12 +587,12 @@
     return { col: Math.floor(finite(point[0]) + finite(normal[0]) * inward), row: Math.floor(finite(point[2]) + finite(normal[2]) * inward) };
   }
 
-  async function armNewPlayerFurniture(itemKey) {
+  async function armNewPlayerFurniture(itemKey, source = 'bag') {
     const defs = placerDeps?.getDecorativeFurnitureDefs?.() || farmDeps?.DECORATIVE_FURNITURE_DEFS || {};
     const entry = Object.entries(defs).find(([, def]) => def?.itemKey === itemKey);
     const key = entry?.[0], def = entry?.[1];
     if (!key || !def || !isWallOrnamentKey(key, def)) return false;
-    if ((placerDeps?.inventory?.[itemKey] || 0) < 1) { toast(`No ${def.name || 'wall furniture'} in inventory.`, false); return false; }
+    if ((placerDeps?.furnitureStock ? placerDeps.furnitureStock(itemKey, source) : placerDeps?.inventory?.[itemKey] || 0) < 1) { toast(`No ${def.name || 'wall furniture'} in inventory.`, false); return false; }
     const attachment = await loadAttachment(key, def);
     if (!attachment) { toast('Wall attachment metadata could not be loaded.', false); return false; }
     const area = farmDeps?.getCurrentArea?.();
@@ -605,6 +606,7 @@
     cancelPlayerAdjustment(false);
     scene.add(mesh); mesh.visible = false;
     playerObject = { id:null, key, mesh, light:null, sfxSource:null, area, rotYDeg:0, wallPlacementPreview:true };
+    playerStockSource = source === 'storage' ? 'storage' : 'bag';
     playerAttachment = attachment; playerMode = 'new'; playerArmedItemKey = itemKey;
     playerPlacement = null; playerPickWall = true; playerPreviewValid = false;
     window.__wallOrnamentReticlePlacementActive = true;
@@ -628,13 +630,14 @@
       const itemKey = playerArmedItemKey;
       const defs = placerDeps?.getDecorativeFurnitureDefs?.() || farmDeps?.DECORATIVE_FURNITURE_DEFS || {};
       const def = defs[playerObject.key];
-      if (!itemKey || !def || (placerDeps?.inventory?.[itemKey] || 0) < 1) { toast('That furniture is no longer available.', false); return false; }
+      if (!itemKey || !def || (placerDeps?.furnitureStock ? placerDeps.furnitureStock(itemKey, playerStockSource) : placerDeps?.inventory?.[itemKey] || 0) < 1 || placerDeps?.hasFarmPermission?.('placeFurniture') === false) { toast('That furniture is no longer available.', false); return false; }
       const preview = playerObject.mesh;
       preview?.parent?.remove?.(preview);
       const scene = area === 'interior' ? farmDeps?.getInteriorScene?.() : farmDeps?.getScene?.();
       const result = farmDeps?.makeDecorativeFurnitureMesh?.(anchor.col, anchor.row, playerObject.key, scene, area, 0);
       if (!result) { scene?.add?.(preview); playerObject.mesh = preview; toast('Could not place wall furniture there.', false); return false; }
-      placerDeps.inventory[itemKey]--; placerDeps.clampInventoryStack?.(itemKey);
+      if (placerDeps.consumeFurnitureStock) placerDeps.consumeFurnitureStock(itemKey, playerStockSource);
+      else { placerDeps.inventory[itemKey]--; placerDeps.clampInventoryStack?.(itemKey); }
       const owner = area === 'interior' ? (farmDeps?.furnitureOwnerFields?.(anchor.col, anchor.row) || {}) : {};
       const object = { id:'decor_'+Math.random().toString(36).slice(2,10), key:playerObject.key, col:anchor.col, row:anchor.row,
         mesh:result.mesh, light:result.light, sfxSource:result.sfxSource, area, rotYDeg:0, ...owner };

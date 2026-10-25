@@ -126,6 +126,7 @@
   }
 
   function enforceGeneratedKasaDyes() {
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // Existing clothing/dyes are outside a grooming session.
     if (kasaPolicyBusy) return;
     let overlay = creatorOverlay();
     if (!overlay) {
@@ -262,6 +263,7 @@
 
   async function installStarterWeapon(model) {
     if (!model?.parent || model !== life.model) return;
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // Grooming does not hand out or preview a new starter weapon.
     if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.child) return; // Dream children are not handed a starter hatchet.
     const THREE = window.THREE;
     const avatarGroup = model.parent;

@@ -181,6 +181,11 @@
     const def = canonicalDef(key);
     if (!def) return null;
 
+    const blueprint = window.CraftingPanel?.blueprintForItem?.(key); // Furniture recipe items share the bag's existing permanent-unlock Read action.
+    if (blueprint) {
+      const learned = !!window.CraftingPanel.ownsBlueprint(blueprint); // Leaves duplicate lessons intact for storage or sale.
+      return { key, kind: 'furnitureBlueprint', verb: learned ? 'Already learned' : 'Read', icon: '📜', itemLabel: def.label || key, allowed: !learned && !blueprint.moteOnly && !blueprint.masteryUnlockId };
+    }
     if (def.masteryUnlock) {
       const lesson = def.masteryUnlock; // Use the same unlock owner as the mastery spend boundary.
       const learned = !!window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId); // The learned bonus persists, but reading consumes one copy.
@@ -253,7 +258,9 @@
 
     let result = null; // Used to normalize the various existing item-owner return shapes into one Inventory action result.
     let ownerHandlesFeedback = false; // TechniqueScrolls already owns its read toast/refresh path, so do not duplicate it here.
-    if (action.kind === 'masteryUnlock') {
+    if (action.kind === 'furnitureBlueprint') {
+      result = window.CraftingPanel?.readBlueprint?.(key);
+    } else if (action.kind === 'masteryUnlock') {
       ownerHandlesFeedback = true;
       result = { ok: !!window.CombatProgression?.readMasteryItem?.(key), message: '' };
     } else if (action.kind === 'combatManual') {

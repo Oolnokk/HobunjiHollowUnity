@@ -237,4 +237,24 @@ assert(toasts.some(entry => /Learned Healing Potion/.test(entry.message)), 'dire
 assert.equal(api.getDebug().lastDirectUse?.key, 'redberrySeeds', 'mobile diagnostics expose the most recent blocked direct-use attempt');
 assert.match(source, /ambiguous-label/, 'ambiguous same-label items fail closed instead of using the wrong stack');
 
+
+// Run the real furniture lesson owner through the same bag-use bridge.
+vm.runInContext(fs.readFileSync('docs/js/crafting-panel.js', 'utf8'), context);
+const furnitureBlueprint = { key: 'chairBlueprint', name: 'Chair', furnitureKey: 'chair', craftCost: { wood: 2 } }; // Physical lesson used to exercise consumption and member restoration.
+inventory.chairBlueprint = 2;
+ITEM_DEFS.chairBlueprint = { label: 'Chair Blueprint', cat: 'blueprint', icon: '📜' };
+windowStub.CraftingPanel.init({ inventory, FURNITURE_BLUEPRINT_CATALOG: [furnitureBlueprint], clampInventoryStack() {}, saveMemberWorldData() { worldSaves++; } });
+assert.equal(api.getInventoryUseAction('chairBlueprint').verb, 'Read');
+assert.equal(api.useInventoryItem('chairBlueprint'), true, 'furniture lessons can be read directly from the bag');
+assert.equal(inventory.chairBlueprint, 1, 'learning consumes exactly one copy');
+assert.equal(windowStub.CraftingPanel.ownsBlueprint(furnitureBlueprint), true);
+assert.equal(api.getInventoryUseAction('chairBlueprint').allowed, false);
+assert.equal(api.useInventoryItem('chairBlueprint'), false, 'duplicates are not consumed');
+assert.equal(inventory.chairBlueprint, 1);
+const savedBlueprints = windowStub.CraftingPanel.serializeBlueprints(); // Round-trips the active member lessons without requiring a physical copy.
+windowStub.CraftingPanel.restoreBlueprints([]);
+assert.equal(windowStub.CraftingPanel.ownsBlueprint(furnitureBlueprint), false, 'another character/world has its own lessons');
+windowStub.CraftingPanel.restoreBlueprints(savedBlueprints);
+assert.equal(windowStub.CraftingPanel.ownsBlueprint(furnitureBlueprint), true, 'returning to the original member restores the lesson');
+
 console.log('Inventory direct item-use regression checks passed.');
