@@ -34,4 +34,5 @@ const game = fs.readFileSync('docs/game.js', 'utf8'); // Player ranged poses liv
 const neckPitch = game.match(/playerNeckJoint\.rotation\.x = activeCameraMode === SHOULDER_SURF_MODE\s*\?\s*-Math\.atan2/); // The head pitches by -elevation.
 assert(neckPitch, 'neck pitch is -elevation; head-relative weapon frames must follow that sign');
 assert.equal((game.match(/if \(headAnchored\) _qRangedAimPitch\.invert\(\)/g) || []).length, 2, 'both the loaded-pose and idle ranged branches must tilt a head-relative frame with the head, not against it');
+assert.equal((game.match(/playerHeadOffset\(/g) || []).length >= 5, true, 'player drink and ranged head-relative poses all map their offset through the species scaler');
 console.log('head-relative animation anchors and reused samples PASS');

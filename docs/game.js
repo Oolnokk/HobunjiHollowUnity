@@ -22868,11 +22868,23 @@
       }
 
       const _headPoseAnchor = new THREE.Vector3(); // Reused by drink and ranged poses; no per-frame head-vector allocation.
+      const _headOffsetScratch = new THREE.Vector3(); // Reused scaled head-relative offset.
+      // Head-relative poses are authored on the Mao'ao-male baseline from the same head centroid NPC gaze tracks
+      // (SharedAttackPose.headAnchor), so their offset follows this player's species/gender proportions.
+      function playerHeadOffset(x, y, z) {
+        const identity = playerPoseIdentity();
+        _headOffsetScratch.set(x, y, z);
+        return window.HobunjiSpeciesPoseScale?.scaleHeadOffset?.(_headOffsetScratch, {
+          speciesId: identity.speciesId, gender: identity.gender,
+          modelHeight: playerAvatarModelHeight, armLength: playerArmLength, poseOrbitScale: playerPoseOrbitScale,
+        }) ?? _headOffsetScratch;
+      }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
         heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
         if (pose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          heldItemHolder.position.set(_headPoseAnchor.x + pose.x, _headPoseAnchor.y + pose.y, _headPoseAnchor.z + pose.z);
+          const offset = playerHeadOffset(pose.x, pose.y, pose.z);
+          heldItemHolder.position.set(_headPoseAnchor.x + offset.x, _headPoseAnchor.y + offset.y, _headPoseAnchor.z + offset.z);
         }
         heldItemHolder.scale.setScalar(0.5);
         _heldItemHandMode = 'bottle';
@@ -22944,7 +22956,8 @@
         playerMesh.add(sourceProbe);
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
         if (neutralPose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          sourceProbe.position.set(_headPoseAnchor.x + neutralPose.x, _headPoseAnchor.y + neutralPose.y, _headPoseAnchor.z + neutralPose.z);
+          const offset = playerHeadOffset(neutralPose.x, neutralPose.y, neutralPose.z);
+          sourceProbe.position.set(_headPoseAnchor.x + offset.x, _headPoseAnchor.y + offset.y, _headPoseAnchor.z + offset.z);
         }
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
@@ -23459,9 +23472,9 @@
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
           if (headAnchored) {
-            toolHolder.position.set(x, y, z).applyQuaternion(_qFac);
+            toolHolder.position.copy(playerHeadOffset(x, y, z)).applyQuaternion(_qFac);
             if (reticleAligned) {
-              toolHolder.position.set(x, y, z).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
+              toolHolder.position.copy(playerHeadOffset(x, y, z)).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
             }
             toolHolder.position.add(_headPoseAnchor);
           } else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
@@ -23509,7 +23522,7 @@
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
           if (headAnchored) {
-            toolHolder.position.set(neutral.x, neutral.y, neutral.z);
+            toolHolder.position.copy(playerHeadOffset(neutral.x, neutral.y, neutral.z));
             if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
             toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
           } else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);

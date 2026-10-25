@@ -1598,6 +1598,7 @@
     return { aimAngle, moving: false, handled: true };
   }
 
+  const _headOffsetScratch = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } }; // Allocation-free scaled head offset.
   function updateBanditVisual(c) {
     const holder = c._banditRangedToolHolder;
     if (!holder) return;
@@ -1643,9 +1644,10 @@
       scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, vθ);
     }
     if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, group)) {
-      holder.position.x += rx * pose.x + fx * pose.z;
-      holder.position.y += pose.y;
-      holder.position.z += rz * pose.x + fz * pose.z;
+      const offset = scaler?.scaleHeadOffset?.(_headOffsetScratch.set(pose.x, pose.y, pose.z), { speciesId, gender, modelHeight, armLength, poseOrbitScale }) || _headOffsetScratch.set(pose.x, pose.y, pose.z); // Same species mapping as the player/editor, from the same head centroid NPC gaze tracks.
+      holder.position.x += rx * offset.x + fx * offset.z;
+      holder.position.y += offset.y;
+      holder.position.z += rz * offset.x + fz * offset.z;
     }
     c._rangedPoseCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     c._rangedPoseHeightScale = height?.heightRatio ?? 1; // Debug proof that ranged bandits share player/editor authored-Y semantics.

@@ -279,6 +279,25 @@
     return point;
   }
 
+  // Head-relative poses are authored on the same Mao'ao-male baseline as hand-relative ones, but their origin is the
+  // visible head instead of the hand anchor, so only the displacement is mapped: lateral/forward by the species orbit
+  // axes, vertical by the rigger body-height ratio (times the orbit's own Y multiplier). The offset is in the pose's
+  // own frame (before any facing/aim rotation), so no yaw is needed. `inverse` maps a concrete offset back to authored.
+  function scaleHeadOffset(offset, options = {}, inverse = false) {
+    if (!offset) return offset;
+    const x = Number(offset.x), y = Number(offset.y), z = Number(offset.z);
+    if (![x, y, z].every(Number.isFinite)) return offset;
+    const axes = axesForPose(options.poseOrbitScale, options.armLength);
+    const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
+    const sy = metrics.heightRatio * axes.y;
+    if (![axes.x, axes.z, sy].every(v => v > 0)) return offset;
+    const [fx, fy, fz] = inverse ? [1 / axes.x, 1 / sy, 1 / axes.z] : [axes.x, sy, axes.z];
+    if (typeof offset.set === 'function') offset.set(x * fx, y * fy, z * fz);
+    else { offset.x = x * fx; offset.y = y * fy; offset.z = z * fz; }
+    return offset;
+  }
+  function unscaleHeadOffset(offset, options = {}) { return scaleHeadOffset(offset, options, true); }
+
   function repoConfigUrl() {
     if (typeof document === 'undefined' || typeof URL === 'undefined') return CONFIG_PATH;
     const scriptUrl = document.currentScript?.src || '';
@@ -328,6 +347,8 @@
     resolveRigScaleY,
     portraitModelHeightFor,
     heightMetrics,
+    scaleHeadOffset,
+    unscaleHeadOffset,
     setScale,
     replaceConfig,
     getConfig,

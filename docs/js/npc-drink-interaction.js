@@ -34,8 +34,14 @@
     const { THREE } = deps;
     const { holder, bottlePlane, hand, poseQuaternion } = interaction;
     holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
-    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, interaction.avatarGroup || interaction.walker?.avatarGroup, holder.parent)) {
-      holder.position.x += pose.x; holder.position.y += pose.y; holder.position.z += pose.z;
+    const avatar = interaction.avatarGroup || interaction.walker?.avatarGroup;
+    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, avatar, holder.parent)) {
+      const data = avatar?.userData || {}; // Same species mapping as the player/editor, from the same head centroid NPC gaze tracks.
+      const offset = window.HobunjiSpeciesPoseScale?.scaleHeadOffset?.({ x: pose.x, y: pose.y, z: pose.z }, {
+        speciesId: data.speciesId, gender: data.gender || 'male', modelHeight: Number(data.portraitModelHeight) || null,
+        armLength: Number(data.armLength), poseOrbitScale: data.poseOrbitAxes ?? Number(data.poseOrbitScale),
+      }) || pose;
+      holder.position.x += offset.x; holder.position.y += offset.y; holder.position.z += offset.z;
     }
     holder.scale.setScalar(0.5);
     poseQuaternion.yaw.setFromAxisAngle(poseQuaternion.up, THREE.MathUtils.degToRad(pose.yaw));
