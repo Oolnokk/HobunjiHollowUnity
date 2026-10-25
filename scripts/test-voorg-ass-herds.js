@@ -82,7 +82,7 @@ const windowStub = {
       assert.equal(kind, 'voorg-ass');
       if (sizeClass === 'small') return { x: 0.27, y: 0.27 };
       if (sizeClass === 'medium') return { x: 0.75, y: 0.75 };
-      return { x: 1.164, y: 1.164 };
+      return { x: 1.1, y: 1.1 };
     },
   },
   CreatureGeneticsRender: { SPECIES: {} },
