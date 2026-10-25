@@ -28,7 +28,7 @@ const context = { window, Audio: FakeAudio, performance: { now: () => 10 }, setT
 vm.runInNewContext(fs.readFileSync('docs/js/audio-system.js', 'utf8'), context, { filename: 'audio-system.js' });
 window.AudioSystem.init({
   TILE, player, getCurrentArea: () => area, worldSurfaceY: () => 0,
-  getActorWorldY: actor => actor.height ?? 0,
+  getActorWorldY: actor => actor.height ?? (actor.x >= 6 * TILE ? -8 : 0), // Point-based hits use the terrain height in the far ravine instead of the absent actor.height.
   audioUrlFailed: () => false, isRealMediaError: () => false, markAudioUrlFailed: () => {},
 });
 const audio = window.AudioSystem;
