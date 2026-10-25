@@ -76,20 +76,30 @@
     if (!marker.parent) context.bodyRoot.parent?.add(marker);
   }
 
-  // Converts a world point on the (neutral, undeformed) portrait plane back to source-image fractions.
+  // Finds the source-image fractions whose skinned world position is nearest `world`. The head is scaled/turned by the neck rig, so
+  // the pixel->world map is not the flat plane; searching it through the game's own resolver stays exact for any pose or mirroring.
   function sourceFractionsFromWorld(context, avatar, world) {
-    const data = avatar.userData, size = sourceSize(avatar);
-    const resolver = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition;
+    const size = sourceSize(avatar), resolver = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition;
     if (!resolver || !size.width) return null;
-    const THREE = context.THREE, plane = data.neckRig.skinnedPlane; // The resolver maps pixels through the skinned plane's own space, so invert in that space.
-    plane.updateWorldMatrix(true, false);
-    const local = plane.worldToLocal(world.clone());
-    const renderedU = (local.x + data.portraitModelWidth / 2) / data.portraitModelWidth;
-    const v = (data.portraitModelHeight / 2 - local.y) / data.portraitModelHeight;
-    const left = resolver(avatar, { x: size.width * 0.25, y: size.height * 0.5 }, new THREE.Vector3());
-    const right = resolver(avatar, { x: size.width * 0.75, y: size.height * 0.5 }, new THREE.Vector3());
-    const flipped = !!(left && right && left.x > right.x); // Portraits may be UV-mirrored; match the resolver's own convention.
-    return { u: flipped ? 1 - renderedU : renderedU, v };
+    const scratch = new context.THREE.Vector3();
+    const distanceAt = (x, y) => (resolver(avatar, { x, y }, scratch) ? scratch.distanceTo(world) : Infinity);
+    let best = { x: size.width / 2, y: size.height / 2, d: Infinity };
+    const GRID = 40;
+    for (let i = 0; i <= GRID; i++) for (let j = 0; j <= GRID; j++) {
+      const x = (i / GRID) * size.width, y = (j / GRID) * size.height, d = distanceAt(x, y);
+      if (d < best.d) best = { x, y, d };
+    }
+    for (let step = size.width / GRID; step > size.width / 4096; step /= 2) { // Coordinate descent, halving the step: sub-pixel accuracy in ~dozens of queries.
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const x = Math.min(size.width, Math.max(0, best.x + dx * step)), y = Math.min(size.height, Math.max(0, best.y + dy * step)), d = distanceAt(x, y);
+          if (d < best.d - 1e-12) { best = { x, y, d }; moved = true; }
+        }
+      }
+    }
+    return { u: best.x / size.width, v: best.y / size.height, error: best.d };
   }
 
   function installPicker(context) {
@@ -104,9 +114,11 @@
       const ndc = new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(ndc, context.camera);
-      const hit = raycaster.intersectObject(plane, false)[0];
-      const fractions = hit && sourceFractionsFromWorld(context, avatar, hit.point);
-      if (!fractions) { $('mouthPointStatus').textContent = 'Click missed the portrait - try again on the face.'; return; }
+      const portraitPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+        new THREE.Vector3(0, 0, 1).applyQuaternion(plane.getWorldQuaternion(new THREE.Quaternion())), plane.getWorldPosition(new THREE.Vector3()));
+      const hitPoint = raycaster.ray.intersectPlane(portraitPlane, new THREE.Vector3()); // The portrait is a flat quad before the neck rig deforms it.
+      const fractions = hitPoint && sourceFractionsFromWorld(context, avatar, hitPoint);
+      if (!fractions || fractions.error > 0.08) { $('mouthPointStatus').textContent = 'Click missed the portrait - try again on the face.'; return; }
       $('mouthPointU').value = fractions.u.toFixed(4); $('mouthPointV').value = fractions.v.toFixed(4);
       writeFromInputs(context);
     }, true);
