@@ -22,9 +22,9 @@
     let affected = 0, remaining = 0; // UI diagnostics show exactly how many opaque pixels changed/remain.
     for (let i = 0; i < result.length; i += 4) {
       const inside = mask[i + 3] >= 128; // Crisp pixel boundary: keep original RGB/alpha without antialiased recoloring.
-      if ((mode === 'remove' ? inside : !inside) && result[i + 3]) {
-        result[i] = result[i + 1] = result[i + 2] = result[i + 3] = 0;
-        affected++;
+      if (mode === 'remove' ? inside : !inside) {
+        if (result[i + 3]) affected++; // Visible-pixel counter ignores already-transparent source pixels.
+        result[i] = result[i + 1] = result[i + 2] = result[i + 3] = 0; // Clear hidden RGB too.
       }
       if (result[i + 3]) remaining++;
     }
