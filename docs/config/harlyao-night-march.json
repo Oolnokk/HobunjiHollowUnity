@@ -51,14 +51,7 @@
     "followerCatchUpMultiplier": 1.2
   },
   "equipment": {
-    "forcedCosmetics": [
-      "rugged_poncho"
-    ],
-    "weaponShapes": [
-      "daggerSword",
-      "hatchet",
-      "fishingspear"
-    ],
+    "loadoutSpeciesId": "harlyao-skeleton",
     "weaponMetalKey": "nativeCopper"
   },
   "visuals": {

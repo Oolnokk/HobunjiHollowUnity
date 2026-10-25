@@ -91,6 +91,8 @@
   function cloneGhostMaterial(source, options) {
     if (!source?.clone) return source;
     const material = source.clone();
+    material.onBeforeCompile = source.onBeforeCompile; // Preserve garment overlay masks and depth-bias uniforms when the army turns spectral.
+    material.customProgramCacheKey = source.customProgramCacheKey;
     const color = normalizedColor(options.color);
     const ghostTexture = source.map ? recoloredTexture(source.map, options.color) : null;
     if (ghostTexture) {

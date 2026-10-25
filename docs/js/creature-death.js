@@ -113,6 +113,8 @@
       const clone = material => {
         if (!material?.color?.clone || !material.clone) return material;
         const individual = material.clone();
+        individual.onBeforeCompile = material.onBeforeCompile; // Keep pants occlusion/depth shaders when fire creates a corpse-local material.
+        individual.customProgramCacheKey = material.customProgramCacheKey;
         clonedMaterials.push({
           material: individual, color: individual.color.clone(),
           emissive: individual.emissive?.clone?.() || null,

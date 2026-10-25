@@ -32,7 +32,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261024h6599902"></script>
+  <script src="js/format-utils.js?v=20261025h4312c61"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261017a"></script>
@@ -157,7 +157,7 @@
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261015hd172faa"></script>
-  <script src="js/metal-armor-system.js?v=20261022hauditfix"></script>
+  <script src="js/metal-armor-system.js?v=20261024haceb249"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261022h23rig2"></script>
   <link rel="stylesheet" href="style.css?v=20261024controllersubtabs2">
@@ -175,7 +175,7 @@
   </script>
   <script src="js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20261021hbc9a71f"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261024h03348de"></script>
   <script src="js/png-plane-avatar.js?v=20261022hea8b100"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
@@ -186,7 +186,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261022h372be04"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261024h62cb70d"></script>
+  <script src="js/held-action-animations.js?v=20261024hd8d9255"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -205,7 +205,7 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261022hedb90bc"></script>
+  <script src="js/pants-garment-renderer.js?v=20261024h6af77d8"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -223,7 +223,7 @@
   <script src="js/creature-genetics-render.js?v=20261024nelkSpectacles1"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261023hf1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
   <script src="js/honeyfuzzle-colors.js?v=20261024hf1"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
-  <script src="js/honeyfuzzle-hives.js?v=20261023hf1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
+  <script src="js/honeyfuzzle-hives.js?v=20261024h1c09ca3"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -252,7 +252,7 @@
   <script src="js/terrain-preview.js?v=20261013he41c002"></script>
   <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261024h0e38459"></script>
+  <script src="js/wilderness-map-generator.js?v=20261024hea1dd78"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -309,7 +309,7 @@
        animal planes. Must load after the procedural leg module and after
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
-  <script src="js/combat/impact-ragdoll-playback.js?v=20261024h86ba6e6"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261024ha298297"></script>
   <script src="js/combat/combat-attach.js?v=20261024at1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
@@ -352,9 +352,9 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261022h84f9354"></script>
+  <script src="js/combat/combat-bandit.js?v=20261024h47507eb"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
-  <script src="js/combat/combat-minion.js?v=20261015h2a5bcf5"></script>
+  <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261015h3faef6c"></script>
@@ -444,7 +444,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261024hb97b14e"></script>
+  <script src="js/farm-troughs.js?v=20261024he01dfa5"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -452,13 +452,13 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261022chiefNames1&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261024h933d75a&surfaceUv=20261006cliffparity1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261019recordeddeath2"></script>
+  <script src="js/creature-death.js?v=20261024h8b1749f"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -540,7 +540,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20260924poradenhunt2"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20261024h260248e"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -619,7 +619,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261023h9a41172"></script>
+  <script src="js/wildlife-spawn.js?v=20261024h4c8cc01"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -716,7 +716,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261024h17abc7d"></script>
+  <script src="js/farm-panel.js?v=20261024ha73cf34"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -743,7 +743,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20261015h7a91f62"></script>
+  <script src="js/input-settings-panel.js?v=20261024h5692d02"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -1446,13 +1446,13 @@
       <!-- ── Stable pane: the character's personal, untradeable companion
            collection — separate from any farm's livestock. See
            renderStablePanel() in game.js. ──────────────────────────────── -->
-      <div class="mp-pane" id="mpStable">
+      <div class="mp-pane" id="mpStable" data-ctrl-transparent>
         <div class="farm-pane">
           <div class="farm-header">
             <div class="settings-section-title">🐾 Your Stable</div>
             <div class="farm-note">Companions travel with you between farms. Stabled animals can't be placed on any farm and don't produce goods, but can still be paired to breed new tradeable livestock. Add one from an undeployed creature item in your Inventory.</div>
           </div>
-          <div id="stableList" class="farm-list"></div>
+          <div id="stableList" class="farm-list" data-ctrl-auto-enter data-ctrl-initial-subtab="stableAgeAdultAnimals"></div>
         </div>
       </div><!-- /mpStable -->
 
@@ -2597,7 +2597,7 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261019h268bf9c"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261024h7f17edc"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
@@ -2740,7 +2740,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261024h071747b"></script>
+  <script src="js/controller-ui-nav.js?v=20261024hb8ea2e5"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

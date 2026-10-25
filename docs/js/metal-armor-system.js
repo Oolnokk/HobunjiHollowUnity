@@ -73,6 +73,8 @@
         'rakakoan::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_m.png',
         'rakakoan::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_f.png',
         'harlyao-skeleton::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
+        'harlyao::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
+        'harlyao::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'harlyao-skeleton::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'engh-sho::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
         'engh-sho::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',

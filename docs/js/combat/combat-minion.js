@@ -8,7 +8,7 @@
 
   const CLASS_ID = 'minion'; // Semantic enemyClass written onto every Minion entity.
   const DEFAULT_WEAPON_SHAPES = Object.freeze(['daggerSword', 'fishingspear', 'hatchet', 'harlyaoLongsword', 'harlyaoBroadsword', 'warhammer']); // Default Harlyao Skeleton Minion melee pool.
-  const OVERWEAR_OPTIONS = Object.freeze([null, 'tankan_bodywrap', 'rugged_poncho']); // Equal-choice overwear pool; null intentionally allows unclothed skeletons.
+  const OVERWEAR_OPTIONS = Object.freeze([null, 'tankan_bodywrap', 'rugged_poncho']); // Equal-choice upper-body pool; pants are supplied by the shared hostile avatar builder.
   const BANDOLIER_CHANCE = 0.5; // Independent torso roll creates six common silhouettes with the three overwear states.
   const HARLYAO_ARMOR_METAL_KEYS = Object.freeze(['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'arsenicalBronze', 'leadedBronze']); // Ordered smith alloys used to map Town Value onto skeleton armor quality.
   const SHAMBLING_FOOTING_FRACTION = 0.70; // Permanent Footing reservation applied after ResourceSystem initializes the entity; only the remaining 30% is ordinarily usable.
@@ -49,9 +49,9 @@
     return Array.isArray(eligible) && eligible.length ? eligible[eligible.length - 1] : HARLYAO_ARMOR_METAL_KEYS[0];
   }
 
-  function rollRoster(speciesId, name = 'Minion') {
+  function rollRoster(speciesId, name = 'Minion', options = {}) {
     const genders = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[speciesId]?.genders; // Species bridge registers the authored genders (Mao'ao Skeleton is male-only).
-    const gender = Array.isArray(genders) && genders.length === 1 ? genders[0] : (rng() < 0.5 ? 'male' : 'female');
+    const gender = options.gender || (Array.isArray(genders) && genders.length === 1 ? genders[0] : (rng() < 0.5 ? 'male' : 'female')); // Ghost marchers retain their authored male body while sharing skeleton equipment.
     const equippedCosmetics = []; // Explicit list bypasses BanditCombat's hood/facewrap/headband guarantee.
     const cosmeticSlots = {}; // Needed by portrait rendering, loot conversion, and outfit-weight profiling.
     const appliedDyes = {}; // Tint-slot keyed map consumed by NpcAvatarPreview.
@@ -67,7 +67,7 @@
       appliedDyes.TORSO = weightedPick();
     }
     const metalArmorItems = []; // These same maximum-temper records feed the portrait and corpse loot.
-    if (speciesId === 'harlyao-skeleton') {
+    if ((options.equipmentSpeciesId || speciesId) === 'harlyao-skeleton') {
       const metalKey = harlyaoArmorMetalKey(); // Both articles share the town-scaled alloy so a skeleton's armor reads as one coherent set.
       for (const id of ['rounded_pauldron', 'tangedcirclet']) {
         const item = window.MetalArmorSystem?.makeCraftedItem?.(id, metalKey); // Shared smith article factory supplies weight and alloy metadata.

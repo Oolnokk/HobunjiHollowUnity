@@ -314,7 +314,11 @@ assert.match(companionRow.innerHTML, /Companion · Lv\. 1\/10/, 'adult companion
 assert.doesNotMatch(companionRow.innerHTML, /leveling coming soon/i, 'authoritative Stable row no longer contains the placeholder');
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 0, 'tree starts collapsed');
 
-companionRow.listeners.click({ target: { closest: () => null } });
+const trainingToggle = descendantsByClass(companionRow, 'stable-training-toggle')[0]; // Exercises the controller-discoverable action rather than a pointer-only blank row click.
+assert.ok(trainingToggle, 'each Stable animal has an explicit Training / Perks action');
+assert.equal(trainingToggle.getAttribute('aria-expanded'), 'false');
+assert.equal(trainingToggle.getAttribute('data-ctrl-detail'), 'stableTrainingDetail_hound2');
+trainingToggle.listeners.click({ stopPropagation() {} });
 companionRow = stableRowById(stableList, 'hound2');
 mountRow = stableRowById(stableList, 'mount1');
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'tapping an adult companion expands its tree');
@@ -324,6 +328,9 @@ assert.match(allText(companionRow), /Dabinggi Hound Combat/, 'expanded companion
 assert.match(allText(companionRow), /Toxic Pounce/, 'species combat perk is rendered inside the actual card');
 
 const companionTree = descendantsByClass(companionRow, 'stable-entry-perk-tree')[0];
+assert.equal(companionTree.id, trainingToggle.getAttribute('data-ctrl-detail'), 'training action links to the rendered tree');
+assert.equal(companionTree.getAttribute('data-ctrl-detail-panel'), '', 'tree uses the shared Confirm/Back detail navigation authority');
+assert.equal(descendantsByClass(companionRow, 'stable-training-toggle')[0].getAttribute('aria-expanded'), 'true');
 const rapportSections = descendantsByClass(companionTree, 'stable-pet-rapport');
 assert.equal(rapportSections.length, 1, 'expanded Stable entry shows exactly one Pet Rapport section');
 assert.match(allText(rapportSections[0]), /Pet Rapport/, 'relationship block uses Pet Rapport terminology');
@@ -335,6 +342,17 @@ assert.match(rapportHeartRows[0].innerHTML, /💛/, 'Pet Rapport uses yellow fil
 const rapportIndex = companionTree.children.indexOf(rapportSections[0]);
 const trainingIndex = companionTree.children.findIndex(child => child.textContent === 'General Companion Training');
 assert(rapportIndex >= 0 && trainingIndex > rapportIndex, 'Pet Rapport appears above the perk sections');
+
+const purchasablePerk = descendantsByClass(companionTree, 'stable-perk-btn').find(button => !button.disabled); // Executes the native purchase handler and its full Stable rerender.
+assert.ok(purchasablePerk, 'an adult with a training point has a purchasable perk');
+const spentPerkId = purchasablePerk.getAttribute('data-key'); // Stable identity must match the progression owner's registered perk.
+const oldRank = progression.perkRank(stable.find(entry => entry.id === 'hound2'), spentPerkId); // Baseline for the single purchase.
+purchasablePerk.listeners.click({ stopPropagation() {} });
+companionRow = stableRowById(stableList, 'hound2');
+mountRow = stableRowById(stableList, 'mount1');
+assert.equal(progression.perkRank(stable.find(entry => entry.id === 'hound2'), spentPerkId), oldRank + 1, 'one perk activation purchases exactly one rank');
+assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'buying a perk keeps this animal tree expanded after rerender');
+assert.equal(descendantsByClass(companionRow, 'stable-training-toggle')[0].getAttribute('data-ctrl-detail'), 'stableTrainingDetail_hound2', 'purchase retains the exact controller return action');
 
 mountRow.listeners.click({ target: { closest: () => null } });
 companionRow = stableRowById(stableList, 'hound2');

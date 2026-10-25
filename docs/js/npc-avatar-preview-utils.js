@@ -252,7 +252,7 @@
         ?? equippedIds.find(id => optionCache?.get(id)?.slot === category)
         ?? null;
       const resolvedId = resolveVariantId(category, equippedId);
-      profile[key] = (resolvedId && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt || { id: 'none', tintSlot: null, layers: [] });
+      profile[key] = (resolvedId && isAllowedSavedCosmetic(category, resolvedId) && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt || { id: 'none', tintSlot: null, layers: [] });
     };
     applyEquip('hat', 'hat', hatOptions?.[0]);
     applyEquip('hood', 'hood', hoodOptions?.[0]);

@@ -19,12 +19,14 @@ async function host(options = {}) {
     async makeEntity(_cfg, _rank, _tier, x, y, opts) {
       if (options.buildGate) await options.buildGate;
       const group = { visible: true, position: position(), traverse() {} }; // Minimal avatar root.
-      const c = { id: `entity-${made.length}`, x, y, homeX: x, homeY: y, health: 40, maxHealth: 40, halfHeight: 0.5, def: { aggroRangePx: 384, moveSpeed: 118 }, areaId: opts.zoneId, areaGrid: grid, areaCols: 200, areaRows: 200, avatarRef: { group, dispose() { c.disposeCalls = (c.disposeCalls || 0) + 1; } }, rosterRecord: opts.rosterOverride, ...opts.extra }; // Unique per-instance definition.
+      const c = { id: `entity-${made.length}`, x, y, homeX: x, homeY: y, health: 40, maxHealth: 40, halfHeight: 0.5, def: { aggroRangePx: 384, moveSpeed: 118 }, areaId: opts.zoneId, areaGrid: grid, areaCols: 200, areaRows: 200, avatarRef: { group, dispose() { c.disposeCalls = (c.disposeCalls || 0) + 1; } }, rosterRecord: opts.rosterOverride, weaponShape: opts.defOverride.weaponShapeKey, ...opts.extra }; // Unique per-instance definition.
       made.push(c); world.add(group); return c;
     },
     discardEntity(c) { discarded.push(c); c.avatarRef.dispose(); c.avatarRef.group.parent?.remove(c.avatarRef.group); deps.hostileObjects.delete(c); },
   }; // Shared humanoid construction/disposal authority.
   const window = { BanditCombat: combat, BanditCamps: { updateCampBanners() {} }, CalendarSystem: { getHour: () => hour, timeDebugSnapshot: () => ({ rawDay: day }) }, RuntimeFrameScheduler: { register(id, callback, opts) { subscriptions.set(id, { callback, opts }); } }, Ghostify: { apply() {}, restore(root) { restored.push(root); }, registerGlowSource() {} }, requestAnimationFrame: callback => callback() }; // Browser-shaped production integration.
+  const sharedContext = { window }; // Use real skeleton equipment generation when materializing ghost soldiers.
+  for (const file of ['metal-armor-system.js', 'combat/combat-minion.js']) vm.runInNewContext(fs.readFileSync('docs/js/' + file, 'utf8'), sharedContext);
   vm.runInNewContext(source, { window, fetch: async () => ({ ok: true, json: async () => structuredClone(config) }), performance, Date });
   await flush(); combat.init(deps);
   return { api: window.HarlyaoNightMarch, made, discarded, deps, subscriptions, world, window, restored,
@@ -57,6 +59,14 @@ async function host(options = {}) {
   d = h.api.debugSnapshot();
   assert.equal(h.made.length, 20); assert.equal(h.deps.hostileObjects.size, 20);
   assert.equal(d.detailedMembers, 20);
+  assert.deepEqual([...new Set(h.made.map(c => c.weaponShape))].sort(), Array.from(h.window.MinionCombat.defaultWeaponShapes).sort(), 'army covers the complete skeleton melee pool');
+  for (const c of h.made) {
+    assert.equal(c.rosterRecord.appearance.speciesId, 'harlyao');
+    assert.equal(c.rosterRecord.appearance.gender, 'male');
+    assert.deepEqual(Array.from(c.rosterRecord.metalArmorItems, item => h.window.MetalArmorSystem.baseCosmeticId(item)).sort(), ['rounded_pauldron', 'tangedcirclet']);
+    assert(c.rosterRecord.metalArmorItems.every(item => item.temperXp === h.window.MetalArmorSystem.MAX_TEMPER_XP));
+  }
+
   for (const c of h.made) {
     assert.equal(c.state, 'return', 'native travel state owns detailed movement');
     assert.equal(c.avatarRef.group.position.y, 7.5, 'first materialization samples current terrain');

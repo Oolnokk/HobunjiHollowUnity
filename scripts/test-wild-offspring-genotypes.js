@@ -77,7 +77,7 @@ for (const [roll, expected] of [[0, 'grehlr-den-mother'], [0.99, 'nazgraku']]) {
 
 Object.assign(wildlifeDeps, {
   TILE: 32, TileType: {}, rnd: () => 0.5, hostileObjects: new Set(),
-  zoneLayouts: new Map([['map_northern_cliffs', { dens: [{ id: 'nazgraku_review', x: 10, y: 10 }], tiles: [] }]]),
+  zoneLayouts: new Map([['map_northern_cliffs', { dens: [{ id: 'grehlr_review', x: 10, y: 10 }, { id: 'nazgraku_review', x: 40, y: 10 }], tiles: [] }]]),
   getCurrentArea: () => 'map_northern_cliffs', getCutscenePreviewActive: () => false, _isZoneArea: () => true, buildZoneScene: () => true, showToast() {},
   makeCreatureEntity: (creatureKey, x, y, options) => ({ creatureKey, x, y, health: 100, ...options }),
 });
