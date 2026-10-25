@@ -417,6 +417,8 @@
         }
       }
     }
+    const spatial = voiceSpatialOptions(entity); // Reject inaudible/off-area actors before taking their voice-priority channel.
+    if (spatial.gain <= 0.002) return { suppressed: true, reason: 'outside-combat-earshot', voiceKind, ...detail };
     const claim = window.CharacterVoiceOwner?.request?.(entity, {
       kind: voiceKind,
       priority: voicePriority(voiceKind),
@@ -426,7 +428,6 @@
 
     const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones), entity);
     plan.tempo /= durationScale; // Shortens dodge duration independently of the species/gender pitch.
-    const spatial = voiceSpatialOptions(entity);
     const volume = clamp(
       Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1) * spatial.gain,
       0,
