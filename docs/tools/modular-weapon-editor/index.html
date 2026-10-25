@@ -8,6 +8,9 @@
 </style></head><body>
 <header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: added adjustable black outlines and a browser for uploaded modular head/shaft PNGs.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
 <main><section><h2>Parts and attachment points</h2><label>Shaft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
+<label><input id="allow-shaft" type="checkbox"> Allow selected shaft in Foundry after calibration</label>
+<label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
+<p id="part-readiness">Newly uploaded parts begin in editor-only mode. Adjust their sockets/pivots here, then enable each when ready. B'gungku also needs a gameplay donor shape before it can be enabled.</p>
 <p>Tap the shaft sprite to place the selected socket. Tap the head sprite to choose its pivot. Pivot editors use the original 450 × 1204 frame. The assembled preview expands to fit every head; gameplay preserves the donor grip and scale.</p>
 <label>Socket <select id="socket"></select></label><div class="toolbar"><button id="add">Add socket</button><button id="remove">Remove socket</button></div><div id="attach-controls"></div>
 <label><input id="disallow" type="checkbox"> Disallow this head on this shaft</label><p>Disallowed pairs are hidden from the Foundry and cannot be forged. They remain visible here for authoring.</p>
@@ -36,5 +39,5 @@
 </div><figure class="cut-stage"><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
 <p>Place the downloaded file in <code>docs/assets/toolsprites/modular_pieces/</code>. To make the new part selectable in the Foundry, add its entry and attachment pivot/socket coordinates to <code>docs/config/modular-weapons.js</code>. Exporting a PNG does not automatically modify the game catalog.</p>
 </section></main>
-<script src="../../config/modular-weapons.js?v=20261018kyliebluntdw015"></script><script src="../../js/modular-weapons.js?v=20261016h26411d5"></script><script src="editor.js?v=20261016h6bdd0ef"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261025b"></script>
+<script src="../../config/modular-weapons.js?v=20261025newparts001"></script><script src="../../js/modular-weapons.js?v=20261025calib001"></script><script src="editor.js?v=20261025calib001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261025b"></script>
 </body></html>
