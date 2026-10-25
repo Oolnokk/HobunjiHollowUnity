@@ -12,7 +12,19 @@
 
   const VERSION = 2;
   const DRAFT_KEY = 'hobunji.portraitMouthPoints.draft.v1';
-  const POINTS = { // Committed table, e.g. 'mao-ao::male': { u: 0.5, v: 0.32 }
+  const POINTS = { // Committed table authored in the attack editor's "Portrait mouth point" panel (Nuhongan still uses its head centroid).
+    'mao-ao::male': { u: 0.6145, v: 0.4676 },
+    'engh-sho::male': { u: 0.5984, v: 0.5379 },
+    'kenkari::male': { u: 0.6457, v: 0.534 },
+    'tletingan::male': { u: 0.591, v: 0.5359 },
+    'rakakoan::male': { u: 0.641, v: 0.543 },
+    'mashtzarr::male': { u: 0.5895, v: 0.5301 },
+    'mashtzarr::female': { u: 0.6066, v: 0.6789 },
+    'mao-ao::female': { u: 0.6008, v: 0.5238 },
+    'engh-sho::female': { u: 0.5965, v: 0.5441 },
+    'kenkari::female': { u: 0.6227, v: 0.5574 },
+    'tletingan::female': { u: 0.6027, v: 0.5594 },
+    'rakakoan::female': { u: 0.6215, v: 0.5461 },
   };
 
   const keyFor = (speciesId, gender) => `${String(speciesId || '').trim().toLowerCase().replace(/_/g, '-')}::${String(gender || 'male').trim().toLowerCase() === 'female' ? 'female' : 'male'}`;

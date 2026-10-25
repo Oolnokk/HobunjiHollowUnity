@@ -90,3 +90,18 @@ assert.equal(attach.createHeadFrame !== undefined && typeof attach.mouthPixel, '
 mathContext.window.HobunjiPortraitMouthPoints = undefined;
 assert.deepEqual({ ...attach.mouthPixel({ userData: { neckRig: { available: true, headCentroidPx: { x: 7, y: 9 } }, speciesId: 'mao-ao', gender: 'male' } }) }, { x: 7, y: 9 }, 'with no authored mouth the head centroid is used');
 console.log('head-relative animation anchors and reused samples PASS');
+
+// The committed mouth table: every point is a valid fraction pair, resolves through pixelFor at any render size, and a species
+// with no entry (Nuhongan) falls back to its head centroid.
+{
+  const mouthContext = { window: { localStorage: undefined } };
+  vm.createContext(mouthContext);
+  vm.runInContext(fs.readFileSync('docs/config/portrait-mouth-points.js', 'utf8'), mouthContext);
+  const mouths = mouthContext.window.HobunjiPortraitMouthPoints;
+  const table = mouths.table();
+  assert.ok(Object.keys(table).length >= 12, 'the authored table ships with the config');
+  for (const [key, point] of Object.entries(table)) assert.ok(point.u > 0 && point.u < 1 && point.v > 0 && point.v < 1, `${key} is a fraction of the portrait`);
+  const rig = { headCentroidPx: { x: 7, y: 9 } };
+  assert.deepEqual({ ...mouths.pixelFor('mao-ao', 'male', rig, { width: 512, height: 512 }) }, { x: 0.6145 * 512, y: 0.4676 * 512 }, 'authored mouth scales with the source canvas');
+  assert.deepEqual({ ...mouths.pixelFor('nuhongan', 'male', rig, { width: 512, height: 512 }) }, { x: 7, y: 9 }, 'species with no mouth keep the head centroid');
+}
