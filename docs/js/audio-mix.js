@@ -39,6 +39,7 @@
   let backgrounded = false; // True while the tab is hidden or the window lost focus (only matters with muteUnfocused).
   const contexts = new Set(); // AudioContexts carrying a bus graph; contexts are long-lived singletons in this game.
   const mediaRefs = new Set(); // WeakRefs to media elements whose volume this module has scaled.
+  let sweepAt = 256; // Most one-shot SFX are fresh <audio> elements, so dead refs are swept as the set grows.
   const musicElements = new WeakSet();
   const routedElements = new WeakSet(); // Elements captured into Web Audio; their bus applies the mix instead.
   const logicalVolume = new WeakMap();
@@ -117,7 +118,12 @@
     if (element.__hobunjiMixTracked) return;
     element.__hobunjiMixTracked = true;
     if (!logicalVolume.has(element)) logicalVolume.set(element, nativeVolume.get.call(element));
-    mediaRefs.add(typeof WeakRef === 'function' ? new WeakRef(element) : { deref: () => element });
+    if (typeof WeakRef !== 'function') return; // Without WeakRef, skip live re-scaling rather than pin every element in memory.
+    mediaRefs.add(new WeakRef(element));
+    if (mediaRefs.size > sweepAt) {
+      for (const ref of mediaRefs) if (!ref.deref()) mediaRefs.delete(ref);
+      sweepAt = Math.max(256, mediaRefs.size * 2); // Amortized O(1) per tracked element.
+    }
   }
 
   if (nativeVolume?.get && nativeVolume?.set) {
