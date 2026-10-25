@@ -364,11 +364,15 @@
   }
 
   function voiceSpatialOptions(entity) {
-    if (!entity || entity === player()) return { panX: 0, extraWetBoost: 0, area: entity?.areaId || entity?.area || null };
-    const spatial = window.AudioSystem?.creatureAudioSpatial?.(entity, {}) || {};
+    if (!entity || entity === player()) return { panX: 0, extraWetBoost: 0, gain: 1, lowpassHz: 20000, area: entity?.areaId || entity?.area || null };
+    const spatial = window.AudioSystem?.combatAudioSpatial?.(entity, { earshotTiles: 14 })
+      || window.AudioSystem?.creatureAudioSpatial?.(entity, {}) || {};
+    const gain = clamp(spatial.gain ?? 1, 0, 1); // NPC voice volume follows actual 3D separation rather than the player's full-volume mix.
     return {
       panX: clamp(spatial.panX ?? 0, -1, 1),
       extraWetBoost: Math.max(0, Number(spatial.extraWetBoost) || 0),
+      gain,
+      lowpassHz: Math.round(4000 + 16000 * Math.pow(gain, 0.7)), // Distant NPC direct voices lose treble while the environmental reflections remain present.
       area: entity.areaId || entity.area || null,
     };
   }
@@ -422,12 +426,13 @@
 
     const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones), entity);
     plan.tempo /= durationScale; // Shortens dodge duration independently of the species/gender pitch.
+    const spatial = voiceSpatialOptions(entity);
     const volume = clamp(
-      Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1),
+      Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1) * spatial.gain,
       0,
       1,
     );
-    const spatial = voiceSpatialOptions(entity);
+    if (volume <= 0.002) { window.CharacterVoiceOwner?.release?.(claim); return { suppressed: true, reason: 'outside-combat-earshot', voiceKind, ...detail }; }
     const finish = () => window.CharacterVoiceOwner?.release?.(claim);
     let snd = null;
     try {
@@ -443,6 +448,7 @@
           extraWetBase: 0, // Character combat voices use the area's normal wet profile; NPC distance contributes only the shared distance wet boost.
           panX: spatial.panX,
           extraWetBoost: spatial.extraWetBoost,
+          lowpassHz: spatial.lowpassHz, // Web Audio dry-path filtering makes distant ravine shouts read as remote.
           area: spatial.area,
           onFinished: finish,
         });
@@ -749,19 +755,27 @@
     const audio = audioConfig();
     const mod = voiceModulation(entity);
     const gain = ctx.createGain();
+    const spatial = voiceSpatialOptions(entity);
     gain.gain.value = clamp(
-      Number(config.grunts?.volume ?? 0.86) * mod.gain * Number(audio.sfxVolume ?? 1),
+      Number(config.grunts?.volume ?? 0.86) * mod.gain * Number(audio.sfxVolume ?? 1) * spatial.gain,
       0,
       3,
     );
-    const spatial = voiceSpatialOptions(entity);
+    const filter = spatial.lowpassHz < 18000 && typeof ctx.createBiquadFilter === 'function' ? ctx.createBiquadFilter() : null; // Filters distant dry grunts but leaves their acoustic reverb send unfiltered.
+    if (filter) {
+      filter.type = 'lowpass';
+      filter.frequency.value = spatial.lowpassHz;
+      gain.connect(filter);
+      gain.__combatVocalFilter = filter;
+    }
+    const dryOutput = filter || gain;
     const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
     if (panner) {
       panner.pan.value = spatial.panX;
-      gain.connect(panner);
+      dryOutput.connect(panner);
       panner.connect(ctx.destination);
       gain.__combatVocalPanner = panner;
-    } else gain.connect(ctx.destination);
+    } else dryOutput.connect(ctx.destination);
     gain.__combatVocalWet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.area }) || null; // NPC charge grunts originate from their world position and still use the current physical acoustic space.
     return gain;
   }
@@ -821,6 +835,7 @@ function finishChargeToken(token) {
   window.CharacterVoiceOwner?.release?.(token.voiceClaim);
   try { token.output?.__combatVocalWet?.send?.disconnect?.(); } catch (_) {}
   try { token.output?.__combatVocalPanner?.disconnect?.(); } catch (_) {}
+  try { token.output?.__combatVocalFilter?.disconnect?.(); } catch (_) {}
   try { token.output?.disconnect?.(); } catch (_) {}
 }
 
@@ -1351,7 +1366,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
