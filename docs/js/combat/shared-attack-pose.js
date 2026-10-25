@@ -371,7 +371,7 @@
     const rig = avatar?.userData?.neckRig;
     if (!rig?.available) return null;
     const data = avatar.userData;
-    return window.HobunjiPortraitMouthPoints?.pixelFor?.(data.speciesId, data.gender, rig) || rig.headCentroidPx || null;
+    return window.HobunjiPortraitMouthPoints?.pixelFor?.(data.speciesId, data.gender, rig, data.sourceCanvas) || rig.headCentroidPx || null;
   }
 
   // Fills `frame` (WORLD space) with the mouth position, the head's world rotation and its uniform scale ratio vs the
