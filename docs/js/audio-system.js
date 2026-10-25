@@ -28,6 +28,9 @@
   const combatDecodedByUrl = new Map(); // Cache shares decoded one-shot weapons, impacts and blocks without allocating a new media source per hit.
   const combatDecodeQueue = []; // Bounded preloads prevent large simultaneous decode spikes during wilderness startup.
   const activePositionalCombat = new Set(); // Stops positional Web Audio sources when the introduction takes sole ownership of the soundscape.
+  const activeDirectionalRoutes = new Set(); // Retains HRTF routes only for the duration of their active audio source.
+  let lastDirectionalRouteUpdateMs = 0; // Limits updates for moving combatants and camera turns to around 12 Hz.
+  let directionalRouteSchedulerInstalled = false; // Guards against installing more than one frame update.
   let combatDecodeInFlight = 0; // Limits startup decoding to two cues at once.
   let combatPositionalContext = null; // Dedicated one-shot context isolates camera-relative HRTF listener coordinates from music/weather graphs.
   let combatSpatialBackend = 'native-fallback'; // Exposed in mobile diagnostics to distinguish true HRTF from a degraded output path.
@@ -39,6 +42,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     installCombatGestureUnlock(); // Warm audio unlock happens on a trusted gesture, before the next wilderness attack.
+    installCombatDirectionalUpdates(); // Turn the camera mid-grunt without leaving an enemy pinned to an old ear.
     preloadConfiguredObjectSfx();
     preloadConfiguredCombatSfx();
     preloadAnimalVoices();
@@ -502,7 +506,7 @@
     }
     const outNode = spatialInput || panNode || ctx.destination;
     if (spatialInput) setTimeout(() => {
-      try { spatialInput.disconnect(); spatialRoute?.node?.disconnect?.(); } catch (_) {}
+      try { spatialInput.disconnect(); spatialRoute?.dispose?.(); } catch (_) {}
     }, Math.ceil(durationS * 1000) + 40); // Detached when the short procedural footfall is complete.
 
     if (noiseMix < 1) {
@@ -695,6 +699,37 @@
     pumpCombatDecodeQueue();
   }
 
+  function updateCombatDirectionalRoutes(frame = {}) {
+    const now = Number.isFinite(frame.timestamp) ? frame.timestamp : performance.now();
+    if (now - lastDirectionalRouteUpdateMs < 80) return;
+    lastDirectionalRouteUpdateMs = now;
+    for (const route of activeDirectionalRoutes) {
+      const pos = acousticPosition3D(route.actor); // Sample the current player and emitting actor, not their starting positions.
+      if (!pos) continue;
+      if (route.backend === 'hrtf') {
+        const { positionX, positionY, positionZ } = route.node;
+        if (positionX && positionY && positionZ) {
+          for (const [param, value] of [[positionX, pos.x], [positionY, pos.y], [positionZ, pos.z]]) {
+            if (typeof param.setTargetAtTime === 'function') param.setTargetAtTime(value, route.ctx.currentTime, 0.025);
+            else param.value = value;
+          }
+        } else route.node.setPosition?.(pos.x, pos.y, pos.z);
+      } else if (route.backend === 'stereo-fallback') {
+        const pan = Math.max(-1, Math.min(1, pos.x / Math.max(1, Math.hypot(pos.x, pos.z) * 0.6)));
+        if (typeof route.node.pan?.setTargetAtTime === 'function') route.node.pan.setTargetAtTime(pan, route.ctx.currentTime, 0.025);
+        else if (route.node.pan) route.node.pan.value = pan;
+      }
+    }
+  }
+
+  function installCombatDirectionalUpdates() {
+    if (directionalRouteSchedulerInstalled || !window.RuntimeFrameScheduler?.register) return;
+    window.RuntimeFrameScheduler.register('combat-spatial-listener', updateCombatDirectionalRoutes, {
+      phase: 'post-game', owner: 'AudioSystem', description: 'Update active HRTF combat emitters at player-relative coordinates.',
+    });
+    directionalRouteSchedulerInstalled = true;
+  }
+
   // Use a listener fixed at (0,0,0), facing -Z, in listener-local
   // coordinates. The caller rotates each world-space emitter into the
   // active camera's right/up/back basis, preserving left/right, rear/front
@@ -714,17 +749,25 @@
           panner.positionX.value = pos.x; panner.positionY.value = pos.y; panner.positionZ.value = pos.z;
         } else panner.setPosition(pos.x, pos.y, pos.z);
         input.connect(panner); panner.connect(ctx.destination);
-        return { node: panner, backend: 'hrtf' };
+        const route = { node: panner, backend: 'hrtf', actor: spatial.sourceActor, ctx,
+          dispose() { activeDirectionalRoutes.delete(route); try { panner.disconnect(); } catch (_) {} },
+        }; // One live route per active attack/voice, disposed when playback ends.
+        if (spatial.sourceActor) activeDirectionalRoutes.add(route);
+        return route;
       } catch (error) { combatSpatialLastError = String(error?.message || error); }
     }
     const stereo = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
     if (stereo) {
       stereo.pan.value = Math.max(-1, Math.min(1, Number(spatial?.panX) || 0));
       input.connect(stereo); stereo.connect(ctx.destination);
-      return { node: stereo, backend: 'stereo-fallback' };
+      const route = { node: stereo, backend: 'stereo-fallback', actor: spatial?.sourceActor, ctx,
+        dispose() { activeDirectionalRoutes.delete(route); try { stereo.disconnect(); } catch (_) {} },
+      };
+      if (spatial?.sourceActor) activeDirectionalRoutes.add(route);
+      return route;
     }
     input.connect(ctx.destination);
-    return { node: null, backend: 'mono-fallback' };
+    return { node: null, backend: 'mono-fallback', dispose() {} };
   }
 
   function playDecodedCombatSfx(cfgEntry, volume, rate, spatial) {
@@ -757,7 +800,7 @@
         try { source.disconnect(); } catch (_) {}
         try { gain.disconnect(); } catch (_) {}
         try { lowpass?.disconnect(); } catch (_) {}
-        try { route.node?.disconnect(); } catch (_) {}
+        try { route.dispose?.(); } catch (_) {}
         try { wet?.send?.disconnect?.(); } catch (_) {}
       }
       source.onended = cleanup;
@@ -1138,12 +1181,8 @@
   // detail, still originate the sound from the right direction, and sound
   // farther away/more echoey the farther it actually is."
   //
-  // panX reuses tickCreatureFootsteps' plain-world-X-difference convention
-  // (see FOOTSTEP_PAN_RANGE_PX above) rather than rotating into the
-  // player's facing direction — this game's camera doesn't track player
-  // facing tightly enough for a facing-relative pan to read as more
-  // correct, and every other panned sound in this file already uses raw
-  // world X.
+  // All combat sources use the camera-relative basis rather than a fixed world-X pan.
+  // Front/back and height remain available even while the orbiting camera turns.
   // Read the same rendered terrain/actor height used by ranged combat.
   // The caller supplies world Y (Three.js units); map x/y remain pixels.
   function audioActorWorldY(actor) {
@@ -1196,7 +1235,7 @@
     const panX = position3d ? Math.max(-1, Math.min(1, position3d.x / Math.max(1, Math.hypot(position3d.x, position3d.z) * 0.6))) : 0; // Stereo fallback follows the camera, not fixed world X.
     const chunkPx = (window.WildernessChunks?.constants?.CHUNK_TILES || 16) * deps.TILE;
     const wetT = Math.max(0, Math.min(1, distance / Math.max(1, chunkPx)));
-    return { panX, position3d, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance,
+    return { panX, position3d, sourceActor: c, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance,
       verticalDistancePx: acousticVerticalSeparationPx(c) };
   }
 
