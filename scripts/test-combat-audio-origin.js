@@ -52,10 +52,9 @@ audio.playWeaponSlashSfx(1, 0);
 assert.equal(played.at(-1).volume, 1, 'the player keeps the original close-range weapon-swing mix');
 audio.playWeaponSlashSfx(1, 0, bottom);
 assert(played.at(-1).volume < 0.1, 'the same swing eight tiles below the player must not sound like their own swing');
+const beforeFarSwing = played.length; // Records that a sound outside the short-range melee earshot must not start.
 audio.playWeaponSlashSfx(1, 0, opposite);
-assert.equal(played.at(-1).url, 'swing.mp3', 'enemy swings preserve their authored audio sample');
-const lastSwingGain = played.at(-1).volume; // Used to check the farther NPC swing against the nearby player's swing.
-assert(lastSwingGain < 0.01, 'opposite cliff melee should be virtually inaudible at the nine-tile earshot');
+assert.equal(played.length, beforeFarSwing, 'opposite cliff melee is inaudible beyond the nine-tile earshot');
 const beforeOtherArea = played.length; // Ensures area mismatch never starts another audio voice.
 audio.playWeaponSlashSfx(1, 0, elsewhere);
 assert.equal(played.length, beforeOtherArea, 'another area cannot trigger an enemy swing on the player');
