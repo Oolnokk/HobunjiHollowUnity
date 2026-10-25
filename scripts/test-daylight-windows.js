@@ -74,7 +74,7 @@ assert.match(farmPanelCore, /delete store\.crossbarWindowFurniture/, 'stale Cros
 assert.match(farmPanelCore, /wideWindowFurniture:[\s\S]*count: 2/, 'starter storage must grant two Wide Windows');
 assert.match(farmPanelCore, /cat: 'furniture'/, 'starter windows must register as ordinary inventory furniture items');
 assert.match(farmPanelCore, /const store = ensureStarterWindowsInFarmStorage\(\)/, 'Farm Storage render path must run the one-time starter grant');
-assert.match(farmPanelCore, /k !== STARTER_WINDOW_STORAGE_SENTINEL/, 'starter grant marker must never render as a storage item');
+assert.match(farmPanelCore, /!k\.startsWith\('__'\)/, 'starter grant marker must never render as a storage item');
 
 const farmPanelLoader = read('docs/js/farm-panel.js'); // Core cache-bust must move with the starter-storage behavior.
 assert.match(farmPanelLoader, /farm-panel-core\.js\?v=[A-Za-z0-9_-]+/, 'Farm Panel must load the player-window catalog revision');

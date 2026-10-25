@@ -597,6 +597,13 @@
     box(.45, .27, 0, .5, .3, .7, .9),
   ];
 
+  CATALOG.groomingKit = [
+    ...tableRecipe(1, 1, .08, .42),
+    { kind: 'cup', color: 0x8bafbd, segments: 24, innerScale: .84, basinDepth: .14,
+      transform: { x: 0, y: .61, z: 0, sx: .62, sy: .23, sz: .62 } },
+    disc(0, .68, 0, .48, .015, .48, 1, { color: 0x66bbdd, segments: 24 }),
+  ];
+
   CATALOG.dresser = cabinetRecipe(2, 1, .85, 2);
 
   // Stone-hearth loading fallback: mirrors the authored open-front masonry silhouette

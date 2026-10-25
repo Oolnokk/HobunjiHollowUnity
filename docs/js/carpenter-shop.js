@@ -42,11 +42,11 @@
       : `<button class="shop-buy-btn" ${dataAttr}>Buy</button>`;
   }
 
-  // Blueprints are never consumed by building (see CraftingPanel's
-  // ownsBlueprint) and sell for 0g, so a second copy is wasted gold.
+  // Physical copies are read once; learned designs remain available without
+  // carrying paper. Block purchases for either a held copy or a learned design.
   function ownsBlueprint(bp) {
     if ((Number(deps.inventory[bp?.key]) || 0) > 0) return true;
-    return !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
+    return !!window.CraftingPanel?.ownsBlueprint?.(bp) || !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
   }
 
   function _barnAdditions() {
@@ -208,7 +208,7 @@
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)} Blueprint</div>
-          <div class="sh-desc">Build with ${deps.esc(window.CraftingPanel.furnitureCostDescription(bp))} in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
+          <div class="sh-desc">Build with ${deps.esc(window.CraftingPanel.furnitureCostDescription(bp))} in the Crafting tab.${owned ? ' Already owned or learned.' : ''}</div>
           <div class="sh-price">${bp.price}g</div>
         </div>
         <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${owned ? 'Owned' : 'Buy'}</button>

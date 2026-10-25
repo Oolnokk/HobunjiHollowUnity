@@ -10,6 +10,29 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  let knownBlueprints = new Set(); // Permanent furniture lessons for the active character in this world.
+
+  function restoreBlueprints(keys) {
+    knownBlueprints = new Set(Array.isArray(keys) ? keys.filter(key => typeof key === 'string') : []);
+  }
+
+  function serializeBlueprints() { return [...knownBlueprints]; }
+
+  function blueprintForItem(key) {
+    return deps?.FURNITURE_BLUEPRINT_CATALOG?.find(bp => bp.key === key) || null;
+  }
+
+  function readBlueprint(key) {
+    const bp = blueprintForItem(key); // Only ordinary registered recipe items can grant a lesson.
+    if (!bp || bp.moteOnly || bp.masteryUnlockId || !(Number(deps.inventory[key]) > 0)) return { ok: false, message: 'That blueprint cannot be read.' };
+    if (ownsBlueprint(bp)) return { ok: false, message: 'You already know this blueprint.' };
+    knownBlueprints.add(key);
+    deps.inventory[key]--;
+    deps.clampInventoryStack(key);
+    deps.saveMemberWorldData();
+    return { ok: true, message: `Learned ${bp.name}!` };
+  }
+
   let craftingActiveCategory = 'all';
 
   function ownedWoodCount() {
@@ -71,7 +94,7 @@
 
   function ownsBlueprint(bp) {
     if (bp?.masteryUnlockId) return !!window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId);
-    return !bp?.moteOnly && (deps.inventory[bp?.key] || 0) > 0; // Mastery ownership is world-scoped; legacy shop blueprint items cannot bypass it.
+    return !!bp && !bp.moteOnly && (bp.alwaysKnown || knownBlueprints.has(bp.key)); // Mastery ownership is world-scoped; legacy shop blueprint items cannot bypass it.
   }
 
   // Every UI and build check reads these same authored material rows. Wood
@@ -103,7 +126,7 @@
       && (deps.inventory[bp.furnitureKey] || 0) < window.InventoryStacks.MAX_TOTAL;
   }
 
-  // Reusable blueprints are never consumed. Validate every ingredient before
+  // Learned designs remain known after their recipe item is consumed. Validate every ingredient before
   // spending any stock, including a stale UI click after inventory changes.
   function craftFurnitureFromBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey); // Resolves only registered recipes.
@@ -148,7 +171,8 @@
 
   function debugSnapshot() {
     return {
-      latestChange: 'Furniture uses authored wood, stone, wool and metal costs; Advanced Loom requires its 8-mote mastery unlock.',
+      latestChange: 'Read furniture blueprints directly from the bag to learn them permanently for this character in this world; Grooming Kit and Campfire Kit are automatically known.',
+      knownBlueprints: serializeBlueprints(),
       recipes: (deps?.FURNITURE_BLUEPRINT_CATALOG || []).map(bp => ({
         key: bp.key, owned: ownsBlueprint(bp), canBuild: canBuildFurniture(bp), ingredients: furnitureIngredients(bp),
       })),
@@ -210,7 +234,7 @@
     });
   }
 
-  window.CraftingPanel = { init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes, craftFurnitureFromBlueprint, furnitureCostDescription, debugSnapshot };
+  window.CraftingPanel = { ownsBlueprint, blueprintForItem, readBlueprint, restoreBlueprints, serializeBlueprints, init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes, craftFurnitureFromBlueprint, furnitureCostDescription, debugSnapshot };
 })();
 
 // Crafting mastery + NPC crafting commissions live next to the CraftingPanel
@@ -225,7 +249,7 @@
     ['js/advanced-loom-system.js?v=20261005loom1', () => Number(window.AdvancedLoomSystem?.version) >= 1],
     ['js/dye-trait-labels.js?v=20261005craft1', () => Number(window.DyeTraitLabels?.version) >= 1],
     ['js/npc-crafting-commission-generator.js?v=20261022h2d5dcb6', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
-    ['js/npc-crafting-commission-delivery.js?v=20261022h5185d1d', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
+    ['js/npc-crafting-commission-delivery.js?v=20261025h133c6f7', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
     ['js/npc-crafting-commissions.js?v=20261022hae47de3', () => Number(window.NpcCraftingCommissions?.version) >= 2],
   ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API. Cache ownership is refreshed by the repo checker.
 

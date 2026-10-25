@@ -53,6 +53,8 @@
   function grantFurnitureBlueprint(task) {
     const commission = task?.commission;
     if (commission?.type !== 'furniture' || !commission.blueprintKey || !taskDeps?.inventory) return;
+    const blueprint = window.CraftingPanel?.blueprintForItem?.(commission.blueprintKey); // Do not grant another physical copy of a lesson already learned.
+    if (blueprint && window.CraftingPanel.ownsBlueprint(blueprint)) return;
     const before = Math.max(0, finite(taskDeps.inventory[commission.blueprintKey], 0)); // Existing permanent blueprint ownership remains intact.
     taskDeps.inventory[commission.blueprintKey] = Math.max(1, before);
     taskDeps.buildInventoryGrid?.();
