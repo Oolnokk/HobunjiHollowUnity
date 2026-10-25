@@ -142,7 +142,7 @@ const rear = { x: 0, y: 4 * TILE, height: 0, areaId: area }; // Enemy behind.
   assert.match(audio.combatSfxDebugSnapshot().spatialError, /interrupted while starting/, 'diagnostics disclose failed 3D start');
 
   const human = fs.readFileSync('docs/js/combat/combat-vocalizations.js', 'utf8'); // Shared HRTF path is used by charge grunts too.
-  assert.match(human, /connectCombatSpatialDry\?\.\(ctx, dryOutput, spatial\)/);
+  assert.match(human, /connectCombatSpatialDry\?\.\(ctx, dryOutput, \{/); // Timed charges now pass live-distance gain metadata into their HRTF route.
   assert.match(human, /position3d: spatial\.position3d/);
   assert.match(human, /__combatVocalDistanceGain = distanceGain/, 'long grunts have a dedicated distance gain independent from charge fade');
   assert.match(human, /connectWetNode\?\.\(ctx, distanceGain/, 'wet charge reflections also attenuate with source distance');
