@@ -14,7 +14,7 @@
     // RangedHudReticle is parser-loaded by index.html; do not reload it here or a stale unversioned cache can replace the live module.
     'js/fullscreen-toggle.js',
     'js/mobile-combat-zoom.js',
-    'js/ambient-biome-audio.js?v=intro-wind',
+    'js/ambient-biome-audio.js?v=20261026cavebgslayer1',
   ];
 
   function ensureRuntimeHelpers() {

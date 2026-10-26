@@ -6029,7 +6029,7 @@
     const keys = new Set();
     const mouth = object?.mouthAnchor;
     if (object?.type !== 'animalDen' || !object.entryInside || !mouth) return keys;
-    for (let y = mouth.y; y < object.y + (object.h || 1); y++) keys.add(`${mouth.x},${y}`);
+    for (let y = mouth.y; y < object.y + (object.h || 1); y++) for (let x = Math.max(object.x, mouth.x - 1); x <= Math.min(object.x + (object.w || 1) - 1, mouth.x + 1); x++) keys.add(`${x},${y}`); // Center path plus both flanking columns match den template placement.
     return keys;
   }
 
