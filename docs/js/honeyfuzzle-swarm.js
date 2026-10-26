@@ -127,6 +127,7 @@
   let _atlasPromise = null;
   let _lastAtlasError = null; // Exposed by debugSnapshot for mobile diagnosis of failed sprite URLs or canvas initialization.
   const _pendingMaterials = new Set();
+  let _linkedWildOrCompanions = 0; // Mobile diagnostics count successful actor-to-swarm genotype bindings.
 
   function loadImage(url) {
     return new Promise((resolve, reject) => {
@@ -268,6 +269,16 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
 
   // ---- avatar --------------------------------------------------------------
 
+  function liveCreatureForId(id) {
+    const combat = window.Combat?.deps; // Existing shared combat dependency container already holds the active creature sets.
+    if (!combat || id == null) return null;
+    for (const set of [combat.hostileObjects, combat.companionObjects]) {
+      if (!set) continue;
+      for (const creature of set) if (creature?.id === id || String(creature?.id) === String(id)) return creature;
+    }
+    return null;
+  }
+
   // options: { name, seed, count, modelWidth, memberWidth, color, genotype }
   // `color` is the zone/egg primary coat, and expressed genotype patterns provide their own secondary tint.
   // modelWidth is the swarm's overall footprint; memberWidth one bird's width.
@@ -302,6 +313,9 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
     let smoothSpeed = 0, smoothSpread = 1, lastNow = 0, disposed = false;
     let baseColor = options.color || options.genotype?.base?.color || null; // The current primary dye, used when setColor() is called after spawning.
     let genotype = options.genotype || null; // Optional inherited secondary tint and spectacles; null is valid for old saves.
+    let linkedCreature = null; // Used only to pick up genotype on wild/companion spawn, whose main renderer forwards color but not genes.
+    let nextActorLookup = 0; // Repeated at most twice per second until the actor is visible in the shared creature sets.
+    const needsActorLink = !String(options.name || '').startsWith('house_') && !genotype; // House renders pass their record directly.
     const applyColors = () => {
       const colors = appearanceColors(baseColor, genotype);
       const u = material.userData.honeyfuzzle;
@@ -317,6 +331,20 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
       update(speedPxPerS, nowMs, dtSeconds, moveSpeedPx, spreadScale) {
         if (disposed) return;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
+        if (needsActorLink && !linkedCreature && now >= nextActorLookup) {
+          nextActorLookup = now + 500;
+          linkedCreature = liveCreatureForId(options.name);
+          if (linkedCreature) {
+            if (linkedCreature.swarmColor && !baseColor) baseColor = linkedCreature.swarmColor;
+            genotype = linkedCreature.genotype || null;
+            applyColors();
+            _linkedWildOrCompanions++;
+          }
+        }
+        if (linkedCreature && linkedCreature.genotype !== genotype) {
+          genotype = linkedCreature.genotype || null;
+          applyColors();
+        }
         const dt = Number.isFinite(dtSeconds) ? dtSeconds : Math.max(0, (now - lastNow) / 1000);
         lastNow = now;
         const target = Math.min(1.4, (Number(speedPxPerS) || 0) / Math.max(1, Number(moveSpeedPx) || 120));
@@ -357,6 +385,6 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
     FRAME_URLS, PATTERN_URLS, ATLAS_COLS, WING_CYCLE, WING_TICK_MS, DEFAULT_MEMBER_COUNT, CROP,
     hashUnit, seedFromString, wingStep, memberFrame, memberPose, appearanceColors,
     buildAvatar, ensureAtlas,
-    debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [ _atlas.canvas.width, _atlas.canvas.height ] : null }),
+    debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
   };
 })();
