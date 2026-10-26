@@ -145,6 +145,12 @@ function fakeThree() {
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 0);
   assert.equal(tinted.group.children.length, 1, 'all overlay sprites share one instanced mesh');
   assert.equal(typeof S.debugSnapshot, 'function');
+  assert(S.FLUTTER_HZ > 0 && S.FLUTTER_HZ < 15, 'opacity variation avoids aliasing at 30 FPS');
+  const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
+  avatar.update(0, 86400000 + 100, 0.016, 150);
+  assert(Number.isFinite(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value)
+    && avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value < Math.PI * 2,
+    'phase remains bounded after a full day of continuous game runtime');
   const actor = { id: 'linked_swarm', swarmColor: '#aabbcc',
     genotype: { tailfeathers: { enabled: true, copies: 1, color: '#332211' },
       spectacles: { enabled: true, copies: 1, color: '#889900' } } }; // Exercises the real game factory's color-only constructor followed by actor collection registration.
@@ -159,6 +165,31 @@ function fakeThree() {
   avatar.dispose();
   assert.equal(avatar.swarm.geometry.disposed, true);
   assert.doesNotThrow(() => avatar.dispose());
+}
+
+// ---- optional overlays fail safely without hiding all swarm bodies ---------------------------
+{
+  const THREE = fakeThree();
+  const context = sandbox({
+    Image: class {
+      constructor() { this.width = 478; this.height = 399; }
+      set src(url) {
+        if (url.endsWith('honeyfuzzle_spectacles.png')) this.onerror(new Error('test: missing optional art'));
+        else this.onload();
+      }
+    },
+    document: { createElement: () => ({
+      getContext: () => ({ drawImage() {} }),
+    }) },
+  });
+  load(context, 'docs/js/honeyfuzzle-swarm.js');
+  const swarm = context.HoneyfuzzleSwarm;
+  swarm.ensureAtlas(THREE).then(() => {
+    const info = swarm.debugSnapshot();
+    assert.equal(info.atlasReady, true, 'the main swarm atlas survives missing optional spectacles art');
+    assert.equal(info.assetWarnings.length, 1, 'mobile diagnostics report the missing optional marking');
+    assert.match(info.assetWarnings[0], /spectacles/);
+  }).catch(error => { throw error; });
 }
 
 // ---- fixed Medium size / companion role -------------------------------------------------
@@ -388,7 +419,14 @@ function hiveWorld({ night = false } = {}) {
   context.Image = class { set src(v) {} }; context.document = { createElement: () => ({ getContext: () => ({ drawImage() {} }) }) };
   const objects = new Map();
   context.FarmBuildings = { canPlaceAt: (col, row) => !objects.has(col + ',' + row), clearFootprint() {} };
-  context.CreatureGenetics = { defaultLivestockName: () => 'Honeyfuzzle Swarm' };
+  context.CreatureGenetics = {
+    defaultLivestockName: () => 'Honeyfuzzle Swarm',
+    makeDefaultGenotype: () => ({
+      base: { color: '#ffffff', copies: 2 }, // Hatch replaces the dummy color with the original hive egg's color.
+      tailfeathers: { color: '#bb8833', copies: 1, enabled: true }, // Inherited secondary tail pigment used by the House swarm visual.
+      spectacles: { color: '#335599', copies: 1, enabled: true }, // Inherited spectacles visual shown on the spawned swarm.
+    }),
+  };
   context.FarmPanel = { cancelBarnPlacement() {}, render() {} };
   context.FarmWorldSettings = { read: () => ({ meta: {}, world: null }), current: () => ({}) };
   const shared = { calendar, inventory, ITEM_DEFS: {}, cropData: {}, COLS: 20, ROWS: 20, TileType: {}, MAX_WATER: 3, scene: { add() {}, remove() {} }, worldObjects: objects,
@@ -414,6 +452,11 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(livestock[0].kind, 'honeyfuzzle'); assert.equal(livestock[0].houseId, 'h1'); assert.equal(livestock[0].barnId, null);
   assert.equal(livestock[0].lifeStage, 'adult', 'a hatched swarm is not mistaken for a Nursery baby');
   assert.equal(livestock[0].swarmColor, '#123a22', 'the hatched swarm keeps its egg\'s color');
+  assert.equal(livestock[0].genotype.base.color, '#123a22', 'hatch preserves the queued egg pigment in its base genotype');
+  assert.equal(livestock[0].genotype.tailfeathers.color, '#bb8833', 'secondary tail allele survives hatching');
+  const houseMesh = added[0].children[0].children[0]; // Inspect the real swarm material attached by House.syncVisual.
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#bb8833', 'house swarm displays inherited secondary tail pigment');
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#335599', 'house swarm displays inherited spectacles pigment');
   assert.equal(house.placeEgg(a).ok, false, 'the swarm fills the house');
   // The house survives a save/load round trip, keeping its swarm.
   const saved = JSON.parse(JSON.stringify(context.FarmProduction.serialize()));
