@@ -22944,21 +22944,37 @@
       }
       // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
       SharedAttackPose.setCameraProvider(() => camera); // Edge-on avoidance judges the flat tool sprite against the live gameplay camera.
+      // The game draws several passes per frame (outlines, depth, held overlay) and each one reaches this hook with an identical head, so the
+      // placement is solved once per frame/camera and replayed onto the holders for the remaining passes.
+      const _attachCache = { valid: false, toolStamp: -1, heldStamp: -1, camera: null, toolActive: false, heldActive: false,
+        toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1 };
       window.PlayerBodyTransformComposer?.addPostHeadAimHook?.((undo, _renderDebug, renderCamera) => {
         const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
         const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
         if (!toolActive && !heldActive) return;
-        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) return;
+        const cache = _attachCache;
+        const hit = cache.valid && cache.toolStamp === _toolAttachStamp && cache.heldStamp === _heldAttachStamp && cache.camera === renderCamera
+          && cache.toolActive === toolActive && cache.heldActive === heldActive;
+        if (toolActive) { _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true; }
+        if (heldActive) { _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true; }
+        if (hit) { // Later pass of the same frame: replay the solved placement.
+          if (toolActive) { toolHolder.position.copy(cache.toolPos); toolHolder.quaternion.copy(cache.toolQuat); toolHolder.scale.setScalar(cache.toolScale); }
+          if (heldActive) { heldItemHolder.position.copy(cache.heldPos); heldItemHolder.quaternion.copy(cache.heldQuat); heldItemHolder.scale.setScalar(cache.heldScale); }
+          undo.push(_restoreHeadAttachments);
+          return;
+        }
+        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
         _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
         if (toolActive) {
-          _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true;
           SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+          cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
         }
         if (heldActive) {
-          _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true;
           SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+          cache.heldPos.copy(heldItemHolder.position); cache.heldQuat.copy(heldItemHolder.quaternion); cache.heldScale = heldItemHolder.scale.x;
         }
         _headFrame.cameraPosition = null;
+        cache.valid = true; cache.toolStamp = _toolAttachStamp; cache.heldStamp = _heldAttachStamp; cache.camera = renderCamera; cache.toolActive = toolActive; cache.heldActive = heldActive;
         undo.push(_restoreHeadAttachments);
       });
       const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
