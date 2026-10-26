@@ -1198,6 +1198,7 @@
 
   window.EquipmentPanel = {
     init,
+    getToolDefinition: key => deps?.TOOL_ITEM_DEFS?.[key] || null, // Used by weapon-enchantment-vfx.js to read the authored metal source PNG from EquipmentPanel's live definition registry.
     squareToolIcon,
     getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
     setEquipmentSlot,
