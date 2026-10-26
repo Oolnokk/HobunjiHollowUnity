@@ -10,7 +10,12 @@ class EmptyGroup {
   updateWorldMatrix(){}
 }
 const windowForTest = {THREE:{Group:EmptyGroup,Vector3:class {}}}; // Dependency-free empty-surface lifecycle; real triangles are also checked headlessly.
-vm.runInNewContext(fs.readFileSync('docs/js/foliage-generator.js','utf8'),{window:windowForTest});
+const generatorSource = fs.readFileSync('docs/js/foliage-generator.js','utf8'); // Checks that generated volumetric strands remain enrolled in the global shell pass.
+vm.runInNewContext(generatorSource,{window:windowForTest});
+const growthBuilder = generatorSource.slice(generatorSource.indexOf('function buildSurfaceGrowth('), generatorSource.indexOf('function applySurfaceGrowth(')); // Restricts outline checks to actual surface-grown tubes.
+assert(growthBuilder.includes('function buildSurfaceGrowth('), 'Surface growth builder must be present');
+assert.match(growthBuilder, /mesh\.geometry\.computeVertexNormals\(\);\s*mesh\.layers\.enable\(1\);[\s\S]*?group\.add\(mesh\);/, 'Merged root/vine tubes must enter the global inverted-shell layer');
+assert(!growthBuilder.includes('mesh.userData.noOutline = true'), 'Surface-grown tubes must not opt out like flat leaf cards');
 const api = windowForTest.FoliageGenerator; // Execute the production normalizer and lifecycle rather than mirroring source expressions.
 const original = {kind:'roots',count:9999,length:-3,radius:Infinity,color:'not-a-color',target:'selected',targetIds:['chair',null,12]};
 const normalized = api.normalizeSurfaceGrowth(original);

@@ -2034,7 +2034,9 @@ window.FoliageGenerator = (() => {
       }
       originalMaterial.dispose();
       mesh.userData.surfaceGrowthTexture=settings.texture;mesh.userData.surfaceGrowthColor=settings.color;
-      mesh.geometry.computeVertexNormals();geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
+      mesh.geometry.computeVertexNormals();
+      mesh.layers.enable(1); // The shared inverted-hull pass outlines these volumetric strands only when Shell Outlines is on.
+      geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
     }
     group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles).';
     return group;
@@ -2058,12 +2060,12 @@ window.FoliageGenerator = (() => {
     const rootFinish = surfaceGrowthDefaults('roots'); // Reuse the current tree-bark texture and render treatment.
     const vineFinish = surfaceGrowthDefaults('vines'); // Reuse the existing green vine material.
     const roots = { kind: 'roots', wallOnly: true, reuseSurfaceSampling: forest || mire, seed: String(seed) + ':wall-roots',
-      count: forest ? 22 : mire ? 18 : 14, length: forest ? 2.3 : mire ? 2.0 : 1.65,
-      radius: forest ? .043 : .036, curl: .55, offset: .008,
+      count: forest ? 44 : mire ? 36 : 28, length: forest ? 4.6 : mire ? 4.0 : 3.3,
+      radius: forest ? .086 : .072, curl: .55, offset: .008,
       color: '#' + barkColor.getHexString(), texture: rootFinish.texture };
     if (!forest && !mire) return [roots];
     return [roots, { kind: 'vines', wallOnly: true, reuseSurfaceSampling: true, seed: String(seed) + ':wall-vines',
-      count: forest ? 17 : 12, length: forest ? 2.3 : 1.9, radius: .021, curl: .65, offset: .018,
+      count: forest ? 34 : 24, length: forest ? 4.6 : 3.8, radius: .042, curl: .65, offset: .018,
       color: vineFinish.color, texture: vineFinish.texture,
       hangChance: forest ? .42 : .55, hangLength: forest ? 1.4 : 1.8 }];
   }
