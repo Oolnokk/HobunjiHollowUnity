@@ -9,13 +9,13 @@
     "motifRotationDeg": 0,
     "tiling": false,
     "invert": false,
-    "motifThinPx": 0,
+    "motifThinPx": 3,
     "frameShape": "square",
     "frameX": 0,
     "frameY": 0,
     "frameRotationDeg": 0,
     "frameScale": 1,
-    "meshScale": 1,
+    "meshScale": 3.2,
     "meshRotationDeg": 0,
     "overpassClearanceMultiplier": 3
   }

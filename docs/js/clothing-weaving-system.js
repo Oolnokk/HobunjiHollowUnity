@@ -2605,6 +2605,8 @@
     }
     await window.PixelWorkYield?.maybeYield();
     const [r, g, b] = hexRgb(colorHex);
+    const overpassInkHex = active.length > 1 && /^#[0-9a-f]{6}$/i.test(String(active[1].pattern.inkColorHex || ''))
+      ? active[1].pattern.inkColorHex : null; // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Reusable patterns avoid authored dark outlines; exact direct masks instead honor every opaque garment pixel selected by manual authoring.
@@ -2690,9 +2692,19 @@
       samplePredicate: i => !!garmentMask[i >> 2],
       applyPredicate: i => {
         const p = i >> 2;
-        return !!garmentMask[p] && !!combinedMask[p];
+        return !!garmentMask[p] && !!combinedMask[p] && (!overpassInkHex || !sampledMasks[1]?.[p]);
       },
     });
+    if (overpassInkHex && sampledMasks[1]) {
+      // A second shade-fill pass uses the uncolored authored source, not the primary ink, so the
+      // overpass retains its own dye/shading without bleeding into the under-strand or its clearance.
+      directShadeFill(base.data, hexRgb(overpassInkHex), {
+        sourceData: shadeSourceData,
+        debugLabel,
+        samplePredicate: i => !!garmentMask[i >> 2],
+        applyPredicate: i => !!garmentMask[i >> 2] && !!sampledMasks[1][i >> 2],
+      });
+    }
 
     await window.PixelWorkYield?.maybeYield();
     const outlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[0]?.pattern, debugLabel, width, height);

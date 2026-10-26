@@ -10,9 +10,11 @@ const specs = [
   ['blessed_blossom_potential', false, 'square'],
   ['blessed_blossom_rebirth', false, 'square'],
   ['blessed_blossom_windswept', false, 'square'],
-  ['winding_roots', true, 'brick'],
+  ['winding_roots', true, 'diamond'],
 ]; // Expected default placements for every newly published motif.
 const index = JSON.parse(fs.readFileSync(path.join(docs, 'config/patterns/index.json'), 'utf8')); // Public catalog consumed by the tools.
+const compositorSource = fs.readFileSync(path.join(docs, 'js/clothing-weaving-system.js'), 'utf8'); // One compositor owns independently tinted overpass masks.
+assert(compositorSource.includes('overpassInkHex'), 'shared compositor supports an independent overpass ink color');
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]); // Guards against accidentally registering a non-PNG file.
 
 for (const [id, tiling, frameShape] of specs) {
@@ -25,7 +27,12 @@ for (const [id, tiling, frameShape] of specs) {
   assert.equal(definition.collectible, false, id + ': decorative, not a ruin reward');
   assert.equal(definition.settings.tiling, tiling);
   assert.equal(definition.settings.frameShape, frameShape);
-  assert.equal(definition.settings.frameScale, 1, id + ': tightly fit the motif bounds without cropping');
+  const expected = id === 'winding_roots'
+    ? { motifScale: 1.11, motifThinPx: 2, frameShape: 'diamond', frameX: -9.412844473855543,
+        frameY: 7.321108098615682, frameRotationDeg: 43, frameScale: 1.5694130284370735, meshScale: 1.86 }
+    : { motifScale: 1, motifThinPx: 3, frameShape: 'square', frameX: 0, frameY: 0,
+        frameRotationDeg: 0, frameScale: 1, meshScale: 3.2 }; // Values match the supplied renamed exports, not invented defaults.
+  for (const [field, value] of Object.entries(expected)) assert.equal(definition.settings[field], value, id + ': ' + field);
   assert.equal(definition.settings.invert, false);
   const imagePath = path.join(docs, definition.motifPng); // PNG used in preview and in-game pattern rendering.
   assert(fs.existsSync(imagePath), id + ': source artwork exists');
