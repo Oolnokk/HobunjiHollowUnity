@@ -23,7 +23,7 @@ assert(shaft, 'Fishing Mace shaft must be registered.');
 assert.equal(shaft.sourceShape, 'fishingmace');
 assert.equal(shaft.sprite, 'assets/toolsprites/modular_pieces/weaponshaft_fishing_mace.png');
 assert.equal(fs.existsSync(`docs/${shaft.sprite}`), true, 'Configured Fishing Mace shaft sprite must exist.');
-assert.deepEqual(plain(shaft.mounts), [{ type: 'eye', start: { x: 193, y: 850 }, end: { x: 193, y: 770 } }]); // Migrated shaft sleeve arrow.
+assert.deepEqual(plain(shaft.mounts), [{ type: 'eye', start: { x: 193, y: 850 }, end: { x: 193, y: 770 } }, { type: 'tang', start: { x: 173, y: 810 }, end: { x: 213, y: 810 } }]); // Hand-authored centered, perpendicular companion tang.
 assert.equal(api.settings('fishing-mace', 'dagger').animation, 'sweep'); // Existing per-pair animation survived the schema conversion.
 assert.equal(shaft.defaults, undefined, 'Global shaft transforms have been removed.');
 assert.equal(api.getConfig().heads['fishing-mace'].mount.type, 'weight');
