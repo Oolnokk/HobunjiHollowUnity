@@ -6,6 +6,8 @@
   let mountIndex = 0; // Active mounting line for edits on the selected haft.
   let serial = 0; // Discard outdated async image/assembly requests.
   let drawing = null; // Active touch/mouse drag, one sprite line at a time.
+  let gizmoMode = 'draw'; // Draw replaces a line; move and rotate edit its two endpoints as a whole.
+  const gizmos = window.ModularMountGizmos; // Reusable line manipulation geometry, shared with regression tests.
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
@@ -42,6 +44,33 @@
     ctx.beginPath(); ctx.arc(start.x, start.y, 9, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+  function drawGizmo(ctx, line) {
+    if (gizmoMode === 'draw') return;
+    const center = gizmos.midpoint(line); // Move handle and rotation pivot at the exact line midpoint.
+    const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(line) : center; // Dedicated draggable handle for current mode.
+    ctx.save(); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#142431'; ctx.lineWidth = 4;
+    if (gizmoMode === 'rotate') {
+      ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(center.x, center.y);
+      ctx.lineTo(handle.x, handle.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(center.x, center.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(handle.x, handle.y, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // Large explicit grab point for touch.
+    ctx.beginPath();
+    if (gizmoMode === 'move') {
+      ctx.moveTo(handle.x - 15, handle.y); ctx.lineTo(handle.x + 15, handle.y);
+      ctx.moveTo(handle.x, handle.y - 15); ctx.lineTo(handle.x, handle.y + 15);
+      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+        ctx.moveTo(handle.x + Math.cos(angle) * 17, handle.y + Math.sin(angle) * 17);
+        ctx.lineTo(handle.x + Math.cos(angle - 0.4) * 11, handle.y + Math.sin(angle - 0.4) * 11);
+        ctx.moveTo(handle.x + Math.cos(angle) * 17, handle.y + Math.sin(angle) * 17);
+        ctx.lineTo(handle.x + Math.cos(angle + 0.4) * 11, handle.y + Math.sin(angle + 0.4) * 11);
+      }
+    } else {
+      ctx.arc(handle.x, handle.y, 11, -Math.PI * 0.85, Math.PI * 0.4);
+      ctx.lineTo(handle.x + 12, handle.y + 2);
+    }
+    ctx.stroke(); ctx.restore();
+  }
   function drawLines(id) {
     const image = cachedImages[id], canvas = byId(id); // Redraw the source image before overlaying edited lines.
     if (!image) return;
@@ -49,6 +78,7 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const mounts = id === 'head-canvas' ? [chosenHead().mount] : chosenShaft().mounts;
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
+    drawGizmo(ctx, id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]); // Only selected line gets handles.
   }
   async function preview() {
     const ticket = ++serial, shaftKey = byId('shaft').value, headKey = byId('head').value; // Preview identity.
@@ -73,7 +103,7 @@
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
           matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
-          disallowed: api.isDisallowed(shaftKey, headKey), revision: api.diagnostics('').revision
+          disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
         }, null, 2);
       } else {
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
@@ -163,38 +193,79 @@
     return { x: Math.max(0, Math.min(450, Math.round((event.clientX - rect.left) / rect.width * 450))),
       y: Math.max(0, Math.min(1204, Math.round((event.clientY - rect.top) / rect.height * 1204))) };
   }
+  function nearHandle(canvas, event, point, radiusPx = 32) {
+    const rect = canvas.getBoundingClientRect(); // Gizmo hit target remains a comfortable CSS-pixel radius on phones.
+    const x = rect.left + point.x / canvas.width * rect.width;
+    const y = rect.top + point.y / canvas.height * rect.height;
+    return Math.hypot(event.clientX - x, event.clientY - y) <= radiusPx;
+  }
+  function setGizmoMode(next) {
+    gizmoMode = next; // Changing modes never changes line geometry or the saved draft.
+    for (const name of ['draw', 'move', 'rotate']) {
+      const button = byId('gizmo-' + name); // Accessible toggle state and active CSS.
+      button.setAttribute('aria-pressed', String(name === gizmoMode));
+      button.classList.toggle('active', name === gizmoMode);
+    }
+    drawLines('shaft-canvas'); drawLines('head-canvas');
+    msg(gizmoMode === 'draw' ? 'Draw: drag a new arrow from base to tip.'
+      : gizmoMode === 'move' ? 'Move: drag the crosshair to move both arrow endpoints together.'
+      : 'Rotate: drag the circular handle to turn the entire arrow around its midpoint.');
+  }
   function gesture(id) {
-    const element = byId(id); // Finger drag from the mounted base toward the arrow tip.
+    const element = byId(id); // Source sprites accept one active line/handle drag.
+    function update(event) {
+      if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
+      const current = pointFor(element, event); // Use source-image coordinates regardless of responsive canvas size.
+      if (drawing.mode === 'draw') {
+        drawing.line.end = current; // Draw mode is the original base-to-tip gesture.
+      } else if (drawing.mode === 'move') {
+        const dx = current.x - drawing.pointerStart.x, dy = current.y - drawing.pointerStart.y;
+        Object.assign(drawing.line, gizmos.move(drawing.original, dx, dy)); // No rescale or change of angle.
+      } else {
+        const angle = gizmos.rotationDelta(drawing.original, drawing.pointerStart, current);
+        Object.assign(drawing.line, gizmos.rotate(drawing.original, angle)); // Rotation keeps its length exactly.
+      }
+      drawLines(id);
+    }
     element.addEventListener('pointerdown', event => {
-      if (drawing) return; event.preventDefault();
+      if (drawing || !event.isPrimary) return;
+      event.preventDefault();
       const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex];
-      const start = pointFor(element, event); // Arrow tail is wherever the user begins drawing.
-      drawing = { id, pointer: event.pointerId, line, original: JSON.parse(JSON.stringify(line)) };
-      line.start = start; line.end = { ...start };
+      const point = pointFor(element, event); // Always work on the currently selected line.
+      const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(line) : gizmos.midpoint(line);
+      if (gizmoMode !== 'draw' && !nearHandle(element, event, handle)) {
+        msg(gizmoMode === 'move' ? 'Drag the crosshair handle to move the selected line.'
+          : 'Drag the circular rotate handle to turn the selected line.');
+        return;
+      }
+      drawing = { id, pointer: event.pointerId, line, mode: gizmoMode,
+        pointerStart: point, original: JSON.parse(JSON.stringify(line)) }; // Restorable state for cancellations.
+      if (gizmoMode === 'draw') { line.start = point; line.end = { ...point }; }
       element.setPointerCapture(event.pointerId); drawLines(id);
     });
     element.addEventListener('pointermove', event => {
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
-      event.preventDefault();
-      drawing.line.end = pointFor(element, event); drawLines(id); // Immediate overlay feedback without recomposing gameplay.
+      event.preventDefault(); update(event); // Live arrows and handles update without expensive image recomposition.
     });
     element.addEventListener('pointerup', event => {
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
-      event.preventDefault(); drawing.line.end = pointFor(element, event);
-      const length = Math.hypot(drawing.line.end.x - drawing.line.start.x, drawing.line.end.y - drawing.line.start.y);
-      if (length < 2) { Object.assign(drawing.line, drawing.original); msg('Drag at least two pixels to set a directed mounting line.'); }
-      const valid = length >= 2; drawing = null;
-      if (valid) save(); else drawLines(id);
-    });
-    element.addEventListener('pointercancel', event => {
-      if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
-      Object.assign(drawing.line, drawing.original); drawing = null; drawLines(id); // Aborted mobile gesture must not save malformed lines.
-    });
-    element.addEventListener('lostpointercapture', event => {
-      if (drawing && drawing.id === id && drawing.pointer === event.pointerId) {
-        Object.assign(drawing.line, drawing.original); drawing = null; drawLines(id);
+      event.preventDefault(); update(event); // Apply final delta even if no pointermove preceded release.
+      const last = drawing;
+      const length = Math.hypot(last.line.end.x - last.line.start.x, last.line.end.y - last.line.start.y);
+      const changed = JSON.stringify(last.line) !== JSON.stringify(last.original); // Skip creating browser drafts for zero movement.
+      if (length < 2 || !changed) {
+        Object.assign(last.line, last.original);
+        if (length < 2) msg('Line must remain at least two pixels long.');
       }
+      drawing = null;
+      if (length >= 2 && changed) save(); else drawLines(id);
     });
+    function cancel(event) {
+      if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
+      Object.assign(drawing.line, drawing.original); drawing = null; drawLines(id); // Never commit aborted multi-touch gestures.
+    }
+    element.addEventListener('pointercancel', cancel);
+    element.addEventListener('lostpointercapture', cancel);
   }
   options('shaft', data.shafts); options('head', data.heads);
   byId('random').onclick = () => {
@@ -240,6 +311,8 @@
     save();
   };
   gesture('shaft-canvas'); gesture('head-canvas');
+  for (const mode of ['draw', 'move', 'rotate']) byId('gizmo-' + mode).onclick = () => setGizmoMode(mode); // Tool mode buttons.
+  setGizmoMode('draw');
   byId('export').onclick = () => {
     const blob = new Blob(['// Foundry directed mount lines and per-combination corrections.\nwindow.MODULAR_WEAPON_CONFIG = ' + JSON.stringify(data, null, 2) + ';\n'], { type: 'text/javascript' }); // Drop-in source, no eval on imports.
     const url = URL.createObjectURL(blob), anchor = document.createElement('a'); // Existing mobile browser download behavior.
