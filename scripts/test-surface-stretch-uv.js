@@ -281,7 +281,7 @@ let unpairedFallbacks = 0; // Proves these sampled rocks would fail without the 
 for (let i = 0; i < 128; i++) {
   const col = i * 17 % 59, row = i * 31 % 71; // Samples diverse deterministic mound silhouettes and changes in triangulation.
   const { stoneGeo } = windowMock.TerrainGeometry.buildRockTileGeo(col, row);
-  const settings = { angleToleranceDeg: 24, edgeSourceFraction: .32, edgeReferenceWorldSize: 1, avoidCollapsedUvs: true }; // Same settings as OreRockTextures.fitRockMesh.
+  const settings = { angleToleranceDeg: 24, edgeSourceFraction: .32, edgeReferenceWorldSize: 1, avoidCollapsedUvs: true }; // Standalone stress fixture for the cliff UV solver; the legacy ore renderer no longer invokes it.
   const unpaired = mapper.mapGeometry(stoneGeo, settings);
   unpairedFallbacks += unpaired.userData.hobunjiSurfaceStretch.fallbackCount;
   const mapped = mapper.mapGeometry(stoneGeo, { ...settings, preserveQuadPairs: true });
@@ -317,4 +317,4 @@ for (let i = 0; i < 128; i++) {
   }
 }
 if (unpairedFallbacks < 128) throw new Error('The real-rock regression fixture no longer exercises the fallback bug');
-console.log('Production ore-rock nine-slice: 128 rocks, ' + mappedRockFaces + ' mapped facets, zero fallbacks or collapsed triangles.');
+console.log('Surface UV solver stress fixture (not used by current ore rendering): 128 rocks, ' + mappedRockFaces + ' mapped facets, zero fallbacks or collapsed triangles.');
