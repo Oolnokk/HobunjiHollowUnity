@@ -1370,9 +1370,21 @@ window.MODULAR_WEAPON_CONFIG = {
             "x": 207,
             "y": 239
           }
+        },
+        {
+          "type": "tang",
+          "start": {
+            "x": 195,
+            "y": 856
+          },
+          "end": {
+            "x": 195,
+            "y": 776
+          }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "mountNotes": "Pick end uses an eye, scoop end uses a tang. Both original matching pairs remain explicitly disallowed for re-forging."
     },
     "plains-sword": {
       "label": "Plains Sword",
