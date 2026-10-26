@@ -168,52 +168,37 @@
     ]
   ],
   "exits": [
-    {
-      "id": "exit_swamp_house_out",
-      "label": "Front Door",
-      "tiles": [
-        [
-          9,
-          8
-        ]
-      ],
-      "targetMap": "",
-      "spawnCol": 0,
-      "spawnRow": 0,
-      "direction": "north",
-      "generateDoor": true
-    },
-    {
-      "id": "exit_swamp_leaf",
-      "label": "Leaf's Room",
-      "tiles": [
-        [
-          7,
-          4
-        ]
-      ],
-      "targetMap": "map_i_swamp_house_leaf",
-      "spawnCol": 9,
-      "spawnRow": 6,
-      "direction": "north",
-      "generateDoor": true
-    },
-    {
-      "id": "exit_swamp_pahu",
-      "label": "Pahu's Room",
-      "tiles": [
-        [
-          11,
-          4
-        ]
-      ],
-      "targetMap": "map_i_swamp_house_pahu",
-      "spawnCol": 9,
-      "spawnRow": 6,
-      "direction": "north",
-      "generateDoor": true
-    }
-  ],
+  {
+    "id": "exit_swamp_house_out",
+    "label": "Front Door",
+    "tiles": [
+      [
+        9,
+        8
+      ]
+    ],
+    "targetMap": "",
+    "spawnCol": 0,
+    "spawnRow": 0,
+    "direction": "north",
+    "generateDoor": true
+  },
+  {
+    "id": "exit_swamp_leaf",
+    "label": "Leaf & Pahu’s Bedroom",
+    "tiles": [
+      [
+        7,
+        4
+      ]
+    ],
+    "targetMap": "map_i_swamp_house_leaf",
+    "spawnCol": 9,
+    "spawnRow": 7,
+    "direction": "east",
+    "generateDoor": true
+  }
+],
   "colliders": [],
   "vendorZones": [],
   "routes": [],

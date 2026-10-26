@@ -890,7 +890,7 @@
                   ],
                   "events": [],
                   "scheduleHooks": {
-                        "defaultMapId": "hobunji_main_town",
+                        "defaultMapId": "map_i_ginju_farmstead_F2_R1",
                         "workBuildingId": "ginju_farmstead",
                         "shopHours": "",
                         "rules": [
@@ -1454,7 +1454,7 @@
                   ],
                   "events": [],
                   "scheduleHooks": {
-                        "defaultMapId": "hobunji_main_town",
+                        "defaultMapId": "map_i_ginju_farmstead_F2_R1",
                         "workBuildingId": "ginju_farmstead",
                         "shopHours": "",
                         "rules": [
@@ -1484,11 +1484,11 @@
                                     "from": "18:00",
                                     "to": "07:00",
                                     "mapId": "map_i_ginju_farmstead_F2_R1",
-                                    "stationId": "station_ginju_bed_parents",
+                                    "stationId": "station_ginju_bed_gikali",
                                     "activity": "sleeping"
                               }
                         ],
-                        "defaultStationId": "station_ginju_bed_parents"
+                        "defaultStationId": "station_ginju_bed_gikali"
                   },
                   "agenda": [
                         {
@@ -1526,7 +1526,7 @@
                               "activity": "sleep",
                               "obligation": "plan",
                               "window": ["18:00", "07:00"],
-                              "destinationStationId": "station_ginju_bed_parents",
+                              "destinationStationId": "station_ginju_bed_gikali",
                               "destinationArea": "map_i_ginju_farmstead_F2_R1",
                               "activityLabel": "sleeping"
                         }
@@ -3020,7 +3020,7 @@
                   ],
                   "events": [],
                   "scheduleHooks": {
-                        "defaultMapId": "hobunji_main_town",
+                        "defaultMapId": "map_i_swamp_house_leaf",
                         "workBuildingId": "little_swamp_house",
                         "shopHours": "",
                         "rules": [
@@ -3034,17 +3034,12 @@
                               {
                                     "from": "18:00",
                                     "to": "10:00",
-                                    "mapId": "map_i_swamp_house",
-                                    "position": {
-                                          "c": 2,
-                                          "r": 3
-                                    },
-                                    "activity": "home",
-                                    "contentIncomplete": true,
-                                    "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
+                                    "mapId": "map_i_swamp_house_leaf",
+                                    "activity": "sleeping",
+                                    "stationId": "station_swamp_leaf_bed"
                               }
                         ],
-                        "defaultStationId": "furniture_chair_map_i_inn_15_11"
+                        "defaultStationId": "station_swamp_leaf_bed"
                   },
                   "agenda": [
                         {
@@ -3057,11 +3052,13 @@
                               "activityLabel": "relaxing at the inn"
                         },
                         {
-                              "id": "home",
-                              "activity": "freeTime",
-                              "obligation": "leisure",
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
                               "window": ["18:00", "10:00"],
-                              "activityLabel": "home"
+                              "activityLabel": "sleeping at home",
+                              "destinationStationId": "station_swamp_leaf_bed",
+                              "destinationArea": "map_i_swamp_house_leaf"
                         }
                   ],
                   "loreBackground": "Leaf and his husband, Pahu ao Pakamu, are both alive at the start of the game. Pahu eventually dies of old age, leaving Leaf widowed. The timing of Pahu’s death has not yet been decided.",
@@ -3558,7 +3555,7 @@
                   ],
                   "events": [],
                   "scheduleHooks": {
-                        "defaultMapId": "hobunji_main_town",
+                        "defaultMapId": "map_i_swamp_house_leaf",
                         "workBuildingId": "little_swamp_house",
                         "shopHours": "",
                         "rules": [
@@ -3579,17 +3576,12 @@
                               {
                                     "from": "20:00",
                                     "to": "08:00",
-                                    "mapId": "map_i_swamp_house",
-                                    "position": {
-                                          "c": 3,
-                                          "r": 3
-                                    },
-                                    "activity": "home",
-                                    "contentIncomplete": true,
-                                    "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
+                                    "mapId": "map_i_swamp_house_leaf",
+                                    "activity": "sleeping",
+                                    "stationId": "station_swamp_pahu_bed"
                               }
                         ],
-                        "defaultStationId": "furniture_chair_map_i_inn_3_11"
+                        "defaultStationId": "station_swamp_pahu_bed"
                   },
                   "agenda": [
                         {
@@ -3611,11 +3603,13 @@
                               "activityLabel": "enjoying the inn"
                         },
                         {
-                              "id": "home",
-                              "activity": "freeTime",
-                              "obligation": "leisure",
+                              "id": "sleep",
+                              "activity": "sleep",
+                              "obligation": "plan",
                               "window": ["20:00", "08:00"],
-                              "activityLabel": "home"
+                              "activityLabel": "sleeping at home",
+                              "destinationStationId": "station_swamp_pahu_bed",
+                              "destinationArea": "map_i_swamp_house_leaf"
                         }
                   ],
                   "loreBackground": "Pahu ao Pakamu and his husband, Leaf, are both alive at the start of the game. Pahu eventually dies of old age. The timing of his death has not yet been decided.",

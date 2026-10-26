@@ -134,7 +134,7 @@
       "reason": "authored:npcWardrobeFor"
     },
     "pahu": {
-      "area": "map_i_swamp_house_pahu",
+      "area": "map_i_swamp_house_leaf",
       "furnitureId": "f_map_i_swamp_house_pahu_wardrobe",
       "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"

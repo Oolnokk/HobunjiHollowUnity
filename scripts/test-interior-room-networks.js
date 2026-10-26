@@ -133,6 +133,7 @@ const exitTiles = m => m.exits.flatMap(e => e.tiles.map(t => t.join(',')));
 for (const id of [
   'map_i_unumanuk_household', 'map_i_unumanuk_household_bedroom', 'map_i_watchhouse', 'map_i_carpenters', 'map_i_carpenters_F2',
   'map_i_carpenters_F2_dzibim', 'map_i_unumanuk_household_teacup', 'map_i_carpenters_F2_nashka',
+  'map_i_swamp_house', 'map_i_swamp_house_leaf', 'map_i_ginju_farmstead_F2_R1',
 ]) {
   const a = analyse(id);
   const { m } = a;

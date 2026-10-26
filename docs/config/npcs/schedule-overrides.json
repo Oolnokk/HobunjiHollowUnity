@@ -180,7 +180,7 @@
     {
       "npcId": "pahu",
       "fromMapId": "map_i_swamp_house",
-      "toMapId": "map_i_swamp_house_pahu",
+      "toMapId": "map_i_swamp_house_leaf",
       "toStationId": "station_swamp_pahu_bed",
       "clearContentIncomplete": true
     }

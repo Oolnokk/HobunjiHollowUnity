@@ -86,7 +86,7 @@ const residents = [
   ['kzubug','map_i_smithy_F2_kzubug','f_map_i_smithy_F2_kzubug_bed','f_map_i_smithy_F2_kzubug_wardrobe','map_i_smithy'],
   ['sloomi','map_i_smithy_F2_sloomi','f_map_i_smithy_F2_sloomi_bed','f_map_i_smithy_F2_sloomi_wardrobe','map_i_smithy'],
   ['leaf','map_i_swamp_house_leaf','f_map_i_swamp_house_leaf_bed','f_map_i_swamp_house_leaf_wardrobe','map_i_swamp_house'],
-  ['pahu','map_i_swamp_house_pahu','f_map_i_swamp_house_pahu_bed','f_map_i_swamp_house_pahu_wardrobe','map_i_swamp_house'],
+  ['pahu','map_i_swamp_house_leaf','f_map_i_swamp_house_leaf_bed','f_map_i_swamp_house_pahu_wardrobe','map_i_swamp_house'],
 ];
 
 const claimed = new Set();
@@ -151,7 +151,7 @@ for(const [npcId,mapId,stationId] of [
   ['kzubug','map_i_smithy_F2_kzubug','station_smi_kzubug_bed'],
   ['sloomi','map_i_smithy_F2_sloomi','station_smi_sloomi_bed'],
   ['leaf','map_i_swamp_house_leaf','station_swamp_leaf_bed'],
-  ['pahu','map_i_swamp_house_pahu','station_swamp_pahu_bed'],
+  ['pahu','map_i_swamp_house_leaf','station_swamp_pahu_bed'],
 ]){
   const redirect=ruleRedirects.get(npcId);
   assert.equal(redirect?.toMapId,mapId,`${npcId} selective home redirect must target their bedroom`);
