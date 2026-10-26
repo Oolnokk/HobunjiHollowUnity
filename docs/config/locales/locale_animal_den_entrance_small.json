@@ -134,7 +134,7 @@
     },
     "2,5": {
       "terrain": "free",
-      "strength": "preferred",
+      "strength": "required",
       "weight": 1,
       "facing": "any",
       "height": {
@@ -144,6 +144,50 @@
       }
     },
     "3,6": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,4": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,5": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "2,6": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,6": {
       "terrain": "free",
       "strength": "required",
       "weight": 1,
