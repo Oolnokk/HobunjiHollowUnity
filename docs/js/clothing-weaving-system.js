@@ -952,7 +952,12 @@
         if (!pattern) continue;
         const overpassEntry = advanced ? state.overpassPatterns[key] : null; // Advanced Loom's second visual pattern for this exact garment role.
         const overpassPattern = overpassEntry?.pattern || (overpassEntry?.patternId ? window.PatternLibrary?.getById?.(overpassEntry.patternId) : null);
-        const patterns = overpassPattern ? [clone(pattern), clone(overpassPattern)] : [clone(pattern)]; // Slot 2 is already rendered as the compositor's overpass.
+        const secondPattern = overpassPattern ? clone(overpassPattern) : null; // Source catalog stays unchanged; item owns its second visual layer.
+        if (secondPattern) {
+          if (overpassEntry?.inkColorHex) secondPattern.inkColorHex = overpassEntry.inkColorHex;
+          else delete secondPattern.inkColorHex; // Empty selection inherits the garment's primary Dye C.
+        }
+        const patterns = secondPattern ? [clone(pattern), secondPattern] : [clone(pattern)];
         const swapPatternColors = !!entry.swapPatternColors; // Stored beside this garment layer so base/trim can swap independently without changing the source pattern.
         layers[key] = {
           pattern: clone(pattern),
@@ -961,6 +966,7 @@
           patternLabel: entry.patternLabel || 'Custom',
           ...(overpassEntry?.patternId ? { overpassPatternLibraryId: overpassEntry.patternId } : {}),
           ...(overpassPattern ? { overpassPatternLabel: overpassEntry?.patternLabel || 'Custom' } : {}),
+          ...(secondPattern && overpassEntry?.inkDyeId ? { overpassPatternDyeId: overpassEntry.inkDyeId } : {}), // Reweaving retains named color choice.
           ...(swapPatternColors ? { swapPatternColors: true } : {}),
         };
       }
@@ -999,6 +1005,8 @@
               pattern: clone(stack[1]),
               patternId: overpassPatternId,
               patternLabel: stored.overpassPatternLabel || (overpassPatternId ? window.PatternLibrary?.listAvailable?.().find(entry => entry.id === overpassPatternId)?.label : null) || 'Custom',
+              inkColorHex: stack[1].inkColorHex || null, // Persistent garment-specific color, not a reusable library style.
+              inkDyeId: stored.overpassPatternDyeId || dyes.find(dye => dye.hex?.toLowerCase() === stack[1].inkColorHex?.toLowerCase())?.id || (stack[1].inkColorHex ? '__saved' : ''),
             };
           }
         }
@@ -1154,6 +1162,7 @@
         populatePatternSelect(select, state.layerPatterns[key]?.patternId);
         row.appendChild(select);
         let overpassSelect = null; // Advanced Loom-only second pattern selector for this garment role.
+        let overpassDyeSelect = null; // This garment role's optional independent overpass dye.
         if (advanced) {
           const overpassLabel = document.createElement('label');
           overpassLabel.textContent = 'Overpass pattern';
@@ -1162,12 +1171,30 @@
           populatePatternSelect(overpassSelect, state.overpassPatterns[key]?.patternId);
           overpassSelect.disabled = !state.layerPatterns[key];
           overpassSelect.onchange = () => {
-            const patternId = overpassSelect.value;
+            const patternId = overpassSelect.value, previous = state.overpassPatterns[key]; // Keep separate color while changing motifs.
             if (!patternId) delete state.overpassPatterns[key];
-            else state.overpassPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: overpassSelect.selectedOptions[0]?.textContent || 'None' };
+            else state.overpassPatterns[key] = { ...previous, pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: overpassSelect.selectedOptions[0]?.textContent || 'None' };
+            if (overpassDyeSelect) overpassDyeSelect.disabled = !patternId;
             refreshPreview();
           };
           row.appendChild(overpassSelect);
+          const overpassInkLabel = document.createElement('label');
+          overpassInkLabel.textContent = 'Overpass ink';
+          row.appendChild(overpassInkLabel);
+          overpassDyeSelect = document.createElement('select');
+          overpassDyeSelect.innerHTML = '<option value="">Same as Dye C</option>' + dyeOptionHtml(dyes, state.overpassPatterns[key]?.inkDyeId || '');
+          const savedInk = state.overpassPatterns[key]?.inkColorHex;
+          if (savedInk && state.overpassPatterns[key]?.inkDyeId === '__saved') overpassDyeSelect.add(new Option('Saved dye (' + savedInk + ')','__saved'));
+          overpassDyeSelect.value = state.overpassPatterns[key]?.inkDyeId || '';
+          overpassDyeSelect.disabled = !state.overpassPatterns[key];
+          overpassDyeSelect.onchange = () => {
+            const entry = state.overpassPatterns[key];
+            if (!entry) return;
+            entry.inkDyeId = overpassDyeSelect.value;
+            if (entry.inkDyeId !== '__saved') entry.inkColorHex = dyes.find(dye => dye.id === entry.inkDyeId)?.hex || null; // Blank is legacy shared ink.
+            refreshPreview();
+          };
+          row.appendChild(overpassDyeSelect);
         }
         const swapWrap = document.createElement('label'); // Holds the per-layer cloth/pattern color-swap control outside PatternAuthoring.
         swapWrap.className = 'loomcraft-pattern-swap';
@@ -1187,11 +1214,13 @@
             delete state.layerPatterns[key];
             delete state.overpassPatterns[key]; // An overpass is always pattern stack slot 2 and therefore cannot exist without slot 1.
             if (overpassSelect) { overpassSelect.value = ''; overpassSelect.disabled = true; }
+            if (overpassDyeSelect) { overpassDyeSelect.value = ''; overpassDyeSelect.disabled = true; }
             swapCheck.checked = false;
             swapCheck.disabled = true;
           } else {
             state.layerPatterns[key] = { pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: select.selectedOptions[0]?.textContent || 'None', swapPatternColors: keepSwap };
             if (overpassSelect) overpassSelect.disabled = false;
+            if (overpassDyeSelect) overpassDyeSelect.disabled = !state.overpassPatterns[key];
             swapCheck.disabled = false;
           }
           refreshPreview();
@@ -1217,6 +1246,7 @@
           delete state.overpassPatterns[key];
           select.value = '';
           if (overpassSelect) { overpassSelect.value = ''; overpassSelect.disabled = true; }
+            if (overpassDyeSelect) { overpassDyeSelect.value = ''; overpassDyeSelect.disabled = true; }
           swapCheck.checked = false;
           swapCheck.disabled = true;
           refreshPreview();
