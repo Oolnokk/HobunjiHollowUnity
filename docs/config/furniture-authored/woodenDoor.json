@@ -138,7 +138,9 @@
       "textureDataUrl": null,
       "textureName": "",
       "textureTransparent": true,
-      "textureTileSize": 1
+      "textureTileSize": 1,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png"
     },
     {
       "id": "part_mud8eq3v_qowsz",
@@ -181,7 +183,9 @@
       "textureDataUrl": null,
       "textureName": "",
       "textureTransparent": true,
-      "textureTileSize": 1
+      "textureTileSize": 1,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png"
     },
     {
       "id": "part_mud8fo7d_zlwk9",
@@ -224,7 +228,9 @@
       "textureDataUrl": null,
       "textureName": "",
       "textureTransparent": true,
-      "textureTileSize": 1
+      "textureTileSize": 1,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png"
     }
   ],
   "seatAnchors": [],

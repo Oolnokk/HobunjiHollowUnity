@@ -8,20 +8,7 @@
     {
       "id": "exit_ginju_front",
       "label": "Front Door",
-      "tiles": [
-        [
-          9,
-          19
-        ],
-        [
-          10,
-          19
-        ],
-        [
-          11,
-          19
-        ]
-      ],
+      "tiles": [[10, 19]],
       "targetMap": "",
       "spawnCol": 0,
       "spawnRow": 0,

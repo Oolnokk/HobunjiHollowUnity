@@ -1055,16 +1055,7 @@
     {
       "id": "training_stairs_up",
       "label": "Up to the Watchhouse",
-      "tiles": [
-        [
-          10,
-          18
-        ],
-        [
-          11,
-          18
-        ]
-      ],
+      "tiles": [[10, 18]],
       "targetMap": "map_i_watchhouse",
       "spawnCol": 4,
       "spawnRow": 14,

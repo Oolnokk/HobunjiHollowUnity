@@ -90,6 +90,69 @@
       : orientation(floorSet, record.col, record.row);
   }
 
+  // Only a complete two-tile opening becomes a double door; longer runs stay separate.
+  function doorGroupsOf(mapData, floorSet) {
+    const records = doorRecordsOf(mapData).filter(record => floorSet.has(keyOf(record.col, record.row))); // Shared by runtime and preview placement.
+    const pending = new Map(records.map(record => [keyOf(record.col, record.row), record])); // Unclaimed tiles in each transverse run.
+    const groups = []; // One placement per single or paired doorway.
+    for (const record of records) {
+      if (!pending.has(keyOf(record.col, record.row))) continue;
+      const facing = recordOrientation(floorSet, record); // Adjacent leaves must share orientation and travel destination.
+      const dc = SIDES[facing.facing][1], dr = -SIDES[facing.facing][0]; // Local width axis, perpendicular to travel.
+      const run = [record]; // Entire contiguous run, so three tiles cannot accidentally yield a pair.
+      pending.delete(keyOf(record.col, record.row));
+      for (const sign of [-1, 1]) {
+        for (let step = 1; ; step++) {
+          const next = pending.get(keyOf(record.col + dc * step * sign, record.row + dr * step * sign)); // Candidate on either side of the seed tile.
+          if (!next || next.exitId !== record.exitId || recordOrientation(floorSet, next).facing !== facing.facing) break;
+          pending.delete(keyOf(next.col, next.row));
+          run.push(next);
+        }
+      }
+      if (run.length === 2) groups.push({ ...record, col: (run[0].col + run[1].col) / 2, row: (run[0].row + run[1].row) / 2, direction: facing.facing, tiles: run });
+      else for (const tile of run) groups.push({ ...tile, tiles: [tile] });
+    }
+    return groups;
+  }
+
+  // Derive a paired mechanism without changing the shared Wooden Door definition.
+  function doubleDoorData(data) {
+    if (!Array.isArray(data?.parts)) return data; // Incomplete or unavailable authored data keeps the existing fallback.
+    const result = JSON.parse(JSON.stringify(data)); // Each pair owns its parts and their animation endpoints.
+    const slab = result.parts.find(part => part.name === 'Wooden Door Slab'); // Existing panel dimensions determine the half-opening width.
+    const rightPost = result.parts.find(part => part.name === 'Right Door Post'); // Outer post bounds locate the two leaf hinges.
+    if (!slab || !rightPost || !result.puzzle?.motion?.parts) return result;
+    const width = rightPost.transform.x + 0.5 - rightPost.transform.sx / 2; // One leaf extends from the centre seam to the outer frame.
+    const scale = width / slab.transform.sx; // Widen leaves into the space previously occupied by the centre posts.
+    const offset = width / 2 - slab.transform.x * scale; // Closed right leaf starts at the centre seam.
+    const motion = {}; // Rebuilt part transitions consumed by FurniturePuzzleRuntime.
+    const parts = []; // Two moving leaves/latches, two outer posts, one continuous header.
+    for (const part of result.parts) {
+      const poses = result.puzzle.motion.parts[part.id]; // Authored OFF/ON motion stays the authority for swinging.
+      if (part.name === 'Wooden Door Slab' || part.name === 'Wooden Door Latch') {
+        for (const sign of [-1, 1]) {
+          const copy = JSON.parse(JSON.stringify(part)); // Independent mirrored leaf; no negative mesh scale or inverted normals.
+          copy.id = `${part.id}_${sign < 0 ? 'left' : 'right'}`;
+          copy.name = `${sign < 0 ? 'Left' : 'Right'} ${part.name}`;
+          const transform = pose => ({ ...pose, x: sign * (pose.x * scale + offset), z: slab.transform.z + (pose.z - slab.transform.z) * scale, ry: sign * pose.ry, rz: sign * pose.rz, sx: pose.sx * scale }); // Reflection across local X mirrors the hinge motion.
+          copy.transform = transform(part.transform);
+          motion[copy.id] = { off: transform(poses.off), on: transform(poses.on) };
+          parts.push(copy);
+        }
+      } else {
+        if (part.name === 'Right Door Post') part.transform.x += 0.5;
+        if (part.name === 'Left Door Post') part.transform.x -= 0.5;
+        if (part.name === 'Doorway Header') part.transform.sy += 1;
+        motion[part.id] = { off: { ...part.transform }, on: { ...part.transform } };
+        parts.push(part);
+      }
+    }
+    result.parts = parts;
+    result.footprint.w = 2;
+    result.puzzle.motion.parts = motion;
+    return result;
+  }
+
   async function loadDoorData() {
     const runtime = window.AuthoredFurniture;
     if (!runtime) return null;
@@ -131,31 +194,32 @@
   // outline/edge marks.
   async function build({ THREE, scene, mapId, mapData, floorSet, surfaceYAt, registerInteractable, decorate }) {
     discard(mapId);
-    const tiles = doorRecordsOf(mapData).filter(record => floorSet.has(keyOf(record.col, record.row))); // Includes map-switch doors without changing their travel action.
+    const tiles = doorGroupsOf(mapData, floorSet); // Includes map-switch doors without changing their travel action.
     const state = { mapId, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
     maps.set(mapId, state);
     if (!tiles.length) return state;
     const data = await loadDoorData();
     if (!data || !window.AuthoredFurniture?.buildGroup) return state;
+    const pairedData = doubleDoorData(data); // Reused immutable paired geometry for this scene build.
     const records = [];
     const objectById = new Map();
     for (const record of tiles) {
       const { col: c, row: r } = record; // Coordinates used to place and register this door.
-      const group = window.AuthoredFurniture.buildGroup(data, 0x8b6540);
+      const group = window.AuthoredFurniture.buildGroup(record.tiles.length === 2 ? pairedData : data, 0x8b6540);
       if (!group) continue;
       const facing = recordOrientation(floorSet, record); // Explicit inward direction wins over inferred floor adjacency.
       const id = `door_${c}_${r}`;
       group.name = `interior_door_${c}_${r}`;
-      group.position.set(c + 0.5, Number(surfaceYAt?.(c, r)) || 0, r + 0.5);
+      group.position.set(c + 0.5, Number(surfaceYAt?.(record.tiles[0].col, record.tiles[0].row)) || 0, r + 0.5);
       group.rotation.y = -facing.rotationDeg * Math.PI / 180;
-      group.userData = Object.assign(group.userData || {}, { interiorDoorTile: { col: c, row: r }, interiorDoorFacing: facing.facing });
+      group.userData = Object.assign(group.userData || {}, { interiorDoorTile: { col: c, row: r }, interiorDoorFacing: facing.facing, interiorDoorWidth: record.tiles.length });
       scene.add(group);
       decorate?.(group);
-      const entry = { id, puzzleMapId: state.puzzleMapId, col: c, row: r, group, facing: facing.facing, active: false, handOpened: false, idleFor: 0, exitId: record.exitId || null }; // setOpen() addresses the mechanism through the entry's own puzzle map id.
+      const entry = { id, puzzleMapId: state.puzzleMapId, col: c, row: r, tiles: record.tiles, group, facing: facing.facing, active: false, handOpened: false, idleFor: 0, exitId: record.exitId || null }; // setOpen() addresses the mechanism through the entry's own puzzle map id.
       state.doors.push(entry);
       records.push({ id, itemKey: 'woodenDoorFurniture' });
       objectById.set(id, group);
-      if (!entry.exitId) registerInteractable?.(c, r, interactableFor(entry)); // Map-switch doors keep the existing Enter/Leave action.
+      if (!entry.exitId) for (const tile of entry.tiles) registerInteractable?.(tile.col, tile.row, interactableFor(entry)); // Map-switch doors keep the existing Enter/Leave action.
     }
     window.FurniturePuzzleRuntime?.registerMap?.(state.puzzleMapId, records, objectById, []);
     return state;
@@ -176,10 +240,9 @@
     for (const entry of state.doors) {
       let npcNear = false;
       for (const actor of tileActors) {
-        const dc = Math.abs(Math.floor(actor[0]) - entry.col), dr = Math.abs(Math.floor(actor[1]) - entry.row);
-        if (dc + dr <= 1) { npcNear = true; break; }
+        if (entry.tiles.some(tile => Math.abs(Math.floor(actor[0]) - tile.col) + Math.abs(Math.floor(actor[1]) - tile.row) <= 1)) { npcNear = true; break; }
       }
-      const playerNear = !!player && Math.hypot(player[0] - (entry.col + 0.5), player[1] - (entry.row + 0.5)) < PLAYER_NEAR_TILES;
+      const playerNear = !!player && entry.tiles.some(tile => Math.hypot(player[0] - (tile.col + 0.5), player[1] - (tile.row + 0.5)) < PLAYER_NEAR_TILES);
       if (npcNear || (entry.exitId && playerNear)) { entry.idleFor = 0; setOpen(entry, true); continue; }
       if (!entry.active) { entry.handOpened = false; continue; }
       if (playerNear) { entry.idleFor = 0; continue; } // Never close on the player.
@@ -201,7 +264,7 @@
     if (!state) return false;
     for (const entry of state.doors) {
       if (entry.exitId || !isBlocked(entry)) continue; // A map-switch doorway must remain reachable even while its mesh is closed.
-      if (x + half > entry.col && x - half < entry.col + 1 && z + half > entry.row && z - half < entry.row + 1) return true;
+      if (entry.tiles.some(tile => x + half > tile.col && x - half < tile.col + 1 && z + half > tile.row && z - half < tile.row + 1)) return true;
     }
     return false;
   }
@@ -209,9 +272,9 @@
   function debug() {
     return [...maps.values()].map(state => ({
       mapId: state.mapId,
-      doors: state.doors.map(entry => ({ col: entry.col, row: entry.row, facing: entry.facing, exitId: entry.exitId, open: entry.active, handOpened: entry.handOpened, blocked: !entry.exitId && isBlocked(entry), progress: Number(entry.group.userData.puzzleProgress) || 0 })),
+      doors: state.doors.map(entry => ({ col: entry.col, row: entry.row, width: entry.tiles.length, tiles: entry.tiles.map(tile => [tile.col, tile.row]), facing: entry.facing, exitId: entry.exitId, open: entry.active, handOpened: entry.handOpened, blocked: !entry.exitId && isBlocked(entry), progress: Number(entry.group.userData.puzzleProgress) || 0 })),
     }));
   }
 
-  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
+  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
 })();
