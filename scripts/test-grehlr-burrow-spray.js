@@ -45,6 +45,11 @@ function creature(key = 'grehlr') {
   };
 }
 
+function advancePastLunge(c) {
+  for (let tick = 0; tick < 100 && c._animalAttack?.state?.stage === 'lunge'; tick++) attacks.update(c, 0.016);
+  assert.notEqual(c._animalAttack?.state?.stage, 'lunge', 'a selected lunge always completes');
+}
+
 for (const key of ['grehlr', 'grehlr-den-mother']) {
   const c = creature(key); // Exercises both species through the stale-pounce compatibility route.
   player.x = 150;
@@ -100,6 +105,9 @@ for (const key of ['grehlr', 'grehlr-den-mother']) {
   const c = creature(key); // Checks actual spray selection, stage progression, and status application.
   attacks.start(c, 'grehlrBurrow', { target: player });
   assert.equal(c._animalAttack.id, 'grehlrStink');
+  assert.equal(c._animalAttack.state.stage, 'lunge', 'selection starts charging without waiting for another AI decision');
+  advancePastLunge(c);
+  assert.equal(c._animalAttack.state.lungeStopReason, 'target');
   attacks.update(c, tuning.grehlrStink.FLIP_S);
   attacks.update(c, tuning.grehlrStink.SPRAY_S);
   assert.equal(c._animalAttack.state.hitCount, 1);
@@ -107,9 +115,29 @@ for (const key of ['grehlr', 'grehlr-den-mother']) {
   assert.equal(attacks.update(c, tuning.grehlrStink.RECOVER_S), false);
 }
 
+// Each stop condition hands off to flip and spray without AI reevaluation.
+for (const stop of ['target', 'range', 'blocked', 'evaded']) {
+  const c = creature();
+  player.x = stop === 'target' ? 430 : 900;
+  if (stop === 'blocked') context.Combat.deps.canOccupyAt = () => false;
+  attacks.start(c, 'grehlrStink', { target: player });
+  assert.equal(c._animalAttack.state.stage, 'lunge');
+  if (stop === 'evaded') player.x = -900;
+  advancePastLunge(c);
+  assert.equal(c._animalAttack.state.stage, 'flip', stop + ': turn executes after lunge');
+  assert.equal(c._animalAttack.state.lungeStopReason, stop === 'evaded' ? 'range' : stop);
+  if (stop === 'target') assert(c.x > 0, 'distant target causes a visible charge');
+  attacks.update(c, tuning.grehlrStink.FLIP_S);
+  attacks.update(c, 0.016);
+  assert.equal(c._animalAttack.state.sprayResolved, true, stop + ': spray executes');
+  attacks.cancel(c);
+  context.Combat.deps.canOccupyAt = () => true;
+}
+player.x = 200;
+
 const range = context.HobunjiGrehlrStink.attackTriggerRangePx; // Verifies species-specific eligibility and unchanged shorter/other-species ranges.
-assert.equal(range(creature(), 440, 100), 225);
-assert.equal(range(creature('grehlr-den-mother'), 620, 100), 225);
+assert.equal(range(creature(), 440, 100), 440);
+assert.equal(range(creature('grehlr-den-mother'), 620, 100), 450);
 assert.equal(range(creature(), 90, 100), 90);
 assert.equal(range(creature('gar-wolf'), 440, 100), 440);
 assert.equal(range({ ...creature(), isCompanion: true }, 90, 100), 90);
@@ -128,8 +156,8 @@ Object.assign(context, {
 });
 context.c.attackCooldownT = 0;
 context.updateCreatureBehaviorStage = (c, dt, target, def, attempt) => {
-  assert.equal(attempt(440), false, 'AI approaches instead of always burrowing from beyond spray selection range');
-  return attempt(200);
+  assert.equal(attempt(500), false, 'AI approaches beyond the charge trigger range');
+  return attempt(400);
 };
 vm.runInContext(`{ ${game.slice(start, end)} }`, context);
 assert.equal(context.c._animalAttack.id, 'grehlrStink', 'live hostile AI can choose spray');
@@ -138,6 +166,7 @@ assert.equal(context.c.stamina, 87);
 function sprayRecipients(c, target) {
   sprayedTargets.length = 0;
   attacks.start(c, 'grehlrStink', { target });
+  advancePastLunge(c);
   attacks.update(c, tuning.grehlrStink.FLIP_S);
   attacks.update(c, 0.016);
   attacks.update(c, 0.016);
@@ -192,6 +221,7 @@ for (const interrupted of [false, true]) {
   emitter.avatarRef.group.parent = particleScene;
   emitter.avatarRef.group.position = { y: 3 };
   attacks.start(emitter, 'grehlrStink', { target: player });
+  advancePastLunge(emitter);
   attacks.update(emitter, tuning.grehlrStink.FLIP_S);
   attacks.update(emitter, 0.08);
   assert.ok(particleScene.children.length > 0, 'spray emits particles');

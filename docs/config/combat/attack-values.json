@@ -142,7 +142,9 @@
     },
     "grehlrStink": {
       "SELECTION_CHANCE": 0.4,
-      "MAX_SELECTION_RANGE_TILES": 2.25,
+      "MAX_SELECTION_RANGE_TILES": 4.5,
+      "LUNGE_MAX_TILES": 2.8,
+      "LUNGE_SPEED_TILES_S": 5.5,
       "FLIP_S": 0.1,
       "SPRAY_S": 0.16,
       "RECOVER_S": 0.18,
