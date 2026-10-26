@@ -128,7 +128,31 @@ const tick = at => { now = at; registeredFrame(at); }; // Runs the production up
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(snapshot().emitters, 1, 'returning to melee restores its own effect');
 
+  const meleeKeyInRangedSlot = weapon(); // Some Dagger/Kylie models are legal in both slots and share the exact same item key.
+  activeSlot = 'ranged'; holder.remove(third); holder.add(meleeKeyInRangedSlot);
+  tick(1072);
+  assert.equal(snapshot().emitters, 0, 'even a ranged visual with the enchanted melee item key must not emit');
+  activeSlot = 'weapon'; holder.remove(meleeKeyInRangedSlot); holder.add(third);
+  tick(1076);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshot().emitters, 1, 'melee aura recovers after a same-key ranged slot');
+
+  const dualMain = plane(); // A dual-wield copy of the enchanted weapon's visible main-hand PNG.
+  const dualOffhand = plane(); // The corresponding off-hand duplicate, distinct from the hidden original material.
+  dualMain.userData.hobunjiDualWieldDuplicate = true;
+  dualOffhand.userData.hobunjiDualWieldDuplicate = true;
+  third.userData.toolPlane.add(dualMain);
+  third.userData.toolPlane.add(dualOffhand);
+  context.window.HobunjiDualWieldWeaponVisuals = { debugSnapshot: () => ({ active: true }) };
+  api.forceRefresh(); tick(1078);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshot().emitters, 2, 'dual-wield duplicates each retain their own aura');
+  assert.equal(dualMain.children.length, 1, 'main dual-wield blade owns one emitter');
+  assert.equal(dualOffhand.children.length, 1, 'offhand dual-wield blade owns one emitter');
+
   heldMode = 'none'; tick(1080);
+  assert.equal(dualMain.children.length, 0, 'holstering disposes the dual-wield main aura');
+  assert.equal(dualOffhand.children.length, 0, 'holstering disposes the dual-wield offhand aura');
   assert.equal(snapshot().emitters, 0, 'putting away a weapon clears its aura');
   heldMode = 'item'; tick(1096);
   assert.equal(snapshot().activeHeldWeaponKey, null, 'holding inventory items cannot spawn the effect');
