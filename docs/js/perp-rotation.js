@@ -10,7 +10,7 @@
   // its sibling systems.
   let deps = null;
   function init(injectedDeps) {
-    deps = injectedDeps;
+    deps = { ...deps, ...injectedDeps }; // Merged: DeadzoneBillboard re-inits with only angleDiff and must not drop game.js's playerWorldPosition.
     installFarmAnimalsInitCapture();
   }
 
