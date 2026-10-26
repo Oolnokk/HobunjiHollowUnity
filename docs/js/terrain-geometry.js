@@ -808,7 +808,7 @@
   // accidentally replaced this with one flat BufferGeometry even though every
   // live caller continued destructuring { stoneGeo, grassGeo }.
   function buildRockTileGeo(col, row) {
-    const VERTS = 7, CELLS = 6;
+    const VERTS = 6, CELLS = 5; // Coarser five-by-five quad lattice: larger facets for cliff-style surface recognition at ~31% fewer triangles.
     const STEP = 1.0 / CELLS;
 
     let seed = ((col * 374761393) ^ (row * 668265263)) >>> 0; // Used to make each tile's irregular mound deterministic.
@@ -843,7 +843,7 @@
     // BFS plateau from a random interior starting cell (never touches edge cells).
     const startCi = 1 + Math.floor(rng() * (CELLS - 2));
     const startCj = 1 + Math.floor(rng() * (CELLS - 2));
-    const maxSize = 2 + Math.floor(rng() * 12);
+    const maxSize = 2 + Math.floor(rng() * 5); // Low-poly five-cell grid: 2–6 connected interior cells retain at least one grass corner and an irregular stone/grass boundary.
     const group = new Set([startCj * CELLS + startCi]);
     const front = [[startCi, startCj]];
 
