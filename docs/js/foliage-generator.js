@@ -2034,7 +2034,9 @@ window.FoliageGenerator = (() => {
       }
       originalMaterial.dispose();
       mesh.userData.surfaceGrowthTexture=settings.texture;mesh.userData.surfaceGrowthColor=settings.color;
-      mesh.geometry.computeVertexNormals();geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
+      mesh.geometry.computeVertexNormals();
+      mesh.layers.enable(1); // The shared inverted-hull pass outlines these volumetric strands only when Shell Outlines is on.
+      geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
     }
     group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles).';
     return group;
