@@ -22892,6 +22892,39 @@
       }
       // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
       // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      // A ranged weapon aims with its authored stance only when (1) RangedWeapons has a config for it and (2) its animStyle resolves to
+      // 'ranged'. Either can be missing if registration ran before this item's definition existed, and the game then silently shows the
+      // generic ranged stance for the whole session. While aiming, notice that, re-run the registrars, and say which condition it was.
+      let _rangedStanceCheckAt = 0;
+      const _rangedStanceReported = new Set();
+      function ensureRangedStanceReady(itemKey) {
+        if (!itemKey) return;
+        const now = performance.now();
+        if (now - _rangedStanceCheckAt < 1000) return; // One cheap lookup a second is plenty; this is a safety net, not a per-frame path.
+        _rangedStanceCheckAt = now;
+        const hasConfig = !!window.RangedWeapons?.config?.[itemKey];
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const styleOk = !def || def.animStyle === 'ranged';
+        if (hasConfig && styleOk) return;
+        const archetypes = window.HobunjiRangedWeaponArchetypes;
+        if (!hasConfig) archetypes?.patchGeneratedDefinitions?.();
+        if (!styleOk) { archetypes?.patchGeneratedDefinitions?.(); window.HobunjiDualRoleRangedAnimStyle?.refresh?.(); }
+        const repaired = !!window.RangedWeapons?.config?.[itemKey] && (!def || def.animStyle === 'ranged');
+        const reason = `${!hasConfig ? 'no-ranged-config' : ''}${!hasConfig && !styleOk ? '+' : ''}${!styleOk ? 'anim-style-not-ranged' : ''}`;
+        const report = `${itemKey}:${reason}:${repaired ? 'repaired' : 'unrepaired'}`;
+        if (!_rangedStanceReported.has(report)) { // Once per distinct outcome, so a persistent failure does not flood the log.
+          _rangedStanceReported.add(report);
+          window.__farmLog?.(`[ranged-stance] ${itemKey} would have used the fallback ranged stance (${reason}); ${repaired ? 'repaired by re-running registration' : 'could not be repaired'}.`, 'warn', 'combat');
+        }
+        if (repaired) rebuildToolMeshes(); // The loaded/unloaded sprite variants depend on the same registration.
+      }
+      let _headAnchorFallbackReported = false;
+      function reportHeadAnchorFallback() { // A head-anchored pose whose head frame could not be resolved is drawn hand-relative: that is the fallback stance.
+        if (_headAnchorFallbackReported) return;
+        _headAnchorFallbackReported = true;
+        const rig = playerAvatarGroup?.userData?.neckRig;
+        window.__farmLog?.(`[ranged-stance] head-anchored pose fell back to the hand-relative stance: head frame unavailable (rig ${rig?.available ? 'ok' : 'missing'}, mouth pixel ${window.SharedAttackPose.mouthPixel(playerAvatarGroup) ? 'ok' : 'missing'}, skinned resolver ${window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition ? 'ok' : 'missing'}).`, 'warn', 'combat');
+      }
       let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
       const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
       function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
@@ -23399,6 +23432,7 @@
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
         _toolAttachStamp++; // A head-anchored placement this frame re-stamps _toolAttachJob; an older stamp means the tool is no longer head-anchored.
+        if (activeTool === 'ranged') ensureRangedStanceReady(equipmentSlots.ranged); // Repairs (and reports) a ranged weapon that would otherwise fall back to the generic stance.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
@@ -23515,6 +23549,7 @@
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
           const headAnchored = sampled.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Head-anchored poses take rotation, position and scale from the head's mouth frame alone; the camera only drives the head.
+          if (sampled.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -23565,6 +23600,7 @@
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
           const headAnchored = neutral.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Same mouth-frame rule as the pose-driven branch above.
+          if (neutral.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));

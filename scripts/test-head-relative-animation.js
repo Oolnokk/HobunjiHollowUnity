@@ -40,6 +40,9 @@ const composerSource = fs.readFileSync('docs/js/player-body-transform-composer.j
 assert.match(composerSource, /applyPlayerHeadAim\(undo, renderDebug\); applyPlayerNeckYawLimit\(renderDebug, camera\); for \(const hook of postHeadAimHooks\)/, 'composer runs post-head-aim hooks right after the head aim and neck limit');
 assert.match(composerSource, /addPostHeadAimHook,/, 'composer exports the hook registration');
 assert.match(game, /addPostHeadAimHook\?\.\(\(undo[^)]*\) =>[\s\S]*placeAtMouth\(toolHolder, _headFrame, _toolAttachJob\.pose[\s\S]*placeAtMouth\(heldItemHolder, _headFrame, _heldAttachJob\.pose[\s\S]*undo\.push\(_restoreHeadAttachments\)/, 'game re-seats the head-anchored tool and held bottle on the drawn head and restores gameplay transforms after the draw');
+assert.match(game, /function ensureRangedStanceReady\(itemKey\)[\s\S]*patchGeneratedDefinitions\?\.\(\)[\s\S]*HobunjiDualRoleRangedAnimStyle\?\.refresh\?\.\(\)[\s\S]*\[ranged-stance\]/, 'aiming repairs a missing ranged config / anim style and logs which one it was');
+assert.match(game, /if \(activeTool === 'ranged'\) ensureRangedStanceReady\(equipmentSlots\.ranged\)/, 'the repair runs while a ranged weapon is the active tool');
+assert.match(game, /if \(sampled\.headRelative && !headAnchored\) reportHeadAnchorFallback\(\)[\s\S]*if \(neutral\.headRelative && !headAnchored\) reportHeadAnchorFallback\(\)/, 'a head-anchored pose that falls back to the hand-relative stance is reported');
 // Mouth/aperture attach math, with a small THREE-compatible vector/quaternion/euler stand-in.
 let fakeNow = 1000; // Controllable clock for the deadzone's stale-gap reset.
 const mathContext = { window: {}, Math, performance: { now: () => fakeNow } };
