@@ -61,6 +61,26 @@ assert.throws(() => outline(sample, width, height, 33), /1–32/);
 assert.throws(() => outline(sample, width, height, 1.25), /1–32/);
 assert.throws(() => outline(sample, width - 1, height, 1), /valid pixels/);
 
+assert(editorHtml.includes('id="cut-min-alpha"') && editorHtml.includes('id="cut-cull-alpha"'), 'The cutter exposes a shared alpha cutoff and manual cleanup.');
+assert(cutter.includes('cullLowAlphaPixels(pixels, cutoff)'), 'PNG export must sanitize faint alpha before encoding.');
+assert(cutter.includes('outlinePixels(pixels, FRAME.width, FRAME.height, thickness, minAlpha())'), 'Outline detection uses the same threshold.');
+const fringe = new Uint8ClampedArray(width * height * 4); // Opaque sprite with a single nearly-invisible rogue pixel.
+mark(fringe, 4, 4, [220, 180, 55, 255]);
+mark(fringe, 8, 8, [150, 70, 40, 3]);
+const cleaned = window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 32); // Below-threshold colors must not survive export.
+assert.equal(cleaned.removed, 1);
+assert.deepEqual(pixel(cleaned.pixels, 8, 8), [0, 0, 0, 0]);
+assert.deepEqual(pixel(cleaned.pixels, 4, 4), [220, 180, 55, 255]);
+assert.deepEqual(pixel(fringe, 8, 8), [150, 70, 40, 3], 'Original source is preserved for Undo.');
+const outlined = outline(fringe, width, height, 1, 32); // Near-invisible pixel must not cause a black outline at far corner.
+assert.equal(outlined.culled, 1);
+assert.deepEqual(pixel(outlined.pixels, 8, 8), [0, 0, 0, 0], 'Faint pixel is cleared while outlining.');
+assert.deepEqual(pixel(outlined.pixels, 7, 8), [0, 0, 0, 0], 'Faint pixel cannot generate an outline.');
+assert.deepEqual(pixel(outlined.pixels, 3, 3), [0, 0, 0, 255], 'Real source pixels still produce outlines.');
+mark(fringe, 8, 8, [150, 70, 40, 32]);
+assert.deepEqual(pixel(window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 32).pixels, 8, 8), [150, 70, 40, 32], 'Alpha at the threshold is kept.');
+assert.throws(() => window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 256), /0 to 255/);
+
 const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe', 'kylie', 'pick-shovel', 'plains-sword'] }; // New authoring-only exports on main.
 for (const [kind, keys] of Object.entries(uploaded)) for (const key of keys) {
   const part = api.getConfig()[kind][key]; // Newly registered parts must be visible in the authoring dropdowns.
