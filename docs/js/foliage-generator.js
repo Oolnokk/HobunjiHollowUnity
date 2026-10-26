@@ -1899,19 +1899,24 @@ window.FoliageGenerator = (() => {
     return targets;
   }
 
+  const caveSurfaceSamplingCache = new WeakMap(); // Shares costly immutable cavern-wall triangle indexes between roots and vines, without retaining unloaded scenes.
   function buildSurfaceGrowth(parent, input = {}) {
     const settings = normalizeSurfaceGrowth(input); // Same sanitized recipe is stored by every authoring tool.
     const group = new T.Group(); // Geometry is expressed in the target parent's local space and follows its later transform.
     group.name = 'Surface ' + settings.kind;
     group.userData.surfaceFoliage = true;
-    const targets = surfaceTargets(parent, settings), triangles = [], large = [], cells = new Map(), candidates = []; // Candidate list is reused across every growth step.
+    const useSharedSampling = input?.reuseSurfaceSampling === true && !!parent.geometry; // Only generated, immutable cave shells opt in; editor meshes still resample after authoring edits.
+    const existingSampling = useSharedSampling ? caveSurfaceSamplingCache.get(parent) : null; // Geometry replacement invalidates the prior index.
+    const shared = existingSampling?.geometry === parent.geometry && existingSampling?.wallOnly === settings.wallOnly ? existingSampling : null;
+    const targets = shared?.targets || surfaceTargets(parent, settings);
+    const triangles = shared?.triangles || [], large = shared?.large || [], cells = shared?.cells || new Map(), candidates = []; // Cached wall triangles and spatial buckets serve both growth kinds.
     let stamp = 0; // Per-step visit mark: dedupes records that overlap several buckets without a Set insertion per record.
     const gather = list => { for (const record of list) if (record.stamp !== stamp) { record.stamp = stamp; candidates.push(record); } }; // Spatial buckets avoid scanning all brick triangles for every growth step.
     parent.updateWorldMatrix(true, true);
     const inverse = parent.matrixWorld.clone().invert(), cellSize = .5, point = new T.Vector3(); // Source vertices are converted once, outside runtime frame work.
-    let totalArea = 0, surfaceCopies = 0; // Area weighting includes every placed brick, not just its reusable source geometry.
+    let totalArea = shared?.totalArea || 0, surfaceCopies = shared?.surfaceCopies || 0; // Area weights and instance counts are immutable for a carved shell.
     const keyOf = (x, y, z) => ((x + 65536) * 131072 + (y + 65536)) * 131072 + z + 65536; // Numeric cell key (exact for |cell| < 65536, i.e. 32 km at 0.5 m cells): shared by insertion and queries without building a string per lookup.
-    for (const mesh of targets) {
+    if (!shared) for (const mesh of targets) {
       const geometry = mesh.geometry, position = geometry.attributes.position, index = geometry.index; // Supports indexed and non-indexed imported GLBs.
       const baseMatrix = inverse.clone().multiply(mesh.matrixWorld); // Mesh/group transforms apply outside each instance's own placement.
       const instanceCount = mesh.isInstancedMesh ? Math.max(0, Math.min(Math.floor(Number(mesh.count)||0), mesh.instanceMatrix?.count ?? Infinity)) : 1; // Exclude unused instance capacity and removed bricks.
@@ -1947,6 +1952,13 @@ window.FoliageGenerator = (() => {
           }
         }
       }
+    }
+    if (shared) {
+      // Each build restarts its stamp counter; clear the previous pass's visit marks so no candidate disappears by accident.
+      for (const record of triangles) record.stamp = 0;
+    } else if (useSharedSampling) {
+      caveSurfaceSamplingCache.set(parent, { geometry: parent.geometry, wallOnly: settings.wallOnly,
+        targets, triangles, large, cells, totalArea, surfaceCopies }); // The second cave layer reuses this exact triangulation.
     }
     group.userData.surfaceGrowthStats = { meshes: targets.length, instances: surfaceCopies, triangles: triangles.length };
     if (!triangles.length) { group.userData.diagnostics = 'No eligible surface triangles.'; return group; }
@@ -2045,12 +2057,12 @@ window.FoliageGenerator = (() => {
       : new T.Color(forest ? TREE_PRESETS.shadewood.barkColorHex : TREE_PRESETS.crownedPine.barkColorHex);
     const rootFinish = surfaceGrowthDefaults('roots'); // Reuse the current tree-bark texture and render treatment.
     const vineFinish = surfaceGrowthDefaults('vines'); // Reuse the existing green vine material.
-    const roots = { kind: 'roots', wallOnly: true, seed: String(seed) + ':wall-roots',
+    const roots = { kind: 'roots', wallOnly: true, reuseSurfaceSampling: forest || mire, seed: String(seed) + ':wall-roots',
       count: forest ? 22 : mire ? 18 : 14, length: forest ? 2.3 : mire ? 2.0 : 1.65,
       radius: forest ? .043 : .036, curl: .55, offset: .008,
       color: '#' + barkColor.getHexString(), texture: rootFinish.texture };
     if (!forest && !mire) return [roots];
-    return [roots, { kind: 'vines', wallOnly: true, seed: String(seed) + ':wall-vines',
+    return [roots, { kind: 'vines', wallOnly: true, reuseSurfaceSampling: true, seed: String(seed) + ':wall-vines',
       count: forest ? 17 : 12, length: forest ? 2.3 : 1.9, radius: .021, curl: .65, offset: .018,
       color: vineFinish.color, texture: vineFinish.texture,
       hangChance: forest ? .42 : .55, hangLength: forest ? 1.4 : 1.8 }];
