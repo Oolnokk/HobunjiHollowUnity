@@ -37,6 +37,12 @@ windowObject.DevSpawner.init({
 
 (async () => {
   await windowObject.LootRolling.loadLootShopConfig();
+  const tier2Label = windowObject.DevRandomRuinDungeonChests.TIERS[2].name; // Live prompt and toast prefix for Tier 2 chests.
+  const tier2Furniture = JSON.parse(fs.readFileSync('docs/config/furniture-authored/ruinDungeonChestT2.json', 'utf8')); // Authored furniture's player-visible metadata.
+  assert.equal(tier2Label, 'Bronze-bound', 'the runtime Tier 2 display name must say Bronze-bound');
+  assert.equal(tier2Furniture.name, 'Bronze-bound Dungeon Chest', 'authored chest name must match the runtime name');
+  assert.equal(poolConfig.pools.dungeonChest_tier2.label, 'Dungeon Chest — Tier 2 (Bronze-bound)', 'loot editor labels match the visible chest');
+
   for (let tier = 1; tier <= 4; tier++) {
     const entries = poolConfig.pools['dungeonChest_tier' + tier].entries; // The editor-owned entries for this chest tier.
     assert.equal(entries.filter(entry => entry.generatorKey === 'dungeonMetalBars').length, 1, 'every tier has exactly one bar generator');
@@ -48,7 +54,7 @@ windowObject.DevSpawner.init({
     for (const roll of [0, 0.3, 0.5, 0.99]) {
       randomValue = roll;
       for (let tier = 1; tier <= 4; tier++) {
-        const chest = { tier, poolId: 'dungeonChest_tier' + tier, tierName: 'Test', id: 'test_' + checked, boss: tier === 4, opened: false }; // Minimal live chest shape used by open().
+        const chest = { tier, poolId: 'dungeonChest_tier' + tier, tierName: windowObject.DevRandomRuinDungeonChests.TIERS[tier].name, id: 'test_' + checked, boss: tier === 4, opened: false }; // Minimal live chest shape used by open().
         assert.equal(windowObject.DevRandomRuinDungeonChests.open(chest), true);
         const loot = granted.at(-1); // Inventory quantities emitted by the production chest grant path.
         const bars = Object.entries(loot).filter(([key]) => key.startsWith('bar_')); // Actual material rewards, excluding relic artifacts and trinkets.
@@ -56,6 +62,7 @@ windowObject.DevSpawner.init({
         assert(count >= 1 && count <= 3, 'each dungeon chest grants 1-3 metal bars');
         assert(loot.harlyaoCopperCoin >= 1, 'metal bars do not replace the guaranteed artifact');
         assert(bars.every(([key]) => metals.slice(0, value + 1).includes(key.slice(4))), 'no materials exceed the Town Value ceiling');
+        if (tier === 2) assert(toasts.at(-1).startsWith('Bronze-bound Dungeon Chest:'), 'Tier 2 loot popup uses Bronze-bound');
         assert.equal(windowObject.DevRandomRuinDungeonChests.open(chest), false, 'opened chests cannot pay out again');
         checked++;
       }
