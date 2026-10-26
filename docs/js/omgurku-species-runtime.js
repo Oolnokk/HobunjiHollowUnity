@@ -1,6 +1,11 @@
 // NPC-only Omgurku: one humanoid NPC identity/AI/combat rig, with a Voorg-ass
 // quadruped lower half. There is NO mount, rider AI, or spawned wildlife.
 // Both halves share the NPC's existing world transform and facing.
+//
+// The same single-actor composite also renders ridden mounts (MOUNTS below):
+// an ordinary rider portrait seated on a full, headed creature card, requested
+// with options.mountSpecies (BanditCombat forwards roster.mountSpecies, e.g.
+// js/porakaneki-avengers.js's Nazgraku riders). Still one actor, no mount AI.
 (() => {
   'use strict';
 
@@ -9,6 +14,15 @@
   const LOWER_RIG = 'voorg-ass'; // Existing animal plane/shoulder rig donor; never creates a Voorg-ass actor.
   const FRAMES = Object.freeze(['idle', 'run1', 'run2']); // Authored lower PNGs, decoded by the shared animal-plane texture cache.
   const SPRITES = Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/omgurku-lower_${frame}.png`])));
+  // Ridden mounts: whole creature cards whose floor/saddle placement is derived
+  // from the creature's authored rig profile (see mountPlacement). Mounted
+  // animals use the regular whiskered sprites, matching game.js's CREATURE_DB note.
+  const MOUNTS = Object.freeze({
+    nazgraku: Object.freeze({
+      lowerRig: 'nazgraku', sizeClass: 'large', modelWidth: 1.21, spriteAspect: 378 / 900, // Same plane recipe as CREATURE_DB.nazgraku.
+      sprites: Object.freeze(Object.fromEntries(FRAMES.map(frame => [frame, `assets/creaturesprites/nazgraku_${frame}.png`]))),
+    }),
+  });
   const DEFAULT_PLACEMENT = Object.freeze({
     lowerWidth: 1.77, lowerHeight: 0.74, visibleFloorCorrection: 0.245,
     saddleU: 0.24, saddleV: 0.249, lowerDeadzoneDegrees: 13,
@@ -32,8 +46,10 @@
   };
   const normalize = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
-  const isOmgurku = options => normalize(options?.speciesId || options?.profile?.fighter?.speciesId ||
-    options?.profile?.appearance?.speciesId || options?.appearance?.speciesId || options?.npcRecord?.appearance?.speciesId) === ID;
+  const optionSpecies = options => normalize(options?.speciesId || options?.profile?.fighter?.speciesId ||
+    options?.profile?.appearance?.speciesId || options?.appearance?.speciesId || options?.npcRecord?.appearance?.speciesId);
+  const isOmgurku = options => optionSpecies(options) === ID;
+  const mountFor = options => MOUNTS[normalize(options?.mountSpecies)] || null;
 
   function installSpeciesData() {
     const config = window.SCRATCHBONES_CONFIG?.game; // Read the canonical mutable appearance config only after parser bootstrap.
@@ -154,6 +170,7 @@
   const coatJobs = new Map(); // One compositing job per native sprite and resolved swatch.
   function prepareLowerCoat(THREE, record) {
     const c = record?.root?.userData?.omgurkuComposite;
+    if (c?.mount) return true; // Ridden mounts keep their native creature coat.
     const renderer = ensureCoatRenderer();
     if (!c || !renderer || !coatTextureCache) return false;
     status.coatColor = c.tintColor;
@@ -248,7 +265,7 @@
     }
     // Real NPC walkers already clamp the portrait root; never re-clamp game NPCs.
     let target = rawYaw, snap = false;
-    const dead = placement.lowerDeadzoneDegrees * Math.PI / 180; // Independent authored lower-half exclusion angle.
+    const dead = c.placement.lowerDeadzoneDegrees * Math.PI / 180; // Independent authored lower-half exclusion angle.
     if (perp.CREATURE_PLANE_ROT_MODE === 'snap' && perp.creatureSnapSwayTarget) {
       const result = perp.creatureSnapSwayTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
       target = result.target; snap = result.snap;
@@ -298,32 +315,34 @@
   function pivotLowerAroundJoin(record) {
     const c = record?.root?.userData?.omgurkuComposite;
     if (!c) return;
-    const saddleZ = (0.5 - placement.saddleU) * placement.lowerWidth; // Radius from lower card center to its fixed attachment.
+    const p = c.placement;
+    const saddleZ = (0.5 - p.saddleU) * p.lowerWidth; // Radius from lower card center to its fixed attachment.
     for (const ref of c.lowerRefs) {
       const yaw = Number(ref.group.rotation?.y) || 0; // Each gait card shares the animal's deadzone rotation.
-      ref.group.position.x = placement.lowerOffsetX - Math.sin(yaw) * saddleZ;
-      ref.group.position.z = placement.lowerOffsetZ + saddleZ * (1 - Math.cos(yaw));
+      ref.group.position.x = p.lowerOffsetX - Math.sin(yaw) * saddleZ;
+      ref.group.position.z = p.lowerOffsetZ + saddleZ * (1 - Math.cos(yaw));
       ref.group.updateMatrixWorld?.(true);
     }
     const join = record.root.userData.omgurkuJoin; // Debug marker remains at the fixed saddle.
-    if (join) { join.x = placement.lowerOffsetX; join.z = placement.lowerOffsetZ + saddleZ; }
+    if (join) { join.x = p.lowerOffsetX; join.z = p.lowerOffsetZ + saddleZ; }
   }
 
   function applyPlacement(record) {
     const c = record?.root?.userData?.omgurkuComposite; // Keeps the named NPC's root fixed while both visual halves reposition together.
     if (!c) return;
-    const w = placement.lowerWidth, h = placement.lowerHeight;
-    const centerY = h / 2 - placement.visibleFloorCorrection + placement.lowerOffsetY;
-    const joinY = centerY + (0.5 - placement.saddleV) * h;
-    const joinZ = (0.5 - placement.saddleU) * w + placement.lowerOffsetZ;
-    c.upper.position.set(placement.lowerOffsetX + placement.upperOffsetX,
-      joinY + placement.upperOffsetY, joinZ + placement.joinDepth + placement.upperOffsetZ);
-    c.upper.scale.setScalar(placement.riderScale);
+    const p = c.placement; // Shared live Omgurku calibration, or a mount's own derived placement.
+    const w = p.lowerWidth, h = p.lowerHeight;
+    const centerY = h / 2 - p.visibleFloorCorrection + p.lowerOffsetY;
+    const joinY = centerY + (0.5 - p.saddleV) * h;
+    const joinZ = (0.5 - p.saddleU) * w + p.lowerOffsetZ;
+    c.upper.position.set(p.lowerOffsetX + p.upperOffsetX,
+      joinY + p.upperOffsetY, joinZ + p.joinDepth + p.upperOffsetZ);
+    c.upper.scale.setScalar(p.riderScale);
     // Rebuilding the animal models is necessary to change their plane dimensions;
     // changing a composite scale here avoids GPU texture churn while dragging sliders.
     const lowerScaleX = w / c.builtLowerWidth, lowerScaleY = h / c.builtLowerHeight;
     for (const ref of c.lowerRefs) {
-      ref.group.position.set(placement.lowerOffsetX, centerY, placement.lowerOffsetZ);
+      ref.group.position.set(p.lowerOffsetX, centerY, p.lowerOffsetZ);
       ref.group.scale.set(lowerScaleX, lowerScaleY, lowerScaleX);
     }
     // Canonical hand anchors are floor-relative, while the portrait is centered.
@@ -366,49 +385,85 @@
     }
   }
 
+  // A mount's card size, floor lift and saddle come from the creature's own
+  // authored rig profile (the same sizeScales/groundOffsets/saddle anchor the
+  // player's mount seat uses), and the rider is raised so its authored
+  // posterior rests on that saddle instead of fusing at the waist.
+  function mountPlacement(mount, upper, riderSpeciesId, riderGender) {
+    const rig = window.HOBUNJI_ATTACHMENT_RIG_PROFILES;
+    const profile = rig?.creatures?.[mount.lowerRig];
+    const size = profile?.sizeScales?.[mount.sizeClass];
+    const sx = Number(size?.x) > 0 ? Number(size.x) : 1, sy = Number(size?.y) > 0 ? Number(size.y) : 1;
+    const w = mount.modelWidth * sx, h = mount.modelWidth * mount.spriteAspect * sy;
+    const authoredLift = Number(profile?.groundOffsets?.[mount.sizeClass]);
+    const groundLift = Number.isFinite(authoredLift) && authoredLift > 0 ? authoredLift : h / 2; // Zero is the authored "Auto" sentinel.
+    const saddle = profile?.anchors?.saddle?.position || {};
+    const riderHeight = Number(upper?.userData?.portraitModelHeight) || 0.9;
+    const riderRule = rig?.characters?.[`${riderSpeciesId}::${riderGender}`]?.posteriorRule;
+    const posteriorY = Number(window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(riderRule, riderHeight, null)); // Floor-relative seat height.
+    return {
+      ...DEFAULT_PLACEMENT,
+      lowerWidth: w, lowerHeight: h,
+      visibleFloorCorrection: h / 2 - groundLift,
+      saddleU: Math.max(0, Math.min(1, 0.5 - (Number(saddle.z) || 0) / mount.modelWidth)),
+      saddleV: Math.max(0, Math.min(1, 0.5 - (Number(saddle.y) || 0) * sy / h)),
+      joinDepth: 0, riderScale: 1,
+      upperOffsetY: riderHeight / 2 - (Number.isFinite(posteriorY) ? posteriorY : riderHeight * 0.32),
+    };
+  }
+
   function installHybridRenderer() {
     const api = window.PNGPlaneAvatar;
     const original = api?.buildSinglePlaneAvatarModel;
     if (!original || typeof api?.buildAnimalPlaneAvatarModel !== 'function' || original.__omgurkuHybridWrapped) return;
     const wrapped = function buildOmgurkuNpc(THREE, sourceCanvas, options = {}) {
-      if (!isOmgurku(options)) return original.apply(this, arguments);
-      const upper = original.call(this, THREE, sourceCanvas, { ...options, speciesId: ID, gender: 'male' }); // Resolve the canonical hand/anatomy rig for appearance-only callers too.
+      const omgurku = isOmgurku(options);
+      const mount = omgurku ? null : mountFor(options); // Omgurku already has its own fused lower half.
+      if (!omgurku && !mount) return original.apply(this, arguments);
+      const upper = original.call(this, THREE, sourceCanvas, omgurku ? { ...options, speciesId: ID, gender: 'male' } : options); // Resolve the canonical hand/anatomy rig for appearance-only callers too.
       if (!upper) return upper;
+      const riderSpecies = omgurku ? ID : (normalize(upper.userData?.speciesId) || optionSpecies(options));
+      const riderGender = omgurku ? 'male' : (upper.userData?.gender || options.gender || options.profile?.fighter?.gender || 'male');
+      const lowerPlacement = mount ? mountPlacement(mount, upper, riderSpecies, riderGender) : placement;
+      const lowerSprites = mount ? mount.sprites : SPRITES;
+      const lowerRig = mount ? mount.lowerRig : LOWER_RIG;
       const lowerRefs = [];
       let record = null; // Allows partial composite construction to unwind safely.
       try {
         for (const frame of FRAMES) {
-          lowerRefs.push(api.buildAnimalPlaneAvatarModel(THREE, new URL(SPRITES[frame], DOCS_ROOT).href, {
-            modelWidth: placement.lowerWidth,
-            modelHeight: placement.lowerHeight,
-            name: `omgurku_${frame}`,
-            creatureId: LOWER_RIG, // Canonical Voorg-ass shoulder/body UV rig, with Omgurku's own already-headless pixels.
+          lowerRefs.push(api.buildAnimalPlaneAvatarModel(THREE, new URL(lowerSprites[frame], DOCS_ROOT).href, {
+            modelWidth: lowerPlacement.lowerWidth,
+            modelHeight: lowerPlacement.lowerHeight,
+            name: `${mount ? `${lowerRig}_mount` : 'omgurku'}_${frame}`,
+            creatureId: lowerRig, // Canonical creature shoulder/body UV rig (Omgurku: Voorg-ass rig with its own already-headless pixels).
             alphaTest: options.alphaTest,
           }));
         }
         const root = new THREE.Group(); // Sole NPC avatar group: collisions, dialogue, held items and movement remain under this parent.
-        root.name = options.name || 'Omgurku_NPC_Hybrid';
+        root.name = options.name || (mount ? 'Mounted_Rider_Hybrid' : 'Omgurku_NPC_Hybrid');
         const riderFrame = new THREE.Group(); // Floor-relative humanoid pose frame, mounted under the centered upper portrait.
         riderFrame.name = 'Omgurku_Mounted_Rider_Floor';
         upper.add(riderFrame);
-        root.userData = { ...upper.userData, speciesId: ID, gender: 'male', omgurkuNpc: true, avatarGroundLift: 0,
+        root.userData = { ...upper.userData, speciesId: riderSpecies, gender: riderGender, omgurkuNpc: omgurku,
+          mountSpecies: mount ? lowerRig : null, avatarGroundLift: 0,
           proceduralHandParent: riderFrame, proceduralBodyRoot: upper };
         upper.userData.proceduralHandParent = riderFrame;
         root.add(upper);
         for (const ref of lowerRefs) root.add(ref.group);
         const c = {
-          upper, riderFrame, lowerRefs, frame: null, builtLowerWidth: placement.lowerWidth, builtLowerHeight: placement.lowerHeight,
+          upper, riderFrame, lowerRefs, frame: null, builtLowerWidth: lowerPlacement.lowerWidth, builtLowerHeight: lowerPlacement.lowerHeight,
+          placement: lowerPlacement, mount, // Omgurku records share the live calibration object; mounts own a derived one.
           positionScratch: new THREE.Vector3(), lastPosition: null,
           cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(), cameraWorld: { x: 0, z: 0 },
           rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
-          lastAnimalFacingAt: 0, tintColor: resolveBodyColorA(options),
+          lastAnimalFacingAt: 0, tintColor: mount ? null : resolveBodyColorA(options),
         };
         root.userData.omgurkuComposite = c;
         record = { root, THREE, npcId: options.npcRecord?.id || null, coatInitialized: false }; // Same record owns facing and genotype visuals.
         live.add(record);
         // Optional garment bridge; no mesh or GPU work until an authored/uploaded
         // PNG is enabled. Parent is this SAME NPC root, not a second actor.
-        if (window.HobunjiOmgurkuConnector?.snapshot()?.enabled)
+        if (!mount && window.HobunjiOmgurkuConnector?.snapshot()?.enabled)
           c.connector = window.HobunjiOmgurkuConnector.create(THREE,root);
         applyPlacement(record);
         installFacingCallbacks(record);
@@ -479,7 +534,7 @@
     const next = bridge.set(config,options);
     for(const record of live){
       const c=record.root.userData.omgurkuComposite;
-      if(!c)continue;
+      if(!c||c.mount)continue;
       if(next.enabled && !c.connector)c.connector=bridge.create(record.THREE,record.root);
       if(!next.enabled && c.connector){c.connector.dispose();c.connector=null;}
       c.connector?.update(true);
@@ -537,11 +592,11 @@
       liveFrames: [...live].map(({ root }) => {
         const c = root.userData.omgurkuComposite;
         return {
-          name: root.name, frame: c?.frame, join: root.userData.omgurkuJoin,
+          name: root.name, mount: c?.mount?.lowerRig || null, frame: c?.frame, join: root.userData.omgurkuJoin,
           parented: !!root.parent, avatarGroundLift: root.userData.avatarGroundLift, appliedLift: root.position.y,
           handParentIsRider: root.userData.proceduralHandParent === c?.riderFrame,
           riderFloorY: c?.riderFrame?.position.y ?? null,
-          lowerDeadzoneDegrees: placement.lowerDeadzoneDegrees,
+          lowerDeadzoneDegrees: (c?.placement || placement).lowerDeadzoneDegrees,
           handRigAttached: !!root.userData.proceduralHandRig,
           upperYaw: c?.upper?.rotation?.y ?? null,
           lowerYaw: c?.lowerRefs?.[0]?.group?.rotation?.y ?? null,
@@ -595,7 +650,7 @@
   const ready = loadAuthoredPlacement(); // Editors await the same authored/local configuration as gameplay.
   window.HobunjiOmgurkuSpecies = Object.freeze({
     ready,
-    id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES,
+    id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES, mounts: MOUNTS, mountPlacement,
     install, setPlacement, setConnector, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
