@@ -63,6 +63,36 @@ assert.equal(recipes('map_western_slope', seed).length, 0, 'Western Slope caves 
 assert.equal(recipes('', seed).length, 0, 'town mine and unclassified interiors stay bare');
 assert.equal(JSON.stringify(recipes('map_eastern_mire', seed)), JSON.stringify(mire), 'recipes must be stable per cave');
 
+// Exercise the real shared-sampling path on an empty but valid triangle source.
+// It deliberately avoids constructing tubes; this checks that two recipe calls
+// scan the unchanged cavern mesh once, without relying on a mocked growth API.
+{
+  class Matrix {
+    clone() { return this; }
+    invert() { return this; }
+    multiply() { return this; }
+  }
+  three.Matrix4 = Matrix; // Fake transform consumed by the surface source's coordinate conversion.
+  three.Vector3 = class {}; // Empty geometry requires a scratch vector but no vector arithmetic.
+  three.Group = class {
+    constructor() { this.userData = {}; this.children = []; }
+    add(child) { this.children.push(child); }
+  };
+  const emptyGeometry = new Geometry(); // Zero triangles test source selection/index reuse independent of tube tessellation.
+  emptyGeometry.setAttribute('position', { count: 0 });
+  emptyGeometry.drawRange = { start: 0, count: 0 };
+  const shell = new Mesh(emptyGeometry, new Material({}));
+  shell.matrixWorld = new Matrix();
+  shell.updateWorldMatrix = () => {};
+  let scans = 0; // Counts source scene traversals to detect an accidental second full cave-mesh scan.
+  shell.traverse = visit => { scans++; visit(shell); };
+  const first = context.FoliageGenerator.buildSurfaceGrowth(shell, cloud[0]);
+  const second = context.FoliageGenerator.buildSurfaceGrowth(shell, cloud[1]);
+  assert.equal(scans, 1, 'roots and vines share one source traversal for the immutable cave shell');
+  assert.equal(first.userData.surfaceGrowthStats.samplingReused, false, 'roots populate a new spatial index');
+  assert.equal(second.userData.surfaceGrowthStats.samplingReused, true, 'vines reuse the previously sampled cave index');
+}
+
 // The real renderer attaches the already-authored growth recipe only to qualified shells.
 const built = []; // Tracks calls into the FoliageGenerator visual mesh owner without building GPU geometry.
 context.FoliageGenerator.buildSurfaceGrowth = (shell, recipe) => {
