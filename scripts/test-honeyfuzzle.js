@@ -41,7 +41,16 @@ function fakeThree() {
   const context = sandbox();
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
-  assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'cycle is up -> mid -> down -> mid');
+  assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'legacy wing-step helper stays compatible');
+  assert.equal(S.ATLAS_COLS, 3); assert.equal(S.ATLAS_ROWS, 2, 'five sprites pack into a 3x2 atlas');
+  assert.deepEqual({ ...S.CROP }, { x: 0, y: 0, w: 478, h: 399 }, 'do not use the obsolete crop on the new PNGs');
+  assert(S.FRAME_URLS.every((url, i) => url.endsWith('honeyfuzzle_fly' + (i + 1) + '.png')));
+  assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_tailfeathers.png')));
+  assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_spectacles.png')));
+  assert.equal(S.appearanceColors('#123456', null).tailColor, '#123456', 'the default tail always uses body color one');
+  assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: true, copies: 1 } }).tailColor, '#abcdef', 'an expressed tail allele uses body color two');
+  assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: false, copies: 2 } }).tailColor, '#123456', 'disabled tail allele shows the default primary tint');
+  assert.equal(S.appearanceColors('#123456', { spectacles: { color: '#fedcba', enabled: true, copies: 1 } }).spectaclesColor, '#fedcba');
   for (let step = 0; step < 12; step++) {
     const frames = [0, 1, 2].map(member => S.memberFrame(member, step));
     assert.equal(new Set(frames).size >= 2, true, 'the three thirds are never all on the same frame');
@@ -96,37 +105,139 @@ function fakeThree() {
   const S = context.HoneyfuzzleSwarm;
   const avatar = S.buildAvatar(THREE, { name: 'swarm_test', modelWidth: 1.3, memberWidth: 0.4, count: 9 });
   assert.equal(avatar.swarm.count, 9, 'one instanced mesh holds the whole swarm');
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <uv_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>' }; // Verifies actual shader composition, not merely uniforms.
+  avatar.swarm.material.onBeforeCompile(shader);
+  assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
+  assert(shader.fragmentShader.includes('composed = overlayHoneyfuzzle( spectacles, composed )'), 'optional spectacles render above all body pixels');
+  assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
+  assert(shader.vertexShader.includes('vUv.xy /= vec2(3.0, 2.0)'), '3x2 atlas UV coordinates are used');
+  assert(shader.fragmentShader.includes('vec2( 0.0, 0.5 )'), 'tail and fly sprite sample different atlas rows');
   assert.equal(avatar.group.children[0], avatar.frontPlane, 'frontPlane is the yaw pivot the creature loop rotates');
   assert.equal(avatar.backPlane, null);
   avatar.update(0, 1000, 0.016, 150);
   const frameAttr = avatar.swarm.geometry.getAttribute('aFrame');
-  const step = S.wingStep(1000);
-  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: 9 }, (_, i) => S.memberFrame(i, step)), 'instance frames follow the shared tick');
-  assert.equal(new Set(Array.from(frameAttr.array)).size >= 2, true, 'more than one wing frame is on screen at once');
+  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: 9 }, (_, i) => i % 3), 'wing phase stays fixed per member');
+  assert.equal(new Set(Array.from(frameAttr.array)).size, 3, 'all three phases occur across the swarm');
   const m = avatar.swarm.instanceMatrix.array;
   assert(Array.from(m).every(Number.isFinite), 'instance matrices are finite');
   assert.equal(m[15], 1);
-  // The same tick must not rewrite the frame attribute (no per-frame GPU upload churn).
+  // Smooth time advances without changing aFrame buffers or reallocating texture data.
   frameAttr.needsUpdate = false;
+  const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
   avatar.update(0, 1001, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, false);
+  assert.notEqual(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value, firstPhase);
   avatar.update(0, 1000 + S.WING_TICK_MS, 0.016, 150);
-  assert.equal(frameAttr.needsUpdate, true, 'a new tick uploads the new frames once');
+  assert.equal(frameAttr.needsUpdate, false);
   // Body color: uncolored swarms keep the authored mint; a colored one gets its own uniforms and can be recolored.
   assert.equal(avatar.swarm.material.userData.honeyfuzzle.uUse.value, 0);
   const tinted = S.buildAvatar(THREE, { name: 'tinted', modelWidth: 1.3, color: '#0b0b0e' });
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uUse.value, 1); assert.equal(tinted.swarm.material.userData.honeyfuzzle.uBody.value.value, '#0b0b0e');
   assert.notEqual(tinted.swarm.material.userData.honeyfuzzle, avatar.swarm.material.userData.honeyfuzzle, 'swarms never share color uniforms');
   tinted.setColor('#ece8e0'); assert.equal(tinted.swarm.material.userData.honeyfuzzle.uBody.value.value, '#ece8e0');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
+  tinted.setGenotype({ tailfeathers: { color: '#abcdef', enabled: true, copies: 1 }, spectacles: { color: '#123456', enabled: true, copies: 2 } });
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#abcdef');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#123456');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 1);
+  tinted.setGenotype(null);
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 0);
+  assert.equal(tinted.group.children.length, 1, 'all overlay sprites share one instanced mesh');
+  assert.equal(typeof S.debugSnapshot, 'function');
+  assert(S.FLUTTER_HZ > 0 && S.FLUTTER_HZ < 15, 'opacity variation avoids aliasing at 30 FPS');
+  const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
+  avatar.update(0, 86400000 + 100, 0.016, 150);
+  assert(Number.isFinite(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value)
+    && avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value < Math.PI * 2,
+    'phase remains bounded after a full day of continuous game runtime');
+  const actor = { id: 'linked_swarm', swarmColor: '#aabbcc',
+    genotype: { tailfeathers: { enabled: true, copies: 1, color: '#332211' },
+      spectacles: { enabled: true, copies: 1, color: '#889900' } } }; // Exercises the real game factory's color-only constructor followed by actor collection registration.
+  context.Combat = { deps: { hostileObjects: new Set(), companionObjects: new Set([actor]) } };
+  const linked = S.buildAvatar(THREE, { name: actor.id, color: actor.swarmColor, count: 6 });
+  linked.update(0, 1234, 0.016, 150);
+  assert.equal(linked.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#332211', 'the wild/companion bridge acquires secondary pigments');
+  assert.equal(linked.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 1);
+  assert(S.debugSnapshot().linkedActors > 0, 'mobile snapshot includes actor link count');
+  linked.dispose();
   assert.equal(S.DEFAULT_MEMBER_COUNT, tinted.memberCount, 'default swarm size');
   avatar.dispose();
   assert.equal(avatar.swarm.geometry.disposed, true);
   assert.doesNotThrow(() => avatar.dispose());
 }
 
+// ---- optional overlays fail safely without hiding all swarm bodies ---------------------------
+{
+  const THREE = fakeThree();
+  const context = sandbox({
+    Image: class {
+      constructor() { this.width = 478; this.height = 399; }
+      set src(url) {
+        if (url.endsWith('honeyfuzzle_spectacles.png')) this.onerror(new Error('test: missing optional art'));
+        else this.onload();
+      }
+    },
+    document: { createElement: () => ({
+      getContext: () => ({ drawImage() {} }),
+    }) },
+  });
+  load(context, 'docs/js/honeyfuzzle-swarm.js');
+  const swarm = context.HoneyfuzzleSwarm;
+  swarm.ensureAtlas(THREE).then(() => {
+    const info = swarm.debugSnapshot();
+    assert.equal(info.atlasReady, true, 'the main swarm atlas survives missing optional spectacles art');
+    assert.equal(info.assetWarnings.length, 1, 'mobile diagnostics report the missing optional marking');
+    assert.match(info.assetWarnings[0], /spectacles/);
+  }).catch(error => { throw error; });
+}
+
+// ---- genotype portraits / chatheads use the same layer ordering --------------------------
+{
+  const context = sandbox();
+  const makeCanvas = () => {
+    const canvas = { width: 0, height: 0, layers: [] }; // One in-memory mock canvas per compositor output or recolor pass.
+    canvas.getContext = () => ({
+      drawImage(image) { canvas.layers.push(image.label || image.layers?.join('+') || 'unknown'); },
+      getImageData() { return { data: new Uint8ClampedArray(canvas.width * canvas.height * 4) }; },
+      putImageData() {},
+    });
+    return canvas;
+  };
+  context.document = { currentScript: null, createElement: makeCanvas };
+  context.Image = class {
+    constructor() { this.width = this.naturalWidth = 478; this.height = this.naturalHeight = 399; }
+    set src(url) { this.label = url; this.onload(); }
+  };
+  context.ColorFill = { shadeFillPixels() {} }; // Only draw order is inspected; normal pigment math is tested elsewhere.
+  context.fetch = async () => ({ json: async () => ({}) }); // No per-species base-mask file is required for full sprite recolor.
+  load(context, 'docs/js/creature-genetics-render.js');
+  const renderer = context.CreatureGeneticsRender;
+  assert.deepEqual(Array.from(renderer.SPECIES.honeyfuzzle.underlayPatterns), ['tailfeathers'], 'static portraits register the tail as a background layer');
+  assert.equal(renderer.patternUrl('honeyfuzzle', 'spectacles', 'run1'), 'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png');
+  const genotype = { base: { color: '#123456' },
+    tailfeathers: { color: '#654321', enabled: true, copies: 1 },
+    spectacles: { color: '#445566', enabled: true, copies: 1 } }; // Confirms secondary pigment appears in the shared genotype cache signature.
+  assert.match(renderer.genotypeSignature('honeyfuzzle', genotype), /tailfeathers:#654321/);
+  renderer.composeFrame('honeyfuzzle', 'idle', genotype).then(canvas => {
+    assert(canvas, 'the genotype renderer produces a honeyfuzzle portrait rather than returning null');
+    assert.deepEqual(Array.from(canvas.layers), [
+      'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
+      'assets/creaturesprites/honeyfuzzle_fly1.png',
+      'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
+    ], 'tail, body, spectacles are composited in that order for portraits');
+    return renderer.composeFrame('honeyfuzzle', 'run2', null);
+  }).then(canvas => {
+    assert.deepEqual(Array.from(canvas.layers), [
+      'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
+      'assets/creaturesprites/honeyfuzzle_fly3.png',
+    ], 'the default tail remains visible without genes or spectacles');
+  }).catch(error => { throw error; });
+}
+
 // ---- fixed Medium size / companion role -------------------------------------------------
 {
-  const context = sandbox({ SCRATCHBONES_CONFIG: { game: { creatureGenetics: { palettes: {} }, livestock: {}, wildlife: {} } }, __farmLog() {}, addEventListener() {} });
+  const context = sandbox({ SCRATCHBONES_CONFIG: { game: { creatureGenetics: { palettes: { default: [{ id: 'mint', name: 'Mint', hex: '#aabbcc', weight: 1 }, { id: 'gold', name: 'Gold', hex: '#aabb44', weight: 1 }] } }, livestock: {}, wildlife: {} } }, __farmLog() {}, addEventListener() {} });
   load(context, 'docs/js/creature-genetics.js');
   const CREATURE_DB = { honeyfuzzle: { label: 'Honeyfuzzle Swarm', defaultSizeClass: 'medium', fixedSizeClass: 'medium' }, drenkirra: { defaultSizeClass: 'large' } };
   context.CreatureGenetics.init({ clamp: (v, a, b) => Math.max(a, Math.min(b, v)), CREATURE_DB });
@@ -135,7 +246,9 @@ function fakeThree() {
   }
   assert.equal(context.CreatureGenetics.stableEntryRole({ kind: 'drenkirra', genotype: { sizeClass: 'small' } }), 'shoulderPet', 'other species keep their Size gene');
   assert.equal(context.CreatureGenetics.defaultLivestockName('honeyfuzzle'), 'Honeyfuzzle Swarm', 'worded as a swarm');
-  assert.equal(context.CreatureGenetics.makeDefaultGenotype('honeyfuzzle'), null, 'no coat genes');
+  const genes = context.CreatureGenetics.makeDefaultGenotype('honeyfuzzle');
+  assert(genes?.base?.color && genes?.tailfeathers && genes?.spectacles, 'honeyfuzzle has inheritable markings');
+  assert.equal(genes.sizeClass, 'medium');
 }
 
 // ---- colors by region ---------------------------------------------------------------------------
@@ -181,6 +294,13 @@ function fakeThree() {
   // Egg colors queue per world and survive in order.
   C.queueEggColors('w1', ['#111111', '#222222']); C.queueEggColors('w2', ['#333333']);
   assert.equal(C.takeEggColor('w1'), '#111111'); assert.equal(C.takeEggColor('w2'), '#333333'); assert.equal(C.takeEggColor('w1'), '#222222'); assert.equal(C.takeEggColor('w1'), null);
+  C.queueEggColors('legacy', ['#112233']);
+  assert.equal(C.takeEggAppearance('legacy').color, '#112233', 'old hex-only queues migrate to appearance objects without losing color');
+  const eggGenes = { base: { color: '#333333' }, tailfeathers: { color: '#008899', enabled: true, copies: 1 } };
+  C.queueEggAppearances('genetic', [{ color: '#ffeedd', genotype: eggGenes }]);
+  const storedEgg = C.takeEggAppearance('genetic');
+  assert.equal(storedEgg.color, '#ffeedd'); assert.equal(storedEgg.genotype.tailfeathers.color, '#008899', 'inherited markings survive the save-backed egg queue');
+  assert.equal(C.takeEggAppearance('genetic'), null, 'one appearance consumed per placed egg');
 }
 
 // ---- hive stumps ----------------------------------------------------------------------------
@@ -349,7 +469,14 @@ function hiveWorld({ night = false } = {}) {
   context.Image = class { set src(v) {} }; context.document = { createElement: () => ({ getContext: () => ({ drawImage() {} }) }) };
   const objects = new Map();
   context.FarmBuildings = { canPlaceAt: (col, row) => !objects.has(col + ',' + row), clearFootprint() {} };
-  context.CreatureGenetics = { defaultLivestockName: () => 'Honeyfuzzle Swarm' };
+  context.CreatureGenetics = {
+    defaultLivestockName: () => 'Honeyfuzzle Swarm',
+    makeDefaultGenotype: () => ({
+      base: { color: '#ffffff', copies: 2 }, // Hatch replaces the dummy color with the original hive egg's color.
+      tailfeathers: { color: '#bb8833', copies: 1, enabled: true }, // Inherited secondary tail pigment used by the House swarm visual.
+      spectacles: { color: '#335599', copies: 1, enabled: true }, // Inherited spectacles visual shown on the spawned swarm.
+    }),
+  };
   context.FarmPanel = { cancelBarnPlacement() {}, render() {} };
   context.FarmWorldSettings = { read: () => ({ meta: {}, world: null }), current: () => ({}) };
   const shared = { calendar, inventory, ITEM_DEFS: {}, cropData: {}, COLS: 20, ROWS: 20, TileType: {}, MAX_WATER: 3, scene: { add() {}, remove() {} }, worldObjects: objects,
@@ -364,8 +491,14 @@ function hiveWorld({ night = false } = {}) {
   context.FarmProduction.load(save);
   const [a, b] = context.FarmProduction.entries();
   // Timed hatch. The egg's color comes from the queue filled when its stump was harvested.
-  context.HoneyfuzzleColors.queueEggColors('w1', ['#123a22']);
+  const sourceGenes = {
+    base: { color: '#cccccc', copies: 2 },
+    tailfeathers: { color: '#804400', copies: 1, enabled: true },
+    spectacles: { color: '#55aaee', copies: 1, enabled: true },
+  }; // Hive egg color remains authoritative; secondary markings must not be rerolled on hatching.
+  context.HoneyfuzzleColors.queueEggAppearances('w1', [{ color: '#123a22', genotype: sourceGenes }]);
   assert.equal(house.placeEgg(a).ok, true);
+  assert.equal(a.house.egg.genotype.tailfeathers.color, '#804400', 'a placed egg retains its source hive genes');
   calendar.day = 2; context.FarmProduction.tick();
   assert.equal(house.phase(a), 'egg', 'not hatched before its time');
   calendar.day = 3; calendar.time01 = 0.5; context.FarmProduction.tick();
@@ -375,6 +508,11 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(livestock[0].kind, 'honeyfuzzle'); assert.equal(livestock[0].houseId, 'h1'); assert.equal(livestock[0].barnId, null);
   assert.equal(livestock[0].lifeStage, 'adult', 'a hatched swarm is not mistaken for a Nursery baby');
   assert.equal(livestock[0].swarmColor, '#123a22', 'the hatched swarm keeps its egg\'s color');
+  assert.equal(livestock[0].genotype.base.color, '#123a22', 'hatch preserves the queued egg pigment in its base genotype');
+  assert.equal(livestock[0].genotype.tailfeathers.color, '#804400', 'secondary tail allele survives hatching');
+  const houseMesh = added[0].children[0].children[0]; // Inspect the real swarm material attached by House.syncVisual.
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#804400', 'house swarm displays inherited secondary tail pigment');
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#55aaee', 'house swarm displays inherited spectacles pigment');
   assert.equal(house.placeEgg(a).ok, false, 'the swarm fills the house');
   // The house survives a save/load round trip, keeping its swarm.
   const saved = JSON.parse(JSON.stringify(context.FarmProduction.serialize()));
@@ -391,6 +529,7 @@ function hiveWorld({ night = false } = {}) {
   inventory.growthTonic = 1;
   assert.equal(house.useTonic(b).ok, true);
   assert.equal(inventory.growthTonic, 0); assert.equal(house.phase(b), 'swarm'); assert.equal(livestock.length, 2); assert.equal(house.visualCount(), 2);
+  assert.equal(livestock[1].genotype.tailfeathers.color, '#bb8833', 'a legacy color-only egg still generates optional genes normally');
   // Moving the swarm to the stable (record removed) empties the house again.
   livestock = livestock.filter(l => l.houseId !== 'h2');
   assert.equal(house.phase(b), 'empty');

@@ -73,8 +73,11 @@
     const now = window.FarmProduction.now();
     deps.inventory[EGG_ITEM] = bagCount(EGG_ITEM) - 1;
     const colors = window.HoneyfuzzleColors;
-    const color = colors?.takeEggColor(deps.getWorldId?.()) || colors?.pickForKey('', 'egg' + Math.random()) || null; // The oldest harvested egg's color; a fresh roll if the bag held eggs from elsewhere.
-    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays(), color };
+    const appearance = colors?.takeEggAppearance?.(deps.getWorldId?.()) || null; // New saves carry an inherited genotype; old queues return {color, genotype:null}.
+    const color = appearance?.color || (!colors?.takeEggAppearance ? colors?.takeEggColor?.(deps.getWorldId?.()) : null)
+      || colors?.pickForKey('', 'egg' + Math.random()) || null; // Old bag-only eggs still receive a valid randomized primary pigment.
+    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays(), color,
+      genotype: appearance?.genotype || null }; // Persist the original hive's tailfeathers/spectacles until hatching.
     persist();
     return { ok: true, message: `🥚 The egg is tucked into the house. It hatches in ${hatchDays()} days.` };
   }
@@ -85,10 +88,12 @@
     const list = deps.loadWorldLivestock();
     const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
     const name = window.CreatureGenetics?.defaultLivestockName?.(KIND) || 'Honeyfuzzle Swarm';
+    const genotype = house.egg.genotype || window.CreatureGenetics?.makeDefaultGenotype?.(KIND) || null; // New eggs inherit their hive markings; legacy color-only eggs roll fresh genes.
+    if (genotype?.base && house.egg.color) genotype.base.color = house.egg.color; // Preserve the mother's hive-region primary color.
     list.push({
       id, kind: KIND, barnId: null, houseId: entry.id, troughIndex: null, releasedAt: Date.now(),
       lifeStage: 'adult', // barnId:null alone reads as a Nursery baby (livestock-nursery.js isBaby); a hatched swarm is ready to live in its house or be taken as a companion.
-      name, genotype: null, swarmColor: house.egg.color || null, daysUntilResource: null, resourceReady: false, heartLevel: 2,
+      name, genotype, swarmColor: house.egg.color || null, daysUntilResource: null, resourceReady: false, heartLevel: 2,
     });
     deps.saveWorldLivestock(list);
     house.egg = null;
@@ -161,8 +166,14 @@
     if (!wants) { if (existing) removeVisual(entry); return; }
     const w = size?.w ?? 1, h = size?.h ?? 1;
     const x = entry.col + w / 2, z = entry.row + h / 2;
-    if (existing) { existing.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z); existing.entry = entry; return; }
-    const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.22, hoverY: 0, color: record.swarmColor || undefined });
+    if (existing) {
+      existing.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z);
+      existing.avatar.setColor(record.swarmColor || record.genotype?.base?.color);
+      existing.avatar.setGenotype(record.genotype); // A changed genotype on a living swarm is visible without rebuilding its GPU geometry.
+      existing.entry = entry;
+      return;
+    }
+    const avatar = window.HoneyfuzzleSwarm.buildAvatar(deps.THREE, { name: 'house_' + entry.id, seed: window.HoneyfuzzleSwarm.seedFromString(entry.id), modelWidth: 1.2, memberWidth: 0.22, hoverY: 0, color: record.swarmColor || record.genotype?.base?.color || undefined, genotype: record.genotype || null });
     avatar.group.position.set(x, deps.surfaceY(x, z) + HOVER_HEIGHT, z);
     deps.scene.add(avatar.group);
     visuals.set(entry.id, { entry, avatar, group: avatar.group });

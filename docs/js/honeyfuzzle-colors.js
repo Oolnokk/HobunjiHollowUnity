@@ -145,9 +145,9 @@
     return palette.length ? palette[hashString(String(key)) % palette.length] : null;
   }
 
-  // Eggs keep their stump's color: harvesting queues one color per egg and placing an egg in
-  // a house takes the oldest. The bag only counts eggs, so (like livestock-item-genotype
-  // persistence) the colors live in a per-world FIFO that survives save/reload.
+  // Eggs keep their stump's color AND optional markings in the existing per-world FIFO.
+  // Legacy saved entries are hex strings, while new ones include {color, genotype}.
+  // The bag only counts eggs, so the FIFO survives save/reload independently.
   const EGG_QUEUE_KEY = 'hobunji_honeyfuzzle_egg_colors_v1';
   function readQueues() {
     try { return JSON.parse(localStorage.getItem(EGG_QUEUE_KEY) || '{}') || {}; } catch (_) { return {}; }
@@ -155,21 +155,30 @@
   function writeQueues(queues) {
     try { localStorage.setItem(EGG_QUEUE_KEY, JSON.stringify(queues)); } catch (_) { /* storage unavailable: eggs just roll a fresh color */ }
   }
-  function queueEggColors(worldId, colors) {
+  function queueEggAppearances(worldId, entries) {
     const queues = readQueues(), id = String(worldId || 'local');
-    queues[id] = [...(queues[id] || []), ...colors.filter(Boolean)].slice(-99);
+    const accepted = (Array.isArray(entries) ? entries : []).map(entry => {
+      if (typeof entry === 'string') return entry; // Legacy color-only eggs remain exactly as saved.
+      if (!entry || typeof entry.color !== 'string') return null;
+      return { color: entry.color, genotype: entry.genotype || null }; // Preserves a harvested swarm's inherited optional markings.
+    }).filter(Boolean);
+    queues[id] = [...(queues[id] || []), ...accepted].slice(-99);
     writeQueues(queues);
   }
-  function takeEggColor(worldId) {
+  function takeEggAppearance(worldId) {
     const queues = readQueues(), id = String(worldId || 'local');
-    const color = (queues[id] || []).shift() || null;
+    const stored = (queues[id] || []).shift() || null;
     if (queues[id] && !queues[id].length) delete queues[id];
     writeQueues(queues);
-    return color;
+    if (typeof stored === 'string') return { color: stored, genotype: null }; // Backward compatibility for existing serialized egg queues.
+    return stored && typeof stored.color === 'string'
+      ? { color: stored.color, genotype: stored.genotype || null } : null;
   }
+  function queueEggColors(worldId, colors) { queueEggAppearances(worldId, colors); } // Keeps callers and older tests working.
+  function takeEggColor(worldId) { return takeEggAppearance(worldId)?.color || null; } // Legacy API still consumes one FIFO entry.
 
   window.HoneyfuzzleColors = {
-    queueEggColors, takeEggColor,
+    queueEggColors, takeEggColor, queueEggAppearances, takeEggAppearance,
     EXCLUDED_ZONES, REGIONS, ZONE_REGION, AUTHORED,
     hexToRgb, hexToHsl, classify, regionPalettes, zonePalette, isExcludedZone, pickForKey,
     resetCache: () => { cache = null; },

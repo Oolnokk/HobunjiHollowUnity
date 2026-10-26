@@ -4,10 +4,11 @@ A honeyfuzzle is a hummingbird-like animal that behaves differently from every o
 
 | Piece | File | Owns |
 | --- | --- | --- |
-| Swarm renderer | `js/honeyfuzzle-swarm.js` (`window.HoneyfuzzleSwarm`) | One instanced draw call per swarm, the shared wing tick, deterministic member motion |
+| Swarm renderer | `js/honeyfuzzle-swarm.js` (`window.HoneyfuzzleSwarm`) | One instanced draw call per swarm, continuously blended fly sprites, tail and spectacles pigmentation |
+| Static portraits | `js/creature-genetics-render.js` (`SPECIES.honeyfuzzle`) | Crop/chathead composites: tail below fly body, optional spectacles above |
 | Species entry | `CREATURE_DB.honeyfuzzle` in `game.js` | Stats, `swarm` render config, `fixedSizeClass: 'medium'` |
 | Hive stumps | `js/honeyfuzzle-hives.js` (`window.HoneyfuzzleHives`) | Swarm spawn/return, long-hold harvest, collapse |
-| Colors | `js/honeyfuzzle-colors.js` (`window.HoneyfuzzleColors`) | Region palettes, per-stump color, egg color queue |
+| Colors | `js/honeyfuzzle-colors.js` (`window.HoneyfuzzleColors`) | Region palettes, per-stump color, backward-compatible egg appearance/genotype FIFO |
 | Honeyfuzzle House | `js/honeyfuzzle-house.js` (`window.HoneyfuzzleHouse`) | One-slot egg/swarm building on the farm |
 | Spatial buzzing | `js/honeyfuzzle-audio.js` (`window.HoneyfuzzleAudio`) | Shared decoded seam-crossfaded recording, 24-tile hive and swarm emitters, live aggression/Doppler |
 
@@ -16,9 +17,9 @@ A honeyfuzzle is a hummingbird-like animal that behaves differently from every o
 The gameplay entity is a single creature (`honeyfuzzle`, labelled "Honeyfuzzle Swarm") that flows through every normal creature path (spawn, LOD, companion AI, damage, death). Only its presentation differs: `createCreatureVisuals` calls `HoneyfuzzleSwarm.buildAvatar` when `def.swarm` is set. The returned `avatarRef` has the same shape as an animal plane avatar (`group`, `dispose`), and `frontPlane` is the yaw pivot that `updateCreatureMesh` already rotates toward the camera-relative facing.
 
 - **No idle/run states.** Hummingbirds never perch. `updateCreatureAnimFrame` hands the swarm one `update(speed, now, dt, moveSpeed)` call per frame.
-- **Wing cycle.** `up -> mid -> down -> mid -> repeat`, all members stepping on the same `WING_TICK_MS` tick. Member `i` sits `i % 3` steps into the 4-step cycle, so a third of the swarm is at each of three different points at any moment.
+- **Hummingbird flutter.** `honeyfuzzle_fly1.png`, `fly2.png`, and `fly3.png` replace the old up/mid/down sprites. Every rendered bird samples all three poses at once, with weights oscillating smoothly around an equal blend. Each member's permanent `i % 3` phase offset prevents the swarm from pulsing in unison. A bounded 7 Hz opacity shimmer is chosen to remain smooth on 30 FPS mobile devices without trying to simulate individual hummingbird wingbeats. Bodies overlap into an essentially solid image while differently positioned wings show translucent ghosted positions, without spawning multiple billboard planes.
 - **Motion (bees, not birds).** 24 small members per swarm (a multiple of 3 so the wing thirds stay even). `memberPose(seed, i, count, nowMs, speed01, spread, out)` is a pure function: each member hovers with a fast tiny buzz, zips to a new random point inside the cloud, hovers again, and mirrors itself to face the way it last darted. Dart periods and phases differ per member, so at any instant some are mid-zip and some hovering, and the cloud breathes. At speed the cloud tightens slightly and per-member `lead` values stretch it: `lead > 0` members run ahead of the heading and `lead < 0` members trail it.
-- **Performance.** One `InstancedMesh`, one atlas of the three frames shared by every swarm, the frame chosen per instance by an `aFrame` attribute (an `onBeforeCompile` UV shift on the shared PNG-plane material), and per-frame work that is only N matrix writes with no allocation. The `aFrame` buffer is uploaded only when the wing tick changes.
+- **Performance.** One `InstancedMesh` and one 3×2 atlas (five populated cells) shared by every swarm: fly1/2/3, tailfeathers, spectacles. The shader composites the five samples per pixel, using a single continuous time uniform and a fixed per-member phase attribute. Per-frame CPU work is only existing pose matrix updates plus one uniform; no atlas uploads or additional bird meshes. This trades modest pixel-shader cost for far fewer draw calls and allocations.
 
 ## Where they live, and what color
 
@@ -33,9 +34,13 @@ Honeyfuzzles live in every wilderness zone except the Western Slope (the generat
 | Eastern Mire | ominous colors: blacks, greys, whites and the darkest greens through violets |
 | any other zone | all three |
 
-Existing species colors are sorted into a region by HSL (`classify`); authored colors name their region. A stump's swarm color is a hash of its key, so it never changes. Harvesting queues one color per egg (per world, persisted), placing an egg in a house takes the oldest, the hatched record keeps `swarmColor`, and moving it to the Stable copies it, so the companion matches its stump.
+Existing species colors are sorted into a region by HSL (`classify`); authored colors name their region. A stump's swarm color is a hash of its key, so it never changes. Harvesting queues the source hive's **color and expressed tail/spectacles genotype** per egg (per world, persisted). Placing an egg in a house takes the oldest appearance record; hatching preserves the genes and primary `swarmColor` when the animal moves to the Stable. Legacy FIFO entries containing only a hex color are converted on read and receive newly rolled genes, so existing saved eggs still hatch.
 
 The swarm renderer recolors the authored mint body in the fragment shader (`uBody`/`uUse` per material): dark pixels (outline, beak, feet, pupil) are untouched and the body is remapped by brightness, which keeps the authored shading and pale wing highlights in any color. Every color shares one atlas texture and one shader program.
+
+**Pattern order and colors:** `honeyfuzzle_tailfeathers.png` is drawn **below** the main body for every bird, even with a missing/old genotype. Normally it takes the primary coat (`swarmColor`/`genotype.base.color`, body color 1). An **expressed** `tailfeathers` allele switches just those feathers to the inherited secondary color (body color 2); unexpressed alleles retain the default primary tint. `honeyfuzzle_spectacles.png` draws **above** the body only when its `spectacles` allele is expressed. Both use the ordinary genetics' enabled/copies/color schema; the tail's visible default is an anatomical renderer property, not a compulsory allele.
+
+All five new PNGs have identical **478×399** canvas coordinates; the retired 500×500 crop would clip the imagery. The shared atlas is packed into **1434×798** pixels so even a GPU limited to 2048 pixels per texture can hold it. Wild hive swarms receive stable per-hive pattern rolls and colors from their area's bird palette. Hatchlings inherit their source hive's optional alleles and retain the stored egg color as their primary (older color-only eggs roll new alleles). Their genotype persists in the farm record and survives transfer to the stable. The main game sprite factory currently forwards the primary color, so the swarm renderer resolves the actor's genotype from `Combat.deps` when it first appears in the active hostile/companion set (at most one retry per 500 ms until found). Houses pass their stored genotype directly. `HoneyfuzzleSwarm.debugSnapshot()` exposes atlas load errors, missing optional markings, exact asset paths and successful actor links for mobile debugging. Missing optional tail/spectacles images do not prevent flight sprites from rendering, but a missing essential fly frame correctly fails the atlas. The normal `CreatureGeneticsRender` additionally supports honeyfuzzle static portraits with tail/body/spectacles in the same order, so animal chatheads need not fall back to generic icons.
 
 ## Always Medium, always a "swarm"
 

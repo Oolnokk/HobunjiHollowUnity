@@ -107,6 +107,19 @@
         skinRecolorKey: { hex: '#A3C89F', hueTolerance: 20, minSaturationRatio: 0.45, minValue: 0.12 },
         skinColorPattern: 'spectacles' }, // Mint skin follows expressed spectacles, falling back to the base coat; iris and outlines remain untouched.
     },
+    honeyfuzzle: {
+      prefix: 'honeyfuzzle',
+      singleFrame: true, // Tail/spectacles PNGs have no idle/run suffix and align with each 478x399 fly pose.
+      fullBaseRecolor: true, // Chatheads use the same primary coat gene as the shader-driven in-world swarm.
+      baseShadeReferenceHex: '#9FB28E', // Measured native honeyfuzzle body pixel (159,178,142); static previews use this tint reference.
+      base: {
+        idle: 'assets/creaturesprites/honeyfuzzle_fly1.png',
+        run1: 'assets/creaturesprites/honeyfuzzle_fly2.png',
+        run2: 'assets/creaturesprites/honeyfuzzle_fly3.png',
+      },
+      patterns: ['tailfeathers', 'spectacles'],
+      underlayPatterns: ['tailfeathers'], // The anatomical tail is always visible BELOW the body, even with no expressed allele.
+    },
     nazgraku: {
       prefix: 'nzg',
       fullBaseRecolor: true,
@@ -538,6 +551,25 @@
     const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
+    const drawnPatterns = []; // Shared diagnostics include anatomical underlays as well as ordinary optional overlays.
+    for (const patternId of spec.underlayPatterns || []) {
+      const layer = genotype?.[patternId]; // Expressed tail genes use their second tint; otherwise this permanent anatomical region uses the primary coat.
+      const expressed = layer?.enabled !== false && Number(layer?.copies) > 0 && !!layer?.color;
+      const underlayColor = expressed ? layer.color : (baseColor || spec.baseShadeReferenceHex || null);
+      const url = patternUrl(kind, patternId, frame, genotype);
+      try {
+        const underlay = underlayColor ? await recoloredPattern(url, underlayColor) : await loadImage(url);
+        const painted = await applyColorPoolPaint(underlay, genotype, patternId, null,
+          `animal:${kind}:${frame}:${patternId}:${underlayColor || 'native'}`).catch(error => {
+          window.__farmLog?.(`[genotype-render] underlay paint for "${patternId}" failed: ${error.message}`, 'warn');
+          return null;
+        });
+        ctx.drawImage(painted || underlay, 0, 0, c.width, c.height);
+        drawnPatterns.push(patternId + (expressed ? '' : '(default)'));
+      } catch (error) {
+        window.__farmLog?.(`[genotype-render] underlay "${patternId}" failed to load (${url}): ${error.message}`, 'warn');
+      }
+    }
     ctx.drawImage(baseSource, 0, 0);
     try {
       const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : mask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
@@ -545,8 +577,8 @@
     } catch (error) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — skipped: ${error.message}`, 'warn');
     }
-    const drawnPatterns = [];
     for (const patternId of spec.patterns) {
+      if (spec.underlayPatterns?.includes(patternId)) continue; // The always-visible tail is already beneath the base, never drawn twice.
       const layer = genotype?.[patternId];
       // A layer with no `enabled` field at all (uumkaoii's permanent
       // fur/plates regions — see makeDefaultGenotype) is always on; only an
