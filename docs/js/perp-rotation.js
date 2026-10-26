@@ -32,6 +32,89 @@
   // between both edges every frame.
   const PERP_CENTER_HYSTERESIS_RAD = THREE.MathUtils.degToRad(3);
 
+  // ── Corrective-direction hierarchy ──
+  // When a raw target sits inside a dead zone, the plane is pushed out to one
+  // of the zone's two edges. Which edge is decided by the first source in this
+  // priority list that currently has a direction; the old behavior (edge
+  // nearest the raw target) is the final fallback when none do. Sources:
+  //   'movement'     — live travel direction, only while actually moving.
+  //   'headtrack'    — where the head is aimed at a target (cutscene/dialogue
+  //                    gaze, station lookAt), fresh within HEADTRACK_TTL_MS.
+  //   'lastMovement' — the last travel direction ever recorded on this state.
+  //   'player'       — bearing from the subject toward the player character
+  //                    (never applies to the player's own state).
+  // Configurable via game.movement.perpCorrectiveDirectionPriority, or at
+  // runtime via PerpRotation.setCorrectivePriority([...]).
+  const CORRECTIVE_SOURCES = ['movement', 'headtrack', 'lastMovement', 'player'];
+  const DEFAULT_CORRECTIVE_PRIORITY = ['movement', 'headtrack', 'lastMovement', 'player'];
+  let correctivePriority = normalizeCorrectivePriority(window.SCRATCHBONES_CONFIG?.game?.movement?.perpCorrectiveDirectionPriority);
+  const HEADTRACK_TTL_MS = 250; // Neck aim has no explicit "stopped tracking" call, so a gaze hint expires shortly after the last aim.
+
+  function normalizeCorrectivePriority(list) {
+    if (!Array.isArray(list)) return DEFAULT_CORRECTIVE_PRIORITY.slice();
+    const seen = new Set();
+    for (const source of list) if (CORRECTIVE_SOURCES.includes(source)) seen.add(source); // Unknown names are ignored; an empty result simply means "nearest edge".
+    return [...seen];
+  }
+
+  function setCorrectivePriority(list) {
+    correctivePriority = normalizeCorrectivePriority(list);
+    return correctivePriority.slice();
+  }
+
+  // Callers report live movement once per update: a finite yaw while moving,
+  // null while stationary. The last finite value is kept for 'lastMovement'.
+  function setMovementHint(state, movementYaw) {
+    if (!state) return;
+    state.movementYaw = Number.isFinite(movementYaw) ? movementYaw : null;
+    if (state.movementYaw !== null) state.lastMovementYaw = state.movementYaw;
+  }
+
+  function setHeadtrackHint(state, headtrackYaw) {
+    if (!state || !Number.isFinite(headtrackYaw)) return;
+    state.headtrackYaw = headtrackYaw;
+    state.headtrackAtMs = nowMs();
+  }
+
+  function playerYawForState(state) {
+    const playerPosition = deps?.playerWorldPosition?.();
+    const entry = playerPosition ? subjectForPerpState(state) : null;
+    const subjectPosition = entry ? worldPositionForSubject(entry.subject) : null;
+    if (!subjectPosition) return null;
+    const dx = Number(playerPosition.x) - Number(subjectPosition.x);
+    const dz = Number(playerPosition.z) - Number(subjectPosition.z);
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || Math.hypot(dx, dz) < 1e-6) return null;
+    return Math.atan2(dx, dz);
+  }
+
+  function correctiveYawFromSource(state, source) {
+    if (source === 'movement') return Number.isFinite(state.movementYaw) ? state.movementYaw : null;
+    if (source === 'headtrack') return Number.isFinite(state.headtrackYaw) && nowMs() - (state.headtrackAtMs ?? -Infinity) <= HEADTRACK_TTL_MS ? state.headtrackYaw : null;
+    if (source === 'lastMovement') return Number.isFinite(state.lastMovementYaw) ? state.lastMovementYaw : null;
+    if (source === 'player') return playerYawForState(state);
+    return null;
+  }
+
+  // Returns { source, yaw } for the highest-priority available source, or null.
+  function resolveCorrectiveDirection(state) {
+    if (!state || state.localPerpsOnly) return null; // Parent-local perps (billboards) don't share the world-yaw space of these hints.
+    for (const source of correctivePriority) {
+      const yaw = correctiveYawFromSource(state, source);
+      if (yaw !== null) return { source, yaw };
+    }
+    return null;
+  }
+
+  // Edge (+1/-1) of perp P that the corrective direction points to, keeping
+  // previousSide while the direction is ambiguous (within the center band of
+  // either P or its antipode, where the sign of angleDiff is noise).
+  function correctiveSideForPerp(corrective, P, previousSide) {
+    const d = deps.angleDiff(corrective.yaw, P);
+    const ambiguous = Math.abs(d) < PERP_CENTER_HYSTERESIS_RAD || Math.PI - Math.abs(d) < PERP_CENTER_HYSTERESIS_RAD;
+    if (ambiguous && previousSide !== null && previousSide !== undefined) return previousSide;
+    return d >= 0 ? 1 : -1;
+  }
+
   const subjectByPerpState = new WeakMap(); // Caches persistent clamp state -> live subject so screen-view lookup is O(1) after the first frame.
   // Negative cache: perp states that matched no registry (deadzone
   // billboards, dew vats, a creature not registered yet...) used to rescan
@@ -248,9 +331,14 @@
     // snapping again immediately if it keeps going past the far edge.
     const previousSide = state.perpSides[nearestI]; // Retained within the center band to prevent side chatter.
     const candidateSide = nearestDT > 0 ? 1 : -1; // Used once aim clearly crosses beyond the center band.
-    const newSide = previousSide !== null && Math.abs(nearestDT) < PERP_CENTER_HYSTERESIS_RAD
+    const nearestEdgeSide = previousSide !== null && Math.abs(nearestDT) < PERP_CENTER_HYSTERESIS_RAD
       ? previousSide
       : candidateSide;
+    // Inside the zone, the corrective-direction hierarchy (movement >
+    // headtrack > last movement > player, by default) picks the edge; outside
+    // it the side just tracks rawTarget so leaving/entering stays continuous.
+    const corrective = isLocked ? resolveCorrectiveDirection(state) : null;
+    const newSide = corrective ? correctiveSideForPerp(corrective, P, previousSide) : nearestEdgeSide;
     // Only a side change observed against the SAME perp as the previous call
     // is a real crossing through that dead zone. perpSides[i] is left behind
     // whenever rawTarget wanders over to the other perp, so when it later
@@ -283,6 +371,8 @@
       nearestDeltaRad: nearestDT,
       previousSide,
       selectedSide: newSide,
+      correctiveSource: corrective ? corrective.source : 'nearest-edge',
+      correctiveYaw: corrective ? corrective.yaw : null,
       wasLocked,
       isLocked,
     };
@@ -402,7 +492,10 @@
     const previousSnapSide = state.snapSide === 1 || state.snapSide === -1 ? state.snapSide : null; // Normalizes fresh/legacy state so undefined never enters dead-zone angle math.
     if (!moving) {
       state.oscPhase = 0;
-      if (previousSnapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
+      if (previousSnapSide === null) {
+        const corrective = resolveCorrectiveDirection(state); // Same hierarchy as perpClamp decides the resting edge.
+        state.snapSide = corrective ? correctiveSideForPerp(corrective, P, null) : (nearestDT >= 0 ? 1 : -1);
+      }
       return { target: P + state.snapSide * deadRad, snap: false };
     }
     state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
@@ -466,6 +559,11 @@
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
     nearestCardinalAngle,
+    setMovementHint,
+    setHeadtrackHint,
+    setCorrectivePriority,
+    getCorrectivePriority: () => correctivePriority.slice(),
+    resolveCorrectiveDirection,
     PERP_DEAD_RAD,
     PERP_CENTER_HYSTERESIS_RAD,
     PERP_DEAD_HYSTERESIS_RAD,
