@@ -29,7 +29,8 @@ near(g.length(twice), 100);
 const edge = { type: 'eye', start: { x: 400, y: 1200 }, end: { x: 430, y: 1202 } };
 const capped = g.setLength(edge, 300); // Clamp tip at the last available frame boundary, not by moving origin.
 near(capped.start.x, 400); near(capped.start.y, 1200);
-near(capped.end.y, 1204);
+near(capped.end.x, 450); // This diagonal hits the right edge before reaching the bottom edge.
+near(capped.end.y, 1200 + 50 * 2 / 30);
 assert(capped.end.x <= 450 && capped.end.y <= 1204);
 assert.equal(g.setLength(sample, NaN), sample, 'Invalid numeric values preserve the line.');
 assert.equal(g.setLength(sample, 0), sample, 'Minimum valid arrow length is enforced.');
