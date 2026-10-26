@@ -33,7 +33,7 @@
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260930plaquesources1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261018badge1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261016h34625d7"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261025hbronzechest1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261018targethum1"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261019h50eef9d"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20261016hd25cc1c"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.

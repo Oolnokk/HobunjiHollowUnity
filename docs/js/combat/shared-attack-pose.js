@@ -346,8 +346,159 @@
     return true;
   }
 
+  // ── Head attach frame ──────────────────────────────────────────────────────────────────────────
+  // Head-anchored poses (blowgun, drink) hang off the portrait's species "mouth" point, not off the camera or a
+  // body orbit: the head already takes its yaw/pitch from the camera, so the tool takes its rotation, position and
+  // scale from the head alone. A tool's "aperture" (a point in its own holder space) is mated with the mouth and the
+  // pose x/y/z/pitch/yaw/roll/scale are an offset in the head's frame.
+
+  // Reference head size: the Mao'ao male head world scale every head-anchored pose was authored against.
+  function referenceHeadScale() {
+    const head = Number(window.HobunjiCharacterRigScale?.scaleFor?.('mao-ao', 'male')?.head);
+    return head > 0 ? head : 0.726;
+  }
+
+  // Caller-owned scratch for headFrame/placeAtMouth, built once from the host's THREE so this module stays dependency-free.
+  function createHeadFrame(THREE) {
+    return {
+      position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: 1,
+      _v: new THREE.Vector3(), _w: new THREE.Vector3(), _q: new THREE.Quaternion(), _r: new THREE.Quaternion(), _q3: new THREE.Quaternion(), _e: new THREE.Euler(), cameraPosition: null,
+    };
+  }
+
+  // Mouth pixel for this avatar's species/gender (the head centroid until a real one is authored).
+  function mouthPixel(avatar) {
+    const rig = avatar?.userData?.neckRig;
+    if (!rig?.available) return null;
+    const data = avatar.userData;
+    return window.HobunjiPortraitMouthPoints?.pixelFor?.(data.speciesId, data.gender, rig, data.sourceCanvas) || rig.headCentroidPx || null;
+  }
+
+  // Edge-on deadzone. Tools are flat sprites, so a tool seen edge-on vanishes. For a head-anchored tool the holder's z axis is the haft (the
+  // sprite's long axis; grip spans and "Tool Z rotation" are about it) and its y axis is the sprite normal. When the camera would see the
+  // sprite within this many degrees of edge-on, the tool is rolled about its OWN haft, by the least rotation, until it is just outside
+  // that zone. The one case it cannot help is a haft pointing along the camera ray (any roll is then edge-on), so it leaves the tool alone.
+  // The aperture/mouth attach, haft direction and everything else are untouched. 0 disables it (the attack editor shows exact poses).
+  let toolEdgeOnDeadzoneRad = Math.max(0, Number(window.SCRATCHBONES_CONFIG?.game?.movement?.toolEdgeOnDeadzoneDeg ?? 10)) * DEG_TO_RAD;
+  const DEADZONE_STALE_MS = 250; // A gap this long (weapon re-equipped, tab switched) forgets which side of edge-on the sprite was on.
+  const TWO_PI = Math.PI * 2;
+  const wrapAngle = angle => angle - TWO_PI * Math.round(angle / TWO_PI);
+  let cameraProvider = null; // () => THREE.Camera|null: the camera the sprite is judged against (the game registers its live camera).
+  function setToolEdgeOnDeadzone(deg) { toolEdgeOnDeadzoneRad = Math.max(0, Number(deg) || 0) * DEG_TO_RAD; }
+  function toolEdgeOnDeadzoneDeg() { return toolEdgeOnDeadzoneRad / DEG_TO_RAD; }
+  function setCameraProvider(provider) { cameraProvider = typeof provider === 'function' ? provider : null; }
+
+  // frame._q is the tool's world rotation, frame._v the world point the camera ray is cast to (the mouth). Rolls frame._q about its own
+  // z by the minimum angle that takes the sprite out of the deadzone; returns the roll applied (radians, 0 when none).
+  function applyEdgeOnDeadzone(holder, frame) {
+    if (!(toolEdgeOnDeadzoneRad > 0)) return 0;
+    const camera = frame.cameraPosition || cameraProvider?.()?.position;
+    if (!camera) return 0;
+    const q = frame._q;
+    const { x, y, z, w } = q;
+    const hx = 2 * (x * z + w * y), hy = 2 * (y * z - w * x), hz = 1 - 2 * (x * x + y * y); // Haft: q * +z
+    const nx = 2 * (x * y - w * z), ny = 1 - 2 * (x * x + z * z), nz = 2 * (y * z + w * x); // Sprite normal: q * +y
+    let cx = frame._v.x - camera.x, cy = frame._v.y - camera.y, cz = frame._v.z - camera.z; // Camera ray through the tool.
+    const length = Math.hypot(cx, cy, cz);
+    if (!(length > 1e-6)) return 0;
+    cx /= length; cy /= length; cz /= length;
+    const a = nx * cx + ny * cy + nz * cz; // Sprite normal . ray: +-1 face-on, 0 edge-on.
+    const b = (hy * nz - hz * ny) * cx + (hz * nx - hx * nz) * cy + (hx * ny - hy * nx) * cz; // (haft x normal) . ray: how the roll changes it.
+    const reach = Math.hypot(a, b); // Best |normal . ray| any roll can give = sin(angle between haft and ray).
+    const state = (holder.userData ||= {}).__edgeOnDeadzone ||= { side: 0, t: -Infinity };
+    const now = performance.now();
+    if (now - state.t > DEADZONE_STALE_MS) state.side = 0;
+    state.t = now;
+    const limit = Math.sin(toolEdgeOnDeadzoneRad); // |normal . ray| must stay at or above this.
+    if (Math.abs(a) >= limit) { state.side = Math.sign(a) || 1; return 0; } // Outside the zone: nothing to do, and remember which face is showing.
+    if (reach < 1e-3) return 0; // Haft along the camera ray: every roll is edge-on, nothing to rotate to.
+    if (!state.side) state.side = Math.sign(a) || 1; // Hysteresis: stay on the face that was showing rather than popping across edge-on.
+    const target = state.side * Math.min(limit, reach);
+    const base = Math.atan2(b, a), spread = Math.acos(Math.max(-1, Math.min(1, target / reach))); // a(alpha) = reach * cos(alpha - base)
+    const one = wrapAngle(base + spread), two = wrapAngle(base - spread);
+    const roll = Math.abs(one) <= Math.abs(two) ? one : two; // Least rotation.
+    q.multiply(frame._q3.set(0, 0, Math.sin(roll / 2), Math.cos(roll / 2))); // Rotate about the tool's own z (the haft).
+    return roll;
+  }
+
+  // The head's world rotation as the product of its ancestors' local rotations, ignoring scale: exactly how the player composer
+  // aims the neck at the interaction ray. A matrix decomposition would skew by a degree or two under the avatar's non-uniform body scale.
+  function headRotation(out, joint) {
+    if (!joint.quaternion) return joint.getWorldQuaternion(out); // Stand-in joints without a transform hierarchy.
+    out.copy(joint.quaternion);
+    for (let node = joint.parent; node; node = node.parent) out.premultiply(node.quaternion);
+    return out;
+  }
+
+  // Fills `frame` (WORLD space) with the mouth position, the head's world rotation and its uniform scale ratio vs the
+  // Mao'ao-male baseline. False when the avatar has no skinned head to attach to.
+  function headFrame(frame, avatar) {
+    const rig = avatar?.userData?.neckRig;
+    const pixel = mouthPixel(avatar);
+    const resolver = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition;
+    const joint = rig?.headScaleJoint || rig?.neckJoint;
+    if (!pixel || !joint || !resolver) return false;
+    const mouth = resolver(avatar, pixel, frame.position);
+    if (!mouth) return false;
+    if (mouth !== frame.position) frame.position.copy(mouth);
+    joint.updateWorldMatrix(true, false);
+    headRotation(frame.quaternion, joint);
+    joint.getWorldScale(frame._v);
+    const headScale = (frame._v.x + frame._v.y) / 2; // Head size is x/y; z mirrors the body and must not feed back into the tool.
+    frame.scale = headScale > 0 ? headScale / referenceHeadScale() : 1;
+    return true;
+  }
+
+  // Places `holder` so its aperture meets the head frame's mouth. `pose` is an offset in the head frame (units scale with
+  // the head), `poseScale` the holder's own uniform scale, `aperture` the mating point in HOLDER space (null = holder
+  // origin). With `localRoot` the result is expressed in that parent's space (a scaled/rotated body root).
+  function placeAtMouth(holder, frame, pose, poseScale, aperture, localRoot = null) {
+    const scale = Math.max(0.0001, (Number(poseScale) || 1) * frame.scale); // World scale of the tool, inherited from the head.
+    frame._e.set((pose.pitch || 0) * DEG_TO_RAD, (pose.yaw || 0) * DEG_TO_RAD, (pose.roll || 0) * DEG_TO_RAD, 'YXZ');
+    frame._r.setFromEuler(frame._e);
+    frame._q.copy(frame.quaternion).multiply(frame._r); // World rotation: head rotation, then the authored tool rotation.
+    frame._v.set((pose.x || 0) * frame.scale, (pose.y || 0) * frame.scale, (pose.z || 0) * frame.scale).applyQuaternion(frame.quaternion).add(frame.position); // World point the aperture sits on.
+    applyEdgeOnDeadzone(holder, frame); // Roll about the haft if the camera would see the sprite edge-on; the aperture stays on that point.
+    if (aperture) frame._v.sub(frame._w.set(aperture.x, aperture.y, aperture.z).multiplyScalar(scale).applyQuaternion(frame._q));
+    if (localRoot) {
+      localRoot.updateWorldMatrix(true, false);
+      localRoot.worldToLocal(frame._v);
+      localRoot.getWorldQuaternion(frame._r).invert();
+      frame._q.premultiply(frame._r);
+      localRoot.getWorldScale(frame._w);
+      holder.scale.setScalar(scale / Math.max(0.0001, frame._w.x));
+    } else holder.scale.setScalar(scale);
+    holder.position.copy(frame._v);
+    holder.quaternion.copy(frame._q);
+    return holder;
+  }
+
+  // Hand-aligned poses scale around the main-hand grip: with the holder's position/rotation already final and its scale set to
+  // `scale`, shifts it so `grip` (a holder-space point measured at scale 1) stays where it was at scale 1. Head-aligned poses
+  // get the same guarantee from placeAtMouth, which pivots on the aperture.
+  function anchorScaleAtPoint(holder, grip, scale) {
+    const k = (Number(scale) || 1) - 1;
+    if (!grip || Math.abs(k) < 1e-9) return holder;
+    const shift = holder.__anchorShift ||= new holder.position.constructor();
+    holder.position.sub(shift.set(grip.x, grip.y, grip.z).multiplyScalar(k).applyQuaternion(holder.quaternion));
+    return holder;
+  }
+
+  // Inverse of placeAtMouth for an editor drag: given the holder's WORLD transform, writes the head-frame pose
+  // (x/y/z in baseline units, pitch/yaw/roll in degrees) that would reproduce it.
+  function poseFromHolderWorld(out, frame, worldPosition, worldQuaternion, worldScale, aperture) {
+    const scale = Math.max(0.0001, Number(worldScale) || 1);
+    frame._v.copy(worldPosition);
+    if (aperture) frame._v.add(frame._w.set(aperture.x, aperture.y, aperture.z).multiplyScalar(scale).applyQuaternion(worldQuaternion));
+    frame._v.sub(frame.position).applyQuaternion(frame._r.copy(frame.quaternion).invert()).multiplyScalar(1 / Math.max(0.0001, frame.scale));
+    out.x = frame._v.x; out.y = frame._v.y; out.z = frame._v.z;
+    frame._e.setFromQuaternion(frame._q.copy(frame._r).multiply(worldQuaternion), 'YXZ'); // _r still holds the inverse head rotation.
+    out.pitch = frame._e.x / DEG_TO_RAD; out.yaw = frame._e.y / DEG_TO_RAD; out.roll = frame._e.z / DEG_TO_RAD;
+    return out;
+  }
+
   window.SharedAttackPose = Object.freeze({
-    headAnchor,
+    headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, setToolEdgeOnDeadzone, toolEdgeOnDeadzoneDeg, setCameraProvider, createHeadFrame, mouthPixel, referenceHeadScale,
     version: 1,
     POSE_KEYS,
     MIRRORED_POSE_KEYS,
