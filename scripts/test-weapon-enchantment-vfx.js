@@ -113,6 +113,7 @@ heldDeps.toolHolder.children = [rangedVisual];
 assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'even with the weapon slot selected, the current held visual must match that weapon and be attached.');
 heldDeps.toolHolder.children = [heldToolVisual, rangedVisual];
 assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, true, 'the matching melee visual is still selected when another plane also exists.');
+scheduledVfxUpdate(1120); // Establish that the enchanted melee weapon is genuinely held before testing immediate holster cleanup.
 
 heldMode = 'none';
 assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'holstering a weapon must suppress particles.');
