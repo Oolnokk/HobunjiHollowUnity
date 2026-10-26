@@ -53,8 +53,8 @@
       "socialize": 0.16,
       "camp": 0.08
     },
-    "denHuntGroupMin": 2,
-    "denHuntGroupMax": 3,
+    "denHuntGroupMin": 3,
+    "denHuntGroupMax": 4,
     "denHuntFormationRadiusTiles": 1.15,
     "denHuntArrivalRadiusTiles": 2.5,
     "denHuntDwellMinSeconds": 4,

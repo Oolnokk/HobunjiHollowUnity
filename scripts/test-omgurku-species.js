@@ -219,6 +219,39 @@ async function main() {
   assert.equal(appearanceRoot.userData.omgurkuComposite.upper.userData.speciesId,'omgurku',
     'appearance-only callers pass species identity to the canonical anatomy builder');
   api.disposeAvatarModel(appearanceRoot);
+
+  // Ridden mounts (Porakaneki Avengers): a whole Nazgraku card under an
+  // ordinary rider, sized/floored/saddled from the creature's authored rig and
+  // seated by the rider's posterior, never by the live Omgurku calibration.
+  rigs.creatures = { nazgraku: { sizeScales: { large: { x: 1.5, y: 1.5 } }, groundOffsets: { large: .31 },
+    anchors: { saddle: { position: { x: 0, y: .08, z: 0 } } } } };
+  rigs.characters['porakaneki::male'] = { posteriorRule: { heightPercentFromFloor: 36 } };
+  window.HOBUNJI_ATTACHMENT_RIG_MATH = { characterPosteriorY: (rule, height) => height * rule.heightPercentFromFloor / 100 };
+  const builtBefore = lowerBuilds.length, disposedBefore = lowerDisposals;
+  const mounted = api.buildSinglePlaneAvatarModel({ Group, Vector3 }, {}, { mountSpecies: 'nazgraku', profile: { fighter: { speciesId: 'porakaneki', gender: 'male' } } });
+  const mc = mounted.userData.omgurkuComposite;
+  assert(mc && mc.mount?.lowerRig === 'nazgraku', 'mountSpecies builds the shared rider composite');
+  assert.equal(mounted.userData.omgurkuNpc, false);
+  assert.equal(mounted.userData.mountSpecies, 'nazgraku');
+  assert.equal(mounted.userData.speciesId, 'porakaneki', 'the rider keeps its own species identity');
+  assert.equal(mounted.userData.proceduralBodyRoot, mc.upper, 'hostile compound path receives the rider as the body root');
+  const mountBuilds = lowerBuilds.slice(builtBefore);
+  assert.equal(mountBuilds.length, 3);
+  for (const [i, frame] of ['idle', 'run1', 'run2'].entries()) {
+    assert(mountBuilds[i].url.endsWith(`/docs/assets/creaturesprites/nazgraku_${frame}.png`), 'regular whiskered Nazgraku frames');
+    assert.equal(mountBuilds[i].options.creatureId, 'nazgraku');
+    assert(Math.abs(mountBuilds[i].options.modelWidth - 1.21 * 1.5) < 1e-9, 'Large Nazgraku card width');
+    assert(Math.abs(mountBuilds[i].options.modelHeight - 1.21 * 378 / 900 * 1.5) < 1e-9, 'Large Nazgraku card height');
+  }
+  for (const frame of ['idle', 'run1', 'run2']) assert(fs.existsSync(path.join(__dirname, '..', 'docs/assets/creaturesprites', `nazgraku_${frame}.png`)));
+  assert(Math.abs(mountBuilds[0].group.position.y - .31) < 1e-9, 'card center sits at the authored Large ground offset');
+  const saddleY = .31 + .08 * 1.5;
+  assert(Math.abs(mounted.userData.omgurkuJoin.y - saddleY) < 1e-9, 'join is the authored saddle anchor');
+  assert(Math.abs(mc.upper.position.y - (saddleY + .5 - .36)) < 1e-9, 'rider posterior rests on the saddle');
+  window.HobunjiOmgurkuSpecies.setPlacement({ lowerWidth: 3 });
+  assert(Math.abs(mc.placement.lowerWidth - 1.21 * 1.5) < 1e-9, 'Omgurku calibration never resizes a mount');
+  api.disposeAvatarModel(mounted);
+  assert.equal(lowerDisposals - disposedBefore, 3, 'mount cards release through the compound disposer');
   window.HobunjiOmgurkuConnector={snapshot:()=>({enabled:true}),create(){throw Error('failed connector');}};
   const fallback=api.buildSinglePlaneAvatarModel({Group,Vector3},{},{speciesId:'omgurku'});
   assert(!fallback.userData.omgurkuComposite,'failed optional construction returns the original upper avatar');

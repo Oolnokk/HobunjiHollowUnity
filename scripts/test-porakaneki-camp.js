@@ -596,10 +596,17 @@ function hunterDebug(api, zoneId, campId, index) {
   fakeNowMs += 1600;
 
   hostileObjects.delete(prey);
-  const outsideBandit = { id: 'eco_outside_bandit', x: 48 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
+  // Fights cover every live actor within the 24-tile release radius around the
+  // player, not just the player's own 16x16 chunk: rivals in plain view fight.
+  const nextChunkBandit = { id: 'eco_next_chunk_bandit', x: 48 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
+  hostileObjects.add(nextChunkBandit);
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, nextChunkBandit, 'a visible actor across the 16-tile chunk boundary is still a faction target');
+  hostileObjects.delete(nextChunkBandit);
+  const outsideBandit = { id: 'eco_outside_bandit', x: 32 * combatDeps.TILE, y: 57 * combatDeps.TILE, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, def: {} };
   hostileObjects.add(outsideBandit);
   api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, null, 'an actor across the 16-tile chunk boundary is not simulated as a faction target');
+  assert.equal(pora._chunkCombatTarget, null, 'an actor beyond the 24-tile ecology radius is not simulated as a faction target');
   assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(15.99, 0))), { x: 0, y: 0 });
   assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(16, 0))), { x: 1, y: 0 });
 
