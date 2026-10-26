@@ -297,8 +297,8 @@
     const nightbugsTarget = wildlifeAllowed && night && !inCloudForest ? genericNightbugsVolume : 0; // Routes generic night wildlife everywhere except the dedicated cloud-forest bed.
     const cloudforestTarget = wildlifeAllowed && inCloudForest && !night ? (bgs.cloudforestVolume ?? 0.30) : 0; // Routes the daytime cloud-forest recording only in its biome.
     const cloudforestNightTarget = wildlifeAllowed && inCloudForest && night ? (bgs.cloudforestNightVolume ?? 0.34) : 0; // Routes the night cloud-forest recording only in its biome.
-    const riverTarget = enabled ? riverMix(deps, area, bgs) : 0;
-    const caveTarget = enabled && isCaveArea(deps, area) ? (bgs.caveVolume ?? 0.38) : 0; // Independent of dampened indoor rain and wind. // Keeps water proximity independent from rain while honoring the audio master switch.
+    const riverTarget = enabled ? riverMix(deps, area, bgs) : 0; // River proximity stays independent of rain.
+    const caveTarget = enabled && isCaveArea(deps, area) ? (bgs.caveVolume ?? 0.38) : 0; // Plays under muffled weather rather than replacing it.
     setLayerTarget('nightbugs', nightbugsTarget, now);
     setLayerTarget('cloudforest', cloudforestTarget, now);
     setLayerTarget('cloudforestNight', cloudforestNightTarget, now);
