@@ -104,6 +104,11 @@ function fakeThree() {
   const S = context.HoneyfuzzleSwarm;
   const avatar = S.buildAvatar(THREE, { name: 'swarm_test', modelWidth: 1.3, memberWidth: 0.4, count: 9 });
   assert.equal(avatar.swarm.count, 9, 'one instanced mesh holds the whole swarm');
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <uv_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>' }; // Verifies actual shader composition, not merely uniforms.
+  avatar.swarm.material.onBeforeCompile(shader);
+  assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
+  assert(shader.fragmentShader.includes('composed = overlayHoneyfuzzle( spectacles, composed )'), 'optional spectacles render above all body pixels');
+  assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
   assert.equal(avatar.group.children[0], avatar.frontPlane, 'frontPlane is the yaw pivot the creature loop rotates');
   assert.equal(avatar.backPlane, null);
   avatar.update(0, 1000, 0.016, 150);
@@ -137,6 +142,16 @@ function fakeThree() {
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 0);
   assert.equal(tinted.group.children.length, 1, 'all overlay sprites share one instanced mesh');
   assert.equal(typeof S.debugSnapshot, 'function');
+  const actor = { id: 'linked_swarm', swarmColor: '#aabbcc',
+    genotype: { tailfeathers: { enabled: true, copies: 1, color: '#332211' },
+      spectacles: { enabled: true, copies: 1, color: '#889900' } } }; // Exercises the real game factory's color-only constructor followed by actor collection registration.
+  context.Combat = { deps: { hostileObjects: new Set(), companionObjects: new Set([actor]) } };
+  const linked = S.buildAvatar(THREE, { name: actor.id, color: actor.swarmColor, count: 6 });
+  linked.update(0, 1234, 0.016, 150);
+  assert.equal(linked.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#332211', 'the wild/companion bridge acquires secondary pigments');
+  assert.equal(linked.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 1);
+  assert(S.debugSnapshot().linkedActors > 0, 'mobile snapshot includes actor link count');
+  linked.dispose();
   assert.equal(S.DEFAULT_MEMBER_COUNT, tinted.memberCount, 'default swarm size');
   avatar.dispose();
   assert.equal(avatar.swarm.geometry.disposed, true);
