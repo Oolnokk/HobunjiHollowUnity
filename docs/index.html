@@ -26,7 +26,7 @@
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/HousePieceGen.js?v=20261026ha263432&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261026h7a4fc85&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261026cavewalls2&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
   <script src="js/tile-pathfinding.js?v=20261018a"></script>
@@ -117,7 +117,7 @@
        window.*.init(...) calls — dozens of already-extracted modules also
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20261014hf784ca8"></script>
+  <script src="js/grid-tile-accessors.js?v=20261026caveentry1"></script>
   <!-- Small self-registering lookup for furniture/lantern-mask point lights
        (game.js's makeFurniturePointLight and a few inline PointLight sites
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
@@ -152,7 +152,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261023h443f8dc"></script>
-  <script src="config/scratchbones-config.js?v=20261026hfineghoul2"></script>
+  <script src="config/scratchbones-config.js?v=20261026hmaskalpha3"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -174,10 +174,10 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
+  <script src="js/portrait-utils.js?v=20261026hmaskalpha1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261024h03348de"></script>
-  <script src="js/png-plane-avatar.js?v=20261022hea8b100"></script>
+  <script src="js/png-plane-avatar.js?v=20261026hmaskalpha2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261025h561f2e2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -235,7 +235,7 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20261026hce2138e"></script>
+  <script src="js/foliage-generator.js?v=20261026cavewalls2"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261025hab1da68"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
@@ -251,9 +251,9 @@
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
   <script src="js/terrain-preview.js?v=20261013he41c002"></script>
-  <script src="js/den-cliff-placement.js?v=20261010h1a6266f"></script>
+  <script src="js/den-cliff-placement.js?v=20261026caveentry1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
-  <script src="js/wilderness-map-generator.js?v=20261025oreveins1"></script>
+  <script src="js/wilderness-map-generator.js?v=20261026caveentry1"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
@@ -329,7 +329,7 @@
   <script src="js/combat/combat-combo.js?v=20261017h9dc5e7c"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261019hc4df62e"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261019h420f48e"></script>
@@ -429,7 +429,7 @@
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261026hf65533c"></script>
-  <script src="js/honeyfuzzle-house.js?v=20261023hf1"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
+  <script src="js/honeyfuzzle-house.js?v=20261026hivebuzz2"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261025he7892dd"></script>
   <script src="js/farm-animals.js?v=20261026h471b7cc"></script>
@@ -622,7 +622,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261026h640d11f"></script>
+  <script src="js/wildlife-spawn.js?v=20261026caveentry1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -746,7 +746,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20261024h5692d02"></script>
+  <script src="js/input-settings-panel.js?v=20261026cavebgslayer1"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -798,7 +798,7 @@
   <!-- Cave height tuning (window.HobunjiCaveShapeConfig), read by cavern-generator.js at carve time. -->
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
-  <script src="js/cavern-generator.js?v=20261025oreveins2"></script>
+  <script src="js/cavern-generator.js?v=20261026cavewalls1"></script>
   <script src="js/ore-rock-textures.js?v=20261026oredgeclamp2"></script> <!-- Shared masked mineral materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261026orequad4"></script>
   <script src="js/town-mine.js?v=20261023ladderodds2"></script>
@@ -855,7 +855,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20261015hb93578b"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261026hmaskalpha8"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
@@ -2603,14 +2603,15 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261026maskoff1"></script>
+  <script src="js/tool-icon-render.js?v=20261026hmaskalpha9"></script>
   <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261025audioAudit4"></script>
+  <script src="js/audio-system.js?v=20261026hivebuzz1"></script>
+  <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20261025combatHrtf2"></script>
@@ -2637,7 +2638,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20261022hcamopt2"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20261026hmaskalpha11"></script>
   <script src="js/camera-tile-collision.js?v=20261023camtile1"></script>
   <script src="js/camera-occlusion-chunks.js?v=20261023occchunk1"></script>
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>

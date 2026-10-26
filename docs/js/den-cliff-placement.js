@@ -177,11 +177,11 @@
         if (!compiled.embeddedKeys.has(`${dx},${dy}`) && Math.abs(tier(tile) - floorTier) > 0.05) return fail(`footprint ${dx},${dy} off the floor tier`);
       }
     }
-    // Walkable entry column from the entry tile out through the footprint's
+    // Walkable three-column swathe from the entry tile out through the footprint's
     // front row: plain floor only (cliff skirts and ramps export as rock/slope).
     for (const step of entryPath(compiled)) {
       const tile = tileAt(x + step.dx, y + step.dy);
-      if (!tile || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return fail(`entry column ${step.dx},${step.dy} not walkable`);
+      if (!tile || tile.water || tile.ramp || tile.occupiedBy || isBoundary(tile) || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return fail(`entry swathe ${step.dx},${step.dy} not walkable`);
     }
     for (const cell of compiled.embedded) {
       if (!probeMatches(tileAt, x + cell.dx, y + cell.dy, cell, floorTier)) return fail(`embedded ${cell.dx},${cell.dy} not ${cell.terrain}`);
@@ -201,7 +201,7 @@
     const { dx, dy } = compiled.mouth;
     if (dx < 0 || dx >= compiled.w || dy < 0 || dy >= compiled.h) return [];
     const cells = [];
-    for (let row = dy; row < compiled.h; row++) cells.push({ dx, dy: row });
+    for (let row = dy; row < compiled.h; row++) for (let col = Math.max(0, dx - 1); col <= Math.min(compiled.w - 1, dx + 1); col++) cells.push({ dx: col, dy: row }); // The center and both flanks must remain open.
     return cells;
   }
 

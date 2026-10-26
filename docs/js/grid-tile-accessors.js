@@ -234,10 +234,10 @@
         if (!authoredState.useLegacyCave) continue;
       }
       if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue; // Mouth exception applies only to the legacy cave shell, never to an explicitly authored furniture/custom collider.
-      // Cliff dens put their entry inside the footprint (under the arch). Every
-      // row from that entry out to the facade front stays walkable across the
-      // full den width, recursively clearing the old path's left/right shell tiles.
-      if (den.cliffBacked && den.mouthAnchor && row >= den.mouthAnchor.y && row < den.y + h && col >= den.x && col < den.x + w) continue;
+      // Cliff dens leave exactly the center entrance column and its immediate
+      // neighbors open, matching the generated terrain overlay and template fit.
+      if (den.cliffBacked && den.mouthAnchor && row >= den.mouthAnchor.y && row < den.y + h
+        && col >= Math.max(den.x, den.mouthAnchor.x - 1) && col <= Math.min(den.x + w - 1, den.mouthAnchor.x + 1)) continue;
       if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
       // Doorway gap carved into the south wall (30%-70% of the footprint's
       // width, on its last row) so the footprint box isn't fully solid with

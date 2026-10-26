@@ -228,6 +228,12 @@
     material.opacity = Math.max(0, Math.min(1, AFTERIMAGE_BASE_OPACITY * opacityScale * sourceOpacity));
     material.depthWrite = false;
     material.depthTest = true;
+    // The solid PNG mask can exceed this afterimage's 0.34 maximum opacity.
+    // A depth-disabled ghost needs the soft visible cutoff, or it disappears.
+    if (material.map && Number(material.alphaTest) > 0) {
+      const softCutoff = Number(window.HobunjiSpritePngSurface?.alphaTest?.()) || 0.001; // Reuses the canonical alpha threshold for translucent sprite-only rendering.
+      material.alphaTest = Math.min(material.alphaTest, softCutoff);
+    }
     if ('skinning' in material) material.skinning = false;
     material.needsUpdate = true;
     return { material, frozenTextures };

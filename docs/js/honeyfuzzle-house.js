@@ -214,9 +214,18 @@
     document.body.append(modal);
   }
 
+  function forEachAudioSource(visitor) { // Gives the shared soundscape only the positions of actually occupied, rendered houses.
+    if (typeof visitor !== 'function') return;
+    for (const [id, visual] of visuals) {
+      const position = visual.group?.position; // Farm models use world-tile units (unlike wilderness creature pixel coordinates).
+      if (position && visual.group.visible !== false) visitor(String(id), position.x, position.z);
+    }
+  }
+
   window.HoneyfuzzleHouse = {
     KEY, KIND, EGG_ITEM,
     init, ensure, phase, placeEgg, hatch, useTonic, tick, open, syncVisual, removeVisual,
     visualCount: () => visuals.size,
+    forEachAudioSource, // Used by HoneyfuzzleAudio's 350ms source scan; no extra per-frame renderer work.
   };
 })();

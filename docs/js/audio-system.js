@@ -1531,6 +1531,7 @@
     config.enabled = false;
     const resumeMusic = window.Music?.beginQuietLoading?.(); // The existing mixer owns both native and gapless-buffer music transports.
     window.HobunjiAmbientBgs?.silence?.();
+    window.HoneyfuzzleAudio?.silence?.(); // Introduction narration owns the soundscape exclusively.
     window.EnvironmentalReverb?.stopAll?.();
     for (const audio of activeSfx) audio.pause?.();
     activeSfx.clear();
@@ -1562,7 +1563,7 @@
           else Promise.resolve(playRequest).catch(error => { lastError = String(error); });
         } catch (error) { lastError = String(error); }
       },
-      finish() { if (finished) return; finished = true; if (!windStarted) resolveStarted?.(false); wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
+      finish() { if (finished) return; finished = true; if (!windStarted) resolveStarted?.(false); wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); window.HoneyfuzzleAudio?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
       debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, windStarted, lastError, latestChange: 'Introduction mutes gameplay sound/music, starts the violent wind loop, and exposes its real playing event so narration can wait for audible wind.' }),
     };
     introductionMix = session;
