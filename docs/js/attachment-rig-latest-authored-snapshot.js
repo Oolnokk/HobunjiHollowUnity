@@ -5,10 +5,13 @@
 // and Full Character Scale workspace.
 (() => {
   'use strict';
-  const selfUrl = document.currentScript?.src ? new URL('./', document.currentScript.src) : null;
-  const base = selfUrl || new URL('./js/', location.href);
-  const urls = [
+  const selfUrl = document.currentScript?.src ? new URL('./', document.currentScript.src) : null; // Resolves every rig bootstrap dependency beside this script instead of against the caller page.
+  const base = selfUrl || new URL('./js/', location.href); // Used by the dependency URL list below when currentScript is unavailable.
+  const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname || ''); // Limits the editor-only Voorg-Ass registration preload to Animation Author pages.
+  const urls = [ // Loaded in order so authored creature rig edits exist before the snapshot importer copies the runtime profile library.
+    ...(isAnimationAuthor ? [new URL('voorg-ass-registration.js?v=20261015h47a3826', base).href] : []),
     new URL('../config/character-rig-scale-defaults.js?v=20261010hd4b4796', base).href,
+    new URL('creature-saddle-authored-20261016.js?v=20261016a', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261012h02be7fe', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261004mammakhhair1', base).href,
@@ -32,8 +35,8 @@
     new URL('character-scale-comparison-presentation.js?v=20260905b', base).href,
     new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,
   ];
-  const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
-    const script = document.createElement('script');
+  const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => { // Preserves dependency ordering for dynamically bootstrapped tool/runtime pages.
+    const script = document.createElement('script'); // Used to load one bootstrap dependency at a time.
     script.src = src;
     script.onload = resolve;
     script.onerror = () => reject(new Error(`Failed to load ${src}`));
