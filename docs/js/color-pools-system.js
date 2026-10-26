@@ -203,6 +203,12 @@
     return out;
   }
 
+  function previewPrimaryPatternPaint(currentPaint, draftPattern) {
+    const draft = clone(draftPattern); // Unsaved authoring preview must replace the primary motif in the renderable pattern stack.
+    const second = Array.isArray(currentPaint?.patterns) ? currentPaint.patterns[1] : null; // Preserves the saved overpass and its separate ink.
+    return { ...clone(currentPaint), pattern: draft, patterns: second ? [draft, clone(second)] : [draft] };
+  }
+
   function invalidateLiveAnimal(entry) {
     const actors = [
       ...(window.Combat?.deps?.companionObjects || []),
@@ -359,9 +365,7 @@
             const layers = cleanDraft();
             const dye = paint.dyeHex || window.DyeSystem?.getById?.(paint.dyeId)?.hex || ownedDyes()[0]?.hex || '#ffffff';
             const previous = layers[regionId] || clone(paint); // cleanDraft() already resolved the saved overpass's independent ink.
-            const overpass = Array.isArray(previous.patterns) ? previous.patterns[1] : null;
-            layers[regionId] = { ...previous, dyeHex: dye, pattern: clone(patternData),
-              patterns: overpass ? [clone(patternData), clone(overpass)] : [clone(patternData)] }; // Preview must replace slot 1 in the actual render stack, not only its legacy alias.
+            layers[regionId] = previewPrimaryPatternPaint({ ...previous, dyeHex: dye }, patternData); // Draft replaces the compositor's real first slot.
             temp[PAINT_KEY] = { version: 1, layers };
             return window.CreatureGeneticsRender?.composeFrame?.(canonicalKind(entry), 'idle', temp, false);
           },
@@ -537,7 +541,7 @@
     makeAltarInteractable,
     decorateScene,
     debugSnapshot,
-    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, setOverpassPattern, setOverpassDye, setDye, cleanDraft }),
+    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, setOverpassPattern, setOverpassDye, setDye, cleanDraft, previewPrimaryPatternPaint }),
   });
 
   window.ColorPoolsSystem = api;
