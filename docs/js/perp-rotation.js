@@ -85,11 +85,16 @@
 
   function playerYawForState(state) {
     const playerPosition = deps?.playerWorldPosition?.();
-    const entry = playerPosition ? subjectForPerpState(state) : null;
-    const subjectPosition = entry ? worldPositionForSubject(entry.subject) : null;
-    if (!subjectPosition) return null;
-    const dx = Number(playerPosition.x) - Number(subjectPosition.x);
-    const dz = Number(playerPosition.z) - Number(subjectPosition.z);
+    if (!playerPosition) return null;
+    let subjectX = perspectiveSubjectX, subjectZ = perspectiveSubjectZ;
+    if (perspectiveSubjectState !== state) { // Reuses the clamp's own perspective lookup; getWorldPosition re-walks the parent matrices.
+      const entry = subjectForPerpState(state);
+      const subjectPosition = entry ? worldPositionForSubject(entry.subject) : null;
+      if (!subjectPosition) return null;
+      subjectX = Number(subjectPosition.x); subjectZ = Number(subjectPosition.z);
+    }
+    const dx = Number(playerPosition.x) - subjectX;
+    const dz = Number(playerPosition.z) - subjectZ;
     if (!Number.isFinite(dx) || !Number.isFinite(dz) || Math.hypot(dx, dz) < 1e-6) return null;
     return Math.atan2(dx, dz);
   }
@@ -107,21 +112,30 @@
     return null;
   }
 
-  // Returns { source, yaw } for the highest-priority available source, or null.
-  function resolveCorrectiveDirection(state) {
+  // Allocation-free hot-path form: returns the winning yaw (or null) and
+  // leaves its source name in resolvedCorrectiveSource.
+  let resolvedCorrectiveSource = null;
+  function resolveCorrectiveYaw(state) {
+    resolvedCorrectiveSource = null;
     if (!state || state.localPerpsOnly) return null; // Parent-local perps (billboards) don't share the world-yaw space of these hints.
-    for (const source of correctivePriority) {
-      const yaw = correctiveYawFromSource(state, source);
-      if (yaw !== null) return { source, yaw };
+    for (let i = 0; i < correctivePriority.length; i++) {
+      const yaw = correctiveYawFromSource(state, correctivePriority[i]);
+      if (yaw !== null) { resolvedCorrectiveSource = correctivePriority[i]; return yaw; }
     }
     return null;
   }
 
-  // Edge (+1/-1) of perp P that the corrective direction points to, keeping
+  // Returns { source, yaw } for the highest-priority available source, or null.
+  function resolveCorrectiveDirection(state) {
+    const yaw = resolveCorrectiveYaw(state);
+    return yaw === null ? null : { source: resolvedCorrectiveSource, yaw };
+  }
+
+  // Edge (+1/-1) of perp P that the corrective yaw points to, keeping
   // previousSide while the direction is ambiguous (within the center band of
   // either P or its antipode, where the sign of angleDiff is noise).
-  function correctiveSideForPerp(corrective, P, previousSide) {
-    const d = deps.angleDiff(corrective.yaw, P);
+  function correctiveSideForPerp(correctiveYaw, P, previousSide) {
+    const d = deps.angleDiff(correctiveYaw, P);
     const ambiguous = Math.abs(d) < PERP_CENTER_HYSTERESIS_RAD || Math.PI - Math.abs(d) < PERP_CENTER_HYSTERESIS_RAD;
     if (ambiguous && previousSide !== null && previousSide !== undefined) return previousSide;
     return d >= 0 ? 1 : -1;
@@ -254,7 +268,12 @@
     return null;
   }
 
+  // Subject position resolved by the latest perspectivePerpsForState call,
+  // kept so the corrective 'player' tier in the same clamp doesn't repeat it.
+  let perspectiveSubjectState = null, perspectiveSubjectX = 0, perspectiveSubjectZ = 0;
+
   function perspectivePerpsForState(state, fallbackPerps) {
+    perspectiveSubjectState = null;
     // Callers whose perps are already in a parent-local frame (see
     // DeadzoneBillboard.localCameraPerps) must never be swapped for world
     // perps, even if a registry ever happened to share their state object.
@@ -263,6 +282,9 @@
     const cameraPosition = entry ? liveCameraPosition() : null;
     const worldPosition = entry ? worldPositionForSubject(entry.subject) : null;
     if (!entry || !cameraPosition || !worldPosition) return fallbackPerps;
+    perspectiveSubjectState = state;
+    perspectiveSubjectX = Number(worldPosition.x);
+    perspectiveSubjectZ = Number(worldPosition.z);
     const creaturePlaneConvention = entry.kind !== 'npc'
       || !!(entry.subject?.animalDef && entry.subject?.animalAvatarRef); // Used below so side-view animal cards keep their own edge-on axis even when represented by an NPC walker.
     const resolved = creaturePlaneConvention
@@ -349,8 +371,9 @@
     // Inside the zone, the corrective-direction hierarchy (movement >
     // headtrack > last movement > player, by default) picks the edge; outside
     // it the side just tracks rawTarget so leaving/entering stays continuous.
-    const corrective = isLocked ? resolveCorrectiveDirection(state) : null;
-    const newSide = corrective ? correctiveSideForPerp(corrective, P, previousSide) : nearestEdgeSide;
+    const correctiveYaw = isLocked ? resolveCorrectiveYaw(state) : null;
+    const correctiveSource = correctiveYaw === null ? 'nearest-edge' : resolvedCorrectiveSource;
+    const newSide = correctiveYaw !== null ? correctiveSideForPerp(correctiveYaw, P, previousSide) : nearestEdgeSide;
     // Only a side change observed against the SAME perp as the previous call
     // is a real crossing through that dead zone. perpSides[i] is left behind
     // whenever rawTarget wanders over to the other perp, so when it later
@@ -383,8 +406,8 @@
       nearestDeltaRad: nearestDT,
       previousSide,
       selectedSide: newSide,
-      correctiveSource: corrective ? corrective.source : 'nearest-edge',
-      correctiveYaw: corrective ? corrective.yaw : null,
+      correctiveSource,
+      correctiveYaw,
       wasLocked,
       isLocked,
     };
@@ -505,8 +528,8 @@
     if (!moving) {
       state.oscPhase = 0;
       if (previousSnapSide === null) {
-        const corrective = resolveCorrectiveDirection(state); // Same hierarchy as perpClamp decides the resting edge.
-        state.snapSide = corrective ? correctiveSideForPerp(corrective, P, null) : (nearestDT >= 0 ? 1 : -1);
+        const correctiveYaw = resolveCorrectiveYaw(state); // Same hierarchy as perpClamp decides the resting edge.
+        state.snapSide = correctiveYaw !== null ? correctiveSideForPerp(correctiveYaw, P, null) : (nearestDT >= 0 ? 1 : -1);
       }
       return { target: P + state.snapSide * deadRad, snap: false };
     }

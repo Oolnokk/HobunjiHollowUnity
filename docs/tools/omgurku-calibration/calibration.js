@@ -213,7 +213,7 @@
     window.THREE = THREE;
     await new Promise((resolve,reject)=>{
       const script=document.createElement('script');
-      script.src='../../js/perp-rotation.js?v=20261026hb1d7e03';
+      script.src='../../js/perp-rotation.js?v=20261026h5e2a9c4';
       script.onload=resolve;
       script.onerror=()=>reject(new Error('Could not load shared gameplay PerpRotation'));
       document.head.append(script);
