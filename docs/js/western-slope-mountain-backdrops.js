@@ -2,7 +2,7 @@
   'use strict';
 
   const WESTERN_SLOPE_ID = 'map_western_slope'; // Used to scope the stack and author overrides to Western Slope.
-  const BACKGROUND_MAX_DEPTH_NDC = 0.999980; // Caps background PNG depth in front of sky-dome.js's reserved cloud/celestial range, including planes beyond camera.far.
+  const BACKGROUND_MAX_DEPTH_NDC = 1 - 5 * (2 / 65535); // One 16-bit depth slot ahead of sky-dome.js's nearest cloud mask, including planes beyond camera.far.
   const GROUP_NAME = 'WesternSlopeMountainBackdrops'; // Used for scene duplicate detection and editor lookup.
   const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v1'; // Used by the background author and live runtime on the same browser.
   const ASSET_URLS = Object.freeze(['assets/backdrops/bd_mountains_1.png','assets/backdrops/bd_mountains_2.png','assets/backdrops/bd_mountains_3.png']); // Near-to-far authored PNGs.

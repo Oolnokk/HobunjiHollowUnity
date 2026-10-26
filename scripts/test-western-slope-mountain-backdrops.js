@@ -193,6 +193,17 @@ vm.runInNewContext(source, {
   assert(skyDepth.CLOUD_DEPTH_NDC.every((depth, index, depths) => index === 0 || depths[index - 1] < depth), 'near cloud masks must occlude farther cloud bands');
   assert(skyDepth.CLOUD_DEPTH_NDC.every(depth => depth < skyDepth.CELESTIAL_DEPTH_NDC), 'cloud masks must continue to occlude the sun and moon');
 
+  for (const bits of [16, 24]) {
+    const maxDepth = 2 ** bits - 1; // Models the precision of WebGL depth attachments after vertex-shader float rounding.
+    const encodedDepths = [backgroundMax, ...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]
+      .map(depth => (Math.fround(depth) * 0.5 + 0.5) * maxDepth); // Converts float-rounded NDC to fixed-point depth coordinates before quantization.
+    const depthSlots = encodedDepths.map(depth => Math.round(depth)); // Used to compare the distinct fixed-point slots for every layer.
+    if (bits === 16) assert(encodedDepths.every(depth => Math.abs(depth - Math.round(depth)) < 0.25),
+      'low-precision sky depths must stay away from rounding boundaries so cloud art does not fight its own depth mask');
+    assert(depthSlots.every((slot, index) => index === 0 || depthSlots[index - 1] < slot),
+      `background, all cloud bands, and celestial PNGs must occupy distinct ordered ${bits}-bit depth slots`);
+  }
+
   const authored = api.readAuthorConfig();
   authored.layers[0].transform.position = [-40, 180, 95];
   authored.layers[0].transform.rotationDeg = [4, 82, -2];

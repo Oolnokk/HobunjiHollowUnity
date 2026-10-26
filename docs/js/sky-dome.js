@@ -14,8 +14,9 @@
   const SKY_RADIUS = 198;
   const CELESTIAL_RADIUS = 197;
   const CLOUD_RADII = [176, 184, 192];
-  const CLOUD_DEPTH_NDC = [0.999990, 0.999992, 0.999994]; // Reserves the far depth range for sky PNGs, behind background scenery (max NDC depth 0.999980).
-  const CELESTIAL_DEPTH_NDC = 0.999998; // Keeps sun/moon PNGs behind every cloud mask regardless of their geometric radius.
+  const SKY_DEPTH_STEP_NDC = 2 / 65535; // One full 16-bit depth-buffer step in NDC, keeping cloud masks distinct on lower-precision GPUs.
+  const CELESTIAL_DEPTH_NDC = 1 - SKY_DEPTH_STEP_NDC; // Centers sun/moon on a representable depth value, away from quantization boundaries.
+  const CLOUD_DEPTH_NDC = CLOUD_RADII.map((_, index) => CELESTIAL_DEPTH_NDC - (CLOUD_RADII.length - index) * SKY_DEPTH_STEP_NDC); // Near-to-far slots behind background scenery's five-step depth cap.
   const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055];
   const CLOUD_COUNTS = [24, 32, 42];
   const CLOUD_OCCLUSION_INSET_PX = 1.5; // Used to shrink each cloud's hard occlusion silhouette so its own thick black outline can cover the seam instead of exposing a gap.
