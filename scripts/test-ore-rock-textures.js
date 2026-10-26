@@ -80,6 +80,11 @@ async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
   browser.OreRockTextures.fitRockMesh(mesh);
   assert.equal(browser.OreRockTextures.debugSnapshot()._surfaceMapping.originalUvs,1,'No double counting');
   assert.equal(browser.OreRockTextures.fitRockMesh({userData:{}}),false,'Missing geometry fails safely');
+  const farmRock={geometry, userData:{farmLooseRockMound:true, naturalSurfaceUvOwner:'HobunjiSurfaceStretchUV'}}; // Farm stones are not ore and may already be natural-surface mapped.
+  assert(browser.OreRockTextures.fitRockMesh(farmRock),'Farm compatibility hook remains available');
+  assert.strictEqual(farmRock.geometry,geometry,'Farm rock never reallocates existing geometry');
+  assert.strictEqual(farmRock.userData.naturalSurfaceUvOwner,'HobunjiSurfaceStretchUV','Ore rollback does not overwrite natural farm UV ownership');
+  assert.strictEqual(farmRock.userData.terrainJigsawIgnore,undefined,'Farm keeps its established UV exclusion decisions');
 
   const cave=fs.readFileSync('docs/js/cavern-ore-rocks.js','utf8');
   const farm=fs.readFileSync('docs/js/vegetation-crop-rendering.js','utf8');
