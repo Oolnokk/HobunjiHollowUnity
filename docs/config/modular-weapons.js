@@ -426,7 +426,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 309
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "dagger-sword": {
       "label": "Dagger Sword",
@@ -498,7 +499,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         }
       },
-      "maxAttachments": 1,
+      "maxAttachments": 8,
       "mounts": [
         {
           "type": "tang",
@@ -638,7 +639,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 537
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "fishing-mace": {
       "label": "Fishing Mace",
@@ -744,7 +746,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 770
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "fishing-spear": {
       "label": "Fishing Spear",
@@ -837,7 +840,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 754
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "harlyao-broadsword": {
       "label": "Harlyao Broadsword",
@@ -912,7 +916,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 575
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "harlyao-longsword": {
       "label": "Harlyao Longsword",
@@ -1016,7 +1021,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 575
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "war-cleaver": {
       "label": "War Cleaver",
@@ -1086,7 +1092,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 755
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "warhammer": {
       "label": "Warhammer",
@@ -1190,7 +1197,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 916
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "bgungku": {
       "label": "B'gungku (donor not yet mapped)",
@@ -1210,7 +1218,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 522
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "hatchet": {
       "label": "Hatchet",
@@ -1234,7 +1243,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 924
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "hoe": {
       "label": "Hoe",
@@ -1258,7 +1268,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 1090
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "kylie": {
       "label": "Kylie",
@@ -1282,7 +1293,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 656
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "pick-shovel": {
       "label": "Pick-Shovel",
@@ -1356,7 +1368,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 239
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     },
     "plains-sword": {
       "label": "Plains Sword",
@@ -1380,7 +1393,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 328
           }
         }
-      ]
+      ],
+      "maxAttachments": 8
     }
   }
 };
