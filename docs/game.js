@@ -5968,6 +5968,17 @@
             mode: window.PerpRotation.CREATURE_PLANE_ROT_MODE,
             reason: 'perched-attachment-owns-orientation',
           };
+        } else if (c.isBandit === true || c.isTribeHunter === true) {
+          // Bandit/barbarian portraits halt on one dead-zone edge chosen by the
+          // corrective-direction hierarchy (movement > combat target > last
+          // movement > player) instead of flip-flopping on a timer, so the
+          // player can tell whether one is closing on them or on someone else.
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Same aimAngleOffset shift as rawTargetRotY above.
+          window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(c.vx, c.vy) : null);
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+          if (pngSnapTo !== null) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);

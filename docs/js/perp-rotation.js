@@ -43,6 +43,9 @@
   //   'lastMovement' — the last travel direction ever recorded on this state.
   //   'player'       — bearing from the subject toward the player character
   //                    (never applies to the player's own state).
+  // Hints are world bearings (atan2(dx, dz)); a state whose plane uses a
+  // different yaw convention (bandit portraits' aimAngleOffset) sets
+  // state.correctiveYawOffset so they land in the same space as rawTarget.
   // Configurable via game.movement.perpCorrectiveDirectionPriority, or at
   // runtime via PerpRotation.setCorrectivePriority([...]).
   const CORRECTIVE_SOURCES = ['movement', 'headtrack', 'lastMovement', 'player'];
@@ -70,6 +73,10 @@
     if (state.movementYaw !== null) state.lastMovementYaw = state.movementYaw;
   }
 
+  function clearHeadtrackHint(state) {
+    if (state) state.headtrackYaw = null;
+  }
+
   function setHeadtrackHint(state, headtrackYaw) {
     if (!state || !Number.isFinite(headtrackYaw)) return;
     state.headtrackYaw = headtrackYaw;
@@ -88,6 +95,11 @@
   }
 
   function correctiveYawFromSource(state, source) {
+    const yaw = correctiveWorldYawFromSource(state, source);
+    return yaw === null ? null : yaw + (Number(state.correctiveYawOffset) || 0);
+  }
+
+  function correctiveWorldYawFromSource(state, source) {
     if (source === 'movement') return Number.isFinite(state.movementYaw) ? state.movementYaw : null;
     if (source === 'headtrack') return Number.isFinite(state.headtrackYaw) && nowMs() - (state.headtrackAtMs ?? -Infinity) <= HEADTRACK_TTL_MS ? state.headtrackYaw : null;
     if (source === 'lastMovement') return Number.isFinite(state.lastMovementYaw) ? state.lastMovementYaw : null;
@@ -561,6 +573,7 @@
     nearestCardinalAngle,
     setMovementHint,
     setHeadtrackHint,
+    clearHeadtrackHint,
     setCorrectivePriority,
     getCorrectivePriority: () => correctivePriority.slice(),
     resolveCorrectiveDirection,
