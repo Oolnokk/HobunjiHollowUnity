@@ -33,7 +33,7 @@
   const WING_CYCLE = Object.freeze([FRAME_UP, FRAME_MID, FRAME_DOWN, FRAME_MID]); // up -> mid -> down -> mid
   const THIRD_STEP_OFFSETS = Object.freeze([0, 1, 2]); // Each third of the swarm sits at a different point of the 4-step cycle.
   const WING_TICK_MS = 55; // Legacy wing-step helper retained for older callers/tests.
-  const FLUTTER_HZ = 16; // Subtle apparent-wing opacity shimmer, not a literal resolved wingbeat; the three superposed poses imply the much faster physical flapping.
+  const FLUTTER_HZ = 7; // Gentle opacity shimmer remains below the 15 Hz Nyquist limit of 30 FPS devices; the ghosted fly poses imply the faster actual wingbeat.
   const DEFAULT_MEMBER_COUNT = 24; // Many small members read as a swarm rather than a flock; a multiple of 3 keeps the wing-cycle thirds exactly even.
   // The new fly1/2/3 and both authored patterns are already cropped to the
   // SAME 478x399 coordinates. Cropping with the legacy 500x500 inset would
@@ -126,7 +126,8 @@
 
   let _atlas = null; // { canvas, texture } once ready
   let _atlasPromise = null;
-  let _lastAtlasError = null; // Exposed by debugSnapshot for mobile diagnosis of failed sprite URLs or canvas initialization.
+  let _lastAtlasError = null; // Exposed by debugSnapshot for mobile diagnosis of failed essential flight sprites or atlas initialization.
+  let _atlasWarnings = []; // Optional marking assets may fail without hiding the entire swarm; warnings expose which overlays are missing.
   const _pendingMaterials = new Set();
   let _linkedWildOrCompanions = 0; // Mobile diagnostics count successful actor-to-swarm genotype bindings.
 
@@ -143,13 +144,20 @@
   function ensureAtlas(THREE) {
     if (_atlas) return Promise.resolve(_atlas);
     if (_atlasPromise) return _atlasPromise;
-    _atlasPromise = Promise.all([...FRAME_URLS, ...PATTERN_URLS].map(loadImage)).then(images => {
+    const assetWarnings = []; // Tracks failed optional marking sprites while the three essential flight poses remain required.
+    const baseImages = FRAME_URLS.map(loadImage); // If any required flight sprite fails, do not cache a partial animation.
+    const patternImages = PATTERN_URLS.map(url => loadImage(url).catch(error => {
+      assetWarnings.push(String(error?.message || error));
+      return null; // Missing spectacles/tail art must not turn every honeyfuzzle invisible.
+    }));
+    _atlasPromise = Promise.all([...baseImages, ...patternImages]).then(images => {
       const canvas = document.createElement('canvas');
       canvas.width = CROP.w * ATLAS_COLS;
       canvas.height = CROP.h * ATLAS_ROWS;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('honeyfuzzle atlas canvas has no 2D context');
       images.forEach((img, index) => {
+        if (!img) return; // Transparent placeholder for an unavailable optional overlay.
         if (img.width < CROP.x + CROP.w || img.height < CROP.y + CROP.h) {
           throw new Error('honeyfuzzle sprite too small for common crop: ' + [...FRAME_URLS, ...PATTERN_URLS][index]);
         }
@@ -165,6 +173,8 @@
         : new THREE.CanvasTexture(canvas);
       _atlas = { canvas, texture };
       _lastAtlasError = null;
+      _atlasWarnings = assetWarnings;
+      for (const warning of assetWarnings) window.__farmLog?.(`[honeyfuzzle] optional overlay unavailable: ${warning}`, 'warn');
       for (const material of _pendingMaterials) { material.map = texture; material.needsUpdate = true; }
       _pendingMaterials.clear();
       return _atlas;
@@ -357,7 +367,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
         const targetSpread = Number.isFinite(spreadScale) && spreadScale > 0 ? spreadScale : 1; // Attached Swarm uses a dense cloud; ordinary flight uses the authored normal spread.
         const spreadCatchup = targetSpread < smoothSpread ? 16 : 9; // Tighten rapidly on contact, then unfurl into normal flight after detaching.
         smoothSpread += (targetSpread - smoothSpread) * Math.min(1, dt * spreadCatchup);
-        material.userData.honeyfuzzle.uWingPhase.value = Math.max(0, now) * 0.001 * FLUTTER_HZ * TAU; // Fluid opacity glimmer across the three permanently superposed wing poses.
+        material.userData.honeyfuzzle.uWingPhase.value = ((Math.max(0, now) * 0.001 * FLUTTER_HZ) % 1) * TAU; // Bounded phase prevents float-precision loss after long browser sessions.
         const arr = mesh.instanceMatrix.array;
         for (let i = 0; i < count; i++) {
           memberPose(seed, i, count, now, smoothSpeed, spread * smoothSpread, pose);
@@ -390,6 +400,6 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
     FRAME_URLS, PATTERN_URLS, ATLAS_COLS, ATLAS_ROWS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
     hashUnit, seedFromString, wingStep, memberFrame, memberPose, appearanceColors,
     buildAvatar, ensureAtlas,
-    debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
+    debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, assetWarnings: [..._atlasWarnings], linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
   };
 })();
