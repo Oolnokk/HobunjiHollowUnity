@@ -43,6 +43,19 @@ vm.runInContext(read('docs/js/color-pools-system.js'), context, { filename: 'col
 const api = context.ColorPoolsSystem;
 assert(api, 'ColorPoolsSystem exports');
 assert.equal(api.stableMaxLevel(), 10, 'Color Pools reads the live refined Stable level cap');
+assert.equal(api.overpassUnlocked(), false, 'unfinished Quest 2 cannot add an overpass');
+assert.equal(api.__test.setOverpassPattern('base', 'overpass'), false, 'direct call cannot bypass quest gate');
+const banubuState = { stage: 2, status: 'active' }; // Uses the real Banubu quest progression state shape.
+context.BanubuQuestline = { ensureQuestState: () => banubuState };
+assert.equal(api.overpassUnlocked(), false, 'accepting the Nine Leaf Tea request is not enough');
+banubuState.stage = 3; banubuState.status = 'blocked';
+assert.equal(api.overpassUnlocked(), true, 'turning in Quest 2 unlocks permanent second-layer paint');
+context.PatternLibrary = { getById: id => ({ motifDataUrl: 'data:image/png;base64,AA==', repoPatternId: id }) };
+api.__test.setLibraryPattern('base', 'primary');
+assert.equal(api.__test.setOverpassPattern('base', 'overpass'), true);
+assert.equal(api.__test.paintPatternStack({ pattern: { repoPatternId: 'primary' }, patterns: [{ repoPatternId: 'primary' }, { repoPatternId: 'overpass' }] })[1].repoPatternId, 'overpass');
+assert.match(read('docs/js/banubu-questline.js'), /state\.stage = 3;/, 'real Banubu second turn-in owns the saved reward state');
+
 assert.deepEqual(api.eligibleStableAnimals().map(entry => entry.id), ['maxed'], 'only max-level Stable animals are eligible');
 assert.deepEqual(
   JSON.parse(JSON.stringify(api.regionsFor(stable[0]))).map(region => region.id),
