@@ -101,7 +101,7 @@
   // Editable authored copies. These intentionally do not alias the Crossbow or
   // Drink objects: later tuning can change Blowgun without changing either source.
   const BLOWGUN_LOAD_POSE = {
-    neutral: { x: 0, y: 0.12, z: 0.18, pitch: -8, yaw: 0, bodyYaw: 0, roll: 0, scale: 1.30 },
+    neutral: { x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, scale: 1.30 }, // Unloaded rest = the thrust-style rest a shovel uses in the shovel slot; syncBlowgunStance keeps it on SharedAttackPose's value.
     windup: { x: 0, y: -0.17, z: 0.09, pitch: 77, yaw: 0, bodyYaw: -10, roll: 0, scale: 1.30 },
     strike: { x: 0, y: 0.18, z: 0.08, pitch: -11, yaw: 0, bodyYaw: 7, roll: 0, scale: 1.30 },
   };
@@ -114,6 +114,8 @@
   function syncBlowgunStance() {
     const authored = window.HeldActionAnimations?.blowgunReady; // Uploaded blowgun tuning now owns its endpoints independently of drinking.
     const strike = sharedDrinkStrikePose();
+    const shovelRest = window.SharedAttackPose?.STYLE_NEUTRAL_POSE?.thrust; // The one authority for the pose a shovel idles in outside the weapon slot.
+    if (shovelRest) Object.assign(BLOWGUN_LOAD_POSE.neutral, { x: shovelRest.x, y: shovelRest.y, z: shovelRest.z, pitch: shovelRest.pitch, yaw: shovelRest.yaw, roll: shovelRest.roll, bodyYaw: shovelRest.bodyYaw });
     for (const phase of ['neutral', 'windup', 'strike']) {
       Object.assign(BLOWGUN_FIRE_POSE[phase], withScale(authored?.poses?.[phase] || strike, 1.30));
     }
@@ -652,7 +654,7 @@
       lastRelease,
       blowgunRawDamage: BLOWGUN_RAW_DAMAGE,
       blowgunAfflictionScale: BLOWGUN_AFFLICTION_SCALE,
-      blowgunLoadSource: 'crossbow-load-copy',
+      blowgunLoadSource: 'crossbow-load-copy', blowgunLoadNeutralSource: 'shovel-thrust-rest',
       blowgunStanceSource: 'drink-strike-copy',
     }),
   };

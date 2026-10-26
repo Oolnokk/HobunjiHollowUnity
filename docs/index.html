@@ -152,7 +152,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261023h443f8dc"></script>
-  <script src="config/scratchbones-config.js?v=20261025h5acc9e3"></script>
+  <script src="config/scratchbones-config.js?v=20261026hc29ac6a"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -179,7 +179,7 @@
   <script src="js/npc-avatar-preview-utils.js?v=20261024h03348de"></script>
   <script src="js/png-plane-avatar.js?v=20261022hea8b100"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
-  <script src="js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
+  <script src="js/species-pose-scaling.js?v=20261025h561f2e2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
@@ -187,7 +187,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261022h372be04"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261024hd8d9255"></script>
+  <script src="js/held-action-animations.js?v=20261026h1aaf0e3"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -196,7 +196,7 @@
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
-  <script src="js/npc-drink-interaction.js?v=20261022h2a0cd42"></script>
+  <script src="js/npc-drink-interaction.js?v=20261025h56b02d2"></script>
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
@@ -302,6 +302,7 @@
   <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
+  <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261022h3e71602"></script>
   <script src="js/combat/combat-core.js?v=20261025ravineAudio1"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
@@ -343,7 +344,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261024hefa7f10"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261025hf104dfa"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261010hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -372,7 +373,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261025audioAudit4"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261026h1caa229"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2798,7 +2799,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261025combatHrtf2"></script>
+  <script src="game.js?v=20261026hcd4c679"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

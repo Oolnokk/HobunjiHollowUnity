@@ -142,6 +142,8 @@
     }
     hide.checked = hideArmSprites;
     paperArm.checked = showPaperArmGuide;
+    const poseBones = document.getElementById('poseShowArmBones'); // Mirror of the same toggle beside the elbow inputs in the pose panel.
+    if (poseBones && poseBones.checked !== showPaperArmGuide) poseBones.checked = showPaperArmGuide;
     const weights = currentWeights();
     const fmt = point => point ? `(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})` : 'unauthored';
     compassStatus.textContent = `Live hand-follow: grip ${(weights.grip * 100).toFixed(0)}% · palm-normal ${(weights.palmNormal * 100).toFixed(0)}% · elbows L ${fmt(currentElbow('left'))} / R ${fmt(currentElbow('right'))} · arms ${hideArmSprites ? 'hidden' : 'visible'} · paper arm ${showPaperArmGuide ? 'shown' : 'hidden'}.`;
@@ -370,6 +372,13 @@
 
   global.HobunjiAttackEditorHandShoulderControls = {
     get hideArmSprites() { return hideArmSprites; },
+    get showPaperArmGuide() { return showPaperArmGuide; },
+    setShowPaperArmGuide(value) { // Same effect as the checkbox in the hand card; used by the toggle next to the elbow controls.
+      showPaperArmGuide = !!value;
+      global.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(showPaperArmGuide);
+      syncCheckboxes();
+      global.ProceduralHandFrameDriver?.syncNow?.();
+    },
     loadFromAnimationObject(parsed) {
       for (const phase of PHASES) {
         poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);

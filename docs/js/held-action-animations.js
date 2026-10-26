@@ -8,7 +8,7 @@
     version: 1,
     kind: 'hobunji_held_action_animation',
     name: 'Drink',
-    headRelative: true, // All endpoints use the visible head as their origin.
+    headRelative: true, // Head-anchored: x/y/z are the held bottle's opening (aperture) measured from the species mouth point, in the head's frame; the head supplies rotation and scale.
     style: 'drink',
     durationS: 0.95,
     windupFrac: 0.38,
@@ -16,10 +16,10 @@
     holdFrac: 0.78,
     poses: {
       // Neutral is an idle endpoint: Pitch + Roll aim to the shoulder.
-      neutral: { headRelative: true, x: -0.45, y: -0.4, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
+      neutral: { headRelative: true, x: -0.45, y: -0.42, z: 0.061, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
       // Active endpoints deliberately retain Roll-only shoulder alignment.
-      windup: { headRelative: true, x: -0.13, y: -0.19, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
-      strike: { headRelative: true, x: -0.05, y: 0, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      windup: { headRelative: true, x: -0.144, y: -0.087, z: 0.056, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      strike: { headRelative: true, x: -0.09, y: 0, z: 0.115, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
     },
   };
 
@@ -134,13 +134,13 @@
     "strikeFrac": 0.62,
     "holdFrac": 0.78,
     "durationS": 0.95,
-    "headRelative": true,
+    "headRelative": true, // Head-anchored: x/y/z are the B'shuakauitl's aperture (mouthpiece end) measured from the species mouth point, in the head's frame; 0 seats the mouthpiece exactly on the mouth.
     "toolEndFlip": false,
     "poses": {
       "neutral": {
-        "x": -0.05,
+        "x": 0,
         "y": 0,
-        "z": 0.22,
+        "z": 0,
         "pitch": -180,
         "yaw": 21,
         "roll": 4,
@@ -162,9 +162,9 @@
       },
       "windup": {
         "headRelative": true,
-        "x": 0.01,
-        "y": -0.03,
-        "z": 0.88,
+        "x": 0,
+        "y": 0,
+        "z": 0,
         "pitch": -180,
         "yaw": 0,
         "roll": 0,
@@ -185,9 +185,9 @@
       },
       "strike": {
         "headRelative": true,
-        "x": -0.05,
+        "x": 0,
         "y": 0,
-        "z": 0.22,
+        "z": 0,
         "pitch": -180,
         "yaw": 21,
         "roll": 4,
@@ -294,7 +294,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261017h24a6e68', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261025h99ed939', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261018hd906350', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
@@ -306,7 +306,7 @@
     new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261024hfd2115a', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20261024h6a5218e', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261025h7c7ee63', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261024hef37f20', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -319,7 +319,7 @@
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20261005hce195f1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20261001c0bd7bbe', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20261025h6a95a6d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20261019h611c43d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.

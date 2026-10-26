@@ -22867,21 +22867,141 @@
         };
       }
 
-      const _headPoseAnchor = new THREE.Vector3(); // Reused by drink and ranged poses; no per-frame head-vector allocation.
+      const _headFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale, refreshed each head-anchored frame.
+      const _headPlacePose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Reused authored offset handed to SharedAttackPose.placeAtMouth.
+      const _headApertureCache = new Map(); // `${itemKey}|${species}|${gender}` -> holder-space aperture, cleared whenever grip data changes.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _headApertureCache.clear());
+      // The tool-holder-space aperture that mates with the portrait mouth (null when the tool defines none).
+      function playerToolAperture(itemKey, context = 'ranged') {
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_headApertureCache.has(key)) _headApertureCache.set(key, window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(itemKey, context, identity) || null);
+        return _headApertureCache.get(key);
+      }
+      const _gripAnchorCache = new Map(); // `${itemKey}|${context}|${species}|${gender}` -> holder-space main-hand grip, cleared with the aperture cache.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _gripAnchorCache.clear());
+      // Hand-aligned poses scale around the main-hand grip, so the hand stays put while the weapon grows or shrinks.
+      function anchorPlayerToolScaleAtGrip(scale, context) {
+        if (!(Math.abs((Number(scale) || 1) - 1) > 1e-9)) return;
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        if (!itemKey) return;
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_gripAnchorCache.has(key)) _gripAnchorCache.set(key, window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(itemKey, context, identity) || null);
+        SharedAttackPose.anchorScaleAtPoint(toolHolder, _gripAnchorCache.get(key), scale);
+      }
+      // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
+      // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      // A ranged weapon aims with its authored stance only when (1) RangedWeapons has a config for it and (2) its animStyle resolves to
+      // 'ranged'. Either can be missing if registration ran before this item's definition existed, and the game then silently shows the
+      // generic ranged stance for the whole session. While aiming, notice that, re-run the registrars, and say which condition it was.
+      let _rangedStanceCheckAt = 0;
+      const _rangedStanceReported = new Set();
+      function ensureRangedStanceReady(itemKey) {
+        if (!itemKey) return;
+        const now = performance.now();
+        if (now - _rangedStanceCheckAt < 1000) return; // One cheap lookup a second is plenty; this is a safety net, not a per-frame path.
+        _rangedStanceCheckAt = now;
+        const hasConfig = !!window.RangedWeapons?.config?.[itemKey];
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const styleOk = !def || def.animStyle === 'ranged';
+        if (hasConfig && styleOk) return;
+        const archetypes = window.HobunjiRangedWeaponArchetypes;
+        if (!hasConfig) archetypes?.patchGeneratedDefinitions?.();
+        if (!styleOk) { archetypes?.patchGeneratedDefinitions?.(); window.HobunjiDualRoleRangedAnimStyle?.refresh?.(); }
+        const repaired = !!window.RangedWeapons?.config?.[itemKey] && (!def || def.animStyle === 'ranged');
+        const reason = `${!hasConfig ? 'no-ranged-config' : ''}${!hasConfig && !styleOk ? '+' : ''}${!styleOk ? 'anim-style-not-ranged' : ''}`;
+        const report = `${itemKey}:${reason}:${repaired ? 'repaired' : 'unrepaired'}`;
+        if (!_rangedStanceReported.has(report)) { // Once per distinct outcome, so a persistent failure does not flood the log.
+          _rangedStanceReported.add(report);
+          window.__farmLog?.(`[ranged-stance] ${itemKey} would have used the fallback ranged stance (${reason}); ${repaired ? 'repaired by re-running registration' : 'could not be repaired'}.`, 'warn', 'combat');
+        }
+        if (repaired) rebuildToolMeshes(); // The loaded/unloaded sprite variants depend on the same registration.
+      }
+      let _headAnchorFallbackReported = false;
+      function reportHeadAnchorFallback() { // A head-anchored pose whose head frame could not be resolved is drawn hand-relative: that is the fallback stance.
+        if (_headAnchorFallbackReported) return;
+        _headAnchorFallbackReported = true;
+        const rig = playerAvatarGroup?.userData?.neckRig;
+        window.__farmLog?.(`[ranged-stance] head-anchored pose fell back to the hand-relative stance: head frame unavailable (rig ${rig?.available ? 'ok' : 'missing'}, mouth pixel ${window.SharedAttackPose.mouthPixel(playerAvatarGroup) ? 'ok' : 'missing'}, skinned resolver ${window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition ? 'ok' : 'missing'}).`, 'warn', 'combat');
+      }
+      let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
+      const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
+      function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
+        _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
+        _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
+        const aperture = playerToolAperture(equipmentSlots.ranged);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture);
+        Object.assign(_toolAttachJob.pose, _headPlacePose);
+        _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
+      }
+      let _heldAttachStamp = 0; // Bumped once per updateHeldItemHolder.
+      const _heldAttachJob = { stamp: -1, scale: 0.5, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
+      const _attachSaved = { toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1, tool: false, held: false };
+      function _restoreHeadAttachments() { // Restores gameplay-time transforms after the draw so logic never reads the render-time pose.
+        if (_attachSaved.tool) { toolHolder.position.copy(_attachSaved.toolPos); toolHolder.quaternion.copy(_attachSaved.toolQuat); toolHolder.scale.setScalar(_attachSaved.toolScale); _attachSaved.tool = false; }
+        if (_attachSaved.held) { heldItemHolder.position.copy(_attachSaved.heldPos); heldItemHolder.quaternion.copy(_attachSaved.heldQuat); heldItemHolder.scale.setScalar(_attachSaved.heldScale); _attachSaved.held = false; }
+      }
+      // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
+      SharedAttackPose.setCameraProvider(() => camera); // Edge-on avoidance judges the flat tool sprite against the live gameplay camera.
+      // The game draws several passes per frame (outlines, depth, held overlay) and each one reaches this hook with an identical head, so the
+      // placement is solved once per frame/camera and replayed onto the holders for the remaining passes.
+      const _attachCache = { valid: false, toolStamp: -1, heldStamp: -1, camera: null, toolActive: false, heldActive: false,
+        toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1 };
+      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.((undo, _renderDebug, renderCamera) => {
+        const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
+        const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
+        if (!toolActive && !heldActive) return;
+        const cache = _attachCache;
+        const hit = cache.valid && cache.toolStamp === _toolAttachStamp && cache.heldStamp === _heldAttachStamp && cache.camera === renderCamera
+          && cache.toolActive === toolActive && cache.heldActive === heldActive;
+        if (toolActive) { _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true; }
+        if (heldActive) { _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true; }
+        if (hit) { // Later pass of the same frame: replay the solved placement.
+          if (toolActive) { toolHolder.position.copy(cache.toolPos); toolHolder.quaternion.copy(cache.toolQuat); toolHolder.scale.setScalar(cache.toolScale); }
+          if (heldActive) { heldItemHolder.position.copy(cache.heldPos); heldItemHolder.quaternion.copy(cache.heldQuat); heldItemHolder.scale.setScalar(cache.heldScale); }
+          undo.push(_restoreHeadAttachments);
+          return;
+        }
+        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
+        _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
+        if (toolActive) {
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+          cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
+        }
+        if (heldActive) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+          cache.heldPos.copy(heldItemHolder.position); cache.heldQuat.copy(heldItemHolder.quaternion); cache.heldScale = heldItemHolder.scale.x;
+        }
+        _headFrame.cameraPosition = null;
+        cache.valid = true; cache.toolStamp = _toolAttachStamp; cache.heldStamp = _heldAttachStamp; cache.camera = renderCamera; cache.toolActive = toolActive; cache.heldActive = heldActive;
+        undo.push(_restoreHeadAttachments);
+      });
+      const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
+      // The bottle's opening: the plane's top edge (the first opaque row of an upright held sprite) in holder space.
+      function heldItemAperture() {
+        if (!_heldItemPlane?.geometry?.parameters) return null;
+        _heldItemPlane.updateMatrix();
+        const height = (Number(_heldItemPlane.geometry.parameters.height) || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1);
+        return _heldAperture.set(0, height / 2, 0).applyMatrix4(_heldItemPlane.matrix);
+      }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
-        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
-        if (pose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          heldItemHolder.position.set(_headPoseAnchor.x + pose.x, _headPoseAnchor.y + pose.y, _headPoseAnchor.z + pose.z);
-        }
-        heldItemHolder.scale.setScalar(0.5);
-        _heldItemHandMode = 'bottle';
-        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
-        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
-        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
-        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw); // Before the head frame reads the skinned head, so the mouth and rotation include this body turn.
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
-        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+        if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
+          Object.assign(_heldAttachJob.pose, { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll });
+          _heldAttachJob.stamp = _heldAttachStamp; // Replayed against the drawn head by the composer's post-head-aim hook.
+        } else {
+          heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+          heldItemHolder.scale.setScalar(0.5);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+          heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        }
+        _heldItemHandMode = 'bottle';
       }
 
       // Begins the shared drink-style windup animation on press. Plays forward
@@ -22943,11 +23063,11 @@
         const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
         playerMesh.add(sourceProbe);
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
-        if (neutralPose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          sourceProbe.position.set(_headPoseAnchor.x + neutralPose.x, _headPoseAnchor.y + neutralPose.y, _headPoseAnchor.z + neutralPose.z);
-        }
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        if (neutralPose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(sourceProbe, _headFrame, neutralPose, 0.5, heldItemAperture(), playerMesh); // Same mouth attach as the live held bottle.
+        }
         const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
         sourceObject.updateWorldMatrix(true, false);
         const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
@@ -22989,6 +23109,7 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
           || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
@@ -23326,6 +23447,8 @@
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
+        _toolAttachStamp++; // A head-anchored placement this frame re-stamps _toolAttachJob; an older stamp means the tool is no longer head-anchored.
+        if (activeTool === 'ranged') ensureRangedStanceReady(equipmentSlots.ranged); // Repairs (and reports) a ranged weapon that would otherwise fall back to the generic stance.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
@@ -23441,6 +23564,8 @@
           if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
+          const headAnchored = sampled.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Head-anchored poses take rotation, position and scale from the head's mouth frame alone; the camera only drives the head.
+          if (sampled.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -23456,14 +23581,12 @@
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
-            toolHolder.position.set(x, y, z).applyQuaternion(_qFac);
-            if (reticleAligned) {
-              toolHolder.position.set(x, y, z).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
-            }
-            toolHolder.position.add(_headPoseAnchor);
-          } else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+          if (headAnchored) placePlayerToolAtMouth(sampled.x, sampled.y, sampled.z, pitchRad, yawRad, rollRad, sampled.scale);
+          else {
+            if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+            anchorPlayerToolScaleAtGrip(sampled.scale, activeTool === 'ranged' ? 'ranged' : 'melee'); // Weapon scale pivots on the main-hand grip, not the holder origin.
+          }
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -23492,6 +23615,8 @@
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
+          const headAnchored = neutral.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Same mouth-frame rule as the pose-driven branch above.
+          if (neutral.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -23504,12 +23629,12 @@
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
-            toolHolder.position.set(neutral.x, neutral.y, neutral.z);
-            if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
-            toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
-          } else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+          if (headAnchored) placePlayerToolAtMouth(neutral.x, neutral.y, neutral.z, THREE.MathUtils.degToRad(neutral.pitch), THREE.MathUtils.degToRad(neutral.yaw), THREE.MathUtils.degToRad(neutral.roll), neutral.scale);
+          else {
+            if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+            anchorPlayerToolScaleAtGrip(neutral.scale, 'ranged'); // Idle ranged scale (e.g. the 1.77 crossbow stance) pivots on the main-hand grip.
+          }
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral

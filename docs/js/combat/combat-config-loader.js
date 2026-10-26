@@ -80,7 +80,7 @@
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
     ['js/controller-modern-flow-bridge.js?v=20261015h04b0f9f', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
-    ['js/player-body-transform-composer.js?v=20261024h2ad0906', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20261025hc89f675', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20261021habeb7c9', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
@@ -127,7 +127,7 @@
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20261018h2b6f4e5', () => !!window.EnemyWeaponStances],
     ['js/npc-held-equipment-v4.js?v=20261021h7d2c1df', () => Number(window.NpcHeldEquipment?.version) >= 4],
-    ['js/combat/ranged-weapon-archetypes.js?v=20261022h531b1c7', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
+    ['js/combat/ranged-weapon-archetypes.js?v=20261025h4338c92', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
     ['js/combat/ranged-camera-ray-authority.js?v=20260927reticletarget1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 4],
     ['js/combat/ranged-camera-focus.js?v=20261024h80cb6ee', () => Number(window.HobunjiRangedCameraFocus?.version) >= 12],
     ['js/combat/combat-camera-alignment-bridge.js?v=20260928meleereticle1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 6],

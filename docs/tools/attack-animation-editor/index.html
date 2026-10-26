@@ -285,7 +285,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js?v=20261013ha525e98"></script>
-<script src="../../config/scratchbones-config.js?v=20261025h5acc9e3"></script>
+<script src="../../config/scratchbones-config.js?v=20261026hc29ac6a"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20261022h23rig2"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20261010hd4b4796"></script>
 <script src="../../js/character-rig-scale.js?v=20261007h0c4d7d9"></script>
@@ -294,15 +294,17 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20261022hea8b100"></script>
-<script src="../../js/species-pose-scaling.js?v=20261018hdcf25ef"></script>
+<script src="../../js/species-pose-scaling.js?v=20261025h561f2e2"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-<script src="../../js/held-action-animations.js?v=20261024hd8d9255"></script>
+<script src="../../js/held-action-animations.js?v=20261026h1aaf0e3"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
-<script src="../../js/combat/shared-attack-pose.js?v=20261022h3e71602"></script>
+<script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
+<script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261025h1491360"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -389,6 +391,24 @@ let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid
 let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
+const editorHeadFrame = window.SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale of the previewed avatar (head-anchored actions).
+const editorApertureScratch = new THREE.Vector3();
+// The main-hand grip in holder space: hand-aligned poses scale around it (head-aligned ones around the aperture).
+function editorToolGrip() {
+  const grips = window.HobunjiHandToolGrips;
+  return grips?.primaryGripHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender }) || null;
+}
+// The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
+function editorToolAperture() {
+  const grips = window.HobunjiHandToolGrips;
+  const authored = grips?.apertureHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+  if (authored) return authored;
+  const plane = toolPlaneMesh?.userData?.toolPlane;
+  const height = Number(plane?.geometry?.parameters?.height);
+  if (!(height > 0)) return null;
+  plane.updateMatrix(); toolPlaneMesh.updateMatrix();
+  return editorApertureScratch.set(0, height / 2, 0).applyMatrix4(plane.matrix).applyMatrix4(toolPlaneMesh.matrix);
+}
 const poseOrbitScratch = new THREE.Vector3(); // Reused by forward/inverse centroid transforms so playback does not allocate every frame.
 const poseWorldDebugScratch = new THREE.Vector3(); // Reused when recording final world position for visible diagnostics.
 let lastAuthoredPose = { x: 0, y: 0, z: 0 }; // Debug copy of the Mao'ao-authored holder-local translation currently previewed.
@@ -714,6 +734,8 @@ transformControls.setSpace('local'); // The proxy supplies the orientation: rig 
 const proxyPivotOffset = new THREE.Vector3(); // Visible weapon's origin in the holder's own local frame (constant while the pose rotates).
 const proxyScratch = new THREE.Vector3();
 const headGizmoScratch = new THREE.Vector3(); // Reused to invert head-origin translations during gizmo edits.
+const editorGizmoQuat = new THREE.Quaternion(); // Reused holder world rotation while inverting a head-anchored gizmo edit.
+const editorGizmoScale = new THREE.Vector3(); // Reused holder world scale while inverting a head-anchored gizmo edit.
 const IDENTITY_QUATERNION = new THREE.Quaternion();
 function gizmoPivotVisual() {
   const dual = window.HobunjiDualWieldWeaponVisuals;
@@ -747,19 +769,27 @@ transformControls.addEventListener('objectChange', () => {
     toolHolder.position.copy(gizmoProxy.position).sub(proxyPivotWorldOffset(toolHolder.quaternion));
   }
   const p = anim.poses[editPhase];
+  if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
+    toolHolder.updateWorldMatrix(true, false);
+    toolHolder.getWorldPosition(headGizmoScratch); toolHolder.getWorldQuaternion(editorGizmoQuat); toolHolder.getWorldScale(editorGizmoScale);
+    SharedAttackPose.poseFromHolderWorld(p, editorHeadFrame, headGizmoScratch, editorGizmoQuat, editorGizmoScale.x, editorToolAperture()); // Head-anchored poses are offsets in the head's frame from the aperture/mouth connection.
+    syncPosePanelFromState(editPhase);
+    refreshJsonView();
+    return;
+  }
+  SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), 2 - toolHolder.scale.x); // Undo the grip-pivot shift (exact inverse: same shift with the sign flipped) before reading the authored origin.
   poseOrbitScratch.set(
     toolBase.position.x + toolHolder.position.x,
     toolBase.position.y + toolHolder.position.y,
     toolBase.position.z + toolHolder.position.z
   ); // Concrete selected-species point in rig space.
-  if (!anim.headRelative) window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
+  window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
   }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
-  if (anim.headRelative && SharedAttackPose.headAnchor(headGizmoScratch, avatarModel, rig)) poseOrbitScratch.sub(headGizmoScratch);
-  else poseOrbitScratch.sub(toolBase.position);
+  poseOrbitScratch.sub(toolBase.position);
   p.x = poseOrbitScratch.x;
   p.y = poseOrbitScratch.y;
   p.z = poseOrbitScratch.z;
@@ -886,6 +916,7 @@ function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y
 // The game's own rest poses (js/combat/shared-attack-pose.js), copied so the editor can edit them
 // freely; 'drink' is editor-only (held-item action previews).
 const SharedAttackPose = window.SharedAttackPose;
+SharedAttackPose.setToolEdgeOnDeadzone(0); // Authoring shows exact poses; the edge-on deadzone is gameplay-only.
 const STYLE_NEUTRAL_POSE = {
   ...Object.fromEntries(Object.entries(SharedAttackPose.STYLE_NEUTRAL_POSE).map(([style, pose]) => [style, { ...pose }])),
   drink:  { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
@@ -1026,6 +1057,8 @@ function renderActivePosePanel() {
       </div>
     </div>`).join('') + `
       <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. Blank means no elbow keyframe. The halfway buttons sample the current shoulder/hand once and write coordinates; gameplay never recalculates a midpoint.</div>
+      <label class="fieldRow" style="cursor:pointer;margin:8px 0 2px"><input id="poseShowArmBones" type="checkbox" style="width:auto;margin-right:6px">Show arm bones</label>
+      <div class="help">Draws shoulder <b style="color:#22c55e">● green</b> → elbow <b style="color:#f97316">● orange</b> → hand socket <b style="color:#22d3ee">● cyan</b> joined by bars. The orange sphere is the elbow as currently interpolated at the previewed time, so it matches the inputs above when the preview sits on this pose. The blue spheres are the hand anchor and weapon grip, not the arm.</div>
       ${elbowRows}`;
   for (const f of fields) {
     const el = $(`pose_${f.key}`);
@@ -1061,6 +1094,11 @@ function renderActivePosePanel() {
       refreshJsonView();
       logDebug(`Authored ${editPhase} ${side} elbow halfway between the currently displayed shoulder and hand.`);
     });
+  }
+  const armBones = $('poseShowArmBones');
+  if (armBones) {
+    armBones.checked = window.HobunjiAttackEditorHandShoulderControls?.showPaperArmGuide === true;
+    armBones.addEventListener('change', () => window.HobunjiAttackEditorHandShoulderControls?.setShowPaperArmGuide?.(armBones.checked));
   }
   syncPosePanelFromState(editPhase);
 }
@@ -1433,9 +1471,16 @@ function applyPoseToRig(pose) {
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
-  if (anim.headRelative && SharedAttackPose.headAnchor(poseOrbitScratch, avatarModel, rig)) {
-    poseOrbitScratch.x += lastAuthoredPose.x; poseOrbitScratch.y += lastAuthoredPose.y; poseOrbitScratch.z += lastAuthoredPose.z;
-  } else window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
+  if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
+    // Head-anchored: the tool's aperture mates with the species mouth point; the head alone supplies rotation and scale.
+    SharedAttackPose.placeAtMouth(toolHolder, editorHeadFrame, pose, safeNum(anim.poses.neutral.scale, 1), editorToolAperture(), toolBase);
+    toolHolder.updateWorldMatrix?.(true, false);
+    toolHolder.getWorldPosition(poseWorldDebugScratch);
+    lastScaledWorldPose.x = poseWorldDebugScratch.x; lastScaledWorldPose.y = poseWorldDebugScratch.y; lastScaledWorldPose.z = poseWorldDebugScratch.z;
+    lastScaledRigPose.x = toolBase.position.x + toolHolder.position.x; lastScaledRigPose.y = toolBase.position.y + toolHolder.position.y; lastScaledRigPose.z = toolBase.position.z + toolHolder.position.z;
+    return;
+  }
+  window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
@@ -1453,6 +1498,7 @@ function applyPoseToRig(pose) {
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
+  SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
 }
 
 // ── Unified gameplay Action registry + practical effects ─────────────────
