@@ -5979,6 +5979,15 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
+        const humanoidVelocityFacing = c.isBandit === true || c.isTribeHunter === true; // Keep existing humanoid movement hints; animals measure actual travel rather than stale requested velocities.
+        const sampledAnimalMovement = dt > 0 && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.perpState.travelSampleX) && Number.isFinite(c.perpState.travelSampleY); // First render establishes a position sample without inventing movement.
+        const creatureMoveX = humanoidVelocityFacing ? (c.vx || 0) : sampledAnimalMovement ? (c.x - c.perpState.travelSampleX) / dt : 0; // Actual horizontal speed drives animal correction, including collision slides.
+        const creatureMoveY = humanoidVelocityFacing ? (c.vy || 0) : sampledAnimalMovement ? (c.y - c.perpState.travelSampleY) / dt : 0; // Paired with X to report world-bearing movement below.
+        c.perpState.travelSampleX = c.x;
+        c.perpState.travelSampleY = c.y;
+        const creatureIsMoving = Math.hypot(creatureMoveX, creatureMoveY) > 5; // Stopped/blocked animals clear the live hint while retaining last movement.
+        c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Convert world-bearing hints into this creature's sprite yaw convention.
+        window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(creatureMoveX, creatureMoveY) : null);
         const shoulderPetBypassesPlaneDeadzone = c.stableRole === 'shoulderPet';
         if (shoulderPetBypassesPlaneDeadzone) {
           // A perched animal already gets its final orientation from the authored
@@ -5999,19 +6008,14 @@
           // corrective-direction hierarchy (movement > combat target > last
           // movement > player) instead of flip-flopping on a timer, so the
           // player can tell whether one is closing on them or on someone else.
-          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Same aimAngleOffset shift as rawTargetRotY above.
-          window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(c.vx, c.vy) : null);
           const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
           if (pngSnapTo !== null) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
-          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
-          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const pngTarget = window.PerpRotation.creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else { // 'halt'
@@ -7283,7 +7287,10 @@
         // switched to this shared rest path instead, since nothing else
         // here ever drove it back down.
         if (typeof c?.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
-        if (c) c._lookAtDebug = null;
+        if (c) {
+          c._lookAtDebug = null;
+          window.PerpRotation.clearHeadtrackHint(c.perpState);
+        }
       }
 
       // Look targets use the character's face, not the feet/body center. The
@@ -7309,6 +7316,7 @@
       // out of a rotated (and, for animals, mirrored front/back) bone
       // transform. Cleared wherever the corresponding look resets to rest.
       function _setLookAtDebug(looker, targetX, targetY, targetWorldY) {
+        window.PerpRotation.setHeadtrackHint(looker.perpState, Math.atan2(targetX - looker.x, targetY - looker.y)); // Active gaze supplies the same second-priority bearing as NPC head tracking.
         looker._lookAtDebug = {
           head: { x: (Number(looker?.x) || 0) / TILE, y: _creatureHeadWorldY(looker), z: (Number(looker?.y) || 0) / TILE },
           target: { x: targetX / TILE, y: targetWorldY, z: targetY / TILE },
@@ -28689,6 +28697,8 @@
       });
 
       window.PixelProbe?.init({
+        animalObjects,
+        hostileObjects,
         renderer,
         camera,
         playerMesh,
