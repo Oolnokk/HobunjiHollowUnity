@@ -47,11 +47,17 @@
       const canvas = document.createElement('canvas'); // Text is generated locally, so no external texture/CORS request is needed.
       canvas.width = 512; canvas.height = 96;
       const context = canvas.getContext('2d');
-      context.fillStyle = '#17241fed'; context.fillRect(0, 0, 512, 96);
-      context.strokeStyle = color; context.lineWidth = 6; context.strokeRect(3, 3, 506, 90);
-      context.fillStyle = '#fff5dc'; context.font = 'bold 28px ' + getComputedStyle(document.body).fontFamily; // Festival sign labels use the gameplay typeface, not canvas's default sans-serif.
-      context.textAlign = 'center'; context.textBaseline = 'middle';
-      context.fillText(record.activity.label || window.FestivalCalendar?.activityLabels[record.activity.type] || record.activity.type, 256, 48, 480);
+      const activityLabel = record.activity.label || window.FestivalCalendar?.activityLabels[record.activity.type] || record.activity.type; // Reused when the game font finishes loading.
+      const paintActivitySign = () => { // Repaints the same canvas used by the existing GPU texture.
+        context.clearRect(0, 0, 512, 96);
+        context.fillStyle = '#17241fed'; context.fillRect(0, 0, 512, 96);
+        context.strokeStyle = color; context.lineWidth = 6; context.strokeRect(3, 3, 506, 90);
+        context.fillStyle = '#fff5dc';
+        context.font = 'bold 28px ' + getComputedStyle(document.body).fontFamily;
+        context.textAlign = 'center'; context.textBaseline = 'middle';
+        context.fillText(activityLabel, 256, 48, 480);
+      };
+      paintActivitySign();
       const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, 'festival-sign');
       const surface = window.HobunjiSpritePngSurface.makeMaterial(THREE, texture, 'festival-sign', { side: THREE.DoubleSide });
       group.userData.festivalMaterials.push(surface);
@@ -61,6 +67,13 @@
       sign.onBeforeRender = (_renderer, _scene, camera) => { group.getWorldQuaternion(parentRotation); sign.quaternion.copy(parentRotation.invert()).multiply(camera.quaternion); };
       group.add(sign);
       group.userData.festivalTexture = texture;
+      // Canvas textures do not automatically repaint after a late web-font load.
+      const fontReady = document.fonts?.load?.('bold 28px "KhymeryyanRomanLetters+Numbers"'); // Resolves the real gameplay font before refreshing any cached sign.
+      fontReady?.then(() => {
+        if (group.userData.festivalDisposed) return; // Never revive GPU resources after a removed festival layout.
+        paintActivitySign();
+        texture.needsUpdate = true;
+      }).catch(() => { /* Keep the initial readable fallback if the font cannot load. */ });
     }
     root.add(group);
   }
