@@ -726,7 +726,7 @@
     }
 
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
-    global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
+    global.FoliageGenerator?.applySurfaceGrowth(group, opts.surfaceGrowth);
     return group;
   }
 
@@ -1477,6 +1477,7 @@
       geom.computeVertexNormals();
       var mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = mesh.receiveShadow = true;
+      if (tag === 'wall' || tag === 'entryTunnel') mesh.userData.surfaceFoliageRole = 'walls';
       mesh.userData.farmMaterialRole = (tag === 'roof' || BOARD_TAGS[tag]) ? 'wood' : (STONE_TAGS[tag] ? 'stone' : null); // Natural farm finish role; canvases keep their authored appearance.
       group.add(mesh);
     }
@@ -1513,6 +1514,7 @@
     }
 
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
+    global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
     return group;
   }
 

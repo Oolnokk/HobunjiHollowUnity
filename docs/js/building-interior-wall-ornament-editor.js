@@ -312,6 +312,7 @@
       catch (error) { lastError = `procedural ${preset.key}: ${error?.message || error}`; }
     }
     if (!group) return null;
+    window.FurniturePatternSurfaces?.applyOverrides?.(group,record.patternOverrides);
     const base = basePosition(record, preset);
     group.position.set(base.x + finite(record.postX), finite(record.postY), base.z + finite(record.postZ));
     group.rotation.y = finite(record.rotY) * DEG;
@@ -341,7 +342,7 @@
     if (!group || !interior) return;
     const layoutId = currentLayoutId();
     const records = wallRecords(interior, layoutId);
-    const signature = JSON.stringify(records.map(record => [record.id, record.itemKey, record.col, record.row, record.rotY, record.postX, record.postY, record.postZ, record.postSX, record.postSY, record.postSZ, record.wallAttachment]));
+    const signature = JSON.stringify(records.map(record => [record.id, record.itemKey, record.col, record.row, record.rotY, record.postX, record.postY, record.postZ, record.postSX, record.postSY, record.postSZ, record.wallAttachment, record.patternOverrides]));
     if (signature === lastFurnitureSignature && layoutId === lastLayoutId) {
       hideBaseFurnitureFor(new Set(records.map(record => String(record.id))));
       return;

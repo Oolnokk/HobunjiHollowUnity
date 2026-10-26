@@ -50,6 +50,7 @@ function applyWindowToSurface(surface, record) {
   if (!surface || !record) return false;
   surface.role = DW_ROLE; // Visible semantic role also flows through the base recognized-surface exporter.
   surface.daylightRadiusTiles = Math.max(0.25, dwFinite(record.daylightRadiusTiles, DW_DEFAULT_RADIUS));
+  if(record.daylightColor)surface.daylightColor=record.daylightColor;
   surface.daylightStrength = dwClamp01(record.daylightStrength == null ? DW_DEFAULT_STRENGTH : record.daylightStrength);
   const setting = surfaceMaterialSetting(surface); // Existing fill pipeline neutralizes texture shading before multiplying by this preview color.
   if (setting) {
@@ -83,6 +84,7 @@ function markSelectedAsWindow() {
     daylightRadiusTiles: Math.max(0.25, dwFinite(prior?.daylightRadiusTiles, DW_DEFAULT_RADIUS)),
     daylightStrength: dwClamp01(prior?.daylightStrength == null ? DW_DEFAULT_STRENGTH : prior.daylightStrength),
     previewFillColor: String(prior?.previewFillColor || DW_PREVIEW_COLOR),
+    daylightColor: prior?.daylightColor || null,
   }; // Stored separately so base surface regeneration cannot erase authoring-only controls.
   applyWindowToSurface(surface, ensureDaylightState()[surface.id]);
   try { renderSurfaceRecognition?.(); } catch (_) {}
@@ -101,6 +103,7 @@ function clearSelectedWindow() {
   if (surface.role === DW_ROLE) surface.role = 'none';
   delete surface.daylightRadiusTiles;
   delete surface.daylightStrength;
+  delete surface.daylightColor;
   const setting = surfaceMaterialSetting(surface); // Material remains textured but stops forcing the daylight preview fill.
   if (setting) {
     if (setting.surfaceRole === DW_ROLE) setting.surfaceRole = 'none';
@@ -121,6 +124,7 @@ function updateSelectedWindowSettings() {
   record.daylightRadiusTiles = Math.max(0.25, dwFinite(dwq('daylightWindowRadius')?.value, DW_DEFAULT_RADIUS));
   record.daylightStrength = dwClamp01(dwq('daylightWindowStrength')?.value ?? DW_DEFAULT_STRENGTH);
   record.previewFillColor = dwq('daylightWindowPreviewColor')?.value || DW_PREVIEW_COLOR;
+  record.daylightColor=record.previewFillColor;
   applyWindowToSurface(surface, record);
   try { renderSurfaceRecognition?.(); } catch (_) {}
   try { rebuildFurnitureMeshes?.(); } catch (_) {}
@@ -133,7 +137,7 @@ function renderDaylightUi() {
   const record = surface ? ensureDaylightState()[surface.id] : null;
   const radius = dwq('daylightWindowRadius'); // Radius input is disabled unless current surface is already marked.
   const strength = dwq('daylightWindowStrength'); // Strength input mirrors the current marked surface.
-  const color = dwq('daylightWindowPreviewColor'); // Preview-only fill swatch; runtime ignores this color and uses outdoor RGB.
+  const color = dwq('daylightWindowPreviewColor'); // Glass tint is multiplied by outdoor RGB and carried into projected daylight.
   if (radius) { radius.disabled = !record; radius.value = dwFinite(record?.daylightRadiusTiles, DW_DEFAULT_RADIUS); }
   if (strength) { strength.disabled = !record; strength.value = dwClamp01(record?.daylightStrength == null ? DW_DEFAULT_STRENGTH : record.daylightStrength); }
   if (color) { color.disabled = !record; color.value = record?.previewFillColor || DW_PREVIEW_COLOR; }
@@ -158,7 +162,7 @@ function installDaylightUi() {
     <div class="muted">Mark a visible pane surface as an outdoor-light aperture. In game the ordinary interior darkness mask is locally uncovered here, then the current outdoor time/weather tint is applied. The surface texture uses the existing shade-preserving fill method and follows the same outdoor RGB.</div>
     <div class="g2" style="margin-top:6px"><button id="markDaylightWindowSurface" class="ok">Use Selected Surface as Window</button><button id="clearDaylightWindowSurface" class="bad">Clear Selected Window</button></div>
     <div class="g2"><div><label>Daylight radius <span class="muted">(tiles)</span></label><input id="daylightWindowRadius" type="number" min="0.25" max="12" step="0.1"></div><div><label>Daylight strength</label><input id="daylightWindowStrength" type="number" min="0" max="1" step="0.05"></div></div>
-    <label>Editor preview fill <span class="muted">(runtime follows outdoor light)</span></label><input id="daylightWindowPreviewColor" type="color" value="${DW_PREVIEW_COLOR}">
+    <label>Glass tint <span class="muted">(pane + projected daylight)</span></label><input id="daylightWindowPreviewColor" type="color" value="${DW_PREVIEW_COLOR}">
     <div id="daylightWindowReadout" class="readout muted" style="margin-top:6px"></div>`;
   host.prepend(panel);
   dwq('markDaylightWindowSurface').onclick = markSelectedAsWindow;
@@ -176,6 +180,7 @@ function importDaylightRecords(data) {
       daylightRadiusTiles: Math.max(0.25, dwFinite(surface.daylightRadiusTiles, DW_DEFAULT_RADIUS)),
       daylightStrength: dwClamp01(surface.daylightStrength == null ? DW_DEFAULT_STRENGTH : surface.daylightStrength),
       previewFillColor: String(surface.materialFillColor || DW_PREVIEW_COLOR),
+      daylightColor: surface.daylightColor || null,
     };
   }
   state.daylightWindows = records;
@@ -190,6 +195,7 @@ exportData = function exportFurnitureWithDaylightWindows(...args) {
     const record = records[surface.id];
     if (!record) continue;
     surface.role = DW_ROLE;
+    if(record.daylightColor)surface.daylightColor=record.daylightColor;
     surface.daylightRadiusTiles = Math.max(0.25, dwFinite(record.daylightRadiusTiles, DW_DEFAULT_RADIUS));
     surface.daylightStrength = dwClamp01(record.daylightStrength == null ? DW_DEFAULT_STRENGTH : record.daylightStrength);
     surface.materialFillEnabled = true;

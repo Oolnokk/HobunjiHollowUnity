@@ -385,9 +385,16 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js?v=20261025h71ebe3a"></script>
+<script src="../../js/interior-scene-builder.js?v=20261026h7a4fc85"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
+<script src="../../js/portrait-utils.js?v=20261026templepatterns1"></script>
+<script src="../../js/motif-store.js?v=20261026templepatterns1"></script>
+<script src="../../js/pattern-library.js?v=20261026templepatterns1"></script>
+<script src="../../js/repo-pattern-library.js?v=20261026templepatterns1"></script>
+<script src="../../js/pattern-authoring.js?v=20261026templepatterns1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261026templepatterns1"></script>
+<script src="../../js/furniture-pattern-surfaces.js?v=20261026h0017b3b"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
 <script src="../../js/interior-door-tiles.js?v=20261018h0336068"></script>
@@ -395,8 +402,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
 <script src="../../js/wall-ornament-placement.js?v=20261025h54c9ae0"></script>
-<script src="../../js/daylight-window-runtime.js?v=20261013h3b89898"></script>
-<script src="../../js/building-interior-wall-ornament-editor.js?v=20261025habb545b"></script>
+<script src="../../js/daylight-window-runtime.js?v=20261026hf5024af"></script>
+<script src="../../js/building-interior-wall-ornament-editor.js?v=20261026he573130"></script>
 
 <script>
 (function () {
@@ -1489,8 +1496,9 @@ function furnGroupFor(f){
     grp = new THREE.Group();
     grp.add(mesh);
   }
-  grp.userData = { furnId: f.id };
-  grp.traverse(function(o){ if(o.isMesh) o.userData = { furnId: f.id }; });
+  window.FurniturePatternSurfaces?.applyOverrides?.(grp,f.patternOverrides);
+  grp.userData = Object.assign(grp.userData||{}, { furnId: f.id });
+  grp.traverse(function(o){ if(o.isMesh) o.userData = Object.assign(o.userData||{}, { furnId: f.id }); });
   return grp;
 }
 
@@ -1613,6 +1621,7 @@ function rebuild3D(){
   var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same geometry used by the scene.
   if(growthReport)log(growthReport);
   scene3.add(previewGroup);
+  refreshAppearanceTargets();
   syncTC();
 
   // Orbit target = centroid
@@ -1834,6 +1843,33 @@ function afterLoad(){
 }
 
 SurfaceFoliageAuthoring.mount($('biaLeftPanel'),{targets:[['walls','Walls + generated gables'],['floors','Floors'],['ceilings','Ceilings'],['selected','Selected furniture']],read:()=>state.interior.surfaceGrowth,selectedIds:()=>state.selectedId?[state.selectedId]:[],write:recipes=>{pushUndo();state.interior.surfaceGrowth=recipes;rebuild3D();refreshExport();return previewGroup.children.filter(child=>child.userData.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');},log});
+
+function refreshAppearanceTargets(){
+  var select=$('appearanceFurniture'); // Lists exact map instance IDs, including windows whose wall sidecar owns the visible mesh.
+  if(!select)return;
+  var previous=select.value;
+  select.replaceChildren();
+  activeFurniture().forEach(function(record){select.add(new Option((catOf(record.itemKey).label||record.itemKey)+' · '+record.id,record.id));});
+  if(activeFurniture().some(function(record){return record.id===previous;}))select.value=previous;
+}
+async function editFurnitureAppearance(){
+  try{
+    var id=$('appearanceFurniture').value,record=activeFurniture().find(function(item){return item.id===id;}); // Read current layout state at the time of editing.
+    if(!record){log('Choose furniture or a window first.','warn');return;}
+    await window.AuthoredFurniture?.load?.(furnKeyOf(record.itemKey));
+    var visual=furnMeshes[id];
+    scene3.traverse(function(node){if(node.userData?.biaWallOrnamentId===id&&node.userData?.meshById)visual=node;});
+    var opened=await window.FurniturePatternSurfaces.editInstance({key:furnKeyOf(record.itemKey),mesh:visual,patternOverrides:record.patternOverrides},function(overrides){
+      var current=activeFurniture().find(function(item){return item.id===id;}); // Modal saves cannot overwrite another layout's instances.
+      if(!current)return;
+      pushUndo();current.patternOverrides=JSON.parse(JSON.stringify(overrides));
+      window.FurniturePatternSurfaces.applyOverrides(furnMeshes[id],current.patternOverrides);
+      refreshExport();log('Saved pattern and colors for '+current.itemKey+'. Window colors also project into incoming light.');
+    });
+    if(!opened)log('This piece has no patterned or illuminated pane surfaces.','warn');
+  }catch(error){log('Appearance editor: '+error.message,'error');}
+}
+(function(){var section=document.createElement('section');section.className='section';section.innerHTML='<h2>Furniture patterns + window glass</h2><p class="hint">Preview and edit rug patterns, dyes, and illuminated window panes. Changes are saved per instance and per layout.</p><select id="appearanceFurniture" style="width:100%"></select><button id="editAppearanceBtn" type="button">Edit pattern / colors</button>'; $('biaRightPanel').prepend(section);$('editAppearanceBtn').onclick=editFurnitureAppearance;})();
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadLib();

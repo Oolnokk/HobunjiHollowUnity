@@ -1886,7 +1886,7 @@ window.FoliageGenerator = (() => {
       while (node) {
         const data = node.userData || {}; // Shared metadata is read without mutating the source definitions.
         excluded ||= !!data.surfaceFoliage || !!data.surfaceFoliageExclude;
-        role ||= data.surfaceFoliageRole || (data.interiorGable || data.interiorGableBricks || data.interiorGableLogs ? 'walls' : data.interiorCeilingSurface ? 'ceilings' : '');
+        role ||= data.surfaceFoliageRole || (data.isWallBricks || data.isWallLogs ? 'walls' : '') || (data.interiorGable || data.interiorGableBricks || data.interiorGableLogs ? 'walls' : data.interiorCeilingSurface ? 'ceilings' : '');
         selected ||= settings.targetIds.includes(String(data.authoredPartId ?? data.partId ?? data.faceId ?? data.surfaceFoliageId ?? ''));
         if (node === parent) break;
         node = node.parent;

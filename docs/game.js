@@ -13858,7 +13858,7 @@
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
             const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
-            const floorSurfaceY = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId); // Used to ground this furniture on the authored floor surface even when its footprint tile is also collision-solid.
+            const floorSurfaceY = InteriorSceneBuilder.furnitureFloorElevation(f, tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId)); // Wall-attached windows keep the editor/opening Y even when their anchor tile is outside the floor.
             const authoredPostY = Number(f.postY) || 0; // Used to preserve intentional editor-authored stacking/lift above the floor.
             const by = floorSurfaceY + authoredPostY; // Final furniture root Y shared by the visual, light, and mobile grounding diagnostics below.
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
