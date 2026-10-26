@@ -1887,7 +1887,8 @@ window.FoliageGenerator = (() => {
         const data = node.userData || {}; // Shared metadata is read without mutating the source definitions.
         excluded ||= !!data.surfaceFoliage || !!data.surfaceFoliageExclude;
         role ||= data.surfaceFoliageRole || (data.isWallBricks || data.isWallLogs ? 'walls' : '') || (data.interiorGable || data.interiorGableBricks || data.interiorGableLogs ? 'walls' : data.interiorCeilingSurface ? 'ceilings' : '');
-        selected ||= settings.targetIds.includes(String(data.authoredPartId ?? data.partId ?? data.faceId ?? data.surfaceFoliageId ?? ''));
+        const id = String(data.authoredPartId ?? data.partId ?? data.faceId ?? data.surfaceFoliageId ?? ''); // An untagged mesh has no id and must never match a stray empty entry.
+        selected ||= id !== '' && settings.targetIds.includes(id);
         if (node === parent) break;
         node = node.parent;
       }
@@ -1901,11 +1902,13 @@ window.FoliageGenerator = (() => {
     const group = new T.Group(); // Geometry is expressed in the target parent's local space and follows its later transform.
     group.name = 'Surface ' + settings.kind;
     group.userData.surfaceFoliage = true;
-    const targets = surfaceTargets(parent, settings), triangles = [], large = [], cells = new Map(); // Spatial buckets avoid scanning all brick triangles for every growth step.
+    const targets = surfaceTargets(parent, settings), triangles = [], large = [], cells = new Map(), candidates = []; // Candidate list is reused across every growth step.
+    let stamp = 0; // Per-step visit mark: dedupes records that overlap several buckets without a Set insertion per record.
+    const gather = list => { for (const record of list) if (record.stamp !== stamp) { record.stamp = stamp; candidates.push(record); } }; // Spatial buckets avoid scanning all brick triangles for every growth step.
     parent.updateWorldMatrix(true, true);
     const inverse = parent.matrixWorld.clone().invert(), cellSize = .5, point = new T.Vector3(); // Source vertices are converted once, outside runtime frame work.
     let totalArea = 0, surfaceCopies = 0; // Area weighting includes every placed brick, not just its reusable source geometry.
-    const keyOf = (x, y, z) => x + ',' + y + ',' + z; // Shared key format for triangle insertion and nearby queries.
+    const keyOf = (x, y, z) => ((x + 65536) * 131072 + (y + 65536)) * 131072 + z + 65536; // Numeric cell key (exact for |cell| < 65536, i.e. 32 km at 0.5 m cells): shared by insertion and queries without building a string per lookup.
     for (const mesh of targets) {
       const geometry = mesh.geometry, position = geometry.attributes.position, index = geometry.index; // Supports indexed and non-indexed imported GLBs.
       const baseMatrix = inverse.clone().multiply(mesh.matrixWorld); // Mesh/group transforms apply outside each instance's own placement.
@@ -1919,23 +1922,25 @@ window.FoliageGenerator = (() => {
         }
         surfaceCopies++;
         for (let i = geometry.drawRange.start; i + 2 < end; i += 3) {
-          const vertices = [0, 1, 2].map(j => new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + j) : i + j).applyMatrix4(matrix)); // Triangle coordinates used by sampling and projection.
-          if (vertices.some(v => !Number.isFinite(v.x + v.y + v.z))) continue;
-          const triangle = new T.Triangle(...vertices), area = triangle.getArea(); // Degenerate faces never become growth anchors.
+          const a = new T.Vector3().fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(matrix), b = new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + 1) : i + 1).applyMatrix4(matrix), c = new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + 2) : i + 2).applyMatrix4(matrix); // Triangle coordinates used by sampling and projection (no per-face temp arrays: this runs for every placed brick).
+          if (!Number.isFinite(a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z)) continue;
+          const triangle = new T.Triangle(a, b, c), area = triangle.getArea(); // Degenerate faces never become growth anchors.
           if (area < 1e-10) continue;
           const faceNormal = triangle.getNormal(new T.Vector3()); // Floor growth stays on top; ceiling growth stays on the room-facing underside.
           if (settings.target === 'floors' && faceNormal.y < .5) continue;
           if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
           totalArea += area;
-          const record = { triangle, normal: triangle.getNormal(new T.Vector3()), area: totalArea }; // Cumulative area permits binary-search seed placement.
+          const record = { triangle, normal: faceNormal, plane: faceNormal.dot(a), stamp: 0, area: totalArea }; // plane = signed offset, a cheap lower bound on distance to the face. // Cumulative area permits binary-search seed placement.
           triangles.push(record);
-          const min = vertices.reduce((a, v) => a.min(v), vertices[0].clone()).divideScalar(cellSize).floor(); // Bucket range includes the full triangle, not only its centroid.
-          const max = vertices.reduce((a, v) => a.max(v), vertices[0].clone()).divideScalar(cellSize).floor();
-          if ((max.x-min.x+1)*(max.y-min.y+1)*(max.z-min.z+1) > 256) { large.push(record); continue; }
-          for (let x=min.x; x<=max.x; x++) for (let y=min.y; y<=max.y; y++) for (let z=min.z; z<=max.z; z++) {
+          const x0 = Math.floor(Math.min(a.x, b.x, c.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x, c.x) / cellSize); // Bucket range includes the full triangle, not only its centroid.
+          const y0 = Math.floor(Math.min(a.y, b.y, c.y) / cellSize), y1 = Math.floor(Math.max(a.y, b.y, c.y) / cellSize);
+          const z0 = Math.floor(Math.min(a.z, b.z, c.z) / cellSize), z1 = Math.floor(Math.max(a.z, b.z, c.z) / cellSize);
+          if ((x1-x0+1)*(y1-y0+1)*(z1-z0+1) > 256) { large.push(record); continue; }
+          for (let x=x0; x<=x1; x++) for (let y=y0; y<=y1; y++) for (let z=z0; z<=z1; z++) {
             const key = keyOf(x,y,z); // Triangle references are shared across overlapped buckets.
-            if (!cells.has(key)) cells.set(key, []);
-            cells.get(key).push(record);
+            let bucket = cells.get(key);
+            if (!bucket) cells.set(key, bucket = []);
+            bucket.push(record);
           }
         }
       }
@@ -1956,11 +1961,14 @@ window.FoliageGenerator = (() => {
         direction.addScaledVector(normal,-direction.dot(normal));
         if (direction.lengthSq()<1e-8) direction.crossVectors(normal,new T.Vector3(1,.3,.2));
         direction.normalize().applyAxisAngle(normal,(random()-.5)*settings.curl*.65);
-        const candidate=anchor.clone().addScaledVector(direction,step), bucket=candidate.clone().divideScalar(cellSize).floor(), candidates=new Set(large); // Query adjacent cells so seams and perpendicular corners remain connected.
-        for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++)for(const record of cells.get(keyOf(bucket.x+x,bucket.y+y,bucket.z+z))||[])candidates.add(record);
+        const candidate=anchor.clone().addScaledVector(direction,step), bx=Math.floor(candidate.x/cellSize), by=Math.floor(candidate.y/cellSize), bz=Math.floor(candidate.z/cellSize); // Query adjacent cells so seams and perpendicular corners remain connected.
+        candidates.length=0;stamp++;gather(large);
+        for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const bucket=cells.get(keyOf(bx+x,by+y,bz+z));if(bucket)gather(bucket);}
         let best=null, distance=step*step*.85, closest=null; // Reject gaps larger than a growth step instead of bridging empty windows.
         for(const record of candidates){
           if(record.normal.dot(normal)<-.25)continue;
+          const planeGap=record.normal.dot(candidate)-record.plane;
+          if(planeGap*planeGap>=distance)continue; // Perpendicular distance never exceeds true distance, so this skips the projection without changing the result.
           record.triangle.closestPointToPoint(candidate,point);
           const d=point.distanceToSquared(candidate); // Nearest actual surface point, never an object's bounding box.
           if(d<distance){distance=d;best=record;closest=point.clone();}
@@ -1973,6 +1981,8 @@ window.FoliageGenerator = (() => {
           for(const record of candidates){
             const dot=record.normal.dot(normal); // Backfaces and near-parallel duplicates do not define a new corner.
             if(dot<-.25||dot>.95)continue;
+            const anchorGap=record.normal.dot(anchor)-record.plane;
+            if(anchorGap*anchorGap>step*step*.01)continue;
             record.triangle.closestPointToPoint(anchor,point);
             if(point.distanceToSquared(anchor)>step*step*.01)continue;
             const turn=direction.clone().applyQuaternion(new T.Quaternion().setFromUnitVectors(normal,record.normal)); // Parallel transport across a convex or concave seam.

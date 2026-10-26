@@ -130,8 +130,8 @@ const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // The h
 const foliageVersion = indexHtml.match(/js\/foliage-generator\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache generation for the actual procedural leafless geometry builder.
 const houseVersion = indexHtml.match(/js\/house-pieces\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache generation for the authoritative natural-surface child loader.
 const naturalVersion = houseLoader.match(/'natural-surface-materials\.js\?v=([A-Za-z0-9_-]+)'/)?.[1]; // Cache generation for the new dead-tree/dead-bush wrapper registrations.
-assert.equal(foliageVersion, '20261025westernbark1', 'the shipped game must invalidate stale foliage-generator.js caches');
+assert(foliageVersion, 'the shipped game must load a cache-busted foliage-generator.js (any token; check-cache-busts.js keeps it current)');
 assert(houseVersion, 'the shipped game must load a cache-busted house-pieces.js (any token; check-cache-busts.js keeps it current)');
-assert.equal(naturalVersion, foliageVersion, 'the shipped game must invalidate stale natural-surface-materials.js caches');
+assert(naturalVersion, 'house-pieces.js must load a cache-busted natural-surface-materials.js (any token; check-cache-busts.js keeps it current)');
 assert(fs.existsSync('docs/' + barkTexturePath), 'the authored trunk PNG requested by the pine and leafless vegetation must exist');
 console.log('Western Slope PNG asset and mobile game cache-generation checks: PASS');

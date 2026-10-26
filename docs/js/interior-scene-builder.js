@@ -576,8 +576,7 @@
   const DEFAULT_WB_OPTS = { unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
   function markInteriorWallSurfaceGroup(group) {
-    group.userData.surfaceFoliageRole = "walls";
-    if (group?.userData) group.userData.interiorWallSurfaceGroup = true;
+    if (group?.userData) { group.userData.surfaceFoliageRole = "walls"; group.userData.interiorWallSurfaceGroup = true; }
     return group;
   }
 
