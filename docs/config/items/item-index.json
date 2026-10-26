@@ -683,6 +683,12 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:fine_bodywrap": {
+    "key": "cosmetic:fine_bodywrap",
+    "label": "Fine Body Wrap",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:fine_hood": {
     "key": "cosmetic:fine_hood",
     "label": "Fine Hood",

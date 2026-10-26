@@ -283,6 +283,10 @@
       "path": "./clothes/overwear/tankan_bodywrap.json"
     },
     {
+      "id": "fine_bodywrap",
+      "path": "./clothes/overwear/fine_bodywrap.json"
+    },
+    {
       "id": "appearance::Mao-ao_M::mao-ao_braid-L",
       "path": "./appearance/mao-ao/braid-L.json"
     },
