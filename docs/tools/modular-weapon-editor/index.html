@@ -41,6 +41,9 @@
 <label>Or choose a PNG from this device <input id="cut-file" type="file" accept="image/png,.png"></label>
 <div class="toolbar"><button id="cut-remove" type="button">Remove inside lasso</button><button id="cut-isolate" type="button">Keep inside lasso</button><button id="cut-clear-selection" type="button">Clear selection</button></div>
 <div class="toolbar"><button id="cut-undo" type="button">Undo</button><button id="cut-reset" type="button">Reset source</button></div>
+<label>Minimum alpha to keep (0–255) <input id="cut-min-alpha" type="number" min="0" max="255" step="1" value="32"></label>
+<button id="cut-cull-alpha" type="button">Cull faint pixels now</button>
+<p>Pixels with alpha below this number are fully cleared, including hidden RGB. Black outlines ignore them, and PNG export always culls them again.</p>
 <label>Black outline thickness (pixels) <input id="cut-outline-thickness" type="number" min="1" max="32" step="1" value="2"></label>
 <button id="cut-outline" type="button">Draw black outline around all visible pixels</button>
 <p>The outline is added into adjacent transparent pixels (including holes), without covering existing interior colors. Pixels touching the frame boundary become black because the 450 × 1204 export cannot grow beyond it. Undo works here too.</p>
