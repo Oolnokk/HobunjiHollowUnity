@@ -1875,7 +1875,9 @@ window.FoliageGenerator = (() => {
       curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
       texture: normalizeGrowthTexture(value.texture, defaults.texture),
       target: ['all', 'walls', 'floors', 'ceilings', 'selected'].includes(value.target) ? value.target : 'all',
-      targetIds: Array.isArray(value.targetIds) ? value.targetIds.filter(id => typeof id === 'string').slice(0, 200) : [] };
+      targetIds: Array.isArray(value.targetIds) ? value.targetIds.filter(id => typeof id === 'string').slice(0, 200) : [],
+      wallOnly: value.wallOnly === true, // A cavern shell has its floor, ceiling and walls in one mesh.
+      hangChance: finite('hangChance', 0, 0, 1), hangLength: finite('hangLength', 0, 0, 6) }; // Hanging tips are optional; existing authoring recipes are unchanged.
   }
 
   function surfaceTargets(parent, settings) {
@@ -1927,6 +1929,7 @@ window.FoliageGenerator = (() => {
           const triangle = new T.Triangle(a, b, c), area = triangle.getArea(); // Degenerate faces never become growth anchors.
           if (area < 1e-10) continue;
           const faceNormal = triangle.getNormal(new T.Vector3()); // Floor growth stays on top; ceiling growth stays on the room-facing underside.
+          if (settings.wallOnly && Math.abs(faceNormal.y) > .65) continue; // Roots/vines select near-vertical rock, never cavern floor or roof.
           if (settings.target === 'floors' && faceNormal.y < .5) continue;
           if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
           totalArea += area;
@@ -1996,6 +1999,15 @@ window.FoliageGenerator = (() => {
         points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset));
       }
       if(points.length<2)continue;
+      if (settings.kind === 'vines' && settings.hangLength > 0 && random() < settings.hangChance) {
+        const tip = points[points.length - 1]; // Last anchored point is the pivot for a dangling section.
+        const drop = Math.min(settings.hangLength * (.65 + random() * .7), Math.max(0, tip.y - .22)); // Keep tips above the cave's nominal floor.
+        const side = new T.Vector3((random() - .5) * .14, 0, (random() - .5) * .14); // A small offset stops every hanging tip being perfectly plumb.
+        if (drop > .12) for (let n = 1; n <= 6; n++) {
+          const t = n / 6; // Hanging vines are no longer projected back onto rock at each point.
+          points.push(tip.clone().addScaledVector(side, t * t).add(new T.Vector3(0, -drop * t, 0)));
+        }
+      }
       geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
     }
     if(geometries.length){
@@ -2023,9 +2035,30 @@ window.FoliageGenerator = (() => {
     return parent.children.filter(child=>child.userData?.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');
   }
 
+  function caveGrowthRecipes(zoneId, seed) {
+    // Use the local tree's actual bark color and the existing natural-surface bark PNG and stretch mapper.
+    const biome = String(zoneId || '');
+    if (!['map_southern_cloud_forest', 'map_eastern_mire', 'map_northern_cliffs'].includes(biome)) return [];
+    const forest = biome === 'map_southern_cloud_forest', mire = biome === 'map_eastern_mire';
+    const barkColor = mire
+      ? new T.Color().setHSL(24 / 360, .38, .20) // Eastern Mire's jungle trunk: hslMat(24, .38, .20).
+      : new T.Color(forest ? TREE_PRESETS.shadewood.barkColorHex : TREE_PRESETS.crownedPine.barkColorHex);
+    const rootFinish = surfaceGrowthDefaults('roots'); // Reuse the current tree-bark texture and render treatment.
+    const vineFinish = surfaceGrowthDefaults('vines'); // Reuse the existing green vine material.
+    const roots = { kind: 'roots', wallOnly: true, seed: String(seed) + ':wall-roots',
+      count: forest ? 22 : mire ? 18 : 14, length: forest ? 2.3 : mire ? 2.0 : 1.65,
+      radius: forest ? .043 : .036, curl: .55, offset: .008,
+      color: '#' + barkColor.getHexString(), texture: rootFinish.texture };
+    if (!forest && !mire) return [roots];
+    return [roots, { kind: 'vines', wallOnly: true, seed: String(seed) + ':wall-vines',
+      count: forest ? 17 : 12, length: forest ? 2.3 : 1.9, radius: .021, curl: .65, offset: .018,
+      color: vineFinish.color, texture: vineFinish.texture,
+      hangChance: forest ? .42 : .55, hangLength: forest ? 1.4 : 1.8 }];
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
-    surfaceGrowthDefaults, normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth,
+    surfaceGrowthDefaults, normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);
