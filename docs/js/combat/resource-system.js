@@ -109,6 +109,11 @@
       family: "damage", tags: ["physical", "blood"],
       desc: "Temporarily lowers effective Health max without reducing it below 1, then recovers its own points every tick."
     },
+    rentHealth: {
+      name: "Rent Health", resource: "health", extend: "zero", priority: 57, recovers: false, reducesEffectiveMax: true,
+      family: "damage", tags: ["wyrm", "sacred-cleansable"],
+      desc: "Rended life permanently reserves maximum Health until the bearer enters sacred ground (such as a Root Totem or the Life Temple)."
+    },
     infectedStamina: {
       name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true, punishedAction: "staminaSpend",
       family: "damage", tags: ["toxin", "infection"],
@@ -523,6 +528,7 @@
 
   function removeAffliction(entity, id, amount) {
     if (!(amount > 0)) return 0;
+    if (id === 'rentHealth' && !window.HobunjiSacredGround?.contains?.(entity)) return 0; // Generic cleanses and passive recovery cannot remove a sacred-only wound.
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before - amount);
     return round1(before - getAffliction(entity, id));
@@ -608,7 +614,8 @@
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
     if (key === "health") {
       const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
-      const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth"), 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
+      const rentHealth = Math.max(0, getAffliction(entity, "rentHealth")); // Persistent Wyrm-witch capacity loss; cleared only by shared sacred-ground detection.
+      const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth") - rentHealth, 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
       return fullHealthMax > 0 ? Math.max(Math.min(1, fullHealthMax), afflictedHealthMax) : 0;
     }
     if (key === "footing") return getProneRecoveryFootingTarget(entity); // Standing usable max and prone recovery target share the same permanent Shambling reservation.
@@ -984,6 +991,14 @@
         addAffliction(entity, id, finalDamage * mul * familyMul);
       }
     }
+    if (opts.fixedAfflictionBuildup) {
+      // On-hit flat buildup belongs inside the authoritative damage transaction: invulnerability,
+      // blocked attacks and intercepted damage never call applyDamage, and player offensive perks
+      // must not accidentally amplify a monster's authored Rent Health.
+      for (const [id, amount] of Object.entries(opts.fixedAfflictionBuildup)) {
+        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAffliction(entity, id, amount);
+      }
+    }
 
     enforceCaps(entity);
     if (lost > 0) window.dispatchEvent(new CustomEvent('hobunji-resource-change', { detail: { entity, delta: -lost, reason: opts.reason || 'damage', immediate: true } }));
@@ -1044,6 +1059,7 @@
     resolvePoisonTick(entity, dt, cfg);
     resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveGenericRecovery(entity, dt, rest, cfg);
+    if (getAffliction(entity, 'rentHealth') > 0) window.HobunjiSacredGround?.cleanseRentHealth?.(entity); // All gameplay healing reads the reusable location registry.
     const puked = maybeTriggerPuke(entity, dt, cfg);
 
     enforceCaps(entity);

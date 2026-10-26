@@ -70,7 +70,7 @@
       // These have dedicated recovery paths; applying the fallback would
       // double-pay their natural recovery.
       if (id === 'drunkenFooting' || id === 'drunkenHealth'
-        || id === 'congealedHealth' || id === 'scentMarkedHealth') continue;
+        || id === 'congealedHealth' || id === 'scentMarkedHealth' || id === 'rentHealth') continue; // Rent Health is sacred-only, not part of the slow passive fallback.
       const scale = RS.getAfflictionNaturalRecoveryScale?.(id) ?? 1;
       if (scale < 1) RS.recoverAfflictionNaturally(entity, id, amount * scale);
       else RS.removeAffliction(entity, id, amount); // DoTs unchanged.

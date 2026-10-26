@@ -30,6 +30,7 @@ const toolDefs = {
     rangedProjectileMaxEmbedded: 2,
     rangedProjectileFadeS: 0.4,
   },
+  fishingspear: { label: 'Fishing Spear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp' }, // Legacy Fishing Spear is the exact item key mine ghouls equip as a ranged weapon.
   fishingspear_copper: { label: 'Copper Fishing Spear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'fishingspear' },
   hatchet_copper: { label: 'Copper Hatchet', sprite: 'assets/toolsprites/axe_hatchet.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'hatchet' },
   daggerSword_copper: { label: 'Copper Dagger-Sword', sprite: 'assets/toolsprites/dagger-sword.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'daggerSword', rangedType: 'thrown' },
@@ -306,6 +307,8 @@ assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinBasis
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinRevolutions, 2.5, 'Dagger must share the generic 2.5-revolution held throw.');
 assert.match(rangedArchetypeSource, /const projectileSpins = animation\?\.projectileSpin !== false[\s\S]*projectileVisualStyle: projectileSpins \? 'spinningWeapon' : 'weapon'[\s\S]*projectileSpinSource: projectileSpins \? 'fishingMace' : null/, 'Generic thrown projectile spin must be driven by the shared Spin Throw animation contract rather than a fragile weapon-name allowlist.');
 assert.doesNotMatch(rangedArchetypeSource, /PROJECTILE_SPINNING_THROWN_SHAPES/, 'Thrown projectile spin must not depend on a separate shape allowlist; fishing spear opts out through its dedicated animation.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear?.rangedType, 'thrown', 'Mine ghouls must be able to throw the legacy Fishing Spear item, not merely hold it.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear?.projectileSprite, toolDefs.fishingspear.sprite, 'Mine spear uses the actual projectile sprite and authored throw animation.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.toolEndFlip, true, 'Fishing spear throw must retain the visible tip-to-handle end flip while using its offset spin.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileVisualStyle, 'weapon', 'Fishing spear must freeze the sampled held alignment after release instead of tumbling in flight.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileSpinSource, null, 'Fishing spear projectile must not receive the generic local-Z tumble.');

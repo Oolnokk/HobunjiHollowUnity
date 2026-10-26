@@ -77,8 +77,15 @@
   function enemyPlan(floor, rng) {
     if (floor <= 3) return rng() < 0.2 ? ['grehlr'] : [];
     if (floor <= 10) return [];
-    const ghoulCount = Math.min(12, 2 + Math.floor((floor - 11) / 10)); // Used to grow pairs into trios and eventually large surrounding groups.
-    return Array.from({ length: ghoulCount }, () => 'ghoul');
+    const tier = tierForFloor(floor); // Mine enemies advance in successive 10-floor bands, not by town upgrades.
+    const ghoulCount = Math.min(12, 2 + Math.floor((floor - 11) / 10)); // Grow pairs into trios and eventually large surrounding groups.
+    const kinds = Array.from({ length: ghoulCount }, () => 'ghoul'); // Base undead roster, then occasional promoted encounters.
+    if (tier >= 4 && rng() < 0.30) kinds[Math.floor(rng() * kinds.length)] = 'ghoul-shadowknight'; // Lieutenants begin one tier after spear ghouls.
+    if (tier >= 5 && rng() < 0.28) {
+      const ordinary = kinds.findIndex(kind => kind === 'ghoul');
+      if (ordinary >= 0) kinds[ordinary] = 'ghoul-wyrm-witch'; // Wyrm-witches begin one tier after Shadowknights.
+    }
+    return kinds;
   }
 
   function hasReturnLadder(floor) {
@@ -112,8 +119,16 @@
     const enemyKinds = enemyPlan(floorNumber, rng); // Used to apply the requested quiet opening followed by increasingly large ghoul groups.
     const enemyExcluded = new Set([...excluded, ...ordinaryTiles.map(([col, row]) => `${col},${row}`)]); // Used to keep a creature from being obscured by a rock even when both choose from the same geometry-safe floor pool.
     const enemyTiles = pickSeparatedTiles(rng, safePlacementFloor, enemyExcluded, enemyKinds.length);
-    const mineEnemySpawns = enemyTiles.map(([col, row], index) => ({ col, row, kind: enemyKinds[index] }));
-    if (mineEnemySpawns.some(spawn => spawn.kind === 'ghoul')) ghoulBgmFloorIds.add(mapId);
+    const mineEnemySpawns = enemyTiles.map(([col, row], index) => {
+      const kind = enemyKinds[index]; // Spawn archetype is interpreted by BanditCombat's shared humanoid factory.
+      const isWitch = kind === 'ghoul-wyrm-witch';
+      const spearChance = Math.min(0.7, 0.35 + (tier - 3) * 0.045); // Fishing Spears appear starting on Floor 21, increasingly often thereafter.
+      return { col, row, kind,
+        rangedWeaponKey: !isWitch && tier >= 3 && rng() < spearChance ? 'fishingspear' : null,
+        witchType: isWitch ? (rng() < 0.5 ? 'shadow-wind' : 'rend-water') : null,
+      };
+    });
+    if (mineEnemySpawns.some(spawn => spawn.kind.startsWith('ghoul'))) ghoulBgmFloorIds.add(mapId);
     else ghoulBgmFloorIds.delete(mapId);
 
     const returnLadder = hasReturnLadder(floorNumber);
@@ -420,7 +435,7 @@
     const floor = floorFromMapId(area);
     const sceneInfo = floor ? deps?.buildingScenes?.get?.(area) : null; // Used to expose placement-clearance counts without requiring desktop developer tools.
     const descentProgress = floor ? window.TownMineDescent?.debugStatus?.(area) ?? null : null; // Used to expose this floor's cumulative next-rock odds in existing mobile-friendly diagnostics.
-    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy'), rubble: descentChance('rubble') }, descentProgress };
+    const snapshot = { area, floor, tier: floor ? tierForFloor(floor) : null, isMine: !!floor, safeRoom: area === SAFE_ROOM_ID, placementSafeTiles: sceneInfo?.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: sceneInfo?.disconnectedFloorTilesRemoved ?? null, enemyPlan: sceneInfo?.mineEnemySpawns?.map(spawn => ({ kind: spawn.kind, spear: !!spawn.rangedWeaponKey, witchType: spawn.witchType })), witches: window.GhoulWyrmWitches?.debugSnapshot?.(), discoveredOreKeys: [...progression.discoveredOreKeys], descentChance: { rock: descentChance('rock'), enemy: descentChance('enemy'), rubble: descentChance('rubble') }, descentProgress };
     window.__farmLog?.(`[town-mine] ${JSON.stringify(snapshot)}`, 'info', 'mine');
     return snapshot;
   }
