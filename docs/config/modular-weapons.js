@@ -1,4 +1,4 @@
-// Authored Foundry head/shaft mounting lines and explicit per-pair layering. No runtime type-based layer inference.
+// Foundry directed mount lines and per-combination corrections.
 window.MODULAR_WEAPON_CONFIG = {
   "schema": "hobunji_modular_weapons.v2",
   "upgrade": {
@@ -257,7 +257,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 239,
           "y": 778
         }
-      }
+      },
+      "editorOnly": false
     },
     "warhammer": {
       "label": "Warhammer",
@@ -284,12 +285,12 @@ window.MODULAR_WEAPON_CONFIG = {
       "mount": {
         "type": "weight",
         "start": {
-          "x": 209,
-          "y": 912
+          "x": 210,
+          "y": 952
         },
         "end": {
-          "x": 209,
-          "y": 832
+          "x": 210,
+          "y": 872
         }
       }
     },
@@ -321,14 +322,14 @@ window.MODULAR_WEAPON_CONFIG = {
         "dagger-sword": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "dagger": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "fishing-mace": {
           "scaleX": 0.5,
@@ -338,20 +339,20 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "harlyao-broadsword": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "harlyao-longsword": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "hatchet": {
           "scaleX": 0.6,
@@ -363,32 +364,32 @@ window.MODULAR_WEAPON_CONFIG = {
         "hoe": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "kylie": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "pick-shovel-pick": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "pickshovel-scoop": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "plains-blade": {
           "scaleX": 0.5,
           "scaleY": 0.309,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "porakaneki-greatclub": {
           "scaleX": 0.8,
@@ -410,8 +411,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "work-hammer": {
-          "scaleX": 0.435,
-          "scaleY": 2.2,
+          "scaleX": 0.375,
+          "scaleY": 2,
           "y": -35,
           "rotation": 1,
           "layerOrder": "head-over-haft"
@@ -419,8 +420,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "bshuakauitl": {
           "scaleX": 0.5,
           "scaleY": 0.9,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         }
       },
       "mounts": [
@@ -478,18 +479,18 @@ window.MODULAR_WEAPON_CONFIG = {
       "overrides": {
         "dagger-sword": {
           "scaleY": 0.464,
+          "layerOrder": "haft-over-head",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "disallow": true
         },
         "dagger": {
           "scaleY": 0.625,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "fishing-mace": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "fishing-spear": {
           "scaleX": 0.85,
@@ -512,12 +513,12 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "hatchet": {
           "scaleY": 0.866,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "hoe": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "pick-shovel-pick": {
           "scaleX": 0.9,
@@ -540,20 +541,20 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "porakaneki-greatclub": {
           "scaleY": 0.523,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "war-cleaver": {
           "x": 20,
           "layerOrder": "haft-over-head"
         },
         "warhammer": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "work-hammer": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
@@ -585,81 +586,81 @@ window.MODULAR_WEAPON_CONFIG = {
         "dagger-sword": {
           "x": -5,
           "y": 30,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "dagger": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
+          "layerOrder": "haft-over-head",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "disallow": true
         },
         "fishing-mace": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "fishing-spear": {
           "scaleX": 0.9,
           "scaleY": 1.25,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "harlyao-broadsword": {
           "scaleY": 0.75,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "harlyao-longsword": {
           "scaleX": 1.2,
           "scaleY": 0.7,
           "x": -3,
           "y": 30,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "hatchet": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "hoe": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "kylie": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 30,
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "pick-shovel-pick": {
           "scaleX": 1.1,
           "scaleY": 1.2,
           "flipY": true,
           "x": 7,
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "pickshovel-scoop": {
           "scaleX": 0.65,
           "scaleY": 1.3,
           "y": -2,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "plains-blade": {
           "scaleX": 0.9,
@@ -670,41 +671,41 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.9,
           "scaleY": 0.947,
           "y": 45,
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "war-cleaver": {
           "scaleX": 1.17,
           "scaleY": 1.8,
           "x": 30,
           "y": 35,
+          "layerOrder": "haft-over-head",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "disallow": true
         },
         "warhammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "work-hammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "bshuakauitl": {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "y": 45,
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         }
       },
       "mounts": [
@@ -743,8 +744,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-mace": {
           "x": 5,
           "y": 30,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "fishing-spear": {
           "scaleX": 1.25,
@@ -863,12 +864,12 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_fishing_spear.png",
       "overrides": {
         "dagger-sword": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "dagger": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "fishing-mace": {
           "scaleX": 0.95,
@@ -877,29 +878,29 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
+          "layerOrder": "haft-over-head",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "disallow": true
         },
         "harlyao-broadsword": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "harlyao-longsword": {
           "scaleX": 1.1,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "hatchet": {
           "scaleX": 0.85,
           "scaleY": 0.85,
           "y": 25,
-          "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": false
         },
         "hoe": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "kylie": {
           "x": 1,
@@ -910,8 +911,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.2,
           "flipY": true,
           "x": 10,
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "pickshovel-scoop": {
           "scaleX": 0.8,
@@ -919,8 +920,8 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "plains-blade": {
           "scaleY": 0.5,
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "porakaneki-greatclub": {
           "scaleX": 0.9,
@@ -930,27 +931,27 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "disallow": false,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": false
         },
         "warhammer": {
           "scaleX": 0.82,
           "scaleY": 1.35,
           "y": 7,
           "rotation": 1,
-          "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": false
         },
         "work-hammer": {
           "scaleX": 0.8,
           "scaleY": 1.1,
           "y": -5,
-          "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": false
         },
         "bshuakauitl": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         }
       },
       "mounts": [
@@ -978,8 +979,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "fishing-spear": {
           "scaleX": 0.9,
@@ -987,16 +988,16 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "hatchet": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "hoe": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "kylie": {
           "scaleX": 0.75,
@@ -1013,8 +1014,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "plains-blade": {
           "scaleY": 0.65,
@@ -1035,12 +1036,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "warhammer": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "work-hammer": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
@@ -1085,8 +1086,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-mace": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "fishing-spear": {
           "scaleX": 0.9,
@@ -1102,20 +1103,20 @@ window.MODULAR_WEAPON_CONFIG = {
         "harlyao-longsword": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "hatchet": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "hoe": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "kylie": {
           "scaleX": 0.8,
@@ -1134,8 +1135,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "pickshovel-scoop": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "plains-blade": {
           "scaleX": 0.9,
@@ -1159,14 +1160,14 @@ window.MODULAR_WEAPON_CONFIG = {
         "warhammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "work-hammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "scaleX": 0.9,
@@ -1195,28 +1196,28 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_war-cleaver.png",
       "overrides": {
         "dagger-sword": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "dagger": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "fishing-mace": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "fishing-spear": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "harlyao-broadsword": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "harlyao-longsword": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "hatchet": {
           "scaleY": 1.2,
@@ -1224,41 +1225,41 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "hoe": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "kylie": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "pick-shovel-pick": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "pickshovel-scoop": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "plains-blade": {
           "scaleY": 0.456,
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "porakaneki-greatclub": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "war-cleaver": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "warhammer": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "work-hammer": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
@@ -1373,8 +1374,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "warhammer": {
           "scaleX": 1.65,
           "x": 5,
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "work-hammer": {
           "x": 5,
@@ -1502,8 +1503,8 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_hatchet.png",
       "overrides": {
         "hatchet": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
@@ -1587,8 +1588,8 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_hoe.png",
       "overrides": {
         "hoe": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
@@ -1672,8 +1673,8 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_kylie.png",
       "overrides": {
         "kylie": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
@@ -1685,16 +1686,17 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
+          "scaleX": 0.75,
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
           "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head"
+          "layerOrder": "head-over-haft"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head"
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -1721,31 +1723,33 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "work-hammer": {
+          "scaleX": 0.5,
+          "scaleY": 2.5,
           "layerOrder": "head-over-haft"
         }
       },
-      "editorOnly": true,
+      "editorOnly": false,
       "mounts": [
         {
           "type": "eye",
           "start": {
-            "x": 203,
-            "y": 736
+            "x": 253.96693099224976,
+            "y": 955.1734838398783
           },
           "end": {
-            "x": 203,
-            "y": 656
+            "x": 311.3429622335276,
+            "y": 953.3378664626867
           }
         },
         {
           "type": "tang",
           "start": {
-            "x": 183,
-            "y": 696
+            "x": 378.31953952612565,
+            "y": 945.0718928356596
           },
           "end": {
-            "x": 223,
-            "y": 696
+            "x": 346.68046047387435,
+            "y": 972.9281071643404
           }
         }
       ],
@@ -1757,74 +1761,74 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_pick-shovel.png",
       "overrides": {
         "dagger-sword": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "dagger": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "fishing-mace": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "fishing-spear": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "harlyao-broadsword": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "harlyao-longsword": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "hatchet": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "hoe": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "kylie": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "pick-shovel-pick": {
+          "layerOrder": "head-over-haft",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": true
         },
         "pickshovel-scoop": {
+          "layerOrder": "haft-over-head",
           "animation": "thrust",
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "disallow": true
         },
         "plains-blade": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "porakaneki-greatclub": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "war-cleaver": {
-          "animation": "thrust",
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "animation": "thrust"
         },
         "warhammer": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "work-hammer": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         },
         "bshuakauitl": {
-          "animation": "thrust",
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "animation": "thrust"
         }
       },
       "editorOnly": true,
@@ -1872,8 +1876,8 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_plains_sword.png",
       "overrides": {
         "plains-blade": {
-          "disallow": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
