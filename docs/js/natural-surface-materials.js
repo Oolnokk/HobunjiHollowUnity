@@ -467,6 +467,8 @@
     const specs = {
       buildJungleTreeMesh: true,
       buildCrownedPineMesh: false,
+      buildDeadTreeMesh: false,
+      buildDeadBushMesh: false,
       buildShadewoodMesh: false,
       buildShrubMesh: false,
       buildWildernessBushMesh: false,

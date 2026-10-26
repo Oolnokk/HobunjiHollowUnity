@@ -48,6 +48,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Mao-ao_M::mao-ao_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('mao-ao', 'male'),
@@ -114,6 +115,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Tletingan_M::tl_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Tletingan_M::tl_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('tletingan', 'male'),
@@ -146,6 +148,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Kenkari_M::kenk_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('kenkari', 'male'),
@@ -201,6 +204,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Mao-ao_M::mao-ao_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('engh-sho', 'male'),
@@ -261,6 +265,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Mashtzarr_M::mashtz_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Mashtzarr_M::mashtz_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('mashtzarr', 'male'),
@@ -384,6 +389,7 @@
   // falls back to the first starter dye so clothing always has some color
   // even before the player has touched the picker.
   function selectedClothDye(which) {
+    if (_creatorSession?.cosmeticsOnly) return null; // Existing clothing dyes remain unchanged in grooming previews and results.
     const dyes = starterClothDyes();
     const id = which === 'B' ? _clothDyeBId : _clothDyeAId;
     return dyes.find(d => d.id === id) || dyes[0] || null;
@@ -1425,6 +1431,7 @@
       alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
+      knownFurnitureBlueprints: [...(memberState.knownFurnitureBlueprints || [])],
       cookingState:      { ...(memberState.cookingState || {}) },
       // These were being saved by game.js's saveMemberWorldData() but never
       // actually read back out here — every one of them silently reset on
@@ -1582,6 +1589,7 @@
       <div class="ob-two-col">${body}</div>
       <div class="ob-footer">
         <span class="ob-footer-hint">${_creatorSession ? esc(_creatorSession.hint || '') : 'Saved automatically — you can change this later.'}</span>
+        ${_creatorSession?.cosmeticsOnly ? '<button class="ob-sel-btn" id="ob-cancel-btn" data-ctrl-cancel>Cancel</button>' : ''}
         <button class="ob-start-btn" id="ob-start-btn">${_creatorSession ? esc(_creatorSession.confirmLabel) : '🌱 Start Farming'}</button>
       </div>
     </div>`;
@@ -1591,6 +1599,10 @@
     if (!_el) return;
     if (_flowStep === 'save-select') { rerenderSaveSelect(); return; }
     _el.innerHTML = renderOverlay();
+    if (_creatorSession?.cosmeticsOnly) {
+      _el.querySelectorAll('[data-ob-species], [data-ob-gender]').forEach(button => { button.disabled = true; });
+      _el.querySelector('[data-ob-tab="collections"]')?.remove();
+    }
     attachListeners();
     schedulePreviewRender();
   }
@@ -1606,11 +1618,13 @@
     });
 
     _el.querySelectorAll('[data-ob-tab]').forEach(btn => btn.addEventListener('click', () => {
+      if (_creatorSession?.cosmeticsOnly && btn.dataset.obTab !== 'appearance') return;
       _activeTab = btn.dataset.obTab;
       rerender();
     }));
 
     _el.querySelectorAll('[data-ob-species]').forEach(btn => btn.addEventListener('click', () => {
+      if (_creatorSession?.cosmeticsOnly) return;
       const sid   = btn.dataset.obSpecies;
       const spec  = SPECIES_DATA[sid];
       if (!spec) return;
@@ -1631,6 +1645,7 @@
     }));
 
     _el.querySelectorAll('[data-ob-gender]').forEach(btn => btn.addEventListener('click', () => {
+      if (_creatorSession?.cosmeticsOnly) return;
       if (btn.disabled) return;
       const g = btn.dataset.obGender;
       const gData = SPECIES_DATA[_state.appearance.speciesId]?.[g];
@@ -1651,7 +1666,7 @@
       const slot = sel.dataset.obSlot;
       const val  = sel.value || undefined;
       if (val) { _state.appearance.cosmetics[slot] = val; }
-      else     { delete _state.appearance.cosmetics[slot]; }
+      else     { _state.appearance.cosmetics[slot] = null; } // Explicit None must clear the slot instead of re-enabling randomized defaults.
       schedulePreviewRender();
     }));
 
@@ -1707,6 +1722,7 @@
     const nicknameEl = _el.querySelector('#ob-nickname');
     if (nicknameEl) nicknameEl.addEventListener('input', () => { _state.nickname = nicknameEl.value; });
 
+    _el.querySelector('#ob-cancel-btn')?.addEventListener('click', cancelCreator);
     const startBtn = _el.querySelector('#ob-start-btn');
     if (startBtn) startBtn.addEventListener('click', _complete);
   }
@@ -1794,6 +1810,7 @@
       playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
+      playerData.knownFurnitureBlueprints = [...(memberState.knownFurnitureBlueprints || [])];
       playerData.cookingState = { ...(memberState.cookingState || {}) };
       // Same fields as the returning-player branch above, for consistency —
       // memberState here is always freshly empty (a brand-new world/member),
@@ -1991,13 +2008,32 @@
       hideName: options.hideName === true,
       child: options.child === true,
       mode: String(options.mode || 'custom'),
+      cosmeticsOnly: options.cosmeticsOnly === true, // Grooming keeps character identity and equipped clothing fixed.
       onComplete: typeof options.onComplete === 'function' ? options.onComplete : null,
+      onCancel: typeof options.onCancel === 'function' ? options.onCancel : null, // Lets in-game editors release their movement/pause ownership without applying edits.
     };
     _flowStep = 'char-create';
     _state = makeDefaultState(options.speciesId || 'mao-ao', options.gender || 'male');
+    if (options.appearance) {
+      const initialAppearance = JSON.parse(JSON.stringify(options.appearance)); // Old/imported appearances may omit cosmetic or color maps.
+      _state.appearance = { ..._state.appearance, ...initialAppearance,
+        cosmetics: { ...(initialAppearance.cosmetics || {}) },
+        bodyColors: { ...(initialAppearance.bodyColors || options.resolvedProfile?.bodyColors || _state.appearance.bodyColors) },
+      };
+    }
+    if (Array.isArray(options.equippedCosmetics)) _state.equippedCosmetics = [...options.equippedCosmetics];
+    if (options.appliedDyes) _state.appliedDyes = JSON.parse(JSON.stringify(options.appliedDyes));
+    if (_creatorSession.cosmeticsOnly && options.resolvedProfile) {
+      for (const { slot } of currentGenderData()?.slots || []) {
+        const cosmetic = options.resolvedProfile[slot]; // Freeze current visible defaults so editing one cosmetic cannot reroll untouched slots.
+        _state.appearance.cosmetics[slot] = cosmetic?.id && cosmetic.id !== 'none' ? cosmetic.id : null;
+      }
+    }
     _activeTab = 'appearance';
-    _colorAIdx = 0;
-    _colorBIdx = 0;
+    const palette = currentGenderData()?.colorOptions || []; // Find active grooming swatches without replacing custom body colors.
+    const colorIndex = key => palette.findIndex(color => ['h', 's', 'v'].every(component => color[component] === _state.appearance.bodyColors?.[key]?.[component])); // Custom colors remain unselected but preserved.
+    _colorAIdx = options.appearance ? colorIndex('A') : 0;
+    _colorBIdx = options.appearance ? colorIndex('B') : 0;
     _clothDyeAId = null;
     _clothDyeBId = null;
     _el = mountOnboardingOverlay();
@@ -2008,8 +2044,19 @@
     return true;
   }
 
+  function cancelCreator() {
+    if (!_creatorSession) return false;
+    const session = _creatorSession; // Cancel applies no appearance or other character mutations.
+    _creatorSession = null;
+    _flowStep = null;
+    removeOnboardingOverlay();
+    document.dispatchEvent(new CustomEvent('hobunji-creator-session', { detail: { phase: 'close', mode: session.mode } }));
+    session.onCancel?.();
+    return true;
+  }
+
   function creatorSessionInfo() {
-    return _creatorSession ? { mode: _creatorSession.mode, child: _creatorSession.child } : null;
+    return _creatorSession ? { mode: _creatorSession.mode, child: _creatorSession.child, cosmeticsOnly: _creatorSession.cosmeticsOnly } : null;
   }
 
   function _completeCreatorSession() {
@@ -2044,5 +2091,5 @@
     _saveFlowStep = null;
   }
 
-  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, creatorSessionInfo };
+  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, cancelCreator, creatorSessionInfo };
 })();

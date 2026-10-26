@@ -162,6 +162,7 @@ window.SCRATCHBONES_CONFIG = {
     },
     "movement": {
       "perpRotDeadzoneDeg": 40,
+      "toolEdgeOnDeadzoneDeg": 10,
       "creaturePerpRotDeadzoneDeg": 27.5,
       "npc": {
         "speedTilesPerSecond": 1.25,
@@ -589,7 +590,8 @@ window.SCRATCHBONES_CONFIG = {
               ]},
               { "slot": "facialHair", "label": "Facial Hair", "options": [
                 { "id": null, "label": "None" },
-                { "id": "appearance::Mao-ao_M::mao-ao_wildbeard", "label": "Wild Beard" }
+                { "id": "appearance::Mao-ao_M::mao-ao_wildbeard", "label": "Wild Beard" },
+                { "id": "appearance::Mao-ao_M::mao-ao_grandbeard", "label": "Grand Beard" }
               ]}
             ],
             "colorOptions": [
@@ -679,7 +681,8 @@ window.SCRATCHBONES_CONFIG = {
               ]},
               { "slot": "facialHair", "label": "Facial Hair", "options": [
                 { "id": null, "label": "None" },
-                { "id": "appearance::Mashtzarr_M::mashtz_wildbeard", "label": "Wild Beard" }
+                { "id": "appearance::Mashtzarr_M::mashtz_wildbeard", "label": "Wild Beard" },
+                { "id": "appearance::Mashtzarr_M::mashtz_grandbeard", "label": "Grand Beard" }
               ]}
             ],
             "colorOptions": [
@@ -4439,7 +4442,8 @@ window.SCRATCHBONES_CONFIG.game.layout.fitter = window.SCRATCHBONES_CONFIG.game.
         ]},
         { slot: 'facialHair', label: 'Facial Hair', options: [
           { id: null, label: 'None' },
-          { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' }
+          { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
+          { id: 'appearance::Kenkari_M::kenk_grandbeard', label: 'Grand Beard' }
         ]}
       ],
       colorOptions: [

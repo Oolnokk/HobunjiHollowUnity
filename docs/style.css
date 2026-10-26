@@ -21,6 +21,7 @@
       --border: rgba(255, 255, 255, 0.13);
       --border-bright: rgba(255, 255, 255, 0.22);
       --text: #f0ffe6;
+      --gameplay-font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace; /* Shared by the game shell and modal overlays. */
       --muted: #8aad8f;
       --accent: #f9e28a;
       --accent-dim: rgba(249, 226, 138, 0.18);
@@ -43,7 +44,7 @@
       height: 100%; overflow: hidden;
       background: var(--bg);
       color: var(--text);
-      font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
+      font-family: var(--gameplay-font-family);
       letter-spacing: 0.02em;
       -webkit-font-smoothing: antialiased;
     }

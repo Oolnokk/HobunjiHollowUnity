@@ -326,6 +326,7 @@
   }
 
   function randomizeCreationLook(overlay, speciesId, gender) {
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // Grooming begins with the current character, never a randomized replacement.
     const identityKey = `${speciesId}::${gender}`;
     if (randomizingLook || !speciesId || identityKey === lastRandomizedIdentity) return;
     randomizingLook = true;
@@ -880,7 +881,7 @@
     // tear it down again once the session's card has faded out.
     document.addEventListener('hobunji-creator-session', event => {
       if (event.detail?.phase === 'open') startObservers();
-      else if (event.detail?.phase === 'close') setTimeout(stopObservers, 500);
+      else if (event.detail?.phase === 'close') setTimeout(() => { if (!window.HobunjiOnboarding?.creatorSessionInfo?.()) stopObservers(); }, 500);
     });
 
     // Neither observer is expensive (both are childList-only, direct children

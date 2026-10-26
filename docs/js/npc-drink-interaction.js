@@ -30,13 +30,30 @@
     };
   }
 
+  // The bottle's opening: its plane's top edge in holder space (reused vector; null without a plane).
+  function bottleAperture(interaction) {
+    const plane = interaction.bottlePlane;
+    const height = Number(plane?.geometry?.parameters?.height);
+    if (!(height > 0)) return null;
+    plane.updateMatrix();
+    return (interaction.apertureScratch ||= new deps.THREE.Vector3()).set(0, height * (plane.scale.y || 1) / 2, 0).applyMatrix4(plane.matrix);
+  }
+
   function applyHolderPose(interaction, pose) {
     const { THREE } = deps;
     const { holder, bottlePlane, hand, poseQuaternion } = interaction;
-    holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
-    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, interaction.avatarGroup || interaction.walker?.avatarGroup, holder.parent)) {
-      holder.position.x += pose.x; holder.position.y += pose.y; holder.position.z += pose.z;
+    const avatar = interaction.avatarGroup || interaction.walker?.avatarGroup;
+    const attach = window.SharedAttackPose;
+    if (pose.headRelative && attach && avatar) {
+      interaction.headFrame ||= attach.createHeadFrame(THREE);
+      if (bottlePlane) bottlePlane.rotation.x = Math.PI / 2;
+      // Head-anchored: the bottle's opening mates with the species mouth point and the head supplies rotation and scale.
+      if (attach.headFrame(interaction.headFrame, avatar)) {
+        attach.placeAtMouth(holder, interaction.headFrame, pose, 0.5, bottleAperture(interaction), holder.parent);
+        return;
+      }
     }
+    holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
     holder.scale.setScalar(0.5);
     poseQuaternion.yaw.setFromAxisAngle(poseQuaternion.up, THREE.MathUtils.degToRad(pose.yaw));
     poseQuaternion.pitch.setFromAxisAngle(poseQuaternion.right, THREE.MathUtils.degToRad(pose.pitch));

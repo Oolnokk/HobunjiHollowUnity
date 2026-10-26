@@ -52,3 +52,86 @@ assert.equal(tile.floraKind, 'copse');
 assert.equal(persisted.has('map_western_slope'), false);
 assert.equal(render({ FoliageGenerator }, 'map_western_slope', tile, {}, 0, 0), 'buildDeadTreeMesh');
 console.log('Western Slope actual axe yields, felling persistence and offscreen regrowth passed.');
+
+// Regress the actual production natural-surface wrapper: both leafless builders
+// should receive the identical crowned-pine bark PNG, tint and full-mesh UV fit.
+const foliageCode = fs.readFileSync('docs/js/foliage-generator.js', 'utf8'); // Checks source presets rather than a second hard-coded tint in the test.
+for (const species of ['deadTree', 'deadBush']) {
+  assert.match(foliageCode, new RegExp('TREE_PRESETS\\.' + species + '\\s*=\\s*\\{[^;]*barkColorHex:\\s*TREE_PRESETS\\.crownedPine\\.barkColorHex'));
+}
+const naturalCode = fs.readFileSync('docs/js/natural-surface-materials.js', 'utf8'); // Executes the live material/UV adapter with lightweight Three mocks.
+const naturalConfigCode = fs.readFileSync('docs/config/natural-surface-materials.js', 'utf8'); // Reads the same configurable trunk PNG path as live trees.
+class BarkTestColor {
+  constructor(value) {
+    const hex = typeof value === 'number' ? value : parseInt(String(value).replace('#', ''), 16); // Mock source/override color used for tint quantization.
+    this.isColor = true;
+    this.r = ((hex >>> 16) & 255) / 255;
+    this.g = ((hex >>> 8) & 255) / 255;
+    this.b = (hex & 255) / 255;
+  }
+}
+let nextTextureId = 0; // Distinguishes created mock PNG textures to verify material-cache sharing.
+const barkThree = {
+  Color: BarkTestColor,
+  CanvasTexture: class {
+    constructor(image) { this.image = image; this.uuid = 'bark-test-' + (++nextTextureId); this.userData = {}; }
+  },
+  MeshBasicMaterial: class {
+    constructor(options) { Object.assign(this, options); this.isMeshBasicMaterial = true; this.userData = {}; }
+  },
+  BufferAttribute: class {
+    constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
+  },
+  ClampToEdgeWrapping: 1001,
+  RepeatWrapping: 1002,
+};
+function makeBarkTestGroup() {
+  const position = { // Geometry spans height 2 and radius 1, making the UV normalization observable.
+    count: 4,
+    getX: i => [1, 0, -1, 0][i],
+    getY: i => [0, 1, 2, 1][i],
+    getZ: i => [0, 1, 0, -1][i],
+  };
+  const geometry = {
+    attributes: { position },
+    getAttribute(name) { return this.attributes[name]; },
+    setAttribute(name, attribute) { this.attributes[name] = attribute; },
+    computeBoundingBox() { this.boundingBox = { min: { x: -1, y: 0, z: -1 }, max: { x: 1, y: 2, z: 1 } }; },
+  };
+  const mesh = { isMesh: true, geometry, material: { color: new BarkTestColor(0x4a3b33), isMeshLambertMaterial: true }, userData: {} };
+  return { children: [mesh] };
+}
+const barkBuilders = Object.fromEntries(
+  ['buildCrownedPineMesh', 'buildDeadTreeMesh', 'buildDeadBushMesh'].map(name => [name, makeBarkTestGroup])
+); // All builder outputs enter NaturalSurfaceMaterials through the same original FoliageGenerator API.
+const barkWindow = { THREE: barkThree, FoliageGenerator: barkBuilders }; // Production wrapper installs on this namespace.
+vm.runInNewContext(naturalConfigCode, { window: barkWindow });
+const barkCanvasDocument = { createElement: () => ({ getContext: () => ({ fillRect() {} }) }) }; // No browser required for initial tinted-PNG placeholder.
+class BarkTestImage { set src(value) { this.requestedPath = value; } } // Keeps authored PNG load inert; inspect its material request instead.
+vm.runInNewContext(naturalCode, { window: barkWindow, document: barkCanvasDocument, Image: BarkTestImage, console });
+const pineBark = barkBuilders.buildCrownedPineMesh(0, 0).children[0]; // Baseline uses the real crowned-pine wrapper branch.
+const barkTexturePath = barkWindow.NaturalSurfaceMaterialConfig.surfaces.trunks.texture; // Authored path comes from config (not a guessed filename).
+const pineTint = pineBark.material.map.userData.naturalSurfaceBodySpriteTintTarget; // Resolved/cached color of the original pine wood.
+for (const name of ['buildDeadTreeMesh', 'buildDeadBushMesh']) {
+  const mesh = barkBuilders[name](0, 0).children[0]; // Calls the production FoliageGenerator wrapper, not a copied function.
+  assert.equal(mesh.userData.naturalSurface, 'trunks', name + ' must be recognized as wooden foliage');
+  assert.equal(mesh.geometry.userData.naturalSurfaceUvMapping, 'cylindrical-stretch', name + ' must stretch-map like a pine');
+  assert.equal(mesh.geometry.attributes.uv.array.length, 8, name + ' must create one UV per position');
+  assert.equal(mesh.geometry.attributes.uv.array[1], 0, name + ' must start the bark texture at the root');
+  assert.equal(mesh.geometry.attributes.uv.array[5], 1, name + ' must reach the bark top');
+  assert.equal(mesh.material.map.userData.hobunjiAuthoredSurfacePath, barkTexturePath, name + ' must use the pine PNG');
+  assert.equal(mesh.material.map.userData.naturalSurfaceBodySpriteTintTarget, pineTint, name + ' must match the pine bark tint');
+  assert.strictEqual(mesh.material.map, pineBark.material.map, name + ' should reuse the same tinted PNG cache entry');
+}
+console.log('Western Slope leafless trunks/bushes use crowned-pine stretch UVs, tint, and cached bark PNG: PASS');
+
+const indexHtml = fs.readFileSync('docs/index.html', 'utf8'); // Runtime HTML must request freshly versioned foliage and house loaders after this change.
+const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // The house loader must in turn request the new NaturalSurfaceMaterials wrapper.
+const foliageVersion = indexHtml.match(/js\/foliage-generator\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache generation for the actual procedural leafless geometry builder.
+const houseVersion = indexHtml.match(/js\/house-pieces\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache generation for the authoritative natural-surface child loader.
+const naturalVersion = houseLoader.match(/'natural-surface-materials\.js\?v=([A-Za-z0-9_-]+)'/)?.[1]; // Cache generation for the new dead-tree/dead-bush wrapper registrations.
+assert.equal(foliageVersion, '20261025westernbark1', 'the shipped game must invalidate stale foliage-generator.js caches');
+assert.equal(houseVersion, foliageVersion, 'the shipped game must refresh house-pieces.js for the changed natural-surface child URL');
+assert.equal(naturalVersion, foliageVersion, 'the shipped game must invalidate stale natural-surface-materials.js caches');
+assert(fs.existsSync('docs/' + barkTexturePath), 'the authored trunk PNG requested by the pine and leafless vegetation must exist');
+console.log('Western Slope PNG asset and mobile game cache-generation checks: PASS');

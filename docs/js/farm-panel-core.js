@@ -69,6 +69,11 @@
       store[WINDOW_PERSISTENCE_REPAIR_SENTINEL] = 1; // Fresh worlds should not receive a later compensation batch just for opening storage twice.
       changed = true;
     }
+    if (!store.__starterGroomingKitGrantedV1) {
+      store.groomingKitFurniture = Math.max(0, Number(store.groomingKitFurniture) || 0) + 1;
+      store.__starterGroomingKitGrantedV1 = 1;
+      changed = true;
+    }
     if (changed) deps._saveWorldStorage(store);
     return store;
   }
@@ -1546,7 +1551,7 @@
     }
     const boxList = document.getElementById('farmStorageBoxList');
     if (boxList) {
-      const keys = Object.keys(store).filter(k => k !== STARTER_WINDOW_STORAGE_SENTINEL && (store[k] || 0) > 0);
+      const keys = Object.keys(store).filter(k => !k.startsWith('__') && (store[k] || 0) > 0);
       boxList.innerHTML = keys.length ? '' : '<div class="farm-note">Storage is empty.</div>';
       keys.forEach(k => {
         const def = deps.ITEM_DEFS[k] || { icon: '📦', label: k };
@@ -1554,6 +1559,13 @@
         row.className = 'farm-storage-row';
         row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${deps.esc(def.label)} ×${store[k]}</span><button class="settings-small-btn">Take</button>`;
         row.querySelector('button').addEventListener('click', () => withdrawFromFarmStorage(k, 1));
+        if (window.FurniturePlacer?.canPlaceFromStorage?.(k)) {
+          const placeButton = document.createElement('button'); // Starts ordinary reticle placement directly from shared farm stock.
+          placeButton.className = 'settings-small-btn';
+          placeButton.textContent = 'Place';
+          placeButton.addEventListener('click', () => window.FurniturePlacer.placeFromStorage(k));
+          row.appendChild(placeButton);
+        }
         boxList.appendChild(row);
       });
     }
@@ -1724,6 +1736,7 @@
   }
 
   window.FarmPanel = {
+    ensureStarterFurnitureStorage: ensureStarterWindowsInFarmStorage,
     init,
     render: renderFarmPanel,
     renderStablePanel,

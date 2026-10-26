@@ -1692,7 +1692,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
-        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
+        // Campfire Kit is automatically known; no permanent blueprint item occupies the bag.
         gold: 100, // Covers a first seed order at SUPPLY_CATALOG prices on day 1.
       };
 
@@ -2447,6 +2447,7 @@
       // These are placed inside the house. Each has a GLB model in assets/models/furniture/.
       // area: 'interior' = house only, 'farm' = farm only, 'any' = either
       const DECORATIVE_FURNITURE_DEFS = {
+        groomingKit: { itemKey: 'groomingKitFurniture', icon: '🪞', name: 'Grooming Kit', price: 20, fw: 1, fd: 1, color: 0x8b6540, area: 'any', alwaysKnown: true, desc: 'A basin of water on a short table. Change your appearance cosmetics.' },
         basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
         doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
@@ -2535,6 +2536,7 @@
         .map(([, def]) => ({
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
           price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture',
+          alwaysKnown: !!def.alwaysKnown || def.itemKey === 'campfireKitFurniture', // Starter designs need no physical recipe.
           moteOnly: !!def.moteOnly, masteryUnlockId: def.masteryUnlockId || null, // Preserve mastery gates when projecting definitions into shop/blueprint catalogs.
         }));
 
@@ -2606,6 +2608,7 @@
         bedrollFurniture: { puktukWool: 3 },
         benchFurniture: { wood: 3 },
         bookshelfFurniture: { wood: 5 },
+        groomingKitFurniture: { wood: 3, bar_tin: 1 },
         bucketFurniture: { bar_tin: 2 },
         candleTableFurniture: { wood: 2, bar_nativeCopper: 1 },
         chairSimpleFurniture: { wood: 2 },
@@ -2646,13 +2649,13 @@
         desc: item.desc,
         moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
         masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
-        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
-        // building from a blueprint only ever spends materials, never the
-        // blueprint itself), so it's priced above the finished piece's own
+        // Reading consumes the paper and permanently learns the design;
+        // building then spends only materials. Price the lesson above the finished piece's own
         // price rather than a fraction of it.
         price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item),
         category,
+        alwaysKnown: !!item.alwaysKnown, // Preserves automatically known starter designs in CraftingPanel.
       }));
 
       const LIVESTOCK_CATALOG = [
@@ -3045,15 +3048,17 @@
         return obj;
       }
 
-      function placeProcessingFurniture(col, row, furnitureKey) {
+      function placeProcessingFurniture(col, row, furnitureKey, source = 'bag') {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture.' };
         if (!canPlaceFurnitureAt(col, row)) return { ok: false, message: 'Place furniture on an empty grass, tilled, or raised tile.' };
-        if ((inventory[def.itemKey] || 0) < 1) return { ok: false, message: 'No ' + def.name + ' in your bag.' };
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) return { ok: false, message: 'No available ' + def.name + ' or furniture permission.' };
         const obj = makeProcessingFurniture(col, row, furnitureKey);
         if (!obj) return { ok: false, message: 'Could not make furniture object.' };
-        inventory[def.itemKey]--;
-        clampInventoryStack(def.itemKey);
+        if (!consumeFurnitureStock(def.itemKey, source)) {
+          obj.reset(); // Dispose the new processor/VFX before it can enter the world when storage cannot be debited.
+          return { ok: false, message: 'Could not save furniture consumption. Nothing was placed.' };
+        }
         worldObjects.set(col + ',' + row, obj);
         processingFurnitureObjects.add(obj);
         return { ok: true, message: 'Placed ' + def.icon + ' ' + def.name + '.' };
@@ -3609,6 +3614,7 @@
           return col >= f.col && col < f.col + size.fw && row >= f.row && row < f.row + size.fd;
         });
         if (!o) return null;
+        if (o.key === 'groomingKit') return makeGroomingInteractable();
         if (o.key === 'hearth') return makeCookingInteractable();
         if (o.key === 'loom') return makeLoomInteractable(false); // Simple Loom keeps the ordinary one-pattern weaving rules.
         if (o.key === 'advancedLoom') return makeLoomInteractable(true); // Advanced Loom opts the shared panel into overpass authoring and doubled overpass costs.
@@ -3676,7 +3682,7 @@
         }));
       }
 
-      function placeDecorativeFurniture(col, row, furnitureKey) {
+      function placeDecorativeFurniture(col, row, furnitureKey, source = 'bag') {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture type.' };
         const isInInterior = currentArea === 'interior';
@@ -3685,12 +3691,14 @@
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
         if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
-        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return { ok: false, message: `No available ${def.name} or furniture permission.` };
         const targetScene = isInInterior ? interiorScene : scene;
         const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
+        if (!consumeFurnitureStock(itemKey, source)) {
+          disposeDecorativeFurniture({ ...result, key: furnitureKey, col, row, area: currentArea });
+          return { ok: false, message: 'Could not save furniture consumption. Nothing was placed.' };
+        }
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
         const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner }; // Stable save record also owns editable table membership.
@@ -3922,15 +3930,34 @@
       // item instead of a terrain/crop type. Set by the Furniture Placer
       // panel (js/furniture-placer.js), consumed by the pointerdown handler
       // right after the farm editor's own.
+      let furniturePlacementSource = 'bag'; // Armed placements debit this source only after a successful placement.
       let furniturePlacementArmedKey = null;
       let furnitureMoveArmedId = null;
       let furniturePlacementGhost = null;
-      function armFurniturePlacement(itemKey) {
+      function armFurniturePlacement(itemKey, source = 'bag') {
+        furniturePlacementSource = source === 'storage' ? 'storage' : 'bag';
         furniturePlacementArmedKey = itemKey || null;
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
         refreshActionBar(); // Placement mode owns the mobile action arch immediately after the selector closes.
+      }
+      function furnitureStock(itemKey, source = 'bag') {
+        if (source === 'storage' && !hasFarmPermission('storage')) return 0;
+        return Math.max(0, Number((source === 'storage' ? _loadWorldStorage() : inventory)?.[itemKey]) || 0);
+      }
+      function consumeFurnitureStock(itemKey, source = 'bag') {
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return false;
+        if (source === 'storage') {
+          const store = _loadWorldStorage(); // Read at commit time so intervening storage changes cannot be overwritten.
+          store[itemKey]--;
+          if (store[itemKey] <= 0) delete store[itemKey];
+          if (!_saveWorldStorage(store)) return false;
+        } else {
+          inventory[itemKey]--;
+          clampInventoryStack(itemKey);
+        }
+        return true;
       }
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
@@ -4385,6 +4412,51 @@
           onAction(action) {
             if (action !== 'obj_sit' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
             return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0);
+          },
+        };
+      }
+
+      function makeGroomingInteractable() {
+        return {
+          interactIcon: '🪞', interactLabel: 'Groom',
+          getButtons: () => [{ icon: '🪞', label: 'Change Appearance', action: 'obj_interact', style: 'primary', allowed: !isPlayerInCombat() }],
+          onAction(action) {
+            if (action !== 'obj_interact' || isPlayerInCombat()) return { ok: false, message: 'Cannot groom right now.' };
+            const profile = _playerData || window.__hobunjiPlayerProfile; // Preserve current identity, equipment, progression and live world data.
+            if (!profile?.appearance) return { ok: false, message: 'Appearance is not ready.' };
+            const previewProfile = window.EquipmentPanel?.applyGearClothingToPlayerData?.(profile) || profile; // Preview the actual worn clothing while editing only appearance cosmetics.
+            let resolvedProfile = null; // Canonical rendered cosmetic choices, including legacy randomized defaults omitted from the saved selections.
+            try { resolvedProfile = window.NpcAvatarPreview?.buildProfileFromNpcExport?.(previewProfile); }
+            catch (error) { return { ok: false, message: 'Your appearance is still loading. Please try again.' }; }
+            if (!resolvedProfile) return { ok: false, message: 'Your appearance is still loading. Please try again.' };
+            const started = window.HobunjiOnboarding?.openCreator({
+              title: 'Grooming Kit', confirmLabel: 'Apply Appearance', hideName: true, cosmeticsOnly: true, mode: 'grooming',
+              speciesId: profile.appearance.speciesId, gender: profile.appearance.gender,
+              resolvedProfile, appearance: previewProfile.appearance, equippedCosmetics: previewProfile.equippedCosmetics, appliedDyes: previewProfile.appliedDyes,
+              onCancel: closeMenu,
+              onComplete(result) {
+                closeMenu();
+                const bodyColors = { ...profile.appearance.bodyColors }; // Preserve equipment tints and change only the creator's body palette channels.
+                for (const key of ['A', 'B', 'C']) if (result.appearance.bodyColors[key]) bodyColors[key] = { ...result.appearance.bodyColors[key] };
+                const appearance = { ...profile.appearance, cosmetics: { ...result.appearance.cosmetics }, bodyColors }; // Species and gender remain the saved values.
+                if (!window.CharacterMetaSave?.update(character => { character.appearance = appearance; })) {
+                  showToast('Could not save your appearance. Please try again.', false);
+                  return;
+                }
+                profile.appearance = appearance;
+                if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = appearance;
+                refreshPlayerAvatar();
+                saveMemberWorldData();
+                showToast('Appearance updated.', true);
+              },
+            });
+            if (started) {
+              menuOpen = true; paused = true; // Ordinary modal gates stop world time, movement and world actions during grooming.
+              player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+              releaseShoulderSurfPointerLock();
+              window.WorldPopupText?.clearInteractionPrompts?.();
+            }
+            return { ok: !!started, message: started ? 'Choose your appearance.' : 'Appearance editor is already open.' };
           },
         };
       }
@@ -5547,17 +5619,11 @@
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
-        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
-        if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-        // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+        const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
+        if (!spatial || spatial.gain <= 0.002) return;
         const tile = window.AudioSystem?.footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
-        // Whistled companions stay quiet (like the player) and unpanned —
-        // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
-        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
-        window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff, pan);
+        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
+        window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain, spatial.panX, { source: c }); // 3D source lets recorded and procedural hostile steps share weapon HRTF.
       }
 
       // Terrain/structure gate for creature movement — unlike tileSpeedAt
@@ -8515,7 +8581,7 @@
       function _loadWorldBreedingPairs() { return window.WorldMetaStore.loadBreedingPairs(_tothalWorldId()); }
       function _saveWorldBreedingPairs(list) { window.WorldMetaStore.saveBreedingPairs(_tothalWorldId(), list); }
       function _loadWorldStorage() { return window.WorldMetaStore.loadStorage(_tothalWorldId()); }
-      function _saveWorldStorage(store) { window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
+      function _saveWorldStorage(store) { return window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
 
       // Jubmir's daily trader stock/shop page now lives in
       // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
@@ -8563,6 +8629,7 @@
         member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
         member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
+        member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
         member.cookingState = window.CookingSystem.serialize();
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
@@ -9935,6 +10002,7 @@
       // itemKey -> () => { getButtons(), onAction() } factory, for furniture
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
+        groomingKitFurniture: () => makeGroomingInteractable(),
         hearthFurniture: () => makeCookingInteractable(),
         loomFurniture: () => makeLoomInteractable(false), // Map-authored Simple Looms share the same ordinary interaction object as player-placed ones.
         advancedLoomFurniture: () => makeLoomInteractable(true), // Map-authored Advanced Looms opt into overpass weaving through the same interaction path.
@@ -12206,14 +12274,11 @@
             if (this.area !== currentArea) return; // not in the player's current area; inaudible
             if (!window.AudioSystem?.footstepAdvance(this, distTiles * TILE)) return;
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
-            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
-            if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-            // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
-            const pan = Math.max(-1, Math.min(1, (wx - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+            const source = { x: wx, y: wy, areaId: this.area, root }; // Real walker elevation stays attached to its audible footfalls.
+            const spatial = window.AudioSystem?.combatAudioSpatial(source, { earshotTiles: 9 });
+            if (!spatial || spatial.gain <= 0.002) return;
             const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
-            window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
+            window.AudioSystem?.playFootstepSfx(this.area, tile, spatial.gain, spatial.panX, { source });
           },
           // Ad-hoc grid pathfinding fallback — used when neither a direct
           // beeline nor the authored route-node graph can get this NPC to
@@ -15630,6 +15695,8 @@
         // they are never collected by a proximity tick or registered on the farm.
         if (_isCavernBuildingArea(currentArea)) return window.CaveSiteSystem?.objectAt?.(currentArea, col, row) || null;
         if (currentArea !== 'farm') return null;
+        const groomingKit = interiorFurnitureObjects.find(obj => obj.area === 'farm' && obj.key === 'groomingKit' && obj.col === col && obj.row === row); // Lookup from placed records also covers restored/moved furniture without another registry.
+        if (groomingKit) return makeGroomingInteractable();
         return worldObjects.get(col + ',' + row) || null;
       }
 
@@ -15972,7 +16039,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `Read from your bag to consume this blueprint and permanently learn ${bp.name} for this character in this world. Build it from the Crafting tab using the listed materials.`,
           };
         }
       });
@@ -22803,21 +22870,141 @@
         };
       }
 
-      const _headPoseAnchor = new THREE.Vector3(); // Reused by drink and ranged poses; no per-frame head-vector allocation.
+      const _headFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale, refreshed each head-anchored frame.
+      const _headPlacePose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Reused authored offset handed to SharedAttackPose.placeAtMouth.
+      const _headApertureCache = new Map(); // `${itemKey}|${species}|${gender}` -> holder-space aperture, cleared whenever grip data changes.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _headApertureCache.clear());
+      // The tool-holder-space aperture that mates with the portrait mouth (null when the tool defines none).
+      function playerToolAperture(itemKey, context = 'ranged') {
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_headApertureCache.has(key)) _headApertureCache.set(key, window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(itemKey, context, identity) || null);
+        return _headApertureCache.get(key);
+      }
+      const _gripAnchorCache = new Map(); // `${itemKey}|${context}|${species}|${gender}` -> holder-space main-hand grip, cleared with the aperture cache.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _gripAnchorCache.clear());
+      // Hand-aligned poses scale around the main-hand grip, so the hand stays put while the weapon grows or shrinks.
+      function anchorPlayerToolScaleAtGrip(scale, context) {
+        if (!(Math.abs((Number(scale) || 1) - 1) > 1e-9)) return;
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        if (!itemKey) return;
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_gripAnchorCache.has(key)) _gripAnchorCache.set(key, window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(itemKey, context, identity) || null);
+        SharedAttackPose.anchorScaleAtPoint(toolHolder, _gripAnchorCache.get(key), scale);
+      }
+      // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
+      // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      // A ranged weapon aims with its authored stance only when (1) RangedWeapons has a config for it and (2) its animStyle resolves to
+      // 'ranged'. Either can be missing if registration ran before this item's definition existed, and the game then silently shows the
+      // generic ranged stance for the whole session. While aiming, notice that, re-run the registrars, and say which condition it was.
+      let _rangedStanceCheckAt = 0;
+      const _rangedStanceReported = new Set();
+      function ensureRangedStanceReady(itemKey) {
+        if (!itemKey) return;
+        const now = performance.now();
+        if (now - _rangedStanceCheckAt < 1000) return; // One cheap lookup a second is plenty; this is a safety net, not a per-frame path.
+        _rangedStanceCheckAt = now;
+        const hasConfig = !!window.RangedWeapons?.config?.[itemKey];
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const styleOk = !def || def.animStyle === 'ranged';
+        if (hasConfig && styleOk) return;
+        const archetypes = window.HobunjiRangedWeaponArchetypes;
+        if (!hasConfig) archetypes?.patchGeneratedDefinitions?.();
+        if (!styleOk) { archetypes?.patchGeneratedDefinitions?.(); window.HobunjiDualRoleRangedAnimStyle?.refresh?.(); }
+        const repaired = !!window.RangedWeapons?.config?.[itemKey] && (!def || def.animStyle === 'ranged');
+        const reason = `${!hasConfig ? 'no-ranged-config' : ''}${!hasConfig && !styleOk ? '+' : ''}${!styleOk ? 'anim-style-not-ranged' : ''}`;
+        const report = `${itemKey}:${reason}:${repaired ? 'repaired' : 'unrepaired'}`;
+        if (!_rangedStanceReported.has(report)) { // Once per distinct outcome, so a persistent failure does not flood the log.
+          _rangedStanceReported.add(report);
+          window.__farmLog?.(`[ranged-stance] ${itemKey} would have used the fallback ranged stance (${reason}); ${repaired ? 'repaired by re-running registration' : 'could not be repaired'}.`, 'warn', 'combat');
+        }
+        if (repaired) rebuildToolMeshes(); // The loaded/unloaded sprite variants depend on the same registration.
+      }
+      let _headAnchorFallbackReported = false;
+      function reportHeadAnchorFallback() { // A head-anchored pose whose head frame could not be resolved is drawn hand-relative: that is the fallback stance.
+        if (_headAnchorFallbackReported) return;
+        _headAnchorFallbackReported = true;
+        const rig = playerAvatarGroup?.userData?.neckRig;
+        window.__farmLog?.(`[ranged-stance] head-anchored pose fell back to the hand-relative stance: head frame unavailable (rig ${rig?.available ? 'ok' : 'missing'}, mouth pixel ${window.SharedAttackPose.mouthPixel(playerAvatarGroup) ? 'ok' : 'missing'}, skinned resolver ${window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition ? 'ok' : 'missing'}).`, 'warn', 'combat');
+      }
+      let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
+      const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
+      function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
+        _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
+        _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
+        const aperture = playerToolAperture(equipmentSlots.ranged);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture);
+        Object.assign(_toolAttachJob.pose, _headPlacePose);
+        _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
+      }
+      let _heldAttachStamp = 0; // Bumped once per updateHeldItemHolder.
+      const _heldAttachJob = { stamp: -1, scale: 0.5, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
+      const _attachSaved = { toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1, tool: false, held: false };
+      function _restoreHeadAttachments() { // Restores gameplay-time transforms after the draw so logic never reads the render-time pose.
+        if (_attachSaved.tool) { toolHolder.position.copy(_attachSaved.toolPos); toolHolder.quaternion.copy(_attachSaved.toolQuat); toolHolder.scale.setScalar(_attachSaved.toolScale); _attachSaved.tool = false; }
+        if (_attachSaved.held) { heldItemHolder.position.copy(_attachSaved.heldPos); heldItemHolder.quaternion.copy(_attachSaved.heldQuat); heldItemHolder.scale.setScalar(_attachSaved.heldScale); _attachSaved.held = false; }
+      }
+      // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
+      SharedAttackPose.setCameraProvider(() => camera); // Edge-on avoidance judges the flat tool sprite against the live gameplay camera.
+      // The game draws several passes per frame (outlines, depth, held overlay) and each one reaches this hook with an identical head, so the
+      // placement is solved once per frame/camera and replayed onto the holders for the remaining passes.
+      const _attachCache = { valid: false, toolStamp: -1, heldStamp: -1, camera: null, toolActive: false, heldActive: false,
+        toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1 };
+      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.((undo, _renderDebug, renderCamera) => {
+        const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
+        const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
+        if (!toolActive && !heldActive) return;
+        const cache = _attachCache;
+        const hit = cache.valid && cache.toolStamp === _toolAttachStamp && cache.heldStamp === _heldAttachStamp && cache.camera === renderCamera
+          && cache.toolActive === toolActive && cache.heldActive === heldActive;
+        if (toolActive) { _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true; }
+        if (heldActive) { _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true; }
+        if (hit) { // Later pass of the same frame: replay the solved placement.
+          if (toolActive) { toolHolder.position.copy(cache.toolPos); toolHolder.quaternion.copy(cache.toolQuat); toolHolder.scale.setScalar(cache.toolScale); }
+          if (heldActive) { heldItemHolder.position.copy(cache.heldPos); heldItemHolder.quaternion.copy(cache.heldQuat); heldItemHolder.scale.setScalar(cache.heldScale); }
+          undo.push(_restoreHeadAttachments);
+          return;
+        }
+        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
+        _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
+        if (toolActive) {
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+          cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
+        }
+        if (heldActive) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+          cache.heldPos.copy(heldItemHolder.position); cache.heldQuat.copy(heldItemHolder.quaternion); cache.heldScale = heldItemHolder.scale.x;
+        }
+        _headFrame.cameraPosition = null;
+        cache.valid = true; cache.toolStamp = _toolAttachStamp; cache.heldStamp = _heldAttachStamp; cache.camera = renderCamera; cache.toolActive = toolActive; cache.heldActive = heldActive;
+        undo.push(_restoreHeadAttachments);
+      });
+      const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
+      // The bottle's opening: the plane's top edge (the first opaque row of an upright held sprite) in holder space.
+      function heldItemAperture() {
+        if (!_heldItemPlane?.geometry?.parameters) return null;
+        _heldItemPlane.updateMatrix();
+        const height = (Number(_heldItemPlane.geometry.parameters.height) || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1);
+        return _heldAperture.set(0, height / 2, 0).applyMatrix4(_heldItemPlane.matrix);
+      }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
-        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
-        if (pose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          heldItemHolder.position.set(_headPoseAnchor.x + pose.x, _headPoseAnchor.y + pose.y, _headPoseAnchor.z + pose.z);
-        }
-        heldItemHolder.scale.setScalar(0.5);
-        _heldItemHandMode = 'bottle';
-        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
-        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
-        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
-        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw); // Before the head frame reads the skinned head, so the mouth and rotation include this body turn.
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
-        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+        if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
+          Object.assign(_heldAttachJob.pose, { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll });
+          _heldAttachJob.stamp = _heldAttachStamp; // Replayed against the drawn head by the composer's post-head-aim hook.
+        } else {
+          heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+          heldItemHolder.scale.setScalar(0.5);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+          heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        }
+        _heldItemHandMode = 'bottle';
       }
 
       // Begins the shared drink-style windup animation on press. Plays forward
@@ -22879,11 +23066,11 @@
         const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
         playerMesh.add(sourceProbe);
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
-        if (neutralPose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          sourceProbe.position.set(_headPoseAnchor.x + neutralPose.x, _headPoseAnchor.y + neutralPose.y, _headPoseAnchor.z + neutralPose.z);
-        }
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        if (neutralPose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(sourceProbe, _headFrame, neutralPose, 0.5, heldItemAperture(), playerMesh); // Same mouth attach as the live held bottle.
+        }
         const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
         sourceObject.updateWorldMatrix(true, false);
         const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
@@ -22925,6 +23112,7 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
           || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
@@ -23262,6 +23450,8 @@
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
+        _toolAttachStamp++; // A head-anchored placement this frame re-stamps _toolAttachJob; an older stamp means the tool is no longer head-anchored.
+        if (activeTool === 'ranged') ensureRangedStanceReady(equipmentSlots.ranged); // Repairs (and reports) a ranged weapon that would otherwise fall back to the generic stance.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
@@ -23377,6 +23567,8 @@
           if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
+          const headAnchored = sampled.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Head-anchored poses take rotation, position and scale from the head's mouth frame alone; the camera only drives the head.
+          if (sampled.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -23392,14 +23584,12 @@
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
-            toolHolder.position.set(x, y, z).applyQuaternion(_qFac);
-            if (reticleAligned) {
-              toolHolder.position.set(x, y, z).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
-            }
-            toolHolder.position.add(_headPoseAnchor);
-          } else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+          if (headAnchored) placePlayerToolAtMouth(sampled.x, sampled.y, sampled.z, pitchRad, yawRad, rollRad, sampled.scale);
+          else {
+            if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+            anchorPlayerToolScaleAtGrip(sampled.scale, activeTool === 'ranged' ? 'ranged' : 'melee'); // Weapon scale pivots on the main-hand grip, not the holder origin.
+          }
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -23428,6 +23618,8 @@
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
+          const headAnchored = neutral.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Same mouth-frame rule as the pose-driven branch above.
+          if (neutral.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -23440,12 +23632,12 @@
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
-            toolHolder.position.set(neutral.x, neutral.y, neutral.z);
-            if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
-            toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
-          } else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+          if (headAnchored) placePlayerToolAtMouth(neutral.x, neutral.y, neutral.z, THREE.MathUtils.degToRad(neutral.pitch), THREE.MathUtils.degToRad(neutral.yaw), THREE.MathUtils.degToRad(neutral.roll), neutral.scale);
+          else {
+            if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+            anchorPlayerToolScaleAtGrip(neutral.scale, 'ranged'); // Idle ranged scale (e.g. the 1.77 crossbow stance) pivots on the main-hand grip.
+          }
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
@@ -27026,6 +27218,7 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
@@ -27506,6 +27699,10 @@
       window.addEventListener('keydown', (event) => {
         if (window.__mapEditorGizmoActive) { event.preventDefault(); return; }
         const key = event.key.toLowerCase();
+        if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) {
+          if (key === 'escape') { event.preventDefault(); window.HobunjiOnboarding.cancelCreator(); }
+          return; // Text/select navigation remains with the creator; gameplay/menu shortcuts cannot unpause it.
+        }
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
           const fishingBoundAction = getActionForButton('desktop', event.code);
@@ -28186,18 +28383,18 @@
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
           const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
           result = decorKey
-            ? placeDecorativeFurniture(col, row, decorKey)
+            ? placeDecorativeFurniture(col, row, decorKey, furniturePlacementSource)
             : processingKey
-              ? placeProcessingFurniture(col, row, processingKey)
+              ? placeProcessingFurniture(col, row, processingKey, furniturePlacementSource)
               : { ok: false, message: 'Furniture not found.' };
           showToast(result.message, result.ok);
           window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
-          if (result.ok && processingKey) {
+          if (result.ok) {
             window.HudUpdate.refreshItemScroll();
             window.FarmEditor.saveFarmLayout();
             saveMemberWorldData();
           }
-          if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
+          if (result.ok && furnitureStock(itemKey, furniturePlacementSource) <= 0) furniturePlacementArmedKey = null;
         }
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -28247,6 +28444,8 @@
           return {
             armed: furniturePlacementModeArmed(),
             itemKey: furniturePlacementArmedKey,
+            source: furniturePlacementSource,
+            remaining: furnitureStock(furniturePlacementArmedKey, furniturePlacementSource),
             moveId: furnitureMoveArmedId,
             reticle: { col: furniturePlacementReticle.col, row: furniturePlacementReticle.row },
             ghost: furniturePlacementGhost ? { col: furniturePlacementGhost.col, row: furniturePlacementGhost.row, valid: !!furniturePlacementGhost.valid } : null,
@@ -28469,6 +28668,9 @@
         clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
+        camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
+        getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
         _isBuildingArea,
         npcGridForArea,
         isRealMediaError: (...a) => window.Music?.isRealMediaError(...a),
@@ -29978,6 +30180,7 @@
       });
 
       window.FurniturePlacer?.init({
+        furnitureStock, consumeFurnitureStock, disposeDecorativeFurniture, closeMenu,
         getCurrentArea: () => currentArea,
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
         getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
@@ -31136,11 +31339,10 @@
         Object.assign(inventory, playerData.isNewWorld
           ? { ...STARTING_INVENTORY }
           : { ...(playerData.nonGearInventory || {}) });
-        // Worlds saved before the Campfire Kit blueprint joined
-        // STARTING_INVENTORY never picked it up — backfill it for free,
-        // once, same as existing characters getting the crossbow/scatterbow
-        // slots below, so it's available without a carpenter trip either way.
-        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
+        // Learned designs belong to this world's active member; starter designs are automatically known.
+        window.CraftingPanel?.restoreBlueprints?.(playerData.knownFurnitureBlueprints);
+        delete inventory.campfireKitFurnitureBlueprint; // Retire the old immortal starter paper now that Campfire Kit is automatically known.
+        window.FarmPanel?.ensureStarterFurnitureStorage?.();
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         window.NpcWardrobe?.restore?.(playerData.npcWardrobeState);

@@ -1,8 +1,11 @@
 // Foundry composition and deterministic gear definitions. No per-frame composition work.
 (function (global) {
   'use strict';
-  const SCHEMA = 'hobunji_modular_weapons.v1'; // Validated editor import format.
-  const DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Uploaded calibration and original-pair restrictions; older drafts remain stored separately.
+  const SCHEMA = 'hobunji_modular_weapons.v2'; // Validated editor import format.
+  const DRAFT_KEY = 'hobunji.modularWeapons.v5'; // New authored companion mounts and explicit pair layering.
+  const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
+  const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
+  const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
   const transforms = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation']; // Inheritable head placement fields.
   const images = new Map(); // CORS image promises reused across combinations.
   const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
@@ -24,32 +27,119 @@
       result[key] = key.startsWith('flip') ? raw?.[key] === true
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
+    if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
     return result;
   }
-  function replace(data, persist = false) {
-    if (data?.schema !== SCHEMA || !data.heads || !data.shafts) throw new Error('Invalid modular weapon attachment file.');
-    const next = JSON.parse(JSON.stringify(global.MODULAR_WEAPON_CONFIG)); // Catalog paths/ownership cannot be changed by a placement import.
-    for (const [key, head] of Object.entries(next.heads)) head.attach = point(data.heads[key]?.attach || head.attach);
-    for (const [key, shaft] of Object.entries(next.shafts)) {
-      const raw = data.shafts[key] || shaft; // Missing imported entries retain committed defaults.
-      shaft.attachments = (Array.isArray(raw.attachments) && raw.attachments.length ? raw.attachments : shaft.attachments).slice(0, shaft.maxAttachments || 8).map(value => ({ ...point(value), rotation: finite(value.rotation, 0, -360, 360) }));
-      shaft.defaults = cleanTransform(raw.defaults, false, shaft.defaults.animation || 'sweep');
-      const committedOverrides = shaft.overrides; // Missing legacy flags inherit the committed pair restrictions.
-      shaft.overrides = {};
-      for (const [head, values] of Object.entries(raw.overrides || {})) if (Object.hasOwn(next.heads, head)) {
-        shaft.overrides[head] = cleanTransform(values, true);
-        if (typeof values.disallow === 'boolean') shaft.overrides[head].disallow = values.disallow;
+  function line(raw, kind, fallback) {
+    const source = raw && typeof raw === 'object' ? raw : fallback; // Only valid authored directed lines may replace shipped geometry.
+    const type = kind === 'head'
+      ? (source?.type === 'weight' || source?.type === 'blade' ? source.type : fallback.type)
+      : (source?.type === 'tang' || source?.type === 'eye' ? source.type : fallback.type); // Shaft mounts accept both kinds.
+    const start = point(source?.start || fallback.start), end = point(source?.end || fallback.end); // Fixed sprite reference coordinates.
+    if (Math.hypot(end.x - start.x, end.y - start.y) < 1) return { ...fallback, start: point(fallback.start), end: point(fallback.end) };
+    return { type, start, end };
+  }
+  function matchingMounts(shaft, head) {
+    const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
+    return (shaft?.mounts || []).filter(mount => mount.type === kind); // Incompatible mechanisms never compose or forge.
+  }
+  function renderingMounts(shaft, head) {
+    const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
+    return compatible.length ? compatible : shaft?.mounts?.slice(0, 1) || []; // Existing saved legacy weapons keep a visual head if a past combination becomes incompatible.
+  }
+  function legacyLine(pivot, type, rotation = 0) {
+    const start = point(pivot), angle = rotation * Math.PI / 180; // Migrates legacy pivot and socket rotation into directed lines.
+    const end = { x: start.x + Math.sin(angle) * 80, y: start.y - Math.cos(angle) * 80 };
+    return { type, start, end };
+  }
+  function addCompanionsToPreviousDraft(raw) {
+    const upgraded = JSON.parse(JSON.stringify(raw)); // Migrate once; do not overwrite current v5 user edits.
+    if (upgraded.schema !== SCHEMA) return upgraded; // v1 drafts are converted separately.
+    for (const shaft of Object.values(upgraded.shafts || {})) {
+      if (!Array.isArray(shaft.mounts)) continue;
+      const originalEyes = shaft.mounts.filter(mount => mount?.type === 'eye');
+      for (const eye of originalEyes) {
+        const dx = eye.end.x - eye.start.x, dy = eye.end.y - eye.start.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 1) continue;
+        const center = { x: (eye.start.x + eye.end.x) / 2, y: (eye.start.y + eye.end.y) / 2 };
+        const alreadyPaired = shaft.mounts.some(mount => mount.type === 'tang' &&
+          Math.hypot((mount.start.x + mount.end.x) / 2 - center.x, (mount.start.y + mount.end.y) / 2 - center.y) < 2);
+        if (alreadyPaired) continue; // An author may already have placed a companion by hand.
+        const offsetX = -dy / 4, offsetY = dx / 4; // Tang length is half eye length; perpendicular and centered.
+        const companion = { type: 'tang',
+          start: { x: center.x - offsetX, y: center.y - offsetY },
+          end: { x: center.x + offsetX, y: center.y + offsetY } };
+        if ([companion.start, companion.end].every(p => p.x >= 0 && p.x <= 450 && p.y >= 0 && p.y <= 1204))
+          shaft.mounts.push(companion); // Preserve adjusted eye location and orientation from prior saved drafts.
       }
-      for (const [head, values] of Object.entries(committedOverrides || {})) {
-        if (values.animation && !raw.defaults?.animation && !shaft.overrides[head]?.animation) {
-          if (!shaft.overrides[head]) shaft.overrides[head] = {};
-          shaft.overrides[head].animation = values.animation;
+    }
+    if (upgraded.heads?.['pick-shovel-pick']) {
+      upgraded.heads['pick-shovel-pick'].mount = JSON.parse(JSON.stringify(global.MODULAR_WEAPON_CONFIG.heads['pick-shovel-pick'].mount)); // Reset only the pick head's old manual rotation, as requested.
+    }
+    return upgraded;
+  }
+  function convertLegacy(raw, reference) {
+    const converted = JSON.parse(JSON.stringify(reference)); // Never trust a legacy import's sprite paths or catalog records.
+    for (const [key, head] of Object.entries(converted.heads)) {
+      const previous = raw.heads?.[key];
+      if (previous?.attach) head.mount = legacyLine(previous.attach, head.mount.type);
+      if (typeof previous?.editorOnly === 'boolean') head.editorOnly = previous.editorOnly;
+    }
+    for (const [key, shaft] of Object.entries(converted.shafts)) {
+      const old = raw.shafts?.[key];
+      if (!old) continue;
+      if (typeof old.editorOnly === 'boolean') shaft.editorOnly = old.editorOnly;
+      if (Array.isArray(old.attachments) && old.attachments.length) {
+        const kind = shaft.mounts[0]?.type || 'tang'; // Preserve original socket order, including double-headed tools.
+        shaft.mounts = old.attachments.slice(0, shaft.maxAttachments || 8).map(p =>
+          legacyLine(p, kind, finite(p?.rotation, 0, -360, 360)));
+      }
+      for (const head of Object.keys(converted.heads)) {
+        const effective = { ...(old.defaults || {}), ...(old.overrides?.[head] || {}) }; // Global legacy defaults become *per-pair* corrections.
+        const correction = {};
+        for (const field of [...transforms, 'animation', 'layerOrder']) { // Legacy v1 exports are normally missing layerOrder; omitted fields use the new default.
+          if (Object.hasOwn(effective, field)) correction[field] = effective[field];
         }
-        if (typeof values.disallow !== 'boolean' || typeof shaft.overrides[head]?.disallow === 'boolean') continue;
-        if (!shaft.overrides[head]) shaft.overrides[head] = {};
-        shaft.overrides[head].disallow = values.disallow;
+        if (typeof effective.disallow === 'boolean') correction.disallow = effective.disallow;
+        if (Object.keys(correction).length) shaft.overrides[head] = correction;
+      }
+    }
+    return addCompanionsToPreviousDraft(converted); // Imported legacy socket-only shafts also receive compatible eye/tang mount pairs.
+  }
+  function replace(data, persist = false) {
+    if (!data?.heads || !data?.shafts || ![SCHEMA, 'hobunji_modular_weapons.v1'].includes(data.schema))
+      throw new Error('Invalid modular weapon attachment file.');
+    const reference = global.MODULAR_WEAPON_CONFIG; // Committed catalog owns sprites, metadata, and keys.
+    const incoming = data.schema === SCHEMA ? data : convertLegacy(data, reference); // Preserve old editor drafts and imported v1 exports.
+    const next = JSON.parse(JSON.stringify(reference));
+    for (const [key, head] of Object.entries(next.heads)) {
+      const raw = incoming.heads[key] || head;
+      head.mount = line(raw.mount, 'head', head.mount);
+      if (typeof raw.editorOnly === 'boolean') head.editorOnly = raw.editorOnly;
+    }
+    for (const [key, shaft] of Object.entries(next.shafts)) {
+      const raw = incoming.shafts[key] || shaft; // Missing imports use committed lines and pair settings.
+      if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly;
+      shaft.mounts = (Array.isArray(raw.mounts) && raw.mounts.length ? raw.mounts : shaft.mounts)
+        .slice(0, shaft.maxAttachments || 8).map((mount, index) => line(mount, 'shaft', shaft.mounts[Math.min(index, shaft.mounts.length - 1)]));
+      const shipped = shaft.overrides; // Keep committed explicit pair exclusions when older imports omit them.
+      shaft.overrides = {};
+      for (const [head, pair] of Object.entries(raw.overrides || {})) if (Object.hasOwn(next.heads, head)) {
+        shaft.overrides[head] = cleanTransform(pair, true);
+        if (typeof pair?.disallow === 'boolean') shaft.overrides[head].disallow = pair.disallow;
+      }
+      for (const [head, pair] of Object.entries(shipped || {})) {
+        if (typeof pair.disallow === 'boolean' && typeof shaft.overrides[head]?.disallow !== 'boolean') {
+          if (!shaft.overrides[head]) shaft.overrides[head] = {};
+          shaft.overrides[head].disallow = pair.disallow;
+        }
+        if (pair.layerOrder && !shaft.overrides[head]?.layerOrder) {
+          if (!shaft.overrides[head]) shaft.overrides[head] = {};
+          shaft.overrides[head].layerOrder = pair.layerOrder; // Missing values from old exports inherit each explicitly authored layer choice.
+        }
       }
     }
     config = next;
@@ -67,9 +157,11 @@
     const parts = decode(key); // Grip, scale, hand mode, and pose always use the donor shaft.
     return parts ? config.shafts[parts.shaft].sourceShape : null;
   }
-  function settings(shaft, head) { return { ...config.shafts[shaft].defaults, ...config.shafts[shaft].overrides[head] }; }
+  function settings(shaft, head) { return { ...NEUTRAL, ...(config.shafts[shaft]?.overrides[head] || {}) }; } // Only selected combination's corrections.
   function isDisallowed(shaft, head) {
-    return !Object.hasOwn(config.shafts, shaft) || !Object.hasOwn(config.heads, head) || config.shafts[shaft].overrides[head]?.disallow === true;
+    return !config.shafts?.[shaft] || !config.heads?.[head] ||
+      !matchingMounts(config.shafts[shaft], config.heads[head]).length ||
+      config.shafts[shaft].overrides[head]?.disallow === true;
   }
   function loadImage(path, base = '') {
     const url = base + path; // Editors supply the docs-relative prefix.
@@ -82,25 +174,39 @@
     }));
     return images.get(url);
   }
-  function headTransform(attach, values, pivot) {
-    const angle = (attach.rotation + values.rotation) * Math.PI / 180; // Combined head rotation, applied after socket-local translation.
-    const socketAngle = attach.rotation * Math.PI / 180; // Socket orientation also rotates the translation.
-    const sx = values.scaleX * (values.flipX ? -1 : 1), sy = values.scaleY * (values.flipY ? -1 : 1); // Signed scales preserve mirrored attachment geometry.
-    const a = Math.cos(angle) * sx, b = Math.sin(angle) * sx, c = -Math.sin(angle) * sy, d = Math.cos(angle) * sy; // Canvas affine matrix, including pivot displacement.
-    return { a, b, c, d,
-      e: attach.x + Math.cos(socketAngle) * values.x - Math.sin(socketAngle) * values.y - a * pivot.x - c * pivot.y,
-      f: attach.y + Math.sin(socketAngle) * values.x + Math.cos(socketAngle) * values.y - b * pivot.x - d * pivot.y };
+  function headTransform(mount, values, headMount) {
+    const src = headMount, target = mount; // Head/source and shaft/destination directed lines.
+    const hx = src.end.x - src.start.x, hy = src.end.y - src.start.y; // Direction and physical authored length of the head's tang/eye.
+    const tx = target.end.x - target.start.x, ty = target.end.y - target.start.y; // Matching directed haft mount.
+    const srcLength = Math.hypot(hx, hy), targetLength = Math.hypot(tx, ty); // Uniform automatic scale follows line-length ratio.
+    if (srcLength < 1 || targetLength < 1) throw new Error('Mount arrows must be at least one pixel long.');
+    const baseAngle = Math.atan2(ty, tx) - Math.atan2(hy, hx); // Rotate the head's arrow exactly onto the haft's arrow.
+    const ratio = targetLength / srcLength; // Automatic stretch is applied ONLY along the head's drawn mounting axis.
+    const ux = hx / srcLength, uy = hy / srcLength; // Unit tangent of the original head arrow.
+    const delta = ratio - 1; // Rank-one axis stretch leaves the perpendicular dimension untouched.
+    const fitA = 1 + delta * ux * ux, fitB = delta * ux * uy; // First column and off-diagonal of the head-axis fit.
+    const fitC = fitB, fitD = 1 + delta * uy * uy; // Second column of the axis-only fit.
+    const angle = baseAngle + values.rotation * Math.PI / 180; // Pair rotation is an additional correction.
+    const sx = values.scaleX * (values.flipX ? -1 : 1), sy = values.scaleY * (values.flipY ? -1 : 1); // Pair scale/flip follows fitting.
+    const cos = Math.cos(angle), sin = Math.sin(angle); // Final rotation aligns directed arrows.
+    const a = cos * sx * fitA - sin * sy * fitB, b = sin * sx * fitA + cos * sy * fitB;
+    const c = cos * sx * fitC - sin * sy * fitD, d = sin * sx * fitC + cos * sy * fitD;
+    const shaftAxis = Math.atan2(ty, tx) + Math.PI / 2; // Pair offsets are in the haft's local axes, preserving legacy socket offsets.
+    const ox = Math.cos(shaftAxis) * values.x - Math.sin(shaftAxis) * values.y;
+    const oy = Math.sin(shaftAxis) * values.x + Math.cos(shaftAxis) * values.y;
+    return { a, b, c, d, e: target.start.x + ox - a * src.start.x - c * src.start.y,
+      f: target.start.y + oy - b * src.start.x - d * src.start.y }; // Exact Canvas affine matrix.
   }
   function compositionFrame(shaft, head, bounds, values) {
-    let left = 0, top = 0, right = 450, bottom = 1204; // Keep the complete donor frame as the fixed grip reference.
-    for (const attach of shaft.attachments) {
-      const matrix = headTransform(attach, values, head.attach); // Bounds and drawing use exactly the same affine transform.
+    let left = 0, top = 0, right = 450, bottom = 1204; // Donor grip geometry always stays anchored to original source frame.
+    for (const mount of renderingMounts(shaft, head)) {
+      const matrix = headTransform(mount, values, head.mount); // Same transform determines bounds and eventual drawing.
       for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
-        const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f; // Transformed source-bound corner.
+        const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
         left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
       }
     }
-    left = Math.floor(left) - 4; top = Math.floor(top) - 4; // Transparent padding protects filtered edge pixels and recolor outlines.
+    left = Math.floor(left) - 4; top = Math.floor(top) - 4;
     return { left, top, width: Math.ceil(right) + 4 - left, height: Math.ceil(bottom) + 4 - top };
   }
   function visibleBounds(image) {
@@ -160,15 +266,21 @@
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
       ctx.translate(-frame.left, -frame.top);
-      if (shaft.crop) {
-        ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
-        ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore();
-      } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
-      for (const attach of shaft.attachments) {
-        const matrix = headTransform(attach, values, head.attach); // Reuse the exact transform whose corners expanded the canvas.
-        ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-        ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
+      function paintHaft() {
+        if (shaft.crop) {
+          ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
+          ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore(); // Crop applies only to the haft, regardless of layer ordering.
+        } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
       }
+      function paintHeads() {
+        for (const mount of renderingMounts(shaft, head)) {
+          const matrix = headTransform(mount, values, head.mount); // Each head uses the exact transform used to expand bounds.
+          ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
+          ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
+        }
+      }
+      if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
+      else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
       return canvas;
     });
     canvases.set(cacheKey, task);
@@ -178,8 +290,10 @@
   }
   function registerDefinitions(defs, shapes, metals, metalKeys) {
     for (const [shaftKey, shaft] of Object.entries(config.shafts)) {
+      if (shaft.editorOnly) continue; // Incomplete upload previews cannot create forgeable weapon items.
       const source = shapes[shaft.sourceShape] || { animStyle: 'sweep', weaponIdleClass: 'heavy' }; // Future/relic source shapes still get a usable baseline.
       for (const [headKey, head] of Object.entries(config.heads)) for (const metalKey of metalKeys) {
+        if (head.editorOnly) continue; // Register old weapon keys even when now unforgeable, to preserve existing inventory saves. // Uncalibrated uploaded head has no gameplay definition.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
@@ -200,10 +314,18 @@
       if (record.shape === 'warhammer') sources.add('warhammer');
       if (record.shape === 'broadsword') sources.add('harlyaoBroadsword');
     }
-    return { heads: Object.keys(config.heads).filter(key => sources.has(config.heads[key].sourceShape)),
-      shafts: Object.keys(config.shafts).filter(key => sources.has(config.shafts[key].sourceShape)) };
+    const shafts = Object.keys(config.shafts).filter(key => !config.shafts[key].editorOnly && sources.has(config.shafts[key].sourceShape)); // Known donor shapes only.
+    const heads = Object.keys(config.heads).filter(key => !config.heads[key].editorOnly && sources.has(config.heads[key].sourceShape)
+      && shafts.some(shaft => !isDisallowed(shaft, key))); // Avoid exposing heads incompatible with every unlocked shaft.
+    return { heads, shafts: shafts.filter(shaft => heads.some(head => !isDisallowed(shaft, head))) };
   }
-  try { const draft = global.localStorage?.getItem(DRAFT_KEY); if (draft) replace(JSON.parse(draft)); } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts,
+  try {
+    const recent = global.localStorage?.getItem(DRAFT_KEY), prior = global.localStorage?.getItem(OLD_DRAFT_KEY);
+    const oldest = global.localStorage?.getItem(LEGACY_DRAFT_KEY); // Only migrate once; current v5 always wins.
+    if (recent) replace(JSON.parse(recent));
+    else if (prior) replace(addCompanionsToPreviousDraft(JSON.parse(prior)), true);
+    else if (oldest) replace(JSON.parse(oldest), true);
+  } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

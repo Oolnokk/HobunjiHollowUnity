@@ -18,6 +18,8 @@ const loom = bp('advancedLoomFurniture');
 assert.equal(loom.moteOnly, true, 'actual decorative catalog preserves moteOnly');
 assert.equal(loom.masteryUnlockId, 'advancedLoomBlueprint', 'actual catalog preserves world mastery id');
 assert.ok(bp('loomFurniture') && !bp('loomFurniture').moteOnly, 'simple loom stays ordinarily purchasable');
+assert.equal(bp('groomingKitFurniture').alwaysKnown, true, 'grooming station needs no learned blueprint');
+assert.equal(bp('campfireKitFurniture').alwaysKnown, true, 'campfire remains available after removing the starter paper');
 
 const materials = {
   stone: { label: 'Stone', sellPrice: 3 },
@@ -50,7 +52,7 @@ api.init({ inventory, FURNITURE_BLUEPRINT_CATALOG: catalog, ITEM_DEFS: materials
   clampInventoryStack() {}, recordHeldOres() {}, showToast() {}, buildInventoryGrid() {},
   saveMemberWorldData() { saves++; }, esc: String });
 const snapshot = () => JSON.stringify(inventory);
-const unlock = entry => { inventory[entry.key] = 1; };
+const unlock = entry => { inventory[entry.key] = 1; assert.equal(api.readBlueprint(entry.key).ok, true); };
 const state = entry => api.debugSnapshot().recipes.find(row => row.key === entry.key);
 const chest = bp('chestFurniture');
 unlock(chest);
@@ -66,8 +68,8 @@ assert.equal(inventory.chestFurniture, 1);
 assert.equal(inventory.bar_lowTinBronze, 0);
 assert.equal(inventory.pineLog, 25);
 assert.equal(inventory.stone, 30);
-assert.equal(inventory[chest.key], 1, 'blueprint is reusable');
-assert.equal(saves, 1);
+assert.equal(inventory[chest.key], 0, 'learning consumes the physical blueprint while building preserves the learned design');
+assert.equal(saves, 2);
 
 // Wool spending goes through the real quality owner, avoiding phantom stacks.
 const woolCalls = [];

@@ -1480,5 +1480,29 @@
     "label": "Night Cardamom",
     "icon": "🌶️",
     "cat": "ingredient"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_grandbeard": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_grandbeard",
+    "label": "Kenk Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard",
+    "label": "Mao Ao Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard": {
+    "key": "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard",
+    "label": "Mashtz Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_grandbeard": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_grandbeard",
+    "label": "Tl Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
   }
 }

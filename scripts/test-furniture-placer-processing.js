@@ -113,7 +113,7 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const actionArcSource = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 assert.match(gameSource,
-  /processingKey\s*\? placeProcessingFurniture\(col, row, processingKey\)/,
+  /processingKey\s*\? placeProcessingFurniture\(col, row, processingKey(?:, furniturePlacementSource)?\)/,
   'placement clicks route processing items through the existing processor placement function');
 assert.match(fs.readFileSync('docs/js/farm-surface-sample.js', 'utf8'),
   /function farmSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,2200}tileSurface \+ exactLift - centerLift/,
@@ -174,7 +174,7 @@ assert.match(gameSource,
   /kind: 'processing'[\s\S]{0,1400}canPlaceFurnitureAt\(col, row, spec\.ignoreObject\)/,
   'processing furniture previews use the existing farm placement validation');
 assert.match(gameSource,
-  /function commitFurniturePlacementAt\(col, row\)[\s\S]{0,2600}placeDecorativeFurniture\(col, row, decorKey\)/,
+  /function commitFurniturePlacementAt\(col, row\)[\s\S]{0,2600}placeDecorativeFurniture\(col, row, decorKey(?:, furniturePlacementSource)?\)/,
   'armed placement commits through one shared tile-targeted placement function');
 assert.match(gameSource,
   /if \(furniturePlacementModeArmed\(\)\) \{[\s\S]{0,420}getReticleTile\(\)[\s\S]{0,260}commitFurniturePlacementAt/,
