@@ -1,0 +1,22 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "blessed_blossom_potential",
+  "name": "Blessed Blossom: Potential",
+  "motifPng": "assets/patterns/motif_blessed_blossom_potential.png",
+  "collectible": false,
+  "settings": {
+    "motifScale": 1,
+    "motifRotationDeg": 0,
+    "tiling": false,
+    "invert": false,
+    "motifThinPx": 0,
+    "frameShape": "square",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1,
+    "meshScale": 1,
+    "meshRotationDeg": 0,
+    "overpassClearanceMultiplier": 3
+  }
+}

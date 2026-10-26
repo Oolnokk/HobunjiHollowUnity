@@ -1,0 +1,22 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "winding_roots",
+  "name": "Winding Roots",
+  "motifPng": "assets/patterns/motif_winding_roots.png",
+  "collectible": false,
+  "settings": {
+    "motifScale": 1,
+    "motifRotationDeg": 0,
+    "tiling": true,
+    "invert": false,
+    "motifThinPx": 0,
+    "frameShape": "brick",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1,
+    "meshScale": 1,
+    "meshRotationDeg": 0,
+    "overpassClearanceMultiplier": 3
+  }
+}
