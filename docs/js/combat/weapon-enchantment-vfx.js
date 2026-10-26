@@ -247,9 +247,8 @@
   }
 
   function sourceSpriteForWeapon(key) {
-    const def = window.EquipmentPanel?.getToolDefinition?.(key)
-      || window.Combat?.deps?.TOOL_ITEM_DEFS?.[key]; // Use the real EquipmentPanel registry; gameplay's Combat.init omits TOOL_ITEM_DEFS.
-    return def?.sprite || def?.baseSprite || null;
+    const defs = window.Combat?.deps?.TOOL_ITEM_DEFS; // EquipmentPanel.exposeInventoryMasteryBridge() populates this existing Combat dependency before the first game frame.
+    return defs?.[key]?.sprite || defs?.[key]?.baseSprite || null;
   }
 
   function activeHeldWeaponKey() {
