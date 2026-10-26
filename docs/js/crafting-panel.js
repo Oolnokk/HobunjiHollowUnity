@@ -55,26 +55,48 @@
     deps.recordHeldOres(heldOreKeys);
   }
 
-  function visibleMetalRecipes() {
-    syncHeldOreDiscoveries();
-    return Object.entries(deps.METAL_BAR_RECIPES).filter(([, ingredients]) =>
-      Object.keys(ingredients).every(oreKey => deps.hasDiscoveredOre(oreKey)));
+  function ingredientItemKey(key) {
+    return key.startsWith('bar_') ? key : deps.metalOreItemKey(key); // Alloying consumes native copper bars; direct smelting consumes ore.
   }
 
-  function craftMetalBar(metalKey) {
-    const ingredients = deps.METAL_BAR_RECIPES[metalKey]; // Used to validate and consume the same authored quantities shown in the row.
+  function ingredientLabel(key) {
+    if (!key.startsWith('bar_')) return deps.ORE_DEFS[key]?.label || key;
+    const metalLabel = deps.METAL_DEFS[key.slice(4)]?.label; // Bar name fallback when an old save has no registered item definition.
+    return deps.ITEM_DEFS?.[key]?.label || (metalLabel ? metalLabel + ' Bar' : key);
+  }
+
+  function requiredTownValue(metalKey, recipeVariant = 'ore') {
+    const threshold = Number(deps.METAL_BAR_TOWN_VALUE?.[metalKey]); // Defined alongside the game metallurgy registry, independent of the player's inventory.
+    if (!Number.isFinite(threshold)) return Infinity; // Unknown/malformed metal keys cannot accidentally unlock every recipe.
+    return recipeVariant.startsWith('alloy-') ? Math.max(3, threshold) : threshold; // Native-copper/tin alloying becomes available at Town Value 3.
+  }
+
+  function visibleMetalRecipes() {
+    const townValue = Math.max(0, Math.floor(Number(deps.getTownValue?.()) || 0)); // Reads current effective Town Value, including any foundry bonus.
+    const direct = Object.entries(deps.METAL_BAR_RECIPES).filter(([metalKey]) =>
+      townValue >= requiredTownValue(metalKey))
+      .map(([metalKey, ingredients]) => [metalKey, ingredients, 'ore']); // Bar recipes appear when the town advances, whether or not ore has been found.
+    const alternates = Object.entries(deps.METAL_BAR_ALTERNATES || {}).flatMap(([metalKey, variants]) =>
+      variants.flatMap((ingredients, index) => townValue >= requiredTownValue(metalKey, 'alloy-' + index)
+        ? [[metalKey, ingredients, 'alloy-' + index]] : [])); // Cassiterite can be combined with native copper only after Town Value 3.
+    return direct.concat(alternates);
+  }
+
+  function craftMetalBar(metalKey, recipeVariant = 'ore') {
+    const ingredients = visibleMetalRecipes().find(([key,,variant]) => key === metalKey && variant === recipeVariant)?.[1]; // Revalidate Town Value on every craft; possessing ore is never an unlock.
     const metal = deps.METAL_DEFS[metalKey];
     if (!ingredients || !metal) return;
+    const barKey = deps.metalBarItemKey(metalKey); // Output remains the existing smithing/foundry bar ID.
+    if ((deps.inventory[barKey] || 0) >= window.InventoryStacks.MAX_TOTAL) { deps.showToast('No room for another bar.', false); return; }
     for (const [oreKey, amount] of Object.entries(ingredients)) {
-      const itemKey = deps.metalOreItemKey(oreKey); // Used to keep ore consumption aligned with mine reward inventory keys.
-      if ((deps.inventory[itemKey] || 0) < amount) { deps.showToast(`Not enough ${deps.ORE_DEFS[oreKey].label}.`, false); return; }
+      const itemKey = ingredientItemKey(oreKey); // Supports either raw ore or native-copper bars.
+      if ((deps.inventory[itemKey] || 0) < amount) { deps.showToast(`Not enough ${ingredientLabel(oreKey)}.`, false); return; }
     }
     for (const [oreKey, amount] of Object.entries(ingredients)) {
-      const itemKey = deps.metalOreItemKey(oreKey);
+      const itemKey = ingredientItemKey(oreKey);
       deps.inventory[itemKey] -= amount;
       deps.clampInventoryStack(itemKey);
     }
-    const barKey = deps.metalBarItemKey(metalKey); // Used as the existing smithing, plating, and ladder material key.
     deps.inventory[barKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[barKey] || 0) + 1);
     deps.showToast(`Crafted 1 ${metal.label} Bar!`, true);
     renderCraftingPanel();
@@ -192,29 +214,29 @@
       const empty = document.createElement('div');
       empty.className = 'ii-empty';
       empty.textContent = craftingActiveCategory === 'metallurgy'
-        ? 'No metal recipes discovered — hold a kind of ore to reveal recipes that use it.'
+        ? 'No metal recipes unlocked at this Town Value yet.'
         : 'No blueprints or discovered recipes in this category yet.';
       list.appendChild(empty);
       return;
     }
-    metalRecipes.forEach(([metalKey, ingredients]) => {
+    metalRecipes.forEach(([metalKey, ingredients, recipeVariant]) => {
       const metal = deps.METAL_DEFS[metalKey];
       const ingredientRows = Object.entries(ingredients).map(([oreKey, amount]) => {
-        const have = deps.inventory[deps.metalOreItemKey(oreKey)] || 0; // Used in the mobile-readable affordability description.
-        return `${amount} ${deps.ORE_DEFS[oreKey].label} (have ${have})`;
+        const have = deps.inventory[ingredientItemKey(oreKey)] || 0; // Actual ore or metal-bar stack, whichever this recipe requires.
+        return `${amount} ${ingredientLabel(oreKey)} (have ${have})`;
       });
-      const canCraft = Object.entries(ingredients).every(([oreKey, amount]) => (deps.inventory[deps.metalOreItemKey(oreKey)] || 0) >= amount);
+      const canCraft = Object.entries(ingredients).every(([oreKey, amount]) => (deps.inventory[ingredientItemKey(oreKey)] || 0) >= amount) && (deps.inventory[deps.metalBarItemKey(metalKey)] || 0) < window.InventoryStacks.MAX_TOTAL;
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">🔶</div>
         <div class="sh-info">
-          <div class="sh-name">${deps.esc(metal.label)} Bar</div>
+          <div class="sh-name">${deps.esc(metal.label)} Bar${recipeVariant.startsWith("alloy") ? " — Alloying" : ""}</div>
           <div class="sh-desc">${ingredientRows.map(deps.esc).join(' + ')} → 1 bar</div>
         </div>
         <button class="shop-buy-btn" data-metal-recipe="${metalKey}" ${canCraft ? '' : 'disabled'}>Craft</button>
       `;
-      row.querySelector('[data-metal-recipe]')?.addEventListener('click', () => craftMetalBar(metalKey));
+      row.querySelector('[data-metal-recipe]')?.addEventListener('click', () => craftMetalBar(metalKey, recipeVariant));
       list.appendChild(row);
     });
     owned.forEach(bp => {

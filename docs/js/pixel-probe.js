@@ -996,6 +996,7 @@
     }
     const metalArmorDiagnostics = window.MetalArmorSystem?.diagnosticsText?.(); // Copyable on-phone proof of every equipped metal article's slot, alloy, Temper, verdigris, weight, and XP-hook readiness.
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
+    if (window.OreRockTextures?.debugSnapshot) lines.push('Ore rock materials: ' + JSON.stringify(window.OreRockTextures.debugSnapshot())); // Copyable mobile proof of ore texture loading and fallback status.
     const mammakhbuurDebug = window.HobunjiMammakhbuurSpecies?.debugSnapshot?.(); // Copies the new species' size/placement and fallback contract on mobile.
     if (mammakhbuurDebug) lines.push('Mammakhbuur: ' + JSON.stringify(mammakhbuurDebug));
     const cutsceneDebug = window.AuthoredCutsceneRuntime?.debugSnapshot?.(); // Copies the active stage and latest runner fixes while a live scene is paused.

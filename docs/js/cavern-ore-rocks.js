@@ -1,6 +1,6 @@
 // Cavern ore rocks — extracted from game.js's loadBuildingScene cavern branch.
-// Marks each mapData.oreRocks tile as a diggable ore rock and adds a tinted
-// rock mesh to the interior scene, registered in the same per-map mesh table
+// Marks each mapData.oreRocks tile as diggable, with stone and masked mineral
+// coloration identical to the town mine, registered in the same mesh table
 // the outdoor ore rocks use (mineableRocksByTile/isMineableRockTile/
 // removeZoneMineableRockVisual), so mining a cavern rock needs no new code.
 // Den caverns and every cave-site history (js/cave-site-system.js — ore
@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Stone plus game.js ORE_DEFS.
+  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tinCopper: 0x58a28d, mushistonite: 0x7ba963, tin: 0x513c32, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Legacy diagnostics palette; visual materials are shared with game.js.
 
   const separatorCracks = new Map(); // Map id -> scene and live crack set, allowing O(1) removals when one mineable wall rock breaks.
   const rockMaps = new Map(); // Map id -> live ore mesh index; explosions never traverse the entire cave scene.
@@ -65,8 +65,9 @@
     group.parent?.remove(group);
     group.traverse(node => {
       node.geometry?.dispose?.();
-      if (Array.isArray(node.material)) for (const material of node.material) material?.dispose?.();
-      else node.material?.dispose?.();
+      if (Array.isArray(node.material)) {
+        for (const material of node.material) if (!material?.userData?.sharedOreRockMaterial) material?.dispose?.();
+      } else if (!node.material?.userData?.sharedOreRockMaterial) node.material?.dispose?.(); // Do not dispose shared ore textures while other rocks still display them.
     });
     return true;
   }
@@ -94,12 +95,12 @@
         // A real ore look (game.js ORE_DEFS key) drops that ore when mined,
         // through the same tile.oreKey path Town Mine nodes use; stone-look
         // rocks keep dropping stone only.
-        grid[rock.row][rock.col].oreKey = deps.oreDefs?.[rock.oreKind] ? rock.oreKind : null;
+        grid[rock.row][rock.col].oreKey = deps.oreDefs?.[rock.oreKey || rock.oreKind] ? (rock.oreKey || rock.oreKind) : null;
         grid[rock.row][rock.col].caveSeparator = rock.caveSeparator === true; // Used by shattercask blast to clear all barrier strata.
       }
       const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
       if (!stoneGeo) continue;
-      const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
+      const rockMesh = new THREE.Mesh(stoneGeo, window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs)); // Colored ore islands, ordinary stone elsewhere, shared across every cave and mine.
       rockMesh.castShadow = rockMesh.receiveShadow = true;
       const rockGroup = new THREE.Group();
       rockGroup.name = 'cave_ore_' + rock.col + '_' + rock.row; // Blast removes this exact rock mesh without rebuilding the cave.

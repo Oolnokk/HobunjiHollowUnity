@@ -1810,7 +1810,9 @@
       };
       const ORE_DEFS = {
         copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
-        tin:     { label: 'Tin Ore',     hex: '#C8CCD0', verdigrisHex: null, oxidationAmount: 0 },
+        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: null, oxidationAmount: 0 },
+        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: null, oxidationAmount: 0 },
+        tin:     { label: 'Tin Ore',     hex: '#513C32', verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
         arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
         lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
         silver:  { label: 'Silver Ore',  hex: '#C0C0C0', verdigrisHex: null, oxidationAmount: 0 },
@@ -1818,9 +1820,9 @@
       }; // Used by mine drops, inventory registration, crafting discovery, and the masked rock-texture recolor.
       const METAL_BAR_RECIPES = {
         nativeCopper:    { copper: 5 },
-        lowTinBronze:    { copper: 4, tin: 1 },
-        tinBronze:       { copper: 3, tin: 2 },
-        highTinBronze:   { copper: 2, tin: 3 },
+        lowTinBronze:    { tinCopper: 5 },
+        tinBronze:       { mushistonite: 5 },
+        highTinBronze:   { tin: 5 },
         arsenicalBronze: { copper: 4, arsenic: 1 },
         leadedBronze:    { copper: 3, tin: 1, lead: 1 },
         tin:             { tin: 5 },
@@ -1830,7 +1832,26 @@
         electrumGold:    { gold: 3, silver: 2 },
         electrumSilver:  { gold: 2, silver: 3 },
         pewter:          { tin: 4, lead: 1 },
-      }; // Used by the Crafting pane; every bar consumes exactly five elemental ore and alloys always combine distinct ores.
+      }; // Used by the Crafting pane; direct smelting consumes five ore per bar.
+      const METAL_BAR_ALTERNATES = {
+        lowTinBronze: [{ bar_nativeCopper: 1, tin: 1 }],
+        tinBronze: [{ bar_nativeCopper: 1, tin: 2 }],
+      }; // Optional bronze alloying with native copper bars; available from Town Value 3.
+      const METAL_BAR_TOWN_VALUE = Object.freeze({
+        nativeCopper: 0,
+        lowTinBronze: 1,
+        tinBronze: 2,
+        highTinBronze: 3,
+        arsenicalBronze: 4,
+        leadedBronze: 5,
+        tin: 3,
+        lead: 5,
+        silver: 7,
+        gold: 0, // Gold is common and worthless in this world; its bar recipe is available from the start.
+        electrumGold: 8,
+        electrumSilver: 8,
+        pewter: 5,
+      }); // Each recipe appears at a fixed Town Value, independently of ore ownership/discovery.
       // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
       const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
         .filter(k => METAL_DEFS[k].tier != null)
@@ -10417,7 +10438,8 @@
               for (const [geometry, matKey] of [[stoneGeo, TileType.ROCK], [grassGeo, TileType.GRASS]]) {
                 if (!geometry) continue;
                 geometry.computeVertexNormals();
-                const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
+                const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Ore-colored islands embedded in stone for streamed wilderness rocks.
+                const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -13235,6 +13257,8 @@
                 // field (named rockKind to avoid colliding with the generator's
                 // own per-object oreKind material pick) and isMineableRockTile below.
                 rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+                oreKind: type === 'rock' && t.generatedObjectType === 'diggableRockOre' ? (t.generatedObjectOreKind || 'stone') : undefined, // Preserves the authored mineral for the shared ore rock renderer.
+                oreKey: type === 'rock' && t.generatedObjectType === 'diggableRockOre' && ORE_DEFS[t.generatedObjectOreKind] ? t.generatedObjectOreKind : null, // Wilderness ore rocks yield their depicted mineral.
                 // Exact generator identity (mirrors terrain-preview.js) so
                 // ZoneTerrainFeatures.buildUndiggableBoulderMeshes assembles each
                 // multi-tile boulder as one shell instead of rediscovering it.
@@ -14083,39 +14107,7 @@
             _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
             const descentHoleMeshes = new Map();
             _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
-            const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
-            carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
-            carvedTexture.repeat.set(0.7, 0.7);
-            if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
-            const mineOreTexturePromises = new Map(); // Used to generate each ore's masked PNG texture once per floor rather than once per rock.
-            const mineRockTextureFor = oreKey => {
-              if (!oreKey || !ORE_DEFS[oreKey] || !window.ToolMetalRecolor) return Promise.resolve(carvedTexture);
-              if (mineOreTexturePromises.has(oreKey)) return mineOreTexturePromises.get(oreKey);
-              const ore = ORE_DEFS[oreKey]; // Used to feed the exact clean-metal/verdigris palette into the shared weapon PNG effect.
-              const seed = Array.from(oreKey).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261); // Stable per-ore blotch layout used by ToolMetalRecolor.
-              const request = window.ToolMetalRecolor.getRecoloredCanvas('assets/textures/carved_smooth.png', {
-                sourceHex: '#635544',
-                targetHex: ore.hex,
-                verdigrisHex: ore.verdigrisHex,
-                oxidationAmount: ore.oxidationAmount,
-                hueToleranceDeg: 8,
-                saturationTolerance: 0.12,
-                outlineWidth: 1,
-                seed,
-              }).then(canvas => {
-                const texture = new THREE.CanvasTexture(canvas); // Applies the recolored/oxidized PNG directly to the rock mesh instead of adding colored geometry.
-                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-                texture.repeat.set(0.7, 0.7);
-                if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-                texture.needsUpdate = true;
-                return texture;
-              }).catch(error => {
-                window.__farmLog?.(`[town-mine] ${ore.label} texture recolor failed; using carved stone: ${error?.message || error}`, 'warn', 'mine');
-                return carvedTexture;
-              });
-              mineOreTexturePromises.set(oreKey, request);
-              return request;
-            };
+            const mineRockMaterialFor = oreKey => window.OreRockTextures.materialFor(THREE, oreKey, ORE_DEFS); // Shared natural-stone base with mineral-colored patches.
             for (const rock of (mapData.oreRocks || [])) {
               const rockKey = `${rock.col},${rock.row}`;
               const tile = bGrid[rock.row]?.[rock.col];
@@ -14129,8 +14121,7 @@
               const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
-              const rockTexture = await mineRockTextureFor(rock.oreKey); // Uses the shared PNG mask/verdigris processor before this rock enters the scene.
-              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, map: rockTexture, roughness: 0.94 }));
+              const baseMesh = new THREE.Mesh(stoneGeo, mineRockMaterialFor(rock.oreKey || rock.oreKind)); // Same ore-bearing stone texture as wilderness caverns.
               baseMesh.castShadow = baseMesh.receiveShadow = true;
               rockGroup.add(baseMesh);
               rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
@@ -15957,7 +15948,7 @@
         ITEM_DEFS[key] = {
           icon: '🪨', label: ore.label, cat: 'material', sellPrice: 2,
           tags: ['Material', 'Ore', oreKey],
-          desc: 'Raw ore from the Town Mine. Five total ore can be worked into one metal bar through Crafting.',
+          desc: oreKey === 'tin' ? 'Cassiterite, a natural tin mineral. Smelt into tin or high-tin bronze; can also alloy with native copper.' : 'Raw mineral ore. Smelt five matching ore into a bar or use discovered recipes to alloy metals.',
         };
       });
 
@@ -29956,6 +29947,9 @@
         ORE_DEFS,
         METAL_DEFS,
         METAL_BAR_RECIPES,
+        METAL_BAR_ALTERNATES,
+        METAL_BAR_TOWN_VALUE,
+        getTownValue: () => window.TownMine?.getTownValue?.() ?? 0,
         metalOreItemKey,
         metalBarItemKey,
         recordHeldOres: oreKeys => window.TownMine?.recordHeldOres?.(oreKeys),

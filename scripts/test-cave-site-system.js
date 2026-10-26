@@ -333,17 +333,21 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
 {
   const oreSource = fs.readFileSync(path.join(root, 'docs/js/cavern-ore-rocks.js'), 'utf8');
   class Obj { constructor() { this.position = { set() {} }; this.children = []; } add(c) { this.children.push(c); } }
-  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshLambertMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) } };
+  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) }, OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }) } };
   oreCtx.window = oreCtx;
   vm.createContext(oreCtx);
   vm.runInContext(oreSource, oreCtx, { filename: 'cavern-ore-rocks.js' });
-  const ORE_DEFS = { copper: {}, tin: {}, arsenic: {}, lead: {}, silver: {}, gold: {} };
+  const ORE_DEFS = { copper: {}, tinCopper: {}, mushistonite: {}, tin: {}, arsenic: {}, lead: {}, silver: {}, gold: {} };
   oreCtx.CavernOreRocks.init({ TileType: { ROCK: 'rock' }, markOutline() {}, zoneMineableRockMeshes: new Map(), oreDefs: ORE_DEFS });
   const grid = [[{}, {}]];
   oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, new Obj(), grid);
   assert.equal(grid[0][0].oreKey, 'copper', 'copper-look cavern rock drops copper ore');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tin, 0x513c32, 'Cassiterite cave texture uses Tin Ore color rather than smithed metal');
   assert.equal(grid[0][1].oreKey, null, 'stone-look cavern rock drops stone only');
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
+  const newGrid = [[{}, {}, {}]];
+  oreCtx.CavernOreRocks.build('map_i_new_ores', { oreRocks: [{ col: 0, row: 0, oreKind: 'tinCopper' }, { col: 1, row: 0, oreKind: 'mushistonite' }, { col: 2, row: 0, oreKind: 'tin' }] }, new Obj(), newGrid);
+  assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
     for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);
