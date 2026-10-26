@@ -1287,8 +1287,11 @@
       if (armor) { items.push(JSON.parse(JSON.stringify(armor))); continue; }
       const slot = roster.cosmeticSlots?.[cosmeticId] || 'torso';
       const piece = _banditClothingPiece(cosmeticId, slot);
-      const dyeId = roster.appliedDyes?.[window.BanditCombat.TINT_SLOT_BY_SLOT[piece.category]] || null;
+      const tintSlot = window.BanditCombat.TINT_SLOT_BY_SLOT[piece.category]; // Loot uses the same clothing channel as the deceased humanoid's portrait.
+      const dyeId = roster.appliedDyes?.[tintSlot] || null;
+      const dyeBId = tintSlot ? roster.appliedDyes?.[`${tintSlot}_B`] : null; // Preserves ghoul silver trims and draped-pants secondary color in actual looted items.
       const dye = dyeId ? catalog.find(d => d.id === dyeId) : null;
+      const dyeB = dyeBId ? catalog.find(d => d.id === dyeBId) : null;
       items.push({
         uid: 'citem_bandit_' + Date.now().toString(36) + '_' + Math.floor(deps.rnd() * 1e6),
         cosmeticId: piece.id,
@@ -1296,7 +1299,7 @@
         label: (dye ? dye.label + ' ' : '') + piece.label,
         baseLabel: piece.label,
         colorA: deps.dyeToClothingColor(dye),
-        colorB: null,
+        colorB: dyeB ? deps.dyeToClothingColor(dyeB) : null,
         price: piece.price,
         sellPrice: Math.floor(piece.price * 0.4),
         sprite: deps.clothingSpriteForCosmetic(piece.id),
