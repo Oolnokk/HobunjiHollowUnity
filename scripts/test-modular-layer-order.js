@@ -66,25 +66,26 @@ async function run() {
 
   // Multi-ended weapon draws EVERY matching head below a single shaft, not interleaved with it.
   const doubled = await api.compose('bshuakauitl', 'warhammer');
-  assert.deepEqual(paints(doubled), ['paint:head', 'paint:head', 'paint:haft'], 'Both heads stay below haft by default.');
+  assert.deepEqual(paints(doubled), ['paint:haft', 'paint:head', 'paint:head'], 'Both sleeve heads sit above the haft from authored pair settings.');
   const multi = JSON.parse(JSON.stringify(api.getConfig()));
   multi.shafts.bshuakauitl.overrides.warhammer = {
-    ...multi.shafts.bshuakauitl.overrides.warhammer, layerOrder: 'head-over-haft'
+    ...multi.shafts.bshuakauitl.overrides.warhammer, layerOrder: 'haft-over-head'
   };
   api.replace(multi);
   assert.deepEqual(paints(await api.compose('bshuakauitl', 'warhammer')),
-    ['paint:haft', 'paint:head', 'paint:head'], 'Reverse order handles two mounts correctly.');
+    ['paint:head', 'paint:head', 'paint:haft'], 'Manual per-pair override puts both sleeve heads below the shaft.');
 
-  // Old schema imports still use implicit haft-over-head unless an explicit v2 override is provided.
+  // Older imports inherit all committed, manually authored pair choices.
   api.replace({ schema: 'hobunji_modular_weapons.v1', heads: {}, shafts: {} });
   assert.equal(api.settings('dagger', 'fishing-spear').layerOrder, 'haft-over-head');
+  assert.equal(api.settings('warhammer', 'fishing-mace').layerOrder, 'head-over-haft', 'Legacy imports inherit committed sleeve-head foreground order.');
 
   const html = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8');
   const editor = fs.readFileSync('docs/tools/modular-weapon-editor/editor.js', 'utf8');
   assert(html.includes('id="layer-order"') && html.includes('value="haft-over-head"')
     && html.includes('value="head-over-haft"'), 'Editor exposes both order options.');
   assert(editor.includes("byId('layer-order').onchange"), 'Layer select has active change handler.');
-  assert(editor.includes("delete pair.layerOrder"), 'Default remains sparse in exported config.');
+  assert(editor.includes("pair.layerOrder = byId('layer-order').value"), 'Both manual choices are saved explicitly and survive curated default fallback.');
   console.log('Modular layering: default, per-pair override, render order, cache, multi-mount, import and editor wiring passed.');
 }
 
