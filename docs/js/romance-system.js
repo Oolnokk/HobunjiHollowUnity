@@ -52,7 +52,7 @@
     nest_stolen: { match: e => e.type === 'nest_stolen' },
   };
   const LOSS_RULES = {
-    barbarian_killed: e => e.type === 'creature_killed' && e.isBarbarian,
+    barbarian_killed: e => e.type === 'creature_killed' && e.isBarbarian && !e.selfDefense, // Defending yourself from hostile barbarians is no loss.
     nest_stolen: e => e.type === 'nest_stolen',
   };
 

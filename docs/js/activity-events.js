@@ -11,8 +11,9 @@
 // Activity types currently emitted (detail fields in parentheses):
 //   fish_caught, tree_felled, rock_broken, ore_mined (oreKey), herb_picked,
 //   crop_harvested (label), livestock_harvested (kind), meal_cooked (recipe),
-//   potion_brewed, chest_opened (buried), creature_killed (creature,
-//   isBandit, isBarbarian, isPredator), animal_petted (farm, kind),
+//   potion_brewed, chest_opened (buried), creature_killed (creatureKey, label,
+//   isBandit, isBarbarian, selfDefense, isPredator) via emitCreatureKilled,
+//   animal_petted (farm, kind),
 //   nest_stolen (liveBirth), drink_accepted (npcId), dance (player started a
 //   dance), dance_together (npcId), kurraya_played
 (() => {
@@ -42,8 +43,27 @@
     return () => listeners.delete(listener);
   }
 
+  // game.js's transitionCreatureToDeath calls this for every non-companion
+  // death. Only the player's (or their companion's) own kills are announced:
+  // an NPC-vs-NPC fight nearby is not something the player did. Porakaneki /
+  // Omgurku hunters are the setting's "barbarians"; killing one that was
+  // already hostile and attacked first is flagged selfDefense.
+  function emitCreatureKilled(c) {
+    if (!c || c.isCompanion) return false;
+    if (window.PlayerDowned?.isTeamKill && !window.PlayerDowned.isTeamKill(c)) return false;
+    const isBarbarian = c.isTribeHunter === true || c.isPorakanekiHunter === true;
+    return emit('creature_killed', {
+      creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
+      isBandit: !!c.isBandit && !isBarbarian, // Tribe hunters reuse the bandit combat actor but are not bandits.
+      isBarbarian,
+      selfDefense: isBarbarian && window.PorakanekiFactionRules?.killedInSelfDefense?.(c) === true,
+      isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
+    });
+  }
+
   window.HobunjiActivityEvents = Object.freeze({
     emit,
+    emitCreatureKilled,
     on,
     debugSnapshot: () => ({ listeners: listeners.size, recent: recent.slice() }),
   });

@@ -23,6 +23,7 @@
     hitPenaltySeconds: 2,       // Bleed-out time lost per enemy hit taken while down.
     reviveInvulnSeconds: 1.5,
     killCreditWindowMs: 8000,   // A kill counts if the player/companion last hit the enemy this recently.
+    dotKillCreditWindowMs: 60000, // Longer window for a death from a lingering burn/bleed/poison tick (afflictions don't record their source).
     downedHealth: 1,            // Health held while down so vitals never see a "dead" player.
   });
   const SOFT_DEATH_REASONS = new Set(['resource-tick']); // handlePlayerDeath reasons that go down instead of dying (bleeding/burning/poison).
@@ -98,21 +99,34 @@
     state.remainingS = Math.max(0, state.remainingS - CONFIG.hitPenaltySeconds);
   }
 
-  // damageCreature calls this for every landed hit (player or companion).
+  // damageCreature calls this for every landed hit on a non-companion, whoever
+  // struck it, so the last hitter is known. friendlyFire marks actor-on-actor
+  // hits (bandit/tribe/lich/predator), which never count as the player's.
   function noteTeamHit(target, dmgOpts) {
     if (!target || target.isCompanion) return;
     const attacker = dmgOpts?.attacker;
     const fromCompanion = !!dmgOpts?.fromCompanion || (attacker?.isCompanion === true && (attacker.master || deps?.player) === deps?.player);
-    const fromPlayer = !attacker || attacker === deps?.player;
+    const fromPlayer = attacker ? attacker === deps?.player : dmgOpts?.friendlyFire !== true;
+    target._lastHitByTeam = fromCompanion || fromPlayer;
     if (fromCompanion || fromPlayer) target._teamHitAt = now();
     if (state && dmgOpts?.ranged && fromPlayer && target.health > 0 && target.def?.hostile !== false) state.focus = target;
+  }
+
+  // The player (or their companion) landed the last hit, recently enough to
+  // own the kill. Another actor finishing the enemy off takes the credit. A
+  // death from a damage-over-time tick (game.js marks _deathByAffliction)
+  // gets the longer window, so a burn the player started still counts.
+  function isTeamKill(creature) {
+    if (!creature || creature.isCompanion || creature._lastHitByTeam === false) return false;
+    const creditMs = creature._deathByAffliction === true ? CONFIG.dotKillCreditWindowMs : CONFIG.killCreditWindowMs;
+    return now() - (Number(creature._teamHitAt) || -Infinity) <= creditMs;
   }
 
   // transitionCreatureToDeath calls this for every non-companion death.
   function noteKill(creature) {
     if (!state || !creature || creature.isCompanion) return;
     if (creature.def?.hostile === false) return; // Passive wildlife is not an enemy.
-    if (now() - (Number(creature._teamHitAt) || -Infinity) > CONFIG.killCreditWindowMs) return;
+    if (!isTeamKill(creature)) return;
     secondWind('kill');
   }
 
@@ -191,6 +205,7 @@
     noteHitWhileDowned,
     noteTeamHit,
     noteKill,
+    isTeamKill, // Kill attribution shared with HobunjiActivityEvents.emitCreatureKilled (dates, likes).
     getFocusTarget,
     allowsAction,
     reset,

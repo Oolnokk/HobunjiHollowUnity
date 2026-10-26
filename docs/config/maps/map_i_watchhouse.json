@@ -869,7 +869,7 @@
   ]
 ],
   "exits": [
-    {"id": "exit_watch_front", "label": "Front Door", "tiles": [[9, 19], [10, 19], [11, 19]], "targetMap": "", "spawnCol": 0, "spawnRow": 0,
+    {"id": "exit_watch_front", "label": "Front Door", "tiles": [[10, 19]], "targetMap": "", "spawnCol": 0, "spawnRow": 0,
  "direction": "north",
  "generateDoor": true},
     {"id": "exit_watch_training_stairs", "label": "Down to the Practice Arena", "tiles": [[2, 14]], "targetMap": "map_i_watchhouse_arena", "spawnCol": 10, "spawnRow": 16,

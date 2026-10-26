@@ -191,6 +191,20 @@ W.HobunjiActivityEvents.emit('creature_killed', { isBarbarian: false });
 assert.equal(romance(), 30, 'the date must be close enough to notice');
 player.x = 21.5;
 
+// Real deaths go through emitCreatureKilled: only the player's own kills are
+// announced, and a barbarian that was hostile and attacked first is self-defense.
+W.PlayerDowned = { isTeamKill: c => c.playerKill === true };
+W.PorakanekiFactionRules = { killedInSelfDefense: c => c.hostileFirst === true };
+clock.hour += 0.2;
+assert.equal(W.HobunjiActivityEvents.emitCreatureKilled({ isTribeHunter: true, isBandit: true, playerKill: false }), false, 'an NPC battle nearby is not announced as the player\'s kill');
+assert.equal(romance(), 30, 'barbarians killing each other near a date cost nothing');
+W.HobunjiActivityEvents.emitCreatureKilled({ isTribeHunter: true, isBandit: true, playerKill: true, hostileFirst: true });
+assert.equal(romance(), 30, 'killing a barbarian that attacked first is neither a loss nor a bandit-kill like');
+W.HobunjiActivityEvents.emitCreatureKilled({ isTribeHunter: true, isBandit: true, playerKill: true });
+assert.equal(romance(), 10, 'killing a barbarian unprovoked is still a loss');
+delete W.PlayerDowned;
+delete W.PorakanekiFactionRules;
+
 // ── Follow / wait ───────────────────────────────────────────────────────
 let target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.equal(target.area, 'town');

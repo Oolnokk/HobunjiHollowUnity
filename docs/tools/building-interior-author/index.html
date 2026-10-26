@@ -392,7 +392,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
-<script src="../../js/interior-door-tiles.js?v=20261026h1f1ff22"></script>
+<script src="../../js/interior-door-tiles.js?v=20261026h273015f"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
@@ -646,13 +646,15 @@ function drawGrid(){
   });
 
   // Door tiles (brown, with a line toward the side the door faces)
-  InteriorDoorTiles.doorRecordsOf(state.interior).forEach(function(record){
-    var c=record.col,r=record.row, o=InteriorDoorTiles.recordOrientation(state.floorSet,record); // Shared with the in-game door builder.
-    gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
-    var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
-    gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
-    gx.moveTo(mx-vy*cw*0.4,my+vx*ch*0.4); gx.lineTo(mx+vy*cw*0.4,my-vx*ch*0.4); gx.stroke(); // door leaf spans perpendicular to its facing
-    gx.strokeStyle='#ffe0a8'; gx.lineWidth=2; gx.beginPath(); gx.moveTo(mx,my); gx.lineTo(mx+vx*cw*0.35,my+vy*ch*0.35); gx.stroke();
+  InteriorDoorTiles.doorGroupsOf(state.interior,state.floorSet).forEach(function(group){
+    group.tiles.forEach(function(record){
+      var c=record.col,r=record.row, o=InteriorDoorTiles.recordOrientation(state.floorSet,group); // Shared with the in-game door builder.
+      gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
+      gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
+      gx.moveTo(mx-vy*cw*0.4,my+vx*ch*0.4); gx.lineTo(mx+vy*cw*0.4,my-vx*ch*0.4); gx.stroke(); // door leaf spans perpendicular to its facing
+      gx.strokeStyle='#ffe0a8'; gx.lineWidth=2; gx.beginPath(); gx.moveTo(mx,my); gx.lineTo(mx+vx*cw*0.35,my+vy*ch*0.35); gx.stroke();
+    });
   });
 
   // Exit zones
@@ -1551,12 +1553,22 @@ function rebuild3D(){
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
   });
 
-  // Door tiles: a brown slab oriented like the in-game Wooden Door.
-  var doorMat3=new THREE.MeshLambertMaterial({color:0x9a6a37,transparent:true,opacity:0.8});
-  InteriorDoorTiles.doorRecordsOf(interior).forEach(function(record){
-    var p=[record.col,record.row],o=InteriorDoorTiles.recordOrientation(floorSet,record); // Includes exit doors and their explicit direction.
-    var m=new THREE.Mesh(new THREE.BoxGeometry(0.92,1.2,0.12),doorMat3);
-    m.position.set(p[0]+0.5,0.6,p[1]+0.5); m.rotation.y=-o.rotationDeg*Math.PI/180; previewGroup.add(m);
+  // Shared grouping shows paired leaves and one outer frame in the editor too.
+  var doorMat3=new THREE.MeshLambertMaterial({color:0x9a6a37,transparent:true,opacity:0.8}); // Preview door wood.
+  InteriorDoorTiles.doorGroupsOf(interior,floorSet).forEach(function(record){
+    var o=InteriorDoorTiles.recordOrientation(floorSet,record),width=record.tiles.length; // Pair width and inward facing match gameplay.
+    var doorway=new THREE.Group(); // One frame enclosing either one or two leaves.
+    function addDoorPart(w,h,d,x,y){
+      var mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),doorMat3); // Lightweight editor proxy in doorway-local space.
+      mesh.position.set(x,y,0); doorway.add(mesh);
+    }
+    if(width===2){ addDoorPart(0.82,1.08,0.13,-0.41,0.54); addDoorPart(0.82,1.08,0.13,0.41,0.54); }
+    else addDoorPart(0.63,1.08,0.13,0,0.54);
+    addDoorPart(0.18,1.16,0.19,-(width-0.18)/2,0.58);
+    addDoorPart(0.18,1.16,0.19,(width-0.18)/2,0.58);
+    addDoorPart(width+0.02,0.23,0.2,0,1.18);
+    doorway.position.set(record.col+0.5,0,record.row+0.5);
+    doorway.rotation.y=-o.rotationDeg*Math.PI/180; previewGroup.add(doorway);
   });
 
   // Entry point markers (editor-only) — see the 2D grid's own "S1" pucks.
