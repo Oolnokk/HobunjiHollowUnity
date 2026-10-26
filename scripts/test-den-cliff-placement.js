@@ -40,6 +40,15 @@ assert.deepEqual(Placement.entryPath(full).map(cell => [cell.dx, cell.dy]), [[0,
 assert.equal(Placement.evaluate(full, tileAt, 4, 8), null, 'full-size den rejects open ground with no cliff behind it');
 assert.equal(Placement.evaluate(full, tileAt, 13, 5), null, 'full-size den rejects a cliff face narrower than 3 tiles');
 assert(Placement.evaluate(small, tileAt, 14, 5), 'small den fits the narrow cliff spur');
+for (const col of [4, 6]) {
+  tileAt(col, 8).occupiedBy = 'blocked-shoulder';
+  assert.equal(Placement.evaluate(full, tileAt, 4, 4), null, 'wide facade must reject blocked approach flanks');
+  delete tileAt(col, 8).occupiedBy;
+}
+tileAt(16, 9).occupiedBy = 'blocked-small-shoulder';
+assert.equal(Placement.evaluate(small, tileAt, 14, 5), null, 'small facade reserves its outside right shoulder too');
+delete tileAt(16, 9).occupiedBy;
+assert(Placement.evaluate(small, tileAt, 14, 5), 'small cave restores eligibility after flanks are cleared');
 assert.equal(Placement.evaluate(full, tileAt, 18, 4), null, 'a one-row plateau ridge is too thin: the cave must sink a tile deeper into the cliff');
 
 tileAt(5, 8).occupiedBy = 'boulder';
@@ -71,6 +80,13 @@ for (const den of dens) {
   assert(den.approachAnchor && den.approachAnchor.y === den.y + den.h, `${den.id}: approach tile is just in front of the footprint`);
   assert.equal(y, den.y + den.h - 3, `${den.id}: entry is inset one final tile past the front floor row, onto the cliff's low side`);
   assert.notEqual(rootMap.tiles[`${den.approachAnchor.x},${den.approachAnchor.y}`]?.type, 'rock', `${den.id}: approach tile is open`);
+  for (let row = den.approachAnchor.y; row <= den.approachAnchor.y + 1; row++) {
+    for (const col of [x - 1, x, x + 1]) {
+      const tile = rootMap.tiles[`${col},${row}`];
+      assert(tile, `${den.id}: approach cell exists at ${col},${row}`);
+      assert(!['rock', 'shrub'].includes(tile.type), `${den.id}: approach flank must not become stone or foliage at ${col},${row}`);
+    }
+  }
 }
 const legacy = Generator.generateZoneWorkspace('map_western_slope', 'den-cliff-regression', []);
 assert(legacy.animalDens.length > 0 && legacy.animalDens.every(den => !den.cliffBacked), 'without templates dens keep legacy free-standing placement');
