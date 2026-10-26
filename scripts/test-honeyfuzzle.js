@@ -42,7 +42,8 @@ function fakeThree() {
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
   assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'legacy wing-step helper stays compatible');
-  assert.equal(S.ATLAS_COLS, 5);
+  assert.equal(S.ATLAS_COLS, 3); assert.equal(S.ATLAS_ROWS, 2, 'five sprites pack into a 3x2 atlas');
+  assert.deepEqual({ ...S.CROP }, { x: 0, y: 0, w: 478, h: 399 }, 'do not use the obsolete crop on the new PNGs');
   assert(S.FRAME_URLS.every((url, i) => url.endsWith('honeyfuzzle_fly' + (i + 1) + '.png')));
   assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_tailfeathers.png')));
   assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_spectacles.png')));
@@ -109,6 +110,8 @@ function fakeThree() {
   assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
   assert(shader.fragmentShader.includes('composed = overlayHoneyfuzzle( spectacles, composed )'), 'optional spectacles render above all body pixels');
   assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
+  assert(shader.vertexShader.includes('vUv.xy /= vec2(3.0, 2.0)'), '3x2 atlas UV coordinates are used');
+  assert(shader.fragmentShader.includes('vec2( 0.0, 0.5 )'), 'tail and fly sprite sample different atlas rows');
   assert.equal(avatar.group.children[0], avatar.frontPlane, 'frontPlane is the yaw pivot the creature loop rotates');
   assert.equal(avatar.backPlane, null);
   avatar.update(0, 1000, 0.016, 150);
