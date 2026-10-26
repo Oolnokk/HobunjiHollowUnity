@@ -309,11 +309,14 @@
     const growthRecipes = root.FoliageGenerator?.caveGrowthRecipes?.(biome, meshData.caveGrowthSeed || options.caveGrowthSeed || biome) || [];
     if (growthRecipes.length) {
       mesh.userData.surfaceFoliageRole = 'walls'; // The tube sampler sees the original carved wall mesh itself.
+      const growthStats = []; // Captures real generation counts and shared-cache use for mobile Pixel Probe debugging.
       for (const recipe of growthRecipes) {
         const growth = root.FoliageGenerator.buildSurfaceGrowth(mesh, recipe); // Identical material/stretch/projection path to authored surface growth.
         mesh.add(growth); // Preserve the Mesh return type, wall collider, and transforms expected by the scene builder.
+        growthStats.push({ kind: recipe.kind, ...growth.userData.surfaceGrowthStats, diagnostics: growth.userData.diagnostics || '' });
       }
       mesh.userData.caveGrowthBiome = biome; // Available to mobile in-game diagnostics.
+      mesh.userData.caveGrowthStats = growthStats; // Strand counts and sampler reuse can be inspected without devtools.
     }
     return mesh;
   }
