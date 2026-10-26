@@ -48,11 +48,19 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(w.Combat.attach.isAttached(swarm), true, 'it reaches the target and attaches');
   assert.equal(w.Combat.attach.hostOf(swarm), host);
   same(w.Combat.attach.attachersOf(host), [swarm]);
-  // It inherits the host's place, following it as it moves, and rides above it.
+  // The swarm inherits the host's X/Y and occupies its visible body center,
+  // correcting for its own hovering wing-cloud pivot rather than sitting above the head.
+  w.deps.getActorWorldY = actor => actor === host ? 2.83 : 0.85;
+  w.deps.worldSurfaceY = () => 2;
+  swarm.avatarRef = { group: { position: { y: 0 }, scale: { y: 1 } }, frontPlane: { position: { y: 0.12 } } };
   host.x = 360; host.y = 260; host.facing = 1.2;
   run(w, swarm, 0.05);
   assert.deepEqual([swarm.x, swarm.y, swarm.facing], [360, 260, 1.2]);
-  assert(swarm._banditLungeHopCurrent > 0.8, 'rides above the host\'s head');
+  assert(Math.abs(swarm._banditLungeHopCurrent - 0.41) < 1e-9, 'body center minus the swarm floor lift and hover pivot');
+  assert(Math.abs(swarm.avatarRef.group.position.y - 2.71) < 1e-9, 'visible wing cloud sits exactly at host world-Y center');
+  assert.equal(swarm._attachVisualSpread, 0.42, 'attachment is visibly much denser than ordinary flight');
+  host.y += 40; run(w, swarm, 0.05);
+  assert.equal(swarm.y, host.y, 'swarm tracks the target as it moves');
   // Ticks: little direct damage, a heavy poison multiplier, no stagger or knockback.
   w.calls.creature.length = 0;
   run(w, swarm, 2);
@@ -181,6 +189,8 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   w.Combat.animalAttacks.applyConfig(authored.creatureAttacks);
   const loaded = w.Combat.attach.config('swarm');
   assert.equal(loaded.durationS, 6); assert.equal(loaded.hostReaction.kind, 'flail'); assert.equal(loaded.tick.playerScale, 0.6);
+  assert.equal(loaded.verticalAnchor, 'center'); assert.equal(loaded.heightAboveHost, 0);
+  assert.equal(loaded.visualSpreadScale, 0.42, 'authoring keeps the compact attached-state visual');
 }
 
 console.log('combat attach: ok');
