@@ -7,7 +7,7 @@
 ## Lifecycle
 
 1. **approach**: the attacker flies/hops to its single target (`approachSpeedPxS`, `contactPx`, `approachTimeoutS`).
-2. **attached**: it takes the host's position and facing every frame, rides just above the host's top (`heightAboveHost`, via the creature renderer's existing vertical-offset slot), and ticks an effect onto the host every `tickIntervalS` for `durationS`.
+2. **attached**: it takes the host's position and facing every frame. Ordinary riders hover above the host's top, but `verticalAnchor: 'center'` overlaps the host's rendered body center, including the attacker's wing-cloud hover offset. It ticks an effect every `tickIntervalS` for `durationS`.
 3. **detach**: on expiry, or when the host or attacker dies, the host leaves the area, or the attack is cancelled. It is set down beside the host (never inside it) and rests for `cooldownS`.
 
 A host can carry `maxPerHost` riders (3 by default), and a rider cannot itself be a host.
@@ -21,7 +21,8 @@ A host can carry `maxPerHost` riders (3 by default), and a rider cannot itself b
 | `onTick(attacker, host, state)` | replaces the default tick entirely |
 | `immuneToHost` | the attacker ignores every hit that comes from its host (a named `attacker`, or an unnamed hit that starts on the host; any unnamed hit for a player host) |
 | `staggerImmune` | no stagger, knockback or flee reaction from anyone while attached (other creatures can still damage it) |
-| `visualSpreadScale` | tightens a swarm renderer over the host |
+| `verticalAnchor`, `heightAboveHost` | default riders sit above the host; `verticalAnchor: 'center'` follows its rendered body center. `heightAboveHost` is an additional offset from whichever anchor was chosen. |
+| `visualSpreadScale` | scales the swarm member radius around the local center; Swarm uses `0.42` while attached and returns to `1` when detached |
 | `hostReaction` | a creature host swats at what is on it: `{ kind: 'flail', intervalS, radiusTiles, damageScale, hitsAllies, hitsOpponents }`. The swat is aimed at the rider, which ignores it, so it lands on whoever else is near: the host's allies by default |
 | `onAttach`, `onDetach` | hooks |
 
@@ -30,6 +31,8 @@ Ticks are delivered with `noStagger` so a damage-over-time rider does not stun-l
 ## Swarm
 
 `def.attacks: ['swarm']`, `attackTag: 'poison'`, `realAttackEvery: 1` (a companion uses Swarm every time instead of the usual 1 in 4). Defaults: 6 s on the target, 5 s rest, a tick every 0.5 s of `0.3 x attackDamage` direct damage with a heavy Poisoned Health buildup (`poisonedHealth: 3`, i.e. 3x the direct damage), softened to 60% against the player; immune to the swarmed target; the swarmed creature flails at 50% of its own `attackDamage` every 1.1 s, which damages allies within 1.4 tiles.
+
+Attached Honeyfuzzles contract to 42% of their free-flight spread for a clearly distinct, densely clustered state. Contraction is quick on impact; they relax back into a loose cloud on detach. Only presentation changes, not attack duration/damage.
 
 Honeyfuzzles are also in the territorial species list (`creatureBehaviors.territorial.species`), so a swarm defends its hive: it warns first, then fights, using Swarm on whoever is attacking or too close.
 

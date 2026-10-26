@@ -152,7 +152,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261023h443f8dc"></script>
-  <script src="config/scratchbones-config.js?v=20261026hmrg7c1d"></script>
+  <script src="config/scratchbones-config.js?v=20261026hfineghoul2"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -187,7 +187,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261022h372be04"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261026hbecf306"></script>
+  <script src="js/held-action-animations.js?v=20261026h7a788f0"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -222,7 +222,7 @@
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
   <script src="js/creature-genetics-render.js?v=20261026beard1a"></script>
-  <script src="js/honeyfuzzle-swarm.js?v=20261023hf1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
+  <script src="js/honeyfuzzle-swarm.js?v=20261026attachdense1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
   <script src="js/honeyfuzzle-colors.js?v=20261024hf1"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
   <script src="js/honeyfuzzle-hives.js?v=20261024h1c09ca3"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -315,7 +315,7 @@
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261024ha298297"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261026rearKick2"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
-  <script src="js/combat/combat-attach.js?v=20261024at1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
+  <script src="js/combat/combat-attach.js?v=20261026attachcenter1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261019h0ffc9ab"></script>
   <script src="js/combat/combat-progression.js?v=20261019h586a5e1"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
@@ -335,7 +335,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20261019h420f48e"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261023hfreeparticles1"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261026heldweapononly3"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261015h91b22f2"></script>
@@ -355,7 +355,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261026h2080c71"></script>
+  <script src="js/combat/combat-bandit.js?v=20261026ha66eee2"></script>
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
@@ -366,7 +366,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261022hbd9c20e"></script>
+  <script src="js/bandit-camps.js?v=20261026h05e01fb"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -799,7 +799,7 @@
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261025oreveins2"></script>
-  <script src="js/ore-rock-textures.js?v=20261025oreveins1"></script> <!-- Shared masked mineral materials: mine, wilderness, caves. -->
+  <script src="js/ore-rock-textures.js?v=20261026oreverdigris1"></script> <!-- Shared masked mineral materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261025oreveins1"></script>
   <script src="js/town-mine.js?v=20261023ladderodds2"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
