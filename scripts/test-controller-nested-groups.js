@@ -212,6 +212,25 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('cancel');
   assert.equal(ui.debugState().groupDepth, 0, 'Back releases the offscreen container');
   scrollPanel.hidden = true; await rebuild(scrollPanel);
+  // A read-only page has no focused child to lead the right stick to its scroll host.
+  const readOnly = new Element('div', { id: 'read-only-content' }); // Ordinary, unannotated information region.
+  readOnly.style.overflowY = 'auto'; readOnly.scrollHeight = 800; readOnly.clientHeight = 200; readOnly.scrollTop = 0;
+  const hiddenReader = new Element('div', { id: 'hidden-reader' }); // A hidden sibling must never steal the scroll gesture.
+  hiddenReader.hidden = true; hiddenReader.style.overflowY = 'auto'; hiddenReader.scrollHeight = 900; hiddenReader.clientHeight = 200; hiddenReader.scrollTop = 0;
+  const clippedReader = new Element('div', { id: 'clipped-reader' }); // Overflow:hidden is clipping, not a scroll destination.
+  clippedReader.style.overflowY = 'hidden'; clippedReader.scrollHeight = 900; clippedReader.clientHeight = 200; clippedReader.scrollTop = 0;
+  const readerPanel = new Element('div', { id: 'reader-panel', 'data-ctrl-panel': '' }, [hiddenReader, clippedReader, readOnly]);
+  body.append(readerPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [readerPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  scrollFrame(1);
+  assert.ok(readOnly.scrollTop > 0, 'right stick finds an ordinary information scroller with no selectable items');
+  assert.equal(hiddenReader.scrollTop, 0); assert.equal(clippedReader.scrollTop, 0);
+  readerPanel.style.overflowY = 'auto'; readerPanel.scrollHeight = 1000; readerPanel.clientHeight = 400; readerPanel.scrollTop = 0;
+  readOnly.scrollTop = 600; scrollFrame(1);
+  assert.ok(readerPanel.scrollTop > 0, 'scrolling hands off to an ancestor at the inner boundary');
+  readerPanel.hidden = true; await rebuild(readerPanel);
+
 
   const treeToggle = button('tree-toggle', 10, 40, { 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // The authored toggle opens just its own collapsible tree.
   const perkRow = new Element('div', { class: 'perk-row', 'data-perk': 'health' }, [button('perk-plus', 10, 100), button('perk-minus', 10, 140)], 10, 90);
@@ -389,14 +408,15 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   body.append(sectionPanel);
   for (const observer of observers) observer([{ target: body, addedNodes: [sectionPanel], removedNodes: [] }]);
   await Promise.resolve();
-  assert.equal(ui.focusedElement(), sectionOwner);
-  press('confirm');
-  assert.equal(ui.focusedElement(), sectionA1, 'entering the owner skips its selected page wrapper');
+  assert.equal(ui.focusedElement(), sectionA1, 'pause panes automatically enter their selected page without a container Confirm');
   assert.equal(sectionA1.clicks, 0, 'entering does not activate the highlighted action');
   assert.ok(storageSection.classList.contains('ctrl-nav-subtab-hidden'));
   assert.equal(ui.debugState().subtab.count, 2);
+  sectionOwner.scrollTop = 180; sectionOwner.scrollHeight = 900; sectionOwner.clientHeight = 200; sectionOwner.style.overflowY = 'auto';
+  press('right'); assert.equal(ui.focusedElement(), sectionA2);
   press('tabNext');
   assert.equal(ui.focusedElement(), storageSection, 'a nested multi-section page remains enterable');
+  assert.equal(sectionOwner.scrollTop, 0, 'a newly selected page starts at its top instead of inheriting the previous page scroll');
   assert.ok(sectionA.classList.contains('ctrl-nav-subtab-hidden'));
   press('confirm');
   assert.equal(ui.focusedElement(), bagColumn.children[0]);
@@ -416,12 +436,13 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(ui.debugState().groupId, 'storage-section', 'a rebuilt nested page owner remains enterable after Back');
   press('cancel');
   press('tabNext');
-  assert.equal(ui.focusedElement(), sectionA1, 'outer bumpers resume after leaving the nested owner');
+  assert.equal(ui.focusedElement(), sectionA2, 'returning to a page remembers its selected control');
+  assert.equal(sectionOwner.scrollTop, 180, 'returning to a page restores its own scroll position');
   const rebuiltSection = new Element('div', { id: 'section-a', class: 'farm-section' }, [button('section-a1', 10, 40), button('section-a2', 110, 40)]); // Replaces the selected page without closing its owner.
   sectionOwner.children[0] = rebuiltSection; rebuiltSection.parentElement = sectionOwner; sectionA.parentElement = null;
   await rebuild(sectionOwner);
   assert.equal(ui.debugState().subtab.id, 'section-a');
-  assert.equal(ui.focusedElement(), rebuiltSection.children[0]);
+  assert.equal(ui.focusedElement(), rebuiltSection.children[1]);
   assert.ok(storageSection.classList.contains('ctrl-nav-subtab-hidden'), 'rebuild retains one-page presentation');
   press('cancel');
   assert.equal(ui.focusedElement(), sectionOwner);

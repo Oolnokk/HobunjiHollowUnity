@@ -3061,7 +3061,14 @@
     /* Overrides the page-wide `canvas { position:absolute; inset:0 }` rule
        (meant for the game's fullscreen 3D canvas) which would otherwise
        blow this canvas up to cover the whole Farm pane. */
-    #farmGlanceCanvas { position: static; inset: auto; width: 100%; height: auto; display: block; image-rendering: pixelated; }
+    #farmGlanceCanvas { position: static; inset: auto; width: auto; height: auto; max-width: 100%; max-height: max(80px, calc(100dvh - 310px)); display: block; image-rendering: pixelated; }
+    #farmSectionLayout .farm-grid-wrap { position: relative; width: fit-content; max-width: 100%; align-self: center; flex: 0 0 auto; }
+    #farmGlanceMarkers { position: absolute; inset: 0; pointer-events: none; }
+    .farm-map-icon { position: absolute; width: 14px; height: 14px; font-size: 12px; line-height: 14px; text-align: center; transform: translate(-50%, -50%); background-size: contain; background-position: center; background-repeat: no-repeat; }
+    .farm-map-icon.sprited-icon { font-size: 0; }
+    .farm-map-icon.crop-ready { outline: 1px solid #f9e28a; }
+    .farm-map-icon.crop-growing { outline: 1px solid #8fd66b; }
+    .farm-map-animal { width: 22px; height: 22px; z-index: 1; filter: drop-shadow(0 1px 1px #000); }
     .farm-grid-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 9px; color: var(--muted); }
     .farm-grid-legend span { display: inline-flex; align-items: center; gap: 3px; }
     .farm-grid-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
@@ -3635,6 +3642,10 @@
       bottom: 10px;
       transform: translateX(-50%);
       display: none;
+      max-width: calc(100vw - 16px);
+      box-sizing: border-box;
+      flex-wrap: wrap;
+      justify-content: center;
       gap: 16px;
       padding: 6px 16px;
       border-radius: 20px;

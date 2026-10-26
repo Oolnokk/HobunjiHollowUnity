@@ -29558,6 +29558,7 @@
       });
 
       window.FarmPanel?.init({
+        cropData, applyItemSpriteIcon, // Shared crop identities and bag artwork for the farm map.
         LIVESTOCK_ITEM_KINDS,
         inventory,
         showToast,

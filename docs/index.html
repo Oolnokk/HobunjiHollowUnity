@@ -33,7 +33,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261025h4312c61"></script>
+  <script src="js/format-utils.js?v=20261026h5291488"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -161,7 +161,7 @@
   <script src="js/metal-armor-system.js?v=20261024haceb249"></script>
   <script src="config/colors/config.js?v=20260930h1b2e2e2"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261025fontpolicy1">
+  <link rel="stylesheet" href="style.css?v=20261026farmdd7918fc">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -428,7 +428,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261023h987fb2d"></script>
+  <script src="js/farm-production.js?v=20261026hf65533c"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026hivebuzz2"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261025he7892dd"></script>
@@ -439,7 +439,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
-  <script src="js/farm-buildings.js?v=20261016h5e4b15e"></script>
+  <script src="js/farm-buildings.js?v=20261026h3253af3"></script>
   <!-- Barn trough system: barn-interior map synthesis, the live fill-level
        mesh registry, and the open-trough bag/slot panel (window.FarmTroughs)
        — self-contained aside from deps injected via init(), and reads
@@ -447,7 +447,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261024he01dfa5"></script>
+  <script src="js/farm-troughs.js?v=20261026hf9ad746"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -467,7 +467,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20261017h1a861b2"></script>
+  <script src="js/farm-crates.js?v=20261026hefdead0"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -719,7 +719,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261025hd838419"></script>
+  <script src="js/farm-panel.js?v=20261026h2931cf6"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -1367,13 +1367,10 @@
            a read-only layout glance, livestock roster + breeding, shared
            storage, and (owner-only) farmhand management. See renderFarmPanel()
            in game.js. ──────────────────────────────────────────────────── -->
-      <div class="mp-pane" id="mpFarm">
+      <div class="mp-pane" id="mpFarm" data-ctrl-auto-enter data-ctrl-initial-subtab="farmSectionLayout">
         <div class="farm-pane">
           <div class="farm-header">
-            <div class="farm-name-row">
-              <input id="farmNameInput" class="farm-name-input" type="text" maxlength="40" disabled aria-label="Farm name">
-              <button id="farmNameSaveBtn" class="settings-small-btn" hidden>Save</button>
-            </div>
+            <strong id="farmNameDisplay">Farm</strong>
             <div class="farm-owner-row">Owned by <span id="farmOwnerName">—</span></div>
           </div>
 
@@ -1381,15 +1378,25 @@
             <div class="settings-section-title">Layout</div>
             <div class="farm-grid-wrap"><canvas id="farmGlanceCanvas" width="480" height="480"></canvas></div>
             <div class="farm-grid-legend" id="farmGridLegend"></div>
+            <div class="farm-toolbar">
+              <button id="farmCancelPlacementBtn" class="settings-small-btn" hidden>Cancel</button>
+            </div>
+
           </div>
 
           <div class="farm-section" id="farmSectionBuildings">
             <div class="settings-section-title">Buildings</div>
             <div id="farmBuildingsNote" class="farm-note"></div>
             <div id="farmBuildingsList" class="farm-list"></div>
-            <div class="farm-toolbar">
-              <button id="farmCancelPlacementBtn" class="settings-small-btn" hidden>Cancel</button>
+          </div>
+
+          <div class="farm-section" id="farmSectionCustomize">
+            <div class="settings-section-title">Customize Farm</div>
+            <div class="farm-name-row">
+              <input id="farmNameInput" class="farm-name-input" type="text" maxlength="40" disabled aria-label="Farm name">
+              <button id="farmNameSaveBtn" class="settings-small-btn" hidden>Save</button>
             </div>
+            <div id="farmBuildingCustomizationList" class="farm-list"></div>
           </div>
 
           <div class="farm-section" id="farmSectionFoodProcessing">
@@ -2802,13 +2809,13 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261026orefacets2"></script>
+  <script src="game.js?v=20261026farmnavmerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261024hb8ea2e5"></script>
+  <script src="js/controller-ui-nav.js?v=20261026h7c74a77"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
