@@ -73,8 +73,11 @@
     const now = window.FarmProduction.now();
     deps.inventory[EGG_ITEM] = bagCount(EGG_ITEM) - 1;
     const colors = window.HoneyfuzzleColors;
-    const color = colors?.takeEggColor(deps.getWorldId?.()) || colors?.pickForKey('', 'egg' + Math.random()) || null; // The oldest harvested egg's color; a fresh roll if the bag held eggs from elsewhere.
-    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays(), color };
+    const appearance = colors?.takeEggAppearance?.(deps.getWorldId?.()) || null; // New saves carry an inherited genotype; old queues return {color, genotype:null}.
+    const color = appearance?.color || (!colors?.takeEggAppearance ? colors?.takeEggColor?.(deps.getWorldId?.()) : null)
+      || colors?.pickForKey('', 'egg' + Math.random()) || null; // Old bag-only eggs still receive a valid randomized primary pigment.
+    ensure(entry).egg = { placedAt: now, hatchAt: now + hatchDays(), color,
+      genotype: appearance?.genotype || null }; // Persist the original hive's tailfeathers/spectacles until hatching.
     persist();
     return { ok: true, message: `🥚 The egg is tucked into the house. It hatches in ${hatchDays()} days.` };
   }
@@ -85,7 +88,7 @@
     const list = deps.loadWorldLivestock();
     const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
     const name = window.CreatureGenetics?.defaultLivestockName?.(KIND) || 'Honeyfuzzle Swarm';
-    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(KIND) || null; // New hatchlings have inheritable optional tail/spectacles genes.
+    const genotype = house.egg.genotype || window.CreatureGenetics?.makeDefaultGenotype?.(KIND) || null; // New eggs inherit their hive markings; legacy color-only eggs roll fresh genes.
     if (genotype?.base && house.egg.color) genotype.base.color = house.egg.color; // Preserve the mother's hive-region primary color.
     list.push({
       id, kind: KIND, barnId: null, houseId: entry.id, troughIndex: null, releasedAt: Date.now(),
