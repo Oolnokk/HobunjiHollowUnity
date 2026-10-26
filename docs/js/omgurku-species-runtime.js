@@ -272,7 +272,8 @@
     } else if (perp.CREATURE_PLANE_ROT_MODE === 'sway' && perp.creatureDeadzoneTarget) {
       target = perp.creatureDeadzoneTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
     } else if (perp.perpClamp) {
-      target = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead).effectiveTarget;
+      const result = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead); // Priority edge changes must cut across the excluded angles, matching creature cards.
+      target = result.effectiveTarget; snap = result.snapTo !== null;
     }
     c.animalYaw = snap || !Number.isFinite(c.animalYaw) ? target
       : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*10);
@@ -332,7 +333,10 @@
     if (!c) return;
     const p = c.placement; // Shared live Omgurku calibration, or a mount's own derived placement.
     const w = p.lowerWidth, h = p.lowerHeight;
-    const centerY = h / 2 - p.visibleFloorCorrection + p.lowerOffsetY;
+    const rigOffset = c.mount ? NaN : Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.['omgurku-lower']?.groundOffsets?.medium); // Mounts already encode their own authored lift in visibleFloorCorrection.
+    const autoCenterY = h / 2 - p.visibleFloorCorrection; // Preserves current placement for Auto/0.
+    const lowerFloorY = Number.isFinite(rigOffset) && Math.abs(rigOffset) > 1e-8 ? rigOffset : autoCenterY; // Nonzero is absolute floor-to-plane-center height.
+    const centerY = lowerFloorY + p.lowerOffsetY; // Both joined halves move together; existing local calibration remains independent.
     const joinY = centerY + (0.5 - p.saddleV) * h;
     const joinZ = (0.5 - p.saddleU) * w + p.lowerOffsetZ;
     c.upper.position.set(p.lowerOffsetX + p.upperOffsetX,

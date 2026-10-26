@@ -412,6 +412,7 @@
   }
 
   function _restoreFarmAnimalHead(animal, dt) {
+    window.PerpRotation?.clearHeadtrackHint(animal.perpState);
     const restDeg = Number(animal.avatarRef?.headRig?.rig?.restDeg);
     animal._lookAtDebug = null;
     if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
@@ -421,9 +422,20 @@
 
   function _farmAnimalLookTarget(animal, dt, idle) {
     const faceTargetRot = _farmAnimalFaceLook(animal, dt);
-    if (faceTargetRot !== null) return faceTargetRot;
+    if (faceTargetRot !== null) {
+      window.PerpRotation?.setHeadtrackHint(animal.perpState, faceTargetRot); // Farm livestock shares NPC gaze priority when watching the player.
+      return faceTargetRot;
+    }
     _restoreFarmAnimalHead(animal, dt);
     return idle ? deps.nearestAngleAmong(animal.groupRot, deps.cameraRelativePerps()) : animal.targetRot;
+  }
+
+  function _reportFarmAnimalMovementHint(animal) {
+    const dx = animal.wx - (animal.perpState.previousFarmX ?? animal.wx); // Actual tile-space displacement feeds movement priority without treating idle hops as travel.
+    const dz = animal.wz - (animal.perpState.previousFarmZ ?? animal.wz); // Paired with dx for the world-bearing convention used by PerpRotation.
+    animal.perpState.previousFarmX = animal.wx;
+    animal.perpState.previousFarmZ = animal.wz;
+    window.PerpRotation?.setMovementHint(animal.perpState, Math.hypot(dx, dz) > 1e-6 ? Math.atan2(dx, dz) : null);
   }
 
   function _updateFarmAnimalFacing(animal, dt, idle) {
@@ -431,6 +443,7 @@
       animal._lookAtDebug = null;
       return;
     }
+    _reportFarmAnimalMovementHint(animal);
     const lookTarget = _farmAnimalLookTarget(animal, dt, idle);
     const { effectiveTarget, snapTo } = deps.perpClamp(animal.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
     if (snapTo !== null) animal.groupRot = effectiveTarget;
