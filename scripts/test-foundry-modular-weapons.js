@@ -60,13 +60,13 @@ assert.equal(window.HobunjiHandToolGrips.toolKeyFor(spearHammer), 'fishingspear'
 assert.equal(api.isDisallowed('missing', 'dagger'), true);
 assert.equal(api.getConfig().shafts['dagger-sword'].mounts.length, 1);
 assert.equal(api.getConfig().shafts['dagger-sword'].crop, undefined);
-assert.equal(api.settings('warhammer', 'dagger').scaleX, 1.65, 'Keep old calibration as per-pair correction');
+assert.equal(api.settings('warhammer', 'work-hammer').scaleX, 1.65, 'Keep old calibration as per-pair correction');
 assert.equal(api.settings('dagger', 'warhammer').y, 45, 'Keep original haft correction for each head pairing');
 const broadShaft = api.getConfig().shafts['harlyao-broadsword']; // Baseline Harlyao sword shaft used for the default longsword proportion.
 const longShaft = api.getConfig().shafts['harlyao-longsword']; // Explicit per-head overrides may intentionally diverge from this default relation.
 assert.deepEqual(plain(longShaft.mounts), plain(broadShaft.mounts));
-assert(Math.abs(api.settings('harlyao-longsword', 'work-hammer').scaleX - api.settings('harlyao-broadsword', 'work-hammer').scaleX * .9) < 1e-6);
-assert(Math.abs(api.settings('harlyao-longsword', 'work-hammer').scaleY - api.settings('harlyao-broadsword', 'work-hammer').scaleY * 1.1) < 1e-6);
+assert(Math.abs(api.settings('harlyao-longsword', 'dagger').scaleX - api.settings('harlyao-broadsword', 'dagger').scaleX * .9) < 1e-6);
+assert(Math.abs(api.settings('harlyao-longsword', 'dagger').scaleY - api.settings('harlyao-broadsword', 'dagger').scaleY * 1.1) < 1e-6);
 assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings remain.');
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
 draft.shafts.dagger.overrides.warhammer = { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true };
