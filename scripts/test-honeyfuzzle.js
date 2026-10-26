@@ -192,6 +192,49 @@ function fakeThree() {
   }).catch(error => { throw error; });
 }
 
+// ---- genotype portraits / chatheads use the same layer ordering --------------------------
+{
+  const context = sandbox();
+  const makeCanvas = () => {
+    const canvas = { width: 0, height: 0, layers: [] }; // One in-memory mock canvas per compositor output or recolor pass.
+    canvas.getContext = () => ({
+      drawImage(image) { canvas.layers.push(image.label || image.layers?.join('+') || 'unknown'); },
+      getImageData() { return { data: new Uint8ClampedArray(canvas.width * canvas.height * 4) }; },
+      putImageData() {},
+    });
+    return canvas;
+  };
+  context.document = { currentScript: null, createElement: makeCanvas };
+  context.Image = class {
+    constructor() { this.width = this.naturalWidth = 478; this.height = this.naturalHeight = 399; }
+    set src(url) { this.label = url; this.onload(); }
+  };
+  context.ColorFill = { shadeFillPixels() {} }; // Only draw order is inspected; normal pigment math is tested elsewhere.
+  context.fetch = async () => ({ json: async () => ({}) }); // No per-species base-mask file is required for full sprite recolor.
+  load(context, 'docs/js/creature-genetics-render.js');
+  const renderer = context.CreatureGeneticsRender;
+  assert.deepEqual(Array.from(renderer.SPECIES.honeyfuzzle.underlayPatterns), ['tailfeathers'], 'static portraits register the tail as a background layer');
+  assert.equal(renderer.patternUrl('honeyfuzzle', 'spectacles', 'run1'), 'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png');
+  const genotype = { base: { color: '#123456' },
+    tailfeathers: { color: '#654321', enabled: true, copies: 1 },
+    spectacles: { color: '#445566', enabled: true, copies: 1 } }; // Confirms secondary pigment appears in the shared genotype cache signature.
+  assert.match(renderer.genotypeSignature('honeyfuzzle', genotype), /tailfeathers:#654321/);
+  renderer.composeFrame('honeyfuzzle', 'idle', genotype).then(canvas => {
+    assert(canvas, 'the genotype renderer produces a honeyfuzzle portrait rather than returning null');
+    assert.deepEqual(Array.from(canvas.layers), [
+      'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
+      'assets/creaturesprites/honeyfuzzle_fly1.png',
+      'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
+    ], 'tail, body, spectacles are composited in that order for portraits');
+    return renderer.composeFrame('honeyfuzzle', 'run2', null);
+  }).then(canvas => {
+    assert.deepEqual(Array.from(canvas.layers), [
+      'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
+      'assets/creaturesprites/honeyfuzzle_fly3.png',
+    ], 'the default tail remains visible without genes or spectacles');
+  }).catch(error => { throw error; });
+}
+
 // ---- fixed Medium size / companion role -------------------------------------------------
 {
   const context = sandbox({ SCRATCHBONES_CONFIG: { game: { creatureGenetics: { palettes: { default: [{ id: 'mint', name: 'Mint', hex: '#aabbcc', weight: 1 }, { id: 'gold', name: 'Gold', hex: '#aabb44', weight: 1 }] } }, livestock: {}, wildlife: {} } }, __farmLog() {}, addEventListener() {} });
