@@ -15,7 +15,7 @@
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
 <p id="part-readiness">Heads and hafts require matching tang or eye lines to assemble.</p>
 <p id="head-construction-note" aria-live="polite"></p>
-<p>Drag from one end of a mounting line to the arrow tip directly on the sprite. Arrows align direction-to-direction, then automatically rotate the head and stretch it **only along the head arrow axis** to match the haft line; its perpendicular width stays unchanged. Gold lines are tangs; aqua lines are eyes/sleeves. All lines use the original 450 × 1204 sprite coordinates.</p>
+<p>Drag from one end of a mounting line to the arrow tip directly on the sprite. Arrows align direction-to-direction, then automatically rotate the head and stretch it only along the head arrow axis to match the haft line; its perpendicular width stays unchanged. Gold lines are tangs; aqua lines are eyes/sleeves. All lines use the original 450 × 1204 sprite coordinates.</p>
 <div class="toolbar" role="group" aria-label="Mount line editing mode">
 <button id="gizmo-draw" type="button" aria-pressed="true">✏️ Draw line</button>
 <button id="gizmo-move" type="button" aria-pressed="false"><span aria-hidden="true">✥</span> Move line</button>
@@ -30,7 +30,7 @@
 <label><input id="disallow" type="checkbox"> Explicitly disallow this head on this haft</label>
 <p>A haft can have tang lines, eye lines, or both; only the matching type accepts each head. Explicit exclusions take precedence even for compatible lines.</p>
 <h2>Selected head + haft corrections</h2>
-<p>There are no longer global transformations. The matching arrows supply initial translation, rotation, and scaling **only along the line direction**. These controls adjust only this exact combination, on top of its automatic transform.</p>
+<p>There are no longer global transformations. The matching arrows supply initial translation, rotation, and scaling only along the line direction. These controls adjust only this exact combination, on top of its automatic transform.</p>
 <table><thead><tr><th>Pair correction</th><th>Setting</th></tr></thead><tbody id="fields"></tbody></table>
 <button id="reset-pair" type="button">Reset this pair's manual corrections</button>
 <details><summary>Mobile diagnostics</summary><pre id="debug"></pre></details></section>
