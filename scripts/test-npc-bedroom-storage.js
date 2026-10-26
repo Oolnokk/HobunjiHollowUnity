@@ -71,7 +71,7 @@ const residents = [
   ['gikali_ginju','map_i_ginju_farmstead_F2_R1','f_ginjuroom_bed','f_ginjuroom_wardrobe_gikali','map_i_ginju_farmstead'],
   ['aliri_ginju','map_i_ginju_farmstead_F2_R2','f_ginjuroom_bed_aliri','f_ginjuroom_wardrobe_aliri','map_i_ginju_farmstead'],
   ['gantami_ginju','map_i_ginju_farmstead_F2_R2','f_ginjuroom_bed_gantami','f_ginjuroom_wardrobe','map_i_ginju_farmstead'],
-  ['teacup_unumanuk','map_i_unumanuk_household_bedroom','f_unmhbed_teacup','f_unmhbed_chest_teacup','map_i_unumanuk_household'],
+  ['teacup_unumanuk','map_i_unumanuk_household_teacup','f_unmhbed_teacup','f_unmhbed_chest_teacup','map_i_unumanuk_household'],
   ['spearhead_unumanuk','map_i_unumanuk_household_bedroom','f_unmhbed_roll_spearhead','f_unmhbed_chest_spearhead','map_i_unumanuk_household'],
   ['oddclaw_unumanuk','map_i_unumanuk_household_bedroom','f_unmhbed_roll_oddclaw','f_unmhbed_chest_oddclaw','map_i_unumanuk_household'],
   ['binding_hatayap','map_i_unumanuk_household_bedroom','f_unmhbed_roll_binding','f_unmhbed_chest_binding','map_i_unumanuk_household'],
@@ -81,12 +81,12 @@ const residents = [
   ['jubmir','map_i_inn_F2_jubmir','f_map_i_inn_F2_jubmir_bed','f_map_i_inn_F2_jubmir_wardrobe','map_i_inn'],
   ['khannibarri_agent','map_i_ikmc_outpost','f_ikmc_hark_bed','f_ikmc_hark_wardrobe','map_i_ikmc_outpost'],
   ['dzibim_khibu','map_i_carpenters_F2_dzibim','f_map_i_carpenters_F2_dzibim_bed','f_map_i_carpenters_F2_dzibim_wardrobe','map_i_carpenters'],
-  ['dzahiri_khibu','map_i_carpenters_F2_dzahiri','f_map_i_carpenters_F2_dzahiri_bed','f_map_i_carpenters_F2_dzahiri_wardrobe','map_i_carpenters'],
+  ['dzahiri_khibu','map_i_carpenters_F2_dzibim','f_map_i_carpenters_F2_dzibim_bed','f_map_i_carpenters_F2_dzahiri_wardrobe','map_i_carpenters'],
   ['nashka_khibu','map_i_carpenters_F2_nashka','f_map_i_carpenters_F2_nashka_bed','f_map_i_carpenters_F2_nashka_wardrobe','map_i_carpenters'],
   ['kzubug','map_i_smithy_F2_kzubug','f_map_i_smithy_F2_kzubug_bed','f_map_i_smithy_F2_kzubug_wardrobe','map_i_smithy'],
   ['sloomi','map_i_smithy_F2_sloomi','f_map_i_smithy_F2_sloomi_bed','f_map_i_smithy_F2_sloomi_wardrobe','map_i_smithy'],
   ['leaf','map_i_swamp_house_leaf','f_map_i_swamp_house_leaf_bed','f_map_i_swamp_house_leaf_wardrobe','map_i_swamp_house'],
-  ['pahu','map_i_swamp_house_pahu','f_map_i_swamp_house_pahu_bed','f_map_i_swamp_house_pahu_wardrobe','map_i_swamp_house'],
+  ['pahu','map_i_swamp_house_leaf','f_map_i_swamp_house_leaf_bed','f_map_i_swamp_house_pahu_wardrobe','map_i_swamp_house'],
 ];
 
 const claimed = new Set();
@@ -139,7 +139,7 @@ const stationRedirects=new Map((scheduleOverrides.stationRedirects||[]).map(entr
 for(const [npcId,mapId,stationId] of [
   ['hreesh','map_i_inn_F2_hreesh','station_inn_hreesh_bed'],
   ['dzibim_khibu','map_i_carpenters_F2_dzibim','station_car_home_dzibim_bed'],
-  ['dzahiri_khibu','map_i_carpenters_F2_dzahiri','station_car_home_dzahiri_bed'],
+  ['dzahiri_khibu','map_i_carpenters_F2_dzibim','station_car_home_dzahiri_bed'],
   ['nashka_khibu','map_i_carpenters_F2_nashka','station_car_home_nashka_bed'],
 ]){
   const redirect=stationRedirects.get(npcId);
@@ -151,7 +151,7 @@ for(const [npcId,mapId,stationId] of [
   ['kzubug','map_i_smithy_F2_kzubug','station_smi_kzubug_bed'],
   ['sloomi','map_i_smithy_F2_sloomi','station_smi_sloomi_bed'],
   ['leaf','map_i_swamp_house_leaf','station_swamp_leaf_bed'],
-  ['pahu','map_i_swamp_house_pahu','station_swamp_pahu_bed'],
+  ['pahu','map_i_swamp_house_leaf','station_swamp_pahu_bed'],
 ]){
   const redirect=ruleRedirects.get(npcId);
   assert.equal(redirect?.toMapId,mapId,`${npcId} selective home redirect must target their bedroom`);

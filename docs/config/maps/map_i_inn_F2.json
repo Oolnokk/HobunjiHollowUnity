@@ -17,7 +17,9 @@
       ],
       "targetMap": "map_i_inn",
       "spawnCol": 9,
-      "spawnRow": 3
+      "spawnRow": 3,
+      "direction": "east",
+      "generateDoor": false
     },
     {
       "id": "exit_inn_f2_jubmir",
@@ -30,7 +32,9 @@
       ],
       "targetMap": "map_i_inn_F2_jubmir",
       "spawnCol": 9,
-      "spawnRow": 9
+      "spawnRow": 9,
+      "direction": "south",
+      "generateDoor": true
     },
     {
       "id": "exit_inn_f2_R3",
@@ -43,7 +47,9 @@
       ],
       "targetMap": "map_i_inn_F2_R3",
       "spawnCol": 9,
-      "spawnRow": 9
+      "spawnRow": 9,
+      "direction": "south",
+      "generateDoor": true
     },
     {
       "id": "exit_inn_f2_R4",
@@ -56,7 +62,9 @@
       ],
       "targetMap": "map_i_inn_F2_R4",
       "spawnCol": 9,
-      "spawnRow": 9
+      "spawnRow": 9,
+      "direction": "south",
+      "generateDoor": true
     },
     {
       "id": "exit_inn_f2_hreesh",
@@ -69,7 +77,9 @@
       ],
       "targetMap": "map_i_inn_F2_hreesh",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     },
     {
       "id": "exit_inn_f2_R5",
@@ -82,7 +92,9 @@
       ],
       "targetMap": "map_i_inn_F2_R5",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     },
     {
       "id": "exit_inn_f2_R6",
@@ -95,7 +107,9 @@
       ],
       "targetMap": "map_i_inn_F2_R6",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     }
   ],
   "colliders": [],

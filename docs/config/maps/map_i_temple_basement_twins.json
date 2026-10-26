@@ -43,7 +43,9 @@
       "tiles": [[9, 5]],
       "targetMap": "map_i_temple_basement",
       "spawnCol": 7,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [[11,9],[12,9]],

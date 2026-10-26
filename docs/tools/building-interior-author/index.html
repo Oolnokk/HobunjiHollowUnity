@@ -162,6 +162,11 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
           <div class="field"><label>Spawn col</label><input id="exitSpawnCol" type="number" min="0" value="0"></div>
           <div class="field"><label>Spawn row</label><input id="exitSpawnRow" type="number" min="0" value="0"></div>
         </div>
+        <div class="grid2" style="margin-top:4px">
+          <div class="field"><label><input id="exitGenerateDoor" type="checkbox"> Generate wooden door</label></div>
+          <div class="field"><label>Direction into this room</label><select id="exitDirection"><option value="">Automatic</option value="north">North ↑</option><option value="east">East →</option><option value="south">South ↓</option><option value="west">West ←</option></select></div>
+        </div>
+        <div class="hint">Direction aligns this door and faces arrivals into this room. Spawn col/row still choose the arrival tile in the target map; set its return exit direction there too.</div>
         <div class="row" style="margin-top:4px">
           <button id="applyExitBtn">Apply</button>
           <button id="delExitBtn" class="danger">Delete</button>
@@ -387,7 +392,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
-<script src="../../js/interior-door-tiles.js?v=20261018h0336068"></script>
+<script src="../../js/interior-door-tiles.js?v=20261026h1f1ff22"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
@@ -641,8 +646,8 @@ function drawGrid(){
   });
 
   // Door tiles (brown, with a line toward the side the door faces)
-  (state.interior.doorTiles||[]).forEach(function(p){
-    var c=p[0],r=p[1], o=InteriorDoorTiles.orientation(state.floorSet,c,r);
+  InteriorDoorTiles.doorRecordsOf(state.interior).forEach(function(record){
+    var c=record.col,r=record.row, o=InteriorDoorTiles.recordOrientation(state.floorSet,record); // Shared with the in-game door builder.
     gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
     var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
     gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
@@ -1195,6 +1200,8 @@ window.__biaSelExit=function(id){
   $('exitTargetMap').value=ez.targetMap||'';
   $('exitSpawnCol').value=ez.spawnCol||0;
   $('exitSpawnRow').value=ez.spawnRow||0;
+  $('exitGenerateDoor').checked=ez.generateDoor===true;
+  $('exitDirection').value=ez.direction||'';
   setTool('paintExit'); renderExitList(); drawGrid();
 };
 $('addExitBtn').addEventListener('click',function(){
@@ -1216,7 +1223,9 @@ $('applyExitBtn').addEventListener('click',function(){
   ez.targetMap=newTargetMap;
   ez.spawnCol=+$('exitSpawnCol').value||0;
   ez.spawnRow=+$('exitSpawnRow').value||0;
-  renderExitList(); refreshExport(); log('Exit zone updated.');
+  ez.generateDoor=$('exitGenerateDoor').checked;
+  ez.direction=$('exitDirection').value;
+  renderExitList(); drawGrid(); rebuild3D(); refreshExport(); log('Exit zone updated: door '+(ez.generateDoor?'on':'off')+', inward '+(ez.direction||'automatic')+'.');
 });
 $('delExitBtn').addEventListener('click',function(){
   if(!state.activeExitId) return; pushUndo();
@@ -1544,8 +1553,8 @@ function rebuild3D(){
 
   // Door tiles: a brown slab oriented like the in-game Wooden Door.
   var doorMat3=new THREE.MeshLambertMaterial({color:0x9a6a37,transparent:true,opacity:0.8});
-  (interior.doorTiles||[]).forEach(function(p){
-    var o=InteriorDoorTiles.orientation(floorSet,p[0],p[1]);
+  InteriorDoorTiles.doorRecordsOf(interior).forEach(function(record){
+    var p=[record.col,record.row],o=InteriorDoorTiles.recordOrientation(floorSet,record); // Includes exit doors and their explicit direction.
     var m=new THREE.Mesh(new THREE.BoxGeometry(0.92,1.2,0.12),doorMat3);
     m.position.set(p[0]+0.5,0.6,p[1]+0.5); m.rotation.y=-o.rotationDeg*Math.PI/180; previewGroup.add(m);
   });

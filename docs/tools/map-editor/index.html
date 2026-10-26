@@ -668,6 +668,8 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
       label: exit.label || exit.id,
       targetMapId: exit.targetMap || '',
       spawnCol: Number.isFinite(exit.spawnCol) ? exit.spawnCol : 0,
+      generateDoor: exit.generateDoor === true,
+      direction: exit.direction || '',
       spawnRow: Number.isFinite(exit.spawnRow) ? exit.spawnRow : 0
     }))
   );
@@ -728,6 +730,8 @@ function buildBuildingInteriorMapV1(m) {
     if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) return;
     const exitId = t.exitId || (typeof t.id === 'string' && t.id.includes('_') ? t.id.replace(/_\d+_\d+$/, '') : t.id) || uid('exit');
     const ex = baseExitsById.get(exitId) || generated.get(exitId) || { id: exitId, label: t.label || 'Exit', tiles: [], targetMap: '', spawnCol: 0, spawnRow: 0 };
+    if (typeof t.generateDoor === 'boolean') ex.generateDoor = t.generateDoor;
+    if (typeof t.direction === 'string') ex.direction = t.direction;
     ex.label = t.label || ex.label || exitId;
     ex.targetMap = t.targetMapId || ex.targetMap || '';
     ex.spawnCol = Number.isFinite(t.spawnCol) ? t.spawnCol : (Number.isFinite(ex.spawnCol) ? ex.spawnCol : 0);
@@ -1600,7 +1604,7 @@ function doorWorldFromBuilding(b, m) {
 
 // Create (or update, if already linked) the transition spot that represents
 // a building's door, tagged with buildingId so it tracks the building when
-// it's moved or rotated. Preserves an existing spot's label/targetMapId.
+// it's moved, rotated, or renamed. The destination remains unchanged.
 function syncBuildingSpot(b, m) {
   const door = doorWorldFromBuilding(b, m);
   if (!door) return;
@@ -1611,6 +1615,7 @@ function syncBuildingSpot(b, m) {
     m.transitions.push(t);
   } else {
     t.col = door.col; t.row = door.row;
+    t.label = 'Enter ' + (b.label || 'Building'); // Keep the entrance prompt synchronized when the placed building is renamed.
   }
 }
 

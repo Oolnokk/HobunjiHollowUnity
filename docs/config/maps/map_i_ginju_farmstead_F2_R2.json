@@ -206,7 +206,9 @@
       ],
       "targetMap": "map_i_ginju_farmstead",
       "spawnCol": 17,
-      "spawnRow": 10
+      "spawnRow": 10,
+      "direction": "south",
+      "generateDoor": false
     }
   ],
   "colliders": [[11,9],[12,9]],

@@ -1,51 +1,65 @@
 {
   "schema": "hobunji_building_interior.v1",
   "id": "map_i_swamp_house_leaf",
-  "name": "Leaf's Room",
+  "name": "Leaf & Pahu’s Bedroom",
   "cols": 20,
   "rows": 20,
   "furniture": [
-    {
-      "id": "f_map_i_swamp_house_leaf_nightstand",
-      "itemKey": "nightstandFurniture",
-      "col": 6,
-      "row": 6,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_map_i_swamp_house_leaf_bed",
-      "itemKey": "basicBedFurniture",
-      "col": 7,
-      "row": 6,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "f_map_i_swamp_house_leaf_wardrobe",
-      "itemKey": "wardrobeFurniture",
-      "col": 10,
-      "row": 6,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1,
-      "npcWardrobeFor": "leaf"
-    }
-  ],
+  {
+    "id": "f_map_i_swamp_house_leaf_nightstand",
+    "itemKey": "nightstandFurniture",
+    "col": 6,
+    "row": 6,
+    "rotY": 0,
+    "postX": 0,
+    "postY": 0,
+    "postZ": 0,
+    "postSX": 1,
+    "postSY": 1,
+    "postSZ": 1
+  },
+  {
+    "id": "f_map_i_swamp_house_leaf_bed",
+    "itemKey": "doubleBedFurniture",
+    "col": 7,
+    "row": 7,
+    "rotY": 0,
+    "postX": 0,
+    "postY": 0,
+    "postZ": 0,
+    "postSX": 1,
+    "postSY": 1,
+    "postSZ": 1
+  },
+  {
+    "id": "f_map_i_swamp_house_leaf_wardrobe",
+    "itemKey": "wardrobeFurniture",
+    "col": 10,
+    "row": 6,
+    "rotY": 0,
+    "postX": 0,
+    "postY": 0,
+    "postZ": 0,
+    "postSX": 1,
+    "postSY": 1,
+    "postSZ": 1,
+    "npcWardrobeFor": "leaf"
+  },
+  {
+    "id": "f_map_i_swamp_house_pahu_wardrobe",
+    "itemKey": "wardrobeFurniture",
+    "col": 10,
+    "row": 9,
+    "rotY": 0,
+    "postX": 0,
+    "postY": 0,
+    "postZ": 0,
+    "postSX": 1,
+    "postSY": 1,
+    "postSZ": 1,
+    "npcWardrobeFor": "pahu"
+  }
+],
   "floor": [
     [
       6,
@@ -176,24 +190,37 @@
       ],
       "targetMap": "map_i_swamp_house",
       "spawnCol": 8,
-      "spawnRow": 4
+      "spawnRow": 4,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],
   "vendorZones": [],
   "routes": [],
   "npcStations": [
-    {
-      "id": "station_swamp_leaf_bed",
-      "label": "Leaf's Bed",
-      "col": 7,
-      "row": 6,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    }
-  ],
+  {
+    "id": "station_swamp_leaf_bed",
+    "label": "Leaf’s Side of the Bed",
+    "col": 7,
+    "row": 7,
+    "rotY": 0,
+    "pose": "lie",
+    "toolKey": "",
+    "toolIntervalSec": 0,
+    "toolAnimStyle": ""
+  },
+  {
+    "id": "station_swamp_pahu_bed",
+    "label": "Pahu’s Side of the Bed",
+    "col": 8,
+    "row": 7,
+    "rotY": 0,
+    "pose": "lie",
+    "toolKey": "",
+    "toolIntervalSec": 0,
+    "toolAnimStyle": ""
+  }
+],
   "npcPaths": []
 }

@@ -1616,6 +1616,21 @@
       pose = poseAtAction(def, action.kind, t);
     }
     holder.userData.headRelativeBackPlane = pose.headRelative ? c.avatarRef?.backPlane : null; // Ranged-only owner silhouette; cleared immediately for ordinary poses.
+    const attach = window.SharedAttackPose;
+    if (pose.headRelative && attach && c.avatarRef?.group) {
+      // Head-anchored: the weapon's aperture mates with the species mouth point and the head supplies rotation and scale.
+      const headFrame = c._banditHeadFrame ||= attach.createHeadFrame(THREE);
+      if (attach.headFrame(headFrame, c.avatarRef.group)) {
+        const weaponKey = c.def.rangedWeaponKey, userData = c.avatarRef.group.userData || {};
+        if (c._banditApertureKey !== weaponKey) { // Resolved once per weapon, not per frame.
+          c._banditApertureKey = weaponKey;
+          c._banditAperture = window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(weaponKey, 'ranged', { speciesId: userData.speciesId, gender: userData.gender }) || null;
+        }
+        attach.placeAtMouth(holder, headFrame, pose, Number.isFinite(Number(neutral?.scale)) ? Number(neutral.scale) : 1, c._banditAperture);
+        window.BanditCombat?.applyRiderMount?.(c, holder);
+        return;
+      }
+    }
     const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
     const rx = Math.cos(vθ), rz = -Math.sin(vθ), fx = Math.sin(vθ), fz = Math.cos(vθ);
     const group = c.avatarRef.group; // Converted bandit portrait root used to reconstruct the raw floor-relative hand base.
@@ -1642,14 +1657,17 @@
     } else {
       scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, vθ);
     }
-    if (pose.headRelative && window.SharedAttackPose?.headAnchor(holder.position, group)) {
-      holder.position.x += rx * pose.x + fx * pose.z;
-      holder.position.y += pose.y;
-      holder.position.z += rz * pose.x + fz * pose.z;
-    }
     c._rangedPoseCentroidScale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1; // Debug only; projectile/reticle orientation remains untouched.
     c._rangedPoseHeightScale = height?.heightRatio ?? 1; // Debug proof that ranged bandits share player/editor authored-Y semantics.
     holder.rotation.set(THREE.MathUtils.degToRad(pose.pitch), vθ + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll), 'YXZ');
+    if (attach && Math.abs(holder.scale.x - 1) > 1e-9) { // Hand-aligned: scale pivots on the main-hand grip, matching the player and the editor.
+      const weaponKey = c.def.rangedWeaponKey, userData = group.userData || {};
+      if (c._banditGripKey !== weaponKey) {
+        c._banditGripKey = weaponKey;
+        c._banditGrip = window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(weaponKey, 'ranged', { speciesId: userData.speciesId, gender: userData.gender }) || null;
+      }
+      attach.anchorScaleAtPoint(holder, c._banditGrip, holder.scale.x);
+    }
     window.BanditCombat?.applyRiderMount?.(c, holder); // Compound mounted riders hold the weapon from their saddle.
   }
 

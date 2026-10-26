@@ -24,7 +24,9 @@
       ],
       "targetMap": "",
       "spawnCol": 0,
-      "spawnRow": 0
+      "spawnRow": 0,
+      "direction": "north",
+      "generateDoor": true
     },
     {
       "id": "exit_ginju_stairs_parents",
@@ -37,7 +39,9 @@
       ],
       "targetMap": "map_i_ginju_farmstead_F2_R1",
       "spawnCol": 11,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": false
     },
     {
       "id": "exit_ginju_stairs_kids",
@@ -50,7 +54,9 @@
       ],
       "targetMap": "map_i_ginju_farmstead_F2_R2",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": false
     }
   ],
   "colliders": [],
