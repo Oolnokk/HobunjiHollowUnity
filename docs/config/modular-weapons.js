@@ -31,7 +31,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 188,
-          "y": 638
+          "y": 478
         }
       }
     },
@@ -48,7 +48,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 207,
-          "y": 703
+          "y": 543
         }
       }
     },
@@ -65,7 +65,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 185,
-          "y": 1054
+          "y": 894
         }
       }
     },
@@ -82,7 +82,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 214,
-          "y": 981
+          "y": 821
         }
       }
     },
@@ -99,7 +99,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 200,
-          "y": 744
+          "y": 584
         }
       }
     },
@@ -116,7 +116,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 196,
-          "y": 789
+          "y": 629
         }
       }
     },
@@ -133,7 +133,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 206,
-          "y": 1084
+          "y": 924
         }
       }
     },
@@ -150,7 +150,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 187,
-          "y": 1204
+          "y": 1090
         }
       }
     },
@@ -167,7 +167,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 203,
-          "y": 816
+          "y": 656
         }
       }
     },
@@ -184,7 +184,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 207,
-          "y": 399
+          "y": 239
         }
       }
     },
@@ -201,7 +201,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 195,
-          "y": 936
+          "y": 776
         }
       }
     },
@@ -218,7 +218,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 187,
-          "y": 488
+          "y": 328
         }
       }
     },
@@ -235,7 +235,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 189,
-          "y": 889
+          "y": 729
         }
       }
     },
@@ -252,7 +252,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 239,
-          "y": 938
+          "y": 778
         }
       }
     },
@@ -269,7 +269,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 208,
-          "y": 1011
+          "y": 851
         }
       }
     },
@@ -286,7 +286,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 209,
-          "y": 992
+          "y": 832
         }
       }
     },
@@ -304,7 +304,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 189,
-          "y": 1083
+          "y": 923
         }
       }
     }
@@ -412,7 +412,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 189,
-            "y": 1083
+            "y": 923
           }
         },
         {
@@ -423,7 +423,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 198,
-            "y": 149
+            "y": 309
           }
         }
       ]
@@ -508,7 +508,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 193,
-            "y": 568
+            "y": 728
           }
         }
       ]
@@ -635,7 +635,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 211.5,
-            "y": 697
+            "y": 537
           }
         }
       ]
@@ -741,7 +741,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 193,
-            "y": 930
+            "y": 770
           }
         }
       ]
@@ -834,7 +834,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 199,
-            "y": 914
+            "y": 754
           }
         }
       ]
@@ -909,7 +909,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 200.5,
-            "y": 735
+            "y": 575
           }
         }
       ]
@@ -1013,7 +1013,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 200.5,
-            "y": 735
+            "y": 575
           }
         }
       ]
@@ -1083,7 +1083,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 205,
-            "y": 915
+            "y": 755
           }
         }
       ]
@@ -1187,7 +1187,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 206,
-            "y": 1076
+            "y": 916
           }
         }
       ]
@@ -1207,7 +1207,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 225,
-            "y": 682
+            "y": 522
           }
         }
       ]
@@ -1231,7 +1231,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 206,
-            "y": 1084
+            "y": 924
           }
         }
       ]
@@ -1255,7 +1255,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 187,
-            "y": 1204
+            "y": 1090
           }
         }
       ]
@@ -1279,7 +1279,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 203,
-            "y": 816
+            "y": 656
           }
         }
       ]
@@ -1353,7 +1353,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 207,
-            "y": 399
+            "y": 239
           }
         }
       ]
@@ -1377,7 +1377,7 @@ window.MODULAR_WEAPON_CONFIG = {
           },
           "end": {
             "x": 187,
-            "y": 488
+            "y": 328
           }
         }
       ]
