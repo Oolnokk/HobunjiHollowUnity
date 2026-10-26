@@ -429,7 +429,7 @@
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261023h987fb2d"></script>
-  <script src="js/honeyfuzzle-house.js?v=20261023hf1"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
+  <script src="js/honeyfuzzle-house.js?v=20261026hivebuzz2"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261025he7892dd"></script>
   <script src="js/farm-animals.js?v=20261026h471b7cc"></script>
@@ -2603,7 +2603,8 @@
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261025audioAudit4"></script>
+  <script src="js/audio-system.js?v=20261026hivebuzz1"></script>
+  <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
   <script src="js/animal-vocalizations.js?v=20261025combatHrtf2"></script>

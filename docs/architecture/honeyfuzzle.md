@@ -9,6 +9,7 @@ A honeyfuzzle is a hummingbird-like animal that behaves differently from every o
 | Hive stumps | `js/honeyfuzzle-hives.js` (`window.HoneyfuzzleHives`) | Swarm spawn/return, long-hold harvest, collapse |
 | Colors | `js/honeyfuzzle-colors.js` (`window.HoneyfuzzleColors`) | Region palettes, per-stump color, egg color queue |
 | Honeyfuzzle House | `js/honeyfuzzle-house.js` (`window.HoneyfuzzleHouse`) | One-slot egg/swarm building on the farm |
+| Spatial buzzing | `js/honeyfuzzle-audio.js` (`window.HoneyfuzzleAudio`) | Shared decoded seam-crossfaded recording, 24-tile hive and swarm emitters, live aggression/Doppler |
 
 ## Swarm = one entity, drawn as a flock
 
@@ -61,3 +62,13 @@ The house is a 1x1 `FarmProduction` building (`config/farm-specializations.js`, 
 ## Combat
 
 Honeyfuzzles fight with **Swarm**, built on the reusable attach mechanic described in [combat-attach.md](combat-attach.md): one chosen target, the swarm sits on top of it for 6 s, deals little direct damage but stacks a lot of Poisoned Health, is immune to that target's attacks, and can still be hurt by anyone else. They are territorial (warning first, then a fight) around their hive, and as a companion they use Swarm on every attack.
+
+## Positional honeyfuzzle buzz
+
+The audio runtime adds independent positional emitters for intact wilderness hive stumps, moving honeyfuzzle creatures (wild or companions registered in the live creature set), and occupied Honeyfuzzle Houses. It hears sources within **24 tiles**, capped at the nearest **8** simultaneous voices; sources fade naturally across that boundary. Hives continue to hum when their swarms are tucked away; collapsed stumps and dead swarms are silent. It deliberately leaves music, weather and biome BGS running concurrently.
+
+Asset: the existing **AAC M4A** recording is in `docs/assets/audio/sfx/utterances/sfx_honeyfuzzle_buzz.m4a` on main. No additional audio upload is needed. The runtime folds its stereo channels to one mono buffer for positional rendering. See `HoneyfuzzleAudio.debugSnapshot()` if a browser fails to load/decode it. All emitters reuse one decoded buffer, whose last 650 ms are overlapped into its beginning to remove the seam. Each emitter runs exactly one looping BufferSource through an equal-power positional panner and distance/area crossfade gain, rather than two voices or new HTMLAudioElements on every restart.
+
+At 10 Hz, only active voices update their location, distance attenuation and AudioParams. A 350 ms scan gathers hives, creatures and farm house visuals without per-frame world scans. Moving sources and the player supply radial velocity for capped physical Doppler; the species territorial warning/fight and attack states add a separate smooth aggression multiplier. AudioParam smoothing prevents clicks/jumps on abrupt AI state changes. The new sound routes through the shared Effects/Master mixer. The opening introduction explicitly silences and then resumes the buzz with the rest of the soundscape.
+
+On mobile use `HoneyfuzzleAudio.debugSnapshot()` (or `window.HoneyfuzzleAudio.debugSnapshot()` in any in-game diagnostics) to inspect load errors, active voice count, pitches and distance source budget. `node scripts/test-honeyfuzzle-audio.js` runs the headless behavior regression.
