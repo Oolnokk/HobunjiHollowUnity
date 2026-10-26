@@ -67,6 +67,14 @@ api.__test.setLibraryPattern('base', 'new-primary');
 assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'replacing primary retains its independent overpass dye');
 api.__test.setOverpassPattern('base', '');
 assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'clearing only overpass leaves first paint intact');
+const previewSource = { dyeHex:'#225588', pattern:{ repoPatternId:'old' }, patterns:[
+  { repoPatternId:'old' }, { repoPatternId:'overpass', inkColorHex:'#cc7722' }
+] }; // Simulates Color Pools' saved two-color paint before opening PatternAuthoring.
+const preview = api.__test.previewPrimaryPatternPaint(previewSource, { repoPatternId:'unsaved-draft' });
+assert.equal(preview.pattern.repoPatternId,'unsaved-draft','legacy primary alias shows the unsaved edit');
+assert.equal(preview.patterns[0].repoPatternId,'unsaved-draft','actual two-slot compositor receives the unsaved primary edit');
+assert.equal(preview.patterns[1].inkColorHex,'#cc7722','editing primary does not erase the overpass color');
+assert.equal(previewSource.patterns[0].repoPatternId,'old','preview never mutates saved paint before Apply');
 
 assert.match(read('docs/js/banubu-questline.js'), /state\.stage = 3;/, 'real Banubu second turn-in owns the saved reward state');
 
