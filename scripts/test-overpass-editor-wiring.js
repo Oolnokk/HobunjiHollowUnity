@@ -21,7 +21,7 @@ const furnitureEditor = checkInlineScripts('docs/tools/furniture-avatar-author/i
 assert.match(patternEditor, /id="overpassInkColor"/, 'Pattern Editor provides separate overpass color input');
 assert.match(patternEditor, /inkColorHex:\s*\$\('overpassInkColor'\)\.value/, 'preview passes that color into the shared compositor');
 assert.match(characterStudio, /data-npc-overpass-ink/, 'NPC clothing editor exposes its own overpass dye');
-assert.match(furnitureEditor, /furniture-avatar-author/, 'furniture authoring tool page remains intact');
+assert.match(furnitureEditor, /foliage-furniture-mode\.js\?v=/, 'furniture authoring page loads its pattern extension');
 const furniturePatterns = read('docs/tools/furniture-avatar-author/furniture-patterns.js');
 assert.match(furniturePatterns, /id="fpOverpassDye"/, 'furniture authoring has a dedicated overpass swatch');
 const surfaceRuntime = read('docs/js/furniture-pattern-surfaces.js');
