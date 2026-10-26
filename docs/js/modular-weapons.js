@@ -43,6 +43,10 @@
     const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
     return (shaft?.mounts || []).filter(mount => mount.type === kind); // Incompatible mechanisms never compose or forge.
   }
+  function renderingMounts(shaft, head) {
+    const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
+    return compatible.length ? compatible : shaft?.mounts?.slice(0, 1) || []; // Existing saved legacy weapons keep a visual head if a past combination becomes incompatible.
+  }
   function legacyLine(pivot, type, rotation = 0) {
     const start = point(pivot), angle = rotation * Math.PI / 180; // Migrates legacy pivot and socket rotation into directed lines.
     const end = { x: start.x + Math.sin(angle) * 80, y: start.y - Math.cos(angle) * 80 };
@@ -156,7 +160,7 @@
   }
   function compositionFrame(shaft, head, bounds, values) {
     let left = 0, top = 0, right = 450, bottom = 1204; // Donor grip geometry always stays anchored to original source frame.
-    for (const mount of matchingMounts(shaft, head)) {
+    for (const mount of renderingMounts(shaft, head)) {
       const matrix = headTransform(mount, values, head.mount); // Same transform determines bounds and eventual drawing.
       for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
         const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
@@ -227,7 +231,7 @@
         ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
         ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore();
       } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
-      for (const mount of matchingMounts(shaft, head)) {
+      for (const mount of renderingMounts(shaft, head)) {
         const matrix = headTransform(mount, values, head.mount); // Reuse the exact transform whose corners expanded the canvas.
         ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
         ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
@@ -244,7 +248,7 @@
       if (shaft.editorOnly) continue; // Incomplete upload previews cannot create forgeable weapon items.
       const source = shapes[shaft.sourceShape] || { animStyle: 'sweep', weaponIdleClass: 'heavy' }; // Future/relic source shapes still get a usable baseline.
       for (const [headKey, head] of Object.entries(config.heads)) for (const metalKey of metalKeys) {
-        if (head.editorOnly || isDisallowed(shaftKey, headKey)) continue; // No registration for structurally mismatched or explicitly excluded parts. // Uncalibrated uploaded head has no gameplay definition.
+        if (head.editorOnly) continue; // Register old weapon keys even when now unforgeable, to preserve existing inventory saves. // Uncalibrated uploaded head has no gameplay definition.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
