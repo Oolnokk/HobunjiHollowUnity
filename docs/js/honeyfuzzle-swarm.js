@@ -240,7 +240,9 @@
         lastNow = now;
         const target = Math.min(1.4, (Number(speedPxPerS) || 0) / Math.max(1, Number(moveSpeedPx) || 120));
         smoothSpeed += (target - smoothSpeed) * Math.min(1, dt * 4);
-        smoothSpread += ((Number(spreadScale) || 1) - smoothSpread) * Math.min(1, dt * 6); // Eases between the free cloud and a tight blanket over an attack target.
+        const targetSpread = Number.isFinite(spreadScale) && spreadScale > 0 ? spreadScale : 1; // Attached Swarm uses a dense cloud; ordinary flight uses the authored normal spread.
+        const spreadCatchup = targetSpread < smoothSpread ? 16 : 9; // Tighten rapidly on contact, then unfurl into normal flight after detaching.
+        smoothSpread += (targetSpread - smoothSpread) * Math.min(1, dt * spreadCatchup);
         const step = wingStep(now);
         const stepChanged = step !== lastStep;
         lastStep = step;
