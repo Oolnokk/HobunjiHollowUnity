@@ -24,8 +24,8 @@ for (const angle of [-151, 0, 47, 270]) for (const flipX of [false, true]) for (
       Math.hypot(head.mount.end.x - head.mount.start.x, head.mount.end.y - head.mount.start.y);
     const offsetAxis = sa + Math.PI / 2, totalAngle = sa - ha + angle * Math.PI / 180; // Independent transform derivation.
     for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
-      const hx = (x - head.mount.start.x) * values.scaleX * (flipX ? -1 : 1) * autoScale;
-      const hy = (y - head.mount.start.y) * values.scaleY * (flipY ? -1 : 1) * autoScale;
+      const hx = (x - head.mount.start.x) * values.scaleX * (flipX ? -1 : 1); // Perpendicular X width is NOT automatically stretched.
+      const hy = (y - head.mount.start.y) * values.scaleY * (flipY ? -1 : 1) * autoScale; // Tang-line Y length is automatically fitted.
       const rx = Math.cos(totalAngle) * hx - Math.sin(totalAngle) * hy;
       const ry = Math.sin(totalAngle) * hx + Math.cos(totalAngle) * hy;
       const px = mount.start.x + Math.cos(offsetAxis) * values.x - Math.sin(offsetAxis) * values.y + rx;
