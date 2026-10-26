@@ -127,7 +127,9 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   const oreDefsMatch = gameSource.match(/const ORE_DEFS = (\{[\s\S]*?\n      \}); \/\/ Used by mine drops/);
   const recipesMatch = gameSource.match(/const METAL_BAR_RECIPES = (\{[\s\S]*?\n      \}); \/\/ Used by the Crafting pane/);
   assert.ok(oreDefsMatch && recipesMatch, 'Metallurgy definitions should remain test-readable in game.js');
-  const oreDefs = vm.runInNewContext(`(${oreDefsMatch[1]})`);
+  const metalsMatch = gameSource.match(/const METAL_DEFS = (\{[\s\S]*?\n      \});\n      const ORE_DEFS =/); // ORE_DEFS now obtains oxidation colors from its corresponding metals instead of duplicating hex literals.
+  assert.ok(metalsMatch, 'Ore definition test should evaluate its dependent alloy palette');
+  const oreDefs = vm.runInNewContext(`(function () { const METAL_DEFS = ${metalsMatch[1]}; return (${oreDefsMatch[1]}); })()`);
   const recipes = vm.runInNewContext(`(${recipesMatch[1]})`);
   for (const [metalKey, ingredients] of Object.entries(recipes)) {
     assert.strictEqual(Object.values(ingredients).reduce((sum, amount) => sum + amount, 0), 5, `${metalKey} should consume exactly five ore`);

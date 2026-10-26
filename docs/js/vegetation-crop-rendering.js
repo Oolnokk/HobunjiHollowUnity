@@ -596,6 +596,8 @@
       let moundRoot = null;
       if (stoneGeo) {
         const m = new THREE.Mesh(stoneGeo, deps.resolveTileMat('farm', TileType.ROCK));
+        m.userData.farmLooseRockMound = true; // The final farm-rock naturalization pass uses this to map the real finished stone material exactly once.
+        if (!window.FacetedNaturalSurfaceShellReduction?.installed) window.OreRockTextures?.fitRockMesh?.(m, `farm:${col},${row}`); // Standalone editor fallback when the gameplay post-build styling module is absent.
         m.castShadow = m.receiveShadow = true;
         m.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
         deps.scene.add(m);

@@ -1809,9 +1809,9 @@
         pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
       };
       const ORE_DEFS = {
-        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
-        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: null, oxidationAmount: 0 },
-        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: null, oxidationAmount: 0 },
+        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: METAL_DEFS.nativeCopper.verdigrisHex, oxidationAmount: 0.58 },
+        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: METAL_DEFS.lowTinBronze.verdigrisHex, oxidationAmount: 0 }, // Surface deposit takes the matching alloy's verdigris rather than this raw ore icon hue.
+        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: METAL_DEFS.tinBronze.verdigrisHex, oxidationAmount: 0 }, // Mineral surface reads as the corresponding tin-bronze oxidation color.
         tin:     { label: 'Tin Ore',     hex: '#513C32', verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
         arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
         lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
@@ -10510,6 +10510,7 @@
                 geometry.computeVertexNormals();
                 const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Ore-colored islands embedded in stone for streamed wilderness rocks.
                 const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
+                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Stretch each mineral face after terrain displacement, before chunking.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -14209,6 +14210,7 @@
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
               const baseMesh = new THREE.Mesh(stoneGeo, mineRockMaterialFor(rock.oreKey || rock.oreKind)); // Same ore-bearing stone texture as wilderness caverns.
+              window.OreRockTextures.fitRockMesh(baseMesh, `town-mine:${rock.col},${rock.row}`); // Full authored PNG per detected mineral-bearing rock face.
               baseMesh.castShadow = baseMesh.receiveShadow = true;
               rockGroup.add(baseMesh);
               rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);

@@ -100,7 +100,7 @@
        partway through its own setup (after camTargetX/pathWallBuilder/
        VEG_CULL_* are declared, well before the first real terrain mesh
        build). -->
-  <script src="js/terrain-geometry.js?v=20261015h9607214"></script>
+  <script src="js/terrain-geometry.js?v=20261026orefacets2"></script>
   <!-- Farm/town grass & weed billboards, crop growth meshes, and per-tile
        ground+vegetation mesh building, extracted out of game.js. Must load
        before game.js, which calls window.VegetationCropRendering.init(...)
@@ -110,7 +110,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20261020hf715daf"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20261026orefaces3"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -455,7 +455,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261026h72a1482&surfaceUv=20261006cliffparity1"></script>
+  <script src="js/house-pieces.js?v=20261026orequad4&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -799,8 +799,8 @@
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261025oreveins2"></script>
-  <script src="js/ore-rock-textures.js?v=20261026oreverdigris1"></script> <!-- Shared masked mineral materials: mine, wilderness, caves. -->
-  <script src="js/cavern-ore-rocks.js?v=20261025oreveins1"></script>
+  <script src="js/ore-rock-textures.js?v=20261026orequad4"></script> <!-- Shared masked mineral materials: mine, wilderness, caves. -->
+  <script src="js/cavern-ore-rocks.js?v=20261026orequad4"></script>
   <script src="js/town-mine.js?v=20261023ladderodds2"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -2801,7 +2801,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261026had38cd2"></script>
+  <script src="game.js?v=20261026orefacets2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
