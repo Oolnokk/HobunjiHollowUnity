@@ -42,6 +42,18 @@
     return keys;
   }
 
+  // Reuses the buried-chest metal picker for dungeon loot, returning the
+  // canonical smithing inventory keys rather than a wilderness-only bundle.
+  function rollTreasureMetalBarLoot() {
+    if (!deps?.metalBarItemKey || !deps.VERDIGRIS_METAL_KEYS?.length) return {};
+    const loot = {}; // Inventory-keyed bar counts passed into the shared dungeon chest loot roller.
+    for (const metalKey of _rollTreasureMetalKeys()) {
+      const barKey = deps.metalBarItemKey(metalKey); // Resolves the exact smithing/crafting inventory item for this metal.
+      if (barKey) loot[barKey] = (loot[barKey] || 0) + 1;
+    }
+    return loot;
+  }
+
   // Looks up one named entry from the treasureChest loot pool (docs/
   // config/loot/loot-pools.json) by id — used instead of game.js's
   // rollLootPool's generic itemKey-roll path since a chest's bundle
@@ -487,6 +499,7 @@
   window.WildTreasure = {
     init,
     weekIndex,
+    rollTreasureMetalBarLoot,
     ensureZone,
     syncZoneInteractivity,
     nearestBuriedPixelPos,

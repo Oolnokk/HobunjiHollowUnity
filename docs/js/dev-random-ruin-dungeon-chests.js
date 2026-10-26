@@ -13,7 +13,7 @@
 
   const TIERS = Object.freeze({
     1:{ name:'Weathered', band:0x6b5a44, glow:0xb8a78a },
-    2:{ name:'Iron-bound', band:0x7c858c, glow:0xc9d6df },
+    2:{ name:'Bronze-bound', band:0x7c858c, glow:0xc9d6df },
     3:{ name:'Gilded', band:0xd4a632, glow:0xffd66a },
     4:{ name:'Ancient', band:0x6fd1c4, glow:0x9ff5ff },
   });

@@ -64,7 +64,7 @@
        window.LootRolling.init(...) and .loadLootShopConfig() during its
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
-  <script src="js/loot-rolling.js?v=20261016h74e3b4c"></script>
+  <script src="js/loot-rolling.js?v=20261025-dungeon-bars"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/crop-planting.js?v=20261008hc238a6f"></script>
@@ -419,7 +419,7 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20261008hcbbb956"></script>
+  <script src="js/wild-treasure.js?v=20261025-dungeon-bars"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -2762,7 +2762,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261024h7587665"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261025hbronzechest1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
