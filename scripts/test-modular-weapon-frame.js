@@ -6,27 +6,38 @@ const window = {}; // Shared authoring/runtime namespace.
 const context = vm.createContext({ window, console }); // Pure layout helpers need no browser canvas.
 for (const path of ['docs/config/modular-weapons.js', 'docs/js/modular-weapons.js']) vm.runInContext(fs.readFileSync(path, 'utf8'), context);
 const api = window.ModularWeapons; // The actual compositor uses these same affine/bounds helpers.
-const shaft = { attachments: [{ x: 200, y: 1200, rotation: 0 }, { x: 200, y: 10, rotation: 180 }] }; // Two ends force overflow beyond both edges.
-const head = { attach: { x: 200, y: 300 } }, bounds = { left: 20, top: 40, right: 420, bottom: 1100 }; // Visible head source bounds.
+const shaft = { mounts: [
+  { type: 'tang', start: { x: 200, y: 1200 }, end: { x: 200, y: 1110 } },
+  { type: 'tang', start: { x: 200, y: 10 }, end: { x: 200, y: 160 } }
+] }; // Two directed tang lines of different lengths test automatic scaling and opposed attachment.
+const head = { mount: { type: 'blade', start: { x: 200, y: 300 }, end: { x: 200, y: 220 } } };
+const bounds = { left: 20, top: 40, right: 420, bottom: 1100 }; // Visible head pixel envelope.
 for (const angle of [-151, 0, 47, 270]) for (const flipX of [false, true]) for (const flipY of [false, true]) {
-  const values = { scaleX: 1.8, scaleY: 2.5, flipX, flipY, x: 75, y: -90, rotation: angle }; // Rotation, both signed axes and socket-local translation interact.
-  const frame = api.compositionFrame(shaft, head, bounds, values); // Must contain the donor and every transformed visible head corner.
+  const values = { scaleX: 1.8, scaleY: 2.5, flipX, flipY, x: 75, y: -90, rotation: angle }; // Pair-specific corrections over automatic affine mount.
+  const frame = api.compositionFrame(shaft, head, bounds, values);
   assert(frame.left <= 0 && frame.top <= 0 && frame.left + frame.width >= 450 && frame.top + frame.height >= 1204);
-  for (const attach of shaft.attachments) {
-    const matrix = api.headTransform(attach, values, head.attach); // Same matrix is passed to CanvasRenderingContext2D.transform.
+  for (const mount of shaft.mounts) {
+    const matrix = api.headTransform(mount, values, head.mount); // Same matrix used by Canvas drawing and bounds.
+    const sa = Math.atan2(mount.end.y - mount.start.y, mount.end.x - mount.start.x);
+    const ha = Math.atan2(head.mount.end.y - head.mount.start.y, head.mount.end.x - head.mount.start.x);
+    const autoScale = Math.hypot(mount.end.x - mount.start.x, mount.end.y - mount.start.y) /
+      Math.hypot(head.mount.end.x - head.mount.start.x, head.mount.end.y - head.mount.start.y);
+    const offsetAxis = sa + Math.PI / 2, totalAngle = sa - ha + angle * Math.PI / 180; // Independent transform derivation.
     for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
-      const a = values.rotation * Math.PI / 180, b = attach.rotation * Math.PI / 180; // Independent nested transform calculation guards order and pivot errors.
-      const hx = (x - head.attach.x) * values.scaleX * (flipX ? -1 : 1), hy = (y - head.attach.y) * values.scaleY * (flipY ? -1 : 1); // Scale around the source head pivot.
-      const rx = Math.cos(a) * hx - Math.sin(a) * hy + values.x, ry = Math.sin(a) * hx + Math.cos(a) * hy + values.y; // Head rotation followed by socket-local translation.
-      const px = Math.cos(b) * rx - Math.sin(b) * ry + attach.x, py = Math.sin(b) * rx + Math.cos(b) * ry + attach.y; // Socket rotation and final authoring position.
+      const hx = (x - head.mount.start.x) * values.scaleX * (flipX ? -1 : 1) * autoScale;
+      const hy = (y - head.mount.start.y) * values.scaleY * (flipY ? -1 : 1) * autoScale;
+      const rx = Math.cos(totalAngle) * hx - Math.sin(totalAngle) * hy;
+      const ry = Math.sin(totalAngle) * hx + Math.cos(totalAngle) * hy;
+      const px = mount.start.x + Math.cos(offsetAxis) * values.x - Math.sin(offsetAxis) * values.y + rx;
+      const py = mount.start.y + Math.sin(offsetAxis) * values.x + Math.cos(offsetAxis) * values.y + ry;
       assert(Math.abs(px - (matrix.a * x + matrix.c * y + matrix.e)) < 1e-8);
       assert(Math.abs(py - (matrix.b * x + matrix.d * y + matrix.f)) < 1e-8);
       assert(px > frame.left && px < frame.left + frame.width && py > frame.top && py < frame.top + frame.height);
     }
   }
-  const layout = api.planeLayout({ width: 1024, height: 1024, modularFrame: frame }, .5); // Downsampled bitmaps must not change logical world scale.
+  const layout = api.planeLayout({ width: 1024, height: 1024, modularFrame: frame }, .5);
   for (const point of [{ x: 0, y: 0 }, { x: 225, y: 602 }, { x: 202, y: 880 }, { x: 450, y: 1204 }]) {
-    const u = (point.x - frame.left) / frame.width, v = (point.y - frame.top) / frame.height; // Expanded texture coordinate for the original grip/source point.
+    const u = (point.x - frame.left) / frame.width, v = (point.y - frame.top) / frame.height;
     assert(Math.abs(layout.x + (u - .5) * layout.width - (point.x - 225) * .5 / 450) < 1e-10);
     assert(Math.abs(layout.y + (.5 - v) * layout.height - (602 - point.y) * .5 / 450) < 1e-10);
   }
