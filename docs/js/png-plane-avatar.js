@@ -804,7 +804,7 @@
 
     // Animal front/back cards use the same sprite alpha and depth silhouette as NPCs, not a separate 0.001 cutout.
     const frontMat = makeSpriteMaterial(THREE, frontTex, 'animal_front_mat');
-    const backMat  = enableSharedFaceMirror(makeSpriteMaterial(THREE, null, 'animal_back_mat'));
+    const backMat  = enableSharedFaceMirror(makeSpriteMaterial(THREE, backTex, 'animal_back_mat'));
     backMat.map = backMapFor(backMat, sourceTextures) || backTex; // Mirrors the shared front texture in-shader; backTex stays for compatibility.
 
     const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight);
