@@ -677,7 +677,7 @@
       material.colorWrite = state.colorWrite;
       material.depthWrite = state.depthWrite;
       material.depthTest = state.depthTest;
-      material.alphaTest = state.alphaTest;
+      if (state.alphaTest !== undefined) material.alphaTest = state.alphaTest;
       material.stencilWrite = state.stencilWrite;
       material.stencilWriteMask = state.stencilWriteMask;
       material.stencilFunc = state.stencilFunc;
