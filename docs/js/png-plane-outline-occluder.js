@@ -97,9 +97,15 @@
 
   function captureMaterial(material) {
     if (!material || materialStates.has(material)) return;
-    materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc });
+    materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc, alphaTest: material.alphaTest });
     material.colorWrite = false;
     material.depthWrite = true;
+    // Color-only portraits may normally avoid depth writing, but this replay
+    // must still ignore faint anti-alias fringe when building an outline mask.
+    if (material.map && Number(material.alphaTest) > 0) {
+      const maskCutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // Matches the shared PNG plane's solid-coverage threshold.
+      material.alphaTest = Math.max(material.alphaTest, maskCutoff);
+    }
     // The replay must obey the completed scene depth. AlwaysDepth let a
     // player behind furniture overwrite that nearer furniture depth, so the
     // later black shell appeared through benches and walls.
@@ -145,6 +151,7 @@
         material.depthWrite = state.depthWrite;
         material.depthTest = state.depthTest;
         material.depthFunc = state.depthFunc;
+        material.alphaTest = state.alphaTest;
       }
       materialStates.clear();
     }
