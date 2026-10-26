@@ -76,6 +76,17 @@
   function availablePatterns() {
     return window.PatternLibrary?.listAvailable?.() || [];
   }
+  function overpassUnlocked() {
+    const quest = window.BanubuQuestline?.ensureQuestState?.(); // Only the final Quest 2 dialogue commits this world/member progression.
+    return Number(quest?.stage) >= 3 && quest?.status === 'blocked'; // Reads the existing persistent quest state, not a duplicated unlock flag.
+  }
+  function paintPatternStack(paint) {
+    const primary = paint?.pattern || (paint?.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
+    if (!primary) return [];
+    const overpass = (Array.isArray(paint?.patterns) ? paint.patterns[1] : null)
+      || (paint?.overpassPatternLibraryId ? snapshotPattern(paint.overpassPatternLibraryId) : null);
+    return overpass ? [primary, overpass] : [primary]; // Old single-pattern saves remain valid.
+  }
 
   function selectedEntry() {
     return eligibleStableAnimals().find(entry => String(entry.id) === String(selectedStableId)) || null;
@@ -137,11 +148,32 @@
     if (!libraryId) {
       delete paint.patternLibraryId;
       delete paint.pattern;
+      delete paint.patterns;
+      delete paint.overpassPatternLibraryId;
       if (!paint.dyeId && !paint.dyeHex) delete draftLayers[regionId];
       return;
     }
+    const priorOverpass = paintPatternStack(paint)[1]; // A primary replacement retains its earned secondary motif.
     paint.patternLibraryId = libraryId;
-    paint.pattern = snapshotPattern(libraryId); // Snapshot keeps an applied animal stable even if the player later removes the library entry.
+    paint.pattern = snapshotPattern(libraryId); // Owns an independent motif snapshot after the library is altered.
+    if (priorOverpass) paint.patterns = [paint.pattern, priorOverpass];
+    else delete paint.patterns;
+  }
+  function setOverpassPattern(regionId, libraryId) {
+    if (!overpassUnlocked()) return false; // Quest gate also guards direct UI calls.
+    const paint = ensurePaint(regionId), primary = paintPatternStack(paint)[0];
+    const second = libraryId ? snapshotPattern(libraryId) : null;
+    if (!primary || !second) { delete paint.patterns; delete paint.overpassPatternLibraryId; return false; }
+    paint.overpassPatternLibraryId = libraryId;
+    paint.patterns = [primary, second]; // Standard shared two-motif renderer.
+    return true;
+  }
+  function setOverpassDye(regionId, dyeId) {
+    if (!overpassUnlocked()) return;
+    const paint = ensurePaint(regionId), dye = window.DyeSystem?.getById?.(dyeId);
+    if (!dye) { delete paint.overpassDyeId; delete paint.overpassDyeHex; return; }
+    paint.overpassDyeId = dye.id;
+    paint.overpassDyeHex = dye.hex; // Saved on this animal without changing the primary paint color.
   }
 
   function setDye(regionId, dyeId) {
@@ -162,7 +194,11 @@
       const pattern = paint?.pattern || (paint?.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
       const dyeHex = paint?.dyeHex || window.DyeSystem?.getById?.(paint?.dyeId)?.hex;
       if (!pattern || !dyeHex) continue;
-      out[regionId] = { ...clone(paint), dyeHex, pattern: clone(pattern) };
+      const stack = paintPatternStack(paint);
+      const secondary = overpassUnlocked() && stack[1] ? clone(stack[1]) : null;
+      if (secondary) secondary.inkColorHex = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex || dyeHex;
+      out[regionId] = { ...clone(paint), dyeHex, pattern: clone(pattern), patterns: secondary ? [clone(pattern), secondary] : [clone(pattern)] }; // Existing single paint remains the default.
+
     }
     return out;
   }
@@ -224,6 +260,7 @@
       eligibleCount: eligibleStableAnimals().length,
       regions: entry ? regionsFor(entry).map(region => region.id) : [],
       paintedRegions: Object.keys(cleanDraft()),
+      overpassUnlocked: overpassUnlocked(),
       lastError,
     };
     if (el) el.textContent = JSON.stringify(snapshot, null, 2);
@@ -241,6 +278,9 @@
       const paint = paintDescriptor(region.id) || {};
       const patternId = paint.patternLibraryId || '';
       const patternKnown = patternId && patterns.some(pattern => pattern.id === patternId);
+      const overpassId = paint.overpassPatternLibraryId || '';
+      const overpassKnown = overpassId && patterns.some(pattern => pattern.id === overpassId);
+      const overpassDyeId = paint.overpassDyeId || paint.dyeId || '';
       return `
         <div class="cp-region" data-region="${esc(region.id)}">
           <div class="cp-region-title"><span class="cp-swatch" style="background:${esc(region.color)}"></span>${esc(region.label)} <span class="cp-help">genetic ${esc(region.color)}</span></div>
@@ -255,6 +295,16 @@
               ${patterns.map(pattern => `<option value="${esc(pattern.id)}" ${patternId === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
             </select></label>
           </div>
+          ${overpassUnlocked() ? `<div class="cp-grid" style="margin-top:7px">
+            <label>Overpass pattern<select data-field="overpass">
+              <option value="">No overpass</option>
+              ${!overpassKnown && overpassId ? `<option value="${esc(overpassId)}" selected>Saved snapshot (${esc(overpassId)})</option>` : ''}
+              ${patterns.map(pattern => `<option value="${esc(pattern.id)}" ${overpassId === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
+            </select></label>
+            <label>Overpass ink<select data-field="overpass-dye" ${paintPatternStack(paint)[1] ? '' : 'disabled'}>
+              ${dyes.map(dye => `<option value="${esc(dye.id)}" ${overpassDyeId === dye.id ? 'selected' : ''}>${esc(dye.label || dye.id)}</option>`).join('')}
+            </select></label>
+          </div>` : '<p class="cp-help" style="margin-top:6px">Overpass painting unlocks after completing Banubu’s second request (Nine Leaf Tea).</p>'}
           <div class="cp-row">
             <button class="cp-btn secondary" type="button" data-act="edit">Author / edit pattern</button>
             <button class="cp-btn secondary" type="button" data-act="clear">Clear this region</button>
@@ -273,6 +323,15 @@
         setLibraryPattern(regionId, event.target.value);
         drawPreview();
         refreshDebug();
+      });
+      row.querySelector('[data-field="overpass"]')?.addEventListener('change', event => {
+        setOverpassPattern(regionId, event.target.value);
+        row.querySelector('[data-field="overpass-dye"]').disabled = !event.target.value;
+        drawPreview(); refreshDebug();
+      });
+      row.querySelector('[data-field="overpass-dye"]')?.addEventListener('change', event => {
+        setOverpassDye(regionId, event.target.value);
+        drawPreview(); refreshDebug();
       });
       row.querySelector('[data-act="clear"]')?.addEventListener('click', () => {
         delete draftLayers[regionId];
@@ -304,7 +363,10 @@
           },
           onSave: async (patternData, libraryId) => {
             paint.patternLibraryId = libraryId || '';
+            const priorOverpass = paintPatternStack(paint)[1]; // Authoring the first slot must preserve its secondary.
             paint.pattern = clone(libraryId ? (window.PatternLibrary?.getById?.(libraryId) || patternData) : patternData);
+            if (priorOverpass) paint.patterns = [paint.pattern, priorOverpass];
+            else delete paint.patterns;
             if (!paint.dyeHex && !paint.dyeId) {
               const firstDye = ownedDyes()[0];
               if (firstDye) { paint.dyeId = firstDye.id; paint.dyeHex = firstDye.hex; }
@@ -464,13 +526,14 @@
     open,
     close,
     ownsAccessKey,
+    overpassUnlocked,
     stableMaxLevel,
     eligibleStableAnimals,
     regionsFor,
     makeAltarInteractable,
     decorateScene,
     debugSnapshot,
-    __test: Object.freeze({ invalidateLiveAnimal }),
+    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, setOverpassPattern, setOverpassDye, cleanDraft }),
   });
 
   window.ColorPoolsSystem = api;
