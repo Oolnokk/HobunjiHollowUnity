@@ -174,6 +174,42 @@
     return `dye:CLOTH:${variant}_${hue}`;
   }
 
+  const GHOUL_OVERWEAR_POOL = Object.freeze(['tankan_bodywrap', 'rugged_poncho', 'fine_poncho']); // Ghoul upper clothing includes the existing body wrap and finely trimmed option; rolled once per spawn.
+  const GHOUL_PANTS_POOL = Object.freeze(['pants_basic', 'draped_pants']); // Equal-probability trouser choices, independent of gender.
+  const GHOUL_PRIMARY_DYE = 'dye:CLOTH:pale_blue'; // All ghoul clothing channels' primary color, including bandoliers and leg garments.
+  const GHOUL_SECONDARY_DYE = 'dye:CLOTH:silver'; // Matching secondary/trim dye on fine hoods, drapes and any two-color clothing.
+
+  function styleGhoulRoster(roster) {
+    if (roster?.appearance?.speciesId !== 'ghoul') return roster;
+    const current = Array.isArray(roster.equippedCosmetics) ? roster.equippedCosmetics : []; // The incoming mine roster may already include a hood, wrap, bandolier or older pants.
+    const priorSlots = roster.cosmeticSlots || {}; // Slot ownership also identifies clothing not in the small explicit item pools.
+    const oldHood = current.find(id => priorSlots[id] === 'hood' || ['fine_hood', 'ragged_hood', 'facewrap'].includes(id)) || null; // Preserved when the fine-hood roll fails.
+    const removed = new Set(); // Used to remove only clothing replaced by the single overwear/hood/pants rolls.
+    for (const id of current) {
+      if (priorSlots[id] === 'overwear' || GHOUL_OVERWEAR_POOL.includes(id) || priorSlots[id] === 'pants'
+          || ['basic_pants', 'layered_skirt', ...GHOUL_PANTS_POOL].includes(id)
+          || priorSlots[id] === 'hood' || ['fine_hood', 'ragged_hood', 'facewrap'].includes(id)) removed.add(id);
+    }
+    const next = current.filter(id => !removed.has(id)); // Torso equipment, especially bandolier1, stays exactly as rolled by the original spawn.
+    const overwear = GHOUL_OVERWEAR_POOL[Math.floor(deps.rnd() * GHOUL_OVERWEAR_POOL.length)]; // Each authored upper-body silhouette has equal weight.
+    const pants = GHOUL_PANTS_POOL[deps.rnd() < 0.5 ? 0 : 1]; // Exactly 50/50 simple versus draped for fresh ghoul spawns.
+    const hood = deps.rnd() < 0.5 ? 'fine_hood' : oldHood; // Fine hoods join the existing headwear mix without requiring a hood every time.
+    for (const id of removed) delete priorSlots[id];
+    for (const [id, slot] of [[overwear, 'overwear'], [pants, 'pants'], [hood, 'hood']]) {
+      if (!id) continue;
+      next.push(id);
+      priorSlots[id] = slot;
+    }
+    roster.equippedCosmetics = next;
+    roster.cosmeticSlots = priorSlots;
+    roster.appliedDyes ||= {};
+    for (const slot of Object.values(BANDIT_TINT_SLOT_BY_SLOT)) {
+      roster.appliedDyes[slot] = GHOUL_PRIMARY_DYE;
+      roster.appliedDyes[`${slot}_B`] = GHOUL_SECONDARY_DYE;
+    }
+    return roster;
+  }
+
   // Produces exactly the record shape makeNpcWalker feeds into
   // NpcAvatarPreview.buildProfileFromNpcExport, plus a `cosmeticSlots`
   // side table the corpse-loot step reads to rebuild each worn item as a
@@ -2524,6 +2560,7 @@
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
     const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
+    if (roster?.appearance?.speciesId === 'ghoul') styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
