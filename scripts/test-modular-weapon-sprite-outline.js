@@ -81,7 +81,7 @@ mark(fringe, 8, 8, [150, 70, 40, 32]);
 assert.deepEqual(pixel(window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 32).pixels, 8, 8), [150, 70, 40, 32], 'Alpha at the threshold is kept.');
 assert.throws(() => window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 256), /0 to 255/);
 
-const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe', 'kylie', 'pick-shovel', 'plains-sword'] }; // New authoring-only exports on main.
+const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe', 'pick-shovel', 'plains-sword'] }; // New authoring-only exports on main.
 for (const [kind, keys] of Object.entries(uploaded)) for (const key of keys) {
   const part = api.getConfig()[kind][key]; // Newly registered parts must be visible in the authoring dropdowns.
   assert(part && part.editorOnly, kind + '/' + key + ' should require calibration.');
