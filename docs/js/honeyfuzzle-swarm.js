@@ -28,17 +28,17 @@
     'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
     'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
   ]); // Always load the anatomical tail and optional spectacles just once for every swarm.
-  const ATLAS_COLS = FRAME_URLS.length + PATTERN_URLS.length; // 3 body poses, 1 tail and 1 spectacles mask share the GPU atlas.
+  const ATLAS_COLS = 3, ATLAS_ROWS = 2; // Packs five authored 478x399 sprites into 1434x798 instead of a too-wide 2390x399 mobile texture.
   const FRAME_UP = 0, FRAME_MID = 1, FRAME_DOWN = 2;
   const WING_CYCLE = Object.freeze([FRAME_UP, FRAME_MID, FRAME_DOWN, FRAME_MID]); // up -> mid -> down -> mid
   const THIRD_STEP_OFFSETS = Object.freeze([0, 1, 2]); // Each third of the swarm sits at a different point of the 4-step cycle.
   const WING_TICK_MS = 55; // Legacy wing-step helper retained for older callers/tests.
   const FLUTTER_HZ = 16; // Subtle apparent-wing opacity shimmer, not a literal resolved wingbeat; the three superposed poses imply the much faster physical flapping.
   const DEFAULT_MEMBER_COUNT = 24; // Many small members read as a swarm rather than a flock; a multiple of 3 keeps the wing-cycle thirds exactly even.
-  // Source art is 500x500 with the bird in roughly x 75..404, y 170..451
-  // across all three frames; crop to that union (plus margin) so members are
-  // not mostly transparent padding.
-  const CROP = Object.freeze({ x: 70, y: 160, w: 345, h: 300 });
+  // The new fly1/2/3 and both authored patterns are already cropped to the
+  // SAME 478x399 coordinates. Cropping with the legacy 500x500 inset would
+  // cut off wings and tails and even make the atlas load fail.
+  const CROP = Object.freeze({ x: 0, y: 0, w: 478, h: 399 });
   const MEMBER_ASPECT = CROP.h / CROP.w;
 
   const TAU = Math.PI * 2;
@@ -146,14 +146,18 @@
     _atlasPromise = Promise.all([...FRAME_URLS, ...PATTERN_URLS].map(loadImage)).then(images => {
       const canvas = document.createElement('canvas');
       canvas.width = CROP.w * ATLAS_COLS;
-      canvas.height = CROP.h;
+      canvas.height = CROP.h * ATLAS_ROWS;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('honeyfuzzle atlas canvas has no 2D context');
       images.forEach((img, index) => {
         if (img.width < CROP.x + CROP.w || img.height < CROP.y + CROP.h) {
           throw new Error('honeyfuzzle sprite too small for common crop: ' + [...FRAME_URLS, ...PATTERN_URLS][index]);
         }
-        ctx.drawImage(img, CROP.x, CROP.y, CROP.w, CROP.h, index * CROP.w, 0, CROP.w, CROP.h);
+        // The three flight bodies occupy canvas row 1 (GPU UV bottom).
+        // The tail and spectacles occupy row 0 (GPU UV top).
+        const atlasCol = index < FRAME_URLS.length ? index : index - FRAME_URLS.length;
+        const atlasRow = index < FRAME_URLS.length ? 1 : 0;
+        ctx.drawImage(img, CROP.x, CROP.y, CROP.w, CROP.h, atlasCol * CROP.w, atlasRow * CROP.h, CROP.w, CROP.h);
       });
       const surface = window.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture
@@ -187,8 +191,8 @@
 #ifdef USE_MAP
   vec2 uv = vUv;
   vec4 fly1 = mapTexelToLinear( texture2D( map, uv ) );
-  vec4 fly2 = mapTexelToLinear( texture2D( map, uv + vec2( 0.2, 0.0 ) ) );
-  vec4 fly3 = mapTexelToLinear( texture2D( map, uv + vec2( 0.4, 0.0 ) ) );
+  vec4 fly2 = mapTexelToLinear( texture2D( map, uv + vec2( 0.3333333, 0.0 ) ) );
+  vec4 fly3 = mapTexelToLinear( texture2D( map, uv + vec2( 0.6666667, 0.0 ) ) );
   // Weights rotate smoothly at hummingbird speed; all three poses contribute
   // every frame. Aligned bodies stay solid, disjoint wings become soft trails.
   float phase = uWingPhase + vWingOffset * 2.0943951;
@@ -200,11 +204,11 @@
                     fly3.rgb * fly3.a * weights.z ) / max( flyAlpha, 0.0001 );
   vec4 body = tintHoneyfuzzle( vec4( flyColor, flyAlpha ), uBody, uUse );
   vec4 tail = tintHoneyfuzzle(
-    mapTexelToLinear( texture2D( map, uv + vec2( 0.6, 0.0 ) ) ), uTailColor, uTailUse );
+    mapTexelToLinear( texture2D( map, uv + vec2( 0.0, 0.5 ) ) ), uTailColor, uTailUse );
   vec4 composed = overlayHoneyfuzzle( body, tail ); // The tail is behind all body/fly pixels.
   if ( uSpectaclesUse > 0.5 ) {
     vec4 spectacles = tintHoneyfuzzle(
-      mapTexelToLinear( texture2D( map, uv + vec2( 0.8, 0.0 ) ) ), uSpectaclesColor, 1.0 );
+      mapTexelToLinear( texture2D( map, uv + vec2( 0.3333333, 0.5 ) ) ), uSpectaclesColor, 1.0 );
     composed = overlayHoneyfuzzle( spectacles, composed );
   }
   diffuseColor *= composed;
@@ -258,7 +262,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aFrame;\nvarying float vWingOffset;')
-        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvWingOffset = aFrame;\n#ifdef USE_UV\nvUv.x /= 5.0;\n#endif');
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvWingOffset = aFrame;\n#ifdef USE_UV\nvUv.xy /= vec2(3.0, 2.0);\n#endif');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\n' + HONEYFUZZLE_SHADER_HELPERS)
         .replace('#include <map_fragment>', MAP_FRAGMENT);
@@ -383,7 +387,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
   }
 
   window.HoneyfuzzleSwarm = {
-    FRAME_URLS, PATTERN_URLS, ATLAS_COLS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
+    FRAME_URLS, PATTERN_URLS, ATLAS_COLS, ATLAS_ROWS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
     hashUnit, seedFromString, wingStep, memberFrame, memberPose, appearanceColors,
     buildAvatar, ensureAtlas,
     debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
