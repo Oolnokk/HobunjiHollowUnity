@@ -9028,6 +9028,7 @@
                 row: t.row,
                 target: 'building',
                 targetMapId: t.targetMapId,
+                direction: t.direction || '',
                 targetSpotId: t.targetSpotId || '',
                 generatedLocaleId: t.generatedLocaleId,
               })); // Terrain placement exports these after generation; without this promotion they existed only in workspace JSON and never became an interactable in-game spot.
@@ -10078,6 +10079,7 @@
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
+      let _pendingArrivalFromArea = null; // Source area retained until an asynchronously loaded interior can resolve its inward door direction.
       let _pendingEntrySpotId = ''; // Named locale-cavern connector requested before its destination scene finished generating.
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       const _rawExteriorMaps = new Map(); // Keeps base arrays intact when live calendar layouts are reapplied.
@@ -13363,6 +13365,7 @@
                 // Retained so the building renderer can keep this spot on
                 // the piece's authored door after rotations or old exports.
                 buildingId: t.buildingId || '',
+                direction: t.direction || '',
                 targetSpotId: t.targetSpotId || '',
               });
             } else if (allZoneMapIds.has(t.targetMapId)) {
@@ -13642,6 +13645,7 @@
               exitTileSet.add(`${tc},${tr}`);
               const t = {
                 col: tc, row: tr, area: mapId, target, exitId: exit.id,
+                ...window.InteriorDoorTiles.exitSettings(mapData, { exitId: exit.id, col: tc, row: tr }, floorSet),
                 targetSpotId: exit.targetSpotId || '',
                 requiresKeyItem: exit.requiresKeyItem || '',
                 hiddenUntilKeyItem: exit.hiddenUntilKeyItem === true,
@@ -13662,13 +13666,14 @@
               const target = !t.targetMapId ? 'exit_building' : 'building';
               const tr = {
                 col: t.col, row: t.row, area: mapId, target, exitId: t.exitId,
+                ...window.InteriorDoorTiles.exitSettings(mapData, t, floorSet),
                 targetSpotId: t.targetSpotId || '',
                 requiresKeyItem: t.requiresKeyItem || '',
                 hiddenUntilKeyItem: t.hiddenUntilKeyItem === true,
               };
               if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
               transitions.push(tr);
-              if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
+              exitTileSet.add(`${t.col},${t.row}`); // Interior map-switch doors need wall openings just like front doors.
             }
           }
           const entranceLightTileSet = Array.isArray(mapData.entranceLightTiles) && mapData.entranceLightTiles.length
@@ -13957,7 +13962,8 @@
           }
           // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
           await window.InteriorDoorTiles?.build({
-            THREE, scene: bScene, mapId, mapData, floorSet,
+            THREE, scene: bScene, mapId, floorSet,
+            mapData: { ...mapData, exits: transitions.map(t => ({ id: t.exitId, tiles: [[t.col, t.row]], direction: t.direction, generateDoor: t.generateDoor })) }, // Door placement follows the same effective transitions that drive travel, including workspace overrides.
             surfaceYAt: (c, r) => tileSurfaceYInArea(bGrid?.[r]?.[c], mapId),
             registerInteractable: (c, r, interactable) => _buildingInteractables.set(mapId + ',' + c + ',' + r, interactable),
             decorate: group => { _markOutline(group); _markFurnitureEdgeId(group); },
@@ -14245,6 +14251,12 @@
               if (mapId === 'map_i_den_banubu') setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true }); // Async cave completion must not restore the exterior look authority.
               _snapCameraTarget();
             }
+            if (_pendingArrivalFromArea !== null) {
+              const arrivalAngle = window.BuildingEntrySpawn.arrivalAngle(info, player.x / TILE - 0.5, player.y / TILE - 0.5, _pendingArrivalFromArea); // Resolve after floor and authored transitions have loaded.
+              _pendingArrivalFromArea = null;
+              if (arrivalAngle !== null) setPlayerFacingInstant(arrivalAngle, { clearLook: true, syncCamera: true });
+              window.__farmLog?.(`[door arrival] ${mapId} facing=${arrivalAngle ?? 'default'}`, 'info');
+            }
             window.LoadingScreenRuntime?.hide();
           }
           debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
@@ -14340,6 +14352,7 @@
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = '') {
+        const arrivalFromArea = currentArea; // Used to match the destination's reciprocal exit for cached and fresh scenes.
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
         // match its own `layouts` schedule (e.g. the temple's spirit
@@ -14378,6 +14391,7 @@
         const row = Number.isFinite(Number(namedSpot?.row)) ? Number(namedSpot.row) : Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
         // If the scene hasn't loaded yet, preserve a requested named connector
         // so loadBuildingScene can resolve it against the generated locale data.
+        _pendingArrivalFromArea = !bi ? arrivalFromArea : null;
         _pendingEntrySpotId = !bi && targetSpotId ? String(targetSpotId) : '';
         _pendingEntrySpawnFromExit = !bi && !_pendingEntrySpotId && !Number.isFinite(defaultCol);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
@@ -14387,8 +14401,8 @@
           playerMesh.position.y = entrySurfaceY;
           playerGroundShadow.position.y = entrySurfaceY + characterGroundShadowSurfaceOffset();
         }
-        const entryFacing = mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2; // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
-        setPlayerFacingInstant(entryFacing, { clearLook: mapId === 'map_i_den_banubu', syncCamera: mapId === 'map_i_den_banubu' });
+        const entryFacing = window.BuildingEntrySpawn.arrivalAngle(bi, col, row, arrivalFromArea) ?? (mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2); // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
+        setPlayerFacingInstant(entryFacing, { clearLook: true, syncCamera: true });
         _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
@@ -14525,7 +14539,7 @@
           currentArea = returnArea;
           if (farmPlayerSave) {
             player.x = farmPlayerSave.x; player.y = farmPlayerSave.y;
-            player.angle = farmPlayerSave.angle; facingAngle = farmPlayerSave.angle;
+            setPlayerFacingInstant(farmPlayerSave.angle + Math.PI, { clearLook: true, syncCamera: true });
           }
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
@@ -25889,7 +25903,7 @@
         if (currentArea === 'town' && _pendingSpotTransition) {
           const t = _pendingSpotTransition;
           const icon = t.target === 'building' ? '🚪' : '🏘';
-          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          const label = window.TownZoneBuildings.entranceLabel(t) || (t.target === 'building' ? 'Enter' : 'Leave Town'); // Use the Map Editor's placed-building name rather than a stale house-template label.
           return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
         }
 

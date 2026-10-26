@@ -1067,7 +1067,9 @@
       ],
       "targetMap": "map_i_watchhouse",
       "spawnCol": 4,
-      "spawnRow": 14
+      "spawnRow": 14,
+      "direction": "north",
+      "generateDoor": true
     }
   ],
   "colliders": [],

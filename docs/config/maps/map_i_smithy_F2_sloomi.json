@@ -176,7 +176,9 @@
       ],
       "targetMap": "map_i_smithy_F2",
       "spawnCol": 10,
-      "spawnRow": 5
+      "spawnRow": 5,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],

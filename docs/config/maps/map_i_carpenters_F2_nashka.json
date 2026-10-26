@@ -175,8 +175,10 @@
         ]
       ],
       "targetMap": "map_i_carpenters_F2",
-      "spawnCol": 9,
-      "spawnRow": 8
+      "spawnCol": 12,
+      "spawnRow": 4,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],
