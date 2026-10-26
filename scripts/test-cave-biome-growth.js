@@ -51,6 +51,20 @@ assert.equal(north[0].kind, 'roots');
 assert.equal(cloud[0].kind, 'roots');
 assert.equal(cloud[1].kind, 'vines');
 assert.equal(mire[1].kind, 'vines');
+const doubledGrowth = [ // Pin cave-only density, reach and thickness while checking the shared normalizer leaves them intact.
+  ['Cloud Forest roots', cloud[0], 44, 4.6, .086],
+  ['Cloud Forest vines', cloud[1], 34, 4.6, .042],
+  ['Eastern Mire roots', mire[0], 36, 4.0, .072],
+  ['Eastern Mire vines', mire[1], 24, 3.8, .042],
+  ['Northern Cliffs roots', north[0], 28, 3.3, .072],
+];
+for (const [name, growth, count, length, radius] of doubledGrowth) { // Assert every biome-specific recipe and its effective sanitized runtime values.
+  for (const recipe of [growth, context.FoliageGenerator.normalizeSurfaceGrowth(growth)]) {
+    assert.equal(recipe.count, count, name + ': strand count doubled');
+    assert.equal(recipe.length, length, name + ': strand length doubled');
+    assert.equal(recipe.radius, radius, name + ': strand radius doubled');
+  }
+}
 for (const growth of [...cloud, ...mire, ...north]) {
   assert.equal(growth.wallOnly, true, 'no strands belong on cave floor or roof');
   assert.match(growth.texture, /^assets\/textures\/.*\.png$/, 'use the shared natural-surface texture catalog');
