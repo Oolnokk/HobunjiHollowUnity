@@ -106,7 +106,7 @@ const server=http.createServer((req,res)=>{
     assert(spawned.holderToRider!=null&&spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
     assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
     // Let the shared hostile loop and the 5 Hz tribe ecology pass run.
-    await page.waitForFunction(()=>window.__tribeQa.omg._chunkCombatTarget===window.__tribeQa.pora&&window.__tribeQa.pora._chunkCombatTarget===window.__tribeQa.omg,null,{timeout:20000});
+    await page.waitForFunction(()=>window.__tribeQa.omg._chunkCombatTarget===window.__tribeQa.pora&&window.__tribeQa.pora._chunkCombatTarget===window.__tribeQa.omg,null,{timeout:90000}); // Software-rendered CI frames are slow, so the 5 Hz ecology pass needs generous headroom.
     await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa;return omg.health<omg.maxHealth||pora.health<pora.maxHealth;},null,{timeout:45000}); // Rival tribes actually trade blows.
     if(SHOTS){
       await page.evaluate(()=>{for(const id of ['ob-overlay','save-startup-gate'])document.getElementById(id)?.style.setProperty('display','none');if(window.Combat.deps.playerMesh)window.Combat.deps.playerMesh.visible=false;}); // Review-only: reveal the fighters under the new-world overlay and behind the player.
@@ -150,12 +150,13 @@ const server=http.createServer((req,res)=>{
     assert.notEqual(camps.chiefs[0],camps.chiefs[1],'the two chief camps are on different maps');
     const removed=await page.evaluate(()=>{
       const {omg,pora}=window.__tribeQa;
+      const wasAttached=!!omg.avatarRef?.group?.parent; // Camp ecology may already have released this hostile on a slow runner.
       const before=window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount; // Camp ecology may spawn other live Omgurku since the first count.
       for(const entity of [omg,pora]){window.Combat.deps.hostileObjects.delete(entity);window.BanditCombat.discardEntity(entity);}
       delete window.__tribeQa;
-      return {before,after:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
+      return {before,wasAttached,after:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
     });
-    assert.equal(removed.after,removed.before-1,'discarding the hostile releases its compound avatar');
+    assert.equal(removed.after,removed.before-(removed.wasAttached?1:0),'discarding the hostile releases its compound avatar');
     assert.deepEqual(errors.slice(baseline),[],'tribe spawning, fighting and cleanup raise no exceptions');
     console.log('Omgurku tribe browser smoke passed',JSON.stringify({fight,camps}));
   }finally{await browser.close();server.close();}

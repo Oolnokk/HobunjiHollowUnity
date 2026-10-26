@@ -660,6 +660,7 @@
       colorWrite: material.colorWrite,
       depthWrite: material.depthWrite,
       depthTest: material.depthTest,
+      alphaTest: material.alphaTest,
       stencilWrite: material.stencilWrite,
       stencilWriteMask: material.stencilWriteMask,
       stencilFunc: material.stencilFunc,
@@ -676,6 +677,7 @@
       material.colorWrite = state.colorWrite;
       material.depthWrite = state.depthWrite;
       material.depthTest = state.depthTest;
+      if (state.alphaTest !== undefined) material.alphaTest = state.alphaTest;
       material.stencilWrite = state.stencilWrite;
       material.stencilWriteMask = state.stencilWriteMask;
       material.stencilFunc = state.stencilFunc;
@@ -685,6 +687,14 @@
       material.stencilZFail = state.stencilZFail;
       material.stencilZPass = state.stencilZPass;
     }
+  }
+
+  function useSpriteOcclusionCutout(object, material) {
+    // Only tagged authored PNG planes use the stricter mask. Foliage, water,
+    // and other protected covers keep their own alpha and depth rules.
+    if (!hasLayer(object, PNG_OCCLUDER_LAYER) || !material.map || Number(material.alphaTest) <= 0) return;
+    const maskCutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // The same minimum coverage used by the regular depth-writing sprite factory.
+    material.alphaTest = Math.max(Number(material.alphaTest), maskCutoff);
   }
 
   function prepareNonGroundDepthMaterials(scene) {
@@ -705,6 +715,7 @@
         // Celestial sprites keep their authored depthWrite=false; only their
         // accidental second color draw is suppressed during this replay.
         if (isMesh && (forceCutoutDepth || forceCoverDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
+        if (forceCutoutDepth) useSpriteOcclusionCutout(object, material);
       });
     });
     return states;
@@ -723,6 +734,7 @@
         if (Number(material.alphaTest || 0) <= 0 && !hasLayer(object, PNG_OCCLUDER_LAYER)) return;
         saveMaterialState(states, material);
         material.depthWrite = true;
+        useSpriteOcclusionCutout(object, material);
       });
     }
     return states;

@@ -152,7 +152,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261023h443f8dc"></script>
-  <script src="config/scratchbones-config.js?v=20261026hfineghoul2"></script>
+  <script src="config/scratchbones-config.js?v=20261026hmaskalpha3"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -174,10 +174,10 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261022omgurkuMerge1"></script>
+  <script src="js/portrait-utils.js?v=20261026hmaskalpha1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261024h03348de"></script>
-  <script src="js/png-plane-avatar.js?v=20261022hea8b100"></script>
+  <script src="js/png-plane-avatar.js?v=20261026hmaskalpha2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261025h561f2e2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -329,7 +329,7 @@
   <script src="js/combat/combat-combo.js?v=20261017h9dc5e7c"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261019hc4df62e"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20261017h4e1f9bc"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261019h420f48e"></script>
@@ -855,7 +855,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20261015hb93578b"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261026hmaskalpha8"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
@@ -2596,7 +2596,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261026maskoff1"></script>
+  <script src="js/tool-icon-render.js?v=20261026hmaskalpha9"></script>
   <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2631,7 +2631,7 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <!-- Authored world-space dialogue/cutscene cameras. Must load before DialogueContent/game.js. -->
-  <script src="js/cinematic-camera-runtime.js?v=20261022hcamopt2"></script>
+  <script src="js/cinematic-camera-runtime.js?v=20261026hmaskalpha11"></script>
   <script src="js/camera-tile-collision.js?v=20261023camtile1"></script>
   <script src="js/camera-occlusion-chunks.js?v=20261023occchunk1"></script>
   <script src="js/dialogue-camera-framing.js?v=20261002hba1474a"></script>

@@ -807,8 +807,13 @@ function spritePngAlphaTest() {
   return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.alphaTest ?? 0.001;
 }
 
+function spritePngMaskAlphaTest() {
+  const configured = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.maskAlphaTest);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(1, configured) : 0.35;
+}
+
 function spritePngMaterialOptions(THREE, texture, debugName, overrides = {}) {
-  return Object.assign({
+  const options = Object.assign({
     name: debugName,
     map: texture || null,
     transparent: true,
@@ -818,6 +823,13 @@ function spritePngMaterialOptions(THREE, texture, debugName, overrides = {}) {
     depthWrite: true,
     opacity: 1,
   }, overrides);
+  // The same fragments supply both color and depth in a normal sprite draw.
+  // Faint PNG fringe must not stamp a much wider silhouette over other planes.
+  // Depth-disabled translucent effects keep their original soft-edge cutoff.
+  if (options.transparent && options.depthWrite && options.map) {
+    options.alphaTest = Math.max(Number(options.alphaTest) || 0, spritePngMaskAlphaTest());
+  }
+  return options;
 }
 
 function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
@@ -861,6 +873,7 @@ window.HobunjiSpritePngSurface = {
   materialOptions: spritePngMaterialOptions,
   makeMaterial: makeSpritePngUnlitMaterial,
   alphaTest: spritePngAlphaTest,
+  maskAlphaTest: spritePngMaskAlphaTest,
 };
 
 // Legacy direct exports remain for editors and older consumers.

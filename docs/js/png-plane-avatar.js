@@ -93,9 +93,9 @@
     }
     return new THREE.MeshBasicMaterial({
       name: debugName, map: texture, transparent: true,
-      alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide,
-      depthTest: true, depthWrite: true, opacity: 1,
-    });
+      alphaTest: Math.max(cfg().alphaTest ?? 0.001, cfg().maskAlphaTest ?? 0.35),
+      side: THREE.FrontSide, depthTest: true, depthWrite: true, opacity: 1,
+    }); // Standalone editor fallback still needs the same solid-depth cutoff.
   }
 
   // Compatibility alias for older callers; this is now literally the sprite
@@ -802,10 +802,9 @@
     const frontTex = sourceTextures.front, backTex = sourceTextures.back; // Per-avatar materials can switch generated maps without mutating these textures.
     let disposed = false; // Disposal wrappers can safely call this more than once.
 
-    // See makeSpriteMaterial above for why depthWrite is true here.
-    const matOpts = { transparent: true, alphaTest: cfg().alphaTest ?? 0.001, side: THREE.FrontSide, depthWrite: true };
-    const frontMat = new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_front_mat', map: frontTex });
-    const backMat  = enableSharedFaceMirror(new THREE.MeshBasicMaterial({ ...matOpts, name: 'animal_back_mat' }));
+    // Animal front/back cards use the same sprite alpha and depth silhouette as NPCs, not a separate 0.001 cutout.
+    const frontMat = makeSpriteMaterial(THREE, frontTex, 'animal_front_mat');
+    const backMat  = enableSharedFaceMirror(makeSpriteMaterial(THREE, backTex, 'animal_back_mat'));
     backMat.map = backMapFor(backMat, sourceTextures) || backTex; // Mirrors the shared front texture in-shader; backTex stays for compatibility.
 
     const frontGeo = new THREE.PlaneGeometry(modelWidth, modelHeight);
