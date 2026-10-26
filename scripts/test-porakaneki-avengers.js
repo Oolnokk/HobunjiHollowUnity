@@ -20,7 +20,9 @@ assert.equal(cfg.avengers.quarryTribe, 'omgurku');
 assert.equal(cfg.avengers.quarryEscapeChance, 0.05, 'mounted riders rarely lose their quarry');
 assert.equal(cfg.avengers.killsPerDay, 0, 'Avengers hunt without a daily limit by default');
 assert.equal(cfg.avengers.escapeReprieveHours, 2);
-assert.equal(cfg.avengers.groupRadiusTiles, 6);
+assert(cfg.avengers.groupRadiusTiles > 0);
+assert(omgurkuCfg.behavior.denHuntGroupMin > cfg.avengers.riders,
+  'balance: a full Omgurku hunting party outnumbers a band, so Avengers prey on stragglers and the Omgurku are safest in groups');
 assert.equal(cfg.avengers.retreatHours, 1);
 assert.equal(cfg.avengers.riderLossChance, 0.1);
 assert(cfg.avengers.rideSpeedTilesPerSecond > cfg.behavior.travelSpeedTilesPerSecond, 'mounted riders outpace walking hunters');
@@ -201,6 +203,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert(pursuing, 'a band is riding at a quarry');
   const pursuer = () => pora.debugSnapshot().zones[pursuing].camps.find(camp => camp.avengers);
   const withdrawalsBefore = pora.debugSnapshot().avengerWithdrawals;
+  const groupRadius = cfg.avengers.groupRadiusTiles;
   cfg.avengers.groupRadiusTiles = 500; // Every Omgurku on the map now counts as the quarry's group: far more than three riders.
   tick(0.21);
   assert(pora.debugSnapshot().avengerWithdrawals > withdrawalsBefore, 'an outnumbered band withdraws');
@@ -211,7 +214,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   for (let i = 0; i < 20; i++) tick(4.1);
   assert.equal(pursuer().avengers.retreating, false, 'the band regroups after retreatHours');
   assert(ZONES.every(zone => !pora.debugSnapshot().zones[zone].camps.find(camp => camp.avengers).avengers.quarryId), 'a band never picks a quarry whose group outnumbers it');
-  cfg.avengers.groupRadiusTiles = 6;
+  cfg.avengers.groupRadiusTiles = groupRadius;
   hour = 12;
 
   // An optional killsPerDay cap still holds when configured.
