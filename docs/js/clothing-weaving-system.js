@@ -2636,7 +2636,8 @@
     await window.PixelWorkYield?.maybeYield();
     const [r, g, b] = hexRgb(colorHex);
     const overpassInkHex = active.length > 1 && /^#[0-9a-f]{6}$/i.test(String(active[1].pattern.inkColorHex || ''))
-      ? active[1].pattern.inkColorHex : null; // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
+      && String(active[1].pattern.inkColorHex).toLowerCase() !== String(colorHex).toLowerCase()
+      ? active[1].pattern.inkColorHex : null; // Same-color overpasses take the old single-pass fast path. // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Reusable patterns avoid authored dark outlines; exact direct masks instead honor every opaque garment pixel selected by manual authoring.
