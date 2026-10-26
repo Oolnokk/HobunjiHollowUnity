@@ -1847,7 +1847,7 @@
         tin: 3,
         lead: 5,
         silver: 7,
-        gold: 8,
+        gold: 0, // Gold is common and worthless in this world; its bar recipe is available from the start.
         electrumGold: 8,
         electrumSilver: 8,
         pewter: 5,
