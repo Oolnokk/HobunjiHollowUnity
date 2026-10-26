@@ -421,6 +421,15 @@
     return roll;
   }
 
+  // The head's world rotation as the product of its ancestors' local rotations, ignoring scale: exactly how the player composer
+  // aims the neck at the interaction ray. A matrix decomposition would skew by a degree or two under the avatar's non-uniform body scale.
+  function headRotation(out, joint) {
+    if (!joint.quaternion) return joint.getWorldQuaternion(out); // Stand-in joints without a transform hierarchy.
+    out.copy(joint.quaternion);
+    for (let node = joint.parent; node; node = node.parent) out.premultiply(node.quaternion);
+    return out;
+  }
+
   // Fills `frame` (WORLD space) with the mouth position, the head's world rotation and its uniform scale ratio vs the
   // Mao'ao-male baseline. False when the avatar has no skinned head to attach to.
   function headFrame(frame, avatar) {
@@ -433,7 +442,7 @@
     if (!mouth) return false;
     if (mouth !== frame.position) frame.position.copy(mouth);
     joint.updateWorldMatrix(true, false);
-    joint.getWorldQuaternion(frame.quaternion);
+    headRotation(frame.quaternion, joint);
     joint.getWorldScale(frame._v);
     const headScale = (frame._v.x + frame._v.y) / 2; // Head size is x/y; z mirrors the body and must not feed back into the tool.
     frame.scale = headScale > 0 ? headScale / referenceHeadScale() : 1;

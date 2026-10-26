@@ -146,6 +146,18 @@ assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled pare
     assert.ok(degBetween(place(holder, frame), exact) < 1e-9, 'without a camera the pose is exact');
   }
 }
+// The head frame's rotation is the product of its ancestors' local rotations (scale ignored), the same convention the composer aims
+// the neck with, so a non-uniform body scale cannot skew the tool away from the interaction ray.
+{
+  const yawQuat = deg => new Q4().setFromEuler({ x: 0, y: deg * Math.PI / 180, z: 0 });
+  const root = { quaternion: yawQuat(20), parent: null };
+  const neck = { quaternion: yawQuat(30), parent: root, updateWorldMatrix() {}, getWorldScale(v) { return v.set(0.726, 0.726, 0.9); }, getWorldQuaternion() { throw new Error('a matrix decomposition must not be used when the hierarchy is available'); } };
+  const avatar = { userData: { neckRig: { available: true, neckJoint: neck, headScaleJoint: neck, headCentroidPx: { x: 1, y: 1 } } } };
+  mathContext.window.PNGPlaneAvatar = { resolveSkinnedPixelWorldPosition(node, pixel, out) { return out.set(0, 1, 0); } };
+  const f = attach.createHeadFrame(THREE);
+  assert.equal(attach.headFrame(f, avatar), true);
+  assert.ok(f.quaternion.angleTo(yawQuat(50)) < 1e-6, 'head rotation is the rotation-only product of the hierarchy');
+}
 // Hand-aligned scaling pivots on the main-hand grip: the grip's position must not depend on the holder's scale.
 {
   const grip = { x: 0.1, y: -0.05, z: 0.5 };
