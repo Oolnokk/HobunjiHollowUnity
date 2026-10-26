@@ -128,7 +128,7 @@ assert.deepEqual(inventory, afterCraft);
 assert.equal(window.FoundryShop.craft('missing', 'dagger', 'nativeCopper').ok, false);
 inventory.gold = NaN;
 assert.equal(window.FoundryShop.craft('warhammer', 'dagger', 'nativeCopper').ok, false);
-const relicParts = api.unlockedParts([], { harlyaoRelics: { relic: { shape: 'longsword' } } }, defs); // Relic unlocks join the same part catalog.
+const relicParts = api.unlockedParts(['dagger'], { harlyaoRelics: { relic: { shape: 'longsword' } } }, defs); // Relic unlocks join the same part catalog.
 assert(relicParts.heads.includes('harlyao-longsword'));
 assert(relicParts.shafts.includes('harlyao-longsword'));
 const oldWorld = plain(mine.serialize()); // Switching worlds cannot leak a foundry bonus.
