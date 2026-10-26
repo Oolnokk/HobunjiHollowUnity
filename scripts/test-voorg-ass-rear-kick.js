@@ -72,12 +72,20 @@ const sandbox = vm.createContext({
   },
   console, Math, Map, Promise,
 });
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/combat/combat-animal-attacks.js'), 'utf8'), sandbox, { filename: 'combat-animal-attacks.js' });
+const baseRegister = windowStub.Combat.animalAttacks.register; // Keeps the production lunge dispatcher and exposes a handle for this isolated test.
+windowStub.Combat.animalAttacks.register = function (id, definition) { this[id] = definition; return baseRegister(id, definition); };
 vm.runInContext(script, sandbox, { filename: 'combat-voorg-ass-rear-kick.js' });
 const kick = windowStub.Combat.animalAttacks.rearKick;
 assert.ok(kick && typeof kick.start === 'function', 'rear kick registers with shared named attack system');
 
 async function settle() {
   await new Promise(resolve => setImmediate(resolve)); // Let the composite rendering promise chain settle before checking attack state.
+}
+
+function advancePastKickLunge(creature, state, deps) {
+  for (let tick = 0; tick < 100 && state.stage === 'lunge'; tick++) kick.update(creature, state, 0.016, deps);
+  assert.equal(state.stage, 'windup', 'selected kick must advance from lunge to windup without another AI decision');
 }
 
 async function main() {
@@ -99,7 +107,11 @@ async function main() {
   };
   const state = {};
   kick.start(wild, state, { target: player }, deps);
-  assert.ok(Math.abs(wild.facing - Math.PI) < 0.0001, 'animal reverses its facing toward the target');
+  assert.equal(state.stage, 'lunge', 'the decision immediately enters its own forward charge');
+  assert.ok(Math.abs(wild.facing) < 0.0001, 'the lunge faces toward the target');
+  advancePastKickLunge(wild, state, deps);
+  assert.equal(state.lungeStopReason, 'target');
+  assert.ok(Math.abs(wild.facing - Math.PI) < 0.0001, 'animal reverses only after its lunge');
   await settle();
   assert.ok(draws.includes('idle') && draws.includes('run1'), 'idle head and run1 hindlegs were composited');
   assert.equal(log.filter(x => x[0] === 'polygon').length, 2, 'both sides use the saved rigger split');
@@ -128,6 +140,7 @@ async function main() {
   const companionState = {};
   kick.start(companion, companionState, { target }, companionDeps);
   assert.ok(!windowStub.VoorgAssRearKick.canUse(companion), 'special cooldown begins on start');
+  advancePastKickLunge(companion, companionState, companionDeps);
   await settle();
   kick.update(companion, companionState, 0.35, companionDeps);
   kick.update(companion, companionState, 0.15, companionDeps);
@@ -150,6 +163,7 @@ async function main() {
   };
   const slowState = {};
   kick.start(slow, slowState, { target }, companionDeps);
+  advancePastKickLunge(slow, slowState, companionDeps);
   kick.update(slow, slowState, 0.35, companionDeps);
   kick.update(slow, slowState, 1.0, companionDeps);
   assert.equal(creatureHits.length, 1, 'slow composite does not land an invisible instant kick');
@@ -164,6 +178,7 @@ async function main() {
   const wildCreatureHits = []; // Wild retaliation must not acquire companion attribution or empowerment.
   const wildState = {}; // Drives the same attack against another animal instead of the player.
   kick.start(wild, wildState, { target }, deps);
+  advancePastKickLunge(wild, wildState, deps);
   await settle();
   kick.update(wild, wildState, 0.35, deps);
   kick.update(wild, wildState, 0.14, { ...deps, damageCreature: (...args) => wildCreatureHits.push(args) });
@@ -195,9 +210,27 @@ async function main() {
     if (evasion === 'side') { runner.x = 0; runner.y = 35; }
     if (evasion === 'area') runner.areaId = 'elsewhere';
     if (evasion === 'dead') runner.health = 0;
+    advancePastKickLunge(wild, missState, deps);
+    assert.equal(missState.lungeStopReason, 'range', evasion + ': no reacquisition or cancellation after selection');
     kick.update(wild, missState, 0.35, deps);
     kick.update(wild, missState, 0.14, deps);
     assert.equal(damageCalls.length, beforeHits, evasion + ': avoids committed rear kick');
+  }
+
+  // Charge can run its full distance or collide with terrain and still turn/kick.
+  for (const stop of ['range', 'blocked']) {
+    const far = { ...player, x: 800, y: 0 };
+    const charger = { ...wild, x: 0, y: 0, facing: 0 };
+    const run = {};
+    const chargeDeps = stop === 'blocked' ? { ...deps, canOccupyAt: () => false } : deps;
+    kick.start(charger, run, { target: far }, chargeDeps);
+    await settle(); // Frame composition is asynchronous; the authored kick may not strike until its pose has loaded.
+    advancePastKickLunge(charger, run, chargeDeps);
+    assert.equal(run.lungeStopReason, stop);
+    if (stop === 'range') assert(charger.x > 0, 'the kick travels forward until its finite lunge range ends');
+    kick.update(charger, run, 0.35, chargeDeps);
+    kick.update(charger, run, 0.14, chargeDeps);
+    assert.equal(run.struck, true, stop + ': lunge still resolves to the hoof strike');
   }
 
   const retreatStart = game.indexOf('} else if (c._voorgRearKickThreat && window.VoorgAssRearKick'); // Execute the real hostile AI retreat branch.
