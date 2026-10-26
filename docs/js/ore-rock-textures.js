@@ -11,7 +11,7 @@
   function baseStone(THREE) {
     if (!stoneMap) {
       stoneMap = new THREE.TextureLoader().load(SOURCE);
-      stoneMap.wrapS = stoneMap.wrapT = THREE.RepeatWrapping;
+      stoneMap.wrapS = stoneMap.wrapT = THREE.ClampToEdgeWrapping; // One complete PNG per fitted facet: never bleed the opposite edge into the protected boundary.
       stoneMap.repeat.set(1, 1); // The temporary stone map must show the same full PNG UV domain as the finished ore canvas.
       if ('colorSpace' in stoneMap && THREE.SRGBColorSpace) stoneMap.colorSpace = THREE.SRGBColorSpace;
       else if (THREE.sRGBEncoding != null) stoneMap.encoding = THREE.sRGBEncoding; // Three r128 uses encoding, not colorSpace.
@@ -88,7 +88,7 @@
     if (key !== 'stone') {
       sourceImage().then(image => {
         const texture = new THREE.CanvasTexture(mineralCanvas(image, oreDefs[key], key)); // Ore-specific tint only in the verdigris-shaped mask.
-        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping; // Ore island UVs terminate at 0/1; repeating would create a visible seam from the opposite border.
         texture.repeat.set(1, 1); // Each UV island samples one complete stone/mineral PNG rather than an arbitrary 70% crop.
         if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
         else if (THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding; // Required by the game's Three r128.
