@@ -1,6 +1,6 @@
 // Cavern ore rocks — extracted from game.js's loadBuildingScene cavern branch.
-// Marks each mapData.oreRocks tile as diggable, with stone and masked mineral
-// coloration identical to the town mine, registered in the same mesh table
+// Marks each mapData.oreRocks tile as diggable, with original metal-bodied
+// patina coloration identical to the town mine, registered in the same mesh table
 // the outdoor ore rocks use (mineableRocksByTile/isMineableRockTile/
 // removeZoneMineableRockVisual), so mining a cavern rock needs no new code.
 // Den caverns and every cave-site history (js/cave-site-system.js — ore
@@ -100,7 +100,7 @@
       }
       const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
       if (!stoneGeo) continue;
-      const rockMesh = new THREE.Mesh(stoneGeo, window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs)); // Colored ore islands, ordinary stone elsewhere, shared across every cave and mine.
+      const rockMesh = new THREE.Mesh(stoneGeo, window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs)); // Recolored metal body and patina, shared across every cave and mine.
       window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${rock.col},${rock.row}`); // Fit each coarser mineral facet to the complete authored PNG, as on cliffs.
       rockMesh.castShadow = rockMesh.receiveShadow = true;
       const rockGroup = new THREE.Group();
