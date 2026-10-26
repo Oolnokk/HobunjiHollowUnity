@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30 # Established-player WebGL fixtures run both an isolated seed and the complete multi-seed audit.
     steps:
       - uses: actions/checkout@v4
