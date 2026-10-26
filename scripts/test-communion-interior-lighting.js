@@ -10,9 +10,34 @@ vm.runInNewContext(read('docs/js/map-layout-system.js'), { window });
 const effective = window.MapLayoutSystem.getEffectiveMapData(temple, { minutes: 60, weekday: 'Anan', dateOrdinal: 1 }); // Midnight service variant.
 assert.equal(effective.activeLayoutId, 'spirit_communion');
 assert.deepEqual(effective.ceiling, temple.ceiling, 'service preserves both gables and the carved roof');
-for (const pane of temple.furniture.filter(piece => piece.wallOrnamentKey)) {
-  assert.deepEqual(effective.furniture.find(piece => piece.id === pane.id), pane, 'service retains each original window transform');
+const roomWindows = temple.furniture.filter(piece => piece.wallOrnamentKey); // Shared permanent architecture across all temple layouts.
+assert.equal(roomWindows.length, 5, 'temple has all five authored stained-glass windows');
+const rug = temple.furniture.find(piece => piece.itemKey === 'rugFurniture'); // Default room's newly authored carpet dimensions and pattern.
+assert(rug, 'temple carpet remains installed');
+assert.equal(rug.gridW, 4);
+assert.equal(rug.gridD, 11);
+assert.equal(rug.gridRot, 90);
+assert.equal(rug.nonColliding, true);
+const rugDefinition = JSON.parse(read('docs/config/furniture-authored/rug.json')); // Ensures the carpet override targets a real exported part.
+assert(rugDefinition.parts.some(part => part.id === 'part_msc11atv_br5pr'));
+assert.equal(rug.patternOverrides?.part_msc11atv_br5pr?.[0]?.patternId, 'winding_roots');
+const windowDefinition = JSON.parse(read('docs/config/furniture-authored/crossbarWindow.json')); // Ensures the glass override targets an existing pane part.
+assert(windowDefinition.parts.some(part => part.id === 'crossbar_window_pane'));
+for (const pane of roomWindows) {
+  const glass = pane.patternOverrides?.crossbar_window_pane?.[0]; // Per-window palette, motif stack, and separate non-tiling overpass.
+  assert(glass, `window ${pane.id} retains its glass override`);
+  assert.equal(glass.patternId, 'winding_roots');
+  assert.equal(glass.patterns?.[1]?.repoPatternId, glass.overpassPatternId);
+  assert.equal(glass.layerTransforms?.[1]?.tiling, false);
+  assert.deepEqual(effective.furniture.find(piece => piece.id === pane.id), pane, 'Spirit Communion retains every stained-glass setting and placement');
 }
+window.MapLayoutSystem.setFlag('templeWedding', true);
+const wedding = window.MapLayoutSystem.getEffectiveMapData(temple, { minutes: 570, weekday: 'Anan', dateOrdinal: 1 }); // Ceremony replaces furniture wholesale.
+assert.equal(wedding.activeLayoutId, 'wedding');
+for (const pane of roomWindows) {
+  assert.deepEqual(wedding.furniture.find(piece => piece.id === pane.id), pane, 'wedding keeps all five mounted stained-glass windows and their patterns');
+}
+window.MapLayoutSystem.setFlag('templeWedding', false);
 vm.runInNewContext(read('docs/js/npc-scheduling.js'), { window });
 window.NpcScheduling.init({
   normalizeNpcArea: area => area,
