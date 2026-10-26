@@ -177,6 +177,9 @@
   const GHOUL_OVERWEAR_POOL = Object.freeze(['tankan_bodywrap', 'fine_bodywrap', 'rugged_poncho', 'fine_poncho']); // All existing upper garments plus the authored two-dye Fine Body Wrap, sampled uniformly per Ghoul.
   const GHOUL_PANTS_POOL = Object.freeze(['pants_basic', 'draped_pants']); // Equal-probability trouser choices, independent of gender.
   const GHOUL_BANDOLIER_CHANCE = 0.5; // Empty-roster mine ghouls now actually roll a bandolier; previously only inherited bandoliers could appear.
+  const GHOUL_HEADBAND_ID = 'appearance::hat::basic_headband'; // Valid Mao-ao headwear article used for the ghoul's common head covering.
+  const GHOUL_HEADBAND_CHANCE = 0.6; // Cloth headbands remain the most common ghoul headwear.
+  const GHOUL_FACEWRAP_CHANCE = 0.2; // Facewraps share the hood slot; fine hoods fill the remaining 20%.
   const GHOUL_PRIMARY_DYE = 'dye:CLOTH:pale_blue'; // All ghoul clothing channels' primary color, including bandoliers and leg garments.
   const GHOUL_SECONDARY_DYE = 'dye:CLOTH:silver'; // Matching secondary/trim dye on fine hoods, drapes and any two-color clothing.
 
@@ -184,12 +187,13 @@
     if (roster?.appearance?.speciesId !== 'ghoul') return roster;
     const current = Array.isArray(roster.equippedCosmetics) ? roster.equippedCosmetics : []; // The incoming mine roster may already include a hood, wrap, bandolier or older pants.
     const priorSlots = roster.cosmeticSlots || {}; // Slot ownership also identifies clothing not in the small explicit item pools.
-    const oldHood = current.find(id => priorSlots[id] === 'hood' || ['fine_hood', 'ragged_hood', 'facewrap'].includes(id)) || null; // Preserved when the fine-hood roll fails.
+    // The ghoul wardrobe chooses exactly one head covering; remove any previously assigned hats or hoods first.
     const removed = new Set(); // Used to remove only clothing replaced by the single overwear/hood/pants rolls.
     for (const id of current) {
       if (priorSlots[id] === 'overwear' || GHOUL_OVERWEAR_POOL.includes(id) || priorSlots[id] === 'pants'
           || ['basic_pants', 'layered_skirt', ...GHOUL_PANTS_POOL].includes(id)
-          || priorSlots[id] === 'hood' || ['fine_hood', 'ragged_hood', 'facewrap'].includes(id)) removed.add(id);
+          || priorSlots[id] === 'hood' || priorSlots[id] === 'hat'
+          || id.startsWith('appearance::hat::') || ['fine_hood', 'ragged_hood', 'facewrap'].includes(id)) removed.add(id);
     }
     const next = current.filter(id => !removed.has(id)); // Other equipped articles, including already rolled bandoliers, survive.
     const alreadyHasTorso = next.some(id => id === 'bandolier1' || priorSlots[id] === 'torso'); // Prevents adding a second torso article to a pre-equipped ghoul.
@@ -201,9 +205,12 @@
     }
     const overwear = GHOUL_OVERWEAR_POOL[Math.floor(deps.rnd() * GHOUL_OVERWEAR_POOL.length)]; // Each authored upper-body silhouette has equal weight.
     const pants = GHOUL_PANTS_POOL[deps.rnd() < 0.5 ? 0 : 1]; // Exactly 50/50 simple versus draped for fresh ghoul spawns.
-    const hood = deps.rnd() < 0.5 ? 'fine_hood' : oldHood; // Fine hoods join the existing headwear mix without requiring a hood every time.
+    const headwearRoll = deps.rnd(); // One independent roll picks exactly one ghoul head covering.
+    const headwear = headwearRoll < GHOUL_HEADBAND_CHANCE ? GHOUL_HEADBAND_ID
+      : headwearRoll < GHOUL_HEADBAND_CHANCE + GHOUL_FACEWRAP_CHANCE ? 'facewrap' : 'fine_hood'; // All selections inherit Pale Blue/Silver dye channels.
+    const headwearSlot = headwear === GHOUL_HEADBAND_ID ? 'hat' : 'hood'; // Loot and portrait assembly need the actual headwear slot.
     for (const id of removed) delete priorSlots[id];
-    for (const [id, slot] of [[overwear, 'overwear'], [pants, 'pants'], [hood, 'hood']]) {
+    for (const [id, slot] of [[overwear, 'overwear'], [pants, 'pants'], [headwear, headwearSlot]]) {
       if (!id) continue;
       next.push(id);
       priorSlots[id] = slot;
@@ -279,6 +286,10 @@
     if (!avatarRef?.group) return avatarRef;
     avatarRef.group.traverse(object => {
       if (!object?.isMesh || !object.material) return;
+      if (object.userData?.hobunjiPantsGarment && object.geometry?.computeVertexNormals) {
+        object.geometry.computeVertexNormals(); // The deformable pants have positions/UVs but no normals; Lambert lighting otherwise makes them black.
+        object.userData.hobunjiPantsLitNormals = true; // PantsGarmentRenderer refreshes normals only when the lit ghoul's legs deform.
+      }
       const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
       let changed = false;
       const litMaterials = sourceMaterials.map(source => {
