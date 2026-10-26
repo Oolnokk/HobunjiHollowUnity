@@ -221,7 +221,7 @@
   <script src="js/creature-genetics.js?v=20261023hade7571"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
-  <script src="js/creature-genetics-render.js?v=20261026beard1a"></script>
+  <script src="js/creature-genetics-render.js?v=20261026hOverpassInk3"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261026attachdense1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
   <script src="js/honeyfuzzle-colors.js?v=20261024hf1"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
   <script src="js/honeyfuzzle-hives.js?v=20261024h1c09ca3"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
@@ -245,7 +245,7 @@
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
   <script src="js/authored-furniture-runtime.js?v=20261025h9b3cc58"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261026h5b39f56"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261026hOverpassInk3"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -374,7 +374,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261026conecharge2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261026hOverpassInk3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -605,7 +605,7 @@
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
-  <script src="js/color-pools-system.js?v=20261015h77640b9"></script>
+  <script src="js/color-pools-system.js?v=20261026hBanubuOverpass3"></script>
   <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
