@@ -148,6 +148,20 @@
   function eyeStatesForKind(kind) {
     return SPECIES[kind]?.eyes?.mode === 'cycle' ? ['A','B','C','D'] : [false, true];
   }
+  // These are renderer-only anatomical defaults, not extra allele slots. A later
+  // authored beard2/beard3 (registered in spec.patterns and inherited genetics)
+  // suppresses beard1 only when its allele is actually expressed and drawable.
+  function visibleDefaultCoatPatterns(spec, genotype) {
+    return (spec.defaultCoatPatterns || []).filter(defaultPattern => {
+      const replacement = spec.patterns.some(id => {
+        if (id === defaultPattern.id || !id.startsWith(defaultPattern.family)) return false;
+        const allele = genotype?.[id]; // A carrier or unexpressed beard must not hide the ordinary beard.
+        return allele?.enabled !== false && allele?.copies > 0 && !!allele?.color;
+      });
+      return !replacement;
+    });
+  }
+
   function eyeSkinTintColor(kind, genotype, baseColor) {
     const patternId = SPECIES[kind]?.eyes?.skinColorPattern; // Optional pattern whose visible pigmentation covers the skin surrounding an eye.
     const layer = patternId ? genotype?.[patternId] : null; // Reads the same expressed allele used by pattern-layer compositing.
@@ -553,6 +567,17 @@
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
       }
     }
+    for (const defaultPattern of visibleDefaultCoatPatterns(spec, genotype)) {
+      const url = patternUrl(kind, defaultPattern.id, frame, genotype); // Uses the already-uploaded idle/run1/run2 beard sprites.
+      try {
+        const coatColor = baseColor || spec.baseShadeReferenceHex || '#99BF99'; // Reuses the base-coat allele; never invents a secondary beard color.
+        const recolored = await recoloredPattern(url, coatColor);
+        ctx.drawImage(recolored, 0, 0, c.width, c.height);
+        drawnPatterns.push(defaultPattern.id + '(default)'); // Debug only; it is not added to genotype traits or breeding.
+      } catch (error) {
+        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): default coat pattern "${defaultPattern.id}" missing (${url}): ${error.message}`, 'warn');
+      }
+    }
     const eyeSkinColor = eyeSkinTintColor(kind, genotype, baseColor); // Nelk spectacles color overrides its base coat only when the pattern is expressed.
     if (spec.eyes) {
       const eyeUrl = spec.eyes.mode === 'cycle'
@@ -597,7 +622,8 @@
       const spec = SPECIES[kind];
       if (!spec) continue;
       urls.push(spec.base.idle, spec.base.run1, spec.base.run2);
-      for (const patternId of spec.patterns) {
+      const prewarmIds = [...spec.patterns, ...(spec.defaultCoatPatterns || []).map(p => p.id)]; // The default beard is prefetched for all three frames without becoming genetic.
+      for (const patternId of prewarmIds) {
         urls.push(patternUrl(kind, patternId, 'idle'), patternUrl(kind, patternId, 'run1'), patternUrl(kind, patternId, 'run2'));
         if (spec.comboPatterns?.[patternId]) for (const frame of ['idle', 'run1', 'run2']) {
           urls.push(`${spec.patternAssetRoot || 'assets/creaturesprites/patterns'}/${spec.prefix}_${spec.comboPatterns[patternId].sprite}_${frame}.png`);
