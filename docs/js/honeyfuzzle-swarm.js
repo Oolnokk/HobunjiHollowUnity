@@ -32,7 +32,8 @@
   const FRAME_UP = 0, FRAME_MID = 1, FRAME_DOWN = 2;
   const WING_CYCLE = Object.freeze([FRAME_UP, FRAME_MID, FRAME_DOWN, FRAME_MID]); // up -> mid -> down -> mid
   const THIRD_STEP_OFFSETS = Object.freeze([0, 1, 2]); // Each third of the swarm sits at a different point of the 4-step cycle.
-  const WING_TICK_MS = 55; // Legacy wing-step helper; the shader blends continuously across the equivalent four-step 220 ms beat.
+  const WING_TICK_MS = 55; // Legacy wing-step helper retained for older callers/tests.
+  const FLUTTER_HZ = 16; // Subtle apparent-wing opacity shimmer, not a literal resolved wingbeat; the three superposed poses imply the much faster physical flapping.
   const DEFAULT_MEMBER_COUNT = 24; // Many small members read as a swarm rather than a flock; a multiple of 3 keeps the wing-cycle thirds exactly even.
   // Source art is 500x500 with the bird in roughly x 75..404, y 170..451
   // across all three frames; crop to that union (plus margin) so members are
@@ -239,10 +240,10 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
 
   function makeSwarmMaterial(THREE, name, colors) {
     const surface = window.HobunjiSpritePngSurface;
-    const overrides = { side: THREE.DoubleSide }; // Same two-sided cutout as other animal cards.
+    const overrides = { side: THREE.DoubleSide, transparent: true, depthWrite: false, alphaTest: 0.001 }; // Ghosted wings must blend rather than mask other birds behind them.
     const material = surface?.makeMaterial
       ? surface.makeMaterial(THREE, _atlas?.texture || null, name, overrides)
-      : new THREE.MeshBasicMaterial({ map: _atlas?.texture || null, transparent: true, alphaTest: 0.001, side: THREE.DoubleSide, name });
+      : new THREE.MeshBasicMaterial({ map: _atlas?.texture || null, ...overrides, name });
     const uniforms = {
       uBody: { value: new THREE.Color(colors.base || '#ffffff') },
       uUse: { value: colors.base ? 1 : 0 },
@@ -352,7 +353,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
         const targetSpread = Number.isFinite(spreadScale) && spreadScale > 0 ? spreadScale : 1; // Attached Swarm uses a dense cloud; ordinary flight uses the authored normal spread.
         const spreadCatchup = targetSpread < smoothSpread ? 16 : 9; // Tighten rapidly on contact, then unfurl into normal flight after detaching.
         smoothSpread += (targetSpread - smoothSpread) * Math.min(1, dt * spreadCatchup);
-        material.userData.honeyfuzzle.uWingPhase.value = Math.max(0, now) / (WING_TICK_MS * 4) * TAU; // Smooth 4.5 Hz full wing beat.
+        material.userData.honeyfuzzle.uWingPhase.value = Math.max(0, now) * 0.001 * FLUTTER_HZ * TAU; // Fluid opacity glimmer across the three permanently superposed wing poses.
         const arr = mesh.instanceMatrix.array;
         for (let i = 0; i < count; i++) {
           memberPose(seed, i, count, now, smoothSpeed, spread * smoothSpread, pose);
@@ -382,7 +383,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
   }
 
   window.HoneyfuzzleSwarm = {
-    FRAME_URLS, PATTERN_URLS, ATLAS_COLS, WING_CYCLE, WING_TICK_MS, DEFAULT_MEMBER_COUNT, CROP,
+    FRAME_URLS, PATTERN_URLS, ATLAS_COLS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
     hashUnit, seedFromString, wingStep, memberFrame, memberPose, appearanceColors,
     buildAvatar, ensureAtlas,
     debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
