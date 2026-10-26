@@ -23,6 +23,16 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   totalEye += eyes.length; totalTang += tangs.length;
   assert(shaft.mounts.length <= (shaft.maxAttachments || 8), shaftKey + ': exceeds mount limit');
   for (const eye of eyes) {
+    if (shaftKey === 'kylie') {
+      // This is an explicit editor export: Kylie mounts were independently moved/rotated after companion creation.
+      assert.equal(eyes.length, 1);
+      assert.equal(tangs.length, 1);
+      assert.deepEqual(plain(eye.start), { x: 253.96693099224976, y: 955.1734838398783 }, 'Keep edited Kylie sleeve start exactly.');
+      assert.deepEqual(plain(eye.end), { x: 311.3429622335276, y: 953.3378664626867 }, 'Keep edited Kylie sleeve end exactly.');
+      assert.deepEqual(plain(tangs[0].start), { x: 378.31953952612565, y: 945.0718928356596 }, 'Keep independently positioned Kylie tang.');
+      assert.deepEqual(plain(tangs[0].end), { x: 346.68046047387435, y: 972.9281071643404 });
+      continue; // Do not forcibly re-center a user's intentional post-generation calibration.
+    }
     const mx = (eye.start.x + eye.end.x) / 2, my = (eye.start.y + eye.end.y) / 2;
     const dx = eye.end.x - eye.start.x, dy = eye.end.y - eye.start.y;
     const length = Math.hypot(dx, dy);
@@ -36,8 +46,9 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   for (const [headKey, head] of Object.entries(committed.heads)) {
     const pair = shaft.overrides[headKey];
     assert(pair, shaftKey + '/' + headKey + ': every pair explicitly authored');
-    assert.equal(pair.layerOrder, head.mount.type === 'weight' ? 'head-over-haft' : 'haft-over-head',
-      shaftKey + '/' + headKey + ': incorrect explicit painter order');
+    const manualHeadAbove = shaftKey === 'kylie' && ['harlyao-broadsword', 'harlyao-longsword'].includes(headKey);
+    assert.equal(pair.layerOrder, manualHeadAbove || head.mount.type === 'weight' ? 'head-over-haft' : 'haft-over-head',
+      shaftKey + '/' + headKey + ': preserve explicit pair layer order, including the user's two Kylie exceptions.');
     assert.equal(api.settings(shaftKey, headKey).layerOrder, pair.layerOrder);
   }
 }
@@ -83,4 +94,4 @@ storage['hobunji.modularWeapons.v5'] = JSON.stringify(current);
 const reloaded = boot(storage);
 assert.equal(reloaded.api.getConfig().shafts.warhammer.mounts.filter(m => m.type === 'tang').length, 0,
   'Do not repeatedly re-create manually removed tangs on current-version drafts');
-console.log('Companion mounts: 9 perpendicular half-length tangs, 255 manually curated layers, pick unrotation, v4->v5 draft upgrade and preservation passed.');
+console.log('Companion mounts: 8 centered companions, manually adjusted Kylie lines, 255 explicit layer choices, pick unrotation, v4->v5 draft migration passed.');
