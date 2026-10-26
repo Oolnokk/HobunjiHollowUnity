@@ -148,10 +148,16 @@
     const srcLength = Math.hypot(hx, hy), targetLength = Math.hypot(tx, ty); // Uniform automatic scale follows line-length ratio.
     if (srcLength < 1 || targetLength < 1) throw new Error('Mount arrows must be at least one pixel long.');
     const baseAngle = Math.atan2(ty, tx) - Math.atan2(hy, hx); // Rotate the head's arrow exactly onto the haft's arrow.
-    const ratio = targetLength / srcLength; // Automatic scale is applied before any pair-specific adjustment.
-    const angle = baseAngle + values.rotation * Math.PI / 180;
-    const sx = ratio * values.scaleX * (values.flipX ? -1 : 1), sy = ratio * values.scaleY * (values.flipY ? -1 : 1);
-    const a = Math.cos(angle) * sx, b = Math.sin(angle) * sx, c = -Math.sin(angle) * sy, d = Math.cos(angle) * sy;
+    const ratio = targetLength / srcLength; // Automatic stretch is applied ONLY along the head's drawn mounting axis.
+    const ux = hx / srcLength, uy = hy / srcLength; // Unit tangent of the original head arrow.
+    const delta = ratio - 1; // Rank-one axis stretch leaves the perpendicular dimension untouched.
+    const fitA = 1 + delta * ux * ux, fitB = delta * ux * uy; // First column and off-diagonal of the head-axis fit.
+    const fitC = fitB, fitD = 1 + delta * uy * uy; // Second column of the axis-only fit.
+    const angle = baseAngle + values.rotation * Math.PI / 180; // Pair rotation is an additional correction.
+    const sx = values.scaleX * (values.flipX ? -1 : 1), sy = values.scaleY * (values.flipY ? -1 : 1); // Pair scale/flip follows fitting.
+    const cos = Math.cos(angle), sin = Math.sin(angle); // Final rotation aligns directed arrows.
+    const a = cos * sx * fitA - sin * sy * fitB, b = sin * sx * fitA + cos * sy * fitB;
+    const c = cos * sx * fitC - sin * sy * fitD, d = sin * sx * fitC + cos * sy * fitD;
     const shaftAxis = Math.atan2(ty, tx) + Math.PI / 2; // Pair offsets are in the haft's local axes, preserving legacy socket offsets.
     const ox = Math.cos(shaftAxis) * values.x - Math.sin(shaftAxis) * values.y;
     const oy = Math.sin(shaftAxis) * values.x + Math.cos(shaftAxis) * values.y;
