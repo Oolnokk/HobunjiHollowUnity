@@ -1904,33 +1904,43 @@ window.FoliageGenerator = (() => {
     const targets = surfaceTargets(parent, settings), triangles = [], large = [], cells = new Map(); // Spatial buckets avoid scanning all brick triangles for every growth step.
     parent.updateWorldMatrix(true, true);
     const inverse = parent.matrixWorld.clone().invert(), cellSize = .5, point = new T.Vector3(); // Source vertices are converted once, outside runtime frame work.
-    let totalArea = 0; // Area weighting avoids crowding densely tessellated meshes.
+    let totalArea = 0, surfaceCopies = 0; // Area weighting includes every placed brick, not just its reusable source geometry.
     const keyOf = (x, y, z) => x + ',' + y + ',' + z; // Shared key format for triangle insertion and nearby queries.
     for (const mesh of targets) {
       const geometry = mesh.geometry, position = geometry.attributes.position, index = geometry.index; // Supports indexed and non-indexed imported GLBs.
-      const matrix = inverse.clone().multiply(mesh.matrixWorld); // Includes nonuniform scale and nested furniture transforms.
+      const baseMatrix = inverse.clone().multiply(mesh.matrixWorld); // Mesh/group transforms apply outside each instance's own placement.
+      const instanceCount = mesh.isInstancedMesh ? Math.max(0, Math.min(Math.floor(Number(mesh.count)||0), mesh.instanceMatrix?.count ?? Infinity)) : 1; // Exclude unused instance capacity and removed bricks.
+      const matrix = mesh.isInstancedMesh ? new T.Matrix4() : baseMatrix, instanceMatrix = mesh.isInstancedMesh ? new T.Matrix4() : null; // Reused across all copies of this source geometry.
       const end = Math.min(index ? index.count : position.count, geometry.drawRange.start + geometry.drawRange.count); // Honor partial draw ranges.
-      for (let i = geometry.drawRange.start; i + 2 < end; i += 3) {
-        const vertices = [0, 1, 2].map(j => new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + j) : i + j).applyMatrix4(matrix)); // Triangle coordinates used by sampling and projection.
-        if (vertices.some(v => !Number.isFinite(v.x + v.y + v.z))) continue;
-        const triangle = new T.Triangle(...vertices), area = triangle.getArea(); // Degenerate faces never become growth anchors.
-        if (area < 1e-10) continue;
-        const faceNormal = triangle.getNormal(new T.Vector3()); // Floor growth stays on top; ceiling growth stays on the room-facing underside.
-        if (settings.target === 'floors' && faceNormal.y < .5) continue;
-        if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
-        totalArea += area;
-        const record = { triangle, normal: triangle.getNormal(new T.Vector3()), area: totalArea }; // Cumulative area permits binary-search seed placement.
-        triangles.push(record);
-        const min = vertices.reduce((a, v) => a.min(v), vertices[0].clone()).divideScalar(cellSize).floor(); // Bucket range includes the full triangle, not only its centroid.
-        const max = vertices.reduce((a, v) => a.max(v), vertices[0].clone()).divideScalar(cellSize).floor();
-        if ((max.x-min.x+1)*(max.y-min.y+1)*(max.z-min.z+1) > 256) { large.push(record); continue; }
-        for (let x=min.x; x<=max.x; x++) for (let y=min.y; y<=max.y; y++) for (let z=min.z; z<=max.z; z++) {
-          const key = keyOf(x,y,z); // Triangle references are shared across overlapped buckets.
-          if (!cells.has(key)) cells.set(key, []);
-          cells.get(key).push(record);
+      for (let instance = 0; instance < instanceCount; instance++) {
+        if (instanceMatrix) {
+          mesh.getMatrixAt(instance, instanceMatrix);
+          matrix.multiplyMatrices(baseMatrix, instanceMatrix);
+        }
+        surfaceCopies++;
+        for (let i = geometry.drawRange.start; i + 2 < end; i += 3) {
+          const vertices = [0, 1, 2].map(j => new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + j) : i + j).applyMatrix4(matrix)); // Triangle coordinates used by sampling and projection.
+          if (vertices.some(v => !Number.isFinite(v.x + v.y + v.z))) continue;
+          const triangle = new T.Triangle(...vertices), area = triangle.getArea(); // Degenerate faces never become growth anchors.
+          if (area < 1e-10) continue;
+          const faceNormal = triangle.getNormal(new T.Vector3()); // Floor growth stays on top; ceiling growth stays on the room-facing underside.
+          if (settings.target === 'floors' && faceNormal.y < .5) continue;
+          if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
+          totalArea += area;
+          const record = { triangle, normal: triangle.getNormal(new T.Vector3()), area: totalArea }; // Cumulative area permits binary-search seed placement.
+          triangles.push(record);
+          const min = vertices.reduce((a, v) => a.min(v), vertices[0].clone()).divideScalar(cellSize).floor(); // Bucket range includes the full triangle, not only its centroid.
+          const max = vertices.reduce((a, v) => a.max(v), vertices[0].clone()).divideScalar(cellSize).floor();
+          if ((max.x-min.x+1)*(max.y-min.y+1)*(max.z-min.z+1) > 256) { large.push(record); continue; }
+          for (let x=min.x; x<=max.x; x++) for (let y=min.y; y<=max.y; y++) for (let z=min.z; z<=max.z; z++) {
+            const key = keyOf(x,y,z); // Triangle references are shared across overlapped buckets.
+            if (!cells.has(key)) cells.set(key, []);
+            cells.get(key).push(record);
+          }
         }
       }
     }
+    group.userData.surfaceGrowthStats = { meshes: targets.length, instances: surfaceCopies, triangles: triangles.length };
     if (!triangles.length) { group.userData.diagnostics = 'No eligible surface triangles.'; return group; }
     const seed = xfnv1a(settings.seed), random = mulberry32(seed), geometries = []; // Deterministic recipes regenerate on import and in gameplay.
     const steps = Math.min(400, Math.ceil(settings.length / Math.min(.15, Math.max(.025, settings.radius * 3)))), step = settings.length / steps; // Bounded density protects mobile previews.
@@ -1992,7 +2002,7 @@ window.FoliageGenerator = (() => {
       mesh.userData.surfaceGrowthTexture=settings.texture;mesh.userData.surfaceGrowthColor=settings.color;
       mesh.geometry.computeVertexNormals();geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
     }
-    group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes (' + triangles.length + ' triangles).';
+    group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles).';
     return group;
   }
 
