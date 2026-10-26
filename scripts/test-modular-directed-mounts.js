@@ -36,7 +36,8 @@ close(transform.a * head.start.x + transform.c * head.start.y + transform.e, tan
 close(transform.b * head.start.x + transform.d * head.start.y + transform.f, tang.start.y, 'Arrow base y');
 close(transform.a * head.end.x + transform.c * head.end.y + transform.e, tang.end.x, 'Arrow tip x');
 close(transform.b * head.end.x + transform.d * head.end.y + transform.f, tang.end.y, 'Arrow tip y');
-close(Math.hypot(transform.a, transform.b), 2, 'Automatic uniform scale');
+close(Math.hypot(transform.a, transform.b), 1, 'Perpendicular width stays at 1x');
+close(Math.hypot(transform.c, transform.d), 2, 'Tang length automatically stretches to 2x');
 const perpendicular = { x: 40, y: 0 }; // Across the blade; must NEVER inherit the line-length scale.
 close(Math.hypot(transform.a * perpendicular.x + transform.c * perpendicular.y,
   transform.b * perpendicular.x + transform.d * perpendicular.y), 40, 'Auto fit preserves blade width');
@@ -56,7 +57,7 @@ assert.equal(cfg.heads.hoe.mount.type, 'weight', 'Transverse hoe retains the exi
 assert(api.isDisallowed('warhammer', 'pickshovel-scoop'), 'Eye-only warhammer cannot forge a tang-mounted shovel scoop.');
 assert(!api.isDisallowed('dagger', 'pickshovel-scoop'), 'Tang haft can accept the shovel scoop.');
 const corrected = api.headTransform(tang, { ...neutral, x: 5, y: 10, scaleX: 1.5, rotation: 30 }, head); // Pair corrections layered over auto transform.
-close(Math.hypot(corrected.a, corrected.b), 3, 'Manual scale multiplies auto scale');
+close(Math.hypot(corrected.a, corrected.b), 1.5, 'Manual X scale modifies width without automatic stretch');
 assert.notEqual(corrected.e, transform.e, 'Pair offset actually changes the position.');
 
 const modified = plain(cfg); // Editor adds both kinds to a previously blade-only haft.
@@ -92,4 +93,4 @@ assert.equal(api.settings('dagger', 'fishing-spear').scaleY, 1.5);
 assert.equal(api.settings('dagger', 'fishing-spear').scaleX, 1.2);
 assert.equal(api.settings('dagger', 'fishing-spear').x, 20);
 assert.equal(api.getConfig().shafts.dagger.defaults, undefined);
-console.log('Directed mounts: compatibility, arrow alignment, 2x auto scaling, pair-only corrections, multi-mounts, invalid geometry, v1 migration passed.');
+console.log('Directed mounts: compatibility, arrow alignment, axis-only auto scaling, pair-only corrections, multi-mounts, invalid geometry, v1 migration passed.');
