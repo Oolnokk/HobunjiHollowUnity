@@ -518,7 +518,7 @@
     const mouth = den?.mouthAnchor;
     const bottom = Number(den?.y) + Math.max(1, Number(den?.h) || 1);
     if (!mouth || !(Number(mouth.y) < bottom)) return keys;
-    for (let row = Number(mouth.y); row < bottom; row++) keys.add(`${Number(mouth.x)},${row}`);
+    for (let row = Number(mouth.y); row < bottom; row++) for (let col = Math.max(Number(den.x), Number(mouth.x) - 1); col <= Math.min(Number(den.x) + Math.max(1, Number(den.w) || 1) - 1, Number(mouth.x) + 1); col++) keys.add(`${col},${row}`); // Center route and flanking columns match DenCliffPlacement.entryPath.
     return keys;
   }
 
