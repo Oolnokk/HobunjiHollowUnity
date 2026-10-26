@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const noop = () => {};
 let overlay = null; // Captures the real creator's current rendered DOM for each grooming visit.
 const listeners = new Map(); // Delivers the same player-ready event that retires startup-only species hooks.
-const button = () => ({ addEventListener(type, fn) { this[type] = fn; }, click() { this.click?.(); } });
+const button = () => ({ listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, click() { this.listeners.click?.(); } });
 const document = {
   documentElement: { classList: { add: noop, remove: noop } },
   body: { appendChild(node) { overlay = node; } },
@@ -30,6 +30,7 @@ const document = {
 const femaleTuft = 'appearance::Tletingan_F::tl_forwardtuft_short'; // Real authored slot value expected in both female Tletingan and Nuhongan grooming.
 const window = {
   FarmWorldSettings: { normalize: () => ({}) },
+  randomPortraitProfileSeeded: () => null, getPortraitFighters: () => [], // Existing female-Mashtzarr guard needs no retry timer.
   SCRATCHBONES_CONFIG: { game: { appearanceEditor: {
     bodyPalettes: { tletingan: { female: [{ h: 5, s: -0.4, v: -0.2 }] }, mashtzarr: { female: [{ h: 10, s: -0.4, v: -0.3 }] } },
     species: {
@@ -44,7 +45,7 @@ const window = {
     },
   } } },
 };
-const context = vm.createContext({ window, document, console, setTimeout: () => 1, CustomEvent: class {
+const context = vm.createContext({ window, document, console, setTimeout: (fn, delay) => { if (delay >= 400) fn(); return 1; }, CustomEvent: class {
   constructor(type, options) { this.type = type; this.detail = options?.detail; }
 } });
 for (const path of ['docs/onboarding-core.js', 'docs/js/nuhongan-species-runtime.js', 'docs/js/onboarding-character-creation-mashtzarr-female.js']) {
