@@ -219,6 +219,7 @@
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
     nelk: ['brushtail', 'cape', 'spectacles'],
     nazgraku: ['spectacles'],
+    honeyfuzzle: ['tailfeathers', 'spectacles'], // Tail art is always rendered; only the differently colored secondary tail is an expressed allele.
   };
   const LIVESTOCK_ALWAYS_PRESENT_PATTERNS = {
     puktuk: new Set(['belly']),
@@ -409,7 +410,7 @@
     };
   }
   function _traitLabel(id) {
-    const overrides = { bodystripes: 'Body stripes', colorpoint: 'Colorpoint', foxtail: 'Fox tail', coloredstripe: 'Colored stripe' }; // Keeps compact genetic IDs readable in the UI.
+    const overrides = { bodystripes: 'Body stripes', colorpoint: 'Colorpoint', foxtail: 'Fox tail', coloredstripe: 'Colored stripe', tailfeathers: 'Tail feathers' }; // Keeps compact genetic IDs readable in the UI.
     return overrides[id] || String(id || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').replace(/^./, char => char.toUpperCase());
   }
   function genotypeTraits(kind, genotype) {
