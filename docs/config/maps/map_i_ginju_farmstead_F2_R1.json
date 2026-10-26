@@ -9,7 +9,7 @@
       "id": "f_ginjuroom_bed",
       "itemKey": "doubleBedFurniture",
       "col": 7,
-      "row": 6,
+      "row": 7,
       "rotY": 0,
       "postX": 0,
       "postY": 0,
@@ -21,7 +21,7 @@
     {
       "id": "f_ginjuroom_nightstand",
       "itemKey": "nightstandFurniture",
-      "col": 6,
+      "col": 8,
       "row": 6,
       "rotY": 0,
       "postX": 0,
@@ -34,7 +34,7 @@
     {
       "id": "f_ginjuroom_wardrobe",
       "itemKey": "wardrobeFurniture",
-      "col": 9,
+      "col": 10,
       "row": 9,
       "rotY": 0,
       "postX": 0,
@@ -193,24 +193,37 @@
       ],
       "targetMap": "map_i_ginju_farmstead",
       "spawnCol": 15,
-      "spawnRow": 10
+      "spawnRow": 10,
+      "direction": "south",
+      "generateDoor": false
     }
   ],
-  "colliders": [[11,9],[12,9]],
+  "colliders": [[12, 9]],
   "vendorZones": [],
   "routes": [],
   "npcStations": [
-    {
-      "id": "station_ginju_bed_parents",
-      "label": "Gorobi & Gikali's Bed",
-      "col": 7,
-      "row": 6,
-      "rotY": 0,
-      "pose": "lie",
-      "toolKey": "",
-      "toolIntervalSec": 0,
-      "toolAnimStyle": ""
-    }
-  ],
+  {
+    "id": "station_ginju_bed_parents",
+    "label": "Gorobi’s Side of the Bed",
+    "col": 7,
+    "row": 7,
+    "rotY": 0,
+    "pose": "lie",
+    "toolKey": "",
+    "toolIntervalSec": 0,
+    "toolAnimStyle": ""
+  },
+  {
+    "id": "station_ginju_bed_gikali",
+    "label": "Gikali’s Side of the Bed",
+    "col": 8,
+    "row": 7,
+    "rotY": 0,
+    "pose": "lie",
+    "toolKey": "",
+    "toolIntervalSec": 0,
+    "toolAnimStyle": ""
+  }
+],
   "npcPaths": []
 }

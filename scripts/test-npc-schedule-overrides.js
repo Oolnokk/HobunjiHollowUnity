@@ -57,7 +57,7 @@ assert(overrides.removeNpcIds.includes('hammerhead_tuhupnuk'), 'Hammerhead is ex
 
 for (const [npcId, stationId, mapId] of [
   ['dzibim_khibu', 'station_car_home_dzibim_bed', 'map_i_carpenters_F2_dzibim'],
-  ['dzahiri_khibu', 'station_car_home_dzahiri_bed', 'map_i_carpenters_F2_dzahiri'],
+  ['dzahiri_khibu', 'station_car_home_dzahiri_bed', 'map_i_carpenters_F2_dzibim'],
   ['nashka_khibu', 'station_car_home_nashka_bed', 'map_i_carpenters_F2_nashka'],
 ]) {
   const npc = byId(npcId);
@@ -84,7 +84,7 @@ const kabokuRules = byId('kaboku_kunji').scheduleHooks.rules;
 assert(!kabokuRules.some(rule => rule.stationId === 'station_kaboku_avoid'), 'old outdoor Kaboku avoidance station is gone');
 const generatedKaboku = kabokuRules.filter(rule => rule.generatedScheduleOverride === 'kaboku_afternoon_family_or_inn');
 assert(generatedKaboku.length >= 7, 'Kaboku gets day-aware social destination rules');
-assert(generatedKaboku.some(rule => rule.stationId === 'furniture_chair_map_i_carpenters_13_9' && rule.activity === 'visiting family'), 'Kaboku visits a family stool when Dzahiri or Nashka is there');
+assert(generatedKaboku.some(rule => rule.stationId === 'furniture_chair_map_i_carpenters_13_10' && rule.activity === 'visiting family'), 'Kaboku visits a family stool when Dzahiri or Nashka is there');
 assert.equal(kabokuRules[0].stationId, 'station_kaboku_dayoff', 'Kaboku day-off rule keeps higher priority');
 
 const absentDb = JSON.parse(JSON.stringify(db));
@@ -101,13 +101,13 @@ const twice = apply(composed, overrides);
 assert.deepEqual(JSON.parse(JSON.stringify(twice)), JSON.parse(JSON.stringify(composed)), 'schedule composition is idempotent');
 
 const stools = new Set(carpenter.furniture.filter(item => item.itemKey === 'stoolFurniture').map(item => `${item.col},${item.row}`));
-for (const coord of ['12,8', '13,8', '12,9', '13,9']) assert(stools.has(coord), `Khibu house has stool ${coord}`);
+for (const coord of ['14,9', '15,9', '12,11', '13,10']) assert(stools.has(coord), `Khibu house has stool ${coord}`);
 const dynamicIds = new Set(dynamicSources.sources.map(source => source.idPattern));
 for (const id of [
-  'furniture_chair_map_i_carpenters_12_8',
-  'furniture_chair_map_i_carpenters_13_8',
-  'furniture_chair_map_i_carpenters_12_9',
-  'furniture_chair_map_i_carpenters_13_9',
+  'furniture_chair_map_i_carpenters_14_9',
+  'furniture_chair_map_i_carpenters_15_9',
+  'furniture_chair_map_i_carpenters_12_11',
+  'furniture_chair_map_i_carpenters_13_10',
   'furniture_chair_map_i_inn_16_8',
 ]) assert(dynamicIds.has(id), `${id} is documented for schedule tooling`);
 if (inn) assert(inn.furniture.some(item => item.itemKey === 'stoolFurniture' && item.col === 16 && item.row === 8), 'Kaboku inn fallback stool exists');

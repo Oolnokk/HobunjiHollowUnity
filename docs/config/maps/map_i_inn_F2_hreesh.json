@@ -176,7 +176,9 @@
       ],
       "targetMap": "map_i_inn_F2",
       "spawnCol": 5,
-      "spawnRow": 9
+      "spawnRow": 9,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],

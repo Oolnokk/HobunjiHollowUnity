@@ -24,7 +24,9 @@
       ],
       "targetMap": "",
       "spawnCol": 0,
-      "spawnRow": 0
+      "spawnRow": 0,
+      "direction": "north",
+      "generateDoor": true
     }
   ],
   "colliders": [],

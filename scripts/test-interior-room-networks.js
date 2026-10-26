@@ -67,7 +67,7 @@ assert.equal(Doors.orientation(floorOf(['...', '#D#', '...']), 1, 1).rotationDeg
 
 // ── Layout checks ───────────────────────────────────────────────────────────
 const FOOT = {
-  basicBedFurniture: [1, 2], bedrollFurniture: [1, 1], wardrobeFurniture: [2, 1], chestFurniture: [1, 1], nightstandFurniture: [1, 1],
+  doubleBedFurniture: [2, 2], basicBedFurniture: [1, 2], bedrollFurniture: [1, 1], wardrobeFurniture: [2, 1], chestFurniture: [1, 1], nightstandFurniture: [1, 1],
   hearthFurniture: [2, 1], benchFurniture: [2, 1], bookshelfFurniture: [2, 1], deskFurniture: [2, 1], dresserFurniture: [2, 1],
   tableLongFurniture: [4, 1], counterFurniture: [3, 1], dryingRackFurniture: [2, 1], rugFurniture: [2, 2],
 };
@@ -132,7 +132,8 @@ const exitTiles = m => m.exits.flatMap(e => e.tiles.map(t => t.join(',')));
 
 for (const id of [
   'map_i_unumanuk_household', 'map_i_unumanuk_household_bedroom', 'map_i_watchhouse', 'map_i_carpenters', 'map_i_carpenters_F2',
-  'map_i_carpenters_F2_dzibim', 'map_i_carpenters_F2_dzahiri', 'map_i_carpenters_F2_nashka',
+  'map_i_carpenters_F2_dzibim', 'map_i_unumanuk_household_teacup', 'map_i_carpenters_F2_nashka',
+  'map_i_swamp_house', 'map_i_swamp_house_leaf', 'map_i_ginju_farmstead_F2_R1',
 ]) {
   const a = analyse(id);
   const { m } = a;
@@ -169,14 +170,13 @@ for (const id of [
   }
 }
 
-// Network character of the three rebuilt ground floors.
-for (const [id, minRooms, minDoors] of [['map_i_unumanuk_household', 6, 4], ['map_i_watchhouse', 6, 4], ['map_i_carpenters', 6, 4]]) {
+// Public areas are now a few legible rooms, with no intervening maze.
+for (const id of ['map_i_unumanuk_household', 'map_i_watchhouse', 'map_i_carpenters']) {
   const a = analyse(id);
-  assert.ok(a.rooms >= minRooms, `${id} is a network of at least ${minRooms} rooms (found ${a.rooms})`);
-  assert.ok((a.m.doorTiles || []).length >= minDoors, `${id} uses door tiles at its doorways`);
-  const hallways = [...a.floor].filter(key => a.passage(key) && !a.m.doorTiles.some(t => t.join(',') === key) && !exitTiles(a.m).includes(key));
-  assert.ok(hallways.length >= 1, `${id} has 1-tile hallways between rooms`);
+  assert.ok(a.rooms <= 3, `${id} has at most three public rooms (found ${a.rooms})`);
+  assert.ok(a.m.doorTiles.length <= 2, `${id} has only the doors separating its public spaces`);
 }
+assert.equal(analyse('map_i_carpenters_F2').rooms, 1, 'family hall is one simple room');
 
 // Combat tutorial entry points stay valid in the rebuilt watchhouse.
 {
@@ -191,13 +191,13 @@ for (const [id, minRooms, minDoors] of [['map_i_unumanuk_household', 6, 4], ['ma
 const db = readJson('docs/config/npcs/hobunji-starter-npc-database.json');
 const registry = readJson('docs/config/npcs/placeholder-wardrobes.json');
 const sleepers = [
-  ['teacup_unumanuk', 'map_i_unumanuk_household_bedroom', 'station_unmh_teacup_bed', 'f_unmhbed_chest_teacup'],
+  ['teacup_unumanuk', 'map_i_unumanuk_household_teacup', 'station_unmh_teacup_bed', 'f_unmhbed_chest_teacup'],
   ['spearhead_unumanuk', 'map_i_unumanuk_household_bedroom', 'station_unmh_spearhead_bed', 'f_unmhbed_chest_spearhead'],
   ['oddclaw_unumanuk', 'map_i_unumanuk_household_bedroom', 'station_unmh_oddclaw_bed', 'f_unmhbed_chest_oddclaw'],
   ['binding_hatayap', 'map_i_unumanuk_household_bedroom', 'station_unmh_binding_bed', 'f_unmhbed_chest_binding'],
   ['tooth_hatayap', 'map_i_unumanuk_household_bedroom', 'station_unmh_tooth_bed', 'f_unmhbed_chest_tooth'],
   ['dzibim_khibu', 'map_i_carpenters_F2_dzibim', 'station_car_home_dzibim_bed', 'f_map_i_carpenters_F2_dzibim_wardrobe'],
-  ['dzahiri_khibu', 'map_i_carpenters_F2_dzahiri', 'station_car_home_dzahiri_bed', 'f_map_i_carpenters_F2_dzahiri_wardrobe'],
+  ['dzahiri_khibu', 'map_i_carpenters_F2_dzibim', 'station_car_home_dzahiri_bed', 'f_map_i_carpenters_F2_dzahiri_wardrobe'],
   ['nashka_khibu', 'map_i_carpenters_F2_nashka', 'station_car_home_nashka_bed', 'f_map_i_carpenters_F2_nashka_wardrobe'],
 ];
 for (const [npcId, area, stationId, storageId] of sleepers) {
@@ -218,3 +218,9 @@ for (const [npcId, area, stationId, storageId] of sleepers) {
 // One storage piece per sleeper.
 assert.equal(new Set(sleepers.map(s => `${s[1]}|${s[3]}`)).size, sleepers.length, 'no shared wardrobes');
 console.log('Room-network layouts: connectivity, doors, beds, wardrobes and sleep schedules passed.');
+
+const shared = map('map_i_carpenters_F2_dzibim');
+assert.equal(shared.furniture.filter(f => /bedFurniture$/i.test(f.itemKey)).length, 1, 'parents share one bed');
+assert.equal(shared.furniture.find(f => /bedFurniture$/i.test(f.itemKey)).itemKey, 'doubleBedFurniture');
+assert.equal(shared.npcStations.filter(st => st.pose === 'lie').length, 2, 'both parents have their own sleeping position');
+assert.ok(!map('map_i_carpenters_F2').exits.some(e => e.targetMap === 'map_i_carpenters_F2_dzahiri'), 'hall has one shared parents bedroom entrance');
