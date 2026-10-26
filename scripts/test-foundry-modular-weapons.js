@@ -71,7 +71,7 @@ assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
 draft.shafts.dagger.overrides.warhammer = { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true };
 api.replace(draft);
-assert.deepEqual(plain(api.settings('dagger', 'warhammer')), { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true });
+assert.deepEqual(plain(api.settings('dagger', 'warhammer')), { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', layerOrder: 'haft-over-head', disallow: true });
 draft.shafts.dagger.overrides.warhammer.scaleX = 1.7;
 api.replace(draft);
 assert.equal(api.settings('dagger', 'warhammer').scaleX, 1.7);
