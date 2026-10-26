@@ -36,7 +36,7 @@ assert(onFace, 'full-size den fits with its back row inside the wide cliff');
 assert.equal(onFace.floorTier, 0, 'den floor is the mouth (low) tier');
 assert.deepEqual(onFace.mouth, { x: 5, y: 6 }, 'entry comes from the template connector, inside the footprint');
 assert(onFace.mouth.y < 4 + full.h, 'entry tile sits inside the cave footprint (in the opening)');
-assert.deepEqual(Placement.entryPath(full).map(cell => [cell.dx, cell.dy]), [[1, 2]], 'entry column runs from the entry tile to the footprint front');
+assert.deepEqual(Placement.entryPath(full).map(cell => [cell.dx, cell.dy]), [[0, 2], [1, 2], [2, 2]], 'entrance path also reserves both flanking columns');
 assert.equal(Placement.evaluate(full, tileAt, 4, 8), null, 'full-size den rejects open ground with no cliff behind it');
 assert.equal(Placement.evaluate(full, tileAt, 13, 5), null, 'full-size den rejects a cliff face narrower than 3 tiles');
 assert(Placement.evaluate(small, tileAt, 14, 5), 'small den fits the narrow cliff spur');
@@ -63,7 +63,11 @@ const rootMap = workspace.maps.find(map => !map.isSubmap) || workspace.maps[0];
 for (const den of dens) {
   const { x, y } = den.mouthAnchor;
   assert(x >= den.x && x < den.x + den.w && y >= den.y && y < den.y + den.h, `${den.id}: entry tile is inside the footprint`);
-  for (let row = y; row < den.y + den.h; row++) assert.notEqual(rootMap.tiles[`${x},${row}`]?.type, 'rock', `${den.id}: entry column (${x},${row}) is walkable ground`);
+  for (let row = y; row < den.y + den.h; row++) {
+    for (let col = Math.max(den.x, x - 1); col <= Math.min(den.x + den.w - 1, x + 1); col++) {
+      assert.notEqual(rootMap.tiles[`${col},${row}`]?.type, 'rock', `${den.id}: all entrance columns (${col},${row}) stay walkable`);
+    }
+  }
   assert(den.approachAnchor && den.approachAnchor.y === den.y + den.h, `${den.id}: approach tile is just in front of the footprint`);
   assert.equal(y, den.y + den.h - 3, `${den.id}: entry is inset one final tile past the front floor row, onto the cliff's low side`);
   assert.notEqual(rootMap.tiles[`${den.approachAnchor.x},${den.approachAnchor.y}`]?.type, 'rock', `${den.id}: approach tile is open`);
