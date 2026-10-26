@@ -56,7 +56,8 @@
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height); // Stone pixels remain untouched wherever the mask is absent.
     const rgba = pixels.data;
-    const tint = [1, 3, 5].map(offset => parseInt(ore.hex.slice(offset, offset + 2), 16)); // Mineral color, not clean forged metal.
+    const mineralHex = ore.verdigrisHex || ore.hex; // Exposed veins use the ore's verdigris tint when one exists; other ores keep their own color.
+    const tint = [1, 3, 5].map(offset => parseInt(mineralHex.slice(offset, offset + 2), 16)); // Applied only inside the irregular mineral mask.
     const seed = seedOf(key);
     for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
       const i = (y * canvas.width + x) * 4;
