@@ -243,6 +243,7 @@
       instance.position.sub(center); holder.add(instance); mesh.add(holder);
       mesh.material.colorWrite = false; mesh.material.depthWrite = false; mesh.castShadow = false; mesh.receiveShadow = false; // Keeps a tiny renderable driver for existing rigid-piece animation hooks.
       mesh.userData.glbReady = true;
+      applyPartOutline(mesh, part); // Asynchronous children inherit the same saved per-piece choice.
     }).catch(error => { mesh.userData.glbError = String(error); window.__farmLog?.('Furniture GLB: ' + error.message, 'error'); });
   }
 
@@ -313,13 +314,44 @@
     return geo;
   }
 
+  // Auto is conservative: only known hard primitives with a full stretch texture
+  // lose their hull. Rounded shapes and unknown GLBs keep their silhouettes.
+  function outlineDecision(part, surfaces = []) {
+    const mode = ['on', 'off'].includes(part.shellOutline) ? part.shellOutline : 'auto'; // Saved per piece; absent/invalid values use Auto.
+    if (mode !== 'auto') return { enabled: mode === 'on', mode, reason: 'manual-' + mode };
+    if (part.kind === 'liquidSurface' || part.kind === 'banner') return { enabled: false, mode, reason: 'flat-surface' };
+    const hard = ['box', 'beam', 'legSquare', 'cushion'].includes(part.kind); // These primitives use the hard-edged box geometry path.
+    const stretch = surfaces.length > 0
+      ? surfaces.every(surface => surface?.texture?.source && (surface.texture.mapping || 'stretch') === 'stretch')
+      : !!part.materialTexture && (part.materialUvMapping === 'connected-surface-stretch' || (Number(part.materialRepeatU ?? 1) === 1 && Number(part.materialRepeatV ?? 1) === 1)); // Editor surface overrides take precedence; partial/tiled texturing cannot replace the whole hull.
+    const shingle = part.kind === 'glb' && /(?:^|\/)HighlandLongshingle(?:_boned)?\.glb$/i.test(part.modelPath || ''); // Roof adapter supplies its stretch-mapped PNG.
+    return { enabled: !(hard && stretch) && !shingle, mode, reason: shingle || (hard && stretch) ? 'stretch-hard-surface' : 'rounded-or-untextured' };
+  }
+
+  function applyPartOutline(root, part, surfaces = []) {
+    const decision = outlineDecision(part, surfaces); // Shared by the editor, gameplay, and delayed GLB children.
+    root.userData.furnitureOutline = decision;
+    root.traverse(child => {
+      if (!child.isMesh) return;
+      // Authored PNG cards and other pre-existing opt-outs must remain safe,
+      // even when a containing piece explicitly requests a shell outline.
+      const protectedMesh = child.userData.isPngPlane === true || !!child.userData.furniturePattern || (child.userData.noOutline === true && !child.userData.furnitureOutlineManaged) || child.userData.furnitureGlbPart; // Invisible GLB driver never draws a hull.
+      if (protectedMesh) { child.userData.noOutline = true; child.layers.disable(1); return; }
+      child.userData.furnitureOutlineManaged = true;
+      child.userData.furnitureOutline = decision;
+      child.userData.noOutline = !decision.enabled;
+      if (decision.enabled) child.layers.enable(1); else child.layers.disable(1);
+    });
+    return decision;
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
     if (part.kind === 'glb') {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(.001, .001, .001), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); // Animation/picking owner while the bone-hidden model loads.
       mesh.position.set(t.x || 0, t.y || 0, t.z || 0); mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
-      mesh.userData.furnitureGlbPart = true; attachGlb(mesh, part, baseColor); return mesh;
+      mesh.userData.furnitureGlbPart = true; mesh.userData.noOutline = true; applyPartOutline(mesh, part); attachGlb(mesh, part, baseColor); return mesh;
     }
     if (part.kind === 'banner') {
       geo = new THREE.PlaneGeometry(Math.max(.01, t.sx || 1), Math.max(.01, t.sy || 1), 12, 16);
@@ -348,6 +380,7 @@
     mesh.userData ||= {};
     mesh.userData.authoredPart = part; // Pattern placement/instance edits use the same immutable authored definition.
     window.FurniturePatternSurfaces?.applyPart?.(mesh, part);
+    applyPartOutline(mesh, part);
     if (part.kind === 'banner') { mat.visible = false; mesh.castShadow = false; } // Patterned child is the visible wind-warped fabric.
     return mesh;
   }
@@ -819,8 +852,10 @@ function campfireRecipe() {
     hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
+    outlineDecision,
+    applyPartOutline,
     makePartMaterial,
-    latestChange: 'Fixed textured furniture startup crashes on Three.js r128 by initializing clone metadata.',
+    latestChange: 'Per-piece shell outlines: Auto skips stretch-textured hard edges; On/Off override rounded and hard pieces independently.',
     shade,
     CATALOG,
   };
