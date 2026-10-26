@@ -26,7 +26,7 @@
       "reason": "schedule:attending the Spirit Counsel station_temple_counsel_ring_5"
     },
     "dzahiri_khibu": {
-      "area": "map_i_carpenters_F2_dzahiri",
+      "area": "map_i_carpenters_F2_dzibim",
       "furnitureId": "f_map_i_carpenters_F2_dzahiri_wardrobe",
       "itemKey": "wardrobeFurniture",
       "reason": "authored:npcWardrobeFor"
@@ -158,7 +158,7 @@
       "reason": "authored:npcWardrobeFor"
     },
     "teacup_unumanuk": {
-      "area": "map_i_unumanuk_household_bedroom",
+      "area": "map_i_unumanuk_household_teacup",
       "furnitureId": "f_unmhbed_chest_teacup",
       "itemKey": "chestFurniture",
       "reason": "authored:npcWardrobeFor"

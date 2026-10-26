@@ -32,8 +32,12 @@
     }
   ],
   "exits": [
-    { "id": "mine_safe_exit", "label": "Back to Town", "tiles": [[3,6],[4,6],[5,6]], "targetMap": "", "spawnCol": 16, "spawnRow": 6 },
-    { "id": "mine_ladder_floor_1", "label": "Descend to Floor 1", "tiles": [[4,2]], "targetMap": "map_i_town_mine_f_001", "spawnCol": 0, "spawnRow": 0 }
+    { "id": "mine_safe_exit", "label": "Back to Town", "tiles": [[3,6],[4,6],[5,6]], "targetMap": "", "spawnCol": 16, "spawnRow": 6,
+ "direction": "north",
+ "generateDoor": true },
+    { "id": "mine_ladder_floor_1", "label": "Descend to Floor 1", "tiles": [[4,2]], "targetMap": "map_i_town_mine_f_001", "spawnCol": 0, "spawnRow": 0,
+ "direction": "south",
+ "generateDoor": true }
   ],
   "mineSafeRoom": true
 }

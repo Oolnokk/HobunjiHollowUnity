@@ -73,7 +73,9 @@
       "tiles": [[11, 5]],
       "targetMap": "map_i_general_store",
       "spawnCol": 11,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "south",
+      "generateDoor": false
     }
   ],
   "colliders": [],

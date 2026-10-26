@@ -11283,7 +11283,7 @@
                               "obligation": "plan",
                               "window": ["22:00", "08:00"],
                               "destinationStationId": "station_car_home_dzahiri_bed",
-                              "destinationArea": "map_i_carpenters_F2_dzahiri",
+                              "destinationArea": "map_i_carpenters_F2_dzibim",
                               "activityLabel": "sleeping upstairs"
                         }
                   ],
@@ -12286,7 +12286,7 @@
                               {
                                     "from": "18:00",
                                     "to": "09:00",
-                                    "mapId": "map_i_unumanuk_household_bedroom",
+                                    "mapId": "map_i_unumanuk_household_teacup",
                                     "stationId": "station_unmh_teacup_bed",
                                     "activity": "home"
                               }
@@ -12319,7 +12319,7 @@
                               "obligation": "plan",
                               "window": ["18:00", "09:00"],
                               "destinationStationId": "station_unmh_teacup_bed",
-                              "destinationArea": "map_i_unumanuk_household_bedroom",
+                              "destinationArea": "map_i_unumanuk_household_teacup",
                               "activityLabel": "home"
                         }
                   ],

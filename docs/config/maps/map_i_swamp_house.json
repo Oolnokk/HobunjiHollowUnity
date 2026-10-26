@@ -179,7 +179,9 @@
       ],
       "targetMap": "",
       "spawnCol": 0,
-      "spawnRow": 0
+      "spawnRow": 0,
+      "direction": "north",
+      "generateDoor": true
     },
     {
       "id": "exit_swamp_leaf",
@@ -192,7 +194,9 @@
       ],
       "targetMap": "map_i_swamp_house_leaf",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     },
     {
       "id": "exit_swamp_pahu",
@@ -205,7 +209,9 @@
       ],
       "targetMap": "map_i_swamp_house_pahu",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     }
   ],
   "colliders": [],

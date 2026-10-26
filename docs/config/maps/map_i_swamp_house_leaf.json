@@ -176,7 +176,9 @@
       ],
       "targetMap": "map_i_swamp_house",
       "spawnCol": 8,
-      "spawnRow": 4
+      "spawnRow": 4,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],

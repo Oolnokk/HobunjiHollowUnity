@@ -15,7 +15,7 @@
       "npcId": "dzahiri_khibu",
       "fromStationId": "station_dzahiri_home",
       "toStationId": "station_car_home_dzahiri_bed",
-      "mapId": "map_i_carpenters_F2_dzahiri"
+      "mapId": "map_i_carpenters_F2_dzibim"
     },
     {
       "npcId": "nashka_khibu",
@@ -145,7 +145,7 @@
       ],
       "whenPresent": {
         "mapId": "map_i_carpenters",
-        "stationId": "furniture_chair_map_i_carpenters_13_9",
+        "stationId": "furniture_chair_map_i_carpenters_13_10",
         "activity": "visiting family"
       },
       "fallback": {
