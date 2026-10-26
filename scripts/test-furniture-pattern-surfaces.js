@@ -195,6 +195,12 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   await api.renderTile({...pattern,patternId:null,patterns:[primary,overpass]});
   assert.equal(stacks.at(-1).length,2);
   assert.equal(stacks.at(-1)[1].overpassClearanceMultiplier,7);
+  const coloredOverpassRecord={...pattern,patternId:null,patterns:[primary,overpass],palette:['#b7a185','#315b67','#dd8844']}; // Third dye belongs to the furniture surface, not its reusable motif.
+  await api.renderTile(coloredOverpassRecord);
+  assert.equal(stacks.at(-1)[1].inkColorHex,'#dd8844','separate furniture overpass ink reaches the production stack compositor');
+  assert.equal(overpass.inkColorHex,undefined,'the overpass library motif is not mutated by its furniture instance');
+  assert.equal(api.normalize({palette:['#111111','#222222','#333333']}).palette[2],'#333333','third palette dye survives JSON normalization');
+  assert.equal(api.normalize({palette:['#111111','#222222']}).palette[2],undefined,'legacy two-dye furniture stays backward compatible');
   const previousCount=compositeCount; // A changed overpass must invalidate the atlas cache.
   await api.renderTile({...pattern,patternId:null,patterns:[primary,{...overpass,overpassClearanceMultiplier:9}]});
   assert.equal(compositeCount,previousCount+1);

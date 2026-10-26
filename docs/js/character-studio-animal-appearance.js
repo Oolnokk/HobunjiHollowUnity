@@ -305,7 +305,7 @@
     refreshDebug();
   }
 
-  function updateRepoSurfacePaint(regionId, repoPatternId, dyeHex, normalizedScale = null) {
+  function updateRepoSurfacePaint(regionId, repoPatternId, dyeHex, normalizedScale = null, overpassPatternId = undefined, overpassInkHex = undefined) {
     updateGenotype(genotypeDraft => {
       const existingRoot = genotypeDraft.colorPoolPaint && typeof genotypeDraft.colorPoolPaint === 'object'
         ? clone(genotypeDraft.colorPoolPaint) : { version: 1, layers: {} };
@@ -316,12 +316,18 @@
       } else {
         const requestedScale = Number(normalizedScale);
         const patternScale = Math.max(7, Math.min(14, Number.isFinite(requestedScale) ? requestedScale : (Number(previous.patternScale) || 7))); // Animal surface patterns need a much larger normalized usage scale than clothing; 7× is the minimum/default.
+        const secondId = overpassPatternId === undefined
+          ? (previous.overpassPatternId || previous.patterns?.[1]?.repoPatternId || '') : overpassPatternId; // Primary and scale edits preserve an authored overpass.
+        const secondInk = overpassInkHex === undefined ? previous.overpassDyeHex : overpassInkHex;
         existingRoot.layers[regionId] = {
           ...previous,
           repoPatternId,
           dyeHex: dyeHex || previous.dyeHex || '#ffffff',
           patternScale,
-          pattern: { repoPatternId }, // Small committed-library reference; runtime resolves the PNG/settings lazily and applies patternScale transiently.
+          pattern: { repoPatternId }, // Small committed-library reference; runtime resolves the PNG/settings lazily.
+          overpassPatternId: secondId || null,
+          overpassDyeHex: secondInk || null,
+          patterns: secondId ? [{ repoPatternId }, { repoPatternId: secondId }] : [{ repoPatternId }],
         };
       }
       if (Object.keys(existingRoot.layers).length) genotypeDraft.colorPoolPaint = { ...existingRoot, version: 1 };
@@ -386,7 +392,9 @@
       ${repoPatterns.length ? surfaceRegions.map(region => {
         const paint = surfacePaintFor(genotype, region.id) || {};
         const selectedPattern = paint.repoPatternId || paint.pattern?.repoPatternId || '';
+        const selectedOverpass = paint.overpassPatternId || paint.patterns?.[1]?.repoPatternId || ''; // Existing Studio data and Color Pools use the same second slot.
         const ink = paint.dyeHex || '#ffffff';
+        const overpassInk = paint.overpassDyeHex || ink;
         const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7));
         return `
           <div class="panelItem" style="margin-top:7px" data-surface-region="${esc(region.id)}">
@@ -401,6 +409,13 @@
                 ${repoPatterns.map(pattern => `<option value="${esc(pattern.id)}" ${selectedPattern === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
               </select></div>
               <div class="col"><label>Pattern ink</label><input class="animalNpcRepoPatternInk" data-region="${esc(region.id)}" type="color" value="${esc(ink)}" ${selectedPattern ? '' : 'disabled'}></div>
+            </div>
+            <div class="grid2" style="margin-top:7px">
+              <div class="col"><label>Overpass pattern</label><select class="animalNpcRepoOverpass" data-region="${esc(region.id)}" ${selectedPattern ? '' : 'disabled'}>
+                <option value="">None</option>
+                ${repoPatterns.map(pattern => `<option value="${esc(pattern.id)}" ${selectedOverpass === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
+              </select></div>
+              <div class="col"><label>Overpass ink</label><input class="animalNpcRepoOverpassInk" data-region="${esc(region.id)}" type="color" value="${esc(overpassInk)}" ${selectedOverpass ? '' : 'disabled'}></div>
             </div>
             <div class="row" style="gap:7px;align-items:center;margin-top:7px">
               <label style="margin:0;white-space:nowrap">Animal scale</label>
@@ -473,6 +488,24 @@
         const select = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
         const scale = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
         if (select?.value) updateRepoSurfacePaint(regionId, select.value, input.value, scale?.value);
+      });
+    });
+    controls.querySelectorAll('.animalNpcRepoOverpass').forEach(input => {
+      input.addEventListener('change', () => {
+        const regionId = input.dataset.region, primary = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
+        const ink = controls.querySelector(`.animalNpcRepoPatternInk[data-region="${CSS.escape(regionId)}"]`);
+        const scale = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
+        const overInk = controls.querySelector(`.animalNpcRepoOverpassInk[data-region="${CSS.escape(regionId)}"]`);
+        if (primary?.value) updateRepoSurfacePaint(regionId, primary.value, ink?.value || '#ffffff', scale?.value, input.value, overInk?.value);
+      });
+    });
+    controls.querySelectorAll('.animalNpcRepoOverpassInk').forEach(input => {
+      input.addEventListener('input', () => {
+        const regionId = input.dataset.region, primary = controls.querySelector(`.animalNpcRepoPattern[data-region="${CSS.escape(regionId)}"]`);
+        const ink = controls.querySelector(`.animalNpcRepoPatternInk[data-region="${CSS.escape(regionId)}"]`);
+        const overpass = controls.querySelector(`.animalNpcRepoOverpass[data-region="${CSS.escape(regionId)}"]`);
+        const scale = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
+        if (primary?.value && overpass?.value) updateRepoSurfacePaint(regionId, primary.value, ink?.value || '#ffffff', scale?.value, overpass.value, input.value);
       });
     });
     controls.querySelectorAll('.animalNpcRepoPatternScale').forEach(input => {

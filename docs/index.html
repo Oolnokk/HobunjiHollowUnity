@@ -245,7 +245,7 @@
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
   <script src="js/authored-furniture-runtime.js?v=20261025h9b3cc58"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261026h5b39f56"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261026hOverpassInk3"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -374,7 +374,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261026conecharge2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261026hOverpassInk3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -596,16 +596,16 @@
        offers (today: metal-craft-shop.js's verdigris-removal patterns).
        Needs init(deps) from game.js, so must load before it, same as
        dye-system.js. -->
-  <script src="js/pattern-library.js?v=20261003h0ad42ee"></script>
+  <script src="js/pattern-library.js?v=20261026hPlayerDefaults5"></script>
   <!-- Dev-mode Settings exporter for the active character's saved PatternLibrary entries. -->
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
        paint can reference a small repoPatternId instead of embedding motif bytes. -->
-  <script src="js/repo-pattern-library.js?v=20261005hf072713"></script>
+  <script src="js/repo-pattern-library.js?v=20261026hRepoDefaults5"></script>
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
-  <script src="js/color-pools-system.js?v=20261015h77640b9"></script>
+  <script src="js/color-pools-system.js?v=20261026hBanubuOverpass5"></script>
   <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2661,7 +2661,7 @@
   <script src="js/festival-ui.js?v=20261023h929b96d"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
-  <script src="js/banubu-questline.js?v=20260925banubutransaction4"></script>
+  <script src="js/banubu-questline.js?v=20261026banubuoverpass3"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20261024h6db587e"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid

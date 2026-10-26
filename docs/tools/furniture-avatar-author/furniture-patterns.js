@@ -12,6 +12,7 @@
     <label>Pattern tile size <input id="fpScale" type="number" min="0.05" max="20" step="0.05" value="1"></label>
     <label>Base dye <input id="fpBase" type="color" value="#b7a185"></label>
     <label>Pattern dye <input id="fpDye" type="color" value="#315b67"></label>
+    <label>Overpass dye <input id="fpOverpassDye" type="color" value="#315b67"></label>
     <label>Engraving core opacity <input id="fpCoreOpacity" type="number" min="0" max="1" step="0.05" value="0.85"></label>
     <fieldset id="fpPieceScaleBox"><legend>Pattern scale override</legend>
       <p>Overrides the tile size of every pattern on the selected piece, including random ruin engravings. Leave blank to use each slot's own size. The Dev Companion's ruin surface list can override it again.</p>
@@ -33,7 +34,7 @@
   document.getElementById('surfaceEditor')?.parentElement?.appendChild(panel);
   const input = id => document.getElementById(id); // Every handler reads current values, rather than stale selected records.
 
-  const placement = api.placementControls(panel,input('fpBase'),input('fpDye')); // Same dye and layer placement controls as placed furniture.
+  const placement = api.placementControls(panel,input('fpBase'),input('fpDye'),input('fpOverpassDye')); // Same dye and layer placement controls as placed furniture.
 
   function target() {
     const surface = selectedSurface(); // Canonical recognized surface selection takes precedence over piece selection.
@@ -57,7 +58,7 @@
     const groupedSquareSides = squarePillarSideGroup(part, surface); // Used by square pillar shafts so selecting any long side authors all four vertical sides together.
     const slot = groupedSquareSides ? `${part.id}:surface:sides` : currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface';
     const record = api.normalize({ ...currentRecord(), slot, mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : input('fpMode').value === 'engraving' ? .5 : 1,
-      engravingCoreOpacity: input('fpCoreOpacity').value || .85, random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value],
+      engravingCoreOpacity: input('fpCoreOpacity').value || .85, random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value, input('fpOverpassDye').value],
       ...(surface && !groupedSquareSides ? { normal: surface.localNormal.toArray(), localCentroid: surface.localCentroid.toArray(), dimensions: [part.transform.sx,part.transform.sy,part.transform.sz] } : {}) });
     if (groupedSquareSides) {
       record.selector = 'sides'; // The shared renderer continuously unwraps rectangular side faces around the full pillar perimeter.
@@ -95,6 +96,7 @@
       input('fpCoreOpacity').value = record.engravingCoreOpacity ?? .85;
       input('fpScale').value = record.scale; input('fpRandom').checked = !!record.random;
       input('fpBase').value = record.palette?.[0] || '#b7a185'; input('fpDye').value = record.palette?.[1] || '#315b67';
+      input('fpOverpassDye').value = record.palette?.[2] || record.palette?.[1] || '#315b67';
     }
     placement.refresh(record || {});
     input('fpDebug').textContent = JSON.stringify({ selectedPart: target().part?.id || null, selectedSurface: target().surface?.id || null, patterns: api.debug(root) }, null, 2);
