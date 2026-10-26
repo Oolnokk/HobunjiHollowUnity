@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path'); // Resolves editor sprite preview assets relative to the actual editor page.
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Executes the live generated shape catalog without starting the world.
 const catalog = game.slice(game.indexOf('      const TOOL_SHAPE_DEFS ='), game.indexOf('      window.ModularWeapons?.registerDefinitions'));
@@ -57,4 +58,44 @@ for (const key of ['warhammer_nativeCopper', 'workhammer_tinBronze', 'harlyaoRel
   assert(window.HobunjiHandToolGrips.primaryGripSpanForTool(key, 'melee'));
   assert(window.HobunjiHandToolGrips.secondaryGripSpanForTool(key, 'melee'));
 }
+// The editor's preview selector is the entry point for grip editing: cover every hammer and Harlyao melee silhouette.
+const attackEditorSource = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Test production's actual selector catalog, not a separately maintained fixture.
+const previewMatch = attackEditorSource.match(/const TOOL_SPRITE_DEFS = (\{[\s\S]*?\n\});\nconst toolTexLoader/);
+assert(previewMatch, 'Attack Editor preview catalog must remain discoverable');
+const previewDefs = vm.runInNewContext('(' + previewMatch[1] + ')'); // Static editor definitions are ordinary JS object literals.
+for (const [shape, png] of Object.entries({
+  warhammer: 'warhammer.png',
+  workhammer: 'work_hammer.png',
+  harlyaoLongsword: 'harlyao_longsword.png',
+  harlyaoBroadsword: 'harlyao_broadsword.png',
+})) {
+  const preview = previewDefs[shape];
+  assert(preview, `Attack Editor should offer ${shape} for grip editing`);
+  assert.equal(preview.animStyle, 'sweep', `${shape} must preview with its gameplay melee style`);
+  assert.equal(preview.usesWeaponStanceBasis, true, `${shape} must use gameplay's melee neutral stance basis`);
+  assert.equal(path.basename(preview.sprite), png);
+  assert(fs.existsSync(path.resolve('docs/tools/attack-animation-editor', preview.sprite)), `Missing editor sprite for ${shape}`);
+}
+const handGrips = window.HobunjiHandToolGrips; // Ensures the chosen editor shape and live relic IDs all use the same editable socket.
+for (const [item, expected] of [
+  ['warhammer_nativeCopper', 'warhammer'],
+  ['workhammer_tinBronze', 'workhammer'],
+  ['harlyaoRelic_warhammer_testing', 'warhammer'],
+  ['harlyaoLongsword', 'harlyaolongsword'],
+  ['harlyaoBroadsword', 'harlyaobroadsword'],
+  ['harlyaoRelic_longsword_testing', 'harlyaolongsword'],
+  ['harlyaoRelic_broadsword_testing', 'harlyaobroadsword'],
+]) assert.equal(handGrips.toolKeyFor(item), expected, `Grip profile for ${item}`);
+handGrips.ensureTool('harlyaoLongsword');
+handGrips.ensureTool('harlyaoBroadsword');
+handGrips.mutate(data => {
+  data.tools.harlyaolongsword.primaryGrip.position.z = 0.21;
+  data.tools.harlyaobroadsword.primaryGrip.position.z = -0.19;
+});
+const authoredDraft = handGrips.clone(); // Round-trip the same normalized grip draft format used by copy/import.
+handGrips.replace(authoredDraft);
+assert.equal(handGrips.authoredPrimaryGripForTool('harlyaoRelic_longsword_test').position.z, 0.21);
+assert.equal(handGrips.authoredPrimaryGripForTool('harlyaoRelic_broadsword_test').position.z, -0.19);
+assert.notEqual(handGrips.authoredPrimaryGripForTool('warhammer_nativeCopper').position.z, 0.21, 'Harlyao sword grip must not overwrite warhammer');
+console.log('Hammer/Harlyao Attack Editor previews and shared relic grip profiles passed.');
 console.log('Hammer catalog, relic persistence, store stock, and smith discovery unlocks passed.');
