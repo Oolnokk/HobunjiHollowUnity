@@ -17,6 +17,8 @@ const ZONES = cfg.wildernessZones;
 
 assert.equal(cfg.avengers.mountSpecies, 'nazgraku');
 assert.equal(cfg.avengers.quarryTribe, 'omgurku');
+assert.equal(cfg.avengers.quarryEscapeChance, 0.25);
+assert.equal(cfg.avengers.riderLossChance, 0.1);
 assert(cfg.avengers.rideSpeedTilesPerSecond > cfg.behavior.travelSpeedTilesPerSecond, 'mounted riders outpace walking hunters');
 assert.equal(omgurkuCfg.avengers, undefined, 'only the Porakaneki keep an Avenger band');
 
@@ -127,6 +129,29 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   }
   for (const zoneId of ZONES) assert(omg.debugSnapshot().zones[zoneId].camps.every(camp => !camp.avengers), 'Omgurku camps keep no band');
 
+  // An off-screen catch is a contest. Force each roll through the shared rnd seam.
+  const seeded = combatDeps.rnd;
+  const riderRows = () => Object.values(pora.debugSnapshot().zones).flatMap(zone => zone.camps.flatMap(camp => camp.hunters)).filter(h => h.role === 'avenger');
+  combatDeps.rnd = () => cfg.avengers.riderLossChance / 2; // Below riderLossChance: the quarry kills a rider and escapes.
+  for (let i = 0; i < 400 && pora.debugSnapshot().avengerLosses === 0; i++) tick(4.1);
+  debug = pora.debugSnapshot();
+  assert(debug.avengerLosses > 0, 'a cornered Omgurku can kill an Avenger');
+  assert.equal(debug.avengerKills, 0, 'the quarry that kills a rider gets away');
+  assert(riderRows().some(rider => rider.activity === 'slain'), 'the dead rider is marked slain');
+  assert(debug.avengerEscapes >= debug.avengerLosses, 'a rider loss also counts as an escape');
+  combatDeps.rnd = () => cfg.avengers.riderLossChance + cfg.avengers.quarryEscapeChance / 2; // Escape band: nobody dies.
+  const lossesBefore = debug.avengerLosses, escapesBefore = debug.avengerEscapes;
+  for (let i = 0; i < 400 && pora.debugSnapshot().avengerEscapes === escapesBefore; i++) tick(4.1);
+  debug = pora.debugSnapshot();
+  assert(debug.avengerEscapes > escapesBefore, 'a travelling Omgurku can simply escape');
+  assert.equal(debug.avengerLosses, lossesBefore);
+  assert.equal(debug.avengerKills, 0);
+  combatDeps.rnd = seeded;
+  day += 2; // New day: escapees are fair game again and slain riders are replaced.
+  tick(0.21);
+  assert(riderRows().every(rider => rider.activity !== 'slain'), 'slain Avengers are replaced after a couple of days');
+  assert.equal(riderRows().length, ZONES.length * cfg.avengers.riders);
+
   // Ride through the day: travelling Omgurku get chased down and slain off-screen.
   const zoneId = ZONES[0];
   let sawPursuit = false;
@@ -149,10 +174,11 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const perBand = Object.values(pora.debugSnapshot().zones).map(zone => zone.camps.find(camp => camp.avengers).avengers.kills);
   assert(perBand.every(kills => kills <= cfg.avengers.killsPerDay), `daily kill quota holds (${perBand})`);
   const slainCount = () => Object.values(omg.debugSnapshot().zones).flatMap(zone => zone.camps.flatMap(camp => camp.hunters)).filter(h => h.activity === 'slain').length;
-  assert.equal(slainCount(), pora.debugSnapshot().avengerKills);
+  const killsBefore = pora.debugSnapshot().avengerKills;
+  assert.equal(slainCount(), killsBefore);
   day += 2;
-  tick(0.21);
-  assert.equal(slainCount(), 0, 'slain travellers are replaced in their camps after a couple of days');
+  tick(0.21); // The new day also resets each band's quota, so a fresh kill can land in this same tick.
+  assert.equal(slainCount(), pora.debugSnapshot().avengerKills - killsBefore, 'slain travellers are replaced in their camps after a couple of days');
 
   // Only hunters away from camp count as travelling; nobody travels at night.
   for (const traveller of ZONES.flatMap(zone => omg.travellingHunters(zone, 8))) {

@@ -306,6 +306,8 @@
     greetings: 0, // Friendly Porakaneki greetings shown this session.
     kills: 0, // Player-attributed Porakaneki deaths charged to tribe Favor.
     avengerKills: 0, // Rival travellers slain off-screen by this tribe's Avengers.
+    avengerLosses: 0, // Avengers killed off-screen by a quarry that fought back.
+    avengerEscapes: 0, // Off-screen quarries that got away from an Avenger band.
     updateTicks: 0, // Counts actual 5 Hz planner updates so a dead runtime cadence is visible in snapshots.
     tickOwner: 'uninstalled', // 'RuntimeFrameScheduler' in shipped gameplay, legacy BanditCamps wrapper only in isolated tests/tools.
   };
@@ -1119,7 +1121,7 @@
   function seedAvengerBand(camp) {
     const av = avengerCfg();
     const rng = seededRng(`${generationYear()}:${camp.id}:avengers`); // Own stream so the band never reshuffles the residents' party rolls.
-    camp.avengerBand = { quarry: null, patrolTarget: null, routeStep: 0, kills: 0, killDay: -1, killsToday: 0, rng };
+    camp.avengerBand = { quarry: null, patrolTarget: null, routeStep: 0, kills: 0, losses: 0, escapes: 0, killDay: -1, killsToday: 0, escaped: new Map(), rng };
     const riders = clamp(Math.floor(num(av.riders, 3)), 1, 6);
     const shapes = Array.isArray(av.weaponShapes) && av.weaponShapes.length ? av.weaponShapes : null;
     for (let i = 0; i < riders; i++) {
@@ -1154,6 +1156,7 @@
   // the whole band at it, and slays it on contact only when nobody involved is
   // live on screen; a visible encounter is fought out by updateChunkEcology.
   // A band that has made its daily kills just patrols home until tomorrow.
+  // An off-screen catch is a contest, not a sure kill (see resolveAvengerCatch).
   function updateAvengerBand(camp) {
     const band = camp?.avengerBand, av = avengerCfg();
     if (!band || !av) return;
@@ -1166,6 +1169,7 @@
       const lead = riders[0];
       let quarry = null, best = num(av.seekRadiusTiles, 64);
       for (const traveller of quarryRuntime()?.travellingHunters?.(camp.zoneId, num(av.travellerMinDistanceTiles, 8)) || []) {
+        if (band.escaped.get(traveller.id) === gameDay()) continue; // A traveller that got away is left alone until tomorrow.
         const d = Math.hypot(traveller.x - lead.x, traveller.y - lead.y);
         if (d <= best) { quarry = traveller; best = d; }
       }
@@ -1190,14 +1194,46 @@
     const reach = num(av.catchRadiusTiles, 1.6) + num(av.formationRadiusTiles, 1.3);
     const caught = riders.some(rider => Math.hypot(rider.x - quarry.x, rider.y - quarry.y) <= reach);
     if (!caught || riders.some(detailedEntityActive) || quarryLive(quarry)) return;
-    if (quarryRuntime()?.slayHunter?.(quarry, `avenged-by:${camp.id}`)) {
-      band.kills += 1;
-      band.killsToday += 1;
-      state.avengerKills += 1;
-      state.lastReason = `${KEY}-avengers-slew:${camp.id}:${quarry.id}`;
-      window.__farmLog?.(`[${KEY}] Avengers from ${camp.id} slew travelling ${quarry.camp?.id || '?'} hunter ${quarry.id}`, 'wildlife');
-    }
+    resolveAvengerCatch(camp, riders, quarry);
     band.quarry = null;
+  }
+  // The quarry fights back: it may kill a rider (and get away) or simply
+  // escape; otherwise the band kills it. Slain riders are replaced like any
+  // other off-screen loss (replaceSlainResidents).
+  function resolveAvengerCatch(camp, riders, quarry) {
+    const band = camp.avengerBand, av = avengerCfg();
+    const riderLoss = clamp(num(av.riderLossChance, 0.10), 0, 1);
+    const escape = clamp(num(av.quarryEscapeChance, 0.25), 0, 1 - riderLoss);
+    const roll = rand();
+    const where = `${camp.id}:${quarry.id}`;
+    if (roll < riderLoss + escape) {
+      band.escaped.set(quarry.id, gameDay());
+      band.escapes += 1;
+      state.avengerEscapes += 1;
+      if (roll < riderLoss) {
+        const rider = riders[Math.floor(rand() * riders.length)] || riders[0];
+        rider.slain = true;
+        rider.slainDay = gameDay();
+        rider.activity = 'slain';
+        rider.target = null;
+        teardownEntity(rider);
+        band.losses += 1;
+        state.avengerLosses += 1;
+        state.lastReason = `${KEY}-avenger-slain:${where}:${rider.id}`;
+        window.__farmLog?.(`[${KEY}] Travelling hunter ${quarry.id} killed Avenger ${rider.id} and escaped`, 'wildlife');
+      } else {
+        state.lastReason = `${KEY}-avengers-escaped:${where}`;
+        window.__farmLog?.(`[${KEY}] Travelling hunter ${quarry.id} escaped the Avengers from ${camp.id}`, 'wildlife');
+      }
+      return 'escaped';
+    }
+    if (!quarryRuntime()?.slayHunter?.(quarry, `avenged-by:${camp.id}`)) return null;
+    band.kills += 1;
+    band.killsToday += 1;
+    state.avengerKills += 1;
+    state.lastReason = `${KEY}-avengers-slew:${where}`;
+    window.__farmLog?.(`[${KEY}] Avengers from ${camp.id} slew travelling ${quarry.camp?.id || '?'} hunter ${quarry.id}`, 'wildlife');
+    return 'killed';
   }
 
   function campDens(camp) {
@@ -1830,6 +1866,8 @@
       avengers: camp.avengerBand ? {
         riders: avengerRiders(camp).length,
         kills: camp.avengerBand.kills,
+        losses: camp.avengerBand.losses,
+        escapes: camp.avengerBand.escapes,
         quarryId: camp.avengerBand.quarry?.id || null,
         quarry: camp.avengerBand.quarry ? { col: Number(camp.avengerBand.quarry.x.toFixed(1)), row: Number(camp.avengerBand.quarry.y.toFixed(1)) } : null,
       } : null,
@@ -1935,6 +1973,8 @@
       greetings: state.greetings,
       kills: state.kills,
       avengerKills: state.avengerKills,
+      avengerLosses: state.avengerLosses,
+      avengerEscapes: state.avengerEscapes,
       ecology: { ...ecologyState },
       lastReason: state.lastReason,
     };
@@ -1965,9 +2005,9 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengerKills=${d.avengerKills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
   });
 
   tribeRuntimes.push(api);

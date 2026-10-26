@@ -61,7 +61,7 @@
     "denHuntDwellMaxSeconds": 8
   },
   "avengers": {
-    "notes": "Porakaneki Avengers: one band of Nazgraku-mounted riders lives at the first hunting camp of every wilderness map. The band patrols around home and rides down any Omgurku hunter travelling at least travellerMinDistanceTiles from its own camp within seekRadiusTiles, killing it (at most killsPerDay per band each day; off-screen victims are replaced in their camp after behavior.slainReplacementDays, default 2). Off-screen catches are abstract kills; near the player the riders fight it out through the shared same-chunk rival-tribe ecology.",
+    "notes": "Porakaneki Avengers: one band of Nazgraku-mounted riders lives at the first hunting camp of every wilderness map. The band patrols around home and rides down any Omgurku hunter travelling at least travellerMinDistanceTiles from its own camp within seekRadiusTiles, killing it (at most killsPerDay per band each day; off-screen victims are replaced in their camp after behavior.slainReplacementDays, default 2). Off-screen catches are a contest: riderLossChance the quarry kills one rider and escapes, quarryEscapeChance it just escapes (either way it is left alone until the next day), otherwise it dies; slain riders are replaced like other off-screen losses. near the player the riders fight it out through the shared same-chunk rival-tribe ecology.",
     "enabled": true,
     "riders": 3,
     "mountSpecies": "nazgraku",
@@ -76,6 +76,8 @@
     "travellerMinDistanceTiles": 8,
     "seekRadiusTiles": 64,
     "killsPerDay": 1,
+    "quarryEscapeChance": 0.25,
+    "riderLossChance": 0.1,
     "catchRadiusTiles": 1.6,
     "formationRadiusTiles": 1.3,
     "patrolRadiusTiles": 18
