@@ -54,6 +54,17 @@ context.PatternLibrary = { getById: id => ({ motifDataUrl: 'data:image/png;base6
 api.__test.setLibraryPattern('base', 'primary');
 assert.equal(api.__test.setOverpassPattern('base', 'overpass'), true);
 assert.equal(api.__test.paintPatternStack({ pattern: { repoPatternId: 'primary' }, patterns: [{ repoPatternId: 'primary' }, { repoPatternId: 'overpass' }] })[1].repoPatternId, 'overpass');
+context.DyeSystem = { getById: id => ({ id, hex: id === 'primary-dye' ? '#225588' : '#cc7722' }) }; // Two independently unlocked game dyes.
+api.__test.setDye('base', 'primary-dye');
+api.__test.setOverpassDye('base', 'second-dye');
+const painted = api.__test.cleanDraft().base; // Same canonical paint snapshot written to the Stable genotype on Apply.
+assert.equal(painted.dyeHex, '#225588', 'primary retains its first dye');
+assert.equal(painted.patterns[1].inkColorHex, '#cc7722', 'overpass snapshot stores its independent dye');
+api.__test.setLibraryPattern('base', 'new-primary');
+assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'replacing primary retains its independent overpass dye');
+api.__test.setOverpassPattern('base', '');
+assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'clearing only overpass leaves first paint intact');
+
 assert.match(read('docs/js/banubu-questline.js'), /state\.stage = 3;/, 'real Banubu second turn-in owns the saved reward state');
 
 assert.deepEqual(api.eligibleStableAnimals().map(entry => entry.id), ['maxed'], 'only max-level Stable animals are eligible');
