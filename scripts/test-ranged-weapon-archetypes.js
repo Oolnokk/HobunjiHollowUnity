@@ -375,6 +375,12 @@ for (const phase of ['neutral', 'windup', 'strike']) {
 }
 for (const phase of ['neutral', 'windup', 'strike']) for (const axis of ['x', 'y', 'z']) assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase][axis], 0, `the mouthpiece (aperture) sits exactly on the mouth: ${phase}.${axis}`);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.yaw, 0);
+for (const phase of ['neutral', 'windup', 'strike']) {
+  const pose = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase]; // Assert the whole loaded/fire timeline shares the head-directed barrel axis.
+  assert.equal(pose.pitch, -180, `Blowgun ${phase} reverses its +Z mouthpiece-end axis to point away from the head`);
+  assert.equal(pose.yaw, 0, `Blowgun ${phase} must not aim sideways independently of head rotation`);
+  assert.equal(pose.bodyYaw, 0, `Blowgun ${phase} must not turn the body to compensate for misaligned barrel yaw`);
+}
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.95);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);
 const blowgunChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('bshuakauitl_copper').map(effect => effect.id);
@@ -487,3 +493,22 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.ownsThrownInput(),
 mockPlayerAction = null;
 windowObject.RangedWeapons.update(0.016);
 assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownChargeItemKey(), null, 'a released press must not start a windup on Neutral.');
+
+
+// Missing user-authored animation must NOT fall back to Drink's angled pose.
+// Run last because rebuilding ranged definitions changes the test's mock loaded states.
+{
+  const original = windowObject.HeldActionAnimations.blowgunReady; // Restored below for any subsequent shared test initialization.
+  windowObject.HeldActionAnimations.blowgunReady = null;
+  windowObject.HobunjiRangedWeaponArchetypes.patchGeneratedDefinitions();
+  const fallback = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose; // Direct generated-weapon test, not a copy of the default constant.
+  for (const phase of ['neutral', 'windup', 'strike']) {
+    assert.strictEqual(fallback[phase].yaw, 0, `missing blowgun animation must never restore Drink's off-axis ${phase} yaw`);
+    assert.strictEqual(fallback[phase].pitch, -180, `missing blowgun animation ${phase} keeps its fixed mouthpiece-end reversal`);
+    assert.strictEqual(fallback[phase].headRelative, true, `missing blowgun animation ${phase} remains anchored to the mouth`);
+  }
+  assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().blowgunStanceSource, 'blowgun-head-forward-fallback');
+  windowObject.HeldActionAnimations.blowgunReady = original;
+  windowObject.HobunjiRangedWeaponArchetypes.patchGeneratedDefinitions();
+  assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().blowgunStanceSource, 'blowgun-authored-mouth-to-reticle');
+}

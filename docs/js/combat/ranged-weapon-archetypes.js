@@ -92,11 +92,9 @@
     };
   }
 
-  function sharedDrinkStrikePose() {
-    return window.HeldActionAnimations?.drink?.poses?.strike || {
-      x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0,
-    };
-  }
+  const BLOWGUN_READY_FALLBACK = Object.freeze({
+    x: 0, y: 0, z: 0, pitch: -180, yaw: 0, roll: 4, bodyYaw: 0, headRelative: true,
+  }); // Used by the fire-pose defaults and missing-animation fallback: the mouth anchors the weapon and its barrel points along the head-forward ray.
 
   // Editable authored copies. These intentionally do not alias the Crossbow or
   // Drink objects: later tuning can change Blowgun without changing either source.
@@ -106,14 +104,14 @@
     strike: { x: 0, y: 0.18, z: 0.08, pitch: -11, yaw: 0, bodyYaw: 7, roll: 0, scale: 1.30 },
   };
   const BLOWGUN_FIRE_POSE = {
-    neutral: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
-    windup: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
-    strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
+    neutral: { ...BLOWGUN_READY_FALLBACK, scale: 1.30 },
+    windup: { ...BLOWGUN_READY_FALLBACK, roll: 0, scale: 1.30 },
+    strike: { ...BLOWGUN_READY_FALLBACK, scale: 1.30 },
   };
 
   function syncBlowgunStance() {
     const authored = window.HeldActionAnimations?.blowgunReady; // Uploaded blowgun tuning now owns its endpoints independently of drinking.
-    const strike = sharedDrinkStrikePose();
+    const strike = BLOWGUN_READY_FALLBACK; // Missing authored data never inherits Drink's off-axis yaw.
     const shovelRest = window.SharedAttackPose?.STYLE_NEUTRAL_POSE?.thrust; // The one authority for the pose a shovel idles in outside the weapon slot.
     if (shovelRest) Object.assign(BLOWGUN_LOAD_POSE.neutral, { x: shovelRest.x, y: shovelRest.y, z: shovelRest.z, pitch: shovelRest.pitch, yaw: shovelRest.yaw, roll: shovelRest.roll, bodyYaw: shovelRest.bodyYaw });
     for (const phase of ['neutral', 'windup', 'strike']) {
@@ -655,7 +653,7 @@
       blowgunRawDamage: BLOWGUN_RAW_DAMAGE,
       blowgunAfflictionScale: BLOWGUN_AFFLICTION_SCALE,
       blowgunLoadSource: 'crossbow-load-copy', blowgunLoadNeutralSource: 'shovel-thrust-rest',
-      blowgunStanceSource: 'drink-strike-copy',
+      blowgunStanceSource: window.HeldActionAnimations?.blowgunReady ? 'blowgun-authored-mouth-to-reticle' : 'blowgun-head-forward-fallback',
     }),
   };
   window.__rangedArchetypeDebug = window.HobunjiRangedWeaponArchetypes;

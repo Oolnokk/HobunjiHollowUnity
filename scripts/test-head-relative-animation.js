@@ -36,6 +36,31 @@ assert.match(game, /SharedAttackPose\.placeAtMouth\(heldItemHolder, _headFrame/,
 assert.doesNotMatch(game, /headAnchor\(_headPoseAnchor/, 'no head-centroid offset path may remain in the player poses');
 assert.doesNotMatch(game, /_qRangedAimPitch\.invert\(\)/, 'camera pitch must not drive a head-anchored tool; the head does');
 
+assert.ok(game.includes('function playerBlowgunReticlePoint()'), 'blowgun reticle convergence uses a named source');
+assert.ok(game.includes('SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture, null, playerBlowgunReticlePoint())'), 'gameplay holder aims from mouth toward reticle');
+assert.ok(game.includes('SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture, null, playerBlowgunReticlePoint())'), 'render-time correction also follows reticle');
+// Both entry points must import the updated mouth-attachment scripts rather than old cached revisions.
+// Token equality is checked only for the SAME script referenced by game/editor; unrelated scripts may update independently.
+{
+  const indexHtml = fs.readFileSync('docs/index.html', 'utf8');
+  const editorHtml = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
+  const loaderJs = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
+  const tokenFor = (source, fileName) => {
+    const location = source.indexOf(fileName + '?v='); // Locates a versioned script reference without relying on DOM execution.
+    if (location < 0) return null;
+    const value = source.slice(location + fileName.length + 3).match(/^[A-Za-z0-9_-]+/);
+    return value ? value[0] : null;
+  };
+  for (const name of ['js/held-action-animations.js', 'js/combat/shared-attack-pose.js']) {
+    const gameToken = tokenFor(indexHtml, name); // Used to ensure normal gameplay gets the matching revised module.
+    const editorToken = tokenFor(editorHtml, name); // The editor must preview the same logic as the actual game.
+    assert.ok(gameToken, `game must load a versioned ${name}`);
+    assert.equal(editorToken, gameToken, `editor and game must use the same ${name} revision`);
+  }
+  assert.ok(tokenFor(indexHtml, 'game.js'), 'game entry point must cache-bust the revised blowgun placement');
+  assert.ok(tokenFor(indexHtml, 'js/combat/combat-config-loader.js'), 'combat dynamic-loader revision must be cache-busted');
+  assert.ok(tokenFor(loaderJs, 'js/combat/ranged-weapon-archetypes.js'), 'generated blowgun configuration must not load from an unversioned URL');
+}
 const composerSource = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Head attachments must follow the drawn (aimed + clamped) head, not the gameplay-time neck.
 assert.match(composerSource, /applyPlayerHeadAim\(undo, renderDebug\); applyPlayerNeckYawLimit\(renderDebug, camera\); for \(const hook of postHeadAimHooks\)/, 'composer runs post-head-aim hooks right after the head aim and neck limit');
 assert.match(composerSource, /addPostHeadAimHook,/, 'composer exports the hook registration');
@@ -56,6 +81,13 @@ class Q4 { constructor(x=0,y=0,z=0,w=1){this.x=x;this.y=y;this.z=z;this.w=w;} co
   slerp(q,t){let d=this.x*q.x+this.y*q.y+this.z*q.z+this.w*q.w;const s=d<0?-1:1;d=Math.abs(d);if(d>0.99999){return this;}const th=Math.acos(d),sn=Math.sin(th),a=Math.sin((1-t)*th)/sn,b=Math.sin(t*th)/sn*s;this.x=a*this.x+b*q.x;this.y=a*this.y+b*q.y;this.z=a*this.z+b*q.z;this.w=a*this.w+b*q.w;return this;}
   rotateTowards(q,step){const a=this.angleTo(q);if(a===0)return this;return this.slerp(q,Math.min(1,step/a));}
   set(x,y,z,w){this.x=x;this.y=y;this.z=z;this.w=w;return this;}
+  setFromUnitVectors(from, to){ // Minimal THREE.Quaternion stand-in for mouth-to-reticle barrel convergence.
+    let x, y, z, w = 1 + from.x*to.x + from.y*to.y + from.z*to.z;
+    if (w < 1e-8) { w = 0; if (Math.abs(from.x)>Math.abs(from.z)) { x=-from.y; y=from.x; z=0; } else { x=0; y=-from.z; z=from.y; } }
+    else { x=from.y*to.z-from.z*to.y; y=from.z*to.x-from.x*to.z; z=from.x*to.y-from.y*to.x; }
+    const inv=1/Math.hypot(x,y,z,w);
+    return this.set(x*inv,y*inv,z*inv,w*inv);
+  }
   setFromEuler(e){const c1=Math.cos(e.x/2),c2=Math.cos(e.y/2),c3=Math.cos(e.z/2),s1=Math.sin(e.x/2),s2=Math.sin(e.y/2),s3=Math.sin(e.z/2);this.x=s1*c2*c3+c1*s2*s3;this.y=c1*s2*c3-s1*c2*s3;this.z=c1*c2*s3-s1*s2*c3;this.w=c1*c2*c3+s1*s2*s3;return this;} }
 class Eu { constructor(){this.x=0;this.y=0;this.z=0;} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
   setFromQuaternion(q){const {x,y,z,w}=q;const m13=2*(x*z+y*w),m23=2*(y*z-x*w),m33=1-2*(x*x+y*y),m21=2*(x*y+z*w),m22=1-2*(x*x+z*z);this.x=Math.asin(-Math.max(-1,Math.min(1,m23)));if(Math.abs(m23)<0.9999999){this.y=Math.atan2(m13,m33);this.z=Math.atan2(m21,m22);}else{this.y=Math.atan2(-(2*(x*z-y*w)),1-2*(y*y+z*z));this.z=0;}return this;} }
@@ -160,6 +192,46 @@ assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled pare
   const f = attach.createHeadFrame(THREE);
   assert.equal(attach.headFrame(f, avatar), true);
   assert.ok(f.quaternion.angleTo(yawQuat(50)) < 1e-6, 'head rotation is the rotation-only product of the hierarchy');
+}
+// The loaded blowgun's mouthpiece is at its local +Z end; its firing direction is local -Z.
+// A -180° X basis flip turns that shaft toward the head's +Z gaze. Yaw must not
+// steer it away from the same head-to-reticle ray that gameplay's guide depicts.
+{
+  const heldContext = { window: {} }; // Reads the exact shipped poses to catch a future off-axis authoring regression.
+  const heldSource = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
+  const bootstrapStart = heldSource.indexOf('  // Shared direct-hand bootstrap.');
+  assert.ok(bootstrapStart > 0, 'held-action pose fixture boundary remains identifiable');
+  vm.runInNewContext(heldSource.slice(0, bootstrapStart) + '\n})();', heldContext);
+  const ready = heldContext.window.HeldActionAnimations.blowgunReady;
+  const f = attach.createHeadFrame(THREE); // Models an arbitrarily yawed/pitched visible head pointing at a perspective reticle.
+  f.position.set(2, 1.4, -3);
+  f.quaternion.setFromEuler({ x: -0.26, y: 0.77, z: 0.05 });
+  f.scale = 1.14;
+  const expected = new V3(0, 0, 1).applyQuaternion(f.quaternion); // Same local head-forward axis used by the diagnostic aim guide.
+  const mouthpiece = { x: -0.0139, y: 0, z: 0.6426 }; // Current B'shuakauitl holder-space aperture at its positive-Z end.
+  for (const phase of ['neutral', 'windup', 'strike']) {
+    const holder = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1), userData: {} };
+    attach.placeAtMouth(holder, f, ready.poses[phase], ready.poses.neutral.scale, mouthpiece);
+    const shaft = new V3(0, 0, -1).applyQuaternion(holder.quaternion); // Blowgun barrel projects away from its mouthpiece.
+    const dot = expected.x * shaft.x + expected.y * shaft.y + expected.z * shaft.z;
+    assert.ok(dot > 1 - 1e-9, `loaded blowgun ${phase} barrel points parallel to head-to-reticle aim (dot ${dot})`);
+    const placedMouthpiece = new V3(mouthpiece.x, mouthpiece.y, mouthpiece.z)
+      .multiplyScalar(holder.scale.x).applyQuaternion(holder.quaternion).add(holder.position);
+    assert.ok(Math.hypot(placedMouthpiece.x - f.position.x, placedMouthpiece.y - f.position.y, placedMouthpiece.z - f.position.z) < 1e-9,
+      `loaded blowgun ${phase} preserves the exact mouth position while aligning its barrel`);
+    // Character View can straighten the head without moving the reticle: only the gun should follow the shared reticle ray.
+    const perspectivePoint = { x: f.position.x + 8.4, y: f.position.y + 2.1, z: f.position.z + 12.5 };
+    attach.placeAtMouth(holder, f, ready.poses[phase], ready.poses.neutral.scale, mouthpiece, null, perspectivePoint);
+    const aimedShaft = new V3(0, 0, -1).applyQuaternion(holder.quaternion); // Actual barrel axis after convergence.
+    const toReticle = new V3(perspectivePoint.x - f.position.x, perspectivePoint.y - f.position.y, perspectivePoint.z - f.position.z);
+    toReticle.multiplyScalar(1/Math.hypot(toReticle.x, toReticle.y, toReticle.z));
+    assert.ok(aimedShaft.x * toReticle.x + aimedShaft.y * toReticle.y + aimedShaft.z * toReticle.z > 1 - 1e-9,
+      `loaded blowgun ${phase} points from the mouth toward the shared reticle even if the head looks elsewhere`);
+    const aimedMouthpiece = new V3(mouthpiece.x, mouthpiece.y, mouthpiece.z)
+      .multiplyScalar(holder.scale.x).applyQuaternion(holder.quaternion).add(holder.position);
+    assert.ok(Math.hypot(aimedMouthpiece.x - f.position.x, aimedMouthpiece.y - f.position.y, aimedMouthpiece.z - f.position.z) < 1e-9,
+      `loaded blowgun ${phase} keeps the mouthpiece attached during reticle correction`);
+  }
 }
 // Hand-aligned scaling pivots on the main-hand grip: the grip's position must not depend on the holder's scale.
 {

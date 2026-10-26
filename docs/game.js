@@ -23002,11 +23002,16 @@
       }
       let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
       const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
+      function playerBlowgunReticlePoint() {
+        return window.RangedWeapons?.config?.[equipmentSlots.ranged]?.rangedType === 'blowgun'
+          ? currentPlayerPerspectiveTarget()?.point || null
+          : null; // Blowgun alone converges its mouth-anchored barrel toward the shared debug/shot reticle; Drink and other head attachments still follow the head normally.
+      }
       function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
         _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
         _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
         const aperture = playerToolAperture(equipmentSlots.ranged);
-        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture, null, playerBlowgunReticlePoint());
         Object.assign(_toolAttachJob.pose, _headPlacePose);
         _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
       }
@@ -23041,7 +23046,7 @@
         if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
         _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
         if (toolActive) {
-          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture, null, playerBlowgunReticlePoint());
           cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
         }
         if (heldActive) {
