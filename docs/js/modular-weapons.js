@@ -4,7 +4,7 @@
   const SCHEMA = 'hobunji_modular_weapons.v2'; // Validated editor import format.
   const DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Directed line calibrations and pair-only corrections.
   const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Legacy calibration imported once into the new schema.
-  const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep' }); // No global shaft defaults.
+  const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
   const transforms = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation']; // Inheritable head placement fields.
   const images = new Map(); // CORS image promises reused across combinations.
   const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
@@ -26,6 +26,7 @@
       result[key] = key.startsWith('flip') ? raw?.[key] === true
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
+    if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
     return result;
@@ -71,7 +72,7 @@
       for (const head of Object.keys(converted.heads)) {
         const effective = { ...(old.defaults || {}), ...(old.overrides?.[head] || {}) }; // Global legacy defaults become *per-pair* corrections.
         const correction = {};
-        for (const field of [...transforms, 'animation']) {
+        for (const field of [...transforms, 'animation', 'layerOrder']) { // Legacy v1 exports are normally missing layerOrder; omitted fields use the new default.
           if (Object.hasOwn(effective, field)) correction[field] = effective[field];
         }
         if (typeof effective.disallow === 'boolean') correction.disallow = effective.disallow;
@@ -233,15 +234,21 @@
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
       ctx.translate(-frame.left, -frame.top);
-      if (shaft.crop) {
-        ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
-        ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore();
-      } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
-      for (const mount of renderingMounts(shaft, head)) {
-        const matrix = headTransform(mount, values, head.mount); // Reuse the exact transform whose corners expanded the canvas.
-        ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-        ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
+      function paintHaft() {
+        if (shaft.crop) {
+          ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
+          ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore(); // Crop applies only to the haft, regardless of layer ordering.
+        } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
       }
+      function paintHeads() {
+        for (const mount of renderingMounts(shaft, head)) {
+          const matrix = headTransform(mount, values, head.mount); // Each head uses the exact transform used to expand bounds.
+          ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
+          ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
+        }
+      }
+      if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
+      else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
       return canvas;
     });
     canvases.set(cacheKey, task);
