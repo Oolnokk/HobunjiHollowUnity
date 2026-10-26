@@ -476,6 +476,8 @@
     const floorSurface = floorSurfaceMap(floor, generated.mesh); // Couples logical standing height to the actual carved mesh instead of an invisible Y=0 plane.
     const surfaceMaterial = String(cavern.surfaceMaterial || ''); // Carried on the mesh so the shared interior renderer can opt only this authored locale into farm-cliff material/stretch parity.
     if (surfaceMaterial) generated.mesh.surfaceMaterial = surfaceMaterial;
+    generated.mesh.caveBiome = String(cavern.biomeId || ''); // Authored caves use their originating zone, not their generic interior map name.
+    generated.mesh.caveGrowthSeed = mapId; // Stable per-cave strand layouts across reloads.
 
     const exits = connectors.map(connector => ({
       id: connector.id,
