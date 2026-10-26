@@ -86,6 +86,9 @@ function verifyGrooming(speciesId, gender, expectedLabel, selectedId, slot = 'ha
   assert.doesNotMatch(overlay.innerHTML, /None available\./, `${speciesId}/${gender} must show usable options`);
   assert.match(overlay.innerHTML, new RegExp(expectedLabel));
   assert.match(overlay.innerHTML, new RegExp('data-ob-slot="' + slot + '"'));
+  if (selectedId) assert(overlay.innerHTML.includes('value="' + selectedId + '" selected'), 'the actual authored cosmetic ID must be selected in the visible menu');
+  if (gender === 'female') assert.doesNotMatch(overlay.innerHTML, /Grand Beard/, 'female characters have no authored Grand Beard option');
+  if (speciesId === 'rakakoan') assert.match(overlay.innerHTML, /class="ob-sel-btn ob-active" data-ob-species="rakakoan"/, 'Rakako\'an preview needs a selected real species button');
   if (forbiddenSlot) assert.doesNotMatch(overlay.innerHTML, new RegExp('data-ob-slot="' + forbiddenSlot + '"'), 'forbidden cosmetic must remain absent');
   assert.equal(api.creatorSessionInfo().cosmeticsOnly, true);
   overlay.start.click();
