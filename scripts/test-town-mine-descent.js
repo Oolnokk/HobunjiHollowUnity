@@ -200,8 +200,13 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   craftingContext.window.CraftingPanel.craftMetalBar('tinBronze', 'alloy-0');
   assert.strictEqual(craftingInventory.bar_tinBronze, 1, 'Native Copper Bar plus Tin Ore produce tin bronze');
   assert.strictEqual(craftingInventory.bar_nativeCopper || 0, 0, 'Alloying consumes the native copper bar');
+  assert.strictEqual(craftingInventory.ore_tin, 3, 'Copper alloying must consume two Tin Ore before high-tin smelting');
+  craftingContext.window.CraftingPanel.craftMetalBar('highTinBronze');
+  assert.strictEqual(craftingInventory.bar_highTinBronze || 0, 0, 'Five Tin Ore must still be required even after Town Value unlock');
+  craftingInventory.ore_tin += 2; // Restock after alloying so the independent high-tin recipe test has its full five ore.
   craftingContext.window.CraftingPanel.craftMetalBar('highTinBronze');
   assert.strictEqual(craftingInventory.bar_highTinBronze, 1, 'Five Tin Ore produce high-tin bronze');
+  assert.strictEqual(craftingInventory.ore_tin || 0, 0, 'High-tin smelting consumes exactly five Tin Ore');
   townValue = 2;
   assert(!visibleRecipeKeys().includes('highTinBronze:ore'), 'Dropping effective Town Value hides the higher tier again');
   townValue = 7;
