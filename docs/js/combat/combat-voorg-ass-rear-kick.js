@@ -5,6 +5,9 @@
   'use strict';
 
   const ATTACK_ID = 'rearKick'; // Shared by both Voorg-Ass and Herd-Mother creature definitions.
+  const LUNGE_MAX_TILES = 2.6; // Maximum forward charge before the kick executes even on a miss.
+  const LUNGE_SPEED_TILES_S = 5.5; // Lunge moves under the attack state, not the wilderness chase AI.
+  const KICK_HALF_CONE_RAD = Math.PI / 3; // Shared by the lunge stopping detector and the eventual rear hoof strike.
   const WINDUP_S = 0.32; // Holds the stationary, reversed pose long enough to telegraph the kick.
   const STRIKE_S = 0.26; // Displays the combined idle-head/run1-hindlegs sprite while the hoof connects.
   const RECOVERY_S = 0.24; // Brief stationary recovery before escape or companion movement resumes.
@@ -36,6 +39,7 @@
   function imageFor(url) {
     return new Promise((resolve, reject) => {
       const image = new Image(); // Fallback for non-genotype specimens when composeFrame cannot supply canvases.
+      image.crossOrigin = 'anonymous';
       image.decoding = 'async';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('Voorg-Ass frame missing: ' + url));
@@ -108,27 +112,37 @@
     return promise;
   }
 
-  function start(creature, state, context) {
+  function start(creature, state, context, deps) {
     const target = context?.target;
     state.target = target; // Strike is committed to the original target, even if it subsequently evades.
-    state.stage = 'windup';
+    state.stage = 'lunge'; // Selection commits immediately: no separate attack-range or AI retry gate.
     state.t = 0;
     state.struck = false;
     state.frame = null;
     state.frameApplied = false;
-    state.angleToward = target
-      ? Math.atan2(target.y - creature.y, target.x - creature.x)
-      : creature.facing || 0;
-    creature.facing = state.angleToward + Math.PI; // The head faces away while the hindquarters point toward the threat.
+    const reach = Math.max(Number(creature.def?.attackRangePx) || 0, deps.TILE * 1.18); // Same cone reach used later by strike().
+    window.Combat.animalAttacks.beginConeLunge(creature, state, context, deps, {
+      rangePx: reach,
+      halfConeRad: KICK_HALF_CONE_RAD,
+      maxDistancePx: deps.TILE * LUNGE_MAX_TILES,
+      speedPxS: deps.TILE * LUNGE_SPEED_TILES_S,
+      targets: target ? [target] : [],
+      detect: (source, victim, lunge) => {
+        const aim = window.Combat?.meleeAimSolution?.(source, victim, lunge.lungeAngle, 0);
+        return window.Combat?.meleeHit
+          ? window.Combat.meleeHit(source, victim, { rangePx: reach, halfConeRad: KICK_HALF_CONE_RAD, yaw: lunge.lungeAngle, pitch: aim?.pitch || 0 })
+          : Math.hypot(victim.x - source.x, victim.y - source.y) <= reach
+            && Math.abs(Math.atan2(Math.sin(Math.atan2(victim.y - source.y, victim.x - source.x) - lunge.lungeAngle), Math.cos(Math.atan2(victim.y - source.y, victim.x - source.x) - lunge.lungeAngle))) <= KICK_HALF_CONE_RAD;
+      },
+    });
+    state.angleToward = state.lungeAngle; // Remains locked through charge, turn, and strike.
     creature.scaleY = 1;
-    creature.vx = 0;
-    creature.vy = 0;
     if (creature.isCompanion) {
       const duration = Math.max(1000, Number(creature.def?.rearKickCooldownS || 9) * 1000);
       creature._voorgRearKickCooldownUntil = performance.now() + (Number.isFinite(duration) ? duration : DEFAULT_COOLDOWN_MS);
     }
     requestKickFrame(creature).then(url => { state.frame = url; }); // Async native-resolution image build; cancellation cannot resurrect the attack.
-    window.__farmLog?.('[voorg-kick] ' + (creature.id || 'voorg-ass') + ' rear kick windup', 'wildlife');
+    window.__farmLog?.('[voorg-kick] ' + (creature.id || 'voorg-ass') + ' rear kick lunge', 'wildlife');
   }
 
   function applyKickSprite(creature, state, deps) {
@@ -158,7 +172,7 @@
     const yaw = state.angleToward; // Hit collider aims behind the animal; the actual visible facing stays reversed.
     const aim = window.Combat?.meleeAimSolution?.(creature, target, yaw, 0);
     const hit = window.Combat?.meleeHit
-      ? window.Combat.meleeHit(creature, target, { rangePx: reach, halfConeRad: Math.PI / 3, yaw, pitch: aim?.pitch || 0 })
+      ? window.Combat.meleeHit(creature, target, { rangePx: reach, halfConeRad: KICK_HALF_CONE_RAD, yaw, pitch: aim?.pitch || 0 })
       : Math.hypot(target.x - creature.x, target.y - creature.y) <= reach;
     if (!hit) return; // Sidestepping or moving out of reach during the tell avoids the kick.
     const stagger = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger;
@@ -167,7 +181,7 @@
     const hitOptions = { tag: 'blunt', attacker: creature, footingDamageMultiplier: footingMultiplier };
     const isPlayer = target === deps.player || (deps.players || []).includes(target);
     if (isPlayer) deps.damagePlayer(DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
-    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
+    else if (creature.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
     else deps.damageCreature(target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
     deps.playCreatureClawHit?.(creature);
     window.__farmLog?.('[voorg-kick] hit ' + (target.id || 'target') + ' knockback=' + KNOCKBACK_PX_S + ' footingMultiplier=' + footingMultiplier.toFixed(1), 'combat');
@@ -175,6 +189,14 @@
 
   function update(creature, state, dt, deps) {
     state.t += Math.max(0, dt);
+    if (state.stage === 'lunge') {
+      const stopReason = window.Combat.animalAttacks.advanceConeLunge(creature, state, dt, deps); // Contact, maximum travel, or terrain all commit to the kick.
+      if (!stopReason) return true;
+      state.lungeStopReason = stopReason; // In-game diagnostics distinguish range exhaustion from target contact.
+      state.stage = 'windup';
+      state.t = 0;
+      window.__farmLog?.('[voorg-kick] ' + (creature.id || 'voorg-ass') + ' lunge stopped: ' + stopReason, 'wildlife');
+    }
     creature.facing = state.angleToward + Math.PI;
     creature.vx = 0;
     creature.vy = 0;
@@ -215,14 +237,16 @@
   }
 
   function cancel(creature) {
-    // Damage interruption must not turn a retreating wild animal into a permanently hostile pursuer.
+    creature.vx = 0;
+    creature.vy = 0;
+    // Genuine external interruption (e.g. death) still performs the existing retreat cleanup.
     if (!creature.isCompanion && isVoorgAss(creature) && creature._voorgRearKickThreat) finish(creature);
   }
 
   window.Combat?.animalAttacks?.register?.(ATTACK_ID, {
     label: 'Rear Kick', start, update, cancel,
-    isStriking: state => state?.stage === 'strike',
+    isStriking: state => state?.stage === 'lunge' || state?.stage === 'strike',
     isWindingUp: state => state?.stage === 'windup',
   });
-  window.VoorgAssRearKick = Object.freeze({ isVoorgAss, canUse, tuning: { WINDUP_S, STRIKE_S, RECOVERY_S, DAMAGE, KNOCKBACK_PX_S, DEFAULT_COOLDOWN_MS, MAX_CACHED_KICK_FRAMES, COMPOSITE_GRACE_S }, cacheSize: () => spriteCache.size }); // Mobile console-free diagnostics.
+  window.VoorgAssRearKick = Object.freeze({ isVoorgAss, canUse, tuning: { LUNGE_MAX_TILES, LUNGE_SPEED_TILES_S, WINDUP_S, STRIKE_S, RECOVERY_S, DAMAGE, KNOCKBACK_PX_S, DEFAULT_COOLDOWN_MS, MAX_CACHED_KICK_FRAMES, COMPOSITE_GRACE_S }, cacheSize: () => spriteCache.size }); // Mobile console-free diagnostics.
 })();

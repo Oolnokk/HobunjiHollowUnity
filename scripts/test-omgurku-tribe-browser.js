@@ -150,11 +150,12 @@ const server=http.createServer((req,res)=>{
     assert.notEqual(camps.chiefs[0],camps.chiefs[1],'the two chief camps are on different maps');
     const removed=await page.evaluate(()=>{
       const {omg,pora}=window.__tribeQa;
+      const before=window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount; // Camp ecology may spawn other live Omgurku since the first count.
       for(const entity of [omg,pora]){window.Combat.deps.hostileObjects.delete(entity);window.BanditCombat.discardEntity(entity);}
       delete window.__tribeQa;
-      return window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount;
+      return {before,after:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
     });
-    assert.equal(removed,spawned.live-1,'discarding the hostile releases its compound avatar');
+    assert.equal(removed.after,removed.before-1,'discarding the hostile releases its compound avatar');
     assert.deepEqual(errors.slice(baseline),[],'tribe spawning, fighting and cleanup raise no exceptions');
     console.log('Omgurku tribe browser smoke passed',JSON.stringify({fight,camps}));
   }finally{await browser.close();server.close();}

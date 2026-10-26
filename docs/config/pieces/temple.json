@@ -2940,5 +2940,20 @@
     "porchStairs": 0,
     "railings": 0,
     "generatedAt": "2026-06-20T13:42:17.000Z"
-  }
+  },
+  "surfaceGrowth": [
+    {
+      "kind": "vines",
+      "seed": "surface-1",
+      "count": 68,
+      "length": 6,
+      "radius": 0.1,
+      "offset": 0.008,
+      "curl": 0.4,
+      "color": "#406040",
+      "texture": "assets/textures/carved_smooth.png",
+      "target": "walls",
+      "targetIds": []
+    }
+  ]
 }

@@ -40,9 +40,12 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 <script src="../../js/GLTFLoader.js"></script>
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/foliage-generator.js"></script>
+<script src="../../config/natural-surface-materials.js?v=20261026h551bd56"></script>
+<script src="../../js/natural-surface-materials.js?v=20261026h551bd56"></script>
+<script src="../../js/surface-foliage-authoring.js?v=20261026hc435c14"></script>
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
-<script src="../../js/surface-stretch-uv-furniture.js?v=20261016h4fe902d"></script>
+<script src="../../js/surface-stretch-uv-furniture.js?v=20261026orequad2"></script>
 <script src="../../js/HousePieceGen.js"></script>
 </head>
 <body>
@@ -2229,7 +2232,8 @@ function deepCleanPiece(piece){ return JSON.parse(JSON.stringify(piece)); }
 function syncPieceFromInputs(){ state.piece.name=$('pieceName').value.trim()||'unnamed_piece'; state.piece.type=$('pieceType').value; state.piece.preset=$('basePreset')?.value || state.piece.preset || 'custom'; state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=finite($('groundY').value,0); state.piece.wallStyle=$('wallStyle').value||undefined; state.piece.logWall={seed:$('logWallSeed').value.trim()||'cabin-log-1',logDiameter:Math.max(.08,finite($('logWallDiameter').value,.34)),trunkWonk:Math.max(0,finite($('logWallWonk').value,.18)),courseGap:finite($('logWallGap').value,-.03)}; syncRoofFromInputs(); syncPieceFromSets(); }
 function exportPiecePayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v38', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece) }; }
 function exportPayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v38', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece), library:state.library.map(deepCleanPiece) }; }
-function refreshExport(){ $('exportText').value=JSON.stringify(exportPiecePayload(),null,2); if (typeof scheduleGamePreviewRebuild === 'function') scheduleGamePreviewRebuild(); }
+function rebuildHouseSurfaceFoliage(){return window.FoliageGenerator.applySurfaceGrowth(root,state.piece.surfaceGrowth);}
+function refreshExport(){ rebuildHouseSurfaceFoliage(); $('exportText').value=JSON.stringify(exportPiecePayload(),null,2); if (typeof scheduleGamePreviewRebuild === 'function') scheduleGamePreviewRebuild(); }
 function importPayload(payload){ if(!payload) throw new Error('Empty JSON.'); pushUndo('Import JSON'); if(payload.currentPiece) state.piece=payload.currentPiece; else if(payload.schema && payload.library?.[0]) state.piece=payload.library[0]; else if(payload.base && payload.footprint) state.piece=payload; else throw new Error('Unrecognized piece JSON.'); ensureFootprintExtensions(state.piece); state.library=Array.isArray(payload.library)?payload.library:[]; for(const p of state.library) ensureFootprintExtensions(p); loadPiece(state.piece); renderPieceList(); refreshExport(); log('Imported modular piece JSON. GLB binaries are represented as placeholders until re-imported.'); }
 function downloadJson(){ const blob=new Blob([JSON.stringify(exportPayload(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${(state.piece.name||'modular_house_piece').replace(/[^a-z0-9_-]+/gi,'_')}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -2259,6 +2263,7 @@ $('refreshExportBtn').onclick=refreshExport; $('downloadJsonBtn').onclick=downlo
 $('jsonInput').onchange=e=>{ const file=e.target.files?.[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ try{ importPayload(JSON.parse(reader.result)); }catch(err){ log(`JSON import failed: ${err.message}`, 'error'); } }; reader.readAsText(file); e.target.value=''; };
 for(const id of ['pieceName','pieceType','basePreset','baseHeight','wallThickness','groundY']) $(id).addEventListener('input',()=>{ syncPieceFromInputs(); refreshExport(); });
 
+SurfaceFoliageAuthoring.mount($('hpaLeftPanel'),{targets:[['all','House surfaces + gables']],read:()=>state.piece.surfaceGrowth,selectedIds:()=>[],write:recipes=>{pushUndo('Surface roots/vines');state.piece.surfaceGrowth=recipes;refreshExport();return rebuildHouseSurfaceFoliage();},log});
 try{ updateUndoRedoButtons(); syncSetsFromPiece(); syncRoofInputsFromPiece(); if(!state.piece.base.faces.length && !footprintSet.size) applyBasePreset('highland', false); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildRoofPreview(); renderAssetList(); renderPieceList(); refreshExport(); resize(); renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); animate(); window.__MHPA_READY__ = true; log('Ready. Default Highland architecture preset loaded. Blue footprint cells drive a tapered Highland frustum shell; same-height adjacent entry-tunnel markers now fuse into continuous multi-tile mouths, including markers authored directly in blue boundary cells; cyan tall-entry markers use 150% regular tunnel height and stay distinct from regular green runs.'); }catch(err){ log('BOOT ERROR: '+(err?.stack||err?.message||err),'error'); resize(); try{ renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); }catch(e){ log('FALLBACK RENDER ERROR: '+(e?.message||e),'error'); } }
 
 // ── Interior furniture mode ───────────────────────────────────────────────────

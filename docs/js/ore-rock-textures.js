@@ -6,13 +6,15 @@
   const states = new Map(); // Mobile-visible loading/fallback diagnostics per ore type.
   let stoneMap = null; // Natural stone fallback while masked ore textures load.
   let imagePromise = null; // Single source-image read, reused for all ore colors.
+  const surfaceStats = { mapped: 0, unmapped: 0, surfaces: 0, fallbacks: 0 }; // Mobile Pixel Probe reports whether low-poly ore faces really use the cliff-style UV solver.
 
   function baseStone(THREE) {
     if (!stoneMap) {
       stoneMap = new THREE.TextureLoader().load(SOURCE);
-      stoneMap.wrapS = stoneMap.wrapT = THREE.RepeatWrapping;
-      stoneMap.repeat.set(0.7, 0.7);
-      if (THREE.SRGBColorSpace) stoneMap.colorSpace = THREE.SRGBColorSpace;
+      stoneMap.wrapS = stoneMap.wrapT = THREE.ClampToEdgeWrapping; // One complete PNG per fitted facet: never bleed the opposite edge into the protected boundary.
+      stoneMap.repeat.set(1, 1); // The temporary stone map must show the same full PNG UV domain as the finished ore canvas.
+      if ('colorSpace' in stoneMap && THREE.SRGBColorSpace) stoneMap.colorSpace = THREE.SRGBColorSpace;
+      else if (THREE.sRGBEncoding != null) stoneMap.encoding = THREE.sRGBEncoding; // Three r128 uses encoding, not colorSpace.
     }
     return stoneMap;
   }
@@ -67,7 +69,7 @@
         + noise(u * 11.7 + 7, v * 11.7 + 9, seed ^ 0x9e3779b9) * 0.3;
       if (mask <= 0.53) continue; // Non-ore portions must stay ordinary stone, with original color and shading.
       const brightness = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / (3 * 255);
-      const shade = 0.62 + brightness * 0.66; // Keep highlights and recesses inside mineral patches.
+      const shade = 0.78 + brightness * 0.56; // Keep the source relief shading but let oxidation read clearly against dark stone.
       for (let channel = 0; channel < 3; channel++) rgba[i + channel] = Math.min(255, Math.round(tint[channel] * shade));
     }
     ctx.putImageData(pixels, 0, 0);
@@ -77,18 +79,19 @@
   function materialFor(THREE, oreKey, oreDefs) {
     const key = oreDefs?.[oreKey] ? oreKey : 'stone'; // Ordinary/unknown rocks use pure stone.
     if (materials.has(key)) return materials.get(key);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: baseStone(THREE), roughness: 0.94,
-    }); // Shared across caves, mine floors and wilderness chunks; do not dispose on single-rock removal.
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff, map: baseStone(THREE),
+    }); // Matches the authored unlit cliff/rock texture treatment, so verdigris stays visible in shaded caves.
     material.userData.sharedOreRockMaterial = true;
     materials.set(key, material);
     states.set(key, key === 'stone' ? 'stone' : 'loading');
     if (key !== 'stone') {
       sourceImage().then(image => {
         const texture = new THREE.CanvasTexture(mineralCanvas(image, oreDefs[key], key)); // Ore-specific tint only in the verdigris-shaped mask.
-        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(0.7, 0.7);
-        if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping; // Ore island UVs terminate at 0/1; repeating would create a visible seam from the opposite border.
+        texture.repeat.set(1, 1); // Each UV island samples one complete stone/mineral PNG rather than an arbitrary 70% crop.
+        if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+        else if (THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding; // Required by the game's Three r128.
         texture.needsUpdate = true;
         material.map = texture;
         material.needsUpdate = true;
@@ -101,5 +104,29 @@
     return material;
   }
 
-  window.OreRockTextures = { materialFor, debugSnapshot: () => Object.fromEntries(states) };
+  function fitRockMesh(mesh, label = 'rock') {
+    const mapper = window.HobunjiSurfaceStretchUV; // Reuses the existing cliff surface-island nine-slice solver after the rock's final displacement.
+    if (!mesh?.geometry || typeof mapper?.mapMesh !== 'function') { surfaceStats.unmapped++; return false; }
+    const previousGeometry = mesh.geometry; // Used to release the indexed mound after the mapper clones it into independently UV-seamed facets.
+    const report = mapper.mapMesh(mesh, {
+      label: 'ore-rock:' + label,
+      angleToleranceDeg: 24, // The same face split threshold as cliff surfaces, now useful on coarser rock geometry.
+      preserveQuadPairs: true, // Keep both triangles of each actual heightfield quad together so its four corners receive a full nine-slice PNG domain.
+      edgeSourceFraction: 0.32, // Preserve the black/pale edge bands of the authored stone PNG around each face.
+      edgeReferenceWorldSize: 1, // A mineable mound is about one tile wide, not a six-tile cliff wall.
+      avoidCollapsedUvs: true,
+    });
+    if (!report) { surfaceStats.unmapped++; return false; }
+    if (mesh.geometry !== previousGeometry) previousGeometry.dispose?.(); // Grass and stone use distinct Geometry objects, so disposing this old GPU object leaves the grass rim intact.
+    mesh.userData ||= {}; // The UV ownership markers below persist until the rock is mined or its chunk is disposed.
+    mesh.userData.terrainJigsawIgnore = true; // Prevent TerrainJigsawUV from replacing the protected-edge ore-rock UV solution.
+    mesh.userData.naturalSurfaceUvOwner = 'HobunjiSurfaceStretchUV'; // Pixel Probe can identify the canonical mapper as the final UV authority.
+    surfaceStats.mapped++;
+    surfaceStats.surfaces += report.patchCount || 0;
+    surfaceStats.fallbacks += report.fallbackCount || 0;
+    mesh.userData.oreRockSurfaceMapped = true; // Used by Pixel Probe to distinguish a successfully fitted rock from the fallback tiled texture.
+    return true;
+  }
+
+  window.OreRockTextures = { materialFor, fitRockMesh, debugSnapshot: () => ({ ...Object.fromEntries(states), _surfaceMapping: { ...surfaceStats } }) };
 })();

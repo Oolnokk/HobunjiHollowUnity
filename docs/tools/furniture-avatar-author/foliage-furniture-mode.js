@@ -12,12 +12,12 @@
   });
 
   (async () => {
-    await loadClassicScript('foliage-furniture-mode-core.js?v=20260907a');
+    await loadClassicScript('foliage-furniture-mode-core.js?v=20261025h2a9d51a');
     await loadClassicScript('../../js/furniture-piece-animation-runtime.js?v=20260907a');
     await loadClassicScript('../../js/tankan-script-layout.js?v=20260915tankan8');
     await loadClassicScript('furniture-decals.js?v=20261003h7cf2f60');
     await loadClassicScript('furniture-wall-ornaments.js?v=20260924fullheight3');
-    await loadClassicScript('furniture-daylight-windows.js?v=20261003hc970385');
+    await loadClassicScript('furniture-daylight-windows.js?v=20261026ha5312a8');
     await loadClassicScript('furniture-decal-catalog.js?v=20260907a');
     await loadClassicScript('furniture-piece-animations.js?v=20261004hd781699');
     await loadClassicScript('../../js/color-fill.js?v=20260923colorfill7');
@@ -26,7 +26,7 @@
     await loadClassicScript('../../js/repo-pattern-library.js?v=20261005hf072713');
     await loadClassicScript('../../js/pattern-authoring.js?v=20261003h8825bc4');
     await loadClassicScript('../../js/clothing-weaving-system.js?v=20261022h3994bc0');
-    await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261016h86b86fc');
-    await loadClassicScript('furniture-patterns.js?v=20261012hcb0e4a5');
+    await loadClassicScript('../../js/furniture-pattern-surfaces.js?v=20261026h5b39f56');
+    await loadClassicScript('furniture-patterns.js?v=20261026h0551e2a');
   })().catch(error => console.error('[Furniture Author Extensions]', error));
 })();

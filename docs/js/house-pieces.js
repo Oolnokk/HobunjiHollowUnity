@@ -6,14 +6,14 @@
   // while index.html keeps a single long-lived js/house-pieces.js include.
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
-  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261006cliffparity1') : '20261006cliffparity1'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
+  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261026orequad1') : '20261026orequad1'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
   window.HobunjiNaturalSurfaceUvLoaderVersion = naturalSurfaceUvVersion; // Used by Pixel Probe diagnostics to show which coherent natural-surface script generation actually loaded on-device.
   const naturalSurfaceScript = (file) => `${file}?v=${encodeURIComponent(naturalSurfaceUvVersion)}`; // Used only by the tightly-coupled natural-surface UV modules so stale child scripts cannot mix generations.
   const scripts = [
     ['SurfaceTint', 'surface-tint.js?v=20261007hec88e1c'],
-    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
+    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20261026h551bd56'],
     ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260915perf1'],
-    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261025westernbark1'],
+    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261026h551bd56'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
@@ -68,7 +68,7 @@
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260924perf1'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
-    ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
+    ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20261026orefaces3'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
     ['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')],

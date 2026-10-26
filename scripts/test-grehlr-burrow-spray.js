@@ -8,6 +8,7 @@ const tuning = JSON.parse(fs.readFileSync('docs/config/combat/attack-values.json
 let roll = 0.9; // Selects burrow or spray deterministically.
 let hits = 0; // Counts emergence damage through the existing dependency seam.
 let winded = 0; // Counts spray affliction through the shared resource API.
+const sprayedTargets = []; // Records actual recipients to verify cone filtering and faction ownership.
 const player = { x: 150, y: 0, health: 100, stamina: 100 }; // Target followed underground, then locked by the telegraph.
 const context = { // Supplies only browser APIs used by the loaded attack modules.
   console, Math, performance, document: { getElementById() { return null; } }, addEventListener() {},
@@ -15,7 +16,7 @@ const context = { // Supplies only browser APIs used by the loaded attack module
   ResourceSystem: {
     spendStamina(c, cost) { c.stamina = Math.max(0, c.stamina - cost); },
     AFFLICTIONS: { windedStamina: {} },
-    addAffliction(c, id, amount) { assert.equal(id, 'windedStamina'); winded += amount; return amount; },
+    addAffliction(c, id, amount) { assert.equal(id, 'windedStamina'); sprayedTargets.push(c); winded += amount; return amount; },
   },
   Combat: { init() {}, deps: {
     TILE: 100, player, players: [player], hostileObjects: [], companionObjects: [],
@@ -42,6 +43,11 @@ function creature(key = 'grehlr') {
     groundShadow: { visible: true }, _ringHud: { visible: true },
     def: { chaseSpeed: 205, modelWidth: 2.2, attackDamage: 14, maxStamina: 100 },
   };
+}
+
+function advancePastLunge(c) {
+  for (let tick = 0; tick < 100 && c._animalAttack?.state?.stage === 'lunge'; tick++) attacks.update(c, 0.016);
+  assert.notEqual(c._animalAttack?.state?.stage, 'lunge', 'a selected lunge always completes');
 }
 
 for (const key of ['grehlr', 'grehlr-den-mother']) {
@@ -99,6 +105,9 @@ for (const key of ['grehlr', 'grehlr-den-mother']) {
   const c = creature(key); // Checks actual spray selection, stage progression, and status application.
   attacks.start(c, 'grehlrBurrow', { target: player });
   assert.equal(c._animalAttack.id, 'grehlrStink');
+  assert.equal(c._animalAttack.state.stage, 'lunge', 'selection starts charging without waiting for another AI decision');
+  advancePastLunge(c);
+  assert.equal(c._animalAttack.state.lungeStopReason, 'target');
   attacks.update(c, tuning.grehlrStink.FLIP_S);
   attacks.update(c, tuning.grehlrStink.SPRAY_S);
   assert.equal(c._animalAttack.state.hitCount, 1);
@@ -106,9 +115,29 @@ for (const key of ['grehlr', 'grehlr-den-mother']) {
   assert.equal(attacks.update(c, tuning.grehlrStink.RECOVER_S), false);
 }
 
+// Each stop condition hands off to flip and spray without AI reevaluation.
+for (const stop of ['target', 'range', 'blocked', 'evaded']) {
+  const c = creature();
+  player.x = stop === 'target' ? 430 : 900;
+  if (stop === 'blocked') context.Combat.deps.canOccupyAt = () => false;
+  attacks.start(c, 'grehlrStink', { target: player });
+  assert.equal(c._animalAttack.state.stage, 'lunge');
+  if (stop === 'evaded') player.x = -900;
+  advancePastLunge(c);
+  assert.equal(c._animalAttack.state.stage, 'flip', stop + ': turn executes after lunge');
+  assert.equal(c._animalAttack.state.lungeStopReason, stop === 'evaded' ? 'range' : stop);
+  if (stop === 'target') assert(c.x > 0, 'distant target causes a visible charge');
+  attacks.update(c, tuning.grehlrStink.FLIP_S);
+  attacks.update(c, 0.016);
+  assert.equal(c._animalAttack.state.sprayResolved, true, stop + ': spray executes');
+  attacks.cancel(c);
+  context.Combat.deps.canOccupyAt = () => true;
+}
+player.x = 200;
+
 const range = context.HobunjiGrehlrStink.attackTriggerRangePx; // Verifies species-specific eligibility and unchanged shorter/other-species ranges.
-assert.equal(range(creature(), 440, 100), 225);
-assert.equal(range(creature('grehlr-den-mother'), 620, 100), 225);
+assert.equal(range(creature(), 440, 100), 440);
+assert.equal(range(creature('grehlr-den-mother'), 620, 100), 450);
 assert.equal(range(creature(), 90, 100), 90);
 assert.equal(range(creature('gar-wolf'), 440, 100), 440);
 assert.equal(range({ ...creature(), isCompanion: true }, 90, 100), 90);
@@ -127,10 +156,82 @@ Object.assign(context, {
 });
 context.c.attackCooldownT = 0;
 context.updateCreatureBehaviorStage = (c, dt, target, def, attempt) => {
-  assert.equal(attempt(440), false, 'AI approaches instead of always burrowing from beyond spray selection range');
-  return attempt(200);
+  assert.equal(attempt(500), false, 'AI approaches beyond the charge trigger range');
+  return attempt(400);
 };
 vm.runInContext(`{ ${game.slice(start, end)} }`, context);
 assert.equal(context.c._animalAttack.id, 'grehlrStink', 'live hostile AI can choose spray');
 assert.equal(context.c.stamina, 87);
+
+function sprayRecipients(c, target) {
+  sprayedTargets.length = 0;
+  attacks.start(c, 'grehlrStink', { target });
+  advancePastLunge(c);
+  attacks.update(c, tuning.grehlrStink.FLIP_S);
+  attacks.update(c, 0.016);
+  attacks.update(c, 0.016);
+  const result = [...sprayedTargets]; // Capture before cancel also verifies the spray cannot apply twice per attack.
+  attacks.cancel(c);
+  return result;
+}
+const victim = { x: 200, y: 0, areaId: 'outside', health: 100 }; // Inside both selection and spray ranges.
+const passive = { ...victim, def: { hostile: false } }; // Passive wildlife shares hostileObjects without being an opposing enemy.
+const shoulder = { ...victim, stableRole: 'shoulderPet' }; // Riding pets are represented by their owner's body.
+const banditPet = { ...victim, isCompanion: true, banditCompanion: true }; // Allied to enemy Grehlrs, opposed to player Grehlrs.
+const alliedPet = { ...victim, isCompanion: true }; // Ground companion on the player's side.
+const rejected = [
+  { ...victim, x: 300 }, { ...victim, y: 200 }, { ...victim, x: -100 },
+  { ...victim, health: 0 }, { ...victim, areaId: 'elsewhere' },
+  { ...victim, _grehlrBurrowProtected: true }, { ...victim, _downed: true },
+]; // Range, cone, death, area, underground and downed exclusions.
+context.Combat.deps.hostileObjects = [victim, passive, banditPet, ...rejected];
+context.Combat.deps.companionObjects = [alliedPet, shoulder, banditPet, ...rejected];
+assert.deepEqual(sprayRecipients({ ...creature(), isCompanion: true }, victim), [victim, banditPet], 'player spray hits opposing actors only, once');
+assert.deepEqual(sprayRecipients(creature(), player), [player, alliedPet], 'wild spray catches players and ground companions');
+assert.deepEqual(sprayRecipients({ ...creature(), isCompanion: true, banditCompanion: true }, player), [player, alliedPet], 'bandit spray attacks the player faction and spares its own faction');
+
+context.CreatureGenetics = { creatureSizeClass: () => 'medium' };
+const medium = { ...creature(), isCompanion: true }; // Species attacks keep their medium-companion selection rule.
+attacks.start(medium, 'pounce', { target: victim });
+assert.equal(medium._animalAttack.id, 'grehlrStink');
+attacks.cancel(medium);
+context.CreatureGenetics.creatureSizeClass = () => 'large';
+const large = { ...creature(), isCompanion: true }; // Large companions must retain burrow rather than selecting medium-only spray.
+attacks.start(large, 'grehlrBurrow', { target: victim });
+assert.equal(large._animalAttack.id, 'grehlrBurrow');
+attacks.cancel(large);
+
+const particleScene = { children: [], add(mesh) { mesh.parent = this; this.children.push(mesh); }, remove(mesh) {
+  this.children = this.children.filter(child => child !== mesh); mesh.parent = null;
+} }; // Exercises particle ownership and retirement without allocating WebGL resources.
+context.THREE = {
+  TetrahedronGeometry: class {},
+  MeshBasicMaterial: class { constructor(options) { Object.assign(this, options); } },
+  Mesh: class {
+    constructor(geometry, material) {
+      this.material = material; // Inspect the real module's particle tint.
+      this.position = { set(x, y, z) { Object.assign(this, { x, y, z }); } }; // Supports spawn and integration coordinates.
+      this.rotation = { set(x, y, z) { Object.assign(this, { x, y, z }); } }; // Supports cosmetic rotation integration.
+      this.scale = { setScalar() {}, multiplyScalar() {} }; // Scale does not affect emitter direction or lifetime.
+    }
+  },
+};
+for (const interrupted of [false, true]) {
+  const emitter = creature(); // A real spray state owns every droplet until finish or cancellation.
+  emitter.avatarRef.group.parent = particleScene;
+  emitter.avatarRef.group.position = { y: 3 };
+  attacks.start(emitter, 'grehlrStink', { target: player });
+  advancePastLunge(emitter);
+  attacks.update(emitter, tuning.grehlrStink.FLIP_S);
+  attacks.update(emitter, 0.08);
+  assert.ok(particleScene.children.length > 0, 'spray emits particles');
+  assert.ok(particleScene.children.every(mesh => mesh.position.x === tuning.grehlrStink.REAR_OFFSET_TILES), 'particles leave the rear toward the target');
+  assert.ok(particleScene.children.every(mesh => mesh.position.y > 3 && mesh.material.color === context.HobunjiGrehlrStink.STINK_OIL_COLOR), 'spray uses the creature height and stink-oil tint');
+  if (interrupted) attacks.cancel(emitter);
+  else {
+    for (let tick = 0; tick < 100 && attacks.isBusy(emitter); tick++) attacks.update(emitter, 0.016);
+    assert.equal(attacks.isBusy(emitter), false, 'spray finishes after recovery and last droplet');
+  }
+  assert.equal(particleScene.children.length, 0, 'no orphan particles after ' + (interrupted ? 'interruption' : 'completion'));
+}
 console.log('Grehlr dive, hidden travel, emergence, cancellation, spray and live AI selection passed.');

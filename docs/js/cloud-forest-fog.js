@@ -720,6 +720,7 @@
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
       if (!(shineR > 0) || !(strength > 0)) continue;
       drawWindowRevealCircle(ctx, center, shineR, strength, 0.35, true); // Daylight pool spreading into the room.
+      runtime.drawProjectedLight?.(ctx,source,lightingDeps.worldToOverlay,strength); // Stained panes cast their exact motif/palette through the existing daylight pass.
       windowMaskStats.drawn += 1;
     }
     ctx.globalCompositeOperation = 'source-over';

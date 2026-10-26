@@ -57,16 +57,16 @@ function geometrySnapshot(col, row) {
   assert.ok(result.grassGeo instanceof FakeBufferGeometry, 'split result contains grassGeo');
   assert.ok(result.stoneGeo.normalsComputed && result.grassGeo.normalsComputed, 'both split geometries request vertex normals');
 
-  const stonePos = result.stoneGeo.getAttribute('position'); // Shared 7x7 mound vertex field.
+  const stonePos = result.stoneGeo.getAttribute('position'); // Shared 6x6 low-poly mound vertex field.
   const grassPos = result.grassGeo.getAttribute('position'); // Same vertex field viewed through the grass subset.
   const stoneUv = result.stoneGeo.getAttribute('uv'); // World-space UVs used by the natural-surface rock mapper.
-  assert.equal(stonePos.count, 49, 'rock mound retains the 7x7 vertex field');
-  assert.equal(grassPos.count, 49, 'grass rim shares the complete 7x7 vertex field');
-  assert.equal(stoneUv.count, 49, 'rock mound retains one UV per vertex');
+  assert.equal(stonePos.count, 36, 'low-poly rock mound has a 6x6 vertex field (31% fewer faces)');
+  assert.equal(grassPos.count, 36, 'grass rim shares the complete 6x6 vertex field');
+  assert.equal(stoneUv.count, 36, 'rock mound retains one UV per vertex');
   assert.ok(result.stoneGeo.index.count > 0, 'rock mound has visible stone triangles');
   assert.ok(result.grassGeo.index.count > 0, 'rock mound has a visible grass blending rim');
-  assert.equal(result.stoneGeo.index.count + result.grassGeo.index.count, 6 * 6 * 6,
-    'stone and grass subsets partition every triangle in the 6x6 cell mound exactly once');
+  assert.equal(result.stoneGeo.index.count + result.grassGeo.index.count, 5 * 5 * 6,
+    'stone and grass subsets partition every triangle in the 5x5 cell mound exactly once');
 
   const maxY = Math.max(...Array.from(stonePos.array).filter((_value, index) => index % 3 === 1)); // Confirms the extraction's flat ROCK_H sheet is gone.
   assert.equal(result.heightTiles, maxY, 'projectile cover height equals the generated mound top');
@@ -86,7 +86,8 @@ function geometrySnapshot(col, row) {
   };
 }
 
-for (const [col, row] of [[0, 0], [4, 7], [19, 31]]) {
+const sampledCoordinates = Array.from({ length: 128 }, (_, i) => [i * 17 % 59, i * 31 % 61]); // Broad deterministic map sampling catches rare mounds that accidentally swallow their grass rim.
+for (const [col, row] of sampledCoordinates) {
   const first = geometrySnapshot(col, row); // First build used as deterministic baseline.
   const second = geometrySnapshot(col, row); // Same coordinates must reproduce exactly the same mound.
   assert.deepEqual(second, first, `rock geometry at ${col},${row} is deterministic`);
@@ -104,5 +105,6 @@ assert.match(gameSource, /const \{ stoneGeo \} = window\.TerrainGeometry\.buildR
   'cavern ore rendering consumes the repaired split API');
 assert.match(farmSource, /const \{ stoneGeo, grassGeo \} = window\.TerrainGeometry\.buildRockTileGeo\(col, row\)/,
   'farm ROCK rendering consumes the repaired split API');
+assert.match(farmSource, /OreRockTextures\?\.fitRockMesh/, 'farm stone faces also use the cliff-style mapper');
 
 console.log('rock tile geometry contract checks passed.');

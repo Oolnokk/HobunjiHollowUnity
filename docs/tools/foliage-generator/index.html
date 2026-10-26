@@ -13,7 +13,11 @@
   <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
   <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
   <script src="js/deadzone-billboard.js?v=20260903-rootcfg1"></script>
-  <script src="js/foliage-generator.js?v=20261024he625287"></script>
+  <script src="js/foliage-generator.js?v=20261026hce2138e"></script>
+<script src="config/natural-surface-materials.js?v=20261026h551bd56"></script>
+<script src="js/natural-surface-materials.js?v=20261026h551bd56"></script>
+  <script src="js/GLTFLoader.js"></script>
+  <script src="js/surface-foliage-authoring.js?v=20261026hc435c14"></script>
   <script src="js/structural-wrap.js?v=20260903-rootcfg1"></script>
   <script src="js/root-totem-plants.js?v=20260903-rootcfg1"></script>
   <style>
@@ -31,15 +35,16 @@
 <div id="app">
   <aside id="sidebar">
     <h1>🌿 Foliage Generator</h1><div class="subtitle">Runtime-backed foliage authoring + generic structural wrap lab</div><div id="errorBox" role="alert"></div>
-    <section class="card"><h2>Preview</h2><div class="row"><label for="plantType">Plant type</label><select id="plantType"><option value="rootTotem">Root Totem</option><option value="crownedPine">Crowned Pine</option><option value="shadewood">Shadewood</option><option value="bush">Bush</option><option value="stump">Stump</option></select></div><div class="row"><label for="seed">Seed</label><input id="seed" type="number" step="1"></div><div class="actions"><button id="randomizeSeed">🎲 Randomize</button><button id="rebuild">↻ Rebuild</button></div></section>
+    <section class="card"><h2>Preview</h2><div class="row"><label for="plantType">Plant type</label><select id="plantType"><option value="surfaceBox">Surface test block</option><option value="externalSurface">Imported GLB surface</option><option value="rootTotem">Root Totem</option><option value="crownedPine">Crowned Pine</option><option value="shadewood">Shadewood</option><option value="bush">Bush</option><option value="stump">Stump</option></select></div><div class="row"><label for="seed">Seed</label><input id="seed" type="number" step="1"></div><div class="actions"><button id="randomizeSeed">🎲 Randomize</button><button id="rebuild">↻ Rebuild</button></div></section>
     <section class="card" id="rootTotemControls"><h2>Root Totem <span class="pill">shared runtime config</span></h2><div class="row"><label for="sourceTree">Source tree</label><select id="sourceTree"><option value="crownedPine">Crowned Pine</option><option value="shadewood">Shadewood</option></select></div><div class="row"><label for="treeCount">Tree count</label><input id="treeCount" type="number"></div>
       <div class="slider-row"><div class="slider-head"><label for="height">Height</label><output id="heightOut"></output></div><input id="height" type="range"></div><div class="slider-row"><div class="slider-head"><label for="turns">Wrap turns</label><output id="turnsOut"></output></div><input id="turns" type="range"></div><div class="slider-row"><div class="slider-head"><label for="radiusStart">Base clearance</label><output id="radiusStartOut"></output></div><input id="radiusStart" type="range"></div><div class="slider-row"><div class="slider-head"><label for="radiusEnd">Top clearance</label><output id="radiusEndOut"></output></div><input id="radiusEnd" type="range"></div><div class="slider-row"><div class="slider-head"><label for="crossStart">Wrapped-tree width at base</label><output id="crossStartOut"></output></div><input id="crossStart" type="range"></div><div class="slider-row"><div class="slider-head"><label for="crossEnd">Wrapped-tree width at top</label><output id="crossEndOut"></output></div><input id="crossEnd" type="range"></div><div class="slider-row"><div class="slider-head"><label for="hostSway">Combined-trunk smoothing</label><output id="hostSwayOut"></output></div><input id="hostSway" type="range"></div><div id="rootTotemConfigNote" class="advanced-note"></div>
     </section>
+    <section class="card"><h2>External surfaces</h2><label>Import GLB <input id="surfaceGlb" type="file" accept=".glb"></label><p class="help">Self-contained GLB meshes can host roots and vines. Exported JSON includes the source geometry and growth layers.</p></section><div id="surfaceGrowthControls"></div>
     <section class="card"><h2>Authoring</h2><div class="actions"><button id="copyJson">📋 Copy JSON</button><button id="downloadJson">⬇ JSON</button></div><div class="help" style="margin-top:7px">Runtime Root Totem defaults, limits, lighting, bottle/rope settings, and canonical recipe come from <code>config/root-totem-config.js</code>.</div></section>
     <section class="card"><h2>Visible diagnostics</h2><pre id="diagnostics">Initializing…</pre></section>
   </aside>
   <main id="viewportWrap"><div id="viewport"></div><div id="status">Initializing foliage runtime…</div></main>
 </div>
-<script src="tools/foliage-generator/tool.js?v=20260903-rootcfg1"></script>
+<script src="tools/foliage-generator/tool.js?v=20261025h92d009a"></script>
 </body>
 </html>

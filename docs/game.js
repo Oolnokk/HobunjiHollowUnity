@@ -1809,9 +1809,9 @@
         pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
       };
       const ORE_DEFS = {
-        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
-        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: null, oxidationAmount: 0 },
-        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: null, oxidationAmount: 0 },
+        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: METAL_DEFS.nativeCopper.verdigrisHex, oxidationAmount: 0.58 },
+        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: METAL_DEFS.lowTinBronze.verdigrisHex, oxidationAmount: 0 }, // Surface deposit takes the matching alloy's verdigris rather than this raw ore icon hue.
+        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: METAL_DEFS.tinBronze.verdigrisHex, oxidationAmount: 0 }, // Mineral surface reads as the corresponding tin-bronze oxidation color.
         tin:     { label: 'Tin Ore',     hex: '#513C32', verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
         arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
         lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
@@ -6730,6 +6730,14 @@
               // scale, and sprite frame for its full duration.
               window.Combat.animalAttacks.update(c, entityDt);
               aimAngle = c.facing;
+            } else if (c._voorgRearKickThreat && window.VoorgAssRearKick?.isVoorgAss?.(c)
+              && (targetPlayer.health <= 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c))) {
+              c._voorgRearKickSpent = true; // Match creature-target retaliation: an unavailable kick ends the defense instead of chasing forever.
+              c._voorgRearKickThreat = null;
+              c.targetPlayer = null;
+              c.targetCreature = null;
+              c.state = 'fleeing-low-health';
+              c.vx = 0; c.vy = 0;
             } else if (def.behaviorStages) {
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
@@ -10502,6 +10510,7 @@
                 geometry.computeVertexNormals();
                 const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Ore-colored islands embedded in stone for streamed wilderness rocks.
                 const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
+                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Stretch each mineral face after terrain displacement, before chunking.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -13842,6 +13851,7 @@
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.userData.surfaceFoliageRole = "floors";
               fl.position.set(c + 0.5, -0.05, r + 0.5);
               if (farmNaturalColors) fl.userData.farmMaterialRole = 'wood';
               bScene.add(fl);
@@ -13962,7 +13972,7 @@
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
             const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
-            const floorSurfaceY = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId); // Used to ground this furniture on the authored floor surface even when its footprint tile is also collision-solid.
+            const floorSurfaceY = InteriorSceneBuilder.furnitureFloorElevation(f, tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId)); // Wall-attached windows keep the editor/opening Y even when their anchor tile is outside the floor.
             const authoredPostY = Number(f.postY) || 0; // Used to preserve intentional editor-authored stacking/lift above the floor.
             const by = floorSurfaceY + authoredPostY; // Final furniture root Y shared by the visual, light, and mobile grounding diagnostics below.
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
@@ -14007,6 +14017,7 @@
             }
             window.FurnitureTableSystem?.registerPlacement(mapId, { ...f, key:furnitureKey }, renderedFurniture, def); // Interior records use the same explicit chair-to-table ids as exterior and locale furniture.
             if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
+            renderedFurniture.userData.surfaceFoliageId = f.id; // Captured per-instance growth targets from the interior editor.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
@@ -14060,6 +14071,7 @@
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(seatFurnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
+          window.FoliageGenerator?.applySurfaceGrowth(bScene, mapData.surfaceGrowth); // Includes completed walls, generated gables, ceiling and selected furniture.
           // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
           await window.InteriorDoorTiles?.build({
             THREE, scene: bScene, mapId, floorSet,
@@ -14198,6 +14210,7 @@
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
               const baseMesh = new THREE.Mesh(stoneGeo, mineRockMaterialFor(rock.oreKey || rock.oreKind)); // Same ore-bearing stone texture as wilderness caverns.
+              window.OreRockTextures.fitRockMesh(baseMesh, `town-mine:${rock.col},${rock.row}`); // Full authored PNG per detected mineral-bearing rock face.
               baseMesh.castShadow = baseMesh.receiveShadow = true;
               rockGroup.add(baseMesh);
               rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);

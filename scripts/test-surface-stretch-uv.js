@@ -252,3 +252,69 @@ const firstSlice = canvasSlices[0]; // Native-scale source/destination borders m
 if (Math.abs(firstSlice[3] - 256 * .32) > 1e-8 || Math.abs(firstSlice[7] - 128 * .32) > 1e-8 || Math.abs(firstSlice[8] - 128 * .32) > 1e-8) throw new Error('2D mapper failed to preserve border scale');
 if (mapper.drawCanvasSurface(drawContext, {}, 360, 1800)) throw new Error('Invalid image must reject safely');
 console.log('2D letter surface shares the cliff protected-border mapping');
+
+  
+// Exercise the real low-poly rock geometry against the real nine-slice surface solver.
+// Earlier mocked-mapper tests missed widespread triangular fallbacks and collapsed UVs.
+Geometry.prototype.setIndex = function (attribute) { this.index = attribute; return this; }; // Used only by the appended production rock geometry test.
+Geometry.prototype.computeVertexNormals = function () {}; // Existing UV tests need positions, not lighting attributes.
+Geometry.prototype.toNonIndexed = function () {
+  if (!this.index) return this.clone();
+  const expanded = new Geometry([]); // Expands the source rock's indexed quad triangles while keeping their original pair order.
+  for (const [name, attribute] of Object.entries(this.attributes)) {
+    const data = new Float32Array(this.index.count * attribute.itemSize); // Carries both position and UV attributes to the real mapper.
+    for (let i = 0; i < this.index.count; i++) {
+      const originalIndex = this.index.getX(i);
+      for (let k = 0; k < attribute.itemSize; k++) data[i * attribute.itemSize + k] = attribute.array[originalIndex * attribute.itemSize + k];
+    }
+    expanded.setAttribute(name, new BufferAttribute(data, attribute.itemSize));
+  }
+  return expanded;
+};
+windowMock.THREE.BufferGeometry = Geometry; // Used by TerrainGeometry to create production low-poly mound BufferGeometry.
+windowMock.THREE.Float32BufferAttribute = BufferAttribute; // Used by TerrainGeometry to populate the shared stone/grass vertex field.
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'terrain-geometry.js'), 'utf8'), {
+  window: windowMock, THREE: windowMock.THREE, Float32Array, Uint16Array, Map, Set, Math, console,
+});
+let mappedRockFaces = 0; // Total final nine-slice islands across sample positions.
+let unpairedFallbacks = 0; // Proves these sampled rocks would fail without the source-quad recovery.
+for (let i = 0; i < 128; i++) {
+  const col = i * 17 % 59, row = i * 31 % 71; // Samples diverse deterministic mound silhouettes and changes in triangulation.
+  const { stoneGeo } = windowMock.TerrainGeometry.buildRockTileGeo(col, row);
+  const settings = { angleToleranceDeg: 24, edgeSourceFraction: .32, edgeReferenceWorldSize: 1, avoidCollapsedUvs: true }; // Same settings as OreRockTextures.fitRockMesh.
+  const unpaired = mapper.mapGeometry(stoneGeo, settings);
+  unpairedFallbacks += unpaired.userData.hobunjiSurfaceStretch.fallbackCount;
+  const mapped = mapper.mapGeometry(stoneGeo, { ...settings, preserveQuadPairs: true });
+  const report = mapped.userData.hobunjiSurfaceStretch;
+  if (report.fallbackCount !== 0 || report.patchCount < 2) throw new Error('Rock ' + col + ',' + row + ' did not get independent intact surface charts: ' + JSON.stringify(report));
+  mappedRockFaces += report.patchCount;
+  const uv = mapped.getAttribute('uv'); // Verifies no real stone triangle collapses to a line after fitting.
+  for (let corner = 0; corner < uv.count; corner++) {
+    const u = uv.getX(corner), v = uv.getY(corner); // Every independent rock facet must stay inside exactly one full authored PNG.
+    if (!Number.isFinite(u) || !Number.isFinite(v) || u < -1e-6 || u > 1 + 1e-6 || v < -1e-6 || v > 1 + 1e-6) {
+      throw new Error('Rock ' + col + ',' + row + ' has out-of-range nine-slice UV (' + u + ',' + v + ') at ' + corner);
+    }
+  }
+  for (let quad = 0; quad < uv.count; quad += 6) {
+    // The first and second triangles of every original heightfield cell share the two corners of their diagonal.
+    // These seams must be continuous even when the 24° face recognizer splits adjacent *cells* into distinct islands.
+    for (const [a, b] of [[quad, quad + 3], [quad + 2, quad + 4]]) {
+      if (Math.abs(uv.getX(a) - uv.getX(b)) > 1e-5 || Math.abs(uv.getY(a) - uv.getY(b)) > 1e-5) {
+        throw new Error('Rock ' + col + ',' + row + ' has an internal diagonal texture seam on quad ' + quad / 6);
+      }
+    }
+    const signedArea = (j) => (uv.getX(j + 1) - uv.getX(j)) * (uv.getY(j + 2) - uv.getY(j))
+      - (uv.getY(j + 1) - uv.getY(j)) * (uv.getX(j + 2) - uv.getX(j)); // Detects mirrored half-quad UVs ignored by absolute-area checks.
+    if (signedArea(quad) * signedArea(quad + 3) <= 0) {
+      throw new Error('Rock ' + col + ',' + row + ' has a flipped UV triangle within quad ' + quad / 6);
+    }
+  }
+
+  for (let j = 0; j < uv.count; j += 3) {
+    const a = [uv.getX(j), uv.getY(j)], b = [uv.getX(j + 1), uv.getY(j + 1)], c = [uv.getX(j + 2), uv.getY(j + 2)];
+    const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+    if (area <= 1e-10) throw new Error('Rock ' + col + ',' + row + ' contains a collapsed mineral triangle at ' + j / 3);
+  }
+}
+if (unpairedFallbacks < 128) throw new Error('The real-rock regression fixture no longer exercises the fallback bug');
+console.log('Production ore-rock nine-slice: 128 rocks, ' + mappedRockFaces + ' mapped facets, zero fallbacks or collapsed triangles.');

@@ -69,7 +69,69 @@
     c.scaleY = 1;
   }
 
-  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, isWindingUp, cancel };
+  // A selected named attack owns this forward charge until its own cone sees a
+  // target, its travel budget expires, or terrain stops it. No AI re-selection.
+  function beginConeLunge(c, state, context, deps, options) {
+    const target = context?.target; // Original decision target supplies the committed bearing.
+    state.lungeAngle = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.atan2(target.y - c.y, target.x - c.x) : (Number(c.facing) || 0);
+    state.lungeTargets = options.targets || (target ? [target] : []); // Eligible actors sampled against the moving cone.
+    state.lungeRangePx = Math.max(0, Number(options.rangePx) || 0); // Cone reach used only for stopping the charge.
+    state.lungeHalfConeRad = Math.max(0, Number(options.halfConeRad) || 0); // Cone width shared with the eventual special.
+    state.lungeMaxDistancePx = Math.max(0, Number(options.maxDistancePx) || 0); // Finite movement budget after commitment.
+    state.lungeSpeedPxS = Math.max(1, Number(options.speedPxS) || 1); // Movement rate independent of the normal chase AI.
+    state.lungeCollideRadiusPx = Math.max(0, Number(options.collideRadiusPx) || (deps.TILE || 32) * 0.32);
+    state.lungeTraveledPx = 0; // Integrates the actual traversed distance, not target distance.
+    state.lungeDetect = options.detect || null; // Optional 3D-specific collision test supplied by the named attack.
+    c.facing = state.lungeAngle;
+    c.vx = 0;
+    c.vy = 0;
+  }
+
+  function coneLungeContact(c, state, deps) {
+    for (const target of state.lungeTargets) {
+      if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)
+          || target._downed || (Number.isFinite(target.health) && target.health <= 0)
+          || (target.areaId != null && c.areaId != null && target.areaId !== c.areaId)) continue;
+      if (state.lungeDetect) {
+        if (state.lungeDetect(c, target, state, deps)) return target;
+      } else if (deps.inCone?.(c.x, c.y, state.lungeAngle, target.x, target.y, state.lungeRangePx, state.lungeHalfConeRad)) {
+        return target;
+      } else if (!deps.inCone) {
+        const dx = target.x - c.x, dy = target.y - c.y; // Fallback for lightweight tests without engine collision helpers.
+        const delta = Math.atan2(Math.sin(Math.atan2(dy, dx) - state.lungeAngle), Math.cos(Math.atan2(dy, dx) - state.lungeAngle));
+        if (Math.hypot(dx, dy) <= state.lungeRangePx && Math.abs(delta) <= state.lungeHalfConeRad) return target;
+      }
+    }
+    return null;
+  }
+
+  function advanceConeLunge(c, state, dt, deps) {
+    const initialContact = coneLungeContact(c, state, deps); // Detect a target already within the actual attack cone.
+    if (initialContact) { state.lungeContact = initialContact; return 'target'; }
+    let remaining = Math.min(Math.max(0, Number(dt) || 0), 0.2) * state.lungeSpeedPxS;
+    remaining = Math.min(remaining, Math.max(0, state.lungeMaxDistancePx - state.lungeTraveledPx));
+    const maxStep = Math.max(1, (deps.TILE || 32) * 0.2); // Substeps prevent skipping thin targets or running through walls on slow frames.
+    while (remaining > 0.0001) {
+      const step = Math.min(remaining, maxStep);
+      const nx = c.x + Math.cos(state.lungeAngle) * step;
+      const ny = c.y + Math.sin(state.lungeAngle) * step;
+      if (deps.canOccupyAt && !deps.canOccupyAt(nx, ny, state.lungeCollideRadiusPx)) return 'blocked';
+      c.x = nx;
+      c.y = ny;
+      state.lungeTraveledPx += step;
+      remaining -= step;
+      deps.tickCreatureFootsteps?.(c, step);
+      const contact = coneLungeContact(c, state, deps);
+      if (contact) { state.lungeContact = contact; return 'target'; }
+    }
+    return state.lungeTraveledPx + 0.0001 >= state.lungeMaxDistancePx ? 'range' : null;
+  }
+
+  window.Combat.animalAttacks = {
+    register, start, update, isBusy, isStriking, isWindingUp, cancel,
+    beginConeLunge, advanceConeLunge,
+  };
 
   // ── Pounce ──────────────────────────────────────────────────────────
   //
