@@ -111,11 +111,19 @@
     if (data) for (let i = 3; i < data.length; i += 4) if (data[i]) count++;
     return count;
   }
+  function minAlpha() {
+    const input = byId('cut-min-alpha'); // One threshold shared by outline generation, cleanup and export.
+    const value = Number(input.value);
+    if (!Number.isInteger(value) || value < 0 || value > 255 || input.value.trim() === '')
+      throw new Error('Enter a whole-number minimum alpha between 0 and 255.');
+    return value;
+  }
   function diagnostics() {
     byId('cut-debug').textContent = JSON.stringify({
       source, sourceSize, workingFrame: FRAME, selectedPoints: path.length,
       remainingOpaquePixels: opaqueCount(pixels), undoDepth: history.length,
       outlineThickness: Number(byId('cut-outline-thickness').value), // Last requested black-border radius.
+      alphaThreshold: Number(byId('cut-min-alpha').value), // Same cutoff for outline and exported PNG.
       uploadedPart: byId('cut-uploaded').value, uploadedPartCount: byId('cut-uploaded').querySelectorAll('option').length, // Mobile diagnostics for current repo-asset browsing.
       output: byId('cut-output').textContent
     }, null, 2);
@@ -235,14 +243,26 @@
     status((mode === 'isolate' ? 'Kept lasso area.' : 'Removed lasso area.') +
       ' Deleted ' + outcome.affected + ' visible pixels; ' + outcome.remaining + ' remain.');
   }
+  byId('cut-cull-alpha').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite and finish drawing before culling.'); return; }
+    try {
+      const result = global.ModularWeaponOutline.cullLowAlphaPixels(pixels, minAlpha()); // Same sanitizer as outline and export.
+      if (!result.removed && result.pixels.every((byte, i) => byte === pixels[i])) {
+        status('No pixels below alpha ' + result.threshold + ' need culling.'); return;
+      }
+      pushUndo(); pixels = result.pixels; path = []; renderNow();
+      status('Culled ' + result.removed + ' faint pixels. Deleted pixels are RGBA (0,0,0,0); Undo remains available.');
+    } catch (error) { status('Cull failed: ' + error.message); }
+  };
   byId('cut-outline').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite and finish any active lasso first.'); return; }
     try {
       const thickness = Number(byId('cut-outline-thickness').value); // Black border radius in authored source pixels.
-      const outcome = global.ModularWeaponOutline.outlinePixels(pixels, FRAME.width, FRAME.height, thickness); // Expand into transparent areas only.
-      if (!outcome.added && !outcome.edgeDarkened) { status('No transparent edges need additional black outline.'); return; }
+      const outcome = global.ModularWeaponOutline.outlinePixels(pixels, FRAME.width, FRAME.height, thickness, minAlpha()); // Expand into transparent areas only.
+      if (!outcome.added && !outcome.edgeDarkened && !outcome.culled) { status('No transparent edges or faint pixels need cleanup.'); return; }
       pushUndo(); pixels = outcome.pixels; path = []; renderNow();
       status('Added ' + outcome.added + ' opaque black outline pixels at thickness ' + thickness +
+        '; culled ' + outcome.culled + ' faint pixels' +
         (outcome.edgeDarkened ? '; blackened ' + outcome.edgeDarkened + ' colored pixels on the export-frame edge.' : '.') +
         ' Undo restores the previous image.');
     } catch (error) { status('Outline failed: ' + error.message); }
@@ -361,17 +381,20 @@
   byId('cut-export').onclick = () => {
     try {
       if (!pixels || !opaqueCount(pixels)) throw new Error('The part has no visible pixels to export.');
+      const cutoff = minAlpha(); // Export always enforces the same threshold even when manual cleanup was skipped.
+      const cleaned = global.ModularWeaponOutline.cullLowAlphaPixels(pixels, cutoff); // Strip faint alpha and hidden RGB from downloaded PNG.
+      if (!cleaned.remaining) throw new Error('No pixels remain above the selected alpha threshold.');
       const name = fileName(byId('cut-kind').value, byId('cut-name').value); // Existing modular-pieces filename convention.
       const png = document.createElement('canvas'); // Export from data, never the drawn lasso overlay.
       png.width = FRAME.width; png.height = FRAME.height;
-      png.getContext('2d').putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
+      png.getContext('2d').putImageData(new ImageData(cleaned.pixels, FRAME.width, FRAME.height), 0, 0);
       png.toBlob(blob => {
         if (!blob) { status('PNG encoding failed.'); return; }
         const url = URL.createObjectURL(blob); // Download is supported on mobile as in the original editor.
         const anchor = document.createElement('a'); // No popup window or external image editor required.
         anchor.href = url; anchor.download = name; document.body.appendChild(anchor);
         anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 15000);
-        status('Exported ' + name + '. Add it to docs/assets/toolsprites/modular_pieces/ and register its attachment data in docs/config/modular-weapons.js.');
+        status('Exported ' + name + ' after culling ' + cleaned.removed + ' pixels below alpha ' + cutoff + '. Add it to docs/assets/toolsprites/modular_pieces/ and register its attachment data in docs/config/modular-weapons.js.');
       }, 'image/png');
     } catch (error) { status('Export failed: ' + error.message); }
   };
