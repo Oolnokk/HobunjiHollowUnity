@@ -50,9 +50,14 @@ const window = {
           { slot: 'hairFront', label: 'Front Hair', options: [{ id: null, label: 'None' }, { id: 'appearance::Mao-ao_M::mao-ao_tuft', label: 'Tuft' }] },
           { slot: 'facialHair', label: 'Facial Hair', options: [{ id: null, label: 'None' }, { id: grandBeard.mashtzarr, label: 'Grand Beard' }] },
         ] },
-        female: { slots: [{ slot: 'hairFront', label: 'Front Hair', options: [
-          { id: null, label: 'None' }, { id: 'appearance::Mao-ao_F::mao-ao_tuft', label: 'Female Hair' },
-        ] }] },
+        female: { slots: [
+          { slot: 'hairFront', label: 'Front Hair', options: [
+            { id: null, label: 'None' }, { id: 'appearance::Mao-ao_F::mao-ao_tuft', label: 'Female Hair' },
+          ] },
+          { slot: 'hairBack', label: 'Back Hair', options: [
+            { id: null, label: 'None' }, { id: 'appearance::Mao-ao_F::mao-ao_long_ponytail', label: 'Long Ponytail' },
+          ] },
+        ] },
       },
       rakakoan: {
         label: "Rakako'an", parentSpecies: 'kenkari', genders: ['male', 'female'],
@@ -115,6 +120,8 @@ verifyGrooming('kenkari', 'male', 'Grand Beard', grandBeard.kenkari, 'facialHair
 verifyGrooming('rakakoan', 'male', 'Grand Beard', grandBeard.kenkari, 'facialHair');
 verifyGrooming('mashtzarr', 'male', 'Grand Beard', grandBeard.mashtzarr, 'facialHair');
 verifyGrooming('mammakhbuur', 'male', 'Grand Beard', grandBeard.mashtzarr, 'facialHair', 'hairFront');
+verifyGrooming('mammakhbuur', 'female', 'Long Ponytail', null, 'hairBack', 'hairFront');
+verifyGrooming('rakakoan', 'female', 'Woven Eyepatch', 'appearance::Rakakoan_F::rakakoan_woven_eyepatch', 'upperFace');
 // The runtime portrait filter merges the parent allow-list with each subspecies' own list.
 const authorRegistry = JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json', 'utf8'));
 const cosmeticEntries = Array.isArray(authorRegistry) ? authorRegistry : Object.values(authorRegistry).find(Array.isArray);
