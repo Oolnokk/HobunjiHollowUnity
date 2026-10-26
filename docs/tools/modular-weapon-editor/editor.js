@@ -1,167 +1,266 @@
 (function () {
   'use strict';
-  const api = window.ModularWeapons; // Shared runtime compositor and import validator.
-  const byId = id => document.getElementById(id); // Tool-local element lookup.
-  let data = JSON.parse(JSON.stringify(api.getConfig())); // Editable draft; canonical runtime data changes only through validation.
-  let socketIndex = 0; // Active socket on the selected shaft.
-  let serial = 0; // Prevent late image loads from overwriting a newer preview.
-  const selectedShaft = () => data.shafts[byId('shaft').value]; // Current shaft authoring record.
-  const selectedHead = () => data.heads[byId('head').value]; // Current head pivot record.
-  function message(text) { byId('status').textContent = text; }
-  function randomCombination() {
-    const pairs = []; // Allowed pairs are rebuilt on demand to honor the latest draft restrictions.
-    const currentShaft = byId('shaft').value, currentHead = byId('head').value; // Avoid repeating the displayed pair when alternatives exist.
-    for (const shaft of Object.keys(data.shafts)) {
-      for (const head of Object.keys(data.heads)) {
-        if (!api.isDisallowed(shaft, head) && (shaft !== currentShaft || head !== currentHead)) pairs.push({ shaft, head });
-      }
-    }
-    if (!pairs.length) {
-      message(api.isDisallowed(currentShaft, currentHead) ? 'No valid combinations remain. Allow a head/shaft pair to try again.' : 'This is the only valid combination.');
-      return;
-    }
-    const pair = pairs[Math.floor(Math.random() * pairs.length)]; // Every other allowed pair has the same chance of selection.
-    byId('shaft').value = pair.shaft; byId('head').value = pair.head;
-    socketIndex = 0;
-    render();
-    message(`Random valid combination: ${data.shafts[pair.shaft].label} + ${data.heads[pair.head].label}.`);
-  }
+  const api = window.ModularWeapons; // Runtime compositor, line transform and import validator.
+  const byId = id => document.getElementById(id); // Shared authoring UI lookup.
+  let data = JSON.parse(JSON.stringify(api.getConfig())); // Editable copy of validated config.
+  let mountIndex = 0; // Active mounting line for edits on the selected haft.
+  let serial = 0; // Discard outdated async image/assembly requests.
+  let drawing = null; // Active touch/mouse drag, one sprite line at a time.
+  const cachedImages = {}; // Source images reused while dragging the arrow interactively.
+  const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
+  const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  const msg = text => { byId('status').textContent = text; }; // Readable status without devtools.
+  const neutral = { scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep' }; // No global transform fields.
   function options(id, entries) {
-    for (const [key, value] of Object.entries(entries)) {
-      const option = document.createElement('option'); // Stable manifest keys are also exported game keys.
-      option.value = key; option.textContent = value.label; byId(id).appendChild(option);
+    for (const [key, record] of Object.entries(entries)) {
+      const option = document.createElement('option'); // Stable catalog key is kept on import/export.
+      option.value = key; option.textContent = record.label; byId(id).appendChild(option);
     }
   }
   function save() {
-    try { data = JSON.parse(JSON.stringify(api.replace(data, true))); message('Draft saved. Preview and game share these attachment settings.'); render(); }
-    catch (error) { message(`Could not save: ${error.message}`); }
+    try {
+      data = JSON.parse(JSON.stringify(api.replace(data, true))); // Persist validated line and pair data to browser draft.
+      msg('Draft saved. Matching tang/eye arrows drive head rotation and size.');
+      render();
+    } catch (error) { msg('Save failed: ' + error.message); }
   }
-  function marker(ctx, point, color) {
-    ctx.strokeStyle = color; ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.arc(point.x, point.y, 17, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(point.x - 26, point.y); ctx.lineTo(point.x + 26, point.y); ctx.moveTo(point.x, point.y - 26); ctx.lineTo(point.x, point.y + 26); ctx.stroke();
+  function compatible() {
+    return api.matchingMounts(chosenShaft(), chosenHead()).length > 0; // Automatic, rather than hand-authored, compatibility rule.
+  }
+  function lineMarker(ctx, mount, selected) {
+    const start = mount.start, end = mount.end; // Base of line and directed arrow tip in original sprite coordinates.
+    const color = mount.type === 'tang' || mount.type === 'blade' ? '#ffcc63' : '#75e9ed'; // Gold for tang; aqua for eye.
+    ctx.save(); ctx.strokeStyle = selected ? '#ffffff' : color; ctx.fillStyle = color;
+    ctx.lineWidth = selected ? 7 : 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+    const a = Math.atan2(end.y - start.y, end.x - start.x); // Head angle determines the arrowhead orientation.
+    const size = 18; // Distinct arrow tip large enough to see on mobile.
+    ctx.beginPath(); ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - Math.cos(a - 0.5) * size, end.y - Math.sin(a - 0.5) * size);
+    ctx.lineTo(end.x - Math.cos(a + 0.5) * size, end.y - Math.sin(a + 0.5) * size);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(start.x, start.y, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  function drawLines(id) {
+    const image = cachedImages[id], canvas = byId(id); // Redraw the source image before overlaying edited lines.
+    if (!image) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const mounts = id === 'head-canvas' ? [chosenHead().mount] : chosenShaft().mounts;
+    mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
   }
   async function preview() {
-    const request = ++serial, shaftKey = byId('shaft').value, headKey = byId('head').value; // Snapshot this render's identity.
-    const shaft = selectedShaft(), head = selectedHead(); // Records matching the request.
+    const ticket = ++serial, shaftKey = byId('shaft').value, headKey = byId('head').value; // Preview identity.
+    const shaft = chosenShaft(), head = chosenHead();
     try {
-      const [shaftImage, headImage, composed] = await Promise.all([api.loadImage(shaft.sprite, '../../'), api.loadImage(head.sprite, '../../'), api.compose(shaftKey, headKey, '../../')]); // Reuses cached bitmaps, no animation loop.
-      if (request !== serial) return;
-      for (const [id, image] of [['shaft-canvas', shaftImage], ['head-canvas', headImage], ['preview', composed]]) {
-        const target = byId(id); // The assembly preview follows the expanded bitmap; pivot editors keep their original source frame.
-        if (id === 'preview') { target.width = image.width; target.height = image.height; }
-        const context = target.getContext('2d'); // Native dimensions show the complete assembly without distorting its aspect ratio.
-        context.clearRect(0, 0, target.width, target.height); context.drawImage(image, 0, 0, target.width, target.height);
-        if (id === 'shaft-canvas') shaft.attachments.forEach((point, index) => marker(context, point, index === socketIndex ? '#ffd16c' : '#63e1cf'));
-        if (id === 'head-canvas') marker(context, head.attach, '#ffd16c');
+      const [shaftImage, headImage] = await Promise.all([
+        api.loadImage(shaft.sprite, '../../'), api.loadImage(head.sprite, '../../')
+      ]); // Image requests are cached in runtime.
+      if (ticket !== serial) return;
+      cachedImages['shaft-canvas'] = shaftImage; cachedImages['head-canvas'] = headImage;
+      drawLines('shaft-canvas'); drawLines('head-canvas');
+      const match = api.matchingMounts(shaft, head), values = api.settings(shaftKey, headKey); // Auto-match and pair-local corrections.
+      const canvas = byId('preview'), ctx = canvas.getContext('2d');
+      if (match.length) {
+        const composed = await api.compose(shaftKey, headKey, '../../'); // Same bitmap the real game uses.
+        if (ticket !== serial) return;
+        canvas.width = composed.width; canvas.height = composed.height;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(composed, 0, 0);
+        const matrices = match.map(mount => api.headTransform(mount, values, head.mount)); // Debug exact affine transforms used in gameplay.
+        byId('debug').textContent = JSON.stringify({
+          shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
+          headArrow: head.mount, matchedMounts: match.length, corrections: values,
+          matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
+          disallowed: api.isDisallowed(shaftKey, headKey), revision: api.diagnostics('').revision
+        }, null, 2);
+      } else {
+        canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
+        ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(shaftImage, 0, 0, 450, 1204);
+        byId('debug').textContent = JSON.stringify({
+          shaft: shaftKey, head: headKey, incompatibility: 'No ' + (head.mount.type === 'blade' ? 'tang' : 'eye') + ' mount on selected haft.',
+          headArrow: head.mount, haftMounts: shaft.mounts
+        }, null, 2);
       }
-      byId('debug').textContent = JSON.stringify({ shaft: shaftKey, head: headKey, sourceWeapon: shaft.sourceShape, sockets: shaft.attachments, headPivot: head.attach, effective: api.settings(shaftKey, headKey), frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height }, disallowed: api.isDisallowed(shaftKey, headKey), revision: api.diagnostics('').revision }, null, 2);
-    } catch (error) { if (request === serial) message(`Preview failed: ${error.message}`); }
+    } catch (error) { if (ticket === serial) msg('Preview failed: ' + error.message); }
+  }
+  function editLineNumbers() {
+    const area = byId('attach-controls'); // Precise fallback when drag placement is difficult on a phone.
+    area.replaceChildren();
+    for (const [label, line] of [['Head', chosenHead().mount], ['Haft', chosenShaft().mounts[mountIndex]]]) {
+      for (const endpoint of ['start', 'end']) for (const axis of ['x', 'y']) {
+        const wrapper = document.createElement('label'), input = document.createElement('input'); // Endpoint coordinate in the 450x1204 source frame.
+        wrapper.textContent = label + ' ' + endpoint + ' ' + axis;
+        input.type = 'number'; input.min = '0'; input.max = axis === 'x' ? '450' : '1204'; input.step = '1';
+        input.value = String(line[endpoint][axis]);
+        input.onchange = () => {
+          const value = Number(input.value);
+          if (!Number.isFinite(value)) { render(); return; }
+          line[endpoint][axis] = Math.max(0, Math.min(axis === 'x' ? 450 : 1204, value));
+          save();
+        };
+        wrapper.appendChild(input); area.appendChild(wrapper);
+      }
+    }
   }
   function render() {
-    const shaft = selectedShaft(), headKey = byId('head').value; // Active settings scope.
-    const overrideMode = byId('mode').value === 'override'; // Checkboxes are meaningful only for an individual head exception.
-    const values = overrideMode ? (shaft.overrides[headKey] || {}) : shaft.defaults; // Sparse override fields inherit their shaft defaults.
-    const effective = api.settings(byId('shaft').value, headKey); // Resolved values displayed for unchecked fields.
-    socketIndex = Math.min(socketIndex, shaft.attachments.length - 1);
+    const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
+    mountIndex = Math.min(mountIndex, shaft.mounts.length - 1);
     byId('socket').replaceChildren();
-    shaft.attachments.forEach((_, index) => {
-      const option = document.createElement('option'); // Socket picker for twin/multi-ended weapons.
-      option.value = index; option.textContent = `Socket ${index + 1}`; byId('socket').appendChild(option);
+    shaft.mounts.forEach((mount, index) => {
+      const option = document.createElement('option'); // Multiple directed attachment lines on one shaft.
+      option.value = index; option.textContent = (index + 1) + ': ' + (mount.type === 'eye' ? 'Eye/sleeve' : 'Tang');
+      byId('socket').appendChild(option);
     });
-    byId('socket').value = socketIndex;
-    byId('remove').disabled = shaft.attachments.length <= 1;
-    byId('add').disabled = shaft.attachments.length >= (shaft.maxAttachments || 8);
-    byId('disallow').checked = api.isDisallowed(byId('shaft').value, headKey);
+    byId('socket').value = String(mountIndex);
+    byId('remove').disabled = shaft.mounts.length <= 1;
+    byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
+    byId('mount-kind').value = shaft.mounts[mountIndex].type;
+    byId('head-kind').value = head.mount.type;
+    byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
-    byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This uploaded shaft has no known gameplay donor yet.
-    byId('allow-head').checked = selectedHead().editorOnly !== true;
-    byId('part-readiness').textContent = shaft.sourceShape === 'bgungku'
-      ? "B'gungku's full-weapon donor has no gameplay shape definition; its shaft remains editor-only until mapped."
-      : (shaft.editorOnly || selectedHead().editorOnly) ? 'One or both selected parts are provisional. Calibrate attachment points and tick Allow before using in Foundry.' : 'Both selected parts are enabled for Foundry.';
-    byId('attach-controls').replaceChildren();
-    for (const key of ['x', 'y', 'rotation']) {
-      const label = document.createElement('label'), input = document.createElement('input'); // Numeric alternative to tapping, including per-socket rotation.
-      label.textContent = `Socket ${key}`; input.type = 'number'; input.step = '1'; input.value = shaft.attachments[socketIndex][key];
-      input.onchange = () => { shaft.attachments[socketIndex][key] = Number(input.value); save(); };
-      label.appendChild(input); byId('attach-controls').appendChild(label);
-    }
+    byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
+    byId('allow-head').checked = head.editorOnly !== true;
+    const accepted = compatible(), needed = head.mount.type === 'blade' ? 'tang' : 'eye';
+    byId('part-readiness').textContent = !accepted
+      ? 'Incompatible: add a ' + needed + ' line to this haft or choose another head.'
+      : shaft.sourceShape === 'bgungku' ? "B'gungku has no gameplay donor; preview/editor use only."
+      : shaft.editorOnly || head.editorOnly ? 'One or both parts still need calibration and Foundry approval.'
+      : 'Compatible directed mounts; both parts are enabled for Foundry.';
+    editLineNumbers();
     byId('fields').replaceChildren();
+    const pair = shaft.overrides[headKey] ||= {}; // Pair-only corrections; no shaft-global defaults.
+    const values = { ...neutral, ...pair }; // Neutral values are not stored unless changed.
     for (const key of [...api.transforms, 'animation']) {
-      const row = document.createElement('tr'), title = document.createElement('td'), toggleCell = document.createElement('td'), valueCell = document.createElement('td'); // One inheritance control per value.
-      const toggle = document.createElement('input'), input = document.createElement(key === 'animation' ? 'select' : 'input'); // Checkbox and its editable transform value.
-      const boolean = key.startsWith('flip'); // Flip transforms use a checkbox rather than a numeric flag.
-      title.textContent = key; toggle.type = 'checkbox'; toggle.checked = !overrideMode || Object.hasOwn(values, key); toggle.disabled = !overrideMode;
-      toggle.setAttribute('aria-label', `Override ${key}`);
-      input.setAttribute('aria-label', key === 'animation' ? 'Attack animation' : key);
+      const row = document.createElement('tr'), title = document.createElement('td'), cell = document.createElement('td'); // Per-pair correction fields.
+      const input = document.createElement(key === 'animation' ? 'select' : 'input');
+      const bool = key.startsWith('flip');
+      title.textContent = key === 'animation' ? 'Attack animation' : key;
+      input.setAttribute('aria-label', 'Pair ' + key);
       if (key === 'animation') {
-        title.textContent = 'Attack animation';
-        for (const style of ['thrust', 'sweep']) {
-          const option = document.createElement('option'); // Named motion styles, authored without code.
-          option.value = style; option.textContent = style === 'thrust' ? 'Thrust' : 'Sweep'; input.appendChild(option);
+        for (const value of ['sweep', 'thrust']) {
+          const option = document.createElement('option'); // Same choices as existing Foundry.
+          option.value = value; option.textContent = value === 'sweep' ? 'Sweep' : 'Thrust'; input.appendChild(option);
         }
-        input.value = overrideMode ? effective[key] : values[key];
+        input.value = values[key];
       } else {
-        input.type = boolean ? 'checkbox' : 'number'; input.step = key.startsWith('scale') ? '.01' : '1';
-        if (boolean) input.checked = overrideMode ? effective[key] : values[key]; else input.value = overrideMode ? effective[key] : values[key];
+        input.type = bool ? 'checkbox' : 'number';
+        input.step = key.startsWith('scale') ? '0.01' : '1';
+        if (bool) input.checked = Boolean(values[key]); else input.value = String(values[key]);
       }
-      input.disabled = !toggle.checked;
-      toggle.onchange = () => {
-        if (!shaft.overrides[headKey]) shaft.overrides[headKey] = {};
-        if (toggle.checked) shaft.overrides[headKey][key] = effective[key]; else delete shaft.overrides[headKey][key];
-        save();
-      };
       input.onchange = () => {
-        if (overrideMode && !shaft.overrides[headKey]) shaft.overrides[headKey] = {};
-        (overrideMode ? shaft.overrides[headKey] : shaft.defaults)[key] = boolean ? input.checked : key === 'animation' ? input.value : Number(input.value);
+        const value = bool ? input.checked : key === 'animation' ? input.value : Number(input.value);
+        if (value === neutral[key]) delete pair[key]; else pair[key] = value; // Store only exceptions for this exact combination.
         save();
       };
-      toggleCell.appendChild(toggle); valueCell.appendChild(input); row.append(title, toggleCell, valueCell); byId('fields').appendChild(row);
+      cell.appendChild(input); row.append(title, cell); byId('fields').appendChild(row);
     }
     preview();
   }
-  function place(id, update) {
-    byId(id).addEventListener('pointerdown', event => {
+  function pointFor(canvas, event) {
+    const rect = canvas.getBoundingClientRect(); // Pointer coordinates mapped into original source frame.
+    return { x: Math.max(0, Math.min(450, Math.round((event.clientX - rect.left) / rect.width * 450))),
+      y: Math.max(0, Math.min(1204, Math.round((event.clientY - rect.top) / rect.height * 1204))) };
+  }
+  function gesture(id) {
+    const element = byId(id); // Finger drag from the mounted base toward the arrow tip.
+    element.addEventListener('pointerdown', event => {
+      if (drawing) return; event.preventDefault();
+      const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex];
+      const start = pointFor(element, event); // Arrow tail is wherever the user begins drawing.
+      drawing = { id, pointer: event.pointerId, line, original: JSON.parse(JSON.stringify(line)) };
+      line.start = start; line.end = { ...start };
+      element.setPointerCapture(event.pointerId); drawLines(id);
+    });
+    element.addEventListener('pointermove', event => {
+      if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
       event.preventDefault();
-      const rect = event.currentTarget.getBoundingClientRect(); // Responsive CSS is mapped back to original pixel coordinates.
-      update({ x: Math.round((event.clientX - rect.left) / rect.width * 450), y: Math.round((event.clientY - rect.top) / rect.height * 1204) }); save();
+      drawing.line.end = pointFor(element, event); drawLines(id); // Immediate overlay feedback without recomposing gameplay.
+    });
+    element.addEventListener('pointerup', event => {
+      if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
+      event.preventDefault(); drawing.line.end = pointFor(element, event);
+      const length = Math.hypot(drawing.line.end.x - drawing.line.start.x, drawing.line.end.y - drawing.line.start.y);
+      if (length < 2) { Object.assign(drawing.line, drawing.original); msg('Drag at least two pixels to set a directed mounting line.'); }
+      const valid = length >= 2; drawing = null;
+      if (valid) save(); else drawLines(id);
+    });
+    element.addEventListener('pointercancel', event => {
+      if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
+      Object.assign(drawing.line, drawing.original); drawing = null; drawLines(id); // Aborted mobile gesture must not save malformed lines.
+    });
+    element.addEventListener('lostpointercapture', event => {
+      if (drawing && drawing.id === id && drawing.pointer === event.pointerId) {
+        Object.assign(drawing.line, drawing.original); drawing = null; drawLines(id);
+      }
     });
   }
   options('shaft', data.shafts); options('head', data.heads);
-  byId('random').onclick = randomCombination;
-  byId('shaft').onchange = () => { socketIndex = 0; render(); };
-  byId('head').onchange = render; byId('mode').onchange = render;
-  byId('socket').onchange = () => { socketIndex = Number(byId('socket').value); render(); };
-  byId('allow-shaft').onchange = () => {
-    if (selectedShaft().sourceShape === 'bgungku') return; // Unknown donor would silently inherit incorrect grip/animations.
-    selectedShaft().editorOnly = !byId('allow-shaft').checked; save();
+  byId('random').onclick = () => {
+    const pairs = []; // Draw only from compatible, allowed pairs, not every cartesian combination.
+    for (const shaft of Object.keys(data.shafts)) for (const head of Object.keys(data.heads)) {
+      if (!api.isDisallowed(shaft, head) && (shaft !== byId('shaft').value || head !== byId('head').value)) pairs.push({ shaft, head });
+    }
+    if (!pairs.length) { msg('No other compatible combinations. Add another tang or eye mount.'); return; }
+    const selected = pairs[Math.floor(Math.random() * pairs.length)];
+    byId('shaft').value = selected.shaft; byId('head').value = selected.head; mountIndex = 0;
+    render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
-  byId('allow-head').onchange = () => {
-    selectedHead().editorOnly = !byId('allow-head').checked; save();
+  byId('shaft').onchange = () => { mountIndex = 0; render(); };
+  byId('head').onchange = render;
+  byId('socket').onchange = () => { mountIndex = Number(byId('socket').value); render(); };
+  byId('head-kind').onchange = () => { chosenHead().mount.type = byId('head-kind').value; save(); };
+  byId('mount-kind').onchange = () => { chosenShaft().mounts[mountIndex].type = byId('mount-kind').value; save(); };
+  byId('add').onclick = () => {
+    const shaft = chosenShaft();
+    if (shaft.mounts.length >= (shaft.maxAttachments || 8)) return;
+    const kind = byId('mount-kind').value; // Users may add a tang, eye, or both on a haft.
+    const last = shaft.mounts[mountIndex]; // New line begins near the currently selected attachment.
+    const origin = { ...last.start }; // Copy center for predictable placement; edit direction next.
+    shaft.mounts.push({ type: kind, start: origin, end: { x: origin.x, y: Math.max(0, origin.y - 80) } });
+    mountIndex = shaft.mounts.length - 1; save();
+  };
+  byId('remove').onclick = () => {
+    if (chosenShaft().mounts.length <= 1) return;
+    chosenShaft().mounts.splice(mountIndex, 1); mountIndex = 0; save();
   };
   byId('disallow').onchange = () => {
-    const shaft = selectedShaft(), head = byId('head').value; // Pair policy is independent of which transform editing mode is selected.
-    if (!shaft.overrides[head]) shaft.overrides[head] = {};
-    shaft.overrides[head].disallow = byId('disallow').checked; save();
+    const pair = chosenShaft().overrides[byId('head').value] ||= {}; // Explicit exclusion for this pair, beyond type gating.
+    pair.disallow = byId('disallow').checked; save();
   };
-  byId('add').onclick = () => { if (selectedShaft().attachments.length >= (selectedShaft().maxAttachments || 8)) return; selectedShaft().attachments.push({ x: 225, y: 50, rotation: 180 }); socketIndex = selectedShaft().attachments.length - 1; save(); };
-  byId('remove').onclick = () => { if (selectedShaft().attachments.length > 1) { selectedShaft().attachments.splice(socketIndex, 1); socketIndex = 0; save(); } };
-  place('shaft-canvas', point => Object.assign(selectedShaft().attachments[socketIndex], point));
-  place('head-canvas', point => { selectedHead().attach = point; });
+  byId('allow-shaft').onchange = () => {
+    if (chosenShaft().sourceShape === 'bgungku') return; // Unknown donor would copy incorrect player hand positions.
+    chosenShaft().editorOnly = !byId('allow-shaft').checked; save();
+  };
+  byId('allow-head').onchange = () => { chosenHead().editorOnly = !byId('allow-head').checked; save(); };
+  byId('reset-pair').onclick = () => {
+    const old = chosenShaft().overrides[byId('head').value] || {}; // Reset local transforms while keeping authored pair exclusion.
+    chosenShaft().overrides[byId('head').value] = typeof old.disallow === 'boolean' ? { disallow: old.disallow } : {};
+    save();
+  };
+  gesture('shaft-canvas'); gesture('head-canvas');
   byId('export').onclick = () => {
-    const blob = new Blob(['// Foundry sprite attachment configuration.\nwindow.MODULAR_WEAPON_CONFIG = ' + JSON.stringify(data, null, 2) + ';\n'], { type: 'text/javascript' }); // Drop-in committed config; never eval imports.
-    const url = URL.createObjectURL(blob), anchor = document.createElement('a'); // Browser download works on mobile as well.
+    const blob = new Blob(['// Foundry directed mount lines and per-combination corrections.\nwindow.MODULAR_WEAPON_CONFIG = ' + JSON.stringify(data, null, 2) + ';\n'], { type: 'text/javascript' }); // Drop-in source, no eval on imports.
+    const url = URL.createObjectURL(blob), anchor = document.createElement('a'); // Existing mobile browser download behavior.
     anchor.href = url; anchor.download = 'modular-weapons.js'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   byId('import').onclick = () => byId('file').click();
   byId('file').onchange = async () => {
     try {
-      const text = await byId('file').files[0].text(); // Accept JSON or the exported JS assignment as data, never executable code.
-      const json = text.trim().startsWith('{') ? text : text.slice(text.indexOf('=') + 1).trim().replace(/;\s*$/, ''); // Removes only the export assignment envelope.
-      data = JSON.parse(JSON.stringify(api.replace(JSON.parse(json), true))); message('Imported attachment configuration.'); render();
-    } catch (error) { message(`Import failed: ${error.message}`); }
-    byId('file').value = '';
+      const file = byId('file').files?.[0]; // Invalid or cancelled imports do not reset the draft.
+      if (!file) return;
+      const raw = await file.text(); // JSON or JS assignment exported by this tool; never eval.
+      const json = raw.trim().startsWith('{') ? raw : raw.slice(raw.indexOf('=') + 1).trim().replace(/;\s*$/, '');
+      data = JSON.parse(JSON.stringify(api.replace(JSON.parse(json), true)));
+      mountIndex = 0; render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
+    } catch (error) { msg('Import failed: ' + error.message); }
+    finally { byId('file').value = ''; }
   };
-  byId('reset').onclick = () => { data = JSON.parse(JSON.stringify(api.replace(window.MODULAR_WEAPON_CONFIG, true))); message('Restored committed attachment settings.'); render(); };
-  message('Ready. Tap sprites to set attachment points.'); render();
+  byId('reset').onclick = () => {
+    data = JSON.parse(JSON.stringify(api.replace(window.MODULAR_WEAPON_CONFIG, true))); // Restores shipped lines and pair corrections.
+    mountIndex = 0; render(); msg('Restored committed directed mount data.');
+  };
+  msg('Ready. Drag arrows over head and shaft images to define matching mounting lines.');
+  render();
 })();
