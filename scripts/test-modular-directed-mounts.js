@@ -56,6 +56,13 @@ assert.equal(cfg.heads['pick-shovel-pick'].mount.type, 'weight', 'Transverse pic
 assert.equal(cfg.heads.hoe.mount.type, 'weight', 'Transverse hoe retains the existing eye fitting.');
 assert(api.isDisallowed('warhammer', 'pickshovel-scoop'), 'Eye-only warhammer cannot forge a tang-mounted shovel scoop.');
 assert(!api.isDisallowed('dagger', 'pickshovel-scoop'), 'Tang haft can accept the shovel scoop.');
+const shovelHaft = cfg.shafts['pick-shovel']; // Original double-ended tool has different attachment hardware on each end.
+assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'eye').length, 1);
+assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'tang').length, 1);
+assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pick-shovel-pick']).length, 1, 'Pick mounts on eye end only.');
+assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pickshovel-scoop']).length, 1, 'Scoop mounts on tang end only.');
+assert.equal(api.isDisallowed('pick-shovel', 'pickshovel-scoop'), true, 'Existing original-pair restrictions remain explicit.');
+
 const corrected = api.headTransform(tang, { ...neutral, x: 5, y: 10, scaleX: 1.5, rotation: 30 }, head); // Pair corrections layered over auto transform.
 close(Math.hypot(corrected.a, corrected.b), 1.5, 'Manual X scale modifies width without automatic stretch');
 assert.notEqual(corrected.e, transform.e, 'Pair offset actually changes the position.');
