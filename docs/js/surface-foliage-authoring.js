@@ -11,7 +11,9 @@ window.SurfaceFoliageAuthoring = (() => {
       <div class="row"><label>Seed <input data-field="seed" value="surface-1" style="width:130px"></label><label>Strands <input data-field="count" type="number" min="1" max="80" value="12" style="width:70px"></label></div>
       <div class="row"><label>Length <input data-field="length" type="number" min="0.05" max="30" step="0.1" value="3" style="width:80px"></label><label>Radius <input data-field="radius" type="number" min="0.002" max="0.3" step="0.005" value="0.025" style="width:80px"></label></div>
       <div class="row"><label>Curl <input data-field="curl" type="number" min="0" max="2" step="0.1" value="0.4" style="width:80px"></label><label>Clearance <input data-field="offset" type="number" min="0" max="0.2" step="0.005" value="0.008" style="width:80px"></label><label>Color <input data-field="color" type="color" value="#3a5f3a"></label></div>
-      <div class="row"><button data-action="apply" type="button">Apply / regenerate</button><button data-action="remove" type="button">Remove layer</button><button data-action="refresh" type="button">Refresh layers</button></div><pre data-report role="status" style="white-space:pre-wrap">Ready. Latest change: roots and vines follow authored surface triangles.</pre>`;
+      <label>PNG texture <input data-field="texture" type="text" placeholder="assets/textures/example.png" style="width:100%"></label>
+      <p class="hint muted">Use an assets/ PNG path or HTTPS URL, upload a PNG to embed it in JSON, or leave blank for solid color.</p><input data-field="textureFile" type="file" accept="image/png" style="max-width:100%"><button data-action="defaults" type="button">Shadewood texture + color</button>
+      <div class="row"><button data-action="apply" type="button">Apply / regenerate</button><button data-action="remove" type="button">Remove layer</button><button data-action="refresh" type="button">Refresh layers</button></div><pre data-report role="status" style="white-space:pre-wrap">Ready. Latest change: per-layer PNG textures and colors, defaulting to Shadewood.</pre>`;
     host.appendChild(panel);
     const field = name => panel.querySelector('[data-field="'+name+'"]'), report = panel.querySelector('[data-report]'); // Scoped selectors allow more than one panel without ID collisions.
     for (const [value, label] of adapter.targets) { const option = document.createElement('option'); option.value=value;option.textContent=label;field('target').appendChild(option); }
@@ -23,13 +25,29 @@ window.SurfaceFoliageAuthoring = (() => {
     }
     field('layer').onchange = () => {
       const recipe = (adapter.read()||[])[Number(field('layer').value)]; // Editing keeps the recipe's captured selected-object IDs.
-      if(recipe)for(const key of ['kind','target','seed','count','length','radius','curl','offset','color'])field(key).value=recipe[key]??'';
+      if(recipe)for(const key of ['kind','target','seed','count','length','radius','curl','offset','color','texture'])field(key).value=window.FoliageGenerator.normalizeSurfaceGrowth(recipe)[key]??'';
     };
-    field('kind').onchange = () => { field('color').value=field('kind').value==='roots'?'#705039':'#3a5f3a'; };
+    function applyDefaults() {
+      const defaults=window.FoliageGenerator.surfaceGrowthDefaults(field('kind').value); // One shared default source keeps the UI and saved/runtime recipes aligned.
+      field('color').value=defaults.color;field('texture').value=defaults.texture;
+    }
+    field('kind').onchange=applyDefaults;
+    panel.querySelector('[data-action="defaults"]').onclick=applyDefaults;
+    field('textureFile').onchange=async event=>{
+      try {
+        const file=event.target.files?.[0]; // PNG bytes are embedded rather than using an expiring object URL.
+        if(!file)return;
+        if(file.type!=='image/png'&&!/\.png$/i.test(file.name))throw new Error('Choose a PNG image.');
+        const bytes=new Uint8Array(await file.slice(0,8).arrayBuffer()); // Reject mislabeled files before persisting them into a project.
+        if(bytes.length!==8||bytes.some((byte,index)=>byte!==[137,80,78,71,13,10,26,10][index]))throw new Error('This file is not a PNG.');
+        field('texture').value=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve('data:image/png;base64,'+String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('PNG could not be read.'));reader.readAsDataURL(file);});
+        report.textContent='PNG embedded: '+file.name+'. Press Apply / regenerate to save this layer.';
+      }catch(error){report.textContent='Texture import failed: '+error.message;}finally{event.target.value='';}
+    };
     panel.querySelector('[data-action="apply"]').onclick = () => {
       try {
         const recipes = [...(adapter.read()||[])], index = Number(field('layer').value), input = {}; // Copy the list so undo snapshots retain the prior state.
-        for(const key of ['kind','target','seed','count','length','radius','curl','offset','color'])input[key]=field(key).value;
+        for(const key of ['kind','target','seed','count','length','radius','curl','offset','color','texture'])input[key]=field(key).value;
         input.targetIds=input.target==='selected' ? adapter.selectedIds() : [];
         if(input.target==='selected'&&!input.targetIds.length){
           if(index>=0&&recipes[index]?.target==='selected')input.targetIds=recipes[index].targetIds||[];
@@ -47,7 +65,7 @@ window.SurfaceFoliageAuthoring = (() => {
       recipes.splice(index,1);report.textContent=adapter.write(recipes)||'Layer removed.';field('layer').value='-1';refresh();
     };
     panel.querySelector('[data-action="refresh"]').onclick=refresh;
-    refresh();return {refresh};
+    applyDefaults();refresh();return {refresh};
   }
   return {mount};
 })();

@@ -153,11 +153,12 @@ window.FoliageGenerator = (() => {
   }
 
   // ─── Tube mesh from spine ─────────────────────────────────────────────────
-  function buildMeshFromSpineWithRadiusFn({ seedU32, spine, radiusFn, radialSegments, twist, noiseAmt, noiseScale, noiseOctaves }) {
+  function buildMeshFromSpineWithRadiusFn({ seedU32, spine, radiusFn, radialSegments, twist, noiseAmt, noiseScale, noiseOctaves, stretchUv = false }) {
     const { pts, tangents, normals, binormals } = spine;
     const rings = pts.length;
     const radial = Math.max(3, Math.floor(radialSegments));
-    const positions = [], indices = [];
+    const positions = [], indices = [], uvs = []; // Optional per-strand PNG coordinates are separate from ordinary tree geometry.
+    const stride = radial + (stretchUv ? 1 : 0); // Duplicate the seam only for textured growth, keeping the existing tree topology intact.
     const TT = new T.Vector3(), N = new T.Vector3(), B = new T.Vector3();
 
     for (let i = 0; i < rings; i++) {
@@ -169,7 +170,8 @@ window.FoliageGenerator = (() => {
       const rBase = Math.max(1e-4, radiusFn(t, i, rings));
       const center = pts[i];
 
-      for (let j = 0; j < radial; j++) {
+      for (let j = 0; j < stride; j++) {
+        if (stretchUv) uvs.push(j / radial, t);
         const a = (j / radial) * Math.PI * 2;
         const nx = Math.cos(a), ny = Math.sin(a);
         const n = fbm3D(center.x * 0.35 + nx * noiseScale + 101.1,
@@ -183,15 +185,17 @@ window.FoliageGenerator = (() => {
       }
     }
     for (let i = 0; i < rings - 1; i++) {
-      const r0 = i * radial, r1 = (i + 1) * radial;
+      const r0 = i * stride, r1 = (i + 1) * stride;
       for (let j = 0; j < radial; j++) {
-        const a0 = r0 + j, a1 = r0 + (j + 1) % radial;
-        const b0 = r1 + j, b1 = r1 + (j + 1) % radial;
+        const next = stretchUv ? j + 1 : (j + 1) % radial; // Seam vertices sample opposite PNG edges without interpolating across its middle.
+        const a0 = r0 + j, a1 = r0 + next;
+        const b0 = r1 + j, b1 = r1 + next;
         indices.push(a0, a1, b0, b0, a1, b1);
       }
     }
     const geom = new T.BufferGeometry();
     geom.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    if (stretchUv) geom.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
     geom.setIndex(indices);
     return geom;
   }
@@ -1845,13 +1849,31 @@ window.FoliageGenerator = (() => {
 
   // Surface growth uses real triangles, so authored walls, gables and furniture
   // share the same tube/noise generation as the foliage generator's own vines.
+  function surfaceGrowthDefaults(kind) {
+    const roots = kind === 'roots', sourceHex = roots ? TREE_PRESETS.shadewood.barkColorHex : TREE_PRESETS.shadewood.vineColorHex; // Roots inherit Shadewood's wood; vines inherit its vine finish.
+    return window.NaturalSurfaceMaterials?.surfaceDefaults?.(roots ? 'trunks' : 'vines', sourceHex) || {
+      texture: roots ? 'assets/textures/wibbly_surface.png' : 'assets/textures/carved_smooth.png',
+      color: '#' + sourceHex.toString(16).padStart(6, '0')
+    };
+  }
+
+  function normalizeGrowthTexture(value, fallback) {
+    if (value === '') return ''; // Explicitly blank means a solid-color strand.
+    if (typeof value !== 'string') return fallback;
+    const path = value.trim().replace(/^docs\//, ''); // Serialized paths stay portable across every editor and gameplay.
+    if (!path) return '';
+    return /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(path) || /^(?:assets\/[^?#]*\.png(?:[?#].*)?|https?:\/\/[^\s]+)$/i.test(path) ? path : fallback;
+  }
+
   function normalizeSurfaceGrowth(value = {}) {
     value = value && typeof value === 'object' ? value : {}; // Malformed imported layers use safe defaults.
+    const defaults = surfaceGrowthDefaults(value.kind); // Also fills missing texture fields on existing saved layers.
     const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
     return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
       count: Math.floor(finite('count', 12, 1, 80)), length: finite('length', 3, .05, 30),
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
-      curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : (value.kind === 'roots' ? '#705039' : '#3a5f3a'),
+      curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
+      texture: normalizeGrowthTexture(value.texture, defaults.texture),
       target: ['all', 'walls', 'floors', 'ceilings', 'selected'].includes(value.target) ? value.target : 'all',
       targetIds: Array.isArray(value.targetIds) ? value.targetIds.filter(id => typeof id === 'string').slice(0, 200) : [] };
   }
@@ -1954,10 +1976,20 @@ window.FoliageGenerator = (() => {
         points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset));
       }
       if(points.length<2)continue;
-      geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2}));
+      geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
     }
     if(geometries.length){
-      const mesh=new T.Mesh(mergeGeoms(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Reuses the canonical foliage tube/material path.
+      const mesh=new T.Mesh(mergeGeomsWithUV(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Keep each strand's own 0..1 PNG wrap through the merge.
+      const originalMaterial = mesh.material; // Release the temporary color source after the shared renderer has read it.
+      if (settings.texture && window.NaturalSurfaceMaterials?.naturalizeMesh) {
+        window.NaturalSurfaceMaterials.naturalizeMesh(mesh, settings.kind==='roots'?'trunks':'vines', 'strand-stretch', {texture:settings.texture,tint:settings.color,tintTreatment:'body-sprite-tint'});
+        mesh.material = mesh.material.clone(); // Growth owns this material; the natural-surface cache and PNG texture remain shared.
+      } else {
+        const sprite = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Solid-color layers still follow the canonical unlit surface appearance.
+        mesh.material = sprite?.makeMaterial ? sprite.makeMaterial(T,null,'surface_growth_solid',{color:parseInt(settings.color.slice(1),16)}) : new T.MeshBasicMaterial({color:parseInt(settings.color.slice(1),16)});
+      }
+      originalMaterial.dispose();
+      mesh.userData.surfaceGrowthTexture=settings.texture;mesh.userData.surfaceGrowthColor=settings.color;
       mesh.geometry.computeVertexNormals();geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
     }
     group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes (' + triangles.length + ' triangles).';
@@ -1973,7 +2005,7 @@ window.FoliageGenerator = (() => {
 
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
-    normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth,
+    surfaceGrowthDefaults, normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);

@@ -15,10 +15,20 @@ const api = windowForTest.FoliageGenerator; // Execute the production normalizer
 const original = {kind:'roots',count:9999,length:-3,radius:Infinity,color:'not-a-color',target:'selected',targetIds:['chair',null,12]};
 const normalized = api.normalizeSurfaceGrowth(original);
 assert.equal(normalized.count,80);assert.equal(normalized.length,.05);assert.equal(normalized.radius,.025);
-assert.equal(normalized.color,'#705039');assert.deepEqual(Array.from(normalized.targetIds),['chair']);assert.equal(original.count,9999);
+assert.equal(normalized.color,'#4a3b33');assert.equal(normalized.texture,'assets/textures/wibbly_surface.png');assert.deepEqual(Array.from(normalized.targetIds),['chair']);assert.equal(original.count,9999);
 for(const bad of [null,undefined,[],42,'broken'])assert.equal(api.normalizeSurfaceGrowth(bad).kind,'vines');
 assert.equal(api.normalizeSurfaceGrowth({target:'invented',count:NaN,length:Infinity,seed:'x'.repeat(999)}).target,'all');
 assert.equal(api.normalizeSurfaceGrowth({seed:'x'.repeat(999)}).seed.length,128);
+assert.equal(api.normalizeSurfaceGrowth({}).texture,'assets/textures/carved_smooth.png');
+assert.equal(api.normalizeSurfaceGrowth({texture:'assets/textures/custom.png',color:'#123456'}).texture,'assets/textures/custom.png');
+assert.equal(api.normalizeSurfaceGrowth({texture:''}).texture,'');
+for(const texture of ['javascript:alert(1)','blob:temporary','file:///x.png','../private.png'])assert.equal(api.normalizeSurfaceGrowth({texture}).texture,'assets/textures/carved_smooth.png');
+const embedded = 'data:image/png;base64,iVBORw0KGgo='; // Portable uploaded PNG reference must survive serialization without becoming an object URL.
+assert.equal(api.normalizeSurfaceGrowth(JSON.parse(JSON.stringify({texture:embedded}))).texture,embedded);
+windowForTest.NaturalSurfaceMaterials={surfaceDefaults:(surface)=>({texture:'assets/textures/configured.png',color:surface==='trunks'?'#504030':'#406040'})};
+assert.equal(api.normalizeSurfaceGrowth({kind:'roots'}).color,'#504030');assert.equal(api.normalizeSurfaceGrowth({kind:'roots'}).texture,'assets/textures/configured.png');
+assert.equal(api.normalizeSurfaceGrowth({kind:'vines',color:'#abcdef'}).color,'#abcdef');
+delete windowForTest.NaturalSurfaceMaterials;
 const parent = new EmptyGroup(), source = new EmptyGroup(), old = new EmptyGroup(), nested = new EmptyGroup(); // Only owned generated layers may be released on regeneration.
 let disposedGeometry=0,disposedMaterial=0;
 source.geometry={dispose:()=>{throw new Error('source geometry disposed');}};
