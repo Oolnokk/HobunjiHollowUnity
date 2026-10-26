@@ -412,9 +412,11 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(sectionA1.clicks, 0, 'entering does not activate the highlighted action');
   assert.ok(storageSection.classList.contains('ctrl-nav-subtab-hidden'));
   assert.equal(ui.debugState().subtab.count, 2);
+  sectionOwner.scrollTop = 180; sectionOwner.scrollHeight = 900; sectionOwner.clientHeight = 200; sectionOwner.style.overflowY = 'auto';
   press('right'); assert.equal(ui.focusedElement(), sectionA2);
   press('tabNext');
   assert.equal(ui.focusedElement(), storageSection, 'a nested multi-section page remains enterable');
+  assert.equal(sectionOwner.scrollTop, 0, 'a newly selected page starts at its top instead of inheriting the previous page scroll');
   assert.ok(sectionA.classList.contains('ctrl-nav-subtab-hidden'));
   press('confirm');
   assert.equal(ui.focusedElement(), bagColumn.children[0]);
@@ -435,6 +437,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('cancel');
   press('tabNext');
   assert.equal(ui.focusedElement(), sectionA2, 'returning to a page remembers its selected control');
+  assert.equal(sectionOwner.scrollTop, 180, 'returning to a page restores its own scroll position');
   const rebuiltSection = new Element('div', { id: 'section-a', class: 'farm-section' }, [button('section-a1', 10, 40), button('section-a2', 110, 40)]); // Replaces the selected page without closing its owner.
   sectionOwner.children[0] = rebuiltSection; rebuiltSection.parentElement = sectionOwner; sectionA.parentElement = null;
   await rebuild(sectionOwner);

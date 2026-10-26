@@ -282,14 +282,14 @@
         const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
         if (window.FarmProduction?.hasPlacement()) {
           const productionResult = window.FarmProduction.placeAt(col, row); // Uses this same map-click owner for multi-tile production buildings.
-          deps.showToast(productionResult.message, productionResult.ok); renderFarmPanel(); return;
+          deps.showToast(productionResult.message, productionResult.ok); window.FarmPanel.render(); return;
         }
         const mode = _farmPlacementMode;
         const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row)
           : window.FarmBuildings.placePlan(mode.tier, col, row);
         deps.showToast(result.message, result.ok);
         if (result.ok) _farmPlacementMode = null;
-        renderFarmPanel();
+        window.FarmPanel.render(); // Reapply barn/incubator/shipping decorators after rebuilding both farm pages.
       });
     }
     canvas.style.cursor = (_farmPlacementMode || window.FarmProduction?.hasPlacement()) ? 'crosshair' : '';
@@ -372,7 +372,7 @@
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Place';
-        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); showFarmMap(); });
+        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; window.FarmPanel.render(); showFarmMap(); });
         row.appendChild(btn);
         customization.appendChild(row);
       });

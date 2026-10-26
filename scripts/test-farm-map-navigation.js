@@ -27,7 +27,7 @@ for (const id of ['farmBuildingsList', 'farmBuildingCustomizationList', 'farmBui
 const itemCalls = [], headCalls = [], editorCalls = []; // Captures delegation to the existing shared authorities.
 const crop = { icon: '🌾', label: 'Needlegrain' }; // Both ready and growing crops use the same harvest item identity.
 const genotype = { colors: ['blue'] }; // Identity must reach the shared chathead renderer unchanged.
-let canAlter = true, mapOpened = false; // Exercises permission gating and the placement-page handoff.
+let canAlter = true, mapOpened = false, publicRenders = 0; // Exercises permission gating and the placement-page handoff.
 const deps = {
   COLS: 2, ROWS: 2, getGrid: () => [[{ type: 'grass', crop: 'grain', cropReady: true }, { type: 'grass', crop: 'grain' }], []],
   ITEM_DEFS: { needlegrain: crop }, cropData: { grain: { cropKey: 'needlegrain' } },
@@ -45,6 +45,7 @@ const context = {
   FARM_GLANCE_PX: 10, _tileColors: () => ({ grass: '#123' }), _farmPlacementMode: null,
   showFarmMap: () => { mapOpened = true; }, openHouseLayoutModal() {},
 };
+context.window.FarmPanel = { render() { publicRenders++; context.renderFarmBuildings(); } }; // Public rendering includes the runtime's building decorators.
 vm.createContext(context);
 vm.runInContext(owner('renderFarmGridGlance') + '\n' + owner('renderFarmBuildings'), context);
 context.renderFarmGridGlance();
@@ -62,7 +63,20 @@ const edits = nodes.get('farmBuildingCustomizationList').children; // House edit
 assert.equal(edits.length, 3);
 edits[1].children[0].click(); assert.equal(editorCalls[0], 'farm_barn_b1');
 edits[2].children[0].click(); assert.equal(mapOpened, true, 'placing a plan opens the map page');
+assert.equal(publicRenders, 1, 'arming a plan refreshes through the decorated public renderer');
 assert.equal(nodes.get('farmCancelPlacementBtn').hidden, false, 'map retains a cancel action during placement');
+nodes.get('farmCancelPlacementBtn').onclick();
+assert.equal(publicRenders, 2, 'cancel refresh also retains decorated building actions');
+delete canvas.dataset.clickBound;
+canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 20, height: 20 }); // Test map completion through the actual click handler.
+deps.showToast = () => {};
+context.window.FarmBuildings = { placePlan: () => ({ ok: true, message: 'Placed' }) };
+edits[2].children[0].click();
+context.renderFarmGridGlance();
+canvas.click({ clientX: 5, clientY: 5 });
+assert.equal(publicRenders, 4, 'successful placement also refreshes through the decorated renderer');
+assert.equal(context._farmPlacementMode, null, 'successful placement clears the armed plan');
+
 canAlter = false; context._farmPlacementMode = null; context.renderFarmBuildings();
 assert.equal(nodes.get('farmBuildingCustomizationList').children.length, 1, 'farmhands cannot move barns or place plans without permission');
 console.log('Farm map shared icons, marker refresh, separated building actions and placement handoff passed');

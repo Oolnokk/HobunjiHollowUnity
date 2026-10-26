@@ -3642,6 +3642,10 @@
       bottom: 10px;
       transform: translateX(-50%);
       display: none;
+      max-width: calc(100vw - 16px);
+      box-sizing: border-box;
+      flex-wrap: wrap;
+      justify-content: center;
       gap: 16px;
       padding: 6px 16px;
       border-radius: 20px;

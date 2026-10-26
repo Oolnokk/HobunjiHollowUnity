@@ -713,6 +713,25 @@
     return groups[0];
   }
 
+  const sectionScrollPositions = new WeakMap(); // Each page retains its own positions in shared scrolling ancestors.
+  function saveSectionScroll(section, panel) {
+    const positions = new Map(); // Stored only when switching pages, never while polling the controller.
+    for (let node = section; node && panel.contains(node); node = node.parentElement) {
+      if (Number.isFinite(node.scrollTop)) positions.set(node, node.scrollTop);
+    }
+    sectionScrollPositions.set(section, positions);
+  }
+
+  function restoreSectionScroll(section, panel) {
+    const positions = sectionScrollPositions.get(section); // New pages start at the top; revisited pages keep their reading position.
+    for (let node = section; node && panel.contains(node); node = node.parentElement) {
+      if (!Number.isFinite(node.scrollTop)) continue;
+      const top = positions?.get(node) || 0; // Also resets an ancestor left scrolled by a different, longer page.
+      if (node.scrollTop !== top) node.scrollTop = top;
+    }
+    cachedScrollHost = null;
+  }
+
   function cycleTabs(delta) {
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
@@ -723,7 +742,9 @@
       const nextIndex = (state.sections.indexOf(state.selected) + delta + state.sections.length) % state.sections.length; // Wraps negative/positive bumper direction.
       const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
       for (const removed of entries.splice(entries.indexOf(local) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
+      saveSectionScroll(state.selected, panel);
       prepareSubtabs(local.node, panel, next.id || null, next.id ? 0 : nextIndex);
+      restoreSectionScroll(next, panel);
       lastFocusedByGroup.set(state.selected, currentTarget);
       scrolledSelection = null;
       const targets = navigationTargets(panel); // Fresh controls may have appeared since the last section switch.
@@ -1132,6 +1153,8 @@
       automaticEntryEnabled = true;
       enterGroup(group, panel);
       prepareSubtabs(group, panel, sectionId);
+      const selected = subtabsByGroup.get(group)?.selected; // Explicit placement-page jumps must also clear an unrelated page's scroll offset.
+      if (selected) restoreSectionScroll(selected, panel);
       scrolledSelection = null;
       const targets = navigationTargets(panel); // Read-only pages can focus their scope while the right stick still scrolls.
       setFocus(pickDefaultTarget(panel, targets) || group, { scroll: false });
@@ -1151,7 +1174,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Right stick scrolls visible information pages, skips hidden/clipped regions and hands off at scroll edges; section focus is remembered.',
+        latestChange: 'Right stick scrolls visible information pages, skips hidden/clipped regions and hands off at scroll edges; section focus and per-page scroll positions are remembered.',
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         scrollHostId: cachedScrollHost?.host?.id || null,
