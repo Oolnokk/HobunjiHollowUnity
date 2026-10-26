@@ -37,6 +37,24 @@ close(transform.b * head.start.x + transform.d * head.start.y + transform.f, tan
 close(transform.a * head.end.x + transform.c * head.end.y + transform.e, tang.end.x, 'Arrow tip x');
 close(transform.b * head.end.x + transform.d * head.end.y + transform.f, tang.end.y, 'Arrow tip y');
 close(Math.hypot(transform.a, transform.b), 2, 'Automatic uniform scale');
+const perpendicular = { x: 40, y: 0 }; // Across the blade; must NEVER inherit the line-length scale.
+close(Math.hypot(transform.a * perpendicular.x + transform.c * perpendicular.y,
+  transform.b * perpendicular.x + transform.d * perpendicular.y), 40, 'Auto fit preserves blade width');
+const diagonalHead = { type: 'blade', start: { x: 200, y: 500 }, end: { x: 230, y: 460 } }; // Oblique 50px mounting axis.
+const diagonalShaft = { type: 'tang', start: { x: 170, y: 850 }, end: { x: 170, y: 950 } }; // 100px vertical mounting axis.
+const diagonalFit = api.headTransform(diagonalShaft, neutral, diagonalHead); // Ratio 2 must only affect direction along 30,-40.
+const pOn = { x: diagonalHead.end.x - diagonalHead.start.x, y: diagonalHead.end.y - diagonalHead.start.y };
+const pAcross = { x: 40, y: 30 }; // Orthogonal to (30,-40), length 50.
+const fitVector = v => ({ x: diagonalFit.a * v.x + diagonalFit.c * v.y, y: diagonalFit.b * v.x + diagonalFit.d * v.y });
+close(Math.hypot(fitVector(pOn).x, fitVector(pOn).y), 100, 'Diagonal tang length scales along its drawn axis');
+close(Math.hypot(fitVector(pAcross).x, fitVector(pAcross).y), 50, 'Diagonal tang perpendicular width stays unchanged');
+close(diagonalFit.a * diagonalHead.end.x + diagonalFit.c * diagonalHead.end.y + diagonalFit.e, diagonalShaft.end.x, 'Diagonal arrowhead endpoint x');
+close(diagonalFit.b * diagonalHead.end.x + diagonalFit.d * diagonalHead.end.y + diagonalFit.f, diagonalShaft.end.y, 'Diagonal arrowhead endpoint y');
+assert.equal(cfg.heads['pickshovel-scoop'].mount.type, 'blade', 'Shovel bowl must take a tang, not a pole through its bowl.');
+assert.equal(cfg.heads['pick-shovel-pick'].mount.type, 'weight', 'Transverse pickaxe head retains its eye.');
+assert.equal(cfg.heads.hoe.mount.type, 'weight', 'Transverse hoe retains the existing eye fitting.');
+assert(api.isDisallowed('warhammer', 'pickshovel-scoop'), 'Eye-only warhammer cannot forge a tang-mounted shovel scoop.');
+assert(!api.isDisallowed('dagger', 'pickshovel-scoop'), 'Tang haft can accept the shovel scoop.');
 const corrected = api.headTransform(tang, { ...neutral, x: 5, y: 10, scaleX: 1.5, rotation: 30 }, head); // Pair corrections layered over auto transform.
 close(Math.hypot(corrected.a, corrected.b), 3, 'Manual scale multiplies auto scale');
 assert.notEqual(corrected.e, transform.e, 'Pair offset actually changes the position.');
