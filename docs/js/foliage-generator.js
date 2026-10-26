@@ -153,11 +153,12 @@ window.FoliageGenerator = (() => {
   }
 
   // ─── Tube mesh from spine ─────────────────────────────────────────────────
-  function buildMeshFromSpineWithRadiusFn({ seedU32, spine, radiusFn, radialSegments, twist, noiseAmt, noiseScale, noiseOctaves }) {
+  function buildMeshFromSpineWithRadiusFn({ seedU32, spine, radiusFn, radialSegments, twist, noiseAmt, noiseScale, noiseOctaves, stretchUv = false }) {
     const { pts, tangents, normals, binormals } = spine;
     const rings = pts.length;
     const radial = Math.max(3, Math.floor(radialSegments));
-    const positions = [], indices = [];
+    const positions = [], indices = [], uvs = []; // Optional per-strand PNG coordinates are separate from ordinary tree geometry.
+    const stride = radial + (stretchUv ? 1 : 0); // Duplicate the seam only for textured growth, keeping the existing tree topology intact.
     const TT = new T.Vector3(), N = new T.Vector3(), B = new T.Vector3();
 
     for (let i = 0; i < rings; i++) {
@@ -169,7 +170,8 @@ window.FoliageGenerator = (() => {
       const rBase = Math.max(1e-4, radiusFn(t, i, rings));
       const center = pts[i];
 
-      for (let j = 0; j < radial; j++) {
+      for (let j = 0; j < stride; j++) {
+        if (stretchUv) uvs.push(j / radial, t);
         const a = (j / radial) * Math.PI * 2;
         const nx = Math.cos(a), ny = Math.sin(a);
         const n = fbm3D(center.x * 0.35 + nx * noiseScale + 101.1,
@@ -183,15 +185,17 @@ window.FoliageGenerator = (() => {
       }
     }
     for (let i = 0; i < rings - 1; i++) {
-      const r0 = i * radial, r1 = (i + 1) * radial;
+      const r0 = i * stride, r1 = (i + 1) * stride;
       for (let j = 0; j < radial; j++) {
-        const a0 = r0 + j, a1 = r0 + (j + 1) % radial;
-        const b0 = r1 + j, b1 = r1 + (j + 1) % radial;
+        const next = stretchUv ? j + 1 : (j + 1) % radial; // Seam vertices sample opposite PNG edges without interpolating across its middle.
+        const a0 = r0 + j, a1 = r0 + next;
+        const b0 = r1 + j, b1 = r1 + next;
         indices.push(a0, a1, b0, b0, a1, b1);
       }
     }
     const geom = new T.BufferGeometry();
     geom.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    if (stretchUv) geom.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
     geom.setIndex(indices);
     return geom;
   }
@@ -1843,8 +1847,185 @@ window.FoliageGenerator = (() => {
 
   function degToRad(d) { return d * Math.PI / 180; }
 
+  // Surface growth uses real triangles, so authored walls, gables and furniture
+  // share the same tube/noise generation as the foliage generator's own vines.
+  function surfaceGrowthDefaults(kind) {
+    const roots = kind === 'roots', sourceHex = roots ? TREE_PRESETS.shadewood.barkColorHex : TREE_PRESETS.shadewood.vineColorHex; // Roots inherit Shadewood's wood; vines inherit its vine finish.
+    return window.NaturalSurfaceMaterials?.surfaceDefaults?.(roots ? 'trunks' : 'vines', sourceHex) || {
+      texture: roots ? 'assets/textures/wibbly_surface.png' : 'assets/textures/carved_smooth.png',
+      color: '#' + sourceHex.toString(16).padStart(6, '0')
+    };
+  }
+
+  function normalizeGrowthTexture(value, fallback) {
+    if (value === '') return ''; // Explicitly blank means a solid-color strand.
+    if (typeof value !== 'string') return fallback;
+    const path = value.trim().replace(/^docs\//, ''); // Serialized paths stay portable across every editor and gameplay.
+    if (!path) return '';
+    return /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(path) || /^(?:assets\/[^?#]*\.png(?:[?#].*)?|https?:\/\/[^\s]+)$/i.test(path) ? path : fallback;
+  }
+
+  function normalizeSurfaceGrowth(value = {}) {
+    value = value && typeof value === 'object' ? value : {}; // Malformed imported layers use safe defaults.
+    const defaults = surfaceGrowthDefaults(value.kind); // Also fills missing texture fields on existing saved layers.
+    const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
+    return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
+      count: Math.floor(finite('count', 12, 1, 80)), length: finite('length', 3, .05, 30),
+      radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
+      curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
+      texture: normalizeGrowthTexture(value.texture, defaults.texture),
+      target: ['all', 'walls', 'floors', 'ceilings', 'selected'].includes(value.target) ? value.target : 'all',
+      targetIds: Array.isArray(value.targetIds) ? value.targetIds.filter(id => typeof id === 'string').slice(0, 200) : [] };
+  }
+
+  function surfaceTargets(parent, settings) {
+    const targets = []; // Only authored surface meshes enter the sampler; generated growth and editor helpers are excluded.
+    parent.traverse(object => {
+      if (!object.isMesh || !object.geometry?.attributes?.position) return;
+      let node = object, role = '', selected = false, excluded = false; // Ancestor tags keep grouped brick/log gables and multi-mesh furniture selectable.
+      while (node) {
+        const data = node.userData || {}; // Shared metadata is read without mutating the source definitions.
+        excluded ||= !!data.surfaceFoliage || !!data.surfaceFoliageExclude;
+        role ||= data.surfaceFoliageRole || (data.isWallBricks || data.isWallLogs ? 'walls' : '') || (data.interiorGable || data.interiorGableBricks || data.interiorGableLogs ? 'walls' : data.interiorCeilingSurface ? 'ceilings' : '');
+        const id = String(data.authoredPartId ?? data.partId ?? data.faceId ?? data.surfaceFoliageId ?? ''); // An untagged mesh has no id and must never match a stray empty entry.
+        selected ||= id !== '' && settings.targetIds.includes(id);
+        if (node === parent) break;
+        node = node.parent;
+      }
+      if (!excluded && (settings.target === 'all' || (settings.target === 'selected' ? selected : role === settings.target))) targets.push(object);
+    });
+    return targets;
+  }
+
+  function buildSurfaceGrowth(parent, input = {}) {
+    const settings = normalizeSurfaceGrowth(input); // Same sanitized recipe is stored by every authoring tool.
+    const group = new T.Group(); // Geometry is expressed in the target parent's local space and follows its later transform.
+    group.name = 'Surface ' + settings.kind;
+    group.userData.surfaceFoliage = true;
+    const targets = surfaceTargets(parent, settings), triangles = [], large = [], cells = new Map(), candidates = []; // Candidate list is reused across every growth step.
+    let stamp = 0; // Per-step visit mark: dedupes records that overlap several buckets without a Set insertion per record.
+    const gather = list => { for (const record of list) if (record.stamp !== stamp) { record.stamp = stamp; candidates.push(record); } }; // Spatial buckets avoid scanning all brick triangles for every growth step.
+    parent.updateWorldMatrix(true, true);
+    const inverse = parent.matrixWorld.clone().invert(), cellSize = .5, point = new T.Vector3(); // Source vertices are converted once, outside runtime frame work.
+    let totalArea = 0, surfaceCopies = 0; // Area weighting includes every placed brick, not just its reusable source geometry.
+    const keyOf = (x, y, z) => ((x + 65536) * 131072 + (y + 65536)) * 131072 + z + 65536; // Numeric cell key (exact for |cell| < 65536, i.e. 32 km at 0.5 m cells): shared by insertion and queries without building a string per lookup.
+    for (const mesh of targets) {
+      const geometry = mesh.geometry, position = geometry.attributes.position, index = geometry.index; // Supports indexed and non-indexed imported GLBs.
+      const baseMatrix = inverse.clone().multiply(mesh.matrixWorld); // Mesh/group transforms apply outside each instance's own placement.
+      const instanceCount = mesh.isInstancedMesh ? Math.max(0, Math.min(Math.floor(Number(mesh.count)||0), mesh.instanceMatrix?.count ?? Infinity)) : 1; // Exclude unused instance capacity and removed bricks.
+      const matrix = mesh.isInstancedMesh ? new T.Matrix4() : baseMatrix, instanceMatrix = mesh.isInstancedMesh ? new T.Matrix4() : null; // Reused across all copies of this source geometry.
+      const end = Math.min(index ? index.count : position.count, geometry.drawRange.start + geometry.drawRange.count); // Honor partial draw ranges.
+      for (let instance = 0; instance < instanceCount; instance++) {
+        if (instanceMatrix) {
+          mesh.getMatrixAt(instance, instanceMatrix);
+          matrix.multiplyMatrices(baseMatrix, instanceMatrix);
+        }
+        surfaceCopies++;
+        for (let i = geometry.drawRange.start; i + 2 < end; i += 3) {
+          const a = new T.Vector3().fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(matrix), b = new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + 1) : i + 1).applyMatrix4(matrix), c = new T.Vector3().fromBufferAttribute(position, index ? index.getX(i + 2) : i + 2).applyMatrix4(matrix); // Triangle coordinates used by sampling and projection (no per-face temp arrays: this runs for every placed brick).
+          if (!Number.isFinite(a.x + a.y + a.z + b.x + b.y + b.z + c.x + c.y + c.z)) continue;
+          const triangle = new T.Triangle(a, b, c), area = triangle.getArea(); // Degenerate faces never become growth anchors.
+          if (area < 1e-10) continue;
+          const faceNormal = triangle.getNormal(new T.Vector3()); // Floor growth stays on top; ceiling growth stays on the room-facing underside.
+          if (settings.target === 'floors' && faceNormal.y < .5) continue;
+          if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
+          totalArea += area;
+          const record = { triangle, normal: faceNormal, plane: faceNormal.dot(a), stamp: 0, area: totalArea }; // plane = signed offset, a cheap lower bound on distance to the face. // Cumulative area permits binary-search seed placement.
+          triangles.push(record);
+          const x0 = Math.floor(Math.min(a.x, b.x, c.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x, c.x) / cellSize); // Bucket range includes the full triangle, not only its centroid.
+          const y0 = Math.floor(Math.min(a.y, b.y, c.y) / cellSize), y1 = Math.floor(Math.max(a.y, b.y, c.y) / cellSize);
+          const z0 = Math.floor(Math.min(a.z, b.z, c.z) / cellSize), z1 = Math.floor(Math.max(a.z, b.z, c.z) / cellSize);
+          if ((x1-x0+1)*(y1-y0+1)*(z1-z0+1) > 256) { large.push(record); continue; }
+          for (let x=x0; x<=x1; x++) for (let y=y0; y<=y1; y++) for (let z=z0; z<=z1; z++) {
+            const key = keyOf(x,y,z); // Triangle references are shared across overlapped buckets.
+            let bucket = cells.get(key);
+            if (!bucket) cells.set(key, bucket = []);
+            bucket.push(record);
+          }
+        }
+      }
+    }
+    group.userData.surfaceGrowthStats = { meshes: targets.length, instances: surfaceCopies, triangles: triangles.length };
+    if (!triangles.length) { group.userData.diagnostics = 'No eligible surface triangles.'; return group; }
+    const seed = xfnv1a(settings.seed), random = mulberry32(seed), geometries = []; // Deterministic recipes regenerate on import and in gameplay.
+    const steps = Math.min(400, Math.ceil(settings.length / Math.min(.15, Math.max(.025, settings.radius * 3)))), step = settings.length / steps; // Bounded density protects mobile previews.
+    for (let strand=0; strand<settings.count; strand++) {
+      const area = random()*totalArea; // Binary search picks an area-weighted starting face.
+      let lo=0, hi=triangles.length-1;
+      while (lo<hi) { const mid=(lo+hi)>>1; if (triangles[mid].area<area) lo=mid+1; else hi=mid; }
+      let current=triangles[lo], normal=current.normal.clone(); // Each step keeps the surface normal for corner following.
+      const u=Math.sqrt(random()), v=random(), start=current.triangle.a.clone().multiplyScalar(1-u).addScaledVector(current.triangle.b,u*(1-v)).addScaledVector(current.triangle.c,u*v); // Uniform barycentric seed.
+      let anchor=start, direction=new T.Vector3(random()-.5, settings.kind==='roots' ? -.7 : .7, random()-.5).normalize(); // Gravity bias is projected onto each encountered surface.
+      const points=[anchor.clone().addScaledVector(normal,settings.radius+settings.offset)]; // Radius-aware clearance keeps tubes outside the source.
+      for (let segment=0; segment<steps; segment++) {
+        direction.addScaledVector(normal,-direction.dot(normal));
+        if (direction.lengthSq()<1e-8) direction.crossVectors(normal,new T.Vector3(1,.3,.2));
+        direction.normalize().applyAxisAngle(normal,(random()-.5)*settings.curl*.65);
+        const candidate=anchor.clone().addScaledVector(direction,step), bx=Math.floor(candidate.x/cellSize), by=Math.floor(candidate.y/cellSize), bz=Math.floor(candidate.z/cellSize); // Query adjacent cells so seams and perpendicular corners remain connected.
+        candidates.length=0;stamp++;gather(large);
+        for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const bucket=cells.get(keyOf(bx+x,by+y,bz+z));if(bucket)gather(bucket);}
+        let best=null, distance=step*step*.85, closest=null; // Reject gaps larger than a growth step instead of bridging empty windows.
+        for(const record of candidates){
+          if(record.normal.dot(normal)<-.25)continue;
+          const planeGap=record.normal.dot(candidate)-record.plane;
+          if(planeGap*planeGap>=distance)continue; // Perpendicular distance never exceeds true distance, so this skips the projection without changing the result.
+          record.triangle.closestPointToPoint(candidate,point);
+          const d=point.distanceToSquared(candidate); // Nearest actual surface point, never an object's bounding box.
+          if(d<distance){distance=d;best=record;closest=point.clone();}
+        }
+        if(!best)break;
+        if(closest.distanceToSquared(anchor)<step*step*.02){
+          // At a shared edge, transport the tangent onto an adjacent face;
+          // closest-point projection alone would strand every vine at corners.
+          let crossed=false; // A seam is crossed only when both faces touch the current anchor.
+          for(const record of candidates){
+            const dot=record.normal.dot(normal); // Backfaces and near-parallel duplicates do not define a new corner.
+            if(dot<-.25||dot>.95)continue;
+            const anchorGap=record.normal.dot(anchor)-record.plane;
+            if(anchorGap*anchorGap>step*step*.01)continue;
+            record.triangle.closestPointToPoint(anchor,point);
+            if(point.distanceToSquared(anchor)>step*step*.01)continue;
+            const turn=direction.clone().applyQuaternion(new T.Quaternion().setFromUnitVectors(normal,record.normal)); // Parallel transport across a convex or concave seam.
+            record.triangle.closestPointToPoint(anchor.clone().addScaledVector(turn,step),point);
+            if(point.distanceToSquared(anchor)<step*step*.2)continue;
+            closest=point.clone();best=record;crossed=true;break;
+          }
+          if(!crossed)break;
+        }
+        direction.copy(closest).sub(anchor).normalize();anchor=closest;current=best;normal=current.normal.clone();
+        points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset));
+      }
+      if(points.length<2)continue;
+      geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
+    }
+    if(geometries.length){
+      const mesh=new T.Mesh(mergeGeomsWithUV(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Keep each strand's own 0..1 PNG wrap through the merge.
+      const originalMaterial = mesh.material; // Release the temporary color source after the shared renderer has read it.
+      if (settings.texture && window.NaturalSurfaceMaterials?.naturalizeMesh) {
+        window.NaturalSurfaceMaterials.naturalizeMesh(mesh, settings.kind==='roots'?'trunks':'vines', 'strand-stretch', {texture:settings.texture,tint:settings.color,tintTreatment:'body-sprite-tint'});
+        mesh.material = mesh.material.clone(); // Growth owns this material; the natural-surface cache and PNG texture remain shared.
+      } else {
+        const sprite = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Solid-color layers still follow the canonical unlit surface appearance.
+        mesh.material = sprite?.makeMaterial ? sprite.makeMaterial(T,null,'surface_growth_solid',{color:parseInt(settings.color.slice(1),16)}) : new T.MeshBasicMaterial({color:parseInt(settings.color.slice(1),16)});
+      }
+      originalMaterial.dispose();
+      mesh.userData.surfaceGrowthTexture=settings.texture;mesh.userData.surfaceGrowthColor=settings.color;
+      mesh.geometry.computeVertexNormals();geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
+    }
+    group.userData.diagnostics = settings.kind + ': ' + geometries.length + '/' + settings.count + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles).';
+    return group;
+  }
+
+  function applySurfaceGrowth(parent, recipes) {
+    // Regeneration is event-driven; replacing only owned geometry preserves source meshes/materials.
+    for(const child of [...parent.children])if(child.userData?.surfaceFoliage){parent.remove(child);child.traverse(object=>{object.geometry?.dispose();if(object.material&&!Array.isArray(object.material))object.material.dispose();});}
+    for(const recipe of (Array.isArray(recipes)?recipes:[]).slice(0,32))parent.add(buildSurfaceGrowth(parent,recipe));
+    return parent.children.filter(child=>child.userData?.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
+    surfaceGrowthDefaults, normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);

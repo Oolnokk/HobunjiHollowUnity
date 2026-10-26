@@ -11,9 +11,9 @@
   const naturalSurfaceScript = (file) => `${file}?v=${encodeURIComponent(naturalSurfaceUvVersion)}`; // Used only by the tightly-coupled natural-surface UV modules so stale child scripts cannot mix generations.
   const scripts = [
     ['SurfaceTint', 'surface-tint.js?v=20261007hec88e1c'],
-    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
+    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20261026h551bd56'],
     ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260915perf1'],
-    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261025westernbark1'],
+    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261026h551bd56'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],

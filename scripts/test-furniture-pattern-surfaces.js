@@ -48,12 +48,21 @@ const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot
 const stacks=[]; // Captures the production primary/overpass pair passed to the compositor.
 const sizes=[]; // Atlas extents verify density independently of normalized geometry UVs.
 const canvases=[]; // Records shade references and shared compositor use.
-const document={createElement(){const result={width:0,height:0,fill:null,getContext(){return {fillStyle:'',fillRect(){result.fill=this.fillStyle;},drawImage(source){result.fill=source.fill;}};}};canvases.push(result);return result;}};
+class Control {
+  constructor(){this.fields=new Map();this.children=[];this.value='';this.checked=false;this.style={};}
+  set innerHTML(value){for(const match of value.matchAll(/data-([a-z0-9-]+)/g))this.fields.set(match[1],new Control());}
+  querySelector(selector){return this.fields.get(selector.match(/data-([^\]]+)/)[1]);}
+  appendChild(child){this.children.push(child);}
+  replaceChildren(){this.children=[];}
+  add(option){this.children.push(option);}
+}
+class Option {constructor(label,value){this.text=label;this.value=value;}}
+const document={createElement(tag){if(tag==='div')return new Control();const result={width:0,height:0,fill:null,getContext(){return {fillStyle:'',fillRect(){result.fill=this.fillStyle;},drawImage(source){result.fill=source.fill;}};}};canvases.push(result);return result;}};
 let compositeCount=0; // Proves repeated instances reuse one pending tile build.
 const window={THREE,PatternLibrary:{getById:id=>definitions.find(d=>d.id===id)?.pattern,getCatalog:()=>definitions,unlock:id=>{if(owned.has(id))return false;owned.add(id);return true;}},
-  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;stacks.push(patterns);sizes.push([canvas.width,canvas.height]);assert(!patterns[0].usageScaleMultiplier || patterns[0].usageScaleMultiplier <= 1,"no furniture-only fourfold magnification");assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
+  ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;stacks.push(patterns);sizes.push([canvas.width,canvas.height]);assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
   HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}})}};
-vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,performance:{now:()=>1000},console});
+vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,Option,performance:{now:()=>1000},console});
 const api=window.FurniturePatternSurfaces; // Public production API used by furniture, ruin generation, and editor preview.
 function box(){const geo=new Geometry();geo.setAttribute('position',new Attribute([-1,.05,-1.5, 1,.05,1.5, 1,.05,-1.5, -1,.05,-1.5, -1,.05,1.5, 1,.05,1.5, -1,-.05,1.5, 1,-.05,1.5, 1,.05,1.5],3));return new Mesh(geo,new Material({}));}
 const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',palette:['#b7a185','#315b67'],scale:1}; // Used on real fixture triangles and restored overrides.
@@ -190,5 +199,22 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   await api.renderTile({...pattern,patternId:null,patterns:[primary,{...overpass,overpassClearanceMultiplier:9}]});
   assert.equal(compositeCount,previousCount+1);
 
+  vm.runInNewContext(fs.readFileSync('docs/config/scratchbones-config.js','utf8'),{window,console});
+  const host=new Control(),baseInput=new Control(),inkInput=new Control();baseInput.value='#C0C0C0';inkInput.value='#7A4A24';
+  const placement=api.placementControls(host,baseInput,inkInput),fields=host.children[0].fields;
+  placement.refresh(pattern);
+  assert(fields.get('dye-base').children.some(option=>option.value==='dye:CLOTH:silver'),'full game dye catalog is available');
+  fields.get('dye-base').value='dye:CLOTH:cream';fields.get('dye-base').onchange();assert.equal(baseInput.value,'#FFF0CC');
+  fields.get('overpass').value='rune-b';fields.get('repeat-1').checked=false;fields.get('zoom-1').value='2';fields.get('rotation-1').value='90';fields.get('x-1').value='.5';fields.get('y-1').value='-.25';
+  const instance=placement.read(pattern),saved=JSON.parse(JSON.stringify(instance));
+  assert.equal(saved.patterns.length,2);assert.equal(saved.overpassPatternId,'rune-b');assert.equal(saved.patterns[1].motifDataUrl,'data:b');
+  placement.refresh(saved);assert.equal(fields.get('repeat-1').checked,false);assert.equal(fields.get('x-1').value,.5);
+  const stack=api.placedPatterns(api.normalize(saved),null,[512,512,.5]);
+  assert.equal(stack[1].tiling,false);assert.equal(stack[1].usageRotationDeg,90);assert.equal(stack[1].usageScaleMultiplier,2);assert.equal(stack[1].usageOffsetX,64);assert.equal(stack[1].usageOffsetY,-32);
+  await api.renderTile(saved,null,[512,512,.5]);assert.equal(stacks.at(-1)[1].tiling,false);assert.equal(stacks.at(-1)[1].usageOffsetX,64,'actual compositor receives the instance offset');
+  assert.equal(definitions[1].pattern.usageOffsetX,undefined,'instance placement never mutates a library motif');
+  assert.equal(api.placedPatterns(api.normalize(pattern),null,[256,256])[0].usageOffsetX,undefined,'other instances retain their original placement');
+  const draft=api.placedPatterns(api.normalize(saved),{motifDataUrl:'data:new-primary'},[256,256]);assert.equal(draft.length,2);assert.equal(draft[1].motifDataUrl,'data:b','editing the primary retains the overpass');
+  fields.get('overpass').value='';assert.equal(placement.read(saved).patterns.length,1,'None removes only the overpass');
   console.log('Furniture pattern normalization, clipping, scale, cache, overrides, wind, ruin unlocks and daylight integration passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

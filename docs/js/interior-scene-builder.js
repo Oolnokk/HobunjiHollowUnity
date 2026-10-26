@@ -520,6 +520,12 @@
   //   options.footprintOf(record) -> { fw, fd }   (defaults to 1x1)
   //   options.floorY                             (defaults to 0)
   const WINDOW_ORNAMENT_KEYS = { simpleWindowFurniture: 'simpleWindow', crossbarWindowFurniture: 'crossbarWindow', wideWindowFurniture: 'wideWindow' };
+  function furnitureFloorElevation(record, sampledFloorY = 0) {
+    // Wall attachments already store their authored height in room coordinates;
+    // sampling a solid wall tile here would lift only the visual above its hole.
+    return record?.wallAttachment ? 0 : (Number(sampledFloorY) || 0);
+  }
+
   function windowWallOpenings(furniture, options = {}) {
     const silhouetteOf = root.DaylightWindowRuntime?.windowSilhouette;
     if (typeof silhouetteOf !== 'function') return [];
@@ -533,11 +539,12 @@
       const nLen = Math.hypot(nx0, nz0);
       if (nLen < 1e-6) continue;
       const nx = nx0 / nLen, nz = nz0 / nLen;
-      const fp = options.footprintOf?.(f) || {};
+      const gridFootprint = root.InteriorFurnitureGrid?.footprintForItem?.(f.itemKey); // Wide windows use the same footprint as their rendered furniture.
+      const fp = options.footprintOf?.(f) || {fw:gridFootprint?.w,fd:gridFootprint?.d};
       const sx = Number.isFinite(Number(f.postSX)) ? Number(f.postSX) : (Number.isFinite(Number(f.postScale)) ? Number(f.postScale) : 1);
       const sy = Number.isFinite(Number(f.postSY)) ? Number(f.postSY) : (Number.isFinite(Number(f.postScale)) ? Number(f.postScale) : 1);
       const rootX = (Number(f.col) || 0) + (Number(fp.fw) || 1) * 0.5 + (Number(f.postX) || 0);
-      const rootY = (Number(options.floorY) || 0) + (Number(f.postY) || 0);
+      const rootY = furnitureFloorElevation(f, options.floorY) + (Number(f.postY) || 0);
       const rootZ = (Number(f.row) || 0) + (Number(fp.fd) || 1) * 0.5 + (Number(f.postZ) || 0);
       const yaw = (Number(f.rotY) || 0) * Math.PI / 180;
       const lx = (silhouette.minX + silhouette.maxX) * 0.5 * sx, ly = (silhouette.minY + silhouette.maxY) * 0.5 * sy;
@@ -569,7 +576,7 @@
   const DEFAULT_WB_OPTS = { unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
   function markInteriorWallSurfaceGroup(group) {
-    if (group?.userData) group.userData.interiorWallSurfaceGroup = true;
+    if (group?.userData) { group.userData.surfaceFoliageRole = "walls"; group.userData.interiorWallSurfaceGroup = true; }
     return group;
   }
 
@@ -659,7 +666,7 @@
   }
 
   root.InteriorSceneBuilder = {
-    DEFAULT_WB_OPTS, windowWallOpenings, openingExcludeQuads, buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
+    DEFAULT_WB_OPTS, furnitureFloorElevation, windowWallOpenings, openingExcludeQuads, buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
     buildCarvedCavernMesh, buildCavernFloorMesh,
   };

@@ -43,7 +43,7 @@ for (const [label, data] of [['crossbarWindow', crossbarPreset], ['wideWindow', 
 }
 
 const runtime = read('docs/js/daylight-window-runtime.js'); // Static source guards the integration strategy requested for interiors.
-assert.match(runtime, /const VERSION = 3/, 'daylight runtime version must include the coplanar mullion revision');
+assert.match(runtime, /const VERSION = [4-9][0-9]*/, 'daylight runtime version must include the coplanar mullion revision');
 assert.match(runtime, /const ROLE = 'daylightWindow'/, 'runtime must consume the generic daylight-window surface role');
 assert.doesNotMatch(runtime, /mullion[^\n]*z: 0\.045/, 'fallback window recipes must not reintroduce the old protruding mullion translation');
 assert.match(runtime, /function ensureWindowVisualRoot\(group\)/, 'daylight windows must establish one construction-time visual assembly boundary');
