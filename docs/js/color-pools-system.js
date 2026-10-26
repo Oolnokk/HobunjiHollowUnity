@@ -358,7 +358,10 @@
             const temp = clone(entry.genotype);
             const layers = cleanDraft();
             const dye = paint.dyeHex || window.DyeSystem?.getById?.(paint.dyeId)?.hex || ownedDyes()[0]?.hex || '#ffffff';
-            layers[regionId] = { ...clone(paint), dyeHex: dye, pattern: clone(patternData) };
+            const previous = layers[regionId] || clone(paint); // cleanDraft() already resolved the saved overpass's independent ink.
+            const overpass = Array.isArray(previous.patterns) ? previous.patterns[1] : null;
+            layers[regionId] = { ...previous, dyeHex: dye, pattern: clone(patternData),
+              patterns: overpass ? [clone(patternData), clone(overpass)] : [clone(patternData)] }; // Preview must replace slot 1 in the actual render stack, not only its legacy alias.
             temp[PAINT_KEY] = { version: 1, layers };
             return window.CreatureGeneticsRender?.composeFrame?.(canonicalKind(entry), 'idle', temp, false);
           },
