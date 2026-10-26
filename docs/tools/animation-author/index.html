@@ -7089,6 +7089,11 @@ function normalizedRigProfileLibrary(value = {}) {
         shoulderGrip: normalizeTransformSnapshot(profile.anchors?.shoulderGrip, 1),
       },
       chatheadFrame: normalizedAnimalChatheadFrameV1543(profile.chatheadFrame),
+      // Preserve canonical runtime ground heights through the older V15.13–V15.30
+      // normalizer passes too. V15.44 finalizes validation, but initial library
+      // and autosaves are normalized before that patch is installed.
+      ...(profile.groundOffsets && typeof profile.groundOffsets === 'object'
+        ? { groundOffsets: { ...profile.groundOffsets } } : {}),
     };
   }
   return output;
