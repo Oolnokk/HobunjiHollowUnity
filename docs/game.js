@@ -1810,9 +1810,9 @@
       };
       const ORE_DEFS = {
         copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: METAL_DEFS.nativeCopper.verdigrisHex, oxidationAmount: 0.58 },
-        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: METAL_DEFS.lowTinBronze.verdigrisHex, oxidationAmount: 0 }, // Surface deposit takes the matching alloy's verdigris rather than this raw ore icon hue.
-        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: METAL_DEFS.tinBronze.verdigrisHex, oxidationAmount: 0 }, // Mineral surface reads as the corresponding tin-bronze oxidation color.
-        tin:     { label: 'Tin Ore',     hex: '#513C32', verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
+        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', rockMetalHex: METAL_DEFS.lowTinBronze.hex, verdigrisHex: METAL_DEFS.lowTinBronze.verdigrisHex, oxidationAmount: 0 }, // Surface deposit takes the matching alloy's verdigris rather than this raw ore icon hue.
+        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', rockMetalHex: METAL_DEFS.tinBronze.hex, verdigrisHex: METAL_DEFS.tinBronze.verdigrisHex, oxidationAmount: 0 }, // Mineral surface reads as the corresponding tin-bronze oxidation color.
+        tin:     { label: 'Tin Ore',     hex: '#513C32', rockMetalHex: METAL_DEFS.tin.hex, verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
         arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
         lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
         silver:  { label: 'Silver Ore',  hex: '#C0C0C0', verdigrisHex: null, oxidationAmount: 0 },
@@ -10508,9 +10508,9 @@
               for (const [geometry, matKey] of [[stoneGeo, TileType.ROCK], [grassGeo, TileType.GRASS]]) {
                 if (!geometry) continue;
                 geometry.computeVertexNormals();
-                const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Ore-colored islands embedded in stone for streamed wilderness rocks.
+                const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Metal-colored rock with optional verdigris markings, shared with caves and the town mine.
                 const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
-                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Stretch each mineral face after terrain displacement, before chunking.
+                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Preserve original continuous rock UVs after terrain displacement.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -14195,7 +14195,7 @@
             _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
             const descentHoleMeshes = new Map();
             _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
-            const mineRockMaterialFor = oreKey => window.OreRockTextures.materialFor(THREE, oreKey, ORE_DEFS); // Shared natural-stone base with mineral-colored patches.
+            const mineRockMaterialFor = oreKey => window.OreRockTextures.materialFor(THREE, oreKey, ORE_DEFS); // Shared metal-bodied ore material with patterned verdigris.
             for (const rock of (mapData.oreRocks || [])) {
               const rockKey = `${rock.col},${rock.row}`;
               const tile = bGrid[rock.row]?.[rock.col];

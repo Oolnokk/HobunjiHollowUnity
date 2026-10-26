@@ -1,6 +1,6 @@
 // Cavern ore rocks — extracted from game.js's loadBuildingScene cavern branch.
-// Marks each mapData.oreRocks tile as diggable, with stone and masked mineral
-// coloration identical to the town mine, registered in the same mesh table
+// Marks each mapData.oreRocks tile as diggable, with original metal-bodied
+// patina coloration identical to the town mine, registered in the same mesh table
 // the outdoor ore rocks use (mineableRocksByTile/isMineableRockTile/
 // removeZoneMineableRockVisual), so mining a cavern rock needs no new code.
 // Den caverns and every cave-site history (js/cave-site-system.js — ore
@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0x3faf9f, tinCopper: 0x4eaa86, mushistonite: 0x57b38b, tin: 0x513c32, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Debug-only palette reflects the actual metal-matched verdigris rock deposits; materialFor remains the rendering authority.
+  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb87333, tinCopper: 0xb66a2e, mushistonite: 0xcd7f32, tin: 0xc8ccd0, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Legacy/debug swatches show metal-bodied rock base hues; materialFor adds separate verdigris markings.
 
   const separatorCracks = new Map(); // Map id -> scene and live crack set, allowing O(1) removals when one mineable wall rock breaks.
   const rockMaps = new Map(); // Map id -> live ore mesh index; explosions never traverse the entire cave scene.
@@ -100,8 +100,8 @@
       }
       const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
       if (!stoneGeo) continue;
-      const rockMesh = new THREE.Mesh(stoneGeo, window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs)); // Colored ore islands, ordinary stone elsewhere, shared across every cave and mine.
-      window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${rock.col},${rock.row}`); // Fit each coarser mineral facet to the complete authored PNG, as on cliffs.
+      const rockMesh = new THREE.Mesh(stoneGeo, window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs)); // Recolored metal body and patina, shared across every cave and mine.
+      window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${rock.col},${rock.row}`); // Keep the earlier continuous UVs on cave ore rocks; no cliff-style facet remapping.
       rockMesh.castShadow = rockMesh.receiveShadow = true;
       const rockGroup = new THREE.Group();
       rockGroup.name = 'cave_ore_' + rock.col + '_' + rock.row; // Blast removes this exact rock mesh without rebuilding the cave.

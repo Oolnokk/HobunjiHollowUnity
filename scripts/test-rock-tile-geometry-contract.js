@@ -57,9 +57,9 @@ function geometrySnapshot(col, row) {
   assert.ok(result.grassGeo instanceof FakeBufferGeometry, 'split result contains grassGeo');
   assert.ok(result.stoneGeo.normalsComputed && result.grassGeo.normalsComputed, 'both split geometries request vertex normals');
 
-  const stonePos = result.stoneGeo.getAttribute('position'); // Shared 6x6 low-poly mound vertex field.
+  const stonePos = result.stoneGeo.getAttribute('position'); // Shared 6x6 mound vertex field.
   const grassPos = result.grassGeo.getAttribute('position'); // Same vertex field viewed through the grass subset.
-  const stoneUv = result.stoneGeo.getAttribute('uv'); // World-space UVs used by the natural-surface rock mapper.
+  const stoneUv = result.stoneGeo.getAttribute('uv'); // World-space UVs retained by the restored continuous rock texture.
   assert.equal(stonePos.count, 36, 'low-poly rock mound has a 6x6 vertex field (31% fewer faces)');
   assert.equal(grassPos.count, 36, 'grass rim shares the complete 6x6 vertex field');
   assert.equal(stoneUv.count, 36, 'rock mound retains one UV per vertex');
@@ -105,6 +105,6 @@ assert.match(gameSource, /const \{ stoneGeo \} = window\.TerrainGeometry\.buildR
   'cavern ore rendering consumes the repaired split API');
 assert.match(farmSource, /const \{ stoneGeo, grassGeo \} = window\.TerrainGeometry\.buildRockTileGeo\(col, row\)/,
   'farm ROCK rendering consumes the repaired split API');
-assert.match(farmSource, /OreRockTextures\?\.fitRockMesh/, 'farm stone faces also use the cliff-style mapper');
+assert.match(farmSource, /OreRockTextures\?\.fitRockMesh/, 'farm stone surfaces still call the non-remapping compatibility hook');
 
 console.log('rock tile geometry contract checks passed.');
