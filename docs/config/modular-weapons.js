@@ -152,7 +152,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 187,
           "y": 1090
         }
-      }
+      },
+      "mountNote": "Eye mount: transverse hoe blade attaches through a sleeve."
     },
     "kylie": {
       "label": "Kylie",
@@ -186,7 +187,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 207,
           "y": 239
         }
-      }
+      },
+      "mountNote": "Eye mount: transverse pick head fits around the haft."
     },
     "pickshovel-scoop": {
       "label": "Pickshovel Scoop",
@@ -194,7 +196,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_pickshovel_scoop.png",
       "dmgType": "blunt",
       "mount": {
-        "type": "weight",
+        "type": "blade",
         "start": {
           "x": 195,
           "y": 856
@@ -203,7 +205,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 195,
           "y": 776
         }
-      }
+      },
+      "mountNote": "Tang mount: shovel bowl must remain clear of the haft."
     },
     "plains-blade": {
       "label": "Plains Blade",
