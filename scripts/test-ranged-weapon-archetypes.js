@@ -375,6 +375,12 @@ for (const phase of ['neutral', 'windup', 'strike']) {
 }
 for (const phase of ['neutral', 'windup', 'strike']) for (const axis of ['x', 'y', 'z']) assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase][axis], 0, `the mouthpiece (aperture) sits exactly on the mouth: ${phase}.${axis}`);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.yaw, 0);
+for (const phase of ['neutral', 'windup', 'strike']) {
+  const pose = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase]; // Assert the whole loaded/fire timeline shares the head-directed barrel axis.
+  assert.equal(pose.pitch, -180, `Blowgun ${phase} reverses its +Z mouthpiece-end axis to point away from the head`);
+  assert.equal(pose.yaw, 0, `Blowgun ${phase} must not aim sideways independently of head rotation`);
+  assert.equal(pose.bodyYaw, 0, `Blowgun ${phase} must not turn the body to compensate for misaligned barrel yaw`);
+}
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.95);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);
 const blowgunChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('bshuakauitl_copper').map(effect => effect.id);
