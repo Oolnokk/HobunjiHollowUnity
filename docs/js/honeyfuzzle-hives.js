@@ -73,9 +73,25 @@
     const T = deps.TILE;
     const hx = (hive.col + 0.5) * T, hy = (hive.row + 0.5) * T;
     const angle = deps.rnd() * Math.PI * 2;
+    const colors = window.HoneyfuzzleColors; // The native zone palette determines both primary and any inherited secondary pigments.
+    const swarmColor = colors?.pickForKey(zoneId, hive.key) || undefined;
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(SPECIES) || null; // The generic genetics module owns the optional feather/spectacles allele schema.
+    if (genotype?.base) {
+      genotype.base.color = swarmColor || genotype.base.color;
+      const seed = window.HoneyfuzzleSwarm?.seedFromString?.(hive.key) || 0; // Stable local markings when the same hive respawns after a zone reload.
+      const palette = colors?.zonePalette(zoneId) || [];
+      for (const [index, id] of ['tailfeathers', 'spectacles'].entries()) {
+        const layer = genotype[id];
+        if (!layer) continue;
+        const enabled = (window.HoneyfuzzleSwarm?.hashUnit?.(seed, 60 + index) ?? 1) < 1 / 3;
+        layer.copies = enabled ? 1 : 0;
+        layer.enabled = enabled;
+        if (palette.length) layer.color = palette[Math.floor((window.HoneyfuzzleSwarm?.hashUnit?.(seed, 80 + index) || 0) * palette.length)];
+      }
+    }
     const c = deps.makeCreatureEntity(SPECIES, hx + Math.cos(angle) * T * 0.9, hy + Math.sin(angle) * T * 0.9, {
       homeX: hx, homeY: hy, state: 'idle', hiveKey: hive.key, wildlifeRole: 'prey',
-      swarmColor: window.HoneyfuzzleColors?.pickForKey(zoneId, hive.key) || undefined, // Each stump's swarm keeps one color from its region's palette.
+      swarmColor, genotype, // The ordinary wildlife entity carries the same cosmetic genes as farm and companion swarms.
     });
     if (!c) return null;
     deps.hostileObjects.add(c);
