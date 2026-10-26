@@ -664,7 +664,12 @@
       const generation = ++scanGeneration; // Captured by this async scan; any newer scan/config refresh invalidates its eventual result.
       resolveActiveSnapshot().then(snapshot => {
         if (generation !== scanGeneration || activeHeldWeaponKey() !== heldWeaponKey) return;
-        if (!snapshot || snapshot.heldVisual !== directHeldVisual(heldWeaponKey)) {
+        if (!snapshot) {
+          activeSnapshot = null;
+          clearAllEmitters();
+          return; // Unenchanted weapons legitimately have no snapshot; retain the normal scan throttle.
+        }
+        if (snapshot.heldVisual !== directHeldVisual(heldWeaponKey)) {
           activeSnapshot = null;
           clearAllEmitters();
           lastScanAt = -Infinity; // Retry a transient mesh rebuild immediately, rather than waiting an extra throttle interval.
