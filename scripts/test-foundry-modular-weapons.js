@@ -37,8 +37,8 @@ assert.equal(window.HobunjiHandToolGrips.toolScaleForTool(key), window.HobunjiHa
 assert.deepEqual(plain(window.HobunjiHandToolGrips.authoredPrimaryGripForTool(key)), plain(window.HobunjiHandToolGrips.authoredPrimaryGripForTool('dagger')));
 const heavyKey = api.itemKey('bshuakauitl', 'dagger', 'nativeCopper'); // Two-end source retains both sockets and its own two-hand grip.
 assert.equal(window.HobunjiHandToolGrips.weaponHandModeForTool(heavyKey), 'two-hand');
-assert.equal(api.getConfig().shafts.bshuakauitl.attachments.length, 2);
-assert.equal(api.getConfig().shafts.bshuakauitl.attachments[1].rotation, 180);
+assert.equal(api.getConfig().shafts.bshuakauitl.mounts.length, 2);
+assert(api.getConfig().shafts.bshuakauitl.mounts[1].end.y > api.getConfig().shafts.bshuakauitl.mounts[1].start.y, 'Opposed legacy socket becomes a reversed arrow.');
 for (const shaft of ['dagger']) for (const head of ['hatchet', 'war-cleaver', 'warhammer', 'work-hammer']) assert.equal(api.isDisallowed(shaft, head), true);
 assert.equal(api.isDisallowed('bshuakauitl', 'warhammer'), false);
 for (const [shaftKey, shaft] of Object.entries(api.getConfig().shafts)) {
@@ -46,10 +46,11 @@ for (const [shaftKey, shaft] of Object.entries(api.getConfig().shafts)) {
     if (shaft.sourceShape === head.sourceShape) assert.equal(api.isDisallowed(shaftKey, headKey), true, `${shaftKey}/${headKey} must not duplicate its original weapon`);
   }
 }
-for (const head of ['hatchet', 'war-cleaver', 'warhammer', 'work-hammer']) {
-  assert.equal(api.isDisallowed('fishing-spear', head), false);
-  assert.equal(api.settings('fishing-spear', head).animation, 'sweep');
+for (const head of ['hatchet', 'warhammer', 'work-hammer']) {
+  assert.equal(api.isDisallowed('fishing-spear', head), true, 'Blade haft needs a matching eye for weighted heads.');
+  assert.equal(api.settings('fishing-spear', head).animation, 'sweep', 'Older pair animation survives even when newly incompatible.');
 }
+assert.equal(api.isDisallowed('fishing-spear', 'war-cleaver'), false, 'A tang on the haft accepts another blade.');
 for (const head of ['dagger', 'dagger-sword', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) assert.equal(api.isDisallowed('bshuakauitl', head), true);
 assert.equal(api.settings('fishing-spear', 'dagger').animation, 'thrust');
 const spearHammer = api.itemKey('fishing-spear', 'warhammer', 'nativeCopper'); // A sweeping head exception retains the spear's two-hand grip authority.
@@ -57,22 +58,21 @@ assert.equal(defs[spearHammer].animStyle, 'sweep');
 assert.equal(defs[spearHammer].comboStyle, 'sweep');
 assert.equal(window.HobunjiHandToolGrips.toolKeyFor(spearHammer), 'fishingspear');
 assert.equal(api.isDisallowed('missing', 'dagger'), true);
-assert.equal(api.getConfig().shafts['dagger-sword'].attachments.length, 1);
+assert.equal(api.getConfig().shafts['dagger-sword'].mounts.length, 1);
 assert.equal(api.getConfig().shafts['dagger-sword'].crop, undefined);
-assert.equal(api.getConfig().shafts.warhammer.defaults.scaleX, 1.65, 'Keep uploaded calibration');
-assert.equal(api.getConfig().shafts.dagger.defaults.y, 45, 'Keep uploaded calibration');
+assert.equal(api.settings('warhammer', 'dagger').scaleX, 1.65, 'Keep old calibration as per-pair correction');
+assert.equal(api.settings('dagger', 'warhammer').y, 45, 'Keep original haft correction for each head pairing');
 const broadShaft = api.getConfig().shafts['harlyao-broadsword']; // Baseline Harlyao sword shaft used for the default longsword proportion.
 const longShaft = api.getConfig().shafts['harlyao-longsword']; // Explicit per-head overrides may intentionally diverge from this default relation.
-assert.deepEqual(plain(longShaft.attachments), plain(broadShaft.attachments));
-assert(Math.abs(longShaft.defaults.scaleX - broadShaft.defaults.scaleX * .9) < 1e-6);
-assert(Math.abs(longShaft.defaults.scaleY - broadShaft.defaults.scaleY * 1.1) < 1e-6);
-for (const key of ['x', 'y', 'rotation', 'flipX', 'flipY']) assert.equal(longShaft.defaults[key], broadShaft.defaults[key]);
+assert.deepEqual(plain(longShaft.mounts), plain(broadShaft.mounts));
+assert(Math.abs(api.settings('harlyao-longsword', 'work-hammer').scaleX - api.settings('harlyao-broadsword', 'work-hammer').scaleX * .9) < 1e-6);
+assert(Math.abs(api.settings('harlyao-longsword', 'work-hammer').scaleY - api.settings('harlyao-broadsword', 'work-hammer').scaleY * 1.1) < 1e-6);
+assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings remain.');
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
-draft.shafts.dagger.defaults = { scaleX: 1.2, scaleY: .8, flipX: true, flipY: false, x: 30, y: 10, rotation: 15 };
-draft.shafts.dagger.overrides.warhammer = { flipX: false, x: 0, rotation: 0 };
+draft.shafts.dagger.overrides.warhammer = { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true };
 api.replace(draft);
 assert.deepEqual(plain(api.settings('dagger', 'warhammer')), { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true });
-draft.shafts.dagger.defaults.scaleX = 1.7;
+draft.shafts.dagger.overrides.warhammer.scaleX = 1.7;
 api.replace(draft);
 assert.equal(api.settings('dagger', 'warhammer').scaleX, 1.7);
 assert.equal(api.settings('dagger', 'warhammer').flipX, false);
@@ -113,6 +113,7 @@ assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok,
 assert.deepEqual(inventory, blockedInventory);
 const enabled = plain(api.getConfig()); // Explicit false survives sanitization and grants an author-approved exception.
 enabled.shafts.dagger.overrides.warhammer.disallow = false;
+enabled.shafts.dagger.mounts.push({ type: 'eye', start: { x: 211, y: 617 }, end: { x: 211, y: 537 } }); // Adds the missing sleeve for a weighted head.
 api.replace(enabled);
 assert.equal(api.isDisallowed('dagger', 'warhammer'), false);
 assert.equal(api.getConfig().shafts.dagger.overrides.warhammer.disallow, false);
@@ -135,30 +136,33 @@ mine.restore(null); assert.equal(mine.getTownValue(), 0); assert.equal(mine.hasI
 mine.restore(oldWorld); assert.equal(mine.getTownValue(), 5);
 assert.equal(saves, 2);
 const legacy = plain(api.getConfig()); // Legacy exports cannot restore the crop/second socket or silently erase new restrictions.
-legacy.shafts['dagger-sword'].attachments.push({ x: 193, y: 880, rotation: 0 });
+legacy.shafts['dagger-sword'].mounts.push({ type: 'eye', start: { x: 193, y: 880 }, end: { x: 193, y: 800 } });
 legacy.shafts['dagger-sword'].crop = { x: 0, y: 640, width: 450, height: 248 };
 delete legacy.shafts.dagger.overrides.warhammer.disallow;
 api.replace(legacy);
 assert.equal(api.isDisallowed('dagger', 'warhammer'), true);
-assert.equal(api.getConfig().shafts['dagger-sword'].attachments.length, 1);
+assert.equal(api.getConfig().shafts['dagger-sword'].mounts.length, 2);
 assert.equal(api.getConfig().shafts['dagger-sword'].crop, undefined);
 const motion = plain(api.getConfig()); // Both animation choices can be authored at shaft and individual-head levels.
 motion.shafts['fishing-spear'].overrides.warhammer.animation = 'thrust';
 api.replace(motion); api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
 assert.equal(defs[spearHammer].animStyle, 'thrust'); assert.equal(defs[spearHammer].comboStyle, 'thrust');
 delete motion.shafts['fishing-spear'].overrides.warhammer.animation;
-motion.shafts['fishing-spear'].defaults.animation = 'sweep';
+// There is no global attack animation; the selected combination's missing override inherits the neutral sweep.
 api.replace(motion); api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
 assert.equal(api.getConfig().shafts['fishing-spear'].overrides.warhammer.animation, undefined);
 assert.equal(defs[spearHammer].animStyle, 'sweep');
 motion.shafts['fishing-spear'].overrides.warhammer.animation = 'invalid';
 api.replace(motion); assert.equal(api.settings('fishing-spear', 'warhammer').animation, 'sweep');
 const olderMotion = plain(api.getConfig()); // Older exports still receive the authored safe spear sweep exceptions.
-delete olderMotion.shafts['fishing-spear'].defaults.animation;
+// Older saved per-pair records also remain independent of any shaft-global default.
 api.replace(olderMotion);
 assert.equal(api.settings('fishing-spear', 'dagger').animation, 'thrust');
 assert.equal(api.settings('fishing-spear', 'warhammer').animation, 'sweep');
 const spearInventory = { gold: 100, pineLog: 20, bar_nativeCopper: 10 }, spearGear = { tools: {} }; // The allowed spear/hammer path must actually craft, not merely appear unlocked.
+const spearWithEye = plain(api.getConfig()); // Give this thrusting haft an additional sleeve for hammer heads.
+spearWithEye.shafts['fishing-spear'].mounts.push({ type: 'eye', start: { x: 199, y: 834 }, end: { x: 199, y: 754 } });
+api.replace(spearWithEye);
 window.FoundryShop.init({ inventory: spearInventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES: ['fishingspear', 'warhammer'], VERDIGRIS_METAL_KEYS: ['nativeCopper'], getGearInventory: () => spearGear,
   metalBarItemKey: metal => `bar_${metal}`, clampInventoryStack() {}, saveGearInventory() {}, buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData() {} });
 assert.equal(window.FoundryShop.craft('fishing-spear', 'warhammer', 'nativeCopper').ok, true);
