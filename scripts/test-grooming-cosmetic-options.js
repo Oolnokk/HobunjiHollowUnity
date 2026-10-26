@@ -76,7 +76,7 @@ assert.equal(window.HobunjiNuhonganSpecies.debugSnapshot().creatorPrivateSpecies
 assert.equal(window.hobunjiOnboardingMashtzarrFemale.speciesTableCaptured, false);
 
 const api = window.HobunjiOnboarding;
-function verifyGrooming(speciesId, gender, expectedLabel, selectedId, slot = 'hairFront') {
+function verifyGrooming(speciesId, gender, expectedLabel, selectedId, slot = 'hairFront', forbiddenSlot = null) {
   const appearance = { speciesId, gender, cosmetics: selectedId ? { [slot]: selectedId } : {},
     bodyColors: { A: { h: 12, s: -0.1, v: -0.2 }, B: { h: 15, s: -0.3, v: -0.4 } } }; // Saved identity and colors must remain stable.
   let applied = null; // Receives the actual Apply result without modifying the character save.
@@ -86,6 +86,7 @@ function verifyGrooming(speciesId, gender, expectedLabel, selectedId, slot = 'ha
   assert.doesNotMatch(overlay.innerHTML, /None available\./, `${speciesId}/${gender} must show usable options`);
   assert.match(overlay.innerHTML, new RegExp(expectedLabel));
   assert.match(overlay.innerHTML, new RegExp('data-ob-slot="' + slot + '"'));
+  if (forbiddenSlot) assert.doesNotMatch(overlay.innerHTML, new RegExp('data-ob-slot="' + forbiddenSlot + '"'), 'forbidden cosmetic must remain absent');
   assert.equal(api.creatorSessionInfo().cosmeticsOnly, true);
   overlay.start.click();
   assert.equal(applied.appearance.speciesId, speciesId, 'grooming may not replace the saved species');
@@ -110,8 +111,7 @@ verifyGrooming('nuhongan', 'male', 'Grand Beard', grandBeard.tletingan, 'facialH
 verifyGrooming('kenkari', 'male', 'Grand Beard', grandBeard.kenkari, 'facialHair');
 verifyGrooming('rakakoan', 'male', 'Grand Beard', grandBeard.kenkari, 'facialHair');
 verifyGrooming('mashtzarr', 'male', 'Grand Beard', grandBeard.mashtzarr, 'facialHair');
-verifyGrooming('mammakhbuur', 'male', 'Grand Beard', grandBeard.mashtzarr, 'facialHair');
-assert.doesNotMatch(overlay.innerHTML, /data-ob-slot="hairFront"/, 'Mammakhbuur must not show prohibited front hair');
+verifyGrooming('mammakhbuur', 'male', 'Grand Beard', grandBeard.mashtzarr, 'facialHair', 'hairFront');
 // The runtime portrait filter merges the parent allow-list with each subspecies' own list.
 const authorRegistry = JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json', 'utf8'));
 const cosmeticEntries = Array.isArray(authorRegistry) ? authorRegistry : Object.values(authorRegistry).find(Array.isArray);
