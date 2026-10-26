@@ -161,6 +161,34 @@ assert.ok(Math.abs(parented.scale.x * 2 - holder.scale.x) < 1e-9, 'a scaled pare
   assert.equal(attach.headFrame(f, avatar), true);
   assert.ok(f.quaternion.angleTo(yawQuat(50)) < 1e-6, 'head rotation is the rotation-only product of the hierarchy');
 }
+// The loaded blowgun's mouthpiece is at its local +Z end; its firing direction is local -Z.
+// A -180° X basis flip turns that shaft toward the head's +Z gaze. Yaw must not
+// steer it away from the same head-to-reticle ray that gameplay's guide depicts.
+{
+  const heldContext = { window: {} }; // Reads the exact shipped poses to catch a future off-axis authoring regression.
+  const heldSource = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
+  const bootstrapStart = heldSource.indexOf('  // Shared direct-hand bootstrap.');
+  assert.ok(bootstrapStart > 0, 'held-action pose fixture boundary remains identifiable');
+  vm.runInNewContext(heldSource.slice(0, bootstrapStart) + '\n})();', heldContext);
+  const ready = heldContext.window.HeldActionAnimations.blowgunReady;
+  const f = attach.createHeadFrame(THREE); // Models an arbitrarily yawed/pitched visible head pointing at a perspective reticle.
+  f.position.set(2, 1.4, -3);
+  f.quaternion.setFromEuler({ x: -0.26, y: 0.77, z: 0.05 });
+  f.scale = 1.14;
+  const expected = new V3(0, 0, 1).applyQuaternion(f.quaternion); // Same local head-forward axis used by the diagnostic aim guide.
+  const mouthpiece = { x: -0.0139, y: 0, z: 0.6426 }; // Current B'shuakauitl holder-space aperture at its positive-Z end.
+  for (const phase of ['neutral', 'windup', 'strike']) {
+    const holder = { position: new V3(), quaternion: new Q4(), scale: new V3(1, 1, 1), userData: {} };
+    attach.placeAtMouth(holder, f, ready.poses[phase], ready.poses.neutral.scale, mouthpiece);
+    const shaft = new V3(0, 0, -1).applyQuaternion(holder.quaternion); // Blowgun barrel projects away from its mouthpiece.
+    const dot = expected.x * shaft.x + expected.y * shaft.y + expected.z * shaft.z;
+    assert.ok(dot > 1 - 1e-9, `loaded blowgun ${phase} barrel points parallel to head-to-reticle aim (dot ${dot})`);
+    const placedMouthpiece = new V3(mouthpiece.x, mouthpiece.y, mouthpiece.z)
+      .multiplyScalar(holder.scale.x).applyQuaternion(holder.quaternion).add(holder.position);
+    assert.ok(Math.hypot(placedMouthpiece.x - f.position.x, placedMouthpiece.y - f.position.y, placedMouthpiece.z - f.position.z) < 1e-9,
+      `loaded blowgun ${phase} preserves the exact mouth position while aligning its barrel`);
+  }
+}
 // Hand-aligned scaling pivots on the main-hand grip: the grip's position must not depend on the holder's scale.
 {
   const grip = { x: 0.1, y: -0.05, z: 0.5 };
