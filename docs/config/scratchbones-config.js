@@ -4032,6 +4032,7 @@ window.SCRATCHBONES_CONFIG = {
         },
         "anchorZ": 0,
         "alphaTest": 0.001,
+        "maskAlphaTest": 0.35,
         "backPlaneOffsetZ": 0.001,
         "portraitVerticalPlacement": {
           "default": 0.5,
