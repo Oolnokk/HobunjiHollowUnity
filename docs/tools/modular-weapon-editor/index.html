@@ -4,6 +4,10 @@
 <title>Modular Weapon Attachments</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#0c1520;color:#e5f4ef;font:14px system-ui}header{padding:14px;position:sticky;top:0;background:#142431;z-index:2}h1{font-size:18px;margin:0 0 6px}button,select,input{font:inherit;color:inherit;background:#203645;border:1px solid #547a80;border-radius:5px;padding:9px;min-height:42px}button{cursor:pointer}input[type=number]{width:100%}input[type=checkbox]{width:22px;height:22px;min-height:0}main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(270px,390px) minmax(300px,1fr)}section{padding:12px;background:#142431;border-radius:8px}label{display:block;margin:6px 0}select{max-width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap}.sprites{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}figure{margin:0;text-align:center}canvas{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain;background:repeating-conic-gradient(#2a3841 0% 25%,#354951 0% 50%) 50%/20px 20px;touch-action:none;cursor:crosshair}figcaption{padding:8px 0}table{width:100%;border-collapse:collapse}td,th{padding:5px;text-align:left}th{font-size:12px}td:first-child{width:75px}td:nth-child(2){width:36px}p{line-height:1.4;color:#bbd2cf}#status{margin:6px 0;white-space:pre-wrap}pre{white-space:pre-wrap;overflow-wrap:anywhere}h2{font-size:16px}#attach-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.line-length-field{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:6px 0}
+.line-length-field input{max-width:130px;min-width:70px}
+.line-length-field button{min-width:42px}
+.line-length-field .line-length-label{font-weight:600;min-width:115px}
 #gizmo-draw.active,#gizmo-move.active,#gizmo-rotate.active{background:#3c6572;border-color:#a4ead8;box-shadow:inset 0 0 0 1px #a4ead8}
 #shaft-canvas,#head-canvas{max-height:none;object-fit:fill}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
 #sprite-cutter{grid-column:1/-1}.cut-grid{display:grid;grid-template-columns:minmax(240px,340px) minmax(250px,1fr);gap:16px}.cut-controls{display:flex;flex-direction:column;gap:6px}.cut-controls label{margin:4px 0}.cut-controls input:not([type=file]),.cut-controls select{width:100%}.cut-stage{width:100%;max-width:470px;justify-self:center}.cut-stage canvas{width:100%;max-height:none;height:auto;object-fit:fill;image-rendering:pixelated}.cut-stage figcaption{word-break:break-word}#cut-status{min-height:3em}#cut-output{font-family:monospace;overflow-wrap:anywhere;color:#7de0cb}#cut-debug{font-size:12px}@media(max-width:760px){.cut-grid{grid-template-columns:1fr}.cut-stage{max-width:min(100%,450px)}}
@@ -26,10 +30,16 @@
 <label>Haft mounting line <select id="socket"></select></label>
 <label>Selected haft mount type <select id="mount-kind"><option value="tang">Tang</option><option value="eye">Eye/sleeve</option></select></label>
 <div class="toolbar"><button id="add" type="button">Add haft line</button><button id="remove" type="button">Remove selected line</button></div>
+<p>Line length is the distance from its fixed origin (base) to its arrow tip. Use the number box, its native arrows, or the − / + buttons to adjust length without changing direction.</p>
 <div id="attach-controls"></div>
 <label><input id="disallow" type="checkbox"> Explicitly disallow this head on this haft</label>
 <p>A haft can have tang lines, eye lines, or both; only the matching type accepts each head. Explicit exclusions take precedence even for compatible lines.</p>
 <h2>Selected head + haft corrections</h2>
+<label>Sprite layer order <select id="layer-order" aria-label="Selected head and haft sprite layer order">
+<option value="haft-over-head">Haft over head (default)</option>
+<option value="head-over-haft">Head over haft</option>
+</select></label>
+<p>Layering applies to this head–haft combination only, including all matching mounts. The default paints the haft on top of the head.</p>
 <p>There are no longer global transformations. The matching arrows supply initial translation, rotation, and scaling only along the line direction. These controls adjust only this exact combination, on top of its automatic transform.</p>
 <table><thead><tr><th>Pair correction</th><th>Setting</th></tr></thead><tbody id="fields"></tbody></table>
 <button id="reset-pair" type="button">Reset this pair's manual corrections</button>
