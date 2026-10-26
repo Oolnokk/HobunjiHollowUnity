@@ -2,6 +2,7 @@
   'use strict';
 
   const WESTERN_SLOPE_ID = 'map_western_slope'; // Used to scope the stack and author overrides to Western Slope.
+  const BACKGROUND_MAX_DEPTH_NDC = 1 - 5 * (2 / 65535); // One 16-bit depth slot ahead of sky-dome.js's nearest cloud mask, including planes beyond camera.far.
   const GROUP_NAME = 'WesternSlopeMountainBackdrops'; // Used for scene duplicate detection and editor lookup.
   const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v1'; // Used by the background author and live runtime on the same browser.
   const ASSET_URLS = Object.freeze(['assets/backdrops/bd_mountains_1.png','assets/backdrops/bd_mountains_2.png','assets/backdrops/bd_mountains_3.png']); // Near-to-far authored PNGs.
@@ -90,6 +91,18 @@
     });
   }
   function materialFor(texture){const T=window.THREE,m=new T.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.01,depthTest:true,depthWrite:false,side:T.FrontSide,fog:false});if('toneMapped'in m)m.toneMapped=false;m.userData=Object.assign({},m.userData,{westernSlopeMountainBackdrop:true});return m;}
+  function keepInFrontOfSky(material) {
+    // Preserve terrain occlusion and PNG blending; only clamp the distant end
+    // of the plane's depth, leaving its authored position and perspective intact.
+    material.userData.backgroundMaxDepthNdc = BACKGROUND_MAX_DEPTH_NDC;
+    material.onBeforeCompile = shader => {
+      shader.uniforms.uBackgroundMaxDepth = { value: BACKGROUND_MAX_DEPTH_NDC };
+      shader.vertexShader = 'uniform float uBackgroundMaxDepth;\n' + shader.vertexShader.replace(
+        /}\s*$/, 'gl_Position.z = min(gl_Position.z, gl_Position.w * uBackgroundMaxDepth);\n}'
+      );
+    };
+    material.customProgramCacheKey = () => 'hobunji-background-layer-depth-v1';
+  }
   function attach(scene,cols,rows,mapId=WESTERN_SLOPE_ID,options=null){
     if(mapId!==WESTERN_SLOPE_ID||!scene)return Promise.resolve(null);
     const config=normalizeAuthorConfig(options?.config||readAuthorConfig()),existing=scene.getObjectByName?.(GROUP_NAME)||(scene.children||[]).find(c=>c?.name===GROUP_NAME);
@@ -102,7 +115,7 @@
       if(record.cancelled||activeByMap.get(mapId)!==record){for(const t of textures)t?.dispose?.();return null;}
       const T=window.THREE,layout=layoutFromTextures(textures,cols,rows,config),root=new T.Group();root.name=GROUP_NAME;root.visible=config.enabled!==false;
       Object.assign(root.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrops:true,mapId,sharedWorldUnitsPerPixel:layout[0]?.unitsPerPixel||0,authorConfig:config});
-      for(const layer of layout){const mesh=new T.Mesh(new T.PlaneGeometry(layer.width,layer.height),materialFor(textures[layer.index]));mesh.name=`${GROUP_NAME}_Layer${layer.layer}`;mesh.renderOrder=-101-layer.index;mesh.castShadow=false;mesh.receiveShadow=false;mesh.frustumCulled=true;Object.assign(mesh.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrop:true,layer:layer.layer,sourceAsset:layer.asset,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight});applyLayer(mesh,layer);root.add(mesh);record.meshes.push(mesh);}
+      for(const layer of layout){const mesh=new T.Mesh(new T.PlaneGeometry(layer.width,layer.height),materialFor(textures[layer.index]));keepInFrontOfSky(mesh.material);mesh.name=`${GROUP_NAME}_Layer${layer.layer}`;mesh.renderOrder=-101-layer.index;mesh.castShadow=false;mesh.receiveShadow=false;mesh.frustumCulled=false;Object.assign(mesh.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrop:true,layer:layer.layer,sourceAsset:layer.asset,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight});applyLayer(mesh,layer);root.add(mesh);record.meshes.push(mesh);}
       record.root=root;scene.add(root);if(Array.isArray(scene.items)&&!scene.items.includes(root))scene.items.push(root);stats.completedBuilds++;applyAuthorConfigToGroup(root,cols,rows,config);
       log(`attached 3 mountain layers to ${mapId}; west X=${layout.map(l=>l.position[0].toFixed(1)).join(', ')}; shared scale=${(layout[0]?.unitsPerPixel||0).toFixed(4)} world units/pixel`);return root;
     }).catch(error=>{stats.lastError=error?.message||String(error);stats.failedBuilds++;log(`build failed: ${stats.lastError}`,'warn');disposeRecord(record);return null;});
@@ -126,7 +139,7 @@
   }
   function debug(){
     const active=activeByMap.get(WESTERN_SLOPE_ID);
-    return {installed:true,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
+    return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
   }
 
   window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER})});

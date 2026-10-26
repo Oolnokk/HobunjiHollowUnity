@@ -5619,17 +5619,11 @@
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
-        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
-        if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-        // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+        const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
+        if (!spatial || spatial.gain <= 0.002) return;
         const tile = window.AudioSystem?.footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
-        // Whistled companions stay quiet (like the player) and unpanned —
-        // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
-        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
-        window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff, pan);
+        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
+        window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain, spatial.panX, { source: c }); // 3D source lets recorded and procedural hostile steps share weapon HRTF.
       }
 
       // Terrain/structure gate for creature movement — unlike tileSpeedAt
@@ -12280,14 +12274,11 @@
             if (this.area !== currentArea) return; // not in the player's current area; inaudible
             if (!window.AudioSystem?.footstepAdvance(this, distTiles * TILE)) return;
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
-            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
-            if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-            // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
-            const pan = Math.max(-1, Math.min(1, (wx - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+            const source = { x: wx, y: wy, areaId: this.area, root }; // Real walker elevation stays attached to its audible footfalls.
+            const spatial = window.AudioSystem?.combatAudioSpatial(source, { earshotTiles: 9 });
+            if (!spatial || spatial.gain <= 0.002) return;
             const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
-            window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
+            window.AudioSystem?.playFootstepSfx(this.area, tile, spatial.gain, spatial.panX, { source });
           },
           // Ad-hoc grid pathfinding fallback — used when neither a direct
           // beeline nor the authored route-node graph can get this NPC to
@@ -28549,6 +28540,9 @@
         clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
+        camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
+        getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
         _isBuildingArea,
         npcGridForArea,
         isRealMediaError: (...a) => window.Music?.isRealMediaError(...a),

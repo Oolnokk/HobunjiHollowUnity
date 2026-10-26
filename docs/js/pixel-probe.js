@@ -1115,6 +1115,9 @@
       const ready = combatSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
       const ageMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null;
       lines.push(`Combat SFX: preload ready=${ready}/${combatSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${ageMs}ms ago detail=${JSON.stringify(lastCue.detail)} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+      const spatial = combatSfxDebug.spatial; // Copyable world-origin evidence for mobile testing at cliffs/ravines.
+      if (spatial) lines.push(`Combat origin: ${spatial.source} area=${spatial.area || '-'} horizontal=${Number(spatial.horizontalTiles).toFixed(1)} tiles vertical=${Number(spatial.verticalTiles).toFixed(1)} tiles 3D=${Number(spatial.distanceTiles).toFixed(1)} tiles gain=${spatial.gain} pan=${spatial.panX} HRTFxyz=${spatial.position3d ? `(${Object.values(spatial.position3d).map(v => Number(v).toFixed(2)).join(',')})` : 'none'}`);
+      lines.push(`Combat direction: backend=${combatSfxDebug.backend || 'unknown'} HRTF starts=${combatSfxDebug.spatialStarts || 0} native fallbacks=${combatSfxDebug.nativeFallbacks || 0} active HRTF=${combatSfxDebug.activeRoutes || 0} decoded=${combatSfxDebug.decoded || 0} decoding=${combatSfxDebug.decoding || 0} queued=${combatSfxDebug.queued || 0} decode errors=${combatSfxDebug.decodeFailures || 0} lastError=${combatSfxDebug.spatialError || '-'}`);
     }
     const chargedBreakerDebug = window.Combat?.chargedBreakerDebug?.snapshot?.(); // Used to verify visible pose charge and its derived lunge/control stats on mobile.
     if (chargedBreakerDebug) {

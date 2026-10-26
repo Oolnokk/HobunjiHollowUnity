@@ -611,6 +611,13 @@
     // echo itself sounds (a real distant jungle echo reads as diffuse, not
     // pinned to one side).
     const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+    let spatialRoute = null; // True HRTF is selected only for positioned creature/NPC vocalizations, not the local player.
+    const lowpassHz = Number(opts.lowpassHz); // Optional distance EQ for NPC combat voices; ordinary wildlife and player audio keep their current frequency response.
+    const lowpass = Number.isFinite(lowpassHz) && lowpassHz < 18000 && typeof context.createBiquadFilter === 'function' ? context.createBiquadFilter() : null;
+    if (lowpass) {
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = Math.max(600, lowpassHz);
+    }
     const startAt = context.currentTime + 0.012;
     const pitchRatio = Math.pow(2, clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
     const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
@@ -623,12 +630,17 @@
     source.playbackRate.value = pitchRatio;
     master.gain.value = clamp(finite(opts.volume, 0.7), 0, 1);
     source.connect(master);
-    if (panner) {
-      panner.pan.value = clamp(finite(opts.panX, 0), -1, 1);
-      master.connect(panner);
-      panner.connect(context.destination);
-    } else {
-      master.connect(context.destination);
+    if (lowpass) master.connect(lowpass); // Dry direct path alone is rolled off; reflections still receive the original master signal.
+    const dryOutput = lowpass || master;
+    if (opts.position3d) spatialRoute = window.AudioSystem?.connectCombatSpatialDry?.(context, dryOutput, opts);
+    if (!spatialRoute) {
+      if (panner) {
+        panner.pan.value = clamp(finite(opts.panX, 0), -1, 1);
+        dryOutput.connect(panner);
+        panner.connect(context.destination);
+      } else {
+        dryOutput.connect(context.destination);
+      }
     }
     // extraWetBoost (see audio-system.js's creatureAudioSpatial) grows with
     // distance on top of the fixed baseline — "farther away sounds more
@@ -647,6 +659,8 @@
       try { source.disconnect(); } catch (_) {}
       try { master.disconnect(); } catch (_) {}
       try { panner?.disconnect(); } catch (_) {}
+      try { spatialRoute?.dispose?.(); } catch (_) {}
+      try { lowpass?.disconnect(); } catch (_) {}
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
     }
@@ -936,6 +950,8 @@
         volume: clamp(finite(capture.audio.volume, opts.volume ?? 0.7), 0, 1),
         area: c?.areaId || null,
         panX: spatial.panX,
+        position3d: spatial.position3d, // Wildlife warning/growl calls share front-back/vertical positioning with combat strikes.
+        sourceActor: spatial.sourceActor, // A moving animal remains in the correct ear until its call ends.
         extraWetBoost: spatial.extraWetBoost,
         onStarted: opts.onStarted,
         onError: error => complete(error),

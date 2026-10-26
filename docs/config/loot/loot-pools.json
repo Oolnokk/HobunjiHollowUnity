@@ -139,18 +139,20 @@
     },
     "dungeonChest_tier1": {
       "label": "Dungeon Chest — Tier 1 (Weathered)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
         {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":1, "chance":1, "conditions":{}},
+        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
         {"id": "trinket_harlyaoReachShard", "itemKey": "trinket_harlyaoReachShard", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
         {"id": "trinket_harlyaoStridingBone", "itemKey": "trinket_harlyaoStridingBone", "min": 1, "max": 1, "chance": 0.08, "conditions": {}}
       ]
     },
     "dungeonChest_tier2": {
-      "label": "Dungeon Chest — Tier 2 (Iron-bound)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "label": "Dungeon Chest — Tier 2 (Bronze-bound)",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
         {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":2, "chance":1, "conditions":{}},
+        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
         {"id": "trinket_harlyaoReachShard", "itemKey": "trinket_harlyaoReachShard", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
         {"id": "trinket_harlyaoStridingBone", "itemKey": "trinket_harlyaoStridingBone", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
         {"id": "trinket_harlyaoTopplingKnuckle", "itemKey": "trinket_harlyaoTopplingKnuckle", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
@@ -162,9 +164,10 @@
     },
     "dungeonChest_tier3": {
       "label": "Dungeon Chest — Tier 3 (Gilded)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
         {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":3, "chance":1, "conditions":{}},
+        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
         {"id": "trinket_harlyaoTopplingKnuckle", "itemKey": "trinket_harlyaoTopplingKnuckle", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
         {"id": "trinket_harlyaoRootedAnklet", "itemKey": "trinket_harlyaoRootedAnklet", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
         {"id": "trinket_harlyaoQuickFang", "itemKey": "trinket_harlyaoQuickFang", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
@@ -178,9 +181,10 @@
     },
     "dungeonChest_tier4": {
       "label": "Dungeon Chest — Tier 4 (Ancient)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
         {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":4, "chance":1, "conditions":{}},
+        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
         {"id": "trinket_harlyaoTirelessBead", "itemKey": "trinket_harlyaoTirelessBead", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
         {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
         {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},

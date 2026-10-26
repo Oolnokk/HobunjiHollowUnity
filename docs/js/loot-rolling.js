@@ -130,6 +130,11 @@
         for (const [key, qty] of Object.entries(artifacts)) gained[key] = (gained[key] || 0) + qty;
         continue;
       }
+      if (entry.kind === 'generator' && entry.generatorKey === 'dungeonMetalBars' && poolId.startsWith('dungeonChest_tier')) {
+        const bars = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Shared buried-treasure picker respects Town Value and prefers lower-tier metals.
+        for (const [key, qty] of Object.entries(bars)) if (qty > 0) gained[key] = (gained[key] || 0) + qty;
+        continue;
+      }
       if (!entry.itemKey) continue; // generator-only entries (see treasureChest) are rolled by name, not through this generic path
       const min = entry.min || 0, max = entry.max != null ? entry.max : min;
       let qty;

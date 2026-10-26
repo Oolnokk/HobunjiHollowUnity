@@ -395,7 +395,7 @@
     const layout = zoneId ? deps._zoneLayouts.get(zoneId) : null;
     if (!layout) {
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.font = '13px system-ui';
+      ctx.font = '13px ' + getComputedStyle(document.body).fontFamily; // Canvas text uses the same typeface as the live gameplay UI.
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('Not yet explored', w / 2, h / 2);
       return;

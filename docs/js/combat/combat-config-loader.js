@@ -100,7 +100,7 @@
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20261001hb2dc3b8', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
     ['js/combat/technique-scrolls.js?v=20261019h19f690e', () => !!window.TechniqueScrolls],
-    ['js/combat/combat-vocalizations.js?v=20261023breathPitch4', () => Number(window.CombatVocalizations?.version) >= 4],
+    ['js/combat/combat-vocalizations.js?v=20261025audioAudit4', () => Number(window.CombatVocalizations?.version) >= 4],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/held-item-action-input.js?v=20260910a', () => !!window.HeldItemActionInput],
@@ -140,7 +140,7 @@
     ['js/combat/combat-corroded-health.js?v=20261018hda57815', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/enemy-combat-health-recovery.js?v=20260924combatheal2', () => Number(window.CombatHealthRecoveryPolicy?.version || window.EnemyCombatHealthRecoveryPolicy?.version) >= 2],
     ['js/combat/combat-death-mark.js?v=20260903a', () => !!window.HobunjiDeathMark],
-    ['js/combat/combat-drenkirra-pellet.js?v=20261015hd356714', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-drenkirra-pellet.js?v=20261025combatHrtf2', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
     // Den locale runtime is an ordinary sibling module, not a script injected
     // from inside Puktuk registration. Keeping one parser-owned loader prevents
