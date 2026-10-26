@@ -1,0 +1,163 @@
+{
+  "slot": "overwear",
+  "material": "cloth",
+  "tags": [
+    "material:cloth",
+    "collared"
+  ],
+  "colorRange": {
+    "minH": -180,
+    "maxH": 180,
+    "stops": [
+      {
+        "h": -180,
+        "sMin": 0.05,
+        "sMax": 0.85,
+        "vMin": -0.18,
+        "vMax": 0.28
+      },
+      {
+        "h": 0,
+        "sMin": 0.05,
+        "sMax": 0.85,
+        "vMin": -0.18,
+        "vMax": 0.28
+      },
+      {
+        "h": 180,
+        "sMin": 0.05,
+        "sMax": 0.85,
+        "vMin": -0.18,
+        "vMax": 0.28
+      }
+    ]
+  },
+  "palette": {
+    "colors": {
+      "A": {
+        "h": 30,
+        "s": 0.35,
+        "l": 0.38
+      },
+      "B": {
+        "h": 22,
+        "s": 0.45,
+        "l": 0.26
+      }
+    },
+    "layers": {
+      "base": "A",
+      "trim": "B"
+    }
+  },
+  "meta": {
+    "name": "Fine Body Wrap",
+    "note": "Pale-blue body wrap with separately dyeable shoulder trim, reusing Mao-ao fitted wrap and shoulder sprites."
+  },
+  "speciesVariants": {
+    "mao-ao_male": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_mao-ao.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
+            "back_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_m.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mao-ao_female": {
+      "parts": {
+        "torso": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_mao-ao_f.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            },
+            "back_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/overwear/portrait/ruggedshoulders_f.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "torso": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
