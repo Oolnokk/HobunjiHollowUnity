@@ -25,12 +25,14 @@ vm.runInNewContext(fs.readFileSync('docs/js/ore-rock-textures.js','utf8'), {wind
 async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
 
 (async () => {
-  const ores = {
-    copper: {hex:'#B87333',verdigrisHex:'#3FAF9F',oxidationAmount:0.58},
-    tinCopper: {hex:'#58A28D',verdigrisHex:'#4EAA86',oxidationAmount:0},
-    mushistonite: {hex:'#7BA963',verdigrisHex:'#57B38B',oxidationAmount:0},
-    tin: {hex:'#513C32',verdigrisHex:null,oxidationAmount:0},
-  }; // Old copper plus introduced bronze and a non-verdigris ore.
+  const game=fs.readFileSync('docs/game.js','utf8'); // Test the actual metal/ore palette, not a hand-copied mock.
+  const definitions=game.slice(game.indexOf('      const METAL_DEFS = {'),game.indexOf('      const METAL_BAR_RECIPES = {'));
+  assert(definitions.includes('const ORE_DEFS = {'), 'The real metal and ore definitions must be present');
+  const actual=vm.runInNewContext(definitions+'\n({ metals: METAL_DEFS, ores: ORE_DEFS })');
+  const ores=actual.ores; // Every mineable ore, including newly introduced bronze types.
+  for (const [ore,metal] of [['tinCopper','lowTinBronze'],['mushistonite','tinBronze'],['tin','tin']]) {
+    assert.equal(ores[ore].rockMetalHex,actual.metals[metal].hex,ore+' rock must use its contained metal color');
+  }
   const stone = browser.OreRockTextures.materialFor(THREE, 'stone', ores);
   assert(stone instanceof THREE.MeshStandardMaterial, 'Restore the original lit rock material');
   assert.equal(stone.map.src, 'assets/textures/carved_smooth.png');
@@ -49,7 +51,7 @@ async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
     assert.equal(m.map.encoding,THREE.sRGBEncoding,'Three r128 uses sRGB encoding');
     assert.equal(browser.OreRockTextures.debugSnapshot()[key],'ready','Mobile diagnostics show success');
   }
-  assert.equal(requests.length,4,'Exactly one recolor per mineral, never one per spawned rock');
+  assert.equal(requests.length,Object.keys(ores).length,'Exactly one recolor per ore type, not per spawned rock');
   for (const {src,opts} of requests) {
     assert.equal(src,'assets/textures/carved_smooth.png');
     assert.equal(opts.sourceHex,'#635544','Recolor actual original stone pigment, not scattered mineral islands');
@@ -58,11 +60,14 @@ async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
     assert.equal(opts.outlineWidth,1);
     assert(Number.isInteger(opts.seed),'Blotches remain deterministic by ore type');
   }
-  const optionsFor = key => requests.find(request => request.opts.targetHex===ores[key].hex).opts;
+  const optionsFor = key => requests.find(request => request.opts.targetHex===(ores[key].rockMetalHex || ores[key].hex)).opts;
   assert.equal(optionsFor('copper').oxidationAmount,0.58,'Original copper patina amount');
   assert.equal(optionsFor('copper').verdigrisHex,ores.copper.verdigrisHex);
   assert.equal(optionsFor('tinCopper').oxidationAmount,0.58,'Crude bronze gets patina over metal');
   assert.equal(optionsFor('mushistonite').oxidationAmount,0.58,'Natural bronze gets patina over metal');
+  assert.equal(optionsFor('tinCopper').targetHex,actual.metals.lowTinBronze.hex,'Crude bronze is metal-colored, not raw ore-icon green');
+  assert.equal(optionsFor('mushistonite').targetHex,actual.metals.tinBronze.hex,'Natural bronze is metal-colored, not raw ore-icon green');
+  assert.equal(optionsFor('tin').targetHex,actual.metals.tin.hex,'Cassiterite rocks take on metallic tin color');
   assert.equal(optionsFor('tin').oxidationAmount,0,'Non-oxidizing rock stays ore-colored');
 
   const geometry={ dispose(){ throw Error('Do not dispose pre-redesign geometry'); } }; // Old UV coordinates must survive.
@@ -76,7 +81,6 @@ async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
   assert.equal(browser.OreRockTextures.debugSnapshot()._surfaceMapping.originalUvs,1,'No double counting');
   assert.equal(browser.OreRockTextures.fitRockMesh({userData:{}}),false,'Missing geometry fails safely');
 
-  const game=fs.readFileSync('docs/game.js','utf8');
   const cave=fs.readFileSync('docs/js/cavern-ore-rocks.js','utf8');
   const farm=fs.readFileSync('docs/js/vegetation-crop-rendering.js','utf8');
   const wilderness=fs.readFileSync('docs/js/wilderness-map-generator.js','utf8');
@@ -84,10 +88,8 @@ async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
   assert(game.includes('OreRockTextures.fitRockMesh')&&cave.includes('OreRockTextures.fitRockMesh'),'Existing geometry hookups do not go missing');
   assert(farm.includes('OreRockTextures?.fitRockMesh'),'Farm hook stays callable without remapping');
   assert(game.includes('verdigrisHex: METAL_DEFS.lowTinBronze.verdigrisHex')&&game.includes('verdigrisHex: METAL_DEFS.tinBronze.verdigrisHex'),'Both new ores keep their real alloy verdigris');
-  const definitions=game.slice(game.indexOf('      const METAL_DEFS = {'),game.indexOf('      const METAL_BAR_RECIPES = {'));
-  const actual=vm.runInNewContext(definitions+'\n({ metals: METAL_DEFS, ores: ORE_DEFS })');
   for (const [ore,metal] of [['tinCopper','lowTinBronze'],['mushistonite','tinBronze']]) {
-    assert.equal(actual.ores[ore].verdigrisHex,actual.metals[metal].verdigrisHex,ore+' uses its corresponding alloy patina');
+    assert.equal(ores[ore].verdigrisHex,actual.metals[metal].verdigrisHex,ore+' uses its corresponding alloy patina');
   }
   assert(wilderness.includes('generatedObjectOreKind')&&game.includes('t.generatedObjectOreKind'),'No change to ore identity or wilderness drops');
   assert.equal(logs.length,0,'No warnings on successful recolors');
