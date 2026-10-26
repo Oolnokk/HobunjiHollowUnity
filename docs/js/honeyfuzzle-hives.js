@@ -69,26 +69,29 @@
 
   // ---- A. swarm lifecycle ---------------------------------------------------
 
+  function hiveGenotype(zoneId, key, primaryColor) {
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(SPECIES) || null; // One canonical allele shape for wild swarms and their harvested eggs.
+    if (!genotype?.base) return genotype;
+    genotype.base.color = primaryColor || genotype.base.color;
+    const seed = window.HoneyfuzzleSwarm?.seedFromString?.(key) || 0; // Same deterministic markings even if the defender is not currently spawned.
+    const palette = window.HoneyfuzzleColors?.zonePalette(zoneId) || []; // Secondary pigments come from the stump's region.
+    for (const [index, id] of ['tailfeathers', 'spectacles'].entries()) {
+      const layer = genotype[id];
+      if (!layer) continue;
+      const enabled = (window.HoneyfuzzleSwarm?.hashUnit?.(seed, 60 + index) ?? 1) < 1 / 3;
+      layer.copies = enabled ? 1 : 0;
+      layer.enabled = enabled;
+      if (palette.length) layer.color = palette[Math.floor((window.HoneyfuzzleSwarm?.hashUnit?.(seed, 80 + index) || 0) * palette.length)];
+    }
+    return genotype;
+  }
+
   function spawnSwarm(zoneId, hive) {
     const T = deps.TILE;
     const hx = (hive.col + 0.5) * T, hy = (hive.row + 0.5) * T;
     const angle = deps.rnd() * Math.PI * 2;
-    const colors = window.HoneyfuzzleColors; // The native zone palette determines both primary and any inherited secondary pigments.
-    const swarmColor = colors?.pickForKey(zoneId, hive.key) || undefined;
-    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(SPECIES) || null; // The generic genetics module owns the optional feather/spectacles allele schema.
-    if (genotype?.base) {
-      genotype.base.color = swarmColor || genotype.base.color;
-      const seed = window.HoneyfuzzleSwarm?.seedFromString?.(hive.key) || 0; // Stable local markings when the same hive respawns after a zone reload.
-      const palette = colors?.zonePalette(zoneId) || [];
-      for (const [index, id] of ['tailfeathers', 'spectacles'].entries()) {
-        const layer = genotype[id];
-        if (!layer) continue;
-        const enabled = (window.HoneyfuzzleSwarm?.hashUnit?.(seed, 60 + index) ?? 1) < 1 / 3;
-        layer.copies = enabled ? 1 : 0;
-        layer.enabled = enabled;
-        if (palette.length) layer.color = palette[Math.floor((window.HoneyfuzzleSwarm?.hashUnit?.(seed, 80 + index) || 0) * palette.length)];
-      }
-    }
+    const swarmColor = window.HoneyfuzzleColors?.pickForKey(zoneId, hive.key) || undefined;
+    const genotype = hiveGenotype(zoneId, hive.key, swarmColor); // One source of truth shared with hive egg genotype persistence.
     const c = deps.makeCreatureEntity(SPECIES, hx + Math.cos(angle) * T * 0.9, hy + Math.sin(angle) * T * 0.9, {
       homeX: hx, homeY: hy, state: 'idle', hiveKey: hive.key, wildlifeRole: 'prey',
       swarmColor, genotype, // The ordinary wildlife entity carries the same cosmetic genes as farm and companion swarms.
@@ -196,8 +199,13 @@
     const eggRoom = Math.max(0, (window.InventoryStacks?.MAX_TOTAL ?? 99) - (Number(deps.inventory[EGG_ITEM]) || 0));
     if (eggRoom < 1) return { ok: false, message: 'No room in your bag for fertile eggs.' };
     const gotEggs = addToBag(EGG_ITEM, Math.min(eggs, eggRoom));
-    const eggColor = window.HoneyfuzzleColors?.pickForKey(zoneId, hiveKeyFor(zoneId, col, row)); // The eggs hatch into this stump's color.
-    if (eggColor) window.HoneyfuzzleColors.queueEggColors(deps.getWorldId?.(), Array.from({ length: gotEggs }, () => eggColor));
+    const sourceKey = hiveKeyFor(zoneId, col, row); // Identifies the same deterministic genetic lineage as its live swarm.
+    const eggColor = window.HoneyfuzzleColors?.pickForKey(zoneId, sourceKey);
+    const parentGenotype = swarmFor(sourceKey)?.genotype || hiveGenotype(zoneId, sourceKey, eggColor); // Harvesting an unspawned hive still yields consistent inherited markings.
+    if (eggColor && gotEggs) {
+      const entries = Array.from({ length: gotEggs }, () => ({ color: eggColor, genotype: parentGenotype })); // Saved FIFO serializes these genes, not shared object references.
+      window.HoneyfuzzleColors?.queueEggAppearances?.(deps.getWorldId?.(), entries);
+    }
     const gotHoney = addToBag(HONEY_ITEM, honey);
     collapseHive(zoneId, col, row);
     window.HobunjiActivityEvents?.emit?.('hive_harvested', { area: zoneId, eggs: gotEggs, honey: gotHoney });
