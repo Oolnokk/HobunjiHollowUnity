@@ -174,8 +174,9 @@
     return `dye:CLOTH:${variant}_${hue}`;
   }
 
-  const GHOUL_OVERWEAR_POOL = Object.freeze(['tankan_bodywrap', 'rugged_poncho', 'fine_poncho']); // Ghoul upper clothing includes the existing body wrap and finely trimmed option; rolled once per spawn.
+  const GHOUL_OVERWEAR_POOL = Object.freeze(['tankan_bodywrap', 'fine_bodywrap', 'rugged_poncho', 'fine_poncho']); // All existing upper garments plus the authored two-dye Fine Body Wrap, sampled uniformly per Ghoul.
   const GHOUL_PANTS_POOL = Object.freeze(['pants_basic', 'draped_pants']); // Equal-probability trouser choices, independent of gender.
+  const GHOUL_BANDOLIER_CHANCE = 0.5; // Empty-roster mine ghouls now actually roll a bandolier; previously only inherited bandoliers could appear.
   const GHOUL_PRIMARY_DYE = 'dye:CLOTH:pale_blue'; // All ghoul clothing channels' primary color, including bandoliers and leg garments.
   const GHOUL_SECONDARY_DYE = 'dye:CLOTH:silver'; // Matching secondary/trim dye on fine hoods, drapes and any two-color clothing.
 
@@ -190,7 +191,14 @@
           || ['basic_pants', 'layered_skirt', ...GHOUL_PANTS_POOL].includes(id)
           || priorSlots[id] === 'hood' || ['fine_hood', 'ragged_hood', 'facewrap'].includes(id)) removed.add(id);
     }
-    const next = current.filter(id => !removed.has(id)); // Torso equipment, especially bandolier1, stays exactly as rolled by the original spawn.
+    const next = current.filter(id => !removed.has(id)); // Other equipped articles, including already rolled bandoliers, survive.
+    const alreadyHasTorso = next.some(id => id === 'bandolier1' || priorSlots[id] === 'torso'); // Prevents adding a second torso article to a pre-equipped ghoul.
+    if (!alreadyHasTorso && deps.rnd() < GHOUL_BANDOLIER_CHANCE) {
+      next.push('bandolier1');
+      priorSlots.bandolier1 = 'torso';
+    } else if (next.includes('bandolier1')) {
+      priorSlots.bandolier1 = 'torso'; // Repairs old external rosters that supplied a bandolier without its loot slot.
+    }
     const overwear = GHOUL_OVERWEAR_POOL[Math.floor(deps.rnd() * GHOUL_OVERWEAR_POOL.length)]; // Each authored upper-body silhouette has equal weight.
     const pants = GHOUL_PANTS_POOL[deps.rnd() < 0.5 ? 0 : 1]; // Exactly 50/50 simple versus draped for fresh ghoul spawns.
     const hood = deps.rnd() < 0.5 ? 'fine_hood' : oldHood; // Fine hoods join the existing headwear mix without requiring a hood every time.
