@@ -285,8 +285,8 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js?v=20261013ha525e98"></script>
-<script src="../../config/scratchbones-config.js?v=20261026hc29ac6a"></script>
-<script src="../../config/attachment-rig-profiles.js?v=20261022h23rig2"></script>
+<script src="../../config/scratchbones-config.js?v=20261026hmrg7c1d"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261025hd81e6fa"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20261010hd4b4796"></script>
 <script src="../../js/character-rig-scale.js?v=20261007h0c4d7d9"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
@@ -304,7 +304,7 @@ canvas{display:block;width:100%;height:100%}
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
-<script src="../../js/combat/shared-attack-pose.js?v=20261025h1491360"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261026blowgunAim1"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -577,7 +577,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: imported B’shuakauitl adjustments; head-relative weapons are masked by their owner’s rear silhouette only.',
+    'Latest: head-anchored tools no longer use the owner’s rear silhouette to mask them.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
@@ -2264,16 +2264,7 @@ function animate() {
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
-  const headOcclusion = window.HeadRelativeWeaponOcclusion; // Same silhouette rule as the game compositor, including skinning and rear-only material groups.
-  const rear = avatarModel?.userData?.neckRig?.skinnedPlane; // Preview portraits use the canonical front/back skinned mesh.
-  const weapon = toolPlaneMesh?.userData?.toolPlane; // Visible PNG only; hands keep their normal depth behavior.
-  if (anim.headRelative && rear && weapon && headOcclusion) {
-    const wasVisible = weapon.visible; // Base world draw omits only the head-relative weapon, then the scoped helper draws it once.
-    weapon.visible = false;
-    try { renderer.render(scene, camera); }
-    finally { weapon.visible = wasVisible; } // Never leave the preview weapon hidden after a render failure.
-    if (wasVisible) headOcclusion.draw(renderer, scene, camera, renderer.render, [{ rear, weapons: [weapon] }], THREE);
-  } else renderer.render(scene, camera);
+  renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();
 

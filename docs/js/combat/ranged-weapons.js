@@ -1615,7 +1615,6 @@
       const t = Math.min(1, action.t / action.durationS);
       pose = poseAtAction(def, action.kind, t);
     }
-    holder.userData.headRelativeBackPlane = pose.headRelative ? c.avatarRef?.backPlane : null; // Ranged-only owner silhouette; cleared immediately for ordinary poses.
     const attach = window.SharedAttackPose;
     if (pose.headRelative && attach && c.avatarRef?.group) {
       // Head-anchored: the weapon's aperture mates with the species mouth point and the head supplies rotation and scale.

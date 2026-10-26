@@ -27,6 +27,20 @@
     run2: 'assets/creaturesprites/voorg-ass_run2.png',
   });
 
+  const LEGACY_VISUAL_GENOTYPE = Object.freeze({
+    base: Object.freeze({ color: BASE_RECOLOR_KEY_HEX, copies: 2, inheritance: 'dominant' }),
+    belly: Object.freeze({ color: BASE_RECOLOR_KEY_HEX, copies: 2, inheritance: 'dominant', enabled: true }),
+  }); // Stable source-coat colors for older/preview animals with no saved genes; never a randomly rerolled genome.
+  function displayGenotypeFor(kind, genotype) {
+    if (kind !== KIND && kind !== HERD_MOTHER_KIND) return genotype; // No migration for unrelated animals.
+    if (genotype?.base?.color) return genotype; // Preserve genuine inherited coloring unchanged.
+    return {
+      ...(genotype || {}),
+      base: { ...LEGACY_VISUAL_GENOTYPE.base },
+      belly: genotype?.belly || { ...LEGACY_VISUAL_GENOTYPE.belly },
+    }; // Renderer-only fallback: the beard remains coat-colored without creating a beard1 allele.
+  }
+
   // Adult + Herd-Mother entries in the live CREATURE_DB. Prey behavior is
   // borrowed from the Uumkao'ii it replaced; existing authored overrides win
   // except for the identity/art fields the species requires.
@@ -43,6 +57,10 @@
       modelWidth: Number(existing.modelWidth) || Number(preyBaseline.modelWidth) || 1.5,
       spriteAspect: Number(existing.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
       lootPool: 'creature_voorg-ass',
+      attackDamage: 1, attackTag: 'blunt', // Rear kick prioritizes knockback/Footing rather than Health.
+      attackStaminaCost: 10, attackCooldownS: 1.3, // Existing ordinary animal-attack resource/cadence gates.
+      attacks: ['rearKick'], realAttackEvery: 1, // Wild retaliation uses only this kick; companions fall back to Guard Charge during cooldown.
+      rearKickCooldownS: 9, // Used by the companion-only signature-attack timer in the animal attack module.
       sprites: { idle: SPRITES.idle, run: [SPRITES.run1, SPRITES.run2] },
     };
     const baseVoorg = creatureDb[KIND]; // Mother tracks adult stat/render changes automatically.
@@ -54,13 +72,15 @@
       hostile: false,
       defaultSizeClass: 'large',
       lootPool: 'creature_voorg-ass',
+      attacks: baseVoorg.attacks, attackTag: baseVoorg.attackTag, // Herd-Mother inherits the same defensive attack.
+      rearKickCooldownS: baseVoorg.rearKickCooldownS,
       sprites: baseVoorg.sprites,
     };
     return true;
   }
 
   // Genotype compositor entry: uploaded base frames plus the mandatory belly
-  // layer, with no optional patterns. Voorg-Ass deliberately does NOT opt into
+  // layer; beard1 is an unconditional coat-colored visual fallback, not a genotype trait. Voorg-Ass deliberately does NOT opt into
   // the full-sprite fallback: CreatureGeneticsRender's cached base recolor
   // tints only the #99BF99 coat family (baseRecolorKeyHex), before the belly
   // and eyes are layered on.
@@ -74,7 +94,8 @@
       baseRecolorMinSaturationRatio: BASE_RECOLOR_MIN_SATURATION_RATIO,
       fullBaseRecolor: false, // Non-coat opaque pixels must remain authored.
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
-      patterns: ['belly'],
+      patterns: ['belly'], // Only inheritable color regions go here; the default beard is not a genotype allele.
+      defaultCoatPatterns: [{ id: 'beard1', family: 'beard' }], // Always draw coat-colored beard1 unless a visible, registered inherited beard variant replaces it.
     };
     return true;
   }
@@ -116,6 +137,7 @@
     ZONE_ID,
     BABY_ITEM_KEY,
     SPRITES,
+    displayGenotypeFor,
     ensureCreatureDefs,
     ensureRendererSpecies,
     ensureNorthernCliffsHerds,

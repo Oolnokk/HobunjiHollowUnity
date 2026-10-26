@@ -1106,8 +1106,6 @@
       renderer.clearStencil?.();
       if (scissored) glState.setScissorTest(true);
       if (overlayMeshes.length) {
-        const headGroups = lastBaseStencilBits >= 2 ? (window.HeadRelativeWeaponOcclusion?.collect(held) || []) : []; // Only active head-relative weapons opt into owner rear masking.
-        const headHidden = hideObjects(headGroups.flatMap(group => group.weapons)); // The ordinary overlay still draws hands, feet and every melee weapon exactly once.
         const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(overlayMeshes) : null;
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
@@ -1117,9 +1115,7 @@
           selectiveOverlayCount++;
         } finally {
           if (overlayStates) restoreMaterialStates(overlayStates);
-          restoreVisibility(headHidden);
         }
-        window.HeadRelativeWeaponOcclusion?.draw(renderer, scene, camera, rawRender, headGroups, THREE, tintOverlay);
       }
       // 2b) CRITICAL PASS ORDER INVARIANT — see
       // docs/architecture/held-object-water-depth-compositing.md:
@@ -1211,8 +1207,7 @@
     const tintCovers = collectVisible(tintCoverRegistry, scene); // Water/slush foreground alpha applies to gear, hands and feet; not opaque snow.
     const feet = collectVisible(waterOccludedRegistry, scene); // Procedural foot meshes share selective ground x-ray.
     if (!held.length && !feet.length) return originalRender.call(this, scene, camera);
-    const headRelativeHeld = window.HeadRelativeWeaponOcclusion?.collect(held).length > 0; // Head masking remains active in interiors with no x-rayed ground.
-    if (!headRelativeHeld && !ground.length && !topFaceGround.length && !(tintCovers.length && (held.length || feet.length))) return originalRender.call(this, scene, camera);
+    if (!ground.length && !topFaceGround.length && !(tintCovers.length && (held.length || feet.length))) return originalRender.call(this, scene, camera);
 
     baseWorldRenderCount++;
     for (const mesh of held) enforceHeldMesh(mesh);
@@ -1272,7 +1267,6 @@
       nonGroundDepthReplays: nonGroundDepthReplayCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
-      headRelativeOcclusion: window.HeadRelativeWeaponOcclusion?.snapshot() || null,
     };
   }
 
