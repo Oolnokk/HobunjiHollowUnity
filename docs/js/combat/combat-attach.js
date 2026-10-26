@@ -9,8 +9,9 @@
 //
 // An attachment has three parts, all driven by the config:
 //   approach  the attacker flies/hops to its single chosen target;
-//   attached  it inherits the target's place (position, facing, a height just
-//             above the target) for durationS and ticks an effect onto it;
+//   attached  it inherits the target's place and facing, overlapping its
+//             visible body center (Swarm) or riding above it (other attacks),
+//             and ticks an effect onto it for durationS;
 //   detach    it ends on time, or when either side dies or leaves the area, or
 //             if the attacker is cancelled, and is set down beside the target.
 // While attached the attacker can be configured to
@@ -26,7 +27,8 @@
 //   onTick(attacker, host, ctx)      -> replaces the default tick
 //   onAttach(attacker, host), onDetach(attacker, host, reason)
 //   immuneToHost, staggerImmune, maxPerHost,
-//   heightAboveHost (world units over the host's top), visualSpreadScale,
+//   verticalAnchor ('center' to overlap the visible body, else above the top),
+//   heightAboveHost (offset from that anchor), visualSpreadScale,
 //   hostReaction: { kind: 'flail', intervalS, radiusTiles, damageScale,
 //                   hitsAllies, hitsOpponents }
 //
@@ -176,6 +178,33 @@
     state.ended = reason;
   }
 
+  // A rider rests above the host; a swarm surrounds the host's *visible*
+  // body center. Resolve that height through Combat's existing world-Y hook,
+  // which supports differently sized portraits, cliffs and riding.
+  function syncAttachedPosition(c, host, cfg) {
+    const d = deps();
+    c.x = host.x; c.y = host.y;
+    c.facing = Number.isFinite(host.facing) ? host.facing : (Number.isFinite(host.angle) ? host.angle : c.facing);
+    c.vx = 0; c.vy = 0;
+    const ownLift = (Number(c.groundLift ?? c.halfHeight) || 0.3) * (Number(c.scaleY) || 1); // Same baseline lift used by updateCreatureMesh.
+    if (cfg.verticalAnchor === 'center') {
+      const pivotOffset = (Number(c.avatarRef?.frontPlane?.position?.y) || 0) *
+        (Number(c.avatarRef?.group?.scale?.y) || 1); // Honeyfuzzle wing cloud hovers above its root; align the birds, not the root.
+      const hostY = Number(d.getActorWorldY?.(host)); // Target's real rendered body center (not its physical top).
+      const groundY = Number(d.worldSurfaceY?.(c.x, c.y)); // Used to convert target center into the existing shared hop-offset slot.
+      const offset = cfg.heightAboveHost ?? 0; // Centered attacks may opt into a small visual offset.
+      c._banditLungeHopCurrent = Number.isFinite(hostY) && Number.isFinite(groundY)
+        ? hostY + offset - groundY - ownLift - pivotOffset
+        : hostHeightUnits(host) * 0.5 + offset - ownLift - pivotOffset;
+      if (Number.isFinite(hostY) && c.avatarRef?.group?.position) {
+        c.avatarRef.group.position.y = hostY + offset - pivotOffset; // Prevent height-lag as the target rises/falls.
+      }
+    } else {
+      c._banditLungeHopCurrent = Math.max(0, hostHeightUnits(host) + (cfg.heightAboveHost ?? 0) - ownLift);
+    }
+    c._attachVisualSpread = cfg.visualSpreadScale ?? 1;
+  }
+
   function updateAttach(c, state, dt) {
     const d = deps();
     const cfg = state.cfg;
@@ -190,6 +219,7 @@
       if (dist <= contact || state.t >= (cfg.approachTimeoutS ?? 0.7)) {
         state.stage = 'attached'; state.t = 0;
         c._attachment.stage = 'attached';
+        syncAttachedPosition(c, host, cfg); // Overlap from the first attached frame.
         window.Combat.telegraph?.cancel?.(c);
         cfg.onAttach?.(c, host);
         return true;
@@ -200,12 +230,8 @@
       return true;
     }
 
-    // attached: take the host's place.
-    c.x = host.x; c.y = host.y;
-    c.facing = Number.isFinite(host.facing) ? host.facing : (Number.isFinite(host.angle) ? host.angle : c.facing);
-    c.vx = 0; c.vy = 0;
-    c._banditLungeHopCurrent = Math.max(0, hostHeightUnits(host) + (cfg.heightAboveHost ?? 0.1) - (Number(c.groundLift ?? c.halfHeight) || 0.3));
-    c._attachVisualSpread = cfg.visualSpreadScale ?? 1;
+    // attached: occupy the host's place (including its vertical body center).
+    syncAttachedPosition(c, host, cfg);
 
     if (state.t >= (typeof cfg.durationS === 'function' ? cfg.durationS(c, host) : (cfg.durationS ?? 5))) { detach(c, state, 'expired'); return false; }
 
@@ -258,8 +284,9 @@
     durationS: 6,
     cooldownS: 5,
     tickIntervalS: 0.5,
-    heightAboveHost: 0.1,
-    visualSpreadScale: 0.9,
+    verticalAnchor: 'center',
+    heightAboveHost: 0,
+    visualSpreadScale: 0.42,
     maxPerHost: 3,
     tick: { damageScale: 0.3, playerScale: 0.6, tag: 'poison', afflictionBonuses: { poisonedHealth: 3 } },
     hostReaction: { kind: 'flail', intervalS: 1.1, radiusTiles: 1.4, damageScale: 0.5, hitsAllies: true, hitsOpponents: false },
