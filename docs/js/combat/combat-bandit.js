@@ -1835,12 +1835,17 @@
   // therefore _updateBanditLookAtTarget, only ever runs during 'chase').
   function restNeckLook(c, dt) {
     _updateBanditNeckYaw(c, 0, dt);
+    window.PerpRotation?.clearHeadtrackHint?.(c.perpState); // No combat target: the sprite's dead-zone edge falls back to movement history / the player.
     c._lookAtDebug = null;
   }
 
   function _updateBanditLookAtTarget(c, dt, targetPlayer) {
     if (!targetPlayer || targetPlayer.health <= 0) { restNeckLook(c, dt); return; }
     const rawAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    // 'headtrack' tier of the sprite's dead-zone corrective direction, so the
+    // player can read WHO a bandit/barbarian is going for even while its
+    // facing sits in the camera dead zone (world bearing, x/z = c.x/c.y).
+    window.PerpRotation?.setHeadtrackHint?.(c.perpState ||= {}, Math.atan2(targetPlayer.x - c.x, targetPlayer.y - c.y));
     const residualRad = deps.angleDiff(rawAngle, c.facing || 0); // How far the target sits from wherever this bandit's body/plane is currently facing.
     _updateBanditNeckYaw(c, residualRad * 180 / Math.PI, dt);
     // Feeds the "Show Interaction Raycast" debug overlay (see

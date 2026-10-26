@@ -4732,6 +4732,7 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        creature.genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(creatureKey, creature.genotype) ?? creature.genotype; // Old/wizard-spawned Voorg-Asses without genes still render their coat-colored default beard; no random reroll.
         window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
         window.ResourceSystem?.initEntity(creature);
         if (!opts.streamVisuals) createCreatureVisuals(creature); // Companions, cinematic actors, and ordinary callers keep immediate construction.
@@ -5142,18 +5143,28 @@
         // supposed to protect its home, not bail the moment it takes a hit.
         const territorialPhase = c._territorialBehavior?.phase;
         if (c.def?.hostile === false && !c.isCompanion && !window.WildlifeFoodWeb?.isDefending?.(c) && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
-          // A drenkirra mid-forage or asleep is pinned to a branch —
-          // clear that (see wildlife-cloud-forest-behavior.js's
-          // interruptForFlee) before the state flip below, or the
-          // branch-pin's own per-frame early-continue in updateHostiles
-          // keeps re-snapping it right back to that spot forever, never
-          // actually reaching the movement this state is supposed to
-          // trigger. A no-op for anything not currently on a branch.
+          // A hit wakes passive wildlife and unpins branch sleepers before either retaliation or flight.
           window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
-          c._animalSleeping = false; // A hit wakes open-air herd sleepers immediately before the flee state takes ownership of movement.
+          c._animalSleeping = false;
           c.scaleY = 1;
-          c.state = 'fleeing-low-health';
-          c.targetCreature = null;
+          const retaliator = dmgOpts?.attacker || (sourceNearPlayer || dmgOpts?.ranged ? player : null); // The actual attacker is preferred; normal player melee/ranged hits also identify their owner.
+          const voorgCanKick = window.VoorgAssRearKick?.isVoorgAss?.(c)
+            && retaliator && retaliator !== c && retaliator.health > 0
+            && c.state !== 'fleeing-low-health' && !c._voorgRearKickSpent
+            && !(c._fleeCooldownUntil > performance.now());
+          if (voorgCanKick) {
+            c._voorgRearKickThreat = retaliator; // Carries the one-off defensive target through the existing chase/patrol-chase state machine.
+            const targetIsPlayer = retaliator === player || players.includes(retaliator);
+            c.state = targetIsPlayer ? 'chase' : 'patrol-chase';
+            c.targetPlayer = targetIsPlayer ? retaliator : null;
+            c.targetCreature = targetIsPlayer ? null : retaliator;
+            c.attackCooldownT = 0; // Retaliate promptly after the knockback/stagger completes.
+            window.__farmLog?.('[voorg-kick] wild animal retaliating before fleeing', 'wildlife');
+          } else {
+            c.state = 'fleeing-low-health';
+            c.targetCreature = null;
+            c._voorgRearKickThreat = null;
+          }
         }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
@@ -5980,6 +5991,17 @@
             mode: window.PerpRotation.CREATURE_PLANE_ROT_MODE,
             reason: 'perched-attachment-owns-orientation',
           };
+        } else if (c.isBandit === true || c.isTribeHunter === true) {
+          // Bandit/barbarian portraits halt on one dead-zone edge chosen by the
+          // corrective-direction hierarchy (movement > combat target > last
+          // movement > player) instead of flip-flopping on a timer, so the
+          // player can tell whether one is closing on them or on someone else.
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Same aimAngleOffset shift as rawTargetRotY above.
+          window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(c.vx, c.vy) : null);
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+          if (pngSnapTo !== null) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
@@ -6535,6 +6557,13 @@
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          if (c._voorgRearKickThreat && c.state !== 'chase' && c.state !== 'patrol-chase') {
+            c._voorgRearKickThreat = null; // A chased-away attacker ends the defensive encounter; escape instead of searching indefinitely.
+            c._voorgRearKickSpent = true;
+            c.state = 'fleeing-low-health';
+            c.targetPlayer = null;
+            c.targetCreature = null;
+          }
 
           // Patrol sighting: a predator that's out patrolling its route (or
           // fallback-wandering with no route) is alert the whole time it's
@@ -6564,7 +6593,7 @@
           // telegraphed bite/modular attack rather than landing it from way
           // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
-          if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (c.state !== 'chase' && !(c.state === 'patrol-chase' && c._voorgRearKickThreat) && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
             if (c.isBandit) {
@@ -6615,6 +6644,7 @@
             if (distFromHome < DEN_SETTLE_RADIUS_PX) {
               c.state = 'idle';
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
+              if (window.VoorgAssRearKick?.isVoorgAss?.(c)) c._voorgRearKickSpent = false; // Another encounter can trigger a kick after the usual flee grace period.
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
               moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, entityDt);
@@ -6628,19 +6658,42 @@
             const prey = c.targetCreature;
             const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId || prey.state === 'fleeing-low-health';
             if (preyGone) {
-              c.state = 'idle'; c.targetCreature = null;
+              c.state = c._voorgRearKickThreat ? 'fleeing-low-health' : 'idle';
+              if (c._voorgRearKickThreat) c._voorgRearKickSpent = true; // Don't wander or hunt after an interrupted defense.
+              c._voorgRearKickThreat = null;
+              c.targetCreature = null;
             } else {
               const pdx = prey.x - c.x, pdy = prey.y - c.y;
               const pdist = Math.hypot(pdx, pdy);
               if (pdist > (def.leashRangePx || TILE * 9) || distFromHome > (def.leashRangePx || TILE * 9)) {
-                c.state = 'return'; c.targetCreature = null;
+                c.state = c._voorgRearKickThreat ? 'fleeing-low-health' : 'return';
+                if (c._voorgRearKickThreat) c._voorgRearKickSpent = true;
+                c._voorgRearKickThreat = null;
+                c.targetCreature = null;
               } else {
-                aimAngle = Math.atan2(pdy, pdx);
-                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
-                const triggerRangePx = def.attackRangePx || TILE * 0.85;
-                if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
-                  c.attackCooldownT = def.attackCooldownS || 1.0;
-                  window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                const defensiveKick = window.VoorgAssRearKick?.isVoorgAss?.(c) && c._voorgRearKickThreat === prey; // Only a struck Voorg-Ass uses named combat against another creature.
+                if (defensiveKick && window.Combat?.animalAttacks?.isBusy(c)) {
+                  window.Combat.animalAttacks.update(c, entityDt);
+                  aimAngle = c.facing; // A kicking animal must keep its head pointed away from its target.
+                } else {
+                  aimAngle = Math.atan2(pdy, pdx);
+                  moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
+                  const triggerRangePx = def.attackRangePx || TILE * 0.85;
+                  if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
+                    if (defensiveKick && !isCreatureSwimming(c) && c.stamina >= def.attackStaminaCost) {
+                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick');
+                      c.attackCooldownT = def.attackCooldownS || 1.0;
+                      if (window.Combat?.animalAttacks?.start(c, 'rearKick', { target: prey })) aimAngle = c.facing;
+                    } else if (defensiveKick) {
+                      c._voorgRearKickSpent = true; // No Stamina or unsuitable water: flee instead of repeatedly trying to kick.
+                      c._voorgRearKickThreat = null;
+                      c.targetCreature = null;
+                      c.state = 'fleeing-low-health';
+                    } else {
+                      c.attackCooldownT = def.attackCooldownS || 1.0;
+                      window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                    }
+                  }
                 }
               }
             }
@@ -8218,7 +8271,10 @@
                   // the short 0-damage/high-knockback guard charge instead.
                   c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
                   const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
-                  const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
+                  const kickSpecies = window.VoorgAssRearKick?.isVoorgAss?.(c) && def.attacks?.includes('rearKick'); // Only Voorg-Ass companions use a distinct special cooldown.
+                  const attackId = kickSpecies
+                    ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
+                    : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge');
                   const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
                   if (startedModular) {
                     aimAngle = c.facing;
@@ -11438,6 +11494,7 @@
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        if (debugEntity?.perpState) window.PerpRotation.setHeadtrackHint?.(debugEntity.perpState, Math.atan2(targetWorld.x - selfEyeWorld.x, targetWorld.z - selfEyeWorld.z)); // World gaze bearing: 'headtrack' tier of the body's dead-zone corrective direction.
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
         neckJoint.rotation.set(pitchDeg * Math.PI / 180, window.PerpRotation.clampedNeckYaw?.(neckJoint, selfRootPosition, yawDeg * Math.PI / 180, maxYawDeg * Math.PI / 180, camera.position) ?? yawDeg * Math.PI / 180, 0);
         return true;
@@ -12213,6 +12270,17 @@
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
+          // Feeds the dead-zone corrective-direction hierarchy with this
+          // walker's actual travel direction (from root displacement between
+          // facing updates), or null while it isn't moving.
+          _reportDeadzoneMovementHint() {
+            const prevX = this._deadzonePrevX, prevZ = this._deadzonePrevZ;
+            this._deadzonePrevX = root.position.x; this._deadzonePrevZ = root.position.z;
+            const moving = this._moveSpeedTiles > 0.05;
+            const dx = Number.isFinite(prevX) ? root.position.x - prevX : 0, dz = Number.isFinite(prevZ) ? root.position.z - prevZ : 0;
+            if (moving && Math.hypot(dx, dz) > 1e-5) this._deadzoneMoveYaw = Math.atan2(dx, dz);
+            window.PerpRotation.setMovementHint(this.perpState, moving && Number.isFinite(this._deadzoneMoveYaw) ? this._deadzoneMoveYaw : null);
+          },
           applyFacingDeadzone(rawRot = this.desiredRot, lerp = 0.15) {
             if (!Number.isFinite(rawRot)) return;
             this.desiredRot = rawRot;
@@ -12222,6 +12290,7 @@
               this.rot += angleDiff(rawRot, this.rot) * animalTurnLerp; // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
               root.rotation.y = this.rot;
               this.animalPngRot ??= this.rot;
+              this._reportDeadzoneMovementHint();
               if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
                 const moving = this._moveSpeedTiles > 0.05;
                 const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
@@ -12247,6 +12316,7 @@
               if (this.legs?.group) this.legs.group.rotation.y = 0;
               return;
             }
+            this._reportDeadzoneMovementHint();
             const stanceYaw = Number(this._heldBodyYawRad) || 0; // The portrait may also be turned by its held-weapon wrapper.
             this.rot = window.PerpRotation.clampedRotation(
               this.perpState, this.rot + stanceYaw, rawRot + stanceYaw, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
@@ -22930,11 +23000,16 @@
       }
       let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
       const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
+      function playerBlowgunReticlePoint() {
+        return window.RangedWeapons?.config?.[equipmentSlots.ranged]?.rangedType === 'blowgun'
+          ? currentPlayerPerspectiveTarget()?.point || null
+          : null; // Blowgun alone converges its mouth-anchored barrel toward the shared debug/shot reticle; Drink and other head attachments still follow the head normally.
+      }
       function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
         _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
         _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
         const aperture = playerToolAperture(equipmentSlots.ranged);
-        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture, null, playerBlowgunReticlePoint());
         Object.assign(_toolAttachJob.pose, _headPlacePose);
         _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
       }
@@ -22969,7 +23044,7 @@
         if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
         _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
         if (toolActive) {
-          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture, null, playerBlowgunReticlePoint());
           cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
         }
         if (heldActive) {
@@ -24126,6 +24201,7 @@
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
           const chairFacing = -facingAngle + Math.PI / 2; // Logical chair direction remains fixed while the flat portrait avoids the camera deadzone.
           player.perpState ||= {};
+          window.PerpRotation.setMovementHint(player.perpState, null); // Seated: no live travel, so last movement/headtrack decide the corrective edge.
           playerFacing = window.PerpRotation.clampedRotation(player.perpState, playerFacing, chairFacing, playerCameraPerps(), 0.18);
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = chairFacing - playerFacing;
@@ -24149,6 +24225,9 @@
           // across whatever body yaw the clamp leaves.
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
+          // Live travel direction (same 5px/s threshold as the walk bob below)
+          // outranks everything else when picking which dead-zone edge to use.
+          window.PerpRotation.setMovementHint(player.perpState, Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
           const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, playerCameraPerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
@@ -29336,6 +29415,7 @@
 
       window.PerpRotation?.init({
         angleDiff,
+        playerWorldPosition: () => playerMesh?.position || null, // 'player' tier of the dead-zone corrective-direction hierarchy.
       });
 
       window.GeneralStore?.init({

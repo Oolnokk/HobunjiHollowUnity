@@ -116,7 +116,7 @@ async function verifyAssetReadiness() {
 // Temporary player doubles must clamp against their own live camera bearing, not gameplay azimuth.
 const facingStart=game.indexOf('          applyFacingDeadzone(rawRot'),facingEnd=game.indexOf('          resetRouteState()',facingStart);
 const facingContext={window:rotation.window,root:{position:{x:0,z:0},rotation:{y:0}},camera:{position:{x:5,z:0}},cameraRelativePerps:()=>[Math.PI/2,-Math.PI/2]};
-vm.runInNewContext('walker={rot:0,perpState:{},'+game.slice(facingStart,facingEnd)+'};walker.applyFacingDeadzone(0,1);',facingContext);
+vm.runInNewContext('walker={rot:0,perpState:{},_reportDeadzoneMovementHint(){},'+game.slice(facingStart,facingEnd)+'};walker.applyFacingDeadzone(0,1);',facingContext);
 assert(Math.abs(facingContext.walker.rot)>=40*Math.PI/180-1e-8,'the temporary player avoids the actual view deadzone');
 
 async function main() {

@@ -136,13 +136,14 @@
     "durationS": 0.95,
     "headRelative": true, // Head-anchored: x/y/z are the B'shuakauitl's aperture (mouthpiece end) measured from the species mouth point, in the head's frame; 0 seats the mouthpiece exactly on the mouth.
     "toolEndFlip": false,
+    // The mouth anchors the aperture AND the barrel direction. -180° pitch aims the shaft out from the face; no independent yaw offsets the shot from the head.
     "poses": {
       "neutral": {
         "x": 0,
         "y": 0,
         "z": 0,
         "pitch": -180,
-        "yaw": 21,
+        "yaw": 0,
         "roll": 4,
         "bodyYaw": 0,
         "scale": 1.3,
@@ -189,7 +190,7 @@
         "y": 0,
         "z": 0,
         "pitch": -180,
-        "yaw": 21,
+        "yaw": 0,
         "roll": 4,
         "bodyYaw": 0,
         "shoulderAim": {
@@ -289,7 +290,6 @@
   // Cache versions below are bumped whenever their held-item authoring contract changes.
   // This matters on the stable game/editor URLs where the parent held-action script URL itself may be cached.
   const handScripts = [
-    new URL('js/head-relative-weapon-occlusion.js?v=20261023hparticles1', docsBase).href,
     new URL('config/hand-model-profiles.js?v=20260919handreview1', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,

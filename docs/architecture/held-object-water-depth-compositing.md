@@ -51,24 +51,13 @@ Do not opt these physical parts into `markHeldPlane()` or the reserved 1.5
 marker. `scripts/test-shattercasks.js` executes the production classifier
 against the held parts and tests the filled, terrain-projected blast preview.
 
-## Head-relative weapons and their owner's rear silhouette
+## Head-relative tools
 
-A holder's `userData.headRelativeBackPlane` points to its owner's rear PNG only
-while the active pose is head-relative. The tag is cleared on ordinary/melee
-frames. `head-relative-weapon-occlusion.js` groups only the registered held PNGs
-under tagged holders; no scene scan is added.
-
-Within overlay stage 2, ordinary gear/hands/feet draw first. Each tagged owner's
-rear alpha silhouette then stamps stencil **bit 1** with color/depth writes off,
-using its original skinning, texture and rear-face culling. Only that owner's
-head-relative weapon draws against the complement of that mask. The mask is
-cleared separately for each owner, so other actors and melee weapons cannot be
-masked by it. Transparent PNG holes remain transparent, and world depth still
-occludes the weapon. Water coverage remains in **bit 0**, including the masked
-weapon's visible fragments; stages 3–5 retain their existing order.
-
-The same helper drives Attack Animation Editor previews. Render targets without
-at least two stencil bits retain ordinary depth occlusion as a fallback.
+Head-relative (mouth-anchored) tools now draw alongside ordinary held equipment
+in stage 2, without any owner-backplane stencil mask or extra weapon overlay.
+They retain regular scene-depth occlusion and the same water/slush tint treatment
+as other held gear. Attack Animation Editor previews likewise draw the tool once
+with the normal renderer; head-based attachment and positioning are unchanged.
 
 ## Why the compositor exists
 
