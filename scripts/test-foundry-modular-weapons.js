@@ -60,7 +60,7 @@ assert.equal(window.HobunjiHandToolGrips.toolKeyFor(spearHammer), 'fishingspear'
 assert.equal(api.isDisallowed('missing', 'dagger'), true);
 assert.equal(api.getConfig().shafts['dagger-sword'].mounts.length, 1);
 assert.equal(api.getConfig().shafts['dagger-sword'].crop, undefined);
-assert.equal(api.settings('warhammer', 'work-hammer').scaleX, 1.65, 'Keep old calibration as per-pair correction');
+assert.equal(api.settings('warhammer', 'harlyao-longsword').scaleX, 1.65, 'Keep old calibration as per-pair correction');
 assert.equal(api.settings('dagger', 'warhammer').y, 45, 'Keep original haft correction for each head pairing');
 const broadShaft = api.getConfig().shafts['harlyao-broadsword']; // Baseline Harlyao sword shaft used for the default longsword proportion.
 const longShaft = api.getConfig().shafts['harlyao-longsword']; // Explicit per-head overrides may intentionally diverge from this default relation.
