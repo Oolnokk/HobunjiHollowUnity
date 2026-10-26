@@ -386,8 +386,8 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../js/metal-armor-system.js?v=20261024haceb249"></script>
 <script src="../../js/sprite-recolor.js?v=20261018resolve1099a" data-character-studio-sprite-recolor="1"></script>
-<script src="../../js/repo-pattern-library.js?v=npcappearance1" data-character-studio-repo-pattern-library="1"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261022h3994bc0" data-character-studio-weaving-compositor="1"></script>
+<script src="../../js/repo-pattern-library.js?v=20261026hRepoDefaults5" data-character-studio-repo-pattern-library="1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261026hOverpassInk3" data-character-studio-weaving-compositor="1"></script>
 <script src="../../js/repo-picker.js?v=20261021hhybridhelm"></script>
 <script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
 <script src="../../js/npc-wardrobe.js?v=20261018h5a78853"></script>
@@ -1685,7 +1685,10 @@ async function renderNpcAppearanceControls() {
       const selected = stack[index]?.repoPatternId || ''; // Retains the selected repository pattern across panel rebuilds.
       return `<div><label>${label}</label><select data-npc-pattern-slot="${esc(item.slot)}" data-pattern-index="${index}" data-pattern-role="${esc(role)}"><option value="">None</option>${patterns.map(pattern => `<option value="${esc(pattern.id)}"${pattern.id === selected ? ' selected' : ''}>${esc(pattern.name)}</option>`).join('')}${stack[index] && !patterns.some(pattern => pattern.id === selected) ? `<option value="__custom" selected>${esc(selected || 'Imported pattern')} (preserved)</option>` : ''}</select>${transformControls(item, role, index, stack[index])}</div>`;
     };
-    return `<div style="margin-top:8px"><span class="sectionTag">${esc(role === '__default' ? 'Cloth' : role)}</span><div class="grid2">${select(0, 'Pattern')}${select(1, 'Overpass pattern')}</div></div>`;
+    const overpassHex = stack[1]?.inkColorHex || '';
+    const overpassDye = dyes.find(dye => dye.hex?.toLowerCase() === overpassHex.toLowerCase())?.id || (overpassHex ? '__saved' : '');
+    const inkOptions = dyes.map(dye => `<option value="${esc(dye.id)}"${dye.id === overpassDye ? ' selected' : ''}>${esc(dye.label || dye.name || dye.id)}</option>`).join('');
+    return `<div style="margin-top:8px"><span class="sectionTag">${esc(role === '__default' ? 'Cloth' : role)}</span><div class="grid2">${select(0, 'Pattern')}${select(1, 'Overpass pattern')}</div>${stack[1] ? `<label>Overpass ink</label><select data-npc-overpass-ink="${esc(item.slot)}" data-pattern-role="${esc(role)}"><option value="">Same as pattern dye</option>${inkOptions}${overpassDye === '__saved' ? `<option value="__saved" selected>Saved custom ink (${esc(overpassHex)})</option>` : ''}</select>` : ''}</div>`;
     }).join('');
     const colorId = typeof item.colorC === 'string' ? item.colorC : item.colorC?.dyeId || ''; // Accepts legacy string dyes and full clothing-item color references.
     const label = StudioAccount.getShopCatalog().find(entry => entry.id === item.cosmeticId)?.label || item.cosmeticId; // Names the exact garment being edited.
@@ -1730,11 +1733,28 @@ async function renderNpcAppearanceControls() {
     const entry = patterns.find(pattern => pattern.id === el.value); // Supplies a portable motif path for saved data.
     const pattern = entry ? window.RepoPatternLibrary.getCachedById(entry.id) : null; // Materializes an authored snapshot so first portrait bakes need no asynchronous lookup.
     if (pattern && entry.motifPng) pattern.motifUrl = entry.motifPng;
+    if (index === 1 && pattern && stack[index]?.inkColorHex) pattern.inkColorHex = stack[index].inkColorHex; // Switching overpass art keeps its independent garment ink.
     stack[index] = pattern;
     const role = el.dataset.patternRole; // Limits this edit to the displayed cloth/trim layer.
     storeClothPattern(item, effective, role, index, stack);
     renderNpcAppearanceControls().catch(error => log('NPC appearance controls failed: ' + error.message, 'error')); invalidatePreview();
     setStatus('Clothing pattern changed — use Apply to NPC');
+  });
+  $('npcPatternControls').querySelectorAll('[data-npc-overpass-ink]').forEach(el => el.onchange = () => {
+    const slot = el.dataset.npcOverpassInk, role = el.dataset.patternRole;
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === slot);
+    if (!item) return;
+    const effective = items.find(entry => entry.slot === slot);
+    const stack = [...window.ClothingWeavingSystem.patternStackForLayer(effective?.weaving, role)];
+    if (!stack[1]) return;
+    const color = dyes.find(dye => dye.id === el.value)?.hex || null;
+    if (el.value !== '__saved') {
+      stack[1] = { ...stack[1] };
+      if (color) stack[1].inkColorHex = color;
+      else delete stack[1].inkColorHex; // Default inherits the garment's Dye C without a duplicate color channel.
+    }
+    storeClothPattern(item, effective, role, 1, stack);
+    invalidatePreview(); setStatus('Overpass ink changed — use Apply to NPC');
   });
   $('npcPatternControls').querySelectorAll('[data-npc-pattern-transform-slot]').forEach(el => el.onchange = () => {
     const slot = el.dataset.npcPatternTransformSlot; // Placement belongs to this garment only.

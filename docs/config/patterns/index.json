@@ -55,6 +55,31 @@
       "id": "harlyao_glyph_ignorance",
       "name": "Harlyao Glyph: Ignorance",
       "file": "config/patterns/pattern_harlyao_glyph_ignorance.json"
+    },
+    {
+      "id": "blessed_blossom_balance",
+      "name": "Blessed Blossom: Balance",
+      "file": "config/patterns/pattern_blessed_blossom_balance.json"
+    },
+    {
+      "id": "blessed_blossom_potential",
+      "name": "Blessed Blossom: Potential",
+      "file": "config/patterns/pattern_blessed_blossom_potential.json"
+    },
+    {
+      "id": "blessed_blossom_rebirth",
+      "name": "Blessed Blossom: Rebirth",
+      "file": "config/patterns/pattern_blessed_blossom_rebirth.json"
+    },
+    {
+      "id": "blessed_blossom_windswept",
+      "name": "Blessed Blossom: Windswept",
+      "file": "config/patterns/pattern_blessed_blossom_windswept.json"
+    },
+    {
+      "id": "winding_roots",
+      "name": "Winding Roots",
+      "file": "config/patterns/pattern_winding_roots.json"
     }
   ]
 }
