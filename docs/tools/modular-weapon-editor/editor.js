@@ -341,8 +341,7 @@
   byId('allow-head').onchange = () => { chosenHead().editorOnly = !byId('allow-head').checked; save(); };
   byId('layer-order').onchange = () => {
     const pair = chosenShaft().overrides[byId('head').value] ||= {}; // Only this exact combination gets an override.
-    if (byId('layer-order').value === 'head-over-haft') pair.layerOrder = 'head-over-haft';
-    else delete pair.layerOrder; // Default haft-over-head remains implicit/sparse in exported configs.
+    pair.layerOrder = byId('layer-order').value === 'head-over-haft' ? 'head-over-haft' : 'haft-over-head'; // Store both explicit options so imported authored presets never override intentional editor changes.
     save(); // Validates, clears compositor cache, and refreshes assembled editor preview.
   };
   byId('reset-pair').onclick = () => {
