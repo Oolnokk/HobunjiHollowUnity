@@ -46,7 +46,7 @@
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
     ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261026h71fc86d'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
-    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261022chiefNames1'],
+    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261026h8b17282'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
     ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261022h909ded2'],
     // A world-space spectral column follows the exact commander's bearing, settling onto the actor as the player approaches.

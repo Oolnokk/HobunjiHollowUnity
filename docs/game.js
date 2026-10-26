@@ -5033,12 +5033,7 @@
         if (!c.isCompanion) {
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
-          const isBarbarian = c.isTribeHunter === true || c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
-          window.HobunjiActivityEvents?.emit('creature_killed', {
-            creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
-            isBandit: !!c.isBandit, isBarbarian,
-            isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
-          });
+          window.HobunjiActivityEvents?.emitCreatureKilled?.(c); // Kill attribution and barbarian/self-defense classification now live in js/activity-events.js.
         }
         if (c._wildlifeVisualsReleased) {
           createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.

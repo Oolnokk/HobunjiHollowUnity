@@ -23,7 +23,7 @@
   // wilderness map. They are ordinary camp residents with role 'avenger' whose
   // planner rides out after the rival tribe's travelling hunters and kills
   // them: off-screen as an abstract slay, near the player through the normal
-  // same-chunk rival-tribe ecology fight.
+  // rival-tribe ecology fight among live actors around the player.
   const BENCHLOG_KEY = 'benchlog'; // Used by camp log rendering and the shared NPC seating stations.
   const BONFIRE_KEY = 'bonfire'; // Used to select the shared 2x2 large-fire furniture instead of the old one-tile campfire.
   const TICK_INTERVAL_S = 0.20; // Neutral planner/LOD cadence; actual entity movement/render/combat stays in the normal hostile loop.
@@ -120,14 +120,18 @@
     const player = playerTilePosition();
     return player ? streamChunkOfTile(player.col, player.row) : null;
   }
-  function entityStreamChunk(entity) {
-    if (!entity || !combatDeps?.TILE) return null;
-    return streamChunkOfTile(entity.x / combatDeps.TILE, entity.y / combatDeps.TILE);
+  // Faction fights (tribe vs tribe, bandits, predators) run for every live
+  // actor within this radius of the player: the release radius out to which
+  // camp residents stay visible actors, so anything on screen fights. It used to
+  // be the player's exact 16x16 stream chunk, which left rival camps in the
+  // next chunk over standing peacefully side by side in plain view.
+  let ecologyRadiusTiles = 24; // Replaced from the first tribe's behavior.ecologyRadiusTiles (default fullSimulationReleaseRadiusTiles).
+  function entityInPlayerEcologyRange(entity) {
+    if (!entity || entity.areaId !== currentArea() || !combatDeps?.TILE) return false;
+    const player = playerTilePosition();
+    return !!player && Math.hypot(entity.x / combatDeps.TILE - player.col, entity.y / combatDeps.TILE - player.row) <= ecologyRadiusTiles;
   }
-  function entitySharesPlayerStreamChunk(entity) {
-    if (!entity || entity.areaId !== currentArea()) return false;
-    return sameStreamChunk(entityStreamChunk(entity), playerStreamChunk());
-  }
+
   function normalizedEcologySpeciesKey(entity) {
     return String(entity?.creatureKey || '')
       .replace(/-herd-mother$/, '')
@@ -174,7 +178,7 @@
   function validChunkCombatTarget(entity, target) {
     return !!entity && !!target && target.health > 0
       && entity.areaId === currentArea() && target.areaId === currentArea()
-      && entitySharesPlayerStreamChunk(entity) && entitySharesPlayerStreamChunk(target);
+      && entityInPlayerEcologyRange(entity) && entityInPlayerEcologyRange(target);
   }
   function setHumanoidEcologyTarget(entity, target) {
     if (!entity) return;
@@ -203,23 +207,23 @@
   function activePlayerChunkEcology() {
     const groups = { tribe: [], bandit: [], predator: [], prey: [] };
     for (const entity of combatDeps?.hostileObjects || []) {
-      if (!entitySharesPlayerStreamChunk(entity) || entity.health <= 0) continue;
+      if (!entityInPlayerEcologyRange(entity) || entity.health <= 0) continue;
       const role = ecologyRole(entity);
       if (role && groups[role]) groups[role].push(entity);
     }
     return groups;
   }
   function hasSharedEnemyNearby(entity) {
-    if (!entitySharesPlayerStreamChunk(entity)) return false;
+    if (!entityInPlayerEcologyRange(entity)) return false;
     for (const other of combatDeps?.hostileObjects || []) {
-      if (other === entity || !entitySharesPlayerStreamChunk(other) || other.health <= 0) continue;
+      if (other === entity || !entityInPlayerEcologyRange(other) || other.health <= 0) continue;
       if (isSharedEnemyOf(entity, other)) {
         if (tribeOf(entity)) entity._porakanekiSharedEnemyUntilMs = nowMs() + 1500;
         return true;
       }
     }
     return !!tribeOf(entity) && nowMs() < num(entity._porakanekiSharedEnemyUntilMs, 0);
-  } // "Nearby" intentionally means the observed 16x16 player chunk, with a 1.5s grace so simultaneous crossfire deaths stay forgiven.
+  } // "Nearby" means the same player ecology radius the fights use, with a 1.5s grace so simultaneous crossfire deaths stay forgiven.
   let ecologyState = { chunk: null, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0 }; // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
   function updateChunkEcology() {
     const observedChunk = playerStreamChunk(); // Used both as the hard simulation gate and the mobile-visible debug identity.
@@ -230,7 +234,7 @@
     let predatorTargets = 0; // Counted below for the same mobile-visible ecology summary.
 
     // Clear only targets this system previously owned once either participant
-    // leaves the player's chunk. No actor-vs-actor simulation continues offscreen.
+    // leaves the player's ecology radius. No actor-vs-actor simulation continues offscreen.
     for (const entity of combatDeps.hostileObjects) {
       if (active.has(entity)) continue;
       if (entity._chunkCombatTarget) entity._chunkCombatTarget = null;
@@ -1058,10 +1062,10 @@
     if (!Number.isFinite(distance)) return false;
     const playerChunk = playerStreamChunk();
     const hunterChunk = streamChunkOfTile(hunter.x, hunter.y);
-    if (sameStreamChunk(playerChunk, hunterChunk)) return true; // Required for observed same-chunk faction encounters, even at opposite chunk corners.
+    if (sameStreamChunk(playerChunk, hunterChunk)) return true; // Everything in the player's own streamed chunk is live, even at its far corners.
     // Once live, keep the resident live until the wider release radius. That
-    // prevents edge oscillation/rebuild thrash while faction-vs-faction combat
-    // itself remains restricted to the exact streamed player chunk.
+    // prevents edge oscillation/rebuild thrash; faction fights cover the same
+    // release radius (entityInPlayerEcologyRange).
     return distance <= (detailedEntityActive(hunter) ? fullSimulationReleaseRadiusTiles() : fullSimulationRadiusTiles());
   }
 
@@ -1796,6 +1800,7 @@
       smallLocaleDef = await smallResponse.json();
       chiefLocaleDef = await chiefResponse.json();
       tentPiece = await tentResponse.json();
+      if (tribeRuntimes[0] === api) ecologyRadiusTiles = Math.max(1, num(cfg?.behavior?.ecologyRadiusTiles, num(cfg?.behavior?.fullSimulationReleaseRadiusTiles, 24)));
       state.lastReason = 'config-ready';
       return cfg;
     } catch (error) {

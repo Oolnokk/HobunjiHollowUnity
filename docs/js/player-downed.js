@@ -98,21 +98,31 @@
     state.remainingS = Math.max(0, state.remainingS - CONFIG.hitPenaltySeconds);
   }
 
-  // damageCreature calls this for every landed hit (player or companion).
+  // damageCreature calls this for every landed hit on a non-companion, whoever
+  // struck it, so the last hitter is known. friendlyFire marks actor-on-actor
+  // hits (bandit/tribe/lich/predator), which never count as the player's.
   function noteTeamHit(target, dmgOpts) {
     if (!target || target.isCompanion) return;
     const attacker = dmgOpts?.attacker;
     const fromCompanion = !!dmgOpts?.fromCompanion || (attacker?.isCompanion === true && (attacker.master || deps?.player) === deps?.player);
-    const fromPlayer = !attacker || attacker === deps?.player;
+    const fromPlayer = attacker ? attacker === deps?.player : dmgOpts?.friendlyFire !== true;
+    target._lastHitByTeam = fromCompanion || fromPlayer;
     if (fromCompanion || fromPlayer) target._teamHitAt = now();
     if (state && dmgOpts?.ranged && fromPlayer && target.health > 0 && target.def?.hostile !== false) state.focus = target;
+  }
+
+  // The player (or their companion) landed the last hit, recently enough to
+  // own the kill. Another actor finishing the enemy off takes the credit.
+  function isTeamKill(creature) {
+    if (!creature || creature.isCompanion || creature._lastHitByTeam === false) return false;
+    return now() - (Number(creature._teamHitAt) || -Infinity) <= CONFIG.killCreditWindowMs;
   }
 
   // transitionCreatureToDeath calls this for every non-companion death.
   function noteKill(creature) {
     if (!state || !creature || creature.isCompanion) return;
     if (creature.def?.hostile === false) return; // Passive wildlife is not an enemy.
-    if (now() - (Number(creature._teamHitAt) || -Infinity) > CONFIG.killCreditWindowMs) return;
+    if (!isTeamKill(creature)) return;
     secondWind('kill');
   }
 
@@ -191,6 +201,7 @@
     noteHitWhileDowned,
     noteTeamHit,
     noteKill,
+    isTeamKill, // Kill attribution shared with HobunjiActivityEvents.emitCreatureKilled (dates, likes).
     getFocusTarget,
     allowsAction,
     reset,

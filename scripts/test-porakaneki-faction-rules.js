@@ -254,6 +254,25 @@ window.BanditCamps.updateCampBanners();
 assert(relationMap.get('porakaneki_chief').favor === -3, `legacy murder favor ${relationMap.get('porakaneki_chief').favor}`);
 assert(relationMap.get('omgurku_chief').favor === 1, `legacy rival favor ${relationMap.get('omgurku_chief').favor}`);
 
+// Date/romance classification at the moment of death: a still-neutral hunter
+// or one the player provoked is not self-defense; an already-hostile hunter
+// whose camp attacked first (attack-on-sight / its own aggression) is.
+const sd = hunter('sd');
+sd.porakanekiCampId = 'sd_camp';
+sd._porakanekiPlannerControlled = true;
+assert(rules.killedInSelfDefense(sd) === false, 'a neutral hunter is never killed in self-defense');
+sd._porakanekiPlannerControlled = false;
+assert(rules.killedInSelfDefense(sd) === true, 'a hostile hunter that attacked first is self-defense');
+const provoked = hunter('provoked');
+provoked.porakanekiCampId = 'provoked_camp';
+hostileObjects.add(provoked);
+rules.syncNow();
+window.Combat.deps.damageCreature(provoked, 1, player.x, player.y, 0, { tag: 'sharp' }); // Player first blood on a neutral camp.
+provoked._porakanekiPlannerControlled = false; // Camp retaliates.
+assert(rules.killedInSelfDefense(provoked) === false, 'a fight the player started is not self-defense');
+assert(rules.killedInSelfDefense({ id: 'wolf' }) === false, 'non-tribe creatures are never classified');
+hostileObjects.delete(provoked);
+
 const hooks = rules.debugSnapshot().hooks;
 assert(Object.values(hooks).every(Boolean), `all hooks installed: ${JSON.stringify(hooks)}`);
 

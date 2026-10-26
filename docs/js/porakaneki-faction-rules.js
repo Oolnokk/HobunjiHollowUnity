@@ -198,6 +198,15 @@
     return true;
   }
 
+  // A tribe hunter that was already hostile to the player when it died, in a
+  // fight the player did not start (attack-on-sight or the tribe's own
+  // aggression), was killed in self-defense. Read at the moment of death by
+  // HobunjiActivityEvents.emitCreatureKilled so dates don't hold it against you.
+  function killedInSelfDefense(entity) {
+    if (!tribeOf(entity) || entity._porakanekiPlannerControlled === true) return false; // Still neutral: the player picked this fight.
+    return campAggressionOrigin.get(campIdFor(entity)) !== 'player';
+  }
+
   function syncCompanionTargetability(entity) {
     if (!entity?.def) return;
     if (!entity._porakanekiFactionDefOverlay) {
@@ -469,6 +478,7 @@
     canonicalizeNpcDatabaseInPlace,
     migrateLegacyRelationshipState: mergeLegacyRelationshipState,
     syncNow: () => refreshEntityState(allTribeEntities()),
+    killedInSelfDefense,
     debugSnapshot: () => ({
       tuning: { ...TRIBES[0].tuning },
       tribeTuning: Object.fromEntries(TRIBES.map(tribe => [tribe.id, { ...tribe.tuning }])),
