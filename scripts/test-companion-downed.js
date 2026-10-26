@@ -241,6 +241,18 @@ assert.equal(PD.isDowned(), true, 'someone else\'s kill does not grant Second Wi
 const arrowed = { id: 'arrowed', health: 30, def: { hostile: true }, areaId: 'zone' };
 PD.noteTeamHit(arrowed, { ranged: true, friendlyFire: true });
 assert.equal(PD.isTeamKill(arrowed), false, 'an attacker-less NPC arrow is never the player\'s hit');
+// A burn/bleed the player started keeps credit for longer when it is what kills.
+const burned = { id: 'burned', health: 30, def: { hostile: true }, areaId: 'zone' };
+PD.noteTeamHit(burned, {});
+nowMs += 30000;
+assert.equal(PD.isTeamKill(burned), false, 'a 30s-old hit does not own an ordinary death');
+burned._deathByAffliction = true;
+assert.equal(PD.isTeamKill(burned), true, 'a damage-over-time death still credits the player 30s after their hit');
+nowMs += 31000;
+assert.equal(PD.isTeamKill(burned), false, 'the damage-over-time credit window still ends');
+PD.noteTeamHit(burned, {});
+PD.noteTeamHit(burned, { friendlyFire: true, attacker: { id: 'bandit' } });
+assert.equal(PD.isTeamKill(burned), false, 'an NPC hitting it after the player takes even a damage-over-time kill');
 const passive = { id: 'deer', def: { hostile: false }, _teamHitAt: nowMs };
 PD.noteKill(passive);
 assert.equal(PD.isDowned(), true, 'killing passive wildlife does not count');

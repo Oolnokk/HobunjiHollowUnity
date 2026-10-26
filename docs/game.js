@@ -5030,9 +5030,11 @@
         // A killed wild creature is the starting source of Motes of Prowess;
         // companions never award kill progression.
         window.PlayerDowned?.noteKill?.(c); // A kill by the player or their companion triggers Second Wind (js/player-downed.js).
-        if (!c.isCompanion) {
+        if (!c.isCompanion && (window.PlayerDowned?.isTeamKill?.(c) ?? true)) { // Only the player's/companion's own kills reward Motes and combat XP, never NPC-vs-NPC deaths nearby.
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
+        }
+        if (!c.isCompanion) {
           window.HobunjiActivityEvents?.emitCreatureKilled?.(c); // Kill attribution and barbarian/self-defense classification now live in js/activity-events.js.
         }
         if (c._wildlifeVisualsReleased) {
@@ -6334,6 +6336,7 @@
         opts.staminaRegenPerSec = c.maxStamina * 0.25;
         window.ResourceSystem?.tick(c, elapsed, opts);
         if (Number(c.health) <= 0) {
+          c._deathByAffliction = true; // Burn/bleed/poison tick: PlayerDowned.isTeamKill gives the player's earlier hit a longer credit window.
           transitionCreatureToDeath(c, c.x, c.y);
           return false;
         }

@@ -23,6 +23,7 @@
     hitPenaltySeconds: 2,       // Bleed-out time lost per enemy hit taken while down.
     reviveInvulnSeconds: 1.5,
     killCreditWindowMs: 8000,   // A kill counts if the player/companion last hit the enemy this recently.
+    dotKillCreditWindowMs: 60000, // Longer window for a death from a lingering burn/bleed/poison tick (afflictions don't record their source).
     downedHealth: 1,            // Health held while down so vitals never see a "dead" player.
   });
   const SOFT_DEATH_REASONS = new Set(['resource-tick']); // handlePlayerDeath reasons that go down instead of dying (bleeding/burning/poison).
@@ -112,10 +113,13 @@
   }
 
   // The player (or their companion) landed the last hit, recently enough to
-  // own the kill. Another actor finishing the enemy off takes the credit.
+  // own the kill. Another actor finishing the enemy off takes the credit. A
+  // death from a damage-over-time tick (game.js marks _deathByAffliction)
+  // gets the longer window, so a burn the player started still counts.
   function isTeamKill(creature) {
     if (!creature || creature.isCompanion || creature._lastHitByTeam === false) return false;
-    return now() - (Number(creature._teamHitAt) || -Infinity) <= CONFIG.killCreditWindowMs;
+    const creditMs = creature._deathByAffliction === true ? CONFIG.dotKillCreditWindowMs : CONFIG.killCreditWindowMs;
+    return now() - (Number(creature._teamHitAt) || -Infinity) <= creditMs;
   }
 
   // transitionCreatureToDeath calls this for every non-companion death.
