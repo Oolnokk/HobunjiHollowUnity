@@ -65,7 +65,7 @@ assert.ok(Math.abs(angleDiff(perspectiveRendered, perspectiveAuthoredFacing)) >=
 assert.equal(perspectiveState.pixelProbeDebug?.cameraPerpsMode, 'npc-world-camera-bearing',
   'NPC clamp diagnostics report that the perspective camera bearing path was used');
 
-// The active generic animal mode is snap, which does not call perpClamp.
+// Legacy snap mode remains available for A/B tuning; test its fresh-state safety.
 // Fresh combat creatures and bandit-style humanoids both start with an empty
 // perpState object, so the first stationary dead-zone call must initialize its
 // side itself instead of assuming callers pre-seeded snapSide:null.
@@ -185,7 +185,7 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /target\.rotY\)\) this\.applyFacingDeadzone/, 'stationary schedule facings use the shared clamp');
 assert.match(gameSource, /applyNpcDialogueFacingExact\(walker, npcTargetRot/, 'dialogue facings bypass the camera deadzone so NPCs face the player exactly');
 assert.match(gameSource, /facing:\s*0,\s*groupRot:\s*0,\s*pngRot:\s*0,\s*perpState:\s*\{\}/,
-  'generic combat creatures really do enter snap mode with a fresh empty perpState');
+  'generic combat creatures initialize with a fresh empty perpState');
 assert.match(gameSource,
   /const shoulderPetBypassesPlaneDeadzone = c\.stableRole === 'shoulderPet';[\s\S]{0,900}c\.pngRot = c\.groupRot;[\s\S]{0,2200}else if \(window\.PerpRotation\.CREATURE_PLANE_ROT_MODE === 'snap'\)/,
   'perched shoulder pets bypass the free-standing creature PNG deadzone while ordinary creatures retain it');

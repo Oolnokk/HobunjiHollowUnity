@@ -228,15 +228,15 @@
       for (const w of deps.npcWalkers) {
         if (node === w.root) {
           const appearance = w.rec?.appearance || {};
-          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, root: w.root };
+          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, perpState: w.perpState, root: w.root };
         }
       }
-      for (const c of deps.companionObjects) {
+      for (const c of new Set([...(deps.companionObjects || []), ...(window.Combat?.deps?.hostileObjects || []), ...(window.Combat?.deps?.animalObjects || [])])) {
         if (node === c.avatarRef?.group) {
           const sizeClass = c.genotype?.sizeClass || c.def?.defaultSizeClass || 'medium'; // Makes size mutations visible in copied mobile probe reports.
           const scaleLabel = `${Math.round((c.visualScaleX || 1) * 100)}%×${Math.round((c.visualScaleY || 1) * 100)}%`; // Confirms the authored class scale reached this live mesh.
           const renderedScaleLabel = `${Math.round((c.avatarRef.group.scale.z || 1) * 100)}%w×${Math.round((c.avatarRef.group.scale.y || 1) * 100)}%h`; // Reports the rotated billboard's actual visible width/height axes.
-          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} configured ${scaleLabel} · rendered ${renderedScaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null, root: c.avatarRef.group };
+          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} configured ${scaleLabel} · rendered ${renderedScaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null, perpState: c.perpState, root: c.avatarRef.group };
         }
       }
       node = node.parent;
@@ -1360,6 +1360,8 @@
       }
       const owner = _pixelProbeOwnerInfo(o);
       if (owner) {
+        const facingDecision = owner.perpState?.pixelProbeDebug; // Tap-to-copy diagnostic exposes the live animal/NPC corrective priority on mobile.
+        if (facingDecision) lines.push(`     Facing priority: ${facingDecision.correctiveSource} side=${facingDecision.selectedSide} locked=${facingDecision.isLocked}; latest change: animals hold a priority-selected edge instead of timed flips.`);
         lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
       }
     });

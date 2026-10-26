@@ -255,7 +255,8 @@
     } else if (perp.CREATURE_PLANE_ROT_MODE === 'sway' && perp.creatureDeadzoneTarget) {
       target = perp.creatureDeadzoneTarget(c.animalFacing,rawYaw,animalPerps,dead,dt,c.frame !== 'idle');
     } else if (perp.perpClamp) {
-      target = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead).effectiveTarget;
+      const result = perp.perpClamp(c.animalFacing,rawYaw,animalPerps,dead); // Priority edge changes must cut across the excluded angles, matching creature cards.
+      target = result.effectiveTarget; snap = result.snapTo !== null;
     }
     c.animalYaw = snap || !Number.isFinite(c.animalYaw) ? target
       : c.animalYaw + diffAngle(target,c.animalYaw) * Math.min(1,dt*10);
