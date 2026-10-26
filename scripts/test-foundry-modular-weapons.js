@@ -37,7 +37,7 @@ assert.equal(window.HobunjiHandToolGrips.toolScaleForTool(key), window.HobunjiHa
 assert.deepEqual(plain(window.HobunjiHandToolGrips.authoredPrimaryGripForTool(key)), plain(window.HobunjiHandToolGrips.authoredPrimaryGripForTool('dagger')));
 const heavyKey = api.itemKey('bshuakauitl', 'dagger', 'nativeCopper'); // Two-end source retains both sockets and its own two-hand grip.
 assert.equal(window.HobunjiHandToolGrips.weaponHandModeForTool(heavyKey), 'two-hand');
-assert.equal(api.getConfig().shafts.bshuakauitl.mounts.length, 2);
+assert.equal(api.getConfig().shafts.bshuakauitl.mounts.length, 4, 'Both eye locations have perpendicular companion tangs.');
 assert(api.getConfig().shafts.bshuakauitl.mounts[1].end.y > api.getConfig().shafts.bshuakauitl.mounts[1].start.y, 'Opposed legacy socket becomes a reversed arrow.');
 for (const shaft of ['dagger']) for (const head of ['hatchet', 'war-cleaver', 'warhammer', 'work-hammer']) assert.equal(api.isDisallowed(shaft, head), true);
 assert.equal(api.isDisallowed('bshuakauitl', 'warhammer'), false);
@@ -71,7 +71,7 @@ assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
 draft.shafts.dagger.overrides.warhammer = { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true };
 api.replace(draft);
-assert.deepEqual(plain(api.settings('dagger', 'warhammer')), { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', layerOrder: 'haft-over-head', disallow: true });
+assert.deepEqual(plain(api.settings('dagger', 'warhammer')), { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', layerOrder: 'head-over-haft', disallow: true });
 draft.shafts.dagger.overrides.warhammer.scaleX = 1.7;
 api.replace(draft);
 assert.equal(api.settings('dagger', 'warhammer').scaleX, 1.7);
