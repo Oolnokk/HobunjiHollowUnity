@@ -15,7 +15,7 @@ class Material {
 const THREE = { // Minimal material/texture API; geometry is intentionally outside these tests.
   MeshBasicMaterial:Material, MeshLambertMaterial:Material, FrontSide:0, RepeatWrapping:1000,
   SphereGeometry:class {}, // Uses the real buildPartMesh entry point without duplicating unrelated box UV geometry.
-  Mesh:class { constructor(geometry, material) { this.geometry=geometry;this.material=material;this.position={set(){}};this.rotation={set(){}}; } },
+  Mesh:class { constructor(geometry, material) { this.isMesh=true;this.userData={};this.layers={enable(){},disable(){}};this.geometry=geometry;this.material=material;this.position={set(){}};this.rotation={set(){}}; } traverse(callback){callback(this);} },
   TextureLoader:class { load(url, done) { const texture=new Texture(); jobs.push(() => {texture.image={url};done(texture);}); return texture; } },
 };
 const fills = []; // Records shared shade-fill calls to verify color, source and cache isolation.

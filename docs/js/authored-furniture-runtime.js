@@ -71,6 +71,8 @@
       mesh.userData.authoredPartId = part.id;
       mesh.userData.authoredPart = part;
       mesh.userData.authoredMatrix = new THREE.Matrix4().compose(mesh.position, mesh.quaternion, mesh.scale);
+      const surfaces = (data.recognizedSurfaces || []).filter(surface => surface.partId === part.id).map(surface => ({ ...surface, ...(data.surfaceSettings?.[surface.id] || {}) })); // Editor's final per-surface mapping settings participate in Auto.
+      window.ProceduralFurniture.applyPartOutline?.(mesh, part, surfaces);
       group.add(mesh);
       meshById.set(part.id, mesh);
     }
