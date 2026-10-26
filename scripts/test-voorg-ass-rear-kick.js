@@ -224,6 +224,7 @@ async function main() {
     const run = {};
     const chargeDeps = stop === 'blocked' ? { ...deps, canOccupyAt: () => false } : deps;
     kick.start(charger, run, { target: far }, chargeDeps);
+    await settle(); // Frame composition is asynchronous; the authored kick may not strike until its pose has loaded.
     advancePastKickLunge(charger, run, chargeDeps);
     assert.equal(run.lungeStopReason, stop);
     if (stop === 'range') assert(charger.x > 0, 'the kick travels forward until its finite lunge range ends');
