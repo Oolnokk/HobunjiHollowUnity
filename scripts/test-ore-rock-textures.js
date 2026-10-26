@@ -40,7 +40,7 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/js/ore-rock-textures.js', 'utf8'), context);
 
 (async () => {
-  const palette = { tinCopper: { hex: '#58A28D' }, mushistonite: { hex: '#7BA963' } }; // Two ores prove material caching is keyed by mineral kind.
+  const palette = { copper: { hex: '#B87333', verdigrisHex: '#3FAF9F' }, tinCopper: { hex: '#58A28D', verdigrisHex: null }, mushistonite: { hex: '#7BA963' } }; // Tests both defined verdigris and ordinary mineral colors.
   const ore = context.window.OreRockTextures.materialFor(THREE, 'tinCopper', palette); // Asynchronously receives its canvas after the source image resolves.
   assert.strictEqual(context.window.OreRockTextures.materialFor(THREE, 'tinCopper', palette), ore, 'One shared material for every rock of the same ore');
   assert.strictEqual(ore.userData.sharedOreRockMaterial, true, 'Removing one rock must not dispose another rock material');
@@ -59,6 +59,25 @@ vm.runInContext(fs.readFileSync('docs/js/ore-rock-textures.js', 'utf8'), context
   assert(unchanged > 500, 'Most of the rock must still look like natural stone');
   assert(changed > 500, 'The ore must occupy visible irregularly colored deposits');
   assert(ore.map !== stone.map, 'A shared ore map cannot alter the unmineralized stone texture');
+  const shade = 0.62 + ((97 + 86 + 77) / (3 * 255)) * 0.66; // Expected shading of the fixture's uniform stone pixels.
+  const shadedColor = hex => [1, 3, 5].map(offset => Math.round(parseInt(hex.slice(offset, offset + 2), 16) * shade)); // Matches the production mineral shading for this non-clipping fixture.
+  const firstMineralColor = pixels => {
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] !== original[i] || pixels[i + 1] !== original[i + 1] || pixels[i + 2] !== original[i + 2]) {
+        return [pixels[i], pixels[i + 1], pixels[i + 2]];
+      }
+    }
+    return null;
+  };
+  assert.deepStrictEqual(firstMineralColor(maskedPixels), shadedColor(palette.tinCopper.hex), 'Ores without verdigris retain their ordinary mineral color');
+  const copper = context.window.OreRockTextures.materialFor(THREE, 'copper', palette); // A real oxidizing ore must display its verdigris rather than freshly forged copper.
+  await Promise.resolve();
+  await Promise.resolve();
+  assert(copper.map instanceof THREE.CanvasTexture, 'Copper also receives a masked ore texture');
+  assert.strictEqual(context.window.OreRockTextures.materialFor(THREE, 'copper', palette), copper, 'Copper material is also cached');
+  assert.deepStrictEqual(firstMineralColor(maskedPixels), shadedColor(palette.copper.verdigrisHex), 'Copper vein pixels should use its existing verdigris hue');
+  assert.notDeepStrictEqual(firstMineralColor(maskedPixels), shadedColor(palette.copper.hex), 'Copper veins must not use the freshly forged metal hue');
+  assert.equal(context.window.OreRockTextures.debugSnapshot().copper, 'ready', 'Mobile diagnostics show copper texture preparation');
   const caveSource = fs.readFileSync('docs/js/cavern-ore-rocks.js', 'utf8'); // Cave renderer should consume exactly the same material function as game.js.
   const gameSource = fs.readFileSync('docs/game.js', 'utf8');
   assert(caveSource.includes('OreRockTextures.materialFor') && gameSource.includes('OreRockTextures.materialFor'), 'Caves, town mines and wilderness use the same renderer');
