@@ -234,7 +234,7 @@
   // One NPC lower half, not a wildlife species: standalone animal-style rig data.
   const omgurkuLowerRig = clone(masterCreatures['voorg-ass']); // Independent floor profile; preserve Voorg-ass genotypes and rig values.
   omgurkuLowerRig.kind = 'omgurku-lower';
-  omgurkuLowerRig.groundOffsets = { large: 0, medium: 0, small: 0 }; // Medium is the fixed adult lower body; zero enables automatic hybrid grounding.
+  omgurkuLowerRig.groundOffsets = { large: 0, medium: 0.3, small: 0 }; // Fixed adult hybrid lower half sits 0.3 world units above its gameplay floor.
   omgurkuLowerRig.sizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed size regardless of animal preview class.
   omgurkuLowerRig.sizeScalePercentages = { large: { x: 100, y: 100 }, medium: { x: 100, y: 100 }, small: { x: 100, y: 100 } }; // Mirrors fixed scales in exports.
   omgurkuLowerRig.anchors = { saddle: identityAnchor([0, 0, 0]), shoulderGrip: identityAnchor([0, 0, 0]) }; // The hybrid join remains owned by hybridPlacement.
