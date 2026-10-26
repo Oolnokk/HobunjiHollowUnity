@@ -24,6 +24,7 @@ assert.match(game, /c\._voorgRearKickSpent = true; \/\/ No Stamina/, 'wildlife e
 
 const log = []; // Hit and sprite calls captured to verify the actual shared damage-frame contract.
 const draws = []; // Tracks use of the rigger's own separator polygons for both sprite halves.
+const fallbackLoads = []; // Records CORS at the moment fallback image loading begins.
 let clock = 1000; // Deterministic simulated wall clock for the companion-only cooldown.
 const frame = key => ({ width: 128, height: 75, kind: key }); // Fake native-size genotyped idle/run1 PNG canvas.
 const context2d = {
@@ -61,7 +62,14 @@ const sandbox = vm.createContext({
     getContext: () => context2d,
     toDataURL: () => 'data:image/png;base64,KICK_FRAME',
   }) },
-  performance: { now: () => clock }, Image: function () {},
+  performance: { now: () => clock }, Image: class {
+    constructor() { this.width = 128; this.height = 75; } // Native fallback sprite dimensions used by the compositor.
+    set src(url) {
+      fallbackLoads.push({ url, crossOrigin: this.crossOrigin });
+      this.kind = url.includes('run1') ? 'run1' : 'idle'; // Identifies each fallback half in the draw log.
+      queueMicrotask(() => this.onload());
+    }
+  },
   console, Math, Map, Promise,
 });
 vm.runInContext(script, sandbox, { filename: 'combat-voorg-ass-rear-kick.js' });
@@ -152,6 +160,64 @@ async function main() {
   assert.equal(creatureHits.length, 1, 'newly ready pose must be displayed before the hoof hits');
   kick.update(slow, slowState, 0.14, companionDeps);
   assert.equal(creatureHits.length, 2, 'delayed composite still lands one kick after its visible strike beat');
+
+  const wildCreatureHits = []; // Wild retaliation must not acquire companion attribution or empowerment.
+  const wildState = {}; // Drives the same attack against another animal instead of the player.
+  kick.start(wild, wildState, { target }, deps);
+  await settle();
+  kick.update(wild, wildState, 0.35, deps);
+  kick.update(wild, wildState, 0.14, { ...deps, damageCreature: (...args) => wildCreatureHits.push(args) });
+  assert.equal(wildCreatureHits.length, 1, 'wild creature kick uses direct creature damage');
+  assert.equal(creatureHits.length, 2, 'wild animal never enters CompanionOffense');
+  assert.equal(wildCreatureHits[0][5].attacker, wild, 'wild damage retains its real source');
+
+  windowStub.CreatureGeneticsRender.genotypeSignature = () => 'fallback-cors';
+  windowStub.CreatureGeneticsRender.composeFrame = async () => null;
+  const fallbackState = {}; // Forces the production raw-image loader when genotype composition is unavailable.
+  kick.start(wild, fallbackState, { target: player }, deps);
+  await settle();
+  assert.equal(fallbackLoads.length, 2, 'both fallback PNG halves load');
+  assert.ok(fallbackLoads.every(load => load.crossOrigin === 'anonymous'), 'CORS is set before each image src');
+  assert.ok(fallbackState.frame, 'fallback image pair still produces a combined pose');
+
+  windowStub.Combat.meleeHit = (source, victim, options) => {
+    const bearing = Math.atan2(victim.y - source.y, victim.x - source.x); // Mimics the shared collider's fallback sector for evasion cases.
+    const delta = Math.atan2(Math.sin(bearing - options.yaw), Math.cos(bearing - options.yaw)); // Angle wrapping keeps rear-facing tests consistent across zero.
+    return Math.hypot(victim.x - source.x, victim.y - source.y) <= options.rangePx && Math.abs(delta) <= options.halfConeRad;
+  };
+  for (const evasion of ['range', 'side', 'area', 'dead']) {
+    const runner = { ...player }; // Target is valid when the tell locks its direction.
+    const missState = {}; // Each evasion is independently committed before the target moves.
+    const beforeHits = damageCalls.length; // An avoided kick must never route Health/Footing/knockback.
+    kick.start(wild, missState, { target: runner }, deps);
+    await settle();
+    if (evasion === 'range') runner.x = 500;
+    if (evasion === 'side') { runner.x = 0; runner.y = 35; }
+    if (evasion === 'area') runner.areaId = 'elsewhere';
+    if (evasion === 'dead') runner.health = 0;
+    kick.update(wild, missState, 0.35, deps);
+    kick.update(wild, missState, 0.14, deps);
+    assert.equal(damageCalls.length, beforeHits, evasion + ': avoids committed rear kick');
+  }
+
+  const retreatStart = game.indexOf('} else if (c._voorgRearKickThreat && window.VoorgAssRearKick'); // Execute the real hostile AI retreat branch.
+  const retreatEnd = game.indexOf('} else if (def.behaviorStages)', retreatStart); // Exclude the unrelated behavior-stage machinery.
+  assert.ok(retreatStart >= 0 && retreatEnd > retreatStart);
+  for (const reason of ['stamina', 'swimming', 'dead-target', 'ready']) {
+    const actor = { ...wild, state: 'chase', stamina: reason === 'stamina' ? 0 : 100,
+      _voorgRearKickThreat: player, _voorgRearKickSpent: false, targetPlayer: player, vx: 10, vy: 20 }; // Independent defensive encounter per eligibility case.
+    vm.runInNewContext(`if (false) { ${game.slice(retreatStart, retreatEnd)} }`, {
+      window: windowStub, c: actor, def: { attackStaminaCost: 10 },
+      targetPlayer: { health: reason === 'dead-target' ? 0 : 100 }, isCreatureSwimming: () => reason === 'swimming',
+    });
+    assert.equal(actor.state, reason === 'ready' ? 'chase' : 'fleeing-low-health', reason + ': player-target kick eligibility');
+    if (reason !== 'ready') {
+      assert.equal(actor._voorgRearKickThreat, null);
+      assert.equal(actor.targetPlayer, null);
+      assert.equal(actor._voorgRearKickSpent, true);
+      assert.equal(actor.vx, 0);
+    }
+  }
 
   console.log('Voorg-Ass rear-kick split pose, delayed art, Footing, knockback, flee and companion cooldown passed.');
 }

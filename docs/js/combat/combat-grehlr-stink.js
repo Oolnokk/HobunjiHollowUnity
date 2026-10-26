@@ -73,7 +73,7 @@
   }
 
   function targetIsUsable(creature, target) {
-    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return false;
+    if (!target || target === creature || target._downed || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return false;
     if (Number.isFinite(target.health) && target.health <= 0) return false;
     if (isBurrowProtected(target)) return false;
     if (target.areaId != null && creature.areaId != null && target.areaId !== creature.areaId) return false;
@@ -172,9 +172,9 @@
 
   function gatherTargets(creature, deps) {
     const targets = []; // Used to let the short cone affect every valid opposing actor it actually catches.
-    if (creature.isCompanion) {
+    if (creature.isCompanion && !creature.banditCompanion) {
       for (const hostile of deps.hostileObjects || []) {
-        if (targetIsUsable(creature, hostile)) targets.push(hostile);
+        if (hostile.def?.hostile !== false && targetIsUsable(creature, hostile)) targets.push(hostile);
       }
       return targets;
     }
@@ -186,7 +186,7 @@
       // ground position — never a legitimate independent target for this
       // cone (see combat-drenkirra-pellet.js's gatherTargets for the same
       // exclusion and reasoning).
-      if (companion.stableRole === 'shoulderPet') continue;
+      if (companion.banditCompanion || companion.stableRole === 'shoulderPet') continue;
       if (targetIsUsable(creature, companion)) targets.push(companion);
     }
     return targets;

@@ -36,6 +36,7 @@
   function imageFor(url) {
     return new Promise((resolve, reject) => {
       const image = new Image(); // Fallback for non-genotype specimens when composeFrame cannot supply canvases.
+      image.crossOrigin = 'anonymous';
       image.decoding = 'async';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('Voorg-Ass frame missing: ' + url));
@@ -167,7 +168,7 @@
     const hitOptions = { tag: 'blunt', attacker: creature, footingDamageMultiplier: footingMultiplier };
     const isPlayer = target === deps.player || (deps.players || []).includes(target);
     if (isPlayer) deps.damagePlayer(DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
-    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
+    else if (creature.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
     else deps.damageCreature(target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
     deps.playCreatureClawHit?.(creature);
     window.__farmLog?.('[voorg-kick] hit ' + (target.id || 'target') + ' knockback=' + KNOCKBACK_PX_S + ' footingMultiplier=' + footingMultiplier.toFixed(1), 'combat');

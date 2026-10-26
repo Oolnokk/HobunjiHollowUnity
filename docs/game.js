@@ -6730,6 +6730,14 @@
               // scale, and sprite frame for its full duration.
               window.Combat.animalAttacks.update(c, entityDt);
               aimAngle = c.facing;
+            } else if (c._voorgRearKickThreat && window.VoorgAssRearKick?.isVoorgAss?.(c)
+              && (targetPlayer.health <= 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c))) {
+              c._voorgRearKickSpent = true; // Match creature-target retaliation: an unavailable kick ends the defense instead of chasing forever.
+              c._voorgRearKickThreat = null;
+              c.targetPlayer = null;
+              c.targetCreature = null;
+              c.state = 'fleeing-low-health';
+              c.vx = 0; c.vy = 0;
             } else if (def.behaviorStages) {
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
