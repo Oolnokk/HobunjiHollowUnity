@@ -343,15 +343,15 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   const grid = [[{}, {}]];
   oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, new Obj(), grid);
   assert.equal(grid[0][0].oreKey, 'copper', 'copper-look cavern rock drops copper ore');
-  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tin, 0x513c32, 'Cassiterite cave texture uses Tin Ore color rather than smithed metal');
-  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.copper, 0x3faf9f, 'Cave diagnostic swatch must show copper verdigris instead of forged copper');
-  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tinCopper, 0x4eaa86, 'Crude bronze ore cave swatch uses low-tin bronze verdigris');
-  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.mushistonite, 0x57b38b, 'Natural bronze cave swatch uses tin-bronze verdigris');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tin, 0xc8ccd0, 'Cassiterite rock cave swatch uses its contained tin metal color');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.copper, 0xb87333, 'Cave diagnostic swatch shows metallic copper underneath patina');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tinCopper, 0xb66a2e, 'Crude bronze cave swatch uses low-tin bronze metal beneath patina');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.mushistonite, 0xcd7f32, 'Natural bronze cave swatch uses tin-bronze metal beneath patina');
   assert.equal(grid[0][1].oreKey, null, 'stone-look cavern rock drops stone only');
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
   const newGrid = [[{}, {}, {}]];
   oreCtx.CavernOreRocks.build('map_i_new_ores', { oreRocks: [{ col: 0, row: 0, oreKind: 'tinCopper' }, { col: 1, row: 0, oreKind: 'mushistonite' }, { col: 2, row: 0, oreKind: 'tin' }] }, new Obj(), newGrid);
-  assert.equal(fittedFaces, 5, 'Every cave resource rock uses the shared facet-mapping helper, including stone-only rocks');
+  assert.equal(fittedFaces, 5, 'Every cave resource rock invokes the compatible UV-preserving helper, including stone-only rocks');
   assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
