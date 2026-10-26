@@ -34,11 +34,11 @@ const species = JSON.parse(read('docs/config/species/omgurku.json')); // Actual 
 assert.equal(Object.keys(context.candidates(species, 'male', 'hood', ['facewrap', 'festivalmask_gar-wolf'], ['facewrap'])).length, 0);
 
 // Explicit saved equipment must obey the same restrictions as random generation.
-const cosmetics = { optionCache: new Map([['facewrap', { id: 'facewrap', slot: 'hood' }], ['festivalmask_gar-wolf', { id: 'festivalmask_gar-wolf', slot: 'hood' }]]), exclusiveCosmeticsByFighter: { omgurku_m: species.male.exclusiveSlotCosmetics }, hatOptions: [], hoodOptions: [], torsoPortraitOptions: [], armPortraitOptions: [] }; // Includes bandit-exclusive and shop masks.
+const cosmetics = { optionCache: new Map([['facewrap', { id: 'facewrap', slot: 'hood', tintSlot: 'HOOD' }], ['festivalmask_gar-wolf', { id: 'festivalmask_gar-wolf', slot: 'hood' }], ['appearance::hat::basic_headband', { id: 'basic_headband', slot: 'hat', tintSlot: 'HAT' }]]), exclusiveCosmeticsByFighter: { omgurku_m: species.male.exclusiveSlotCosmetics }, hatOptions: [], hoodOptions: [], torsoPortraitOptions: [], armPortraitOptions: [] }; // Includes bandit-exclusive and shop masks.
 const previewWindow = {
   SCRATCHBONES_CONFIG: { game: { account: { shopCatalog: [] } } },
   loadPortraitCosmetics: async () => cosmetics,
-  getPortraitFighters: () => [{ id: 'omgurku_m', speciesId: 'omgurku', gender: 'male' }],
+  getPortraitFighters: () => [{ id: 'omgurku_m', speciesId: 'omgurku', gender: 'male' }, { id: 'ghoul_m', speciesId: 'ghoul', gender: 'male' }, { id: 'ghoul_f', speciesId: 'ghoul', gender: 'female' }],
   randomPortraitProfileSeeded: (_rng, fighters) => ({ fighter: fighters[0], bodyColors: {} }),
 }; // Use the real NPC adapter instead of testing a copy of its hood selection.
 vm.runInNewContext(read('docs/js/npc-avatar-preview-utils.js'), { window: previewWindow, document: { currentScript: null }, console, URL });
@@ -48,5 +48,13 @@ vm.runInNewContext(read('docs/js/npc-avatar-preview-utils.js'), { window: previe
     const profile = previewWindow.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'omgurku', gender: 'male' }, equippedCosmetics: [id] }); // Old explicit saves must not force masks back onto hybrids.
     assert.equal(profile.hood.id, 'none');
   }
-  console.log('Enemy pants and Omgurku mask restrictions passed.');
+  for (const gender of ['male', 'female']) {
+    for (const [id, slot, expectedId, tintSlot] of [['facewrap', 'hood', 'facewrap', 'HOOD'], ['appearance::hat::basic_headband', 'hat', 'basic_headband', 'HAT']]) {
+      const profile = previewWindow.NpcAvatarPreview.buildProfileFromNpcExport({ appearance: { speciesId: 'ghoul', gender }, equippedCosmetics: [id] }); // Exercise the real hostile NPC portrait's saved headwear adapter.
+      assert.equal(profile[slot]?.id, expectedId, `Ghoul ${gender} should visibly equip ${id}`);
+      assert.equal(profile[slot]?.tintSlot, tintSlot, `Ghoul ${id} should resolve its authored dye channel`);
+      assert.equal(profile[slot === 'hood' ? 'hat' : 'hood']?.id, 'none', 'No second head covering may appear');
+    }
+  }
+  console.log('Enemy pants, Omgurku mask restrictions, and ghoul headwear portrait equip checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
