@@ -278,9 +278,55 @@
   SPECIES_DATA.mammakhbuur.genders = ['male', 'female'];
   SPECIES_DATA.mammakhbuur.female = JSON.parse(JSON.stringify(SPECIES_DATA.mashtzarr.female || SPECIES_DATA.mashtzarr.male));
   for (const gender of SPECIES_DATA.mammakhbuur.genders) {
-    const authored = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.mashtzarr?.[gender]; // Creator uses the matching donor gender's existing cosmetic choices.
-    if (authored?.slots) SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots));
+    const speciesConfig = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species; // Resolve the Mammakhbuur-specific no-front-hair rule before falling back to their Mashtzarr donor.
+    const authored = speciesConfig?.mammakhbuur?.[gender] || speciesConfig?.mashtzarr?.[gender];
+    if (Array.isArray(authored?.slots)) {
+      SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots))
+        .filter(slot => slot?.slot !== 'hairFront'); // Mammakhbuur never expose front hair, but retain Mashtzarr Grand Beard on males.
+    }
     SPECIES_DATA.mammakhbuur[gender].colorOptions = bodyPalette('mashtzarr', gender);
+  }
+
+  // Resolve creator options again for returning players. The Mashtzarr and
+  // Nuhongan compatibility bridges used to patch this private table only
+  // during the first character-creation render; a returning player's first
+  // visit may instead be the Grooming Kit, long after those hooks retire.
+  function creatorSpeciesData(speciesId) {
+    const configured = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {}; // Authoritative slots for species/genders missing from the original creator snapshot.
+    const key = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Lookup-only normalization keeps old saved identities unchanged.
+    if (key === 'rakakoan' && !SPECIES_DATA.rakakoan && configured.rakakoan?.male?.slots?.length) {
+      SPECIES_DATA.rakakoan = {
+        ...configured.rakakoan,
+        genders: [...(configured.rakakoan.genders || ['male', 'female'])],
+      }; // Preserve Rakako'an eyepatches and Kenkari beard options on an existing save, including the active species button for the 3D preview.
+    }
+    window.hobunjiOnboardingMashtzarrFemale?.hydratePrivateSpeciesTable?.(SPECIES_DATA);
+    for (const [key, spec] of Object.entries(SPECIES_DATA)) {
+      for (const gender of ['male', 'female']) {
+        const authored = configured[key]?.[gender];
+        if (Array.isArray(spec[gender]?.slots) && spec[gender].slots.length) continue;
+        if (!Array.isArray(authored?.slots) || !authored.slots.length) continue;
+        spec[gender] = {
+          ...authored,
+          colorOptions: authored.colorOptions || bodyPalette(key, gender),
+        };
+        if (!spec.genders.includes(gender)) spec.genders.push(gender);
+      }
+    }
+    window.HobunjiNuhonganSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA);
+    const spec = SPECIES_DATA[key];
+    if (spec) return spec;
+    const authored = configured[key];
+    return authored ? {
+      ...authored,
+      label: authored.label || key,
+      genders: authored.genders || ['male', 'female'].filter(g => Array.isArray(authored[g]?.slots)),
+    } : null;
+  }
+
+  function creatorGenderData(speciesId, gender) {
+    const key = String(gender || '').trim().toLowerCase();
+    return creatorSpeciesData(speciesId)?.[key === 'f' ? 'female' : key === 'm' ? 'male' : key] || null;
   }
 
   // Clothing slots for collections tab (mirrors scratchbones shop catalog categories)
@@ -628,7 +674,7 @@
   function makeDefaultState(speciesId, gender) {
     speciesId = speciesId || 'mao-ao';
     gender    = gender    || 'male';
-    const spec = SPECIES_DATA[speciesId] || SPECIES_DATA['mao-ao'];
+    const spec = creatorSpeciesData(speciesId) || SPECIES_DATA['mao-ao'];
     if (!spec.genders.includes(gender)) gender = spec.genders[0];
     const gData = spec[gender];
     const opts  = gData?.colorOptions || [];
@@ -651,7 +697,7 @@
   }
 
   function currentGenderData() {
-    return _state ? SPECIES_DATA[_state.appearance.speciesId]?.[_state.appearance.gender] : null;
+    return _state ? creatorGenderData(_state.appearance.speciesId, _state.appearance.gender) : null;
   }
 
   // ── Portrait rendering ────────────────────────────────────────────────
@@ -1461,18 +1507,20 @@
   // ── HTML renderers ────────────────────────────────────────────────────
   function renderAppearanceBody() {
     const ap        = _state.appearance;
-    const specData  = SPECIES_DATA[ap.speciesId];
-    const gData     = specData?.[ap.gender];
+    const specData  = creatorSpeciesData(ap.speciesId);
+    const gData     = creatorGenderData(ap.speciesId, ap.gender);
+    const activeSpecies = String(ap.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Keeps the selected species button accurate for old saved spellings in the grooming preview.
+    const activeGender = /^(female|f)$/i.test(String(ap.gender || '')) ? 'female' : 'male'; // Mirrors the creator's gender resolution for saved abbreviated values.
     const colorOpts = gData?.colorOptions || [];
 
     const speciesBtns = Object.entries(SPECIES_DATA).map(([sid, sd]) =>
-      `<button class="ob-sel-btn${ap.speciesId === sid ? ' ob-active' : ''}" data-ob-species="${esc(sid)}">${esc(sd.label)}</button>`
+      `<button class="ob-sel-btn${activeSpecies === sid ? ' ob-active' : ''}" data-ob-species="${esc(sid)}">${esc(sd.label)}</button>`
     ).join('');
 
     const availGenders = specData?.genders || ['male'];
     const genderBtns = ['male', 'female'].map(g => {
       const avail = availGenders.includes(g);
-      return `<button class="ob-sel-btn${ap.gender === g ? ' ob-active' : ''}${!avail ? ' ob-disabled' : ''}"
+      return `<button class="ob-sel-btn${activeGender === g ? ' ob-active' : ''}${!avail ? ' ob-disabled' : ''}"
                        data-ob-gender="${g}"${!avail ? ' disabled' : ''}>${g === 'male' ? 'Male' : 'Female'}</button>`;
     }).join('');
 
