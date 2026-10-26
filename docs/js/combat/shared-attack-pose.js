@@ -452,11 +452,25 @@
   // Places `holder` so its aperture meets the head frame's mouth. `pose` is an offset in the head frame (units scale with
   // the head), `poseScale` the holder's own uniform scale, `aperture` the mating point in HOLDER space (null = holder
   // origin). With `localRoot` the result is expressed in that parent's space (a scaled/rotated body root).
-  function placeAtMouth(holder, frame, pose, poseScale, aperture, localRoot = null) {
+  function placeAtMouth(holder, frame, pose, poseScale, aperture, localRoot = null, aimPoint = null) {
     const scale = Math.max(0.0001, (Number(poseScale) || 1) * frame.scale); // World scale of the tool, inherited from the head.
     frame._e.set((pose.pitch || 0) * DEG_TO_RAD, (pose.yaw || 0) * DEG_TO_RAD, (pose.roll || 0) * DEG_TO_RAD, 'YXZ');
     frame._r.setFromEuler(frame._e);
     frame._q.copy(frame.quaternion).multiply(frame._r); // World rotation: head rotation, then the authored tool rotation.
+    // Optional head-anchored muzzle convergence: keep the aperture on the actual mouth,
+    // but rotate the shaft (-Z from the +Z mouthpiece end) toward the SAME finite
+    // perspective point as the head-to-reticle diagnostic guide. Character View can
+    // straighten the head without detaching the blowgun from this live reticle ray.
+    if (aimPoint && [aimPoint.x, aimPoint.y, aimPoint.z].every(Number.isFinite)) {
+      const dx = aimPoint.x - frame.position.x, dy = aimPoint.y - frame.position.y, dz = aimPoint.z - frame.position.z; // Mouth-to-reticle vector used only when a caller opts into muzzle convergence.
+      const distance = Math.hypot(dx, dy, dz); // Prevents zero-length aim targets from changing the authored pose.
+      if (distance > 1e-6) {
+        frame._v.set(dx / distance, dy / distance, dz / distance); // Desired world-space barrel direction from the true mouth.
+        frame._w.set(0, 0, -1).applyQuaternion(frame._q); // Current barrel direction before any convergence correction.
+        frame._q3.setFromUnitVectors(frame._w, frame._v); // Minimal world-space rotation preserves the authored shaft roll.
+        frame._q.premultiply(frame._q3); // Only the gun's orientation changes; the mouthpiece stays anchored below.
+      }
+    }
     frame._v.set((pose.x || 0) * frame.scale, (pose.y || 0) * frame.scale, (pose.z || 0) * frame.scale).applyQuaternion(frame.quaternion).add(frame.position); // World point the aperture sits on.
     applyEdgeOnDeadzone(holder, frame); // Roll about the haft if the camera would see the sprite edge-on; the aperture stays on that point.
     if (aperture) frame._v.sub(frame._w.set(aperture.x, aperture.y, aperture.z).multiplyScalar(scale).applyQuaternion(frame._q));
