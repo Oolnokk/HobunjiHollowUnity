@@ -48,7 +48,7 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
     assert(pair, shaftKey + '/' + headKey + ': every pair explicitly authored');
     const manualHeadAbove = shaftKey === 'kylie' && ['harlyao-broadsword', 'harlyao-longsword'].includes(headKey);
     assert.equal(pair.layerOrder, manualHeadAbove || head.mount.type === 'weight' ? 'head-over-haft' : 'haft-over-head',
-      shaftKey + '/' + headKey + ': preserve explicit pair layer order, including the user's two Kylie exceptions.');
+      shaftKey + '/' + headKey + ': preserve explicit pair layer order, including two Kylie exceptions.');
     assert.equal(api.settings(shaftKey, headKey).layerOrder, pair.layerOrder);
   }
 }
