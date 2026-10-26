@@ -498,6 +498,7 @@
     const messages = [];
     if (rewardResult.reward) messages.push(`${rewardResult.reward.label || rewardResult.reward.id} obtained.`);
     if (teaSetup?.station) messages.push('Tea Grinder obtained and Nine Leaf Tea learned.');
+    if (Number(stage) === 2) messages.push('Color Pools overpass painting unlocked.'); // Quest 2's saved stage-three completion is the reward; no duplicate key item.
     return { ok: true, message: messages.join(' ') || 'Banubu accepted it.' };
   }
 
