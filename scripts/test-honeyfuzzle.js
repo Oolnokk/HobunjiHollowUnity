@@ -41,7 +41,15 @@ function fakeThree() {
   const context = sandbox();
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
-  assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'cycle is up -> mid -> down -> mid');
+  assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'legacy wing-step helper stays compatible');
+  assert.equal(S.ATLAS_COLS, 5);
+  assert(S.FRAME_URLS.every((url, i) => url.endsWith('honeyfuzzle_fly' + (i + 1) + '.png')));
+  assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_tailfeathers.png')));
+  assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_spectacles.png')));
+  assert.equal(S.appearanceColors('#123456', null).tailColor, '#123456', 'the default tail always uses body color one');
+  assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: true, copies: 1 } }).tailColor, '#abcdef', 'an expressed tail allele uses body color two');
+  assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: false, copies: 2 } }).tailColor, '#123456', 'disabled tail allele shows the default primary tint');
+  assert.equal(S.appearanceColors('#123456', { spectacles: { color: '#fedcba', enabled: true, copies: 1 } }).spectaclesColor, '#fedcba');
   for (let step = 0; step < 12; step++) {
     const frames = [0, 1, 2].map(member => S.memberFrame(member, step));
     assert.equal(new Set(frames).size >= 2, true, 'the three thirds are never all on the same frame');
@@ -100,24 +108,35 @@ function fakeThree() {
   assert.equal(avatar.backPlane, null);
   avatar.update(0, 1000, 0.016, 150);
   const frameAttr = avatar.swarm.geometry.getAttribute('aFrame');
-  const step = S.wingStep(1000);
-  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: 9 }, (_, i) => S.memberFrame(i, step)), 'instance frames follow the shared tick');
-  assert.equal(new Set(Array.from(frameAttr.array)).size >= 2, true, 'more than one wing frame is on screen at once');
+  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: 9 }, (_, i) => i % 3), 'wing phase stays fixed per member');
+  assert.equal(new Set(Array.from(frameAttr.array)).size, 3, 'all three phases occur across the swarm');
   const m = avatar.swarm.instanceMatrix.array;
   assert(Array.from(m).every(Number.isFinite), 'instance matrices are finite');
   assert.equal(m[15], 1);
-  // The same tick must not rewrite the frame attribute (no per-frame GPU upload churn).
+  // Smooth time advances without changing aFrame buffers or reallocating texture data.
   frameAttr.needsUpdate = false;
+  const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
   avatar.update(0, 1001, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, false);
+  assert.notEqual(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value, firstPhase);
   avatar.update(0, 1000 + S.WING_TICK_MS, 0.016, 150);
-  assert.equal(frameAttr.needsUpdate, true, 'a new tick uploads the new frames once');
+  assert.equal(frameAttr.needsUpdate, false);
   // Body color: uncolored swarms keep the authored mint; a colored one gets its own uniforms and can be recolored.
   assert.equal(avatar.swarm.material.userData.honeyfuzzle.uUse.value, 0);
   const tinted = S.buildAvatar(THREE, { name: 'tinted', modelWidth: 1.3, color: '#0b0b0e' });
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uUse.value, 1); assert.equal(tinted.swarm.material.userData.honeyfuzzle.uBody.value.value, '#0b0b0e');
   assert.notEqual(tinted.swarm.material.userData.honeyfuzzle, avatar.swarm.material.userData.honeyfuzzle, 'swarms never share color uniforms');
   tinted.setColor('#ece8e0'); assert.equal(tinted.swarm.material.userData.honeyfuzzle.uBody.value.value, '#ece8e0');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
+  tinted.setGenotype({ tailfeathers: { color: '#abcdef', enabled: true, copies: 1 }, spectacles: { color: '#123456', enabled: true, copies: 2 } });
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#abcdef');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#123456');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 1);
+  tinted.setGenotype(null);
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 0);
+  assert.equal(tinted.group.children.length, 1, 'all overlay sprites share one instanced mesh');
+  assert.equal(typeof S.debugSnapshot, 'function');
   assert.equal(S.DEFAULT_MEMBER_COUNT, tinted.memberCount, 'default swarm size');
   avatar.dispose();
   assert.equal(avatar.swarm.geometry.disposed, true);
@@ -126,7 +145,7 @@ function fakeThree() {
 
 // ---- fixed Medium size / companion role -------------------------------------------------
 {
-  const context = sandbox({ SCRATCHBONES_CONFIG: { game: { creatureGenetics: { palettes: {} }, livestock: {}, wildlife: {} } }, __farmLog() {}, addEventListener() {} });
+  const context = sandbox({ SCRATCHBONES_CONFIG: { game: { creatureGenetics: { palettes: { default: [{ id: 'mint', name: 'Mint', hex: '#aabbcc', weight: 1 }, { id: 'gold', name: 'Gold', hex: '#aabb44', weight: 1 }] } }, livestock: {}, wildlife: {} } }, __farmLog() {}, addEventListener() {} });
   load(context, 'docs/js/creature-genetics.js');
   const CREATURE_DB = { honeyfuzzle: { label: 'Honeyfuzzle Swarm', defaultSizeClass: 'medium', fixedSizeClass: 'medium' }, drenkirra: { defaultSizeClass: 'large' } };
   context.CreatureGenetics.init({ clamp: (v, a, b) => Math.max(a, Math.min(b, v)), CREATURE_DB });
@@ -135,7 +154,9 @@ function fakeThree() {
   }
   assert.equal(context.CreatureGenetics.stableEntryRole({ kind: 'drenkirra', genotype: { sizeClass: 'small' } }), 'shoulderPet', 'other species keep their Size gene');
   assert.equal(context.CreatureGenetics.defaultLivestockName('honeyfuzzle'), 'Honeyfuzzle Swarm', 'worded as a swarm');
-  assert.equal(context.CreatureGenetics.makeDefaultGenotype('honeyfuzzle'), null, 'no coat genes');
+  const genes = context.CreatureGenetics.makeDefaultGenotype('honeyfuzzle');
+  assert(genes?.base?.color && genes?.tailfeathers && genes?.spectacles, 'honeyfuzzle has inheritable markings');
+  assert.equal(genes.sizeClass, 'medium');
 }
 
 // ---- colors by region ---------------------------------------------------------------------------
