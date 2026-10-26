@@ -152,6 +152,7 @@
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
     byId('allow-head').checked = head.editorOnly !== true;
+    byId('head-construction-note').textContent = head.mountNote || ''; // Authoring notes for shovel scoop, transverse hoe, and pick head.
     const accepted = compatible(), needed = head.mount.type === 'blade' ? 'tang' : 'eye';
     byId('part-readiness').textContent = !accepted
       ? 'Incompatible: add a ' + needed + ' line to this haft or choose another head.'
