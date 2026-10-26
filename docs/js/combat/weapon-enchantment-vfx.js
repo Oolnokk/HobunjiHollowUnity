@@ -23,6 +23,7 @@
   const EMITTERS = new Map(); // Used by updateEmitters() to retain pooled particles for each currently visible weapon plane.
 
   let lastScanAt = -Infinity; // Used by update() to throttle held-plane/config resolution.
+  let lastHeldWeaponKey = null; // Used by update() to clear existing particles immediately on a held-slot, holster, or weapon change.
   let activeSnapshot = null; // Used by updateEmitters()/debugSnapshot() as the latest resolved weapon + planar visual state.
   let scanGeneration = 0; // Used by update()/forceRefresh() so an older async mask scan can never overwrite a newer weapon/config snapshot.
   let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler registration.
@@ -249,20 +250,31 @@
     return defs?.[key]?.sprite || defs?.[key]?.baseSprite || null;
   }
 
+  function activeHeldWeaponKey() {
+    const deps = window.Combat?.deps; // Gameplay's authoritative held mode, equipment slot, and per-weapon enchantment identity.
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Optional fallback for integrations without the Combat held-slot seams.
+    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Shared live hand/stance state.
+    const activeSlot = deps?.getActiveTool?.() ?? runtimeState?.activeSlot ?? handDeps?.getActiveTool?.() ?? null; // Only the drawn melee slot may display this melee weapon's aura.
+    const heldMode = deps?.getHeldMode?.() ?? handDeps?.getHeldMode?.() ?? null; // Holstering or holding a bag item suppresses the aura.
+    if (activeSlot != null && activeSlot !== 'weapon') return null;
+    if (heldMode != null && heldMode !== 'tool') return null;
+    const weaponKey = deps?.currentWeaponKey?.() || null; // The weapon whose stored enchantments and verdigris mask will be read.
+    const equippedKey = deps?.equipmentSlots?.weapon ?? handDeps?.equipmentSlots?.weapon ?? (activeSlot === 'weapon' ? runtimeState?.itemKey : null); // Prevent a stale weapon-key seam from adorning a newly selected item.
+    if (!weaponKey || weaponKey === 'none' || (equippedKey && equippedKey !== weaponKey)) return null;
+    return weaponKey;
+  }
+
   function directHeldVisual(key) {
-    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the same live player-held seams as hand grips and dual-wield presentation.
-    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Used to identify the active held slot without assuming 'weapon'.
-    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first optional toolMeshMap lookup key.
-    const meshMap = handDeps?.toolMeshMap; // Some runtime injections expose this map; others intentionally expose only toolHolder.
-    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Fast path when the equipment mesh map is present.
-    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane?.isObject3D) return visual;
-    const candidates = meshMap instanceof Map ? [...meshMap.values()] : Object.values(meshMap || {}); // Used as an equipment-slot fallback if the active-slot snapshot lags one frame.
-    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane?.isObject3D) || null;
-    if (visual) return visual;
-    const holder = handDeps?.toolHolder; // Real gameplay may omit toolMeshMap; the holder child is the canonical fallback used by dual-wield-weapon-visuals.js.
-    return holder?.children?.find(child => child?.visible !== false && child?.userData?.itemKey === key && child?.userData?.toolPlane?.isObject3D)
-      || holder?.children?.find(child => child?.visible !== false && child?.userData?.toolPlane?.isObject3D)
-      || null;
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Shares the live held visual with procedural hands and dual wield.
+    const holder = handDeps?.toolHolder; // Only the actually attached holder child is eligible, not an equipped-but-holstered mesh.
+    const meshMap = handDeps?.toolMeshMap; // Some integrations expose the equipment map; the shipped hand deps may not.
+    const isHeldWeapon = candidate => candidate?.visible !== false
+      && candidate?.userData?.itemKey === key
+      && candidate?.userData?.toolPlane?.isObject3D
+      && (!holder || candidate.parent === holder || holder.children?.includes(candidate)); // Never fall back to an unrelated tool/ranged PNG.
+    const weaponVisual = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // The melee slot only; map entries for other slots cannot inherit its aura.
+    if (isHeldWeapon(weaponVisual)) return weaponVisual;
+    return holder?.children?.find(isHeldWeapon) || null;
   }
 
   function sceneHeldVisual(key) {
@@ -285,7 +297,9 @@
   }
 
   function heldVisualForWeapon(key) {
-    return directHeldVisual(key) || sceneHeldVisual(key);
+    if (activeHeldWeaponKey() !== key) return null;
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // A present player holder must never fall through to an NPC's matching scene visual.
+    return directHeldVisual(key) || (handDeps?.toolHolder ? null : sceneHeldVisual(key));
   }
 
   function particlePlanesForVisual(visual) {
@@ -606,7 +620,8 @@
   }
 
   async function resolveActiveSnapshot() {
-    const weaponKey = window.Combat?.deps?.currentWeaponKey?.() || 'none'; // Used as the single enchantment/save/held-visual identity for this scan.
+    const weaponKey = activeHeldWeaponKey(); // Scans are valid only while this specific enchanted melee weapon is in hand.
+    if (!weaponKey) return null;
     const visual = normalizedState(weaponKey); // Used to decide whether this weapon should emit at all and which plane vocabulary to use.
     if (!visual) return null;
     const heldVisual = heldVisualForWeapon(weaponKey); // Used as the exact makeToolPlaneMesh object carrying the rendered PNG plane.
@@ -645,6 +660,16 @@
   }
 
   function update(nowMs) {
+    const heldWeaponKey = activeHeldWeaponKey(); // Checked every frame so tools, ranged weapons, and holstering clear particles without a 180-ms leak.
+    if (heldWeaponKey !== lastHeldWeaponKey) {
+      lastHeldWeaponKey = heldWeaponKey;
+      scanGeneration++; // Invalidates any unresolved metal-mask scan from the previously held weapon or slot.
+      lastScanAt = -Infinity; // Rescan immediately when the actual melee weapon comes back into the player's hand.
+      activeSnapshot = null;
+      clearAllEmitters(); // Also clears overlay padding on the old blade rather than leaving drifting sprites on another item.
+      lastEvent = heldWeaponKey ? `held melee weapon: ${heldWeaponKey}` : 'melee weapon not held; aura cleared';
+    }
+    if (!heldWeaponKey) return;
     const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now(); // Used as scheduler/RAF-compatible wall time.
     const previous = activeSnapshot?.updatedAt ?? now; // Used to derive a bounded visual-only delta time.
     const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000)); // Used to keep tab-resume gaps from launching particles far from the weapon.
@@ -654,7 +679,7 @@
       lastScanAt = now;
       const generation = ++scanGeneration; // Captured by this async scan; any newer scan/config refresh invalidates its eventual result.
       resolveActiveSnapshot().then(snapshot => {
-        if (generation !== scanGeneration) return;
+        if (generation !== scanGeneration || activeHeldWeaponKey() !== heldWeaponKey) return;
         if (!snapshot) {
           activeSnapshot = null;
           clearAllEmitters();
@@ -824,6 +849,9 @@
       visual: state ? { ...state, colorHex: dyeHex(state.dyeId), opacity: ALIGNMENTS[state.alignment]?.opacity ?? null } : null,
       sourceSprite: sourceSpriteForWeapon(key),
       heldVisualFound: !!heldVisualForWeapon(key),
+      activeHeldWeaponKey: activeHeldWeaponKey(), // Mobile diagnostics distinguish an enchanted weapon being equipped from actually drawn.
+      activeSlot: window.Combat?.deps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null,
+      heldMode: window.Combat?.deps?.getHeldMode?.() ?? null,
       matchedMetalPixels: activeSnapshot?.weaponKey === key ? (activeSnapshot.mask?.matchedMetalPixels || 0) : null,
       visibleParticlePlanes: activeSnapshot?.weaponKey === key ? (activeSnapshot.planes?.length || 0) : 0,
       emitters: EMITTERS.size,
@@ -831,7 +859,7 @@
       overlayPadding: [...EMITTERS.values()].map(emitter => Number((emitter.plane?.userData?.hobunjiHeldOverlayVfxPadding || 0).toFixed(4))), // Reveals the live out-of-weapon overdraw envelope on mobile.
       dualWield: window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.() || null,
       metalDetection: { sourceHex: SOURCE_HEX, hueToleranceDeg: SOURCE_HUE_TOL_DEG, saturationTolerance: SOURCE_SAT_TOL, alphaMin: SOURCE_ALPHA_MIN },
-      latestChange: 'Metal pixels restrict spawning only; drifting/growing sprites expand the held-overlay scissor beyond the blade.',
+      latestChange: 'Only the drawn, identity-matched melee weapon emits; changing held slot or holstering immediately clears its aura.',
       lastEvent,
     };
   }
