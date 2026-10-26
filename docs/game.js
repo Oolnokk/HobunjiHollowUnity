@@ -25903,7 +25903,7 @@
         if (currentArea === 'town' && _pendingSpotTransition) {
           const t = _pendingSpotTransition;
           const icon = t.target === 'building' ? '🚪' : '🏘';
-          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          const label = window.TownZoneBuildings.entranceLabel(t) || (t.target === 'building' ? 'Enter' : 'Leave Town'); // Use the Map Editor's placed-building name rather than a stale house-template label.
           return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
         }
 

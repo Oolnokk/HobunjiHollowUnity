@@ -3064,7 +3064,7 @@
                               "activityLabel": "home"
                         }
                   ],
-                  "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>",
+                  "loreBackground": "Leaf and his husband, Pahu ao Pakamu, are both alive at the start of the game. Pahu eventually dies of old age, leaving Leaf widowed. The timing of Pahu’s death has not yet been decided.",
                   "phrasePools": [
                         {
                               "id": "pool_leaf_greetings",
@@ -3618,7 +3618,7 @@
                               "activityLabel": "home"
                         }
                   ],
-                  "loreBackground": "<suggestion: widower status — see Leaf's entry; the source notes leave open which partner was widowed or whether both remain alive>",
+                  "loreBackground": "Pahu ao Pakamu and his husband, Leaf, are both alive at the start of the game. Pahu eventually dies of old age. The timing of his death has not yet been decided.",
                   "phrasePools": [
                         {
                               "id": "pool_pahu_greetings",

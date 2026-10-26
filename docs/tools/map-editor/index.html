@@ -1604,7 +1604,7 @@ function doorWorldFromBuilding(b, m) {
 
 // Create (or update, if already linked) the transition spot that represents
 // a building's door, tagged with buildingId so it tracks the building when
-// it's moved or rotated. Preserves an existing spot's label/targetMapId.
+// it's moved, rotated, or renamed. The destination remains unchanged.
 function syncBuildingSpot(b, m) {
   const door = doorWorldFromBuilding(b, m);
   if (!door) return;
@@ -1615,6 +1615,7 @@ function syncBuildingSpot(b, m) {
     m.transitions.push(t);
   } else {
     t.col = door.col; t.row = door.row;
+    t.label = 'Enter ' + (b.label || 'Building'); // Keep the entrance prompt synchronized when the placed building is renamed.
   }
 }
 
