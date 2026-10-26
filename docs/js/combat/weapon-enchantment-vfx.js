@@ -254,12 +254,11 @@
   function activeHeldWeaponKey() {
     const deps = window.Combat?.deps; // Gameplay's authoritative held mode, equipment slot, and per-weapon enchantment identity.
     const handDeps = window.ProceduralHandAttachments?.gameDeps; // Optional fallback for integrations without the Combat held-slot seams.
-    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Shared live hand/stance state.
-    const activeSlot = deps?.getActiveTool?.() ?? runtimeState?.activeSlot ?? handDeps?.getActiveTool?.() ?? null; // Only the drawn melee slot may display this melee weapon's aura.
+    const activeSlot = deps?.getActiveTool?.() ?? handDeps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null; // Prefer cheap authoritative slot getters; avoid refreshing the full stance snapshot every frame.
     const heldMode = deps?.getHeldMode?.() ?? handDeps?.getHeldMode?.() ?? null; // Holstering or holding a bag item suppresses the aura.
     if (activeSlot !== 'weapon' || heldMode !== 'tool') return null; // Fail closed if held-slot metadata is missing; never guess from a nearby mesh.
     const weaponKey = deps?.currentWeaponKey?.() || null; // The weapon whose stored enchantments and verdigris mask will be read.
-    const equippedKey = deps?.equipmentSlots?.weapon ?? handDeps?.equipmentSlots?.weapon ?? (activeSlot === 'weapon' ? runtimeState?.itemKey : null); // Prevent a stale weapon-key seam from adorning a newly selected item.
+    const equippedKey = deps?.equipmentSlots?.weapon ?? handDeps?.equipmentSlots?.weapon ?? window.WeaponToolStances?.getRuntimeState?.()?.itemKey ?? null; // Reject a stale weapon key; borrow the stance's item identity only when slot registries are unavailable.
     if (!weaponKey || weaponKey === 'none' || (equippedKey && equippedKey !== weaponKey)) return null;
     return weaponKey;
   }
@@ -838,7 +837,7 @@
       visual: state ? { ...state, colorHex: dyeHex(state.dyeId), opacity: ALIGNMENTS[state.alignment]?.opacity ?? null } : null,
       sourceSprite: sourceSpriteForWeapon(key),
       heldVisualFound: !!heldVisualForWeapon(key),
-      currentHeldVisualMatchesSnapshot: activeSnapshot?.heldVisual === heldVisualForWeapon(key), // Helps mobile diagnostics catch stale scans after a same-key mesh rebuild.
+      currentHeldVisualMatchesSnapshot: !!activeSnapshot?.heldVisual && activeSnapshot.heldVisual === heldVisualForWeapon(key), // True only when a real current visual matches a live snapshot.
       activeHeldWeaponKey: activeHeldWeaponKey(), // Mobile diagnostics distinguish an enchanted weapon being equipped from actually drawn.
       activeSlot: window.Combat?.deps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null,
       heldMode: window.Combat?.deps?.getHeldMode?.() ?? null,
