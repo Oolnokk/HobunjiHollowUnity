@@ -111,7 +111,7 @@
       prefix: 'honeyfuzzle',
       singleFrame: true, // Tail/spectacles PNGs have no idle/run suffix and align with each 478x399 fly pose.
       fullBaseRecolor: true, // Chatheads use the same primary coat gene as the shader-driven in-world swarm.
-      baseShadeReferenceHex: '#A3B28E', // Native honeyfuzzle mint tone; reused for an ungenotyped tail.
+      baseShadeReferenceHex: '#9FB28E', // Measured native honeyfuzzle body pixel (159,178,142); static previews use this tint reference.
       base: {
         idle: 'assets/creaturesprites/honeyfuzzle_fly1.png',
         run1: 'assets/creaturesprites/honeyfuzzle_fly2.png',
