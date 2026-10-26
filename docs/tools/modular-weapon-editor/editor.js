@@ -119,6 +119,38 @@
     const area = byId('attach-controls'); // Precise fallback when drag placement is difficult on a phone.
     area.replaceChildren();
     for (const [label, line] of [['Head', chosenHead().mount], ['Haft', chosenShaft().mounts[mountIndex]]]) {
+      const group = document.createElement('div'), title = document.createElement('span'); // One length per selected arrow.
+      group.className = 'line-length-field'; title.className = 'line-length-label';
+      title.textContent = label + ' arrow length'; group.appendChild(title);
+      const lengthInput = document.createElement('input'); // Native ↑ / ↓ spinner also works with keyboard and mobile.
+      lengthInput.type = 'number'; lengthInput.min = '2'; lengthInput.step = '1';
+      lengthInput.max = String(Math.floor(gizmos.maxLength(line)));
+      lengthInput.value = String(Math.round(gizmos.length(line) * 100) / 100);
+      lengthInput.setAttribute('aria-label', label + ' arrow origin-to-tip length (pixels)');
+      function changeLength(value) {
+        if (!Number.isFinite(value) || value < 2) {
+          msg('Arrow length must be at least two pixels.'); return;
+        }
+        const next = gizmos.setLength(line, value); // Changes only the arrow tip; origin and bearing are fixed.
+        if (Math.abs(gizmos.length(next) - gizmos.length(line)) < 1e-6) {
+          lengthInput.value = String(Math.round(gizmos.length(line) * 100) / 100);
+          if (value > gizmos.maxLength(line)) msg('Arrow tip cannot extend beyond the sprite border.');
+          return;
+        }
+        Object.assign(line, next); save(); // Immediately updates preview and persisted draft through shared validation.
+      }
+      lengthInput.onchange = () => {
+        if (lengthInput.value.trim() === '') { render(); return; }
+        changeLength(Number(lengthInput.value));
+      };
+      const shorten = document.createElement('button'), extend = document.createElement('button');
+      shorten.type = extend.type = 'button'; shorten.textContent = '−'; extend.textContent = '+';
+      shorten.setAttribute('aria-label', 'Shorten ' + label.toLowerCase() + ' arrow by one pixel');
+      extend.setAttribute('aria-label', 'Lengthen ' + label.toLowerCase() + ' arrow by one pixel');
+      shorten.onclick = () => changeLength(gizmos.length(line) - 1);
+      extend.onclick = () => changeLength(gizmos.length(line) + 1);
+      group.append(shorten, lengthInput, extend);
+      area.appendChild(group);
       for (const endpoint of ['start', 'end']) for (const axis of ['x', 'y']) {
         const wrapper = document.createElement('label'), input = document.createElement('input'); // Endpoint coordinate in the 450x1204 source frame.
         wrapper.textContent = label + ' ' + endpoint + ' ' + axis;
@@ -162,6 +194,7 @@
     editLineNumbers();
     byId('fields').replaceChildren();
     const pair = shaft.overrides[headKey] ||= {}; // Pair-only corrections; no shaft-global defaults.
+    byId('layer-order').value = pair.layerOrder === 'head-over-haft' ? 'head-over-haft' : 'haft-over-head'; // Default: haft in the foreground.
     const values = { ...neutral, ...pair }; // Neutral values are not stored unless changed.
     for (const key of [...api.transforms, 'animation']) {
       const row = document.createElement('tr'), title = document.createElement('td'), cell = document.createElement('td'); // Per-pair correction fields.
@@ -306,6 +339,12 @@
     chosenShaft().editorOnly = !byId('allow-shaft').checked; save();
   };
   byId('allow-head').onchange = () => { chosenHead().editorOnly = !byId('allow-head').checked; save(); };
+  byId('layer-order').onchange = () => {
+    const pair = chosenShaft().overrides[byId('head').value] ||= {}; // Only this exact combination gets an override.
+    if (byId('layer-order').value === 'head-over-haft') pair.layerOrder = 'head-over-haft';
+    else delete pair.layerOrder; // Default haft-over-head remains implicit/sparse in exported configs.
+    save(); // Validates, clears compositor cache, and refreshes assembled editor preview.
+  };
   byId('reset-pair').onclick = () => {
     const old = chosenShaft().overrides[byId('head').value] || {}; // Reset local transforms while keeping authored pair exclusion.
     chosenShaft().overrides[byId('head').value] = typeof old.disallow === 'boolean' ? { disallow: old.disallow } : {};
