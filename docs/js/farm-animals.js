@@ -746,6 +746,7 @@
   // back to the plain uncolored sprite, already loaded synchronously
   // below, until that async compose resolves).
   function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
+    genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(kind, genotype) ?? genotype; // Only legacy Voorg-Ass livestock without saved genes gets a stable coat-colored visual fallback.
     const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
     const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
     const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotype); // Uses the Animation Author's class-specific proportions.

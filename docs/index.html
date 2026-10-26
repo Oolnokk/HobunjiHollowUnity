@@ -217,11 +217,11 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/voorg-ass-registration.js?v=20261015h47a3826"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
+  <script src="js/voorg-ass-registration.js?v=20261026beard1a"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/creature-genetics.js?v=20261023hade7571"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
-  <script src="js/creature-genetics-render.js?v=20261024nelkSpectacles1"></script>
+  <script src="js/creature-genetics-render.js?v=20261026beard1a"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261023hf1"></script> <!-- Honeyfuzzle swarm renderer: instanced 3-frame wing cycle (creature visuals in game.js use it when CREATURE_DB[kind].swarm is set). -->
   <script src="js/honeyfuzzle-colors.js?v=20261024hf1"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
   <script src="js/honeyfuzzle-hives.js?v=20261024h1c09ca3"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
@@ -314,6 +314,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261024ha298297"></script>
+  <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261026rearKick2"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
   <script src="js/combat/combat-attach.js?v=20261024at1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261019h0ffc9ab"></script>
   <script src="js/combat/combat-progression.js?v=20261019h586a5e1"></script>
@@ -431,7 +432,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261023hf1"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261025he7892dd"></script>
-  <script src="js/farm-animals.js?v=20261024h5d672e8"></script>
+  <script src="js/farm-animals.js?v=20261026beard1a"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -621,7 +622,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261024h4c8cc01"></script>
+  <script src="js/wildlife-spawn.js?v=20261026h640d11f"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -2800,7 +2801,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261026hmrg4e9a"></script>
+  <script src="game.js?v=20261026beardKick2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -4732,6 +4732,7 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        creature.genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(creatureKey, creature.genotype) ?? creature.genotype; // Old/wizard-spawned Voorg-Asses without genes still render their coat-colored default beard; no random reroll.
         window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
         window.ResourceSystem?.initEntity(creature);
         if (!opts.streamVisuals) createCreatureVisuals(creature); // Companions, cinematic actors, and ordinary callers keep immediate construction.
@@ -5145,18 +5146,28 @@
         // supposed to protect its home, not bail the moment it takes a hit.
         const territorialPhase = c._territorialBehavior?.phase;
         if (c.def?.hostile === false && !c.isCompanion && !window.WildlifeFoodWeb?.isDefending?.(c) && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
-          // A drenkirra mid-forage or asleep is pinned to a branch —
-          // clear that (see wildlife-cloud-forest-behavior.js's
-          // interruptForFlee) before the state flip below, or the
-          // branch-pin's own per-frame early-continue in updateHostiles
-          // keeps re-snapping it right back to that spot forever, never
-          // actually reaching the movement this state is supposed to
-          // trigger. A no-op for anything not currently on a branch.
+          // A hit wakes passive wildlife and unpins branch sleepers before either retaliation or flight.
           window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
-          c._animalSleeping = false; // A hit wakes open-air herd sleepers immediately before the flee state takes ownership of movement.
+          c._animalSleeping = false;
           c.scaleY = 1;
-          c.state = 'fleeing-low-health';
-          c.targetCreature = null;
+          const retaliator = dmgOpts?.attacker || (sourceNearPlayer || dmgOpts?.ranged ? player : null); // The actual attacker is preferred; normal player melee/ranged hits also identify their owner.
+          const voorgCanKick = window.VoorgAssRearKick?.isVoorgAss?.(c)
+            && retaliator && retaliator !== c && retaliator.health > 0
+            && c.state !== 'fleeing-low-health' && !c._voorgRearKickSpent
+            && !(c._fleeCooldownUntil > performance.now());
+          if (voorgCanKick) {
+            c._voorgRearKickThreat = retaliator; // Carries the one-off defensive target through the existing chase/patrol-chase state machine.
+            const targetIsPlayer = retaliator === player || players.includes(retaliator);
+            c.state = targetIsPlayer ? 'chase' : 'patrol-chase';
+            c.targetPlayer = targetIsPlayer ? retaliator : null;
+            c.targetCreature = targetIsPlayer ? null : retaliator;
+            c.attackCooldownT = 0; // Retaliate promptly after the knockback/stagger completes.
+            window.__farmLog?.('[voorg-kick] wild animal retaliating before fleeing', 'wildlife');
+          } else {
+            c.state = 'fleeing-low-health';
+            c.targetCreature = null;
+            c._voorgRearKickThreat = null;
+          }
         }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
@@ -6548,6 +6559,13 @@
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          if (c._voorgRearKickThreat && c.state !== 'chase' && c.state !== 'patrol-chase') {
+            c._voorgRearKickThreat = null; // A chased-away attacker ends the defensive encounter; escape instead of searching indefinitely.
+            c._voorgRearKickSpent = true;
+            c.state = 'fleeing-low-health';
+            c.targetPlayer = null;
+            c.targetCreature = null;
+          }
 
           // Patrol sighting: a predator that's out patrolling its route (or
           // fallback-wandering with no route) is alert the whole time it's
@@ -6577,7 +6595,7 @@
           // telegraphed bite/modular attack rather than landing it from way
           // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
-          if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (c.state !== 'chase' && !(c.state === 'patrol-chase' && c._voorgRearKickThreat) && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
             if (c.isBandit) {
@@ -6628,6 +6646,7 @@
             if (distFromHome < DEN_SETTLE_RADIUS_PX) {
               c.state = 'idle';
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
+              if (window.VoorgAssRearKick?.isVoorgAss?.(c)) c._voorgRearKickSpent = false; // Another encounter can trigger a kick after the usual flee grace period.
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
               moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, entityDt);
@@ -6641,19 +6660,42 @@
             const prey = c.targetCreature;
             const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId || prey.state === 'fleeing-low-health';
             if (preyGone) {
-              c.state = 'idle'; c.targetCreature = null;
+              c.state = c._voorgRearKickThreat ? 'fleeing-low-health' : 'idle';
+              if (c._voorgRearKickThreat) c._voorgRearKickSpent = true; // Don't wander or hunt after an interrupted defense.
+              c._voorgRearKickThreat = null;
+              c.targetCreature = null;
             } else {
               const pdx = prey.x - c.x, pdy = prey.y - c.y;
               const pdist = Math.hypot(pdx, pdy);
               if (pdist > (def.leashRangePx || TILE * 9) || distFromHome > (def.leashRangePx || TILE * 9)) {
-                c.state = 'return'; c.targetCreature = null;
+                c.state = c._voorgRearKickThreat ? 'fleeing-low-health' : 'return';
+                if (c._voorgRearKickThreat) c._voorgRearKickSpent = true;
+                c._voorgRearKickThreat = null;
+                c.targetCreature = null;
               } else {
-                aimAngle = Math.atan2(pdy, pdx);
-                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
-                const triggerRangePx = def.attackRangePx || TILE * 0.85;
-                if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
-                  c.attackCooldownT = def.attackCooldownS || 1.0;
-                  window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                const defensiveKick = window.VoorgAssRearKick?.isVoorgAss?.(c) && c._voorgRearKickThreat === prey; // Only a struck Voorg-Ass uses named combat against another creature.
+                if (defensiveKick && window.Combat?.animalAttacks?.isBusy(c)) {
+                  window.Combat.animalAttacks.update(c, entityDt);
+                  aimAngle = c.facing; // A kicking animal must keep its head pointed away from its target.
+                } else {
+                  aimAngle = Math.atan2(pdy, pdx);
+                  moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
+                  const triggerRangePx = def.attackRangePx || TILE * 0.85;
+                  if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
+                    if (defensiveKick && !isCreatureSwimming(c) && c.stamina >= def.attackStaminaCost) {
+                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick');
+                      c.attackCooldownT = def.attackCooldownS || 1.0;
+                      if (window.Combat?.animalAttacks?.start(c, 'rearKick', { target: prey })) aimAngle = c.facing;
+                    } else if (defensiveKick) {
+                      c._voorgRearKickSpent = true; // No Stamina or unsuitable water: flee instead of repeatedly trying to kick.
+                      c._voorgRearKickThreat = null;
+                      c.targetCreature = null;
+                      c.state = 'fleeing-low-health';
+                    } else {
+                      c.attackCooldownT = def.attackCooldownS || 1.0;
+                      window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                    }
+                  }
                 }
               }
             }
@@ -8231,7 +8273,10 @@
                   // the short 0-damage/high-knockback guard charge instead.
                   c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
                   const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
-                  const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
+                  const kickSpecies = window.VoorgAssRearKick?.isVoorgAss?.(c) && def.attacks?.includes('rearKick'); // Only Voorg-Ass companions use a distinct special cooldown.
+                  const attackId = kickSpecies
+                    ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
+                    : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge');
                   const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
                   if (startedModular) {
                     aimAngle = c.facing;
