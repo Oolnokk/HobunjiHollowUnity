@@ -186,7 +186,7 @@ Town Value (raised by extending the mine ladder, `docs/js/town-mine.js`) now pay
 
 ## Honeyfuzzle swarms, hive stumps and the Honeyfuzzle House
 
-Honeyfuzzles are hummingbird-like swarms: one creature entity drawn as an instanced flock whose members share a wing tick (up, mid, down, mid) at staggered offsets. They are always Medium (companions), live in hollow hive stumps in the wild (one long hold gives 1-3 fertile eggs and honey, then the stump collapses) and, on the farm, in a 1x1 Honeyfuzzle House bought from the carpenter instead of a barn or incubator. See [docs/architecture/honeyfuzzle.md](docs/architecture/honeyfuzzle.md).
+Honeyfuzzles are hummingbird-like swarms: one creature entity drawn as an instanced flock with the new fly1/2/3 sprites softly blended together at staggered wing phases. Each bird's tailfeathers always layer underneath the body (primary pigment unless an expressed tailfeathers allele provides secondary color), with optional spectacles drawn above. They are always Medium (companions), live in hollow hive stumps in the wild (one long hold gives 1-3 fertile eggs and honey, then the stump collapses) and, on the farm, in a 1x1 Honeyfuzzle House bought from the carpenter instead of a barn or incubator. See [docs/architecture/honeyfuzzle.md](docs/architecture/honeyfuzzle.md).
 
 ## Dev Companion window
 
