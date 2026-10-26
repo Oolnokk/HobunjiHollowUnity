@@ -76,9 +76,11 @@
     if (!mesh?.geometry) return false;
     mesh.userData ||= {}; // Marks the farm post-pass as completed without reallocating geometry every frame.
     if (!mesh.userData.oreRockSurfaceMapped) uvStats.originalUvs++;
-    mesh.userData.oreRockSurfaceMapped = true; // Existing farm code uses this as its one-time processed flag.
-    mesh.userData.terrainJigsawIgnore = true; // Preserve original, continuous rock texture coordinates.
-    mesh.userData.naturalSurfaceUvOwner = 'legacy-continuous-rock-uv'; // Pixel Probe tells the two UV modes apart.
+    mesh.userData.oreRockSurfaceMapped = true; // Farm post-pass relies on this one-time processed marker.
+    if (!mesh.userData.farmLooseRockMound) {
+      mesh.userData.terrainJigsawIgnore = true; // Mineable ore keeps its original world UVs instead of facet re-baking.
+      mesh.userData.naturalSurfaceUvOwner = 'legacy-continuous-rock-uv'; // Pixel Probe identifies the ore rollback.
+    } // Plain farm rocks retain NaturalSurfaceMaterials' existing UV ownership without ore-specific overrides.
     return true;
   }
 
