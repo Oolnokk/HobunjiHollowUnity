@@ -30,7 +30,7 @@ class ImageStub {
   set src(value) { assert(value.endsWith('/carved_smooth.png')); this.onload(); }
 }
 const THREE = {
-  RepeatWrapping: 1, SRGBColorSpace: 2, sRGBEncoding: 3001, // The shipped Three r128 uses sRGBEncoding instead of colorSpace.
+  RepeatWrapping: 1, ClampToEdgeWrapping: 1001, SRGBColorSpace: 2, sRGBEncoding: 3001, // The shipped Three r128 uses sRGBEncoding instead of colorSpace.
   TextureLoader: class { load(src) { return { src, repeat: { set(x, y) { this.x = x; this.y = y; } } }; } },
   CanvasTexture: class { constructor(canvas) { this.image = canvas; this.repeat = { set() {} }; } },
   MeshBasicMaterial: class { constructor(options) { Object.assign(this, options); this.userData = {}; } }, // Ore rock colors must remain visible without cave lighting.
@@ -47,9 +47,13 @@ vm.runInContext(fs.readFileSync('docs/js/ore-rock-textures.js', 'utf8'), context
   const stone = context.window.OreRockTextures.materialFor(THREE, 'stone', palette); // Fallback must be plain carved stone.
   assert.equal(stone.map.src, 'assets/textures/carved_smooth.png', 'Stone-only rocks retain the original image');
   assert.deepStrictEqual([stone.map.repeat.x, stone.map.repeat.y], [1, 1], 'The loading/stone fallback must use the same full PNG crop as the mineral canvas');
+  assert.strictEqual(stone.map.wrapS, THREE.ClampToEdgeWrapping, 'Stone texture U must clamp at the full-PNG facet perimeter');
+  assert.strictEqual(stone.map.wrapT, THREE.ClampToEdgeWrapping, 'Stone texture V must clamp at the full-PNG facet perimeter');
   await Promise.resolve();
   await Promise.resolve();
   assert(ore.map instanceof THREE.CanvasTexture, 'Mineral-bearing rocks use a selectively recolored canvas');
+  assert.strictEqual(ore.map.wrapS, THREE.ClampToEdgeWrapping, 'Ore UV U=1 cannot wrap to the opposite image edge');
+  assert.strictEqual(ore.map.wrapT, THREE.ClampToEdgeWrapping, 'Ore UV V=1 cannot wrap to the opposite image edge');
   assert.equal(context.window.OreRockTextures.debugSnapshot().tinCopper, 'ready', 'Mobile diagnostics report successful texture preparation');
   let unchanged = 0, changed = 0; // Counts unaltered natural-stone and altered mineral pixels within the one ore texture.
   for (let i = 0; i < original.length; i += 4) {
@@ -75,6 +79,7 @@ vm.runInContext(fs.readFileSync('docs/js/ore-rock-textures.js', 'utf8'), context
   await Promise.resolve();
   await Promise.resolve();
   assert(copper.map instanceof THREE.CanvasTexture, 'Copper also receives a masked ore texture');
+  assert.strictEqual(copper.map.wrapS, THREE.ClampToEdgeWrapping, 'Verdigris copper must clamp its authored surface border');
   assert.strictEqual(copper.map.encoding, THREE.sRGBEncoding, 'Three r128 receives the sRGB encoding required to display verdigris accurately');
   assert(copper instanceof THREE.MeshBasicMaterial, 'Ore uses the unlit authored cliff texture treatment');
   assert.strictEqual(context.window.OreRockTextures.materialFor(THREE, 'copper', palette), copper, 'Copper material is also cached');
