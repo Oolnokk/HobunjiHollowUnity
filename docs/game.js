@@ -1836,22 +1836,7 @@
       const METAL_BAR_ALTERNATES = {
         lowTinBronze: [{ bar_nativeCopper: 1, tin: 1 }],
         tinBronze: [{ bar_nativeCopper: 1, tin: 2 }],
-      }; // Optional bronze alloying with native copper bars; available from Town Value 3.
-      const METAL_BAR_TOWN_VALUE = Object.freeze({
-        nativeCopper: 0,
-        lowTinBronze: 1,
-        tinBronze: 2,
-        highTinBronze: 3,
-        arsenicalBronze: 4,
-        leadedBronze: 5,
-        tin: 3,
-        lead: 5,
-        silver: 7,
-        gold: 0, // Gold is common and worthless in this world; its bar recipe is available from the start.
-        electrumGold: 8,
-        electrumSilver: 8,
-        pewter: 5,
-      }); // Each recipe appears at a fixed Town Value, independently of ore ownership/discovery.
+      }; // Optional bronze alloying with native copper bars; available whenever the ingredients are owned.
       // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
       const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
         .filter(k => METAL_DEFS[k].tier != null)
@@ -5234,6 +5219,14 @@
         return best;
       }
 
+      window.HobunjiSacredGround?.init?.({
+        tileSize: TILE,
+        getPlayer: () => player, // The live avatar determines its zone even when player.areaId has not been rewritten on a map swap.
+        getCurrentArea: () => currentArea,
+        getRootTotems: areaId => _zoneLayouts.get(areaId)?.rootTotems || [],
+        getFarmRootTotem: () => window.TownMine?.farmRootTotem?.(COLS, ROWS),
+      }); // Shared registry is initialized once and can be used by future sacred-ground mechanics.
+
       function respawnPlayer(reason = 'death') {
         window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
         if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
@@ -5254,6 +5247,7 @@
           player.stamina = player.maxStamina;
           player.invulnUntil = performance.now() + 1000;
           _snapCameraTarget();
+          window.HobunjiSacredGround?.cleanseRentHealth?.(player); // Mine death returns to a root totem, so sacred-only wounds clear immediately.
           showToast('You awaken at the farm Root Totem, carrying everything you found...', false);
           return;
         }
@@ -5287,6 +5281,7 @@
           player.health = Math.round(player.maxHealth * 0.5);
           player.invulnUntil = performance.now() + 1000;
           _snapCameraTarget();
+          window.HobunjiSacredGround?.cleanseRentHealth?.(player); // Same instant sacred-ground reset as physically approaching the totem.
           showToast('You awaken at the nearest Root Totem...', false);
           return;
         }
@@ -14227,21 +14222,38 @@
                 continue;
               }
               const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
+              const isShadowknight = spawn.kind === 'ghoul-shadowknight'; // Mine Tier 4+ counterpart to a Bandit Lieutenant.
+              const isWitch = spawn.kind === 'ghoul-wyrm-witch'; // Mine Tier 5+ has two distinct magical attack packages.
+              const rank = isShadowknight ? 'lieutenant' : 'grunt'; // Reuse the shared rank/mastery and staged melee mechanics.
+              const label = isShadowknight ? 'Ghoul Shadowknight' : isWitch
+                ? (spawn.witchType === 'rend-water' ? 'Rend-water Wyrm-witch' : 'Shadow-wind Wyrm-witch') : 'Ghoul';
               const rosterOverride = {
-                name: 'Ghoul',
+                name: label,
                 appearance: { speciesId: 'ghoul', gender, cosmetics: {}, randomSeed: `mine-ghoul:${mapData.mineFloor}:${spawn.col}:${spawn.row}` }, // Use Ghoul's authored pink skin palette instead of the old bright desaturated white override.
                 equippedCosmetics: [],
                 appliedDyes: {},
               };
-              const ghoul = await window.BanditCombat?.makeEntity?.(gangConfig || {}, 'grunt', Math.max(1, mapData.mineTier), (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
+              const ghoul = await window.BanditCombat?.makeEntity?.(gangConfig || {}, rank, Math.max(1, mapData.mineTier), (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
                 zoneId: mapId,
                 scene: bScene,
                 grid: bGrid,
                 cols,
                 rows,
                 rosterOverride,
-                defOverride: { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: TILE * 8, leashRangePx: TILE * 30 },
-                extra: { isMineGhoul: true, mineGroupId: `mine-ghouls-${mapData.mineFloor}` },
+                defOverride: {
+                  label,
+                  maxHealth: isShadowknight ? 78 : isWitch ? 60 : 34,
+                  maxStamina: isShadowknight ? 75 : 55,
+                  attackDamage: isShadowknight ? 13 : isWitch ? 10 : 6,
+                  rangedWeaponKey: isWitch ? null : (spawn.rangedWeaponKey || null),
+                  aggroRangePx: TILE * (isWitch ? 10 : 8),
+                  leashRangePx: TILE * 30,
+                },
+                extra: {
+                  isMineGhoul: true, isGhoulShadowknight: isShadowknight,
+                  mineWyrmWitchType: isWitch ? (spawn.witchType || 'shadow-wind') : null,
+                  mineGroupId: `mine-ghouls-${mapData.mineFloor}`,
+                },
               });
               if (ghoul) { hostileObjects.add(ghoul); spawnedMineEnemyCount++; }
             }
@@ -30050,8 +30062,7 @@
         METAL_DEFS,
         METAL_BAR_RECIPES,
         METAL_BAR_ALTERNATES,
-        METAL_BAR_TOWN_VALUE,
-        getTownValue: () => window.TownMine?.getTownValue?.() ?? 0,
+
         metalOreItemKey,
         metalBarItemKey,
         recordHeldOres: oreKeys => window.TownMine?.recordHeldOres?.(oreKeys),

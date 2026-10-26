@@ -43,6 +43,8 @@
         woundedHealth: '#8b3f64',
         scentMarkedHealth: '#7dbb69',
         congealedHealth: '#344aa8',
+        rentHealth: '#42c7e8', // Distinct sacred-water blue used by the max-Health reservation ring and any future Rent visuals.
+        rentHealth: '#32b4e5', // Reserved maximum Health until sacred ground, distinct from temporary Congealed Health.
         infectedStamina: '#7ea12f',
         windedStamina: '#4f63d9',
         bruisedHealth: '#5840c8',

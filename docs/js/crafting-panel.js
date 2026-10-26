@@ -65,25 +65,19 @@
     return deps.ITEM_DEFS?.[key]?.label || (metalLabel ? metalLabel + ' Bar' : key);
   }
 
-  function requiredTownValue(metalKey, recipeVariant = 'ore') {
-    const threshold = Number(deps.METAL_BAR_TOWN_VALUE?.[metalKey]); // Defined alongside the game metallurgy registry, independent of the player's inventory.
-    if (!Number.isFinite(threshold)) return Infinity; // Unknown/malformed metal keys cannot accidentally unlock every recipe.
-    return recipeVariant.startsWith('alloy-') ? Math.max(3, threshold) : threshold; // Native-copper/tin alloying becomes available at Town Value 3.
-  }
-
   function visibleMetalRecipes() {
-    const townValue = Math.max(0, Math.floor(Number(deps.getTownValue?.()) || 0)); // Reads current effective Town Value, including any foundry bonus.
-    const direct = Object.entries(deps.METAL_BAR_RECIPES).filter(([metalKey]) =>
-      townValue >= requiredTownValue(metalKey))
-      .map(([metalKey, ingredients]) => [metalKey, ingredients, 'ore']); // Bar recipes appear when the town advances, whether or not ore has been found.
-    const alternates = Object.entries(deps.METAL_BAR_ALTERNATES || {}).flatMap(([metalKey, variants]) =>
-      variants.flatMap((ingredients, index) => townValue >= requiredTownValue(metalKey, 'alloy-' + index)
-        ? [[metalKey, ingredients, 'alloy-' + index]] : [])); // Cassiterite can be combined with native copper only after Town Value 3.
+    const registered = deps?.METAL_DEFS || {}; // Rejects unregistered material keys without tying crafting permissions to Town Value.
+    const direct = Object.entries(deps?.METAL_BAR_RECIPES || {})
+      .filter(([metalKey, ingredients]) => registered[metalKey] && ingredients && typeof ingredients === 'object')
+      .map(([metalKey, ingredients]) => [metalKey, ingredients, 'ore']); // Every known bar can be smelted as soon as its ore is found.
+    const alternates = Object.entries(deps?.METAL_BAR_ALTERNATES || {}).flatMap(([metalKey, variants]) =>
+      registered[metalKey] && Array.isArray(variants) ? variants.flatMap((ingredients, index) =>
+        ingredients && typeof ingredients === 'object' ? [[metalKey, ingredients, 'alloy-' + index]] : []) : []); // Cassiterite/copper alloying is equally available from the outset.
     return direct.concat(alternates);
   }
 
   function craftMetalBar(metalKey, recipeVariant = 'ore') {
-    const ingredients = visibleMetalRecipes().find(([key,,variant]) => key === metalKey && variant === recipeVariant)?.[1]; // Revalidate Town Value on every craft; possessing ore is never an unlock.
+    const ingredients = visibleMetalRecipes().find(([key,,variant]) => key === metalKey && variant === recipeVariant)?.[1]; // Validate the actual authored recipe and live inventory, not Town Value.
     const metal = deps.METAL_DEFS[metalKey];
     if (!ingredients || !metal) return;
     const barKey = deps.metalBarItemKey(metalKey); // Output remains the existing smithing/foundry bar ID.
@@ -193,7 +187,7 @@
 
   function debugSnapshot() {
     return {
-      latestChange: 'Read furniture blueprints directly from the bag to learn them permanently for this character in this world; Grooming Kit and Campfire Kit are automatically known.',
+      latestChange: 'Metal bar recipes and alloy variants require their ingredients, not Town Value; advanced metal loot restrictions are unchanged.',
       knownBlueprints: serializeBlueprints(),
       recipes: (deps?.FURNITURE_BLUEPRINT_CATALOG || []).map(bp => ({
         key: bp.key, owned: ownsBlueprint(bp), canBuild: canBuildFurniture(bp), ingredients: furnitureIngredients(bp),
@@ -214,7 +208,7 @@
       const empty = document.createElement('div');
       empty.className = 'ii-empty';
       empty.textContent = craftingActiveCategory === 'metallurgy'
-        ? 'No metal recipes unlocked at this Town Value yet.'
+        ? 'No registered metal recipes available.'
         : 'No blueprints or discovered recipes in this category yet.';
       list.appendChild(empty);
       return;

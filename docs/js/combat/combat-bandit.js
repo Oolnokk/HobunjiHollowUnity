@@ -1631,19 +1631,21 @@
   const BANDIT_STRAFE_SPEED_PX_S = 55;
   const _banditAttackSlots = []; // [{ bandit, angle }]
 
-  function claimBanditAttackSlot(c, towardAngle) {
+  function claimBanditAttackSlot(c, towardAngle, target) {
     for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
       const s = _banditAttackSlots[i];
-      if (s.bandit.health <= 0 || s.bandit.state !== 'chase') _banditAttackSlots.splice(i, 1);
+      if (s.bandit.health <= 0 || s.bandit.state !== 'chase' || !s.bandit.avatarRef?.group?.parent) _banditAttackSlots.splice(i, 1);
     }
     const existing = _banditAttackSlots.find(s => s.bandit === c);
-    if (existing) return existing;
-    if (_banditAttackSlots.length >= BANDIT_MAX_ATTACK_SLOTS) return null;
+    if (existing?.target === target) return existing;
+    if (existing) _banditAttackSlots.splice(_banditAttackSlots.indexOf(existing), 1); // Switching opponents releases the previous fight's slot.
+    const competing = _banditAttackSlots.filter(s => s.bandit.areaId === c.areaId && s.target === target); // Only this active target/area shares attack slots; old encounters cannot starve mine ghouls.
+    if (competing.length >= BANDIT_MAX_ATTACK_SLOTS) return null;
     let angle = towardAngle;
-    for (const s of _banditAttackSlots) {
+    for (const s of competing) {
       if (Math.abs(deps.angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
     }
-    const slot = { bandit: c, angle };
+    const slot = { bandit: c, target, angle };
     _banditAttackSlots.push(slot);
     return slot;
   }
@@ -1665,28 +1667,29 @@
   const BANDIT_QUEUE_RING_STEP_MUL = 0.6;
   const _banditQueueRings = []; // [{ bandit, ringIndex, angle }]
 
-  function claimBanditQueueRing(c, towardAngle) {
+  function claimBanditQueueRing(c, towardAngle, target) {
     for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
       const q = _banditQueueRings[i];
-      if (q.bandit.health <= 0 || q.bandit.state !== 'chase') _banditQueueRings.splice(i, 1);
+      if (q.bandit.health <= 0 || q.bandit.state !== 'chase' || !q.bandit.avatarRef?.group?.parent) _banditQueueRings.splice(i, 1);
     }
     const existing = _banditQueueRings.find(q => q.bandit === c);
-    if (existing) return existing;
+    if (existing?.target === target) return existing;
+    if (existing) _banditQueueRings.splice(_banditQueueRings.indexOf(existing), 1); // Reassign the waiting ring when a creature changes combat target.
     const countByRing = [];
-    for (const q of _banditQueueRings) countByRing[q.ringIndex] = (countByRing[q.ringIndex] || 0) + 1;
+    for (const q of _banditQueueRings) if (q.bandit.areaId === c.areaId && q.target === target) countByRing[q.ringIndex] = (countByRing[q.ringIndex] || 0) + 1;
     let ringIndex = 0;
     while ((countByRing[ringIndex] || 0) >= BANDIT_QUEUE_RING_CAPACITY) ringIndex++;
     // Spread bandits already on this same ring apart by angle -- not a
     // hard minimum-separation lock like attack slots (queue rings don't
     // need that guarantee), just an even starting spacing so a ring
     // doesn't spawn its members all bunched at the same bearing.
-    const onRing = _banditQueueRings.filter(q => q.ringIndex === ringIndex);
+    const onRing = _banditQueueRings.filter(q => q.ringIndex === ringIndex && q.bandit.areaId === c.areaId && q.target === target);
     const slice = Math.PI * 2 / (BANDIT_QUEUE_RING_CAPACITY + 1);
     let angle = towardAngle;
     for (const q of onRing) {
       if (Math.abs(deps.angleDiff(angle, q.angle)) < slice) angle += slice;
     }
-    const rec = { bandit: c, ringIndex, angle };
+    const rec = { bandit: c, target, ringIndex, angle };
     _banditQueueRings.push(rec);
     return rec;
   }
@@ -1918,6 +1921,8 @@
     }
   }
 
+  const ghoulWyrmApiByActor = new WeakMap(); // One Wyrm-witch adapter per actor; no temporary closures for ordinary bandits or per-frame allocations.
+
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
     if (!targetPlayer || Number(targetPlayer.health) <= 0) return { aimAngle: c.facing || 0, moving: false };
@@ -1925,6 +1930,19 @@
     const def = c.def, loadout = def.banditAbilityLoadout;
     _updateBanditLookAtTarget(c, dt, targetPlayer);
     const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    if (c.mineWyrmWitchType) {
+      let witchApi = ghoulWyrmApiByActor.get(c); // Stable callback reused for this witch; ordinary humanoids do not allocate spell state per frame.
+      if (!witchApi) {
+        witchApi = {
+          TILE: deps.TILE, moveToward: deps.moveCreatureToward, canOccupyAt: deps.canOccupyAt,
+          getCurrentArea: deps.getCurrentArea, // Discard an in-flight Wyrm spell when its owning mine room unloads.
+          damage: (target, amount, fromX, fromY, knockback, options) => damageBanditCombatTarget(c, target, amount, fromX, fromY, knockback, options),
+        };
+        ghoulWyrmApiByActor.set(c, witchApi);
+      }
+      const witchResult = window.GhoulWyrmWitches?.update?.(c, dt, targetPlayer, distToPlayer, witchApi); // Dedicated spells run before normal ranged/melee.
+      if (witchResult?.handled) return witchResult;
+    }
     const flaskResult = updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Flaskers get first refusal on ranged combat before ordinary crossbow/melee logic.
     if (flaskResult?.handled) return flaskResult;
     const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
@@ -1964,7 +1982,7 @@
     if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) deps.moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
     const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
-    const slot = claimBanditAttackSlot(c, towardAngle);
+    const slot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
     // attackCooldownS (0.95-1.15s) runs noticeably longer than the
     // post-attack retreat step (deps.JUMP_BACK_DUR_S, 0.4s), and retreating
     // only backs up one tile -- well short of engageRangePx once lunge
@@ -2015,7 +2033,7 @@
       // if engageRangePx*0.85/1.8 would otherwise put it there (a
       // crowded arena's personal-space pushes can shove the "supposed
       // to be far enough out" ring/flank point closer than intended).
-      const queueRing = slot ? null : claimBanditQueueRing(c, towardAngle);
+      const queueRing = slot ? null : claimBanditQueueRing(c, towardAngle, targetPlayer);
       const baseAngle = slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle);
       const baseRadius = Math.max(
         def.attackRangePx * 1.5,
@@ -2051,6 +2069,13 @@
     }); // Shared ±45° gate turns before stamina is spent or any windup begins.
     if (alignment && (!alignment.eligible || !alignment.aligned)) {
       if (alignment.eligible) c.facing = alignment.nextFacing;
+      else {
+        // Outside the ±45° alignment cone, the shared alignment helper refuses to turn.
+        // Turn the actor INTO eligibility first; otherwise any flank/spawn facing away waits forever while only dodging.
+        const delta = deps.angleDiff(alignment.desiredFacing, c.facing || 0); // Turn toward the same screen-corrected bearing that determines attack eligibility.
+        const step = (window.Combat?.ATTACK_ALIGNMENT_TURN_RATE_RAD_S || Math.PI * 2) * Math.max(0, dt);
+        c.facing = (c.facing || 0) + Math.sign(delta) * Math.min(Math.abs(delta), step);
+      }
       return { aimAngle: c.facing, moving: false };
     }
     if (alignment?.aligned) c.facing = alignment.desiredFacing;
@@ -2602,6 +2627,11 @@
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
     const def = Object.assign(makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth), opts.defOverride || {});
+    if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
+      // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
+      // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
+      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.();
+    }
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
     const gridCols = opts.cols || deps.getActiveCols();
