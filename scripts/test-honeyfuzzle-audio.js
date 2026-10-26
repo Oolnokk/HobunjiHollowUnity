@@ -4,6 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+const AUDIO_FILE = 'docs/assets/audio/sfx/utterances/sfx_honeyfuzzle_buzz.m4a'; // Must exist at the runtime URL, preventing silent 404 regressions after file moves.
+assert.equal(fs.existsSync(AUDIO_FILE), true, 'the referenced honeyfuzzle M4A recording exists in the repository');
+
 let now = 1000, interval = null, fetchCount = 0, startCount = 0, stopCount = 0;
 let requestedAudioUrl = null; // Captures the real fetch URL so the regression verifies the actual committed asset path.
 const events = {}; // Keeps gesture callbacks for autoplay-unlock checks.
