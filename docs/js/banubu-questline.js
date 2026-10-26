@@ -88,11 +88,13 @@
     }
     let migrated = false; // Used to persist only when an old five-fish-pie prototype state actually needs correction.
     if (Number(state.stage) >= 3 || state.status === 'finished') {
-      state.status = 'blocked';
-      state.stage = 3;
-      state.target = null;
-      state.nextTarget = null;
-      migrated = true;
+      if (state.status !== 'blocked' || Number(state.stage) !== 3 || state.target != null || state.nextTarget != null) {
+        state.status = 'blocked';
+        state.stage = 3;
+        state.target = null;
+        state.nextTarget = null;
+        migrated = true; // A completed Quest 2 save is normalized once, not re-written whenever Color Pools checks its reward.
+      }
     } else if (Number(state.stage) === 2 && state.target && state.target.questType !== 'nineLeafTea') {
       state.target = null; // Old prototype stage-two fish targets are invalid now that stage two is Nine Leaf Tea.
       migrated = true;
@@ -498,6 +500,7 @@
     const messages = [];
     if (rewardResult.reward) messages.push(`${rewardResult.reward.label || rewardResult.reward.id} obtained.`);
     if (teaSetup?.station) messages.push('Tea Grinder obtained and Nine Leaf Tea learned.');
+    if (Number(stage) === 2) messages.push('Color Pools overpass painting unlocked.'); // Quest 2's saved stage-three completion is the reward; no duplicate key item.
     return { ok: true, message: messages.join(' ') || 'Banubu accepted it.' };
   }
 

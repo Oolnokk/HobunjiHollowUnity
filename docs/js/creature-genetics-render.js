@@ -382,6 +382,8 @@
         regionId,
         paint.dyeId || '',
         paint.dyeHex || '',
+        paint.overpassDyeId || '',
+        paint.overpassDyeHex || '',
         paint.patternLibraryId || '',
         paint.repoPatternId || paint.pattern?.repoPatternId || '',
         Math.max(7, Math.min(14, Number(paint.patternScale) || 7)).toFixed(3),
@@ -426,7 +428,7 @@
     const rawPatterns = Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : [
       paint.pattern || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null),
     ]; // Current Color Pools UI writes only the legacy primary slot; a future unlock can populate patterns[1] without changing rendering.
-    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Both slots intentionally share the same animal-use scale and ink color.
+    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Both slots share a usage scale but may have separate ink dyes.
     const debugBase = { patternCount: rawPatterns.filter(Boolean).length, patternScale: animalPatternScale, dyeHex, status: 'pending' };
     try {
       const patterns = [];
@@ -437,7 +439,11 @@
         if (repoPatternId && !(pattern.motifDataUrl || pattern.motifUrl || pattern.customMotifId)) {
           pattern = await window.RepoPatternLibrary?.getById?.(repoPatternId) || pattern;
         }
-        if (pattern) patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale }); // Purpose-specific render field remains transient and identical for both slots.
+        if (pattern) {
+          const secondaryInk = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex;
+          patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale,
+            ...(patterns.length === 1 && /^#[0-9a-f]{6}$/i.test(secondaryInk || '') ? { inkColorHex: secondaryInk } : {}) }); // Only slot 2 receives the independent dye.
+        }
         if (patterns.length >= 2) break;
       }
       const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage
