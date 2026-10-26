@@ -392,7 +392,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
 <script src="../../js/procedural-furniture.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
-<script src="../../js/interior-door-tiles.js?v=20261026h40a1bd9"></script>
+<script src="../../js/interior-door-tiles.js?v=20261026h273015f"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
@@ -646,13 +646,15 @@ function drawGrid(){
   });
 
   // Door tiles (brown, with a line toward the side the door faces)
-  InteriorDoorTiles.doorRecordsOf(state.interior).forEach(function(record){
-    var c=record.col,r=record.row, o=InteriorDoorTiles.recordOrientation(state.floorSet,record); // Shared with the in-game door builder.
-    gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
-    var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
-    gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
-    gx.moveTo(mx-vy*cw*0.4,my+vx*ch*0.4); gx.lineTo(mx+vy*cw*0.4,my-vx*ch*0.4); gx.stroke(); // door leaf spans perpendicular to its facing
-    gx.strokeStyle='#ffe0a8'; gx.lineWidth=2; gx.beginPath(); gx.moveTo(mx,my); gx.lineTo(mx+vx*cw*0.35,my+vy*ch*0.35); gx.stroke();
+  InteriorDoorTiles.doorGroupsOf(state.interior,state.floorSet).forEach(function(group){
+    group.tiles.forEach(function(record){
+      var c=record.col,r=record.row, o=InteriorDoorTiles.recordOrientation(state.floorSet,group); // Shared with the in-game door builder.
+      gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
+      gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
+      gx.moveTo(mx-vy*cw*0.4,my+vx*ch*0.4); gx.lineTo(mx+vy*cw*0.4,my-vx*ch*0.4); gx.stroke(); // door leaf spans perpendicular to its facing
+      gx.strokeStyle='#ffe0a8'; gx.lineWidth=2; gx.beginPath(); gx.moveTo(mx,my); gx.lineTo(mx+vx*cw*0.35,my+vy*ch*0.35); gx.stroke();
+    });
   });
 
   // Exit zones

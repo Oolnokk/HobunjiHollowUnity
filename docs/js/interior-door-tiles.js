@@ -73,13 +73,19 @@
     return [...records.values()];
   }
 
+  function roomFloorOf(mapData, floorSet) {
+    const roomFloor = new Set(floorSet); // Doorway siblings must not be mistaken for the room's inward floor.
+    for (const record of doorRecordsOf(mapData)) roomFloor.delete(keyOf(record.col, record.row));
+    return roomFloor;
+  }
+
   function exitSettings(mapData, transition, floorSet) {
     const authored = (mapData?.exits || []).find(exit => exit.id === transition.exitId)
       || (mapData?.exits || []).find(exit => (exit.tiles || []).some(([c, r]) => c === transition.col && r === transition.row)); // Old workspace transitions can lack both new fields and an exitId.
     const direction = typeof transition.direction === 'string' ? transition.direction : (authored?.direction || ''); // An explicit empty string selects automatic orientation rather than inheriting an old direction.
     const floor = floorSet || new Set((mapData?.floor || []).map(([c, r]) => keyOf(c, r))); // Scene builds pass their cached floor set; tests and standalone callers can derive it.
     return {
-      direction: Object.hasOwn(SIDES, direction) ? direction : orientation(floor, transition.col, transition.row).facing,
+      direction: Object.hasOwn(SIDES, direction) ? direction : orientation(roomFloorOf(mapData, floor), transition.col, transition.row).facing,
       generateDoor: typeof transition.generateDoor === 'boolean' ? transition.generateDoor : authored?.generateDoor === true,
     };
   }
@@ -92,7 +98,10 @@
 
   // Only a complete two-tile opening becomes a double door; longer runs stay separate.
   function doorGroupsOf(mapData, floorSet) {
-    const records = doorRecordsOf(mapData).filter(record => floorSet.has(keyOf(record.col, record.row))); // Shared by runtime and preview placement.
+    const roomFloor = roomFloorOf(mapData, floorSet); // Infer both leaves from actual room space instead of each other.
+    const records = doorRecordsOf(mapData)
+      .filter(record => floorSet.has(keyOf(record.col, record.row)))
+      .map(record => ({ ...record, direction: recordOrientation(roomFloor, record).facing })); // Resolve singles too, so runtime and previews share the corrected orientation.
     const pending = new Map(records.map(record => [keyOf(record.col, record.row), record])); // Unclaimed tiles in each transverse run.
     const groups = []; // One placement per single or paired doorway.
     for (const record of records) {

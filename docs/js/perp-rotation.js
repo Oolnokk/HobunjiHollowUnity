@@ -442,13 +442,13 @@
   // removing any of the three.
   //   'sway' — legacy: continuously lerps/rocks through the dead zone via
   //            creatureDeadzoneTarget (sine oscillation, smooth).
-  //   'halt' — current default going in: locks to the dead-zone edge and
+  //   'halt' — active priority-driven mode: locks to the dead-zone edge and
   //            stays there via perpClamp (same halt behavior player/NPC
   //            avatars and farm-pen livestock already use), eased in.
   //   'snap' — newest: alternates between the dead zone's two edges with
   //            a hard cut (no interpolation) via creatureSnapSwayTarget,
   //            instead of sweeping/lerping between them.
-  const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
+  const CREATURE_PLANE_ROT_MODE = 'halt'; // Active: NPC corrective priorities; legacy 'sway'/'snap' remain available for A/B tuning.
 
   // Oscillation angular speed shared by the 'sway' and 'snap' modes below
   // — ~1.2s per full back-and-forth cycle, fast enough to read clearly

@@ -34,6 +34,19 @@ for (const direction of ['north', 'south', 'east', 'west']) {
   assert.equal(groups[0].tiles.length, 2);
   assert.equal(Doors.recordOrientation(floor, groups[0]).facing, direction);
 }
+// Automatic orientation must ignore neighbouring door tiles when finding the room.
+for (const painted of [true, false]) {
+  const tiles = [[3, 3], [3, 4]]; // A vertical pair on a west wall, with the room to its east.
+  const map = painted ? { doorTiles: tiles } : { exits: [{ id: 'automatic', tiles, generateDoor: true }] }; // Both authoring paths allow Automatic direction.
+  const floor = new Set(['3,3', '3,4', '4,3', '4,4']); // Neighbouring leaves are not inward room space.
+  const groups = Doors.doorGroupsOf(map, floor); // Vertical pairs used to infer north/south and remain separate.
+  assert.equal(groups.length, 1, 'automatic vertical pair has one frame');
+  assert.equal(groups[0].direction, 'east');
+  if (!painted) {
+    for (const [col, row] of tiles) assert.equal(Doors.exitSettings(map, { exitId: 'automatic', col, row, direction: '' }, floor).direction, 'east', 'effective gameplay transitions agree with automatic preview orientation');
+  }
+}
+
 for (const count of [1, 3, 4, 5]) {
   const tiles = Array.from({ length: count }, (_, i) => [i, 1]); // Longer connected runs must never be partially paired.
   assert.equal(Doors.doorGroupsOf({ doorTiles: tiles }, new Set(tiles.map(tile => tile.join(',')))).length, count);
