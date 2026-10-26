@@ -589,10 +589,20 @@
     mapData.rows = Math.max(mapData.rows, ...mapData.outerRimTiles.map(tile => tile[1] + 2), ...floor.map(tile => tile[1] + 2));
     mapData.floorSurfaceByTile = surface.byTile;
     mapData.floorSurfaceY = surface.median;
-    mapData.mesh = { ...generated.mesh, vaultCeiling: generated.vaultCeiling, surfaceMaterial: mapData.mesh?.surfaceMaterial }; // Height is already carved in; no render-time vertex stretch.
+    mapData.mesh = { ...generated.mesh, vaultCeiling: generated.vaultCeiling, surfaceMaterial: mapData.mesh?.surfaceMaterial,
+      caveBiome: mapData.mesh?.caveBiome || caveBiomeForMapId(mapData.id), caveGrowthSeed: mapData.id }; // Persist biome through feature-driven shell recarves.
     mapData.cavernCarvedHeightScale = heightScale;
     mapData.cavernClearanceFootprints = clearances;
     return mapData;
+  }
+
+  function caveBiomeForMapId(mapId) {
+    // A den's map id retains its exterior biome even if it is carved before the zone is loaded.
+    const registered = window.WildlifeSpawn?.denCavernZoneOf?.(mapId);
+    if (registered) return registered;
+    if (!String(mapId).startsWith('map_i_den_')) return '';
+    return ['map_southern_cloud_forest', 'map_eastern_mire', 'map_northern_cliffs', 'map_western_slope']
+      .find(zone => String(mapId).startsWith('map_i_den_' + zone + '_')) || '';
   }
 
   function synthesizeCavernMapData(mapId) {
@@ -622,7 +632,7 @@
       wallStyle: 'cavern',
       exitCol, exitRow,
       disconnectedFloorTilesRemoved,
-      mesh,
+      mesh: { ...mesh, caveBiome: caveBiomeForMapId(mapId), caveGrowthSeed: mapId }, // Town mine and Western Slope never request growth.
       oreRocks, creatureSpawns,
       nestCol, nestRow,
       denMotherDefeated: denCleared, nestState: turnover?.clutch || null,
