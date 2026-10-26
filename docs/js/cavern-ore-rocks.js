@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0x3faf9f, tinCopper: 0x4eaa86, mushistonite: 0x57b38b, tin: 0x513c32, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Debug-only palette reflects the actual metal-matched verdigris rock deposits; materialFor remains the rendering authority.
+  const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb87333, tinCopper: 0xb66a2e, mushistonite: 0xcd7f32, tin: 0xc8ccd0, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Legacy/debug swatches show metal-bodied rock base hues; materialFor adds separate verdigris markings.
 
   const separatorCracks = new Map(); // Map id -> scene and live crack set, allowing O(1) removals when one mineable wall rock breaks.
   const rockMaps = new Map(); // Map id -> live ore mesh index; explosions never traverse the entire cave scene.
