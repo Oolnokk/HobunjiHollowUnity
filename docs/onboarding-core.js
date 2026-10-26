@@ -283,6 +283,42 @@
     SPECIES_DATA.mammakhbuur[gender].colorOptions = bodyPalette('mashtzarr', gender);
   }
 
+  // Resolve creator options again for returning players. The Mashtzarr and
+  // Nuhongan compatibility bridges used to patch this private table only
+  // during the first character-creation render; a returning player's first
+  // visit may instead be the Grooming Kit, long after those hooks retire.
+  function creatorSpeciesData(speciesId) {
+    const configured = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {}; // Authoritative slots for species/genders missing from the original creator snapshot.
+    window.hobunjiOnboardingMashtzarrFemale?.hydratePrivateSpeciesTable?.(SPECIES_DATA);
+    for (const [key, spec] of Object.entries(SPECIES_DATA)) {
+      for (const gender of ['male', 'female']) {
+        const authored = configured[key]?.[gender];
+        if (Array.isArray(spec[gender]?.slots) && spec[gender].slots.length) continue;
+        if (!Array.isArray(authored?.slots) || !authored.slots.length) continue;
+        spec[gender] = {
+          ...authored,
+          colorOptions: authored.colorOptions || bodyPalette(key, gender),
+        };
+        if (!spec.genders.includes(gender)) spec.genders.push(gender);
+      }
+    }
+    window.HobunjiNuhonganSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA);
+    const key = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Lookup-only normalization keeps old saved identities unchanged.
+    const spec = SPECIES_DATA[key];
+    if (spec) return spec;
+    const authored = configured[key];
+    return authored ? {
+      ...authored,
+      label: authored.label || key,
+      genders: authored.genders || ['male', 'female'].filter(g => Array.isArray(authored[g]?.slots)),
+    } : null;
+  }
+
+  function creatorGenderData(speciesId, gender) {
+    const key = String(gender || '').trim().toLowerCase();
+    return creatorSpeciesData(speciesId)?.[key === 'f' ? 'female' : key === 'm' ? 'male' : key] || null;
+  }
+
   // Clothing slots for collections tab (mirrors scratchbones shop catalog categories)
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: '🎩 Hat',      category: 'hat' },
@@ -628,7 +664,7 @@
   function makeDefaultState(speciesId, gender) {
     speciesId = speciesId || 'mao-ao';
     gender    = gender    || 'male';
-    const spec = SPECIES_DATA[speciesId] || SPECIES_DATA['mao-ao'];
+    const spec = creatorSpeciesData(speciesId) || SPECIES_DATA['mao-ao'];
     if (!spec.genders.includes(gender)) gender = spec.genders[0];
     const gData = spec[gender];
     const opts  = gData?.colorOptions || [];
@@ -651,7 +687,7 @@
   }
 
   function currentGenderData() {
-    return _state ? SPECIES_DATA[_state.appearance.speciesId]?.[_state.appearance.gender] : null;
+    return _state ? creatorGenderData(_state.appearance.speciesId, _state.appearance.gender) : null;
   }
 
   // ── Portrait rendering ────────────────────────────────────────────────
@@ -1461,8 +1497,8 @@
   // ── HTML renderers ────────────────────────────────────────────────────
   function renderAppearanceBody() {
     const ap        = _state.appearance;
-    const specData  = SPECIES_DATA[ap.speciesId];
-    const gData     = specData?.[ap.gender];
+    const specData  = creatorSpeciesData(ap.speciesId);
+    const gData     = creatorGenderData(ap.speciesId, ap.gender);
     const colorOpts = gData?.colorOptions || [];
 
     const speciesBtns = Object.entries(SPECIES_DATA).map(([sid, sd]) =>
