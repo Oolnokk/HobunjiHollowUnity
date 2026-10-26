@@ -486,6 +486,7 @@
           opacity: Number.isFinite(Number(material?.opacity)) ? Number(material.opacity) : 1,
           transparent: !!material?.transparent,
           depthWrite: material?.depthWrite !== false,
+          alphaTest: material?.alphaTest, // Restores the uncut solid sprite mask after a temporarily translucent pet fade.
         })),
       });
     });
@@ -501,6 +502,7 @@
         state.material.opacity = state.opacity;
         state.material.transparent = state.transparent;
         state.material.depthWrite = state.depthWrite;
+        if (state.alphaTest !== undefined) state.material.alphaTest = state.alphaTest;
         state.material.needsUpdate = true;
       }
     }
@@ -521,6 +523,10 @@
         state.material.opacity = state.opacity * visibleFactor;
         state.material.transparent = state.transparent || visibleFactor < 0.999;
         state.material.depthWrite = visibleFactor >= 0.999 ? state.depthWrite : false;
+        if (state.material.map && Number(state.alphaTest) > 0) {
+          const softCutoff = Number(window.HobunjiSpritePngSurface?.alphaTest?.()) || 0.001; // Faded depth-disabled pets retain their anti-aliased edges.
+          state.material.alphaTest = state.material.depthWrite ? state.alphaTest : Math.min(state.alphaTest, softCutoff);
+        }
         state.material.needsUpdate = true;
       }
     }
