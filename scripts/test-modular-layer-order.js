@@ -40,7 +40,7 @@ async function run() {
   const api = window.ModularWeapons;
   const config = api.getConfig();
   assert.equal(api.settings('dagger', 'fishing-spear').layerOrder, 'haft-over-head', 'Default is haft in the foreground.');
-  assert.equal(config.shafts.dagger.overrides['fishing-spear']?.layerOrder, undefined, 'Default need not be explicitly stored.');
+  assert.equal(config.shafts.dagger.overrides['fishing-spear']?.layerOrder, 'haft-over-head', 'Every pair has an explicitly curated shipped layer.');
   function paints(canvas) { return canvas.operations.filter(op => op.startsWith('paint:')); }
   const defaultCanvas = await api.compose('dagger', 'fishing-spear'); // Compatible single-headed weapon.
   assert.deepEqual(paints(defaultCanvas), ['paint:head', 'paint:haft'], 'Default renderer paints head first.');
