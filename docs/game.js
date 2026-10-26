@@ -5979,9 +5979,15 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
-        const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5; // Shared by wildlife, mounts, companions and humanoids; stationary updates clear only the live hint.
+        const humanoidVelocityFacing = c.isBandit === true || c.isTribeHunter === true; // Keep existing humanoid movement hints; animals measure actual travel rather than stale requested velocities.
+        const sampledAnimalMovement = dt > 0 && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.perpState.travelSampleX) && Number.isFinite(c.perpState.travelSampleY); // First render establishes a position sample without inventing movement.
+        const creatureMoveX = humanoidVelocityFacing ? (c.vx || 0) : sampledAnimalMovement ? (c.x - c.perpState.travelSampleX) / dt : 0; // Actual horizontal speed drives animal correction, including collision slides.
+        const creatureMoveY = humanoidVelocityFacing ? (c.vy || 0) : sampledAnimalMovement ? (c.y - c.perpState.travelSampleY) / dt : 0; // Paired with X to report world-bearing movement below.
+        c.perpState.travelSampleX = c.x;
+        c.perpState.travelSampleY = c.y;
+        const creatureIsMoving = Math.hypot(creatureMoveX, creatureMoveY) > 5; // Stopped/blocked animals clear the live hint while retaining last movement.
         c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Convert world-bearing hints into this creature's sprite yaw convention.
-        window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(c.vx, c.vy) : null);
+        window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(creatureMoveX, creatureMoveY) : null);
         const shoulderPetBypassesPlaneDeadzone = c.stableRole === 'shoulderPet';
         if (shoulderPetBypassesPlaneDeadzone) {
           // A perched animal already gets its final orientation from the authored
@@ -28691,6 +28697,8 @@
       });
 
       window.PixelProbe?.init({
+        animalObjects,
+        hostileObjects,
         renderer,
         camera,
         playerMesh,

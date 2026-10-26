@@ -231,7 +231,7 @@
           return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, perpState: w.perpState, root: w.root };
         }
       }
-      for (const c of new Set([...(deps.companionObjects || []), ...(window.Combat?.deps?.hostileObjects || []), ...(window.Combat?.deps?.animalObjects || [])])) {
+      for (const c of new Set([...(deps.companionObjects || []), ...(deps.hostileObjects || []), ...(deps.animalObjects || [])])) {
         if (node === c.avatarRef?.group) {
           const sizeClass = c.genotype?.sizeClass || c.def?.defaultSizeClass || 'medium'; // Makes size mutations visible in copied mobile probe reports.
           const scaleLabel = `${Math.round((c.visualScaleX || 1) * 100)}%×${Math.round((c.visualScaleY || 1) * 100)}%`; // Confirms the authored class scale reached this live mesh.

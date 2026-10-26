@@ -17,12 +17,14 @@ const renderStart = gameSource.indexOf('        c.pngRot ??= c.groupRot;'); // S
 const renderEnd = gameSource.indexOf('        const planeDelta =', renderStart); // End before material/rig rendering dependencies.
 assert.ok(renderStart >= 0 && renderEnd > renderStart);
 const render = new Function('window', 'c', 'grp', 'rawTargetRotY', 'cameraRelativeCreaturePerps', 'dt', 'angleDiff', gameSource.slice(renderStart, renderEnd)); // Executes the real branch used by wildlife, mounts and companions.
-function step(c, raw = 0) {
+function step(c, raw = 0, travel = true) {
+  if (travel && Number.isFinite(c.x) && Number.isFinite(c.y)) { c.x += (c.vx || 0) / 60; c.y += (c.vy || 0) / 60; }
   clockMs += 1000 / 60;
   render(context, c, { userData: {} }, raw, () => [0, Math.PI], 1 / 60, angleDiff);
 }
 for (const role of ['wild', 'mount', 'companion']) {
-  const c = { stableRole: role, def: {}, perpState: {}, groupRot: 0, vx: 80, vy: 100 }; // Fresh state follows the runtime creature constructor contract.
+  const c = { x: 0, y: 0, stableRole: role, def: {}, perpState: {}, groupRot: 0, vx: 80, vy: 100 }; // Fresh state follows the runtime creature constructor contract.
+  step(c); // Establish the first actual-position sample.
   for (let frame = 0; frame < 600; frame++) {
     step(c);
     assert.equal(c.perpState.pixelProbeDebug.selectedSide, 1, `${role}: ten seconds of travel never alternates sides`);
@@ -31,6 +33,8 @@ for (const role of ['wild', 'mount', 'companion']) {
   api.setHeadtrackHint(c.perpState, -0.4);
   step(c);
   assert.equal(c.perpState.pixelProbeDebug.selectedSide, 1, 'movement outranks active gaze');
+  step(c, 0, false); // Requested velocity stays nonzero, as it can when wildlife stops or hits a wall.
+  assert.equal(c.perpState.movementYaw, null, 'stale requested velocity cannot override active gaze');
   c.vx = c.vy = 0;
   step(c);
   assert.equal(c.perpState.pixelProbeDebug.correctiveSource, 'headtrack');
@@ -45,7 +49,17 @@ for (const role of ['wild', 'mount', 'companion']) {
   step(c, Math.PI / 2);
   assert.equal(c.perpState.pixelProbeDebug.effectiveTargetRotY, Math.PI / 2, 'outside the deadzone the logical facing is unchanged');
 }
-const animal = { perpState: {}, avatarRef: { group: { position: { x: 0, z: 0 } } }, vx: 0, vy: 0, def: {}, groupRot: 0 }; // Idle wildlife with no movement history tests player fallback.
+const sliding = { x: 0, y: 0, def: {}, perpState: {}, groupRot: 0, vx: 80, vy: 100 }; // Intended travel differs from actual motion along a blocking wall.
+step(sliding, 0, false);
+sliding.x = -1;
+step(sliding, 0, false);
+assert.equal(sliding.perpState.pixelProbeDebug.correctiveSource, 'movement');
+assert.equal(sliding.perpState.pixelProbeDebug.selectedSide, -1, 'collision slides use the achieved direction rather than requested velocity');
+for (let frame = 0; frame < 180; frame++) step(sliding, 0, false);
+assert.equal(sliding.perpState.pixelProbeDebug.correctiveSource, 'lastMovement', 'blocked animals retain their last achieved travel as a lower priority');
+assert.equal(sliding.perpState.pixelProbeDebug.selectedSide, -1);
+
+const animal = { x: 0, y: 0, perpState: {}, avatarRef: { group: { position: { x: 0, z: 0 } } }, vx: 0, vy: 0, def: {}, groupRot: 0 }; // Idle wildlife with no movement history tests player fallback.
 context.Combat = { deps: { hostileObjects: [animal] } };
 api.init({ playerWorldPosition: () => ({ x: -2, z: 3 }) });
 step(animal);
