@@ -231,6 +231,15 @@
     };
   }
 
+  // One NPC lower half, not a wildlife species: standalone animal-style rig data.
+  const omgurkuLowerRig = clone(masterCreatures['voorg-ass']); // Independent floor profile; preserve Voorg-ass genotypes and rig values.
+  omgurkuLowerRig.kind = 'omgurku-lower';
+  omgurkuLowerRig.groundOffsets = { large: 0, medium: 0, small: 0 }; // Medium is the fixed adult lower body; zero enables automatic hybrid grounding.
+  omgurkuLowerRig.sizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed size regardless of animal preview class.
+  omgurkuLowerRig.sizeScalePercentages = { large: { x: 100, y: 100 }, medium: { x: 100, y: 100 }, small: { x: 100, y: 100 } }; // Mirrors fixed scales in exports.
+  omgurkuLowerRig.anchors = { saddle: identityAnchor([0, 0, 0]), shoulderGrip: identityAnchor([0, 0, 0]) }; // The hybrid join remains owned by hybridPlacement.
+  masterCreatures['omgurku-lower'] = omgurkuLowerRig;
+
   const MASTER_PROVENANCE = Object.freeze({
     handShoulder: Object.freeze({ source: 'exact supplied v9 Rig Coordinates hand-shoulder tuples authored after Animation Author adopted gameplay width 0.9', authoredCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945', exportedAt: V9_SHOULDERS_EXPORTED_AT, correction: 'v2 removes the v1 forensic master extra x0.9 scale; exact v9 values are already runtime-space values' }),
     posterior: Object.freeze({ source: 'preview calibration: posterior is 20% of portrait height below the live portrait-plane bottom edge', coordinateSpace: 'floor-relative portrait-height percent', authoredAt: '2026-10-17' }),
