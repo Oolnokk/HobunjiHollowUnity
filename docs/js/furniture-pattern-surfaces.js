@@ -17,7 +17,8 @@
       mode: ['cloth', 'glass', 'engraving'].includes(record.mode) ? record.mode : 'cloth',
       selector: String(record.selector || 'all'),
       scale: Math.max(.05, Math.min(20, finite(record.scale, 1))),
-      palette: [hex(record.palette?.[0], '#b7a185'), hex(record.palette?.[1], '#315b67')],
+      palette: [hex(record.palette?.[0], '#b7a185'), hex(record.palette?.[1], '#315b67'),
+        ...(record.palette?.[2] ? [hex(record.palette[2], hex(record.palette?.[1], '#315b67'))] : [])], // Optional third palette channel exclusively colors the overpass.
       engravingCoreOpacity: Number(record.opacity) === 0 ? 0 : Math.max(0,Math.min(1,finite(record.engravingCoreOpacity,.85))), // Core opacity is independent of the softer restored stroke.
       opacity: Math.max(0, Math.min(1, finite(record.opacity, record.mode === 'glass' ? .8 : record.mode === 'engraving' ? .5 : 1))),
     };
@@ -69,9 +70,9 @@
     return [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.PatternLibrary?.listAvailable?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || [])];
   }
 
-  function placementControls(host, baseInput, dyeInput) {
+  function placementControls(host, baseInput, dyeInput, overpassInput = null) {
     const controls = document.createElement('div'); // The same controls author defaults and per-instance furniture/window overrides.
-    controls.innerHTML = '<label>Game base dye <select data-dye-base></select></label><label>Game pattern dye <select data-dye-ink></select></label>' +
+    controls.innerHTML = '<label>Game base dye <select data-dye-base></select></label><label>Game pattern dye <select data-dye-ink></select></label><label>Game overpass dye <select data-dye-overpass></select></label>' +
       '<p>Offsets use surface tile units: X right, Y down. A non-tiling layer stamps its motif once.</p>' +
       [0,1].map(index => `<fieldset><legend>${index ? 'Overpass' : 'Primary pattern'}</legend>${index ? '<label>Overpass pattern <select data-overpass></select></label>' : ''}
         <label><input data-repeat-${index} type="checkbox" checked>Repeat / tile</label>
@@ -88,13 +89,14 @@
       for (const entry of entries) if(entry.id && !seen.has(entry.id)) {seen.add(entry.id);select.add(new Option(entry.label || entry.name || entry.id,entry.id));}
       select.value = selected || '';
     };
-    for (const [name,input] of [['base',baseInput],['ink',dyeInput]]) {
+    for (const [name,input] of [['base',baseInput],['ink',dyeInput], ...(overpassInput ? [['overpass',overpassInput]] : [])]) {
       field(`dye-${name}`).onchange = () => { const dye=dyes().find(entry=>entry.id===field(`dye-${name}`).value); if(dye?.hex)input.value=dye.hex; };
       input.addEventListener?.('input', () => { field(`dye-${name}`).value=dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id || ''; });
     }
     return {
       refresh(record = {}) {
-        for (const [name,input] of [['base',baseInput],['ink',dyeInput]]) populate(field(`dye-${name}`),dyes(),'Custom color',dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id);
+        for (const [name,input] of [['base',baseInput],['ink',dyeInput], ...(overpassInput ? [['overpass',overpassInput]] : [])]) populate(field(`dye-${name}`),dyes(),'Custom color',dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id);
+        if (!overpassInput) field('dye-overpass').disabled = true;
         const entries=patternCatalog();
         if(record.patterns?.[1] && !entries.some(entry=>entry.id===record.overpassPatternId))entries.unshift({id:record.overpassPatternId || '__custom',label:'Current overpass'});
         populate(field('overpass'),entries,'None',record.patterns?.[1] ? record.overpassPatternId || '__custom' : '');
@@ -125,6 +127,7 @@
     const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage; // Canonical tiling, inversion, thickness and overpass implementation.
     if (!compositor) throw new Error('The weaving pattern renderer has not loaded');
     const patterns = placedPatterns(record, patternOverride, size); // Furniture previews share the canonical primary/overpass stack.
+    if (patterns[1] && record.palette[2]) patterns[1] = { ...patterns[1], inkColorHex: record.palette[2] }; // The third dye is an instance placement color, not a mutation of a saved motif.
     const key = JSON.stringify([record.mode, record.palette, patterns, size, record.mode === 'engraving' ? [record.opacity,record.engravingCoreOpacity] : null]); // Scale/opacity belong to placement rather than the reusable tile pixels.
     if (tileCache.has(key)) return tileCache.get(key);
     const pending = (async () => {
@@ -500,8 +503,8 @@
     const panel = document.createElement('div'); // Touch-sized controls share the player's unlocked/saved pattern library.
     panel.setAttribute('data-ctrl-panel', ''); // Lets controller navigation reach the surface dropdown and buttons.
     panel.style.cssText = 'position:fixed;inset:10% 5%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px';
-    panel.innerHTML = '<h3>Furniture pattern</h3><label>Surface <select data-part></select></label><br><label>Pattern tile size <input data-scale type="number" min="0.05" max="20" step="0.05"></label><br><label>Base dye <input data-base type="color"></label><br><label>Pattern dye <input data-dye type="color"></label><br><label>Pattern <select data-pattern></select></label><br><label><input data-solid type="checkbox">Solid color (no motif)</label><br><button data-edit>Choose / draw pattern</button> <button data-apply>Apply settings</button> <button data-close data-ctrl-cancel>Close</button><pre data-debug style="white-space:pre-wrap"></pre>';
-    const placement = placementControls(panel,panel.querySelector('[data-base]'),panel.querySelector('[data-dye]'));
+    panel.innerHTML = '<h3>Furniture pattern</h3><label>Surface <select data-part></select></label><br><label>Pattern tile size <input data-scale type="number" min="0.05" max="20" step="0.05"></label><br><label>Base dye <input data-base type="color"></label><br><label>Pattern dye <input data-dye type="color"></label><br><label>Overpass dye <input data-overpass-ink type="color"></label><br><label>Pattern <select data-pattern></select></label><br><label><input data-solid type="checkbox">Solid color (no motif)</label><br><button data-edit>Choose / draw pattern</button> <button data-apply>Apply settings</button> <button data-close data-ctrl-cancel>Close</button><pre data-debug style="white-space:pre-wrap"></pre>';
+    const placement = placementControls(panel,panel.querySelector('[data-base]'),panel.querySelector('[data-dye]'),panel.querySelector('[data-overpass-ink]'));
     const find = name => panel.querySelector(`[data-${name}]`); // Dialog-scoped lookup avoids collisions with the furniture editor.
     candidates.forEach(({part}, index) => { const option = document.createElement('option'); option.value = index; option.textContent = part.name || part.id; find('part').appendChild(option); });
     const selected = () => candidates[Number(find('part').value) || 0]; // Selection is read at each action, never inferred from a global mesh name.
@@ -509,14 +512,14 @@
       const part = selected().part;
       return normalize(object.patternOverrides?.[part.id]?.[0] || part.patternSurfaces?.[0] || {slot:'stained-glass',mode:'glass',selector:'all',normal:[0,0,1],patternId:'diamond-ring',solid:true});
     };
-    const refresh = () => { const record = current(); find('scale').value = record.scale; find('base').value = record.palette[0]; find('dye').value = record.palette[1]; find('solid').checked=!!record.solid;
+    const refresh = () => { const record = current(); find('scale').value = record.scale; find('base').value = record.palette[0]; find('dye').value = record.palette[1]; find('overpass-ink').value = record.palette[2] || record.palette[1]; find('solid').checked=!!record.solid;
       const catalog=[...(window.PatternLibrary?.getCatalog?.()||[]),...(window.RepoPatternLibrary?.listCached?.()||[])]; // Every authored/saved motif is selectable without redrawing it.
       find('pattern').replaceChildren();const ids=new Set();for(const entry of [{id:record.patternId,name:record.patternId},...catalog])if(entry.id&&!ids.has(entry.id)){ids.add(entry.id);find('pattern').add(new Option(entry.name||entry.label||entry.id,entry.id));}
       find('pattern').value=record.patternId||'';placement.refresh(record);find('debug').textContent = JSON.stringify(debug(object.mesh), null, 2); };
     const settings = () => {
       const record=placement.read(current()),patternId=find('pattern').value;
       if(patternId!==record.patternId){record.pattern=null;record.patterns[0]=resolvePattern({patternId});}
-      return normalize({...record,patternId,solid:find('solid').checked,scale:find('scale').value,palette:[find('base').value,find('dye').value]});
+      return normalize({...record,patternId,solid:find('solid').checked,scale:find('scale').value,palette:[find('base').value,find('dye').value,find('overpass-ink').value]});
     };
     const save = record => {
       const overrides = {...object.patternOverrides, [selected().part.id]: [record]}; // Per-instance only; does not edit shared furniture definitions.
