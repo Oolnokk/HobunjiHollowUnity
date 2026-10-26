@@ -716,7 +716,7 @@
   ]
 ],
   "exits": [
-    {"id": "exit_car_front", "label": "Front Door", "tiles": [[5, 15], [6, 15], [7, 15]], "targetMap": "", "spawnCol": 0, "spawnRow": 0,
+    {"id": "exit_car_front", "label": "Front Door", "tiles": [[6, 15]], "targetMap": "", "spawnCol": 0, "spawnRow": 0,
  "direction": "north",
  "generateDoor": true},
     {"id": "exit_carpenters_up", "label": "Stairs Up", "tiles": [[9, 3]], "targetMap": "map_i_carpenters_F2", "spawnCol": 9, "spawnRow": 2,
