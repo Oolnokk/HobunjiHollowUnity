@@ -2469,6 +2469,556 @@
           "gridRot": 180,
           "gridW": 2,
           "gridD": 1
+        },
+        {
+          "id": "fwall_mv74tcm0luv6",
+          "itemKey": "crossbarWindowFurniture",
+          "wallOrnamentKey": "crossbarWindow",
+          "col": 9,
+          "row": 1,
+          "rotY": 0,
+          "postX": 0.646,
+          "postY": 0.232,
+          "postZ": 0.7,
+          "postSX": 1.5,
+          "postSY": 2,
+          "postSZ": 1,
+          "wallAttachment": {
+            "version": 1,
+            "wallPoint": [
+              10.146,
+              2.472,
+              2
+            ],
+            "wallNormal": [
+              0,
+              0,
+              1
+            ],
+            "offsetU": 0,
+            "offsetV": 0,
+            "normalOffset": 0.1875,
+            "space": "wall-surface-uvn"
+          },
+          "nonColliding": true,
+          "patternOverrides": {
+            "crossbar_window_pane": [
+              {
+                "slot": "stained-glass",
+                "mode": "glass",
+                "selector": "all",
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "patternId": "winding_roots",
+                "solid": false,
+                "scale": 1,
+                "palette": [
+                  "#d9ffb3",
+                  "#468c00",
+                  "#00ffff"
+                ],
+                "engravingCoreOpacity": 0.85,
+                "opacity": 0.8,
+                "patterns": [
+                  {
+                    "motifScale": 1.11,
+                    "motifRotationDeg": 0,
+                    "tiling": true,
+                    "invert": false,
+                    "motifThinPx": 2,
+                    "frameShape": "diamond",
+                    "frameX": -9.412844473855543,
+                    "frameY": 7.321108098615682,
+                    "frameRotationDeg": 43,
+                    "frameScale": 1.5694130284370735,
+                    "meshScale": 1.86,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "winding_roots",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+                  },
+                  {
+                    "motifScale": 1,
+                    "motifRotationDeg": 0,
+                    "tiling": false,
+                    "invert": false,
+                    "motifThinPx": 3,
+                    "frameShape": "square",
+                    "frameX": 0,
+                    "frameY": 0,
+                    "frameRotationDeg": 0,
+                    "frameScale": 1,
+                    "meshScale": 3.2,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "blessed_blossom_balance",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_balance.png"
+                  }
+                ],
+                "overpassPatternId": "blessed_blossom_balance",
+                "layerTransforms": [
+                  {
+                    "tiling": true,
+                    "scale": 1,
+                    "rotationDeg": 0,
+                    "offsetX": 0,
+                    "offsetY": 0
+                  },
+                  {
+                    "tiling": false,
+                    "scale": 1.7,
+                    "rotationDeg": 0,
+                    "offsetX": -0.05,
+                    "offsetY": 0
+                  }
+                ],
+                "pattern": null
+              }
+            ]
+          }
+        },
+        {
+          "id": "fwall_mv77lbuqd1er",
+          "itemKey": "crossbarWindowFurniture",
+          "wallOrnamentKey": "crossbarWindow",
+          "col": 14,
+          "row": 7,
+          "rotY": -90,
+          "postX": 0.5,
+          "postY": -0.25,
+          "postZ": 0,
+          "postSX": 1.2,
+          "postSY": 1.75,
+          "postSZ": 1,
+          "nonColliding": true,
+          "wallAttachment": {
+            "version": 1,
+            "wallPoint": [
+              14.923,
+              1.648,
+              8.047
+            ],
+            "wallNormal": [
+              -1,
+              0,
+              0
+            ],
+            "offsetU": 0.5,
+            "offsetV": 0.2,
+            "normalOffset": 0.01,
+            "space": "wall-surface-uvn"
+          },
+          "patternOverrides": {
+            "crossbar_window_pane": [
+              {
+                "slot": "stained-glass",
+                "mode": "glass",
+                "selector": "all",
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "patternId": "winding_roots",
+                "solid": false,
+                "scale": 1,
+                "palette": [
+                  "#d9ffb3",
+                  "#468c00",
+                  "#ff8000"
+                ],
+                "engravingCoreOpacity": 0.85,
+                "opacity": 0.8,
+                "patterns": [
+                  {
+                    "motifScale": 1.11,
+                    "motifRotationDeg": 0,
+                    "tiling": true,
+                    "invert": false,
+                    "motifThinPx": 2,
+                    "frameShape": "diamond",
+                    "frameX": -9.412844473855543,
+                    "frameY": 7.321108098615682,
+                    "frameRotationDeg": 43,
+                    "frameScale": 1.5694130284370735,
+                    "meshScale": 1.86,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "winding_roots",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+                  },
+                  {
+                    "motifScale": 1,
+                    "motifRotationDeg": 0,
+                    "tiling": false,
+                    "invert": false,
+                    "motifThinPx": 3,
+                    "frameShape": "square",
+                    "frameX": 0,
+                    "frameY": 0,
+                    "frameRotationDeg": 0,
+                    "frameScale": 1,
+                    "meshScale": 3.2,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "blessed_blossom_potential",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_potential.png"
+                  }
+                ],
+                "overpassPatternId": "blessed_blossom_potential",
+                "layerTransforms": [
+                  {
+                    "tiling": true,
+                    "scale": 1,
+                    "rotationDeg": 0,
+                    "offsetX": 0,
+                    "offsetY": 0
+                  },
+                  {
+                    "tiling": false,
+                    "scale": 1.2,
+                    "rotationDeg": 0,
+                    "offsetX": -0.1,
+                    "offsetY": 0
+                  }
+                ],
+                "pattern": null
+              }
+            ]
+          }
+        },
+        {
+          "id": "fwall_mv77wqry70qh",
+          "itemKey": "crossbarWindowFurniture",
+          "wallOrnamentKey": "crossbarWindow",
+          "col": 14,
+          "row": 11,
+          "rotY": -90,
+          "postX": 0.5,
+          "postY": -0.25,
+          "postZ": 0,
+          "postSX": 1.2,
+          "postSY": 1.75,
+          "postSZ": 1,
+          "nonColliding": true,
+          "wallAttachment": {
+            "version": 1,
+            "wallPoint": [
+              14.786,
+              1.699,
+              10.533
+            ],
+            "wallNormal": [
+              -1,
+              0,
+              0
+            ],
+            "offsetU": 0,
+            "offsetV": 0,
+            "normalOffset": 0.01,
+            "space": "wall-surface-uvn"
+          },
+          "patternOverrides": {
+            "crossbar_window_pane": [
+              {
+                "slot": "stained-glass",
+                "mode": "glass",
+                "selector": "all",
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "patternId": "winding_roots",
+                "solid": false,
+                "scale": 1,
+                "palette": [
+                  "#d9ffb3",
+                  "#468c00",
+                  "#ffffff"
+                ],
+                "engravingCoreOpacity": 0.85,
+                "opacity": 0.8,
+                "patterns": [
+                  {
+                    "motifScale": 1.11,
+                    "motifRotationDeg": 0,
+                    "tiling": true,
+                    "invert": false,
+                    "motifThinPx": 2,
+                    "frameShape": "diamond",
+                    "frameX": -9.412844473855543,
+                    "frameY": 7.321108098615682,
+                    "frameRotationDeg": 43,
+                    "frameScale": 1.5694130284370735,
+                    "meshScale": 1.86,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "winding_roots",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+                  },
+                  {
+                    "motifScale": 1,
+                    "motifRotationDeg": 0,
+                    "tiling": false,
+                    "invert": false,
+                    "motifThinPx": 3,
+                    "frameShape": "square",
+                    "frameX": 0,
+                    "frameY": 0,
+                    "frameRotationDeg": 0,
+                    "frameScale": 1,
+                    "meshScale": 3.2,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "blessed_blossom_windswept",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_windswept.png"
+                  }
+                ],
+                "overpassPatternId": "blessed_blossom_windswept",
+                "layerTransforms": [
+                  {
+                    "tiling": true,
+                    "scale": 1,
+                    "rotationDeg": 0,
+                    "offsetX": 0,
+                    "offsetY": 0
+                  },
+                  {
+                    "tiling": false,
+                    "scale": 1.2,
+                    "rotationDeg": 0,
+                    "offsetX": -0.1,
+                    "offsetY": 0.1
+                  }
+                ],
+                "pattern": null
+              }
+            ]
+          }
+        },
+        {
+          "id": "fwall_mv780vrmh7b9",
+          "itemKey": "crossbarWindowFurniture",
+          "wallOrnamentKey": "crossbarWindow",
+          "col": 5,
+          "row": 11,
+          "rotY": 90,
+          "postX": -0.322,
+          "postY": -0.028,
+          "postZ": 0,
+          "postSX": 1.2,
+          "postSY": 1.75,
+          "postSZ": 1,
+          "nonColliding": true,
+          "wallAttachment": {
+            "version": 1,
+            "wallPoint": [
+              5.155,
+              1.932,
+              12.083
+            ],
+            "wallNormal": [
+              1,
+              0,
+              0
+            ],
+            "offsetU": 0,
+            "offsetV": 0,
+            "normalOffset": 0.01,
+            "space": "wall-surface-uvn"
+          },
+          "patternOverrides": {
+            "crossbar_window_pane": [
+              {
+                "slot": "stained-glass",
+                "mode": "glass",
+                "selector": "all",
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "patternId": "winding_roots",
+                "solid": false,
+                "scale": 1,
+                "palette": [
+                  "#d9ffb3",
+                  "#468c00",
+                  "#ffbf00"
+                ],
+                "engravingCoreOpacity": 0.85,
+                "opacity": 0.8,
+                "patterns": [
+                  {
+                    "motifScale": 1.11,
+                    "motifRotationDeg": 0,
+                    "tiling": true,
+                    "invert": false,
+                    "motifThinPx": 2,
+                    "frameShape": "diamond",
+                    "frameX": -9.412844473855543,
+                    "frameY": 7.321108098615682,
+                    "frameRotationDeg": 43,
+                    "frameScale": 1.5694130284370735,
+                    "meshScale": 1.86,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "winding_roots",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+                  },
+                  {
+                    "motifScale": 1,
+                    "motifRotationDeg": 0,
+                    "tiling": false,
+                    "invert": false,
+                    "motifThinPx": 3,
+                    "frameShape": "square",
+                    "frameX": 0,
+                    "frameY": 0,
+                    "frameRotationDeg": 0,
+                    "frameScale": 1,
+                    "meshScale": 3.2,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "blessed_blossom_rebirth",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_rebirth.png"
+                  }
+                ],
+                "overpassPatternId": "blessed_blossom_rebirth",
+                "layerTransforms": [
+                  {
+                    "tiling": true,
+                    "scale": 1,
+                    "rotationDeg": 0,
+                    "offsetX": 0,
+                    "offsetY": 0
+                  },
+                  {
+                    "tiling": false,
+                    "scale": 1.5,
+                    "rotationDeg": 0,
+                    "offsetX": -0.05,
+                    "offsetY": 0.2
+                  }
+                ],
+                "pattern": null
+              }
+            ]
+          }
+        },
+        {
+          "id": "fwall_mv786wv4mgxi",
+          "itemKey": "crossbarWindowFurniture",
+          "wallOrnamentKey": "crossbarWindow",
+          "col": 5,
+          "row": 7,
+          "rotY": 90,
+          "postX": -0.303,
+          "postY": -0.002,
+          "postZ": 0,
+          "postSX": 1.2,
+          "postSY": 1.75,
+          "postSZ": 1,
+          "nonColliding": true,
+          "wallAttachment": {
+            "version": 1,
+            "wallPoint": [
+              5.174,
+              1.758,
+              8.475
+            ],
+            "wallNormal": [
+              1,
+              0,
+              0
+            ],
+            "offsetU": 0.5,
+            "offsetV": 0.2,
+            "normalOffset": 0.01,
+            "space": "wall-surface-uvn"
+          },
+          "patternOverrides": {
+            "crossbar_window_pane": [
+              {
+                "slot": "stained-glass",
+                "mode": "glass",
+                "selector": "all",
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "patternId": "winding_roots",
+                "solid": false,
+                "scale": 1,
+                "palette": [
+                  "#d9ffb3",
+                  "#468c00",
+                  "#ffb3b3"
+                ],
+                "engravingCoreOpacity": 0.85,
+                "opacity": 0.8,
+                "patterns": [
+                  {
+                    "motifScale": 1.11,
+                    "motifRotationDeg": 0,
+                    "tiling": true,
+                    "invert": false,
+                    "motifThinPx": 2,
+                    "frameShape": "diamond",
+                    "frameX": -9.412844473855543,
+                    "frameY": 7.321108098615682,
+                    "frameRotationDeg": 43,
+                    "frameScale": 1.5694130284370735,
+                    "meshScale": 1.86,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "winding_roots",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+                  },
+                  {
+                    "motifScale": 1,
+                    "motifRotationDeg": 0,
+                    "tiling": false,
+                    "invert": false,
+                    "motifThinPx": 3,
+                    "frameShape": "square",
+                    "frameX": 0,
+                    "frameY": 0,
+                    "frameRotationDeg": 0,
+                    "frameScale": 1,
+                    "meshScale": 3.2,
+                    "meshRotationDeg": 0,
+                    "overpassClearanceMultiplier": 3,
+                    "repoPatternId": "blessed_blossom_balance",
+                    "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_balance.png"
+                  }
+                ],
+                "overpassPatternId": "blessed_blossom_balance",
+                "layerTransforms": [
+                  {
+                    "tiling": true,
+                    "scale": 1,
+                    "rotationDeg": 0,
+                    "offsetX": 0,
+                    "offsetY": 0
+                  },
+                  {
+                    "tiling": false,
+                    "scale": 1.5,
+                    "rotationDeg": 0,
+                    "offsetX": -0.1,
+                    "offsetY": 0.1
+                  }
+                ],
+                "pattern": null
+              }
+            ]
+          }
         }
       ],
       "npcStations": [
