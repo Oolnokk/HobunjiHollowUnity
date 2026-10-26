@@ -313,7 +313,10 @@
     const c = record?.root?.userData?.omgurkuComposite; // Keeps the named NPC's root fixed while both visual halves reposition together.
     if (!c) return;
     const w = placement.lowerWidth, h = placement.lowerHeight;
-    const centerY = h / 2 - placement.visibleFloorCorrection + placement.lowerOffsetY;
+    const rigOffset = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.['omgurku-lower']?.groundOffsets?.medium); // Independent fixed-size animal rig ground offset.
+    const autoCenterY = h / 2 - placement.visibleFloorCorrection; // Preserves current placement for Auto/0.
+    const lowerFloorY = Number.isFinite(rigOffset) && Math.abs(rigOffset) > 1e-8 ? rigOffset : autoCenterY; // Nonzero is absolute floor-to-plane-center height.
+    const centerY = lowerFloorY + placement.lowerOffsetY; // Both joined halves move together; existing local calibration remains independent.
     const joinY = centerY + (0.5 - placement.saddleV) * h;
     const joinZ = (0.5 - placement.saddleU) * w + placement.lowerOffsetZ;
     c.upper.position.set(placement.lowerOffsetX + placement.upperOffsetX,

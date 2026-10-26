@@ -1204,7 +1204,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      Only resolves when this tool is served from its real docs/tools/
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
-<script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
 <script src="../../js/animal-chathead-frame.js?v=20261023hf985e11"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 
@@ -1217,7 +1217,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261026hgripload1209a', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261026ha5c86d9', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261022h500c2bc', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
@@ -4042,6 +4042,7 @@ function animationUiTemplate() {
             <div class="maaSectionTitle"><b>Reusable attachment coordinates</b><span class="maaSmall maaMuted">Species profiles</span></div>
             <div class="maaSmall maaMuted">Characters store a posterior and shoulder-perch origin by species + gender. Posterior X is centered and posterior Y is an editable percentage of rendered character height above the gameplay floor. Creatures store saddle and shoulder-grip origins by species.</div>
             <div class="maaSmall maaMuted" style="margin-top:7px">Mounting aligns posterior → saddle. Shoulder pets align shoulder grip → shoulder perch. Animation keys belong to the invisible intermediate parent between those two fixed pivots.</div>
+            <button type="button" class="secondary" id="maaOmgurkuLowerRigBtn" style="width:100%;margin-top:9px">Edit Omgurku lower-half ground offset</button>
           </section>
           <section class="maaSection" id="maaViewportFacingSection">
             <div class="maaSectionTitle"><b>Viewport rotational deadzones</b><span class="maaSmall maaMuted">Camera-relative preview</span></div>
@@ -7088,6 +7089,11 @@ function normalizedRigProfileLibrary(value = {}) {
         shoulderGrip: normalizeTransformSnapshot(profile.anchors?.shoulderGrip, 1),
       },
       chatheadFrame: normalizedAnimalChatheadFrameV1543(profile.chatheadFrame),
+      // Preserve canonical runtime ground heights through the older V15.13–V15.30
+      // normalizer passes too. V15.44 finalizes validation, but initial library
+      // and autosaves are normalized before that patch is installed.
+      ...(profile.groundOffsets && typeof profile.groundOffsets === 'object'
+        ? { groundOffsets: { ...profile.groundOffsets } } : {}),
     };
   }
   return output;
@@ -13671,6 +13677,110 @@ if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version
 animationAuthor.recentChange = 'V15.45 adds species-authored animal dialogue chathead framing to Rig Coordinates; animal ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');
+
+// NPC-only Omgurku: author the lower animal half without touching Voorg-ass.
+const OMGURKU_LOWER_RIG_KIND = 'omgurku-lower'; // Matches its independent attachment-rig species entry.
+const OMGURKU_LOWER_AUTO_GROUND_Y = 0.74 / 2 - 0.245; // Current authored hybrid automatic floor baseline.
+async function addOmgurkuLowerRigActor() {
+  if (animationAuthor.mode !== 'rig') return null;
+  const existing = animationAuthor.actors.find(actor => actor.source?.kind === OMGURKU_LOWER_RIG_KIND);
+  if (existing) {
+    selectAnimationActor(existing.id);
+    renderAllAnimationUi();
+    frameAllAnimationActors('angle');
+    return existing;
+  }
+  await initAnimationWorkspaceScene();
+  if (!window.PNGPlaneAvatar?.buildAnimalPlaneAvatarModel) throw Error('Animal plane builder unavailable.');
+  // Older rig autosaves can predate this NPC-only lower-body species entirely.
+  // Supply its canonical 0.300 baseline only when absent; never replace a
+  // deliberately authored value (including zero/Auto).
+  const library = animationAuthor.attachmentRigProfiles?.creatures;
+  const canonical = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[OMGURKU_LOWER_RIG_KIND];
+  if (library && canonical) {
+    if (!library[OMGURKU_LOWER_RIG_KIND]) library[OMGURKU_LOWER_RIG_KIND] = structuredCloneSafe(canonical);
+    else if (!library[OMGURKU_LOWER_RIG_KIND].groundOffsets) library[OMGURKU_LOWER_RIG_KIND].groundOffsets = structuredCloneSafe(canonical.groundOffsets);
+  }
+  if (animationAuthor.actors.length) clearAnimationActors(); // Rig preview, like the other species pickers, edits one actor at a time.
+  const placement = window.HobunjiOmgurkuSpecies?.debugSnapshot?.()?.placement || {}; // Current runtime calibration, when loaded in the tool.
+  const width = Number(placement.lowerWidth) > 0 ? Number(placement.lowerWidth) : 1.77; // The actual hybrid lower width.
+  const height = Number(placement.lowerHeight) > 0 ? Number(placement.lowerHeight) : 0.74; // The actual hybrid lower height.
+  const url = new URL('../../assets/creaturesprites/omgurku-lower_idle.png', location.href).href; // Headless lower-body idle sprite.
+  const model = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(state.three.THREE, url, {
+    modelWidth: width, modelHeight: height, creatureId: 'voorg-ass', name: 'Omgurku_Lower_Rig',
+  }); // Shared animal mesh builder; no extra NPC, animal AI, or mount.
+  const actor = createAnimationActorShell({
+    id: 'rig_omgurku_lower', label: 'Omgurku — lower half',
+    source: { type: 'creature', kind: OMGURKU_LOWER_RIG_KIND, frame: 'idle' }, model: model.group,
+  });
+  ensureCreatureTransformProfile(OMGURKU_LOWER_RIG_KIND);
+  applyCreatureSizeClass(actor, 'medium', { announce: false, render: false });
+  animationAuthor.actors.push(actor);
+  selectAnimationActor(actor.id);
+  renderAllAnimationUi();
+  frameAllAnimationActors('angle');
+  setStatus('Editing Omgurku lower-half floor height.', 'good');
+  return actor;
+}
+document.addEventListener('click', event => {
+  if (!event.target.closest('#maaOmgurkuLowerRigBtn')) return;
+  addOmgurkuLowerRigActor().catch(error => {
+    log('Omgurku lower-half rig: ' + (error.stack || error.message), 'error');
+    setStatus('Omgurku preview failed: ' + error.message, 'bad');
+  });
+});
+const originalRenderRigInspectorOmgurku = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  const result = originalRenderRigInspectorOmgurku();
+  const actor = selectedAnimationActor();
+  if (animationAuthor.mode !== 'rig' || actor?.source?.kind !== OMGURKU_LOWER_RIG_KIND) return result;
+  const section = $('maaCreaturePlaneScaleRigSection');
+  if (!section) return result;
+  section.querySelectorAll('.maaCreatureSizeCard').forEach(card => {
+    if (!card.querySelector('[data-maa-rig-ground-offset="medium"]')) { card.remove(); return; }
+    card.querySelector('.maaGrid2')?.remove(); // Hybrid size is fixed, not genotype-controlled.
+    card.querySelector('[data-maa-rig-preview-size]')?.remove();
+    const field = card.querySelector('[data-maa-rig-ground-offset="medium"]')?.closest('.maaField');
+    const label = field?.querySelector('label');
+    if (label) label.textContent = 'Omgurku lower-half ground Y offset';
+    const note = field?.querySelector('.maaSmall');
+    if (note) note.textContent = 'World units: 0 = automatic hybrid grounding; nonzero = floor-to-lower-plane-center height. Both halves remain joined.';
+  });
+  section.querySelector('#maaResetAllCreaturePlaneScales')?.remove();
+  const heading = section.querySelector('.maaSectionTitle b');
+  if (heading) heading.textContent = 'Omgurku lower-body floor placement';
+  const description = section.querySelector('.maaSectionTitle + .maaSmall');
+  if (description) description.textContent = 'The animal sprite stays fixed while the blue ground plane moves. Edits save to its independent animal-style rig profile.';
+  return result;
+};
+const originalSyncCreatureGroundReferenceOmgurku = syncCreatureGroundReferenceV1543;
+syncCreatureGroundReferenceV1543 = function(actor, sizeClass) {
+  const result = originalSyncCreatureGroundReferenceOmgurku(actor, sizeClass);
+  if (actor?.source?.kind !== OMGURKU_LOWER_RIG_KIND || animationAuthor.mode !== 'rig') return result;
+  const rigRoot = animationAuthor.modeRoots?.rig;
+  const group = rigRoot?.getObjectByName('CreatureGroundReferenceV1543');
+  if (!group || !actor.visualOffset || !state.three.THREE) return result;
+  const world = new state.three.THREE.Vector3(); // Lower sprite's fixed preview location.
+  actor.visualOffset.updateMatrixWorld(true);
+  actor.visualOffset.getWorldPosition(world);
+  const local = world.clone(); // Ground helper uses the rig-root's own local coordinates.
+  rigRoot.worldToLocal(local);
+  const offset = creatureGroundOffsetV1542(actor, 'medium'); // Fixed-size authored profile value.
+  const placement = window.HobunjiOmgurkuSpecies?.debugSnapshot?.()?.placement;
+  const autoHeight = placement ? Number(placement.lowerHeight) / 2 - Number(placement.visibleFloorCorrection) : OMGURKU_LOWER_AUTO_GROUND_Y; // Mirrors runtime Auto/0.
+  const lift = Number.isFinite(offset) && Math.abs(offset) > 1e-8 ? offset : Number.isFinite(autoHeight) ? autoHeight : OMGURKU_LOWER_AUTO_GROUND_Y; // Exact authored or automatic height.
+  group.position.set(local.x, local.y - lift, local.z);
+  group.updateMatrixWorld(true);
+  if (state.three.grid) {
+    state.three.grid.position.y = world.y - lift; // Ground reference and shared grid agree.
+    state.three.grid.updateMatrixWorld?.(true);
+  }
+  return world.y - lift;
+};
+animationAuthor.recentChange = 'Omgurku lower-half ground height is editable as an animal rig with its own exportable profile, fixed-size preview, and moving ground plane.';
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('Omgurku lower-half animal-style Rig Coordinates controls ready.');
+
 })();
 </script>
 <script>
