@@ -186,12 +186,13 @@
     c.x = host.x; c.y = host.y;
     c.facing = Number.isFinite(host.facing) ? host.facing : (Number.isFinite(host.angle) ? host.angle : c.facing);
     c.vx = 0; c.vy = 0;
-    const ownLift = (Number(c.groundLift ?? c.halfHeight) || 0.3) * (Number(c.scaleY) || 1); // Same baseline lift used by updateCreatureMesh.
+    const authoredLift = Number(c.groundLift ?? c.halfHeight); // The creature renderer's floor-to-root offset; zero is a valid authored ground lift.
+    const ownLift = (Number.isFinite(authoredLift) ? authoredLift : 0.3) * (c.scaleY ?? 1); // Same baseline (and squash scale) used by updateCreatureMesh.
     if (cfg.verticalAnchor === 'center') {
       const pivotOffset = (Number(c.avatarRef?.frontPlane?.position?.y) || 0) *
         (Number(c.avatarRef?.group?.scale?.y) || 1); // Honeyfuzzle wing cloud hovers above its root; align the birds, not the root.
-      const hostY = Number(d.getActorWorldY?.(host)); // Target's real rendered body center (not its physical top).
-      const groundY = Number(d.worldSurfaceY?.(c.x, c.y)); // Used to convert target center into the existing shared hop-offset slot.
+      const hostY = d.getActorWorldY?.(host); // Target's real rendered body center (not its physical top); missing values must not turn into 0.
+      const groundY = d.worldSurfaceY?.(c.x, c.y); // Converts target center into the existing shared hop-offset slot, retaining undefined for the fallback.
       const offset = cfg.heightAboveHost ?? 0; // Centered attacks may opt into a small visual offset.
       c._banditLungeHopCurrent = Number.isFinite(hostY) && Number.isFinite(groundY)
         ? hostY + offset - groundY - ownLift - pivotOffset
@@ -200,7 +201,7 @@
         c.avatarRef.group.position.y = hostY + offset - pivotOffset; // Prevent height-lag as the target rises/falls.
       }
     } else {
-      c._banditLungeHopCurrent = Math.max(0, hostHeightUnits(host) + (cfg.heightAboveHost ?? 0) - ownLift);
+      c._banditLungeHopCurrent = Math.max(0, hostHeightUnits(host) + (cfg.heightAboveHost ?? 0.1) - ownLift); // Preserve the legacy 0.1 above-head gap for other attach attacks.
     }
     c._attachVisualSpread = cfg.visualSpreadScale ?? 1;
   }
