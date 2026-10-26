@@ -101,7 +101,7 @@
       const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
       if (!stoneGeo) continue;
       const rockMesh = new THREE.Mesh(stoneGeo, window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs)); // Recolored metal body and patina, shared across every cave and mine.
-      window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${rock.col},${rock.row}`); // Fit each coarser mineral facet to the complete authored PNG, as on cliffs.
+      window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${rock.col},${rock.row}`); // Keep the earlier continuous UVs on cave ore rocks; no cliff-style facet remapping.
       rockMesh.castShadow = rockMesh.receiveShadow = true;
       const rockGroup = new THREE.Group();
       rockGroup.name = 'cave_ore_' + rock.col + '_' + rock.row; // Blast removes this exact rock mesh without rebuilding the cave.
