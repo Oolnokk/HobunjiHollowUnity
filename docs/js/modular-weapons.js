@@ -2,8 +2,9 @@
 (function (global) {
   'use strict';
   const SCHEMA = 'hobunji_modular_weapons.v2'; // Validated editor import format.
-  const DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Directed line calibrations and pair-only corrections.
-  const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Legacy calibration imported once into the new schema.
+  const DRAFT_KEY = 'hobunji.modularWeapons.v5'; // New authored companion mounts and explicit pair layering.
+  const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
+  const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
   const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
   const transforms = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation']; // Inheritable head placement fields.
   const images = new Map(); // CORS image promises reused across combinations.
@@ -53,6 +54,33 @@
     const end = { x: start.x + Math.sin(angle) * 80, y: start.y - Math.cos(angle) * 80 };
     return { type, start, end };
   }
+  function addCompanionsToPreviousDraft(raw) {
+    const upgraded = JSON.parse(JSON.stringify(raw)); // Migrate once; do not overwrite current v5 user edits.
+    if (upgraded.schema !== SCHEMA) return upgraded; // v1 drafts are converted separately.
+    for (const shaft of Object.values(upgraded.shafts || {})) {
+      if (!Array.isArray(shaft.mounts)) continue;
+      const originalEyes = shaft.mounts.filter(mount => mount?.type === 'eye');
+      for (const eye of originalEyes) {
+        const dx = eye.end.x - eye.start.x, dy = eye.end.y - eye.start.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 1) continue;
+        const center = { x: (eye.start.x + eye.end.x) / 2, y: (eye.start.y + eye.end.y) / 2 };
+        const alreadyPaired = shaft.mounts.some(mount => mount.type === 'tang' &&
+          Math.hypot((mount.start.x + mount.end.x) / 2 - center.x, (mount.start.y + mount.end.y) / 2 - center.y) < 2);
+        if (alreadyPaired) continue; // An author may already have placed a companion by hand.
+        const offsetX = -dy / 4, offsetY = dx / 4; // Tang length is half eye length; perpendicular and centered.
+        const companion = { type: 'tang',
+          start: { x: center.x - offsetX, y: center.y - offsetY },
+          end: { x: center.x + offsetX, y: center.y + offsetY } };
+        if ([companion.start, companion.end].every(p => p.x >= 0 && p.x <= 450 && p.y >= 0 && p.y <= 1204))
+          shaft.mounts.push(companion); // Preserve adjusted eye location and orientation from prior saved drafts.
+      }
+    }
+    if (upgraded.heads?.['pick-shovel-pick']) {
+      upgraded.heads['pick-shovel-pick'].mount = JSON.parse(JSON.stringify(global.MODULAR_WEAPON_CONFIG.heads['pick-shovel-pick'].mount)); // Reset only the pick head's old manual rotation, as requested.
+    }
+    return upgraded;
+  }
   function convertLegacy(raw, reference) {
     const converted = JSON.parse(JSON.stringify(reference)); // Never trust a legacy import's sprite paths or catalog records.
     for (const [key, head] of Object.entries(converted.heads)) {
@@ -79,7 +107,7 @@
         if (Object.keys(correction).length) shaft.overrides[head] = correction;
       }
     }
-    return converted;
+    return addCompanionsToPreviousDraft(converted); // Imported legacy socket-only shafts also receive compatible eye/tang mount pairs.
   }
   function replace(data, persist = false) {
     if (!data?.heads || !data?.shafts || ![SCHEMA, 'hobunji_modular_weapons.v1'].includes(data.schema))
@@ -107,6 +135,10 @@
         if (typeof pair.disallow === 'boolean' && typeof shaft.overrides[head]?.disallow !== 'boolean') {
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
           shaft.overrides[head].disallow = pair.disallow;
+        }
+        if (pair.layerOrder && !shaft.overrides[head]?.layerOrder) {
+          if (!shaft.overrides[head]) shaft.overrides[head] = {};
+          shaft.overrides[head].layerOrder = pair.layerOrder; // Missing values from old exports inherit each explicitly authored layer choice.
         }
       }
     }
@@ -288,8 +320,11 @@
     return { heads, shafts: shafts.filter(shaft => heads.some(head => !isDisallowed(shaft, head))) };
   }
   try {
-    const recent = global.localStorage?.getItem(DRAFT_KEY), old = global.localStorage?.getItem(OLD_DRAFT_KEY); // Latest v2 draft wins, otherwise migrate v1 once.
-    if (recent || old) replace(JSON.parse(recent || old), Boolean(!recent && old));
+    const recent = global.localStorage?.getItem(DRAFT_KEY), prior = global.localStorage?.getItem(OLD_DRAFT_KEY);
+    const oldest = global.localStorage?.getItem(LEGACY_DRAFT_KEY); // Only migrate once; current v5 always wins.
+    if (recent) replace(JSON.parse(recent));
+    else if (prior) replace(addCompanionsToPreviousDraft(JSON.parse(prior)), true);
+    else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
