@@ -78,7 +78,7 @@
   }
   function overpassUnlocked() {
     const quest = window.BanubuQuestline?.ensureQuestState?.(); // Only the final Quest 2 dialogue commits this world/member progression.
-    return Number(quest?.stage) >= 3 && quest?.status === 'blocked'; // Reads the existing persistent quest state, not a duplicated unlock flag.
+    return Number(quest?.stage) >= 3; // Stage three follows Quest 2's committed turn-in; any future Banubu quest stages retain the earned overpass.
   }
   function paintPatternStack(paint) {
     const primary = paint?.pattern || (paint?.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
