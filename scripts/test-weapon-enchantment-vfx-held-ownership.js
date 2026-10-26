@@ -12,9 +12,9 @@ const equipmentSource = fs.readFileSync(path.join(__dirname, '../docs/js/equipme
 const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
 const combatInitBody = gameSource.split('window.Combat?.init({')[1]?.split('window.NearbyVolumeCollision?.init(')[0] || ''; // Live Combat injection inspected below.
 assert(combatInitBody, 'game.js Combat.init production seam must be discoverable');
-assert(!combatInitBody.includes('TOOL_ITEM_DEFS,'), 'this test must be updated if Combat gains an authoritative definitions registry');
-assert(equipmentSource.includes('getToolDefinition: key => deps?.TOOL_ITEM_DEFS?.[key]'), 'EquipmentPanel must expose its live authored definitions');
-assert(vfxSource.includes('window.EquipmentPanel?.getToolDefinition?.(key)'), 'enchantment scan must use the real equipment registry');
+assert(!combatInitBody.includes('TOOL_ITEM_DEFS,'), 'Combat.init definitions are bridged later by EquipmentPanel rather than supplied directly');
+assert(equipmentSource.includes('combatDeps.TOOL_ITEM_DEFS ||= uiDeps.TOOL_ITEM_DEFS'), 'EquipmentPanel must keep the existing Combat definitions bridge');
+assert(vfxSource.includes('window.Combat?.deps?.TOOL_ITEM_DEFS'), 'enchantment scan must reuse the Combat definitions bridge');
 
 let now = 1000; // Test clock advanced below to drive the pre-render scheduler without browser timers.
 let activeSlot = 'weapon'; // Set to ranged/hoe/none below to verify each slot's effect isolation.
@@ -47,7 +47,7 @@ const weapon = () => {
 const holder = new Object3D(); // The live player tool holder, not an NPC or nearby scenery root.
 let first = weapon(); // Original enchanted weapon mesh, invalidated while its mask still loads.
 holder.add(first);
-const definitions = { dagger_copper: { sprite: 'assets/dagger-source.png' } }; // The authored image path exists only on EquipmentPanel's definition registry.
+const definitions = { dagger_copper: { sprite: 'assets/dagger-source.png' } }; // The real EquipmentPanel init bridges this registry onto Combat before the first game frame.
 const context = {
   window: {
     Combat: { deps: {
@@ -58,7 +58,6 @@ const context = {
       getActiveScene: () => ({ traverse(visitor) { const enemy = weapon(); visitor(enemy); } }),
       // Deliberately NO TOOL_ITEM_DEFS: game.js does not inject it into Combat.
     } },
-    EquipmentPanel: { getToolDefinition: key => definitions[key] || null },
     ProceduralHandAttachments: { gameDeps: { toolHolder: holder } },
     EnchantmentSystem: { PLANES: ['Ohthic'], planarCounts: () => ({ Ohthic: 1 }) },
     ColorFill: { rgbToHsv: () => ({ h: 0, s: 0 }), hueDistance: () => 0 },
@@ -66,6 +65,8 @@ const context = {
   },
   document: {
     baseURI: 'https://example.test/docs/',
+    addEventListener() {}, // EquipmentPanel's existing click-to-clear-mastery bridge binds here.
+    head: { appendChild() {} }, // InventoryUI is dynamic-loaded, but its script must not execute in this focused test.
     createElement() {
       return {
         width: 0, height: 0,
@@ -85,6 +86,15 @@ const context = {
 context.window.window = context.window;
 vm.createContext(context);
 vm.runInContext(vfxSource, context, { filename: 'weapon-enchantment-vfx.js' });
+assert.equal(context.window.Combat.deps.TOOL_ITEM_DEFS, undefined, 'Combat.init does not inject the tool registry directly');
+vm.runInContext(equipmentSource, context, { filename: 'equipment-panel.js' });
+context.window.EquipmentPanel.init({
+  TOOL_ITEM_DEFS: definitions,
+  equipmentSlots: { weapon: 'dagger_copper' },
+  getGearInventory: () => ({}),
+  toolMasteryLevel: () => 0,
+});
+assert.equal(context.window.Combat.deps.TOOL_ITEM_DEFS, definitions, 'live EquipmentPanel.init bridges the authored sprite definitions to Combat');
 const api = context.window.WeaponEnchantmentVFX; // The actual production VFX module, rather than a test-reimplemented classifier.
 const snapshot = () => api.debugSnapshot('dagger_copper'); // Mobile-facing debug values double as observable regression state.
 const tick = at => { now = at; registeredFrame(at); }; // Runs the production update, including immediate equipment cleanup.
