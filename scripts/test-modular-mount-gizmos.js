@@ -10,6 +10,30 @@ const g = window.ModularMountGizmos; // Real renderer and controller manipulatio
 const sample = { type: 'eye', start: { x: 200, y: 180 }, end: { x: 200, y: 280 } }; // Center (200,230), length 100.
 const near = (a, b) => assert(Math.abs(a - b) < 1e-7, a + ' differs from ' + b); // Geometry epsilon.
 
+assert.equal(g.length(sample), 100, 'Arrow length measures from its origin to the tip.');
+const longer = g.setLength(sample, 180); // Numerical length extends tip while preserving origin and bearing.
+near(longer.start.x, sample.start.x);
+near(longer.start.y, sample.start.y);
+near(longer.end.x, 200);
+near(longer.end.y, 360);
+near(g.length(longer), 180);
+near(g.length(sample), 100); // Undo/editor source remains untouched.
+const shorter = g.setLength(sample, 35);
+near(shorter.end.y, 215);
+near(g.length(shorter), 35);
+const diagonal = { type: 'tang', start: { x: 100, y: 200 }, end: { x: 130, y: 240 } }; // 3:4:5 line, 50px long.
+const twice = g.setLength(diagonal, 100);
+near(twice.start.x, 100); near(twice.start.y, 200);
+near(twice.end.x, 160); near(twice.end.y, 280);
+near(g.length(twice), 100);
+const edge = { type: 'eye', start: { x: 400, y: 1200 }, end: { x: 430, y: 1202 } };
+const capped = g.setLength(edge, 300); // Clamp tip at the last available frame boundary, not by moving origin.
+near(capped.start.x, 400); near(capped.start.y, 1200);
+near(capped.end.y, 1204);
+assert(capped.end.x <= 450 && capped.end.y <= 1204);
+assert.equal(g.setLength(sample, NaN), sample, 'Invalid numeric values preserve the line.');
+assert.equal(g.setLength(sample, 0), sample, 'Minimum valid arrow length is enforced.');
+
 const moved = g.move(sample, 80, -30); // Translate without changing direction or length.
 assert.equal(moved.start.x, 280);
 assert.equal(moved.start.y, 150);
@@ -50,4 +74,8 @@ assert(html.indexOf('mount-gizmos.js?') < html.indexOf('editor.js?'), 'Geometry 
 assert(editor.includes('gizmos.move(drawing.original, dx, dy)'));
 assert(editor.includes('gizmos.rotate(drawing.original, angle)'));
 assert(editor.includes("button.setAttribute('aria-pressed'"), 'Active tool modes must be accessible.');
-console.log('Mount gizmos: move, bounded rotation, handle placement, arrow length, non-mutation and editor bindings passed.');
+assert(editor.includes("gizmos.setLength(line, value)"), 'Length field must update the selected line, not an unrelated coordinate.');
+assert(editor.includes("lengthInput.type = 'number'"), 'Length field uses native spinner arrows.');
+assert(editor.includes("shorten.onclick") && editor.includes("extend.onclick"), 'Mobile increment/decrement buttons are wired.');
+assert(html.includes('Line length is the distance'), 'Length semantics are explained beside the editor.');
+console.log('Mount gizmos: move, rotate, adjustable origin-to-tip length, frame bounds, non-mutation and editor bindings passed.');
