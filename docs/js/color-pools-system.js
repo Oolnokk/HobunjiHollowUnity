@@ -534,7 +534,7 @@
     makeAltarInteractable,
     decorateScene,
     debugSnapshot,
-    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, setOverpassPattern, setOverpassDye, cleanDraft }),
+    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, setOverpassPattern, setOverpassDye, setDye, cleanDraft }),
   });
 
   window.ColorPoolsSystem = api;
