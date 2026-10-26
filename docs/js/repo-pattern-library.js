@@ -40,6 +40,7 @@
       id,
       label,
       collectible: raw.collectible === true || indexEntry?.collectible === true, // Explicit opt-in keeps decorative clothing motifs out of ruin rewards.
+      availableByDefault: raw.availableByDefault === true || indexEntry?.availableByDefault === true, // Only named free motifs bypass the game's collectible-unlock path.
       file: String(indexEntry?.file || ''),
       motifPng,
       pattern: {
@@ -110,6 +111,7 @@
       name: entry.label,
       source: 'repo',
       collectible: entry.collectible,
+      availableByDefault: entry.availableByDefault, // PatternLibrary reads this for always-available player motifs.
       removable: false,
       file: entry.file,
       motifPng: entry.motifPng,

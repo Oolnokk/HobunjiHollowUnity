@@ -18,5 +18,6 @@
     "meshScale": 3.2,
     "meshRotationDeg": 0,
     "overpassClearanceMultiplier": 3
-  }
+  },
+  "availableByDefault": true
 }

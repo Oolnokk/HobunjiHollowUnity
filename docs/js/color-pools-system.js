@@ -196,7 +196,7 @@
       if (!pattern || !dyeHex) continue;
       const stack = paintPatternStack(paint);
       const secondary = overpassUnlocked() && stack[1] ? clone(stack[1]) : null;
-      if (secondary) secondary.inkColorHex = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex || dyeHex;
+      if (secondary) secondary.inkColorHex = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex || secondary.inkColorHex || dyeHex; // Preserve saved two-color paint even if dye catalog changes.
       out[regionId] = { ...clone(paint), dyeHex, pattern: clone(pattern), patterns: secondary ? [clone(pattern), secondary] : [clone(pattern)] }; // Existing single paint remains the default.
 
     }
