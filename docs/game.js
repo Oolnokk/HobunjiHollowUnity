@@ -5983,6 +5983,17 @@
             mode: window.PerpRotation.CREATURE_PLANE_ROT_MODE,
             reason: 'perched-attachment-owns-orientation',
           };
+        } else if (c.isBandit === true || c.isTribeHunter === true) {
+          // Bandit/barbarian portraits halt on one dead-zone edge chosen by the
+          // corrective-direction hierarchy (movement > combat target > last
+          // movement > player) instead of flip-flopping on a timer, so the
+          // player can tell whether one is closing on them or on someone else.
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Same aimAngleOffset shift as rawTargetRotY above.
+          window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(c.vx, c.vy) : null);
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+          if (pngSnapTo !== null) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
@@ -11440,6 +11451,7 @@
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        if (debugEntity?.perpState) window.PerpRotation.setHeadtrackHint?.(debugEntity.perpState, Math.atan2(targetWorld.x - selfEyeWorld.x, targetWorld.z - selfEyeWorld.z)); // World gaze bearing: 'headtrack' tier of the body's dead-zone corrective direction.
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
         neckJoint.rotation.set(pitchDeg * Math.PI / 180, window.PerpRotation.clampedNeckYaw?.(neckJoint, selfRootPosition, yawDeg * Math.PI / 180, maxYawDeg * Math.PI / 180, camera.position) ?? yawDeg * Math.PI / 180, 0);
         return true;
@@ -12215,6 +12227,17 @@
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
+          // Feeds the dead-zone corrective-direction hierarchy with this
+          // walker's actual travel direction (from root displacement between
+          // facing updates), or null while it isn't moving.
+          _reportDeadzoneMovementHint() {
+            const prevX = this._deadzonePrevX, prevZ = this._deadzonePrevZ;
+            this._deadzonePrevX = root.position.x; this._deadzonePrevZ = root.position.z;
+            const moving = this._moveSpeedTiles > 0.05;
+            const dx = Number.isFinite(prevX) ? root.position.x - prevX : 0, dz = Number.isFinite(prevZ) ? root.position.z - prevZ : 0;
+            if (moving && Math.hypot(dx, dz) > 1e-5) this._deadzoneMoveYaw = Math.atan2(dx, dz);
+            window.PerpRotation.setMovementHint(this.perpState, moving && Number.isFinite(this._deadzoneMoveYaw) ? this._deadzoneMoveYaw : null);
+          },
           applyFacingDeadzone(rawRot = this.desiredRot, lerp = 0.15) {
             if (!Number.isFinite(rawRot)) return;
             this.desiredRot = rawRot;
@@ -12224,6 +12247,7 @@
               this.rot += angleDiff(rawRot, this.rot) * animalTurnLerp; // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
               root.rotation.y = this.rot;
               this.animalPngRot ??= this.rot;
+              this._reportDeadzoneMovementHint();
               if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
                 const moving = this._moveSpeedTiles > 0.05;
                 const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
@@ -12249,6 +12273,7 @@
               if (this.legs?.group) this.legs.group.rotation.y = 0;
               return;
             }
+            this._reportDeadzoneMovementHint();
             const stanceYaw = Number(this._heldBodyYawRad) || 0; // The portrait may also be turned by its held-weapon wrapper.
             this.rot = window.PerpRotation.clampedRotation(
               this.perpState, this.rot + stanceYaw, rawRot + stanceYaw, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
@@ -24128,6 +24153,7 @@
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
           const chairFacing = -facingAngle + Math.PI / 2; // Logical chair direction remains fixed while the flat portrait avoids the camera deadzone.
           player.perpState ||= {};
+          window.PerpRotation.setMovementHint(player.perpState, null); // Seated: no live travel, so last movement/headtrack decide the corrective edge.
           playerFacing = window.PerpRotation.clampedRotation(player.perpState, playerFacing, chairFacing, playerCameraPerps(), 0.18);
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = chairFacing - playerFacing;
@@ -24151,6 +24177,9 @@
           // across whatever body yaw the clamp leaves.
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
+          // Live travel direction (same 5px/s threshold as the walk bob below)
+          // outranks everything else when picking which dead-zone edge to use.
+          window.PerpRotation.setMovementHint(player.perpState, Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
           const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, playerCameraPerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
@@ -29338,6 +29367,7 @@
 
       window.PerpRotation?.init({
         angleDiff,
+        playerWorldPosition: () => playerMesh?.position || null, // 'player' tier of the dead-zone corrective-direction hierarchy.
       });
 
       window.GeneralStore?.init({
