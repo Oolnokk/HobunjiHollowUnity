@@ -289,6 +289,27 @@ for (let i = 0; i < 128; i++) {
   if (report.fallbackCount !== 0 || report.patchCount < 2) throw new Error('Rock ' + col + ',' + row + ' did not get independent intact surface charts: ' + JSON.stringify(report));
   mappedRockFaces += report.patchCount;
   const uv = mapped.getAttribute('uv'); // Verifies no real stone triangle collapses to a line after fitting.
+  for (let corner = 0; corner < uv.count; corner++) {
+    const u = uv.getX(corner), v = uv.getY(corner); // Every independent rock facet must stay inside exactly one full authored PNG.
+    if (!Number.isFinite(u) || !Number.isFinite(v) || u < -1e-6 || u > 1 + 1e-6 || v < -1e-6 || v > 1 + 1e-6) {
+      throw new Error('Rock ' + col + ',' + row + ' has out-of-range nine-slice UV (' + u + ',' + v + ') at ' + corner);
+    }
+  }
+  for (let quad = 0; quad < uv.count; quad += 6) {
+    // The first and second triangles of every original heightfield cell share the two corners of their diagonal.
+    // These seams must be continuous even when the 24° face recognizer splits adjacent *cells* into distinct islands.
+    for (const [a, b] of [[quad, quad + 3], [quad + 2, quad + 4]]) {
+      if (Math.abs(uv.getX(a) - uv.getX(b)) > 1e-5 || Math.abs(uv.getY(a) - uv.getY(b)) > 1e-5) {
+        throw new Error('Rock ' + col + ',' + row + ' has an internal diagonal texture seam on quad ' + quad / 6);
+      }
+    }
+    const signedArea = (j) => (uv.getX(j + 1) - uv.getX(j)) * (uv.getY(j + 2) - uv.getY(j))
+      - (uv.getY(j + 1) - uv.getY(j)) * (uv.getX(j + 2) - uv.getX(j)); // Detects mirrored half-quad UVs ignored by absolute-area checks.
+    if (signedArea(quad) * signedArea(quad + 3) <= 0) {
+      throw new Error('Rock ' + col + ',' + row + ' has a flipped UV triangle within quad ' + quad / 6);
+    }
+  }
+
   for (let j = 0; j < uv.count; j += 3) {
     const a = [uv.getX(j), uv.getY(j)], b = [uv.getX(j + 1), uv.getY(j + 1)], c = [uv.getX(j + 2), uv.getY(j + 2)];
     const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
