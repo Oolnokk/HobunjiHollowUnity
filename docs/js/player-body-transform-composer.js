@@ -173,6 +173,15 @@
     return headAimEnabled;
   }
 
+  // Head-anchored attachments (blowgun, held drink) sample the head AFTER the render-time head aim and neck limits, so a tool follows the
+  // head that is actually drawn rather than the pre-clamp gameplay head. Each hook may push undo steps for what it moves.
+  const postHeadAimHooks = new Set();
+  function addPostHeadAimHook(hook) {
+    if (typeof hook !== 'function') return () => {};
+    postHeadAimHooks.add(hook);
+    return () => postHeadAimHooks.delete(hook);
+  }
+
   function applyPlayerHeadAim(undo, renderDebug) {
     if (!headAimEnabled || window.CharacterActionLocks?.isLocked?.('player','head')) return;
     const neck = currentPlayerNeckJoint(); // Uses the current rebuilt rig rather than a second head registry.
@@ -567,7 +576,7 @@
         }
       }
 
-      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); } // Clamp after channels land, using the same live camera as this render.
+      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
       lastRenderDebug = renderDebug;
 
       try {
@@ -634,6 +643,7 @@
   window.PlayerBodyTransformComposer = {
     setChannel,
     setHeadAimTarget,
+    addPostHeadAimHook,
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,

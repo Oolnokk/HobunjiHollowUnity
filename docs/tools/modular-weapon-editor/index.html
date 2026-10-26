@@ -3,16 +3,77 @@
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
 <title>Modular Weapon Attachments</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#0c1520;color:#e5f4ef;font:14px system-ui}header{padding:14px;position:sticky;top:0;background:#142431;z-index:2}h1{font-size:18px;margin:0 0 6px}button,select,input{font:inherit;color:inherit;background:#203645;border:1px solid #547a80;border-radius:5px;padding:9px;min-height:42px}button{cursor:pointer}input[type=number]{width:100%}input[type=checkbox]{width:22px;height:22px;min-height:0}main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(270px,390px) minmax(300px,1fr)}section{padding:12px;background:#142431;border-radius:8px}label{display:block;margin:6px 0}select{max-width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap}.sprites{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}figure{margin:0;text-align:center}canvas{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain;background:repeating-conic-gradient(#2a3841 0% 25%,#354951 0% 50%) 50%/20px 20px;touch-action:none;cursor:crosshair}figcaption{padding:8px 0}table{width:100%;border-collapse:collapse}td,th{padding:5px;text-align:left}th{font-size:12px}td:first-child{width:75px}td:nth-child(2){width:36px}p{line-height:1.4;color:#bbd2cf}#status{margin:6px 0;white-space:pre-wrap}pre{white-space:pre-wrap;overflow-wrap:anywhere}h2{font-size:16px}#attach-controls{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
+*{box-sizing:border-box}body{margin:0;background:#0c1520;color:#e5f4ef;font:14px system-ui}header{padding:14px;position:sticky;top:0;background:#142431;z-index:2}h1{font-size:18px;margin:0 0 6px}button,select,input{font:inherit;color:inherit;background:#203645;border:1px solid #547a80;border-radius:5px;padding:9px;min-height:42px}button{cursor:pointer}input[type=number]{width:100%}input[type=checkbox]{width:22px;height:22px;min-height:0}main{padding:12px;display:grid;gap:12px;grid-template-columns:minmax(270px,390px) minmax(300px,1fr)}section{padding:12px;background:#142431;border-radius:8px}label{display:block;margin:6px 0}select{max-width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap}.sprites{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}figure{margin:0;text-align:center}canvas{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain;background:repeating-conic-gradient(#2a3841 0% 25%,#354951 0% 50%) 50%/20px 20px;touch-action:none;cursor:crosshair}figcaption{padding:8px 0}table{width:100%;border-collapse:collapse}td,th{padding:5px;text-align:left}th{font-size:12px}td:first-child{width:75px}td:nth-child(2){width:36px}p{line-height:1.4;color:#bbd2cf}#status{margin:6px 0;white-space:pre-wrap}pre{white-space:pre-wrap;overflow-wrap:anywhere}h2{font-size:16px}#attach-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.line-length-field{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:6px 0}
+.line-length-field input{max-width:130px;min-width:70px}
+.line-length-field button{min-width:42px}
+.line-length-field .line-length-label{font-weight:600;min-width:115px}
+#gizmo-draw.active,#gizmo-move.active,#gizmo-rotate.active{background:#3c6572;border-color:#a4ead8;box-shadow:inset 0 0 0 1px #a4ead8}
+#shaft-canvas,#head-canvas{max-height:none;object-fit:fill}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
+#sprite-cutter{grid-column:1/-1}.cut-grid{display:grid;grid-template-columns:minmax(240px,340px) minmax(250px,1fr);gap:16px}.cut-controls{display:flex;flex-direction:column;gap:6px}.cut-controls label{margin:4px 0}.cut-controls input:not([type=file]),.cut-controls select{width:100%}.cut-stage{width:100%;max-width:470px;justify-self:center}.cut-stage canvas{width:100%;max-height:none;height:auto;object-fit:fill;image-rendering:pixelated}.cut-stage figcaption{word-break:break-word}#cut-status{min-height:3em}#cut-output{font-family:monospace;overflow-wrap:anywhere;color:#7de0cb}#cut-debug{font-size:12px}@media(max-width:760px){.cut-grid{grid-template-columns:1fr}.cut-stage{max-width:min(100%,450px)}}
 </style></head><body>
-<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: uploaded attachment values applied; matching original shaft/head pairs are disallowed, including in random selections.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
-<main><section><h2>Parts and attachment points</h2><label>Shaft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
-<p>Tap the shaft sprite to place the selected socket. Tap the head sprite to choose its pivot. Pivot editors use the original 450 × 1204 frame. The assembled preview expands to fit every head; gameplay preserves the donor grip and scale.</p>
-<label>Socket <select id="socket"></select></label><div class="toolbar"><button id="add">Add socket</button><button id="remove">Remove socket</button></div><div id="attach-controls"></div>
-<label><input id="disallow" type="checkbox"> Disallow this head on this shaft</label><p>Disallowed pairs are hidden from the Foundry and cannot be forged. They remain visible here for authoring.</p>
-<h2>Head placement</h2><label>Editing <select id="mode"><option value="defaults">Shaft defaults (all heads)</option><option value="override">Selected head exception</option></select></label>
-<p>In exception mode, check a value to override it. Unchecked values use this shaft’s current defaults, including the Thrust/Sweep attack animation.</p><table><thead><tr><th>Value</th><th>Use</th><th>Setting</th></tr></thead><tbody id="fields"></tbody></table>
+<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: companion tangs at every eye mount, explicit per-pair layer order, and automatic migration of earlier editor drafts.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
+<main><section><h2>Directed head and haft mounts</h2>
+<label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
+<label><input id="allow-shaft" type="checkbox"> Allow selected haft in Foundry after calibration</label>
+<label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
+<p id="part-readiness">Heads and hafts require matching tang or eye lines to assemble.</p>
+<p id="head-construction-note" aria-live="polite"></p>
+<p>Drag from one end of a mounting line to the arrow tip directly on the sprite. Arrows align direction-to-direction, then automatically rotate the head and stretch it only along the head arrow axis to match the haft line; its perpendicular width stays unchanged. Gold lines are tangs; aqua lines are eyes/sleeves. All lines use the original 450 × 1204 sprite coordinates.</p>
+<div class="toolbar" role="group" aria-label="Mount line editing mode">
+<button id="gizmo-draw" type="button" aria-pressed="true">✏️ Draw line</button>
+<button id="gizmo-move" type="button" aria-pressed="false"><span aria-hidden="true">✥</span> Move line</button>
+<button id="gizmo-rotate" type="button" aria-pressed="false"><span aria-hidden="true">↻</span> Rotate line</button>
+</div>
+<p>In Draw mode, drag base to arrow tip. In Move mode, drag the crosshair to shift the whole line. In Rotate mode, drag the circle on its short arm to turn the line around its midpoint without changing its length.</p>
+<label>Head construction <select id="head-kind"><option value="blade">Blade — tang</option><option value="weight">Weight — eye/sleeve</option></select></label>
+<label>Haft mounting line <select id="socket"></select></label>
+<label>Selected haft mount type <select id="mount-kind"><option value="tang">Tang</option><option value="eye">Eye/sleeve</option></select></label>
+<div class="toolbar"><button id="add" type="button">Add haft line</button><button id="remove" type="button">Remove selected line</button></div>
+<p>Line length is the distance from its fixed origin (base) to its arrow tip. Use the number box, its native arrows, or the − / + buttons to adjust length without changing direction.</p>
+<div id="attach-controls"></div>
+<label><input id="disallow" type="checkbox"> Explicitly disallow this head on this haft</label>
+<p>A haft can have tang lines, eye lines, or both; only the matching type accepts each head. Explicit exclusions take precedence even for compatible lines.</p>
+<h2>Selected head + haft corrections</h2>
+<label>Sprite layer order <select id="layer-order" aria-label="Selected head and haft sprite layer order">
+<option value="haft-over-head">Haft over head</option>
+<option value="head-over-haft">Head over haft</option>
+</select></label>
+<p>Layering applies only to this head–haft combination, including all matching mounts. Authored initial choices put eye/sleeve heads above hafts and tang-mounted heads below them; either choice can be edited and saved independently.</p>
+<p>There are no longer global transformations. The matching arrows supply initial translation, rotation, and scaling only along the line direction. These controls adjust only this exact combination, on top of its automatic transform.</p>
+<table><thead><tr><th>Pair correction</th><th>Setting</th></tr></thead><tbody id="fields"></tbody></table>
+<button id="reset-pair" type="button">Reset this pair's manual corrections</button>
 <details><summary>Mobile diagnostics</summary><pre id="debug"></pre></details></section>
-<section><div class="sprites"><figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Shaft sockets</figcaption></figure><figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head pivot</figcaption></figure><figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon</figcaption></figure></div><p>Socket rotation repeats the same head on another end. B’shuakauitl begins with two opposing sockets. Placement translation, rotation, flips and X/Y scaling apply around each socket.</p><p>Drafts save on this browser. Reload the game to use a changed draft. Export the config to update docs/config/modular-weapons.js for all players.</p></section></main>
-<script src="../../config/modular-weapons.js?v=20261018kyliebluntdw015"></script><script src="../../js/modular-weapons.js?v=20261016h26411d5"></script><script src="editor.js?v=20261016h6bdd0ef"></script>
+<section><div class="sprites">
+<figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines</figcaption></figure>
+<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head line</figcaption></figure>
+<figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon</figcaption></figure></div>
+<p>White-highlighted arrow is the selected haft line. Move and Rotate gizmos act on the whole selected line, while leaving other lines untouched. The first arrow point is the mounting base, and the arrow tip is the forward direction. Matching directed lines determine position and orientation. Multi-ended hafts may have multiple lines of either kind.</p>
+<p>Drafts save in this browser; gameplay uses the validated draft on reload. Export the config to update docs/config/modular-weapons.js for everyone.</p>
+</section><section id="sprite-cutter"><h2>Make a modular head or shaft from a full weapon</h2>
+<p>Load a complete PNG, draw around any pixels with a finger, stylus, or mouse, then remove the selected region or keep only the selection. Repeat on the remaining image; Undo and Reset protect the original artwork. Export retains the game’s 450 × 1204 coordinates and all surviving RGBA colors/transparency.</p>
+<div class="cut-grid"><div class="cut-controls">
+<label>Existing weapon sprite <select id="cut-existing"></select></label><button id="cut-load-existing" type="button">Load selected weapon</button>
+<label>Or load any repo weapon PNG path (relative to docs/) <input id="cut-path" type="text" placeholder="assets/toolsprites/weapon.png" spellcheck="false"></label><button id="cut-load-path" type="button">Load sprite path</button>
+<label>Uploaded modular heads and shafts on main <select id="cut-uploaded"></select></label>
+<div class="toolbar"><button id="cut-load-uploaded" type="button">Load uploaded part</button><button id="cut-refresh-uploaded" type="button">Refresh main uploads</button></div>
+<label>Or choose a PNG from this device <input id="cut-file" type="file" accept="image/png,.png"></label>
+<div class="toolbar"><button id="cut-remove" type="button">Remove inside lasso</button><button id="cut-isolate" type="button">Keep inside lasso</button><button id="cut-clear-selection" type="button">Clear selection</button></div>
+<div class="toolbar"><button id="cut-undo" type="button">Undo</button><button id="cut-reset" type="button">Reset source</button></div>
+<label>Minimum alpha to keep (0–255) <input id="cut-min-alpha" type="number" min="0" max="255" step="1" value="32"></label>
+<button id="cut-cull-alpha" type="button">Cull faint pixels now</button>
+<p>Pixels with alpha below this number are fully cleared, including hidden RGB. Black outlines ignore them, and PNG export always culls them again.</p>
+<label>Black outline thickness (pixels) <input id="cut-outline-thickness" type="number" min="1" max="32" step="1" value="2"></label>
+<button id="cut-outline" type="button">Draw black outline around all visible pixels</button>
+<p>The outline is added into adjacent transparent pixels (including holes), without covering existing interior colors. Pixels touching the frame boundary become black because the 450 × 1204 export cannot grow beyond it. Undo works here too.</p>
+<label>Part type <select id="cut-kind"><option value="head">Head</option><option value="shaft">Shaft</option></select></label>
+<label>Part name <input id="cut-name" type="text" maxlength="80" placeholder="e.g. fishing_mace" spellcheck="false"></label>
+<div>Export location: <div id="cut-output" aria-live="polite"></div></div>
+<button id="cut-export" type="button">Export transparent PNG</button>
+<p id="cut-status" role="status" aria-live="polite"></p>
+<details><summary>Sprite cutter diagnostics</summary><pre id="cut-debug"></pre></details>
+</div><figure class="cut-stage"><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
+<p>Place the downloaded file in <code>docs/assets/toolsprites/modular_pieces/</code>. To make the new part selectable in the Foundry, add its entry and attachment pivot/socket coordinates to <code>docs/config/modular-weapons.js</code>. Exporting a PNG does not automatically modify the game catalog.</p>
+</section></main>
+<script src="../../config/modular-weapons.js?v=20261025companion001"></script><script src="../../js/modular-weapons.js?v=20261025companion001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="editor.js?v=20261025companion001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261025b"></script>
 </body></html>

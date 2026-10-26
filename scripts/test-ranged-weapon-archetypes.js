@@ -362,6 +362,9 @@ assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.rangedTy
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.damage, 2, 'Blowgun should use deliberately tiny raw damage.');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.basicAfflictionScale, 40, 'Blowgun should heavily amplify mastery affliction buildup.');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.neutral.pitch, -180, 'Blowgun stance should copy Drink strike pitch.');
+const blowgunRest = windowObject.RangedWeapons.config.bshuakauitl_copper.loadPose.neutral; // Unloaded stance is the same thrust rest a shovel idles in outside the weapon slot.
+for (const [channel, expected] of Object.entries({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 })) assert.strictEqual(blowgunRest[channel], expected, `Blowgun unloaded neutral ${channel} should match the shovel's thrust rest.`);
+assert.strictEqual(blowgunRest.headRelative, undefined, 'The unloaded rest is hand-relative like a shovel, not head-relative.');
 
 const kylieChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('kylie_copper').map(effect => effect.id);
 assert.deepStrictEqual(kylieChoices, ['congealedHealth', 'windedStamina', 'bruisedHealth', 'shatteredStamina', 'knockback'], 'Kylie ranged mastery should expose only blunt-family buildup plus knockback, preserving source ordering.');
@@ -370,7 +373,7 @@ for (const phase of ['neutral', 'windup', 'strike']) {
   assert.equal(pose.headRelative, true);
   for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) assert.equal(pose[key], windowObject.HeldActionAnimations.blowgunReady.poses[phase][key]);
 }
-assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.z, 0.88);
+for (const phase of ['neutral', 'windup', 'strike']) for (const axis of ['x', 'y', 'z']) assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase][axis], 0, `the mouthpiece (aperture) sits exactly on the mouth: ${phase}.${axis}`);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.yaw, 0);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.95);
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);

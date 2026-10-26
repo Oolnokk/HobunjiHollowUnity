@@ -76,7 +76,7 @@
     4: '#c687ff',
     5: '#ffb454'
   };
-  const oreKinds = ['stone', 'copper', 'tin', 'lead', 'silver', 'gold', 'arsenic']; // Stone plus game.js ORE_DEFS. 'lead'/'arsenic' replaced the non-existent 'iron'/'crystal' in place so seeded picks stay stable.
+  const oreKinds = ['stone', 'copper', 'tinCopper', 'mushistonite', 'tin', 'lead', 'silver', 'gold', 'arsenic']; // Stone and distinct ore-stage minerals; the shared renderer uses normal stone outside colored veins.
 
   // Ported from WildernessMapGeneratorV4412: named terrain presets and boundary
   // cliff modes. Only used when a caller explicitly opts in via overrides (see
@@ -6048,7 +6048,7 @@
           const key = `${x},${y}`;
           const current = overlays.get(key);
           const priority = overlayType === 'rock' ? 3 : overlayType === 'shrub' ? 2 : 1;
-          if (!current || priority > current.priority) overlays.set(key, { type: overlayType, objectId: object.id, objectType: object.type, priority });
+          if (!current || priority > current.priority) overlays.set(key, { type: overlayType, objectId: object.id, objectType: object.type, oreKind: object.type === 'diggableRockOre' ? (object.oreKind || 'stone') : null, priority });
         }
       }
     }
@@ -6137,6 +6137,7 @@
     if (overlay?.objectId) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
+      if (overlay.objectType === 'diggableRockOre') output.generatedObjectOreKind = overlay.oreKind; // Preserve mineral identity for game.js's resource-rock textures and ore drops.
     }
     return hobunjiCleanTileRecord(output);
   }
@@ -6156,6 +6157,7 @@
     if (overlay?.objectId) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
+      if (overlay.objectType === 'diggableRockOre') output.generatedObjectOreKind = overlay.oreKind; // Preserve mineral identity for game.js's resource-rock textures and ore drops.
     }
     return hobunjiCleanTileRecord(output);
   }

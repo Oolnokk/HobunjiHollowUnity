@@ -80,7 +80,7 @@
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
     ['js/controller-modern-flow-bridge.js?v=20261015h04b0f9f', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
-    ['js/player-body-transform-composer.js?v=20261024h2ad0906', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20261025hc89f675', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20261021habeb7c9', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
@@ -100,7 +100,7 @@
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20261001hb2dc3b8', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
     ['js/combat/technique-scrolls.js?v=20261019h19f690e', () => !!window.TechniqueScrolls],
-    ['js/combat/combat-vocalizations.js?v=20261023breathPitch4', () => Number(window.CombatVocalizations?.version) >= 4],
+    ['js/combat/combat-vocalizations.js?v=20261025audioAudit4', () => Number(window.CombatVocalizations?.version) >= 4],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/held-item-action-input.js?v=20260910a', () => !!window.HeldItemActionInput],
@@ -127,7 +127,7 @@
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20261018h2b6f4e5', () => !!window.EnemyWeaponStances],
     ['js/npc-held-equipment-v4.js?v=20261021h7d2c1df', () => Number(window.NpcHeldEquipment?.version) >= 4],
-    ['js/combat/ranged-weapon-archetypes.js?v=20261022h531b1c7', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
+    ['js/combat/ranged-weapon-archetypes.js?v=20261025h4338c92', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 14],
     ['js/combat/ranged-camera-ray-authority.js?v=20260927reticletarget1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 4],
     ['js/combat/ranged-camera-focus.js?v=20261024h80cb6ee', () => Number(window.HobunjiRangedCameraFocus?.version) >= 12],
     ['js/combat/combat-camera-alignment-bridge.js?v=20260928meleereticle1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 6],
@@ -140,7 +140,7 @@
     ['js/combat/combat-corroded-health.js?v=20261018hda57815', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/enemy-combat-health-recovery.js?v=20260924combatheal2', () => Number(window.CombatHealthRecoveryPolicy?.version || window.EnemyCombatHealthRecoveryPolicy?.version) >= 2],
     ['js/combat/combat-death-mark.js?v=20260903a', () => !!window.HobunjiDeathMark],
-    ['js/combat/combat-drenkirra-pellet.js?v=20261015hd356714', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-drenkirra-pellet.js?v=20261025combatHrtf2', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
     // Den locale runtime is an ordinary sibling module, not a script injected
     // from inside Puktuk registration. Keeping one parser-owned loader prevents

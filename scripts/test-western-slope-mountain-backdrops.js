@@ -165,6 +165,45 @@ vm.runInNewContext(source, {
   assert.deepEqual(root.children.map(mesh => mesh.renderOrder), [-101, -102, -103], 'farthest transparent layer must render before nearer layers');
   assert(root.children.every(mesh => mesh.material.depthWrite === false && mesh.material.fog === false), 'background planes must not write depth or inherit near-ground fog');
 
+  // Execute both shader hooks and compare their depth contract, including
+  // mountains beyond the gameplay far plane and nearer opaque terrain.
+  const skySource = fs.readFileSync('docs/js/sky-dome.js', 'utf8'); // Provides the actual sky layer helper and constants for this integration check.
+  const skyContext = { window: {}, console }; // Sky installation is inert without its optional runtime dependencies.
+  vm.runInNewContext(skySource.replace('  installClockHook(); installWeatherHook(); installRainHook();',
+    '  window.testSkyDepth = { setSkyLayerDepth, CLOUD_DEPTH_NDC, CELESTIAL_DEPTH_NDC, makeCelestialPack, rebuildClouds };'), skyContext);
+  const skyDepth = skyContext.window.testSkyDepth; // Production sky depth policy compared with the live backdrop material below.
+  const backgroundShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' }; // Minimal THREE shader passed through the actual compilation hook.
+  root.children[0].material.onBeforeCompile(backgroundShader);
+  const backgroundMax = backgroundShader.uniforms.uBackgroundMaxDepth.value; // Used to evaluate foreground/sky depth comparisons.
+  assert.match(backgroundShader.vertexShader, /min\(gl_Position.z, gl_Position.w \* uBackgroundMaxDepth\)/);
+  assert(root.children.every(mesh => mesh.frustumCulled === false), 'far-plane CPU culling must not discard depth-clamped mountain PNGs');
+  for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
+    const skyMaterial = { userData: {} }; // Isolates each material's uniform and program cache behavior.
+    const skyShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' }; // Exercises the shared cloud-mask/cloud-art/celestial shader policy.
+    skyDepth.setSkyLayerDepth(skyMaterial, depth);
+    skyMaterial.onBeforeCompile(skyShader);
+    assert.match(skyShader.vertexShader, /gl_Position.z = gl_Position.w \* uSkyLayerDepth/);
+    assert.equal(skyShader.uniforms.uSkyLayerDepth.value, depth);
+    assert(backgroundMax < depth && depth < 1, 'every sky PNG and cloud depth mask must sit behind background PNGs and inside the far plane');
+    for (const originalDepth of [0.9, 0.99999, 1.2]) {
+      assert(Math.min(originalDepth, backgroundMax) < depth, 'near, distant, and beyond-far backgrounds must pass sky depth masks');
+      assert(0.8 < Math.min(originalDepth, backgroundMax), 'foreground terrain must still occlude every background layer');
+    }
+  }
+  assert(skyDepth.CLOUD_DEPTH_NDC.every((depth, index, depths) => index === 0 || depths[index - 1] < depth), 'near cloud masks must occlude farther cloud bands');
+  assert(skyDepth.CLOUD_DEPTH_NDC.every(depth => depth < skyDepth.CELESTIAL_DEPTH_NDC), 'cloud masks must continue to occlude the sun and moon');
+
+  for (const bits of [16, 24]) {
+    const maxDepth = 2 ** bits - 1; // Models the precision of WebGL depth attachments after vertex-shader float rounding.
+    const encodedDepths = [backgroundMax, ...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]
+      .map(depth => (Math.fround(depth) * 0.5 + 0.5) * maxDepth); // Converts float-rounded NDC to fixed-point depth coordinates before quantization.
+    const depthSlots = encodedDepths.map(depth => Math.round(depth)); // Used to compare the distinct fixed-point slots for every layer.
+    if (bits === 16) assert(encodedDepths.every(depth => Math.abs(depth - Math.round(depth)) < 0.25),
+      'low-precision sky depths must stay away from rounding boundaries so cloud art does not fight its own depth mask');
+    assert(depthSlots.every((slot, index) => index === 0 || depthSlots[index - 1] < slot),
+      `background, all cloud bands, and celestial PNGs must occupy distinct ordered ${bits}-bit depth slots`);
+  }
+
   const authored = api.readAuthorConfig();
   authored.layers[0].transform.position = [-40, 180, 95];
   authored.layers[0].transform.rotationDeg = [4, 82, -2];

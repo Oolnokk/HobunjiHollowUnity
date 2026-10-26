@@ -410,7 +410,7 @@
   }
 
   function mineOreKind(rng) {
-    return weightedPick(rng, [['stone', 32], ['copper', 24], ['tin', 18], ['lead', 9], ['arsenic', 6], ['silver', 8], ['gold', 3]]); // Rock looks drawn from game.js ORE_DEFS (no iron in this world).
+    return weightedPick(rng, [['stone', 32], ['copper', 24], ['tinCopper', 12], ['mushistonite', 7], ['tin', 4], ['lead', 9], ['arsenic', 6], ['silver', 8], ['gold', 3]]); // Rock looks drawn from game.js ORE_DEFS (no iron in this world).
   }
 
   function addMineLayer(mapData, rng, candidates, blockedKeys, plan) {

@@ -14,6 +14,9 @@
   const SKY_RADIUS = 198;
   const CELESTIAL_RADIUS = 197;
   const CLOUD_RADII = [176, 184, 192];
+  const SKY_DEPTH_STEP_NDC = 2 / 65535; // One full 16-bit depth-buffer step in NDC, keeping cloud masks distinct on lower-precision GPUs.
+  const CELESTIAL_DEPTH_NDC = 1 - SKY_DEPTH_STEP_NDC; // Centers sun/moon on a representable depth value, away from quantization boundaries.
+  const CLOUD_DEPTH_NDC = CLOUD_RADII.map((_, index) => CELESTIAL_DEPTH_NDC - (CLOUD_RADII.length - index) * SKY_DEPTH_STEP_NDC); // Near-to-far slots behind background scenery's five-step depth cap.
   const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055];
   const CLOUD_COUNTS = [24, 32, 42];
   const CLOUD_OCCLUSION_INSET_PX = 1.5; // Used to shrink each cloud's hard occlusion silhouette so its own thick black outline can cover the seam instead of exposing a gap.
@@ -291,6 +294,19 @@
     });
   }
 
+  function setSkyLayerDepth(material, depth) {
+    // Keep depth testing against terrain and cloud masks, but decouple sky depth
+    // from camera-centered shell geometry so distant scenery stays in front.
+    material.userData = Object.assign({}, material.userData, { skyLayerDepthNdc: depth });
+    material.onBeforeCompile = shader => {
+      shader.uniforms.uSkyLayerDepth = { value: depth };
+      shader.vertexShader = 'uniform float uSkyLayerDepth;\n' + shader.vertexShader.replace(
+        /}\s*$/, 'gl_Position.z = gl_Position.w * uSkyLayerDepth;\n}'
+      );
+    };
+    material.customProgramCacheKey = () => 'hobunji-sky-layer-depth-v1';
+  }
+
   function makeCloudMaterial(texture) {
     const THREE = deps.THREE;
     return new THREE.ShaderMaterial({
@@ -445,6 +461,7 @@
     const selfLight = new THREE.Sprite(new THREE.SpriteMaterial({ ...baseOptions, blending: THREE.AdditiveBlending }));
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(kind === 'moon'), transparent: true, depthTest: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending }));
     for (const node of [sprite, selfLight, glow]) {
+      setSkyLayerDepth(node.material, CELESTIAL_DEPTH_NDC);
       node.layers.set(0); // Explicitly exclude shell/material-ID/PNG-occluder outline passes.
       node.userData.hobunjiNoOutline = true;
       node.frustumCulled = false;
@@ -478,6 +495,8 @@
       const depthMesh = new deps.THREE.Mesh(geometry, depthMaterial);
       const material = makeCloudMaterial(texture);
       const mesh = new deps.THREE.Mesh(geometry, material);
+      setSkyLayerDepth(depthMaterial, CLOUD_DEPTH_NDC[index]);
+      setSkyLayerDepth(material, CLOUD_DEPTH_NDC[index]);
       depthMesh.name = `hobunji_cloud_depth_mask_${index}`;
       depthMesh.frustumCulled = false;
       depthMesh.renderOrder = -850 + index;
@@ -668,7 +687,7 @@
 
   function getDebugState() {
     const lighting = fullDayLightingState();
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, skyFaceIndependentScreenMapping: true, skyLongitudeSeamUnwrapped: true, cloudMipSeamSuppressed: true, skyResolution: skyMaterial?.uniforms?.uSkyResolution?.value ? `${Math.round(skyMaterial.uniforms.uSkyResolution.value.x)}x${Math.round(skyMaterial.uniforms.uSkyResolution.value.y)}` : null, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), overcastTarget: rawOvercastLevel(), overcast: currentOvercastLevel(), overcastDarkness: lighting.overcastDarkness, ambientOverlayAlpha: lighting.a, lanternActivationStrength: lighting.lanternActivation, lanternActive: lighting.a >= LANTERN_ACTIVATION_ALPHA, lanternActivationAlpha: LANTERN_ACTIVATION_ALPHA, lanternFullAlpha: LANTERN_FULL_ALPHA, effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, cloudOverlapMasking: true, distantBackgroundsInFrontOfSky: true, cloudDepthNdc: [...CLOUD_DEPTH_NDC], celestialDepthNdc: CELESTIAL_DEPTH_NDC, skyFaceIndependentScreenMapping: true, skyLongitudeSeamUnwrapped: true, cloudMipSeamSuppressed: true, skyResolution: skyMaterial?.uniforms?.uSkyResolution?.value ? `${Math.round(skyMaterial.uniforms.uSkyResolution.value.x)}x${Math.round(skyMaterial.uniforms.uSkyResolution.value.y)}` : null, cloudMaskInsetPx: CLOUD_OCCLUSION_INSET_PX, cloudDepthErosionPx: CLOUD_DEPTH_EROSION_PX, cloudDepthMaskCount: cloudBands.filter(band => !!band.depthMesh).length, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();

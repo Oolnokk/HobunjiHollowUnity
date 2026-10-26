@@ -139,7 +139,9 @@
       ],
       "targetMap": "map_i_smithy",
       "spawnCol": 11,
-      "spawnRow": 4
+      "spawnRow": 4,
+      "direction": "south",
+      "generateDoor": false
     },
     {
       "id": "exit_smithy_f2_kzubug",
@@ -152,7 +154,9 @@
       ],
       "targetMap": "map_i_smithy_F2_kzubug",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     },
     {
       "id": "exit_smithy_f2_sloomi",
@@ -165,7 +169,9 @@
       ],
       "targetMap": "map_i_smithy_F2_sloomi",
       "spawnCol": 9,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "north",
+      "generateDoor": true
     }
   ],
   "colliders": [],

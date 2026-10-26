@@ -110,6 +110,13 @@
 
   // ── Town building detection ──────────────────────────────────────
   // Reads explicit building entries from the town layout (placed by map editor).
+  function entranceLabel(transition, building) {
+    if (transition?.target !== 'building' && transition?.target !== 'interior') return transition?.label || '';
+    const placed = building || (deps?.getTownZone?.()?.buildings || []).find(b => b.id === transition.buildingId || transition.id === 'bldg_entrance_' + b.id); // The placed building label is the Map Editor's name, independent of its house-piece template.
+    const name = String(placed?.label || placed?.name || '').trim(); // Used by door prompts and auto-generated entrances.
+    return name ? 'Enter ' + name : (transition.label || 'Enter');
+  }
+
   function detectTownBuildings() {
     const buildings = deps.getTownZone()?.buildings || [];
     deps.debugLog('_detectTownBuildings: ' + buildings.length + ' placed buildings');
@@ -357,16 +364,24 @@
           }
           deps.debugLog(`Building entrance ${bldg.id}: corrected (${oldCol},${oldRow}) -> (${eCol},${eRow})`);
         }
+        if (linkedEntry) linkedEntry.label = entranceLabel(linkedEntry, bldg); // Refresh stale labels even if the authored door never moved.
         // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
-        const hasWorkspaceEntry = worldTownTransitions.some(t =>
+        const workspaceEntry = worldTownTransitions.find(t =>
           t.target === 'building' &&
           Number.isFinite(t.col) && Number.isFinite(t.row) &&
           t.col >= wBMinC && t.col <= wBMaxC &&
           t.row >= wBMinR && t.row <= wBMaxR);
-        const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
-        if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
+        const doorEntry = worldTownTransitions.find(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow); // Legacy maps may not have stored a buildingId on their entrance.
+        const namedEntry = linkedEntry || workspaceEntry || doorEntry; // Bind a matched doorway to its placed building for future prompt refreshes.
+        if (namedEntry && (namedEntry.target === 'building' || namedEntry.target === 'interior')) {
+          namedEntry.buildingId = bldg.id;
+          namedEntry.label = entranceLabel(namedEntry, bldg);
+        }
+        const hasAnyEntryAtDoor = !!doorEntry;
+        if (!workspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
           worldTownTransitions.push({
-            id: eid, area: 'town', col: eCol, row: eRow,
+            id: eid, area: 'town', col: eCol, row: eRow, buildingId: bldg.id,
+            label: entranceLabel({ target: 'interior' }, bldg),
             target: 'interior',
             targetCol: Math.floor(deps.INTERIOR_COLS / 2), targetRow: deps.INTERIOR_ROWS - 2,
           });
@@ -605,6 +620,7 @@
     grassContext: () => deps, // Late-loaded grass suppression can recover the already-initialized scene/map adapters.
     init,
     detectTownBuildings,
+    entranceLabel,
     loadHousePieceFaceTexture,
     spawnTownBuildings,
     spawnTownDecorFurniture,

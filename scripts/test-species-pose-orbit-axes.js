@@ -72,4 +72,5 @@ for (const axes of [{ x: 0.5, y: 0.8, z: 2 }, { x: 1.3, y: 1, z: 0.4 }, 0.65]) {
 // The legacy centroid helper honours the same axes.
 const legacy = api.scalePointAroundCentroid({ ...raw }, 0, 0.3, 0, 9, { x: 0.5, y: 0.5, z: 2 });
 near(legacy.x, 0.3, 'legacy X'); near(legacy.z, -1, 'legacy Z'); near(legacy.y, 0.3 + (0.7 - 0.3) * 0.5, 'legacy Y around the centroid');
+
 console.log('species pose orbit axes ok');

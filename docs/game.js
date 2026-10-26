@@ -1810,7 +1810,9 @@
       };
       const ORE_DEFS = {
         copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
-        tin:     { label: 'Tin Ore',     hex: '#C8CCD0', verdigrisHex: null, oxidationAmount: 0 },
+        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', verdigrisHex: null, oxidationAmount: 0 },
+        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', verdigrisHex: null, oxidationAmount: 0 },
+        tin:     { label: 'Tin Ore',     hex: '#513C32', verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
         arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
         lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
         silver:  { label: 'Silver Ore',  hex: '#C0C0C0', verdigrisHex: null, oxidationAmount: 0 },
@@ -1818,9 +1820,9 @@
       }; // Used by mine drops, inventory registration, crafting discovery, and the masked rock-texture recolor.
       const METAL_BAR_RECIPES = {
         nativeCopper:    { copper: 5 },
-        lowTinBronze:    { copper: 4, tin: 1 },
-        tinBronze:       { copper: 3, tin: 2 },
-        highTinBronze:   { copper: 2, tin: 3 },
+        lowTinBronze:    { tinCopper: 5 },
+        tinBronze:       { mushistonite: 5 },
+        highTinBronze:   { tin: 5 },
         arsenicalBronze: { copper: 4, arsenic: 1 },
         leadedBronze:    { copper: 3, tin: 1, lead: 1 },
         tin:             { tin: 5 },
@@ -1830,7 +1832,26 @@
         electrumGold:    { gold: 3, silver: 2 },
         electrumSilver:  { gold: 2, silver: 3 },
         pewter:          { tin: 4, lead: 1 },
-      }; // Used by the Crafting pane; every bar consumes exactly five elemental ore and alloys always combine distinct ores.
+      }; // Used by the Crafting pane; direct smelting consumes five ore per bar.
+      const METAL_BAR_ALTERNATES = {
+        lowTinBronze: [{ bar_nativeCopper: 1, tin: 1 }],
+        tinBronze: [{ bar_nativeCopper: 1, tin: 2 }],
+      }; // Optional bronze alloying with native copper bars; available from Town Value 3.
+      const METAL_BAR_TOWN_VALUE = Object.freeze({
+        nativeCopper: 0,
+        lowTinBronze: 1,
+        tinBronze: 2,
+        highTinBronze: 3,
+        arsenicalBronze: 4,
+        leadedBronze: 5,
+        tin: 3,
+        lead: 5,
+        silver: 7,
+        gold: 0, // Gold is common and worthless in this world; its bar recipe is available from the start.
+        electrumGold: 8,
+        electrumSilver: 8,
+        pewter: 5,
+      }); // Each recipe appears at a fixed Town Value, independently of ore ownership/discovery.
       // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
       const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
         .filter(k => METAL_DEFS[k].tier != null)
@@ -5619,17 +5640,11 @@
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
-        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
-        if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-        // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+        const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
+        if (!spatial || spatial.gain <= 0.002) return;
         const tile = window.AudioSystem?.footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
-        // Whistled companions stay quiet (like the player) and unpanned —
-        // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
-        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
-        window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff, pan);
+        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
+        window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain, spatial.panX, { source: c }); // 3D source lets recorded and procedural hostile steps share weapon HRTF.
       }
 
       // Terrain/structure gate for creature movement — unlike tileSpeedAt
@@ -9045,6 +9060,7 @@
                 row: t.row,
                 target: 'building',
                 targetMapId: t.targetMapId,
+                direction: t.direction || '',
                 targetSpotId: t.targetSpotId || '',
                 generatedLocaleId: t.generatedLocaleId,
               })); // Terrain placement exports these after generation; without this promotion they existed only in workspace JSON and never became an interactable in-game spot.
@@ -10095,6 +10111,7 @@
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
+      let _pendingArrivalFromArea = null; // Source area retained until an asynchronously loaded interior can resolve its inward door direction.
       let _pendingEntrySpotId = ''; // Named locale-cavern connector requested before its destination scene finished generating.
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       const _rawExteriorMaps = new Map(); // Keeps base arrays intact when live calendar layouts are reapplied.
@@ -10432,7 +10449,8 @@
               for (const [geometry, matKey] of [[stoneGeo, TileType.ROCK], [grassGeo, TileType.GRASS]]) {
                 if (!geometry) continue;
                 geometry.computeVertexNormals();
-                const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
+                const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Ore-colored islands embedded in stone for streamed wilderness rocks.
+                const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -12305,14 +12323,11 @@
             if (this.area !== currentArea) return; // not in the player's current area; inaudible
             if (!window.AudioSystem?.footstepAdvance(this, distTiles * TILE)) return;
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
-            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
-            if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-            // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
-            const pan = Math.max(-1, Math.min(1, (wx - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+            const source = { x: wx, y: wy, areaId: this.area, root }; // Real walker elevation stays attached to its audible footfalls.
+            const spatial = window.AudioSystem?.combatAudioSpatial(source, { earshotTiles: 9 });
+            if (!spatial || spatial.gain <= 0.002) return;
             const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
-            window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
+            window.AudioSystem?.playFootstepSfx(this.area, tile, spatial.gain, spatial.panX, { source });
           },
           // Ad-hoc grid pathfinding fallback — used when neither a direct
           // beeline nor the authored route-node graph can get this NPC to
@@ -13267,6 +13282,8 @@
                 // field (named rockKind to avoid colliding with the generator's
                 // own per-object oreKind material pick) and isMineableRockTile below.
                 rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+                oreKind: type === 'rock' && t.generatedObjectType === 'diggableRockOre' ? (t.generatedObjectOreKind || 'stone') : undefined, // Preserves the authored mineral for the shared ore rock renderer.
+                oreKey: type === 'rock' && t.generatedObjectType === 'diggableRockOre' && ORE_DEFS[t.generatedObjectOreKind] ? t.generatedObjectOreKind : null, // Wilderness ore rocks yield their depicted mineral.
                 // Exact generator identity (mirrors terrain-preview.js) so
                 // ZoneTerrainFeatures.buildUndiggableBoulderMeshes assembles each
                 // multi-tile boulder as one shell instead of rediscovering it.
@@ -13397,6 +13414,7 @@
                 // Retained so the building renderer can keep this spot on
                 // the piece's authored door after rotations or old exports.
                 buildingId: t.buildingId || '',
+                direction: t.direction || '',
                 targetSpotId: t.targetSpotId || '',
               });
             } else if (allZoneMapIds.has(t.targetMapId)) {
@@ -13676,6 +13694,7 @@
               exitTileSet.add(`${tc},${tr}`);
               const t = {
                 col: tc, row: tr, area: mapId, target, exitId: exit.id,
+                ...window.InteriorDoorTiles.exitSettings(mapData, { exitId: exit.id, col: tc, row: tr }, floorSet),
                 targetSpotId: exit.targetSpotId || '',
                 requiresKeyItem: exit.requiresKeyItem || '',
                 hiddenUntilKeyItem: exit.hiddenUntilKeyItem === true,
@@ -13696,13 +13715,14 @@
               const target = !t.targetMapId ? 'exit_building' : 'building';
               const tr = {
                 col: t.col, row: t.row, area: mapId, target, exitId: t.exitId,
+                ...window.InteriorDoorTiles.exitSettings(mapData, t, floorSet),
                 targetSpotId: t.targetSpotId || '',
                 requiresKeyItem: t.requiresKeyItem || '',
                 hiddenUntilKeyItem: t.hiddenUntilKeyItem === true,
               };
               if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
               transitions.push(tr);
-              if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
+              exitTileSet.add(`${t.col},${t.row}`); // Interior map-switch doors need wall openings just like front doors.
             }
           }
           const entranceLightTileSet = Array.isArray(mapData.entranceLightTiles) && mapData.entranceLightTiles.length
@@ -13991,7 +14011,8 @@
           }
           // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
           await window.InteriorDoorTiles?.build({
-            THREE, scene: bScene, mapId, mapData, floorSet,
+            THREE, scene: bScene, mapId, floorSet,
+            mapData: { ...mapData, exits: transitions.map(t => ({ id: t.exitId, tiles: [[t.col, t.row]], direction: t.direction, generateDoor: t.generateDoor })) }, // Door placement follows the same effective transitions that drive travel, including workspace overrides.
             surfaceYAt: (c, r) => tileSurfaceYInArea(bGrid?.[r]?.[c], mapId),
             registerInteractable: (c, r, interactable) => _buildingInteractables.set(mapId + ',' + c + ',' + r, interactable),
             decorate: group => { _markOutline(group); _markFurnitureEdgeId(group); },
@@ -14111,39 +14132,7 @@
             _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
             const descentHoleMeshes = new Map();
             _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
-            const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
-            carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
-            carvedTexture.repeat.set(0.7, 0.7);
-            if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
-            const mineOreTexturePromises = new Map(); // Used to generate each ore's masked PNG texture once per floor rather than once per rock.
-            const mineRockTextureFor = oreKey => {
-              if (!oreKey || !ORE_DEFS[oreKey] || !window.ToolMetalRecolor) return Promise.resolve(carvedTexture);
-              if (mineOreTexturePromises.has(oreKey)) return mineOreTexturePromises.get(oreKey);
-              const ore = ORE_DEFS[oreKey]; // Used to feed the exact clean-metal/verdigris palette into the shared weapon PNG effect.
-              const seed = Array.from(oreKey).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261); // Stable per-ore blotch layout used by ToolMetalRecolor.
-              const request = window.ToolMetalRecolor.getRecoloredCanvas('assets/textures/carved_smooth.png', {
-                sourceHex: '#635544',
-                targetHex: ore.hex,
-                verdigrisHex: ore.verdigrisHex,
-                oxidationAmount: ore.oxidationAmount,
-                hueToleranceDeg: 8,
-                saturationTolerance: 0.12,
-                outlineWidth: 1,
-                seed,
-              }).then(canvas => {
-                const texture = new THREE.CanvasTexture(canvas); // Applies the recolored/oxidized PNG directly to the rock mesh instead of adding colored geometry.
-                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-                texture.repeat.set(0.7, 0.7);
-                if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-                texture.needsUpdate = true;
-                return texture;
-              }).catch(error => {
-                window.__farmLog?.(`[town-mine] ${ore.label} texture recolor failed; using carved stone: ${error?.message || error}`, 'warn', 'mine');
-                return carvedTexture;
-              });
-              mineOreTexturePromises.set(oreKey, request);
-              return request;
-            };
+            const mineRockMaterialFor = oreKey => window.OreRockTextures.materialFor(THREE, oreKey, ORE_DEFS); // Shared natural-stone base with mineral-colored patches.
             for (const rock of (mapData.oreRocks || [])) {
               const rockKey = `${rock.col},${rock.row}`;
               const tile = bGrid[rock.row]?.[rock.col];
@@ -14157,8 +14146,7 @@
               const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
-              const rockTexture = await mineRockTextureFor(rock.oreKey); // Uses the shared PNG mask/verdigris processor before this rock enters the scene.
-              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, map: rockTexture, roughness: 0.94 }));
+              const baseMesh = new THREE.Mesh(stoneGeo, mineRockMaterialFor(rock.oreKey || rock.oreKind)); // Same ore-bearing stone texture as wilderness caverns.
               baseMesh.castShadow = baseMesh.receiveShadow = true;
               rockGroup.add(baseMesh);
               rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
@@ -14279,6 +14267,12 @@
               if (mapId === 'map_i_den_banubu') setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true }); // Async cave completion must not restore the exterior look authority.
               _snapCameraTarget();
             }
+            if (_pendingArrivalFromArea !== null) {
+              const arrivalAngle = window.BuildingEntrySpawn.arrivalAngle(info, player.x / TILE - 0.5, player.y / TILE - 0.5, _pendingArrivalFromArea); // Resolve after floor and authored transitions have loaded.
+              _pendingArrivalFromArea = null;
+              if (arrivalAngle !== null) setPlayerFacingInstant(arrivalAngle, { clearLook: true, syncCamera: true });
+              window.__farmLog?.(`[door arrival] ${mapId} facing=${arrivalAngle ?? 'default'}`, 'info');
+            }
             window.LoadingScreenRuntime?.hide();
           }
           debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
@@ -14374,6 +14368,7 @@
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = '') {
+        const arrivalFromArea = currentArea; // Used to match the destination's reciprocal exit for cached and fresh scenes.
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
         // match its own `layouts` schedule (e.g. the temple's spirit
@@ -14412,6 +14407,7 @@
         const row = Number.isFinite(Number(namedSpot?.row)) ? Number(namedSpot.row) : Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
         // If the scene hasn't loaded yet, preserve a requested named connector
         // so loadBuildingScene can resolve it against the generated locale data.
+        _pendingArrivalFromArea = !bi ? arrivalFromArea : null;
         _pendingEntrySpotId = !bi && targetSpotId ? String(targetSpotId) : '';
         _pendingEntrySpawnFromExit = !bi && !_pendingEntrySpotId && !Number.isFinite(defaultCol);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
@@ -14421,8 +14417,8 @@
           playerMesh.position.y = entrySurfaceY;
           playerGroundShadow.position.y = entrySurfaceY + characterGroundShadowSurfaceOffset();
         }
-        const entryFacing = mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2; // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
-        setPlayerFacingInstant(entryFacing, { clearLook: mapId === 'map_i_den_banubu', syncCamera: mapId === 'map_i_den_banubu' });
+        const entryFacing = window.BuildingEntrySpawn.arrivalAngle(bi, col, row, arrivalFromArea) ?? (mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2); // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
+        setPlayerFacingInstant(entryFacing, { clearLook: true, syncCamera: true });
         _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
@@ -14559,7 +14555,7 @@
           currentArea = returnArea;
           if (farmPlayerSave) {
             player.x = farmPlayerSave.x; player.y = farmPlayerSave.y;
-            player.angle = farmPlayerSave.angle; facingAngle = farmPlayerSave.angle;
+            setPlayerFacingInstant(farmPlayerSave.angle + Math.PI, { clearLook: true, syncCamera: true });
           }
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
@@ -15977,7 +15973,7 @@
         ITEM_DEFS[key] = {
           icon: '🪨', label: ore.label, cat: 'material', sellPrice: 2,
           tags: ['Material', 'Ore', oreKey],
-          desc: 'Raw ore from the Town Mine. Five total ore can be worked into one metal bar through Crafting.',
+          desc: oreKey === 'tin' ? 'Cassiterite, a natural tin mineral. Smelt into tin or high-tin bronze; can also alloy with native copper.' : 'Raw mineral ore. Smelt five matching ore into a bar or use discovered recipes to alloy metals.',
         };
       });
 
@@ -22901,21 +22897,141 @@
         };
       }
 
-      const _headPoseAnchor = new THREE.Vector3(); // Reused by drink and ranged poses; no per-frame head-vector allocation.
+      const _headFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale, refreshed each head-anchored frame.
+      const _headPlacePose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Reused authored offset handed to SharedAttackPose.placeAtMouth.
+      const _headApertureCache = new Map(); // `${itemKey}|${species}|${gender}` -> holder-space aperture, cleared whenever grip data changes.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _headApertureCache.clear());
+      // The tool-holder-space aperture that mates with the portrait mouth (null when the tool defines none).
+      function playerToolAperture(itemKey, context = 'ranged') {
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_headApertureCache.has(key)) _headApertureCache.set(key, window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(itemKey, context, identity) || null);
+        return _headApertureCache.get(key);
+      }
+      const _gripAnchorCache = new Map(); // `${itemKey}|${context}|${species}|${gender}` -> holder-space main-hand grip, cleared with the aperture cache.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _gripAnchorCache.clear());
+      // Hand-aligned poses scale around the main-hand grip, so the hand stays put while the weapon grows or shrinks.
+      function anchorPlayerToolScaleAtGrip(scale, context) {
+        if (!(Math.abs((Number(scale) || 1) - 1) > 1e-9)) return;
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        if (!itemKey) return;
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_gripAnchorCache.has(key)) _gripAnchorCache.set(key, window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(itemKey, context, identity) || null);
+        SharedAttackPose.anchorScaleAtPoint(toolHolder, _gripAnchorCache.get(key), scale);
+      }
+      // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
+      // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      // A ranged weapon aims with its authored stance only when (1) RangedWeapons has a config for it and (2) its animStyle resolves to
+      // 'ranged'. Either can be missing if registration ran before this item's definition existed, and the game then silently shows the
+      // generic ranged stance for the whole session. While aiming, notice that, re-run the registrars, and say which condition it was.
+      let _rangedStanceCheckAt = 0;
+      const _rangedStanceReported = new Set();
+      function ensureRangedStanceReady(itemKey) {
+        if (!itemKey) return;
+        const now = performance.now();
+        if (now - _rangedStanceCheckAt < 1000) return; // One cheap lookup a second is plenty; this is a safety net, not a per-frame path.
+        _rangedStanceCheckAt = now;
+        const hasConfig = !!window.RangedWeapons?.config?.[itemKey];
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const styleOk = !def || def.animStyle === 'ranged';
+        if (hasConfig && styleOk) return;
+        const archetypes = window.HobunjiRangedWeaponArchetypes;
+        if (!hasConfig) archetypes?.patchGeneratedDefinitions?.();
+        if (!styleOk) { archetypes?.patchGeneratedDefinitions?.(); window.HobunjiDualRoleRangedAnimStyle?.refresh?.(); }
+        const repaired = !!window.RangedWeapons?.config?.[itemKey] && (!def || def.animStyle === 'ranged');
+        const reason = `${!hasConfig ? 'no-ranged-config' : ''}${!hasConfig && !styleOk ? '+' : ''}${!styleOk ? 'anim-style-not-ranged' : ''}`;
+        const report = `${itemKey}:${reason}:${repaired ? 'repaired' : 'unrepaired'}`;
+        if (!_rangedStanceReported.has(report)) { // Once per distinct outcome, so a persistent failure does not flood the log.
+          _rangedStanceReported.add(report);
+          window.__farmLog?.(`[ranged-stance] ${itemKey} would have used the fallback ranged stance (${reason}); ${repaired ? 'repaired by re-running registration' : 'could not be repaired'}.`, 'warn', 'combat');
+        }
+        if (repaired) rebuildToolMeshes(); // The loaded/unloaded sprite variants depend on the same registration.
+      }
+      let _headAnchorFallbackReported = false;
+      function reportHeadAnchorFallback() { // A head-anchored pose whose head frame could not be resolved is drawn hand-relative: that is the fallback stance.
+        if (_headAnchorFallbackReported) return;
+        _headAnchorFallbackReported = true;
+        const rig = playerAvatarGroup?.userData?.neckRig;
+        window.__farmLog?.(`[ranged-stance] head-anchored pose fell back to the hand-relative stance: head frame unavailable (rig ${rig?.available ? 'ok' : 'missing'}, mouth pixel ${window.SharedAttackPose.mouthPixel(playerAvatarGroup) ? 'ok' : 'missing'}, skinned resolver ${window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition ? 'ok' : 'missing'}).`, 'warn', 'combat');
+      }
+      let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
+      const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
+      function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
+        _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
+        _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
+        const aperture = playerToolAperture(equipmentSlots.ranged);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture);
+        Object.assign(_toolAttachJob.pose, _headPlacePose);
+        _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
+      }
+      let _heldAttachStamp = 0; // Bumped once per updateHeldItemHolder.
+      const _heldAttachJob = { stamp: -1, scale: 0.5, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
+      const _attachSaved = { toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1, tool: false, held: false };
+      function _restoreHeadAttachments() { // Restores gameplay-time transforms after the draw so logic never reads the render-time pose.
+        if (_attachSaved.tool) { toolHolder.position.copy(_attachSaved.toolPos); toolHolder.quaternion.copy(_attachSaved.toolQuat); toolHolder.scale.setScalar(_attachSaved.toolScale); _attachSaved.tool = false; }
+        if (_attachSaved.held) { heldItemHolder.position.copy(_attachSaved.heldPos); heldItemHolder.quaternion.copy(_attachSaved.heldQuat); heldItemHolder.scale.setScalar(_attachSaved.heldScale); _attachSaved.held = false; }
+      }
+      // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
+      SharedAttackPose.setCameraProvider(() => camera); // Edge-on avoidance judges the flat tool sprite against the live gameplay camera.
+      // The game draws several passes per frame (outlines, depth, held overlay) and each one reaches this hook with an identical head, so the
+      // placement is solved once per frame/camera and replayed onto the holders for the remaining passes.
+      const _attachCache = { valid: false, toolStamp: -1, heldStamp: -1, camera: null, toolActive: false, heldActive: false,
+        toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1 };
+      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.((undo, _renderDebug, renderCamera) => {
+        const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
+        const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
+        if (!toolActive && !heldActive) return;
+        const cache = _attachCache;
+        const hit = cache.valid && cache.toolStamp === _toolAttachStamp && cache.heldStamp === _heldAttachStamp && cache.camera === renderCamera
+          && cache.toolActive === toolActive && cache.heldActive === heldActive;
+        if (toolActive) { _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true; }
+        if (heldActive) { _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true; }
+        if (hit) { // Later pass of the same frame: replay the solved placement.
+          if (toolActive) { toolHolder.position.copy(cache.toolPos); toolHolder.quaternion.copy(cache.toolQuat); toolHolder.scale.setScalar(cache.toolScale); }
+          if (heldActive) { heldItemHolder.position.copy(cache.heldPos); heldItemHolder.quaternion.copy(cache.heldQuat); heldItemHolder.scale.setScalar(cache.heldScale); }
+          undo.push(_restoreHeadAttachments);
+          return;
+        }
+        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
+        _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
+        if (toolActive) {
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture);
+          cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
+        }
+        if (heldActive) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+          cache.heldPos.copy(heldItemHolder.position); cache.heldQuat.copy(heldItemHolder.quaternion); cache.heldScale = heldItemHolder.scale.x;
+        }
+        _headFrame.cameraPosition = null;
+        cache.valid = true; cache.toolStamp = _toolAttachStamp; cache.heldStamp = _heldAttachStamp; cache.camera = renderCamera; cache.toolActive = toolActive; cache.heldActive = heldActive;
+        undo.push(_restoreHeadAttachments);
+      });
+      const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
+      // The bottle's opening: the plane's top edge (the first opaque row of an upright held sprite) in holder space.
+      function heldItemAperture() {
+        if (!_heldItemPlane?.geometry?.parameters) return null;
+        _heldItemPlane.updateMatrix();
+        const height = (Number(_heldItemPlane.geometry.parameters.height) || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1);
+        return _heldAperture.set(0, height / 2, 0).applyMatrix4(_heldItemPlane.matrix);
+      }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
-        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
-        if (pose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          heldItemHolder.position.set(_headPoseAnchor.x + pose.x, _headPoseAnchor.y + pose.y, _headPoseAnchor.z + pose.z);
-        }
-        heldItemHolder.scale.setScalar(0.5);
-        _heldItemHandMode = 'bottle';
-        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
-        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
-        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
-        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw); // Before the head frame reads the skinned head, so the mouth and rotation include this body turn.
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
-        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+        if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
+          Object.assign(_heldAttachJob.pose, { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll });
+          _heldAttachJob.stamp = _heldAttachStamp; // Replayed against the drawn head by the composer's post-head-aim hook.
+        } else {
+          heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+          heldItemHolder.scale.setScalar(0.5);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+          heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        }
+        _heldItemHandMode = 'bottle';
       }
 
       // Begins the shared drink-style windup animation on press. Plays forward
@@ -22977,11 +23093,11 @@
         const sourceProbe = new THREE.Group(); // Fallback hand transform when the rendered held plane has not appeared yet.
         playerMesh.add(sourceProbe);
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
-        if (neutralPose.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup, playerMesh)) {
-          sourceProbe.position.set(_headPoseAnchor.x + neutralPose.x, _headPoseAnchor.y + neutralPose.y, _headPoseAnchor.z + neutralPose.z);
-        }
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        if (neutralPose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(sourceProbe, _headFrame, neutralPose, 0.5, heldItemAperture(), playerMesh); // Same mouth attach as the live held bottle.
+        }
         const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
         sourceObject.updateWorldMatrix(true, false);
         const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
@@ -23023,6 +23139,7 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
           || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
@@ -23360,6 +23477,8 @@
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
+        _toolAttachStamp++; // A head-anchored placement this frame re-stamps _toolAttachJob; an older stamp means the tool is no longer head-anchored.
+        if (activeTool === 'ranged') ensureRangedStanceReady(equipmentSlots.ranged); // Repairs (and reports) a ranged weapon that would otherwise fall back to the generic stance.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
@@ -23475,6 +23594,8 @@
           if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
+          const headAnchored = sampled.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Head-anchored poses take rotation, position and scale from the head's mouth frame alone; the camera only drives the head.
+          if (sampled.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -23490,14 +23611,12 @@
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
           if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (sampled.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
-            toolHolder.position.set(x, y, z).applyQuaternion(_qFac);
-            if (reticleAligned) {
-              toolHolder.position.set(x, y, z).applyQuaternion(_qRangedAimPitch).applyQuaternion(_qFac);
-            }
-            toolHolder.position.add(_headPoseAnchor);
-          } else if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+          if (headAnchored) placePlayerToolAtMouth(sampled.x, sampled.y, sampled.z, pitchRad, yawRad, rollRad, sampled.scale);
+          else {
+            if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+            anchorPlayerToolScaleAtGrip(sampled.scale, activeTool === 'ranged' ? 'ranged' : 'melee'); // Weapon scale pivots on the main-hand grip, not the holder origin.
+          }
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -23526,6 +23645,8 @@
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
+          const headAnchored = neutral.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Same mouth-frame rule as the pose-driven branch above.
+          if (neutral.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -23538,12 +23659,12 @@
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
           if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
-          if (neutral.headRelative && SharedAttackPose.headAnchor(_headPoseAnchor, playerAvatarGroup)) {
-            toolHolder.position.set(neutral.x, neutral.y, neutral.z);
-            if (rangedTracksAim) toolHolder.position.applyQuaternion(_qRangedAimPitch);
-            toolHolder.position.applyQuaternion(_qFac).add(_headPoseAnchor);
-          } else if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+          if (headAnchored) placePlayerToolAtMouth(neutral.x, neutral.y, neutral.z, THREE.MathUtils.degToRad(neutral.pitch), THREE.MathUtils.degToRad(neutral.yaw), THREE.MathUtils.degToRad(neutral.roll), neutral.scale);
+          else {
+            if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+            anchorPlayerToolScaleAtGrip(neutral.scale, 'ranged'); // Idle ranged scale (e.g. the 1.77 crossbow stance) pivots on the main-hand grip.
+          }
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
@@ -25802,7 +25923,7 @@
         if (currentArea === 'town' && _pendingSpotTransition) {
           const t = _pendingSpotTransition;
           const icon = t.target === 'building' ? '🚪' : '🏘';
-          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          const label = window.TownZoneBuildings.entranceLabel(t) || (t.target === 'building' ? 'Enter' : 'Leave Town'); // Use the Map Editor's placed-building name rather than a stale house-template label.
           return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
         }
 
@@ -28578,6 +28699,9 @@
         clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
+        camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
+        getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
         _isBuildingArea,
         npcGridForArea,
         isRealMediaError: (...a) => window.Music?.isRealMediaError(...a),
@@ -29853,6 +29977,9 @@
         ORE_DEFS,
         METAL_DEFS,
         METAL_BAR_RECIPES,
+        METAL_BAR_ALTERNATES,
+        METAL_BAR_TOWN_VALUE,
+        getTownValue: () => window.TownMine?.getTownValue?.() ?? 0,
         metalOreItemKey,
         metalBarItemKey,
         recordHeldOres: oreKeys => window.TownMine?.recordHeldOres?.(oreKeys),

@@ -6,7 +6,10 @@ const fs = require('fs');
 const vm = require('vm');
 
 const config = JSON.parse(fs.readFileSync('docs/config/town-mine.json', 'utf8'));
-assert.ok(config.oreTierOreKeys.flat().every(key => !/bronze|electrum|pewter/i.test(key)), 'Mine tiers must contain elemental ores, never alloy ores');
+assert.ok(config.oreTierOreKeys.flat().every(key => !/bronze|electrum|pewter/i.test(key)), 'Mine tiers must contain mineral ores, never finished-bar keys');
+assert.ok(config.oreTierOreKeys[1].includes('tinCopper') && !config.oreTierOreKeys[0].includes('tinCopper'), 'Crude Bronze Ore begins in tier 2');
+assert.ok(config.oreTierOreKeys[2].includes('mushistonite') && !config.oreTierOreKeys[1].includes('mushistonite'), 'Natural Bronze Ore begins in tier 3');
+assert.ok(config.oreTierOreKeys[3].includes('tin') && !config.oreTierOreKeys.slice(0,3).some(keys => keys.includes('tin')), 'Tin Ore begins in tier 4');
 const townMap = JSON.parse(fs.readFileSync('docs/config/maps/hobunji_hollow_town.map.json', 'utf8'));
 const mapIndex = JSON.parse(fs.readFileSync('docs/config/maps/index.json', 'utf8'));
 const safeRoom = JSON.parse(fs.readFileSync('docs/config/maps/map_i_town_mine_safe.json', 'utf8'));
@@ -128,12 +131,24 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   const recipes = vm.runInNewContext(`(${recipesMatch[1]})`);
   for (const [metalKey, ingredients] of Object.entries(recipes)) {
     assert.strictEqual(Object.values(ingredients).reduce((sum, amount) => sum + amount, 0), 5, `${metalKey} should consume exactly five ore`);
-    if (/bronze|electrum|pewter/i.test(metalKey)) assert.ok(Object.keys(ingredients).length > 1, `${metalKey} must combine multiple elemental ores`);
+    if (!['lowTinBronze', 'tinBronze', 'highTinBronze'].includes(metalKey) && /bronze|electrum|pewter/i.test(metalKey)) assert.ok(Object.keys(ingredients).length > 1, `${metalKey} must combine multiple mineral ores`);
     assert.ok(Object.keys(ingredients).every(key => oreDefs[key]), `${metalKey} should reference only registered elemental ores`);
   }
 
-  const discovered = new Set(['copper']);
-  const craftingInventory = { ore_copper: 5, ore_tin: 5 };
+  assert.equal(Object.keys(recipes.lowTinBronze).join(','), 'tinCopper', 'Crude Bronze Ore is the only direct low-tin ingredient');
+  assert.equal(Object.keys(recipes.tinBronze).join(','), 'mushistonite', 'Natural Bronze Ore is the only direct tin-bronze ingredient');
+  assert.equal(Object.keys(recipes.highTinBronze).join(','), 'tin', 'Tin Ore (cassiterite) directly smelts into high-tin bronze');
+  const townValueMatch = gameSource.match(/const METAL_BAR_TOWN_VALUE = Object\.freeze\((\{[\s\S]*?\n      \})\); \/\/ Each recipe appears/);
+  assert.ok(townValueMatch, 'Every metal bar recipe should define its Town Value unlock requirement');
+  const metalTownValues = vm.runInNewContext('(' + townValueMatch[1] + ')');
+  assert.deepStrictEqual(Object.keys(recipes).sort(), Object.keys(metalTownValues).sort(), 'All direct metal bar recipes must have a Town Value requirement');
+  assert.strictEqual(metalTownValues.nativeCopper, 0);
+  assert.strictEqual(metalTownValues.gold, 0, 'Gold is worthless in this world and should not require Town Value progression');
+  assert.strictEqual(metalTownValues.lowTinBronze, 1);
+  assert.strictEqual(metalTownValues.tinBronze, 2);
+  assert.strictEqual(metalTownValues.highTinBronze, 3);
+  let townValue = 0;
+  const craftingInventory = { ore_copper: 5, ore_tin: 5, ore_tinCopper: 5, ore_mushistonite: 5 };
   const craftingContext = {
     window: { InventoryStacks: require('./lib/inventory-stacks') },
     document: { querySelectorAll: () => [], getElementById: () => null },
@@ -142,20 +157,64 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   vm.runInContext(fs.readFileSync('docs/js/crafting-panel.js', 'utf8'), craftingContext);
   craftingContext.window.CraftingPanel.init({
     inventory: craftingInventory,
+    ITEM_DEFS: { bar_nativeCopper: { label: 'Native Copper Bar' } },
     clampInventoryStack: key => { if ((craftingInventory[key] || 0) <= 0) delete craftingInventory[key]; },
     FURNITURE_BLUEPRINT_CATALOG: [], ORE_DEFS: oreDefs,
     METAL_DEFS: Object.fromEntries(Object.keys(recipes).map(key => [key, { label: key }])),
     METAL_BAR_RECIPES: recipes,
-    metalOreItemKey: key => `ore_${key}`, metalBarItemKey: key => `bar_${key}`,
-    recordHeldOres: keys => keys.forEach(key => discovered.add(key)), hasDiscoveredOre: key => discovered.has(key),
+    METAL_BAR_ALTERNATES: { lowTinBronze: [{ bar_nativeCopper: 1, tin: 1 }], tinBronze: [{ bar_nativeCopper: 1, tin: 2 }] },
+    METAL_BAR_TOWN_VALUE: metalTownValues,
+    getTownValue: () => townValue,
+    metalOreItemKey: key => 'ore_' + key, metalBarItemKey: key => 'bar_' + key,
     showToast: () => {}, buildInventoryGrid: () => {}, saveMemberWorldData: () => {}, esc: value => value,
   });
-  const visibleRecipeKeys = craftingContext.window.CraftingPanel.visibleMetalRecipes().map(([key]) => key);
-  assert.ok(visibleRecipeKeys.includes('nativeCopper') && visibleRecipeKeys.includes('tinBronze'), 'holding copper and tin should reveal their pure/alloy recipes');
-  assert.ok(!visibleRecipeKeys.includes('arsenicalBronze'), 'recipes must stay hidden until every ingredient ore has been held');
+  const visibleRecipeKeys = () => craftingContext.window.CraftingPanel.visibleMetalRecipes().map(([key,,variant]) => key + ':' + variant);
+  assert(visibleRecipeKeys().includes('nativeCopper:ore'), 'Native Copper recipe is available immediately');
+  assert(visibleRecipeKeys().includes('gold:ore'), 'Gold bar recipe is unlocked at Town Value 0, even without any Gold Ore');
+  craftingContext.window.CraftingPanel.craftMetalBar('gold');
+  assert.strictEqual(craftingInventory.bar_gold || 0, 0, 'A free recipe still requires its actual Gold Ore ingredients');
+  craftingInventory.ore_gold = 5;
+  craftingContext.window.CraftingPanel.craftMetalBar('gold');
+  assert.strictEqual(craftingInventory.bar_gold, 1, 'Gold can be smelted at Town Value 0 when the required ore is available');
+  assert(!visibleRecipeKeys().includes('lowTinBronze:ore'), 'Owning crude bronze ore does not skip Town Value 1');
+  assert(!visibleRecipeKeys().includes('tinBronze:ore'), 'Owning natural bronze ore does not skip Town Value 2');
+  assert(!visibleRecipeKeys().includes('highTinBronze:ore'), 'Owning tin ore does not skip Town Value 3');
+  craftingContext.window.CraftingPanel.craftMetalBar('tinBronze');
+  assert.strictEqual(craftingInventory.bar_tinBronze || 0, 0, 'Hidden Town Value recipes cannot be crafted directly');
   craftingContext.window.CraftingPanel.craftMetalBar('nativeCopper');
-  assert.strictEqual(craftingInventory.ore_copper || 0, 0, 'crafting one copper bar should consume five copper ore');
-  assert.strictEqual(craftingInventory.bar_nativeCopper, 1, 'crafting five ore should produce one existing metal bar item');
+  assert.strictEqual(craftingInventory.ore_copper || 0, 0, 'Native Copper consumes five Copper Ore');
+  assert.strictEqual(craftingInventory.bar_nativeCopper, 1, 'Native Copper bar is produced at Town Value 0');
+  townValue = 1;
+  assert(visibleRecipeKeys().includes('lowTinBronze:ore'), 'Town Value 1 reveals low-tin bronze');
+  assert(!visibleRecipeKeys().includes('tinBronze:ore'), 'Town Value 1 cannot reveal standard tin bronze');
+  craftingContext.window.CraftingPanel.craftMetalBar('lowTinBronze');
+  assert.strictEqual(craftingInventory.bar_lowTinBronze, 1, 'Five Crude Bronze Ore produce low-tin bronze at Town Value 1');
+  townValue = 2;
+  assert(visibleRecipeKeys().includes('tinBronze:ore'), 'Town Value 2 reveals Natural Bronze Ore smelting');
+  assert(!visibleRecipeKeys().includes('highTinBronze:ore'), 'Town Value 2 cannot reveal high-tin bronze');
+  assert(!visibleRecipeKeys().includes('tinBronze:alloy-0'), 'Copper-tin alloying remains locked before Town Value 3');
+  townValue = 3;
+  assert(visibleRecipeKeys().includes('highTinBronze:ore'), 'Town Value 3 reveals high-tin bronze smelting');
+  assert(visibleRecipeKeys().includes('lowTinBronze:alloy-0'), 'Town Value 3 unlocks copper-tin alloying for low-tin bronze');
+  assert(visibleRecipeKeys().includes('tinBronze:alloy-0'), 'Town Value 3 unlocks copper-tin alloying for tin bronze');
+  craftingContext.window.CraftingPanel.craftMetalBar('tinBronze', 'alloy-0');
+  assert.strictEqual(craftingInventory.bar_tinBronze, 1, 'Native Copper Bar plus Tin Ore produce tin bronze');
+  assert.strictEqual(craftingInventory.bar_nativeCopper || 0, 0, 'Alloying consumes the native copper bar');
+  assert.strictEqual(craftingInventory.ore_tin, 3, 'Copper alloying must consume two Tin Ore before high-tin smelting');
+  craftingContext.window.CraftingPanel.craftMetalBar('highTinBronze');
+  assert.strictEqual(craftingInventory.bar_highTinBronze || 0, 0, 'Five Tin Ore must still be required even after Town Value unlock');
+  craftingInventory.ore_tin += 2; // Restock after alloying so the independent high-tin recipe test has its full five ore.
+  craftingContext.window.CraftingPanel.craftMetalBar('highTinBronze');
+  assert.strictEqual(craftingInventory.bar_highTinBronze, 1, 'Five Tin Ore produce high-tin bronze');
+  assert.strictEqual(craftingInventory.ore_tin || 0, 0, 'High-tin smelting consumes exactly five Tin Ore');
+  townValue = 2;
+  assert(!visibleRecipeKeys().includes('highTinBronze:ore'), 'Dropping effective Town Value hides the higher tier again');
+  townValue = 7;
+  assert(visibleRecipeKeys().includes('silver:ore'), 'Silver bars still require Town Value 7');
+  assert(visibleRecipeKeys().includes('gold:ore'), 'Gold remains unlocked regardless of how far the town progresses');
+  assert(!visibleRecipeKeys().includes('electrumGold:ore'), 'Gold availability must not prematurely unlock silver-bearing electrum');
+  townValue = 8;
+  assert(visibleRecipeKeys().includes('electrumGold:ore') && visibleRecipeKeys().includes('electrumSilver:ore'), 'Electrum alloy recipes still unlock at Town Value 8');
   console.log('Town mine descent/regeneration checks passed.');
 })().catch(error => {
   console.error(error);

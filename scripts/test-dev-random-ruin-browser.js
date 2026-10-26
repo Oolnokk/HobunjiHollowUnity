@@ -645,10 +645,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           deps.player.health=1;
           rs.addAffliction?.(deps.player,'burningHealth',Number(deps.player.maxHealth)||100);
           window.PlayerVitals.updatePlayerVitals(1);
+          const downedByBurn=window.PlayerDowned.isDowned(); // Lethal Burning Health now puts the player down (Second Wind) before any checkpoint recovery.
+          window.PlayerDowned.update(window.PlayerDowned.CONFIG.bleedOutSeconds+1); // Bleed-out is the canonical path from downed to death/respawnPlayer.
           const healthAtRespawn=deps.player.health; // Capture the recovery result before ordinary rendered frames regenerate Health.
           await sleep(3);
           const cp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
           respawn={
+            downedByBurn,
             handled:cp.respawnCount>respawnsBefore,
             reason:cp.lastReason,
             area:window.GridTileAccessors.getCurrentArea(),
@@ -664,9 +667,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           place({x:cp.activePoint.x+1.6,z:cp.activePoint.z+1.6,y:cp.activePoint.y});
           deps.player.health=1;
           window.Combat.deps.damagePlayer?.((Number(deps.player.maxHealth)||100)*2);
+          const downedByHit=window.PlayerDowned.isDowned();
+          window.PlayerDowned.update(window.PlayerDowned.CONFIG.bleedOutSeconds+1);
           await sleep(3);
           const directCp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
           respawn.directHit={
+            downedByHit,
             handled:directCp.respawnCount>directBefore,
             reason:directCp.lastReason,
             area:window.GridTileAccessors.getCurrentArea(),
@@ -761,14 +767,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         assert.ok(approachNear?buttonAlong<near:buttonAlong>far,'safe-path reveal pedestal must sit before the pressure-plate field rather than beyond it: '+JSON.stringify({grid,entry,near,far}));
       }
       assert.match(simpleRuntime.checkpointAfterCross?.activeId||'',/^doorway-/,'crossing a doorway must advance the checkpoint: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.downedByBurn,true,'lethal Burning Health must first put the player down: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.handled,true,'ruin checkpoint recovery must handle death locally: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.respawn?.reason,'resource-tick','Burning Health death must route through the real PlayerVitals checkpoint seam: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.reason,'bleed-out','Burning Health death must go down, then route bleed-out through the real respawnPlayer checkpoint seam: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.area,'map_i_dev_random_ruin','checkpoint death recovery must stay inside the generated ruin: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.x-simpleRuntime.respawn.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.z-simpleRuntime.respawn.activePoint.z)<.02,'checkpoint respawn must land at the last crossed doorway: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn.healthAtRespawn,Math.max(1,Math.round(simpleRuntime.respawn.maxHealth*.5)),'checkpoint respawn should match the game half-Health recovery convention before regeneration: '+JSON.stringify(simpleRuntime));
       assert.ok(simpleRuntime.respawn.health>=simpleRuntime.respawn.healthAtRespawn&&simpleRuntime.respawn.health<=simpleRuntime.respawn.maxHealth,'post-respawn frames may regenerate Health within its normal bounds');
+      assert.equal(simpleRuntime.respawn?.directHit?.downedByHit,true,'lethal direct hit must first put the player down: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.handled,true,'direct-hit death must pass through canonical respawnPlayer and stay at the ruin checkpoint: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.respawn?.directHit?.reason,'death','canonical direct-hit checkpoint recovery must identify the normal death path: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.directHit?.reason,'bleed-out','canonical direct-hit checkpoint recovery must identify the downed bleed-out death path: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.directHit.x-simpleRuntime.respawn.directHit.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.directHit.z-simpleRuntime.respawn.directHit.activePoint.z)<.02,'direct-hit respawn must land on the active doorway checkpoint: '+JSON.stringify(simpleRuntime));
       if(simpleRuntime.ropeAttach){
