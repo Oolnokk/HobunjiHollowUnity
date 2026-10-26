@@ -151,7 +151,7 @@
         material.depthWrite = state.depthWrite;
         material.depthTest = state.depthTest;
         material.depthFunc = state.depthFunc;
-        material.alphaTest = state.alphaTest;
+        if (state.alphaTest !== undefined) material.alphaTest = state.alphaTest;
       }
       materialStates.clear();
     }
