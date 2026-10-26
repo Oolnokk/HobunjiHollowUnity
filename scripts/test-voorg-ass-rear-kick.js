@@ -69,7 +69,7 @@ const kick = windowStub.Combat.animalAttacks.rearKick;
 assert.ok(kick && typeof kick.start === 'function', 'rear kick registers with shared named attack system');
 
 async function settle() {
-  for (let i = 0; i < 8; i++) await Promise.resolve(); // Let composite Promise.all, cache and strike-state handlers settle.
+  await new Promise(resolve => setImmediate(resolve)); // Let the composite rendering promise chain settle before checking attack state.
 }
 
 async function main() {
