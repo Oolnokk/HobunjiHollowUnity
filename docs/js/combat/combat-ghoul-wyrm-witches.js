@@ -66,6 +66,33 @@
     c.facing = angleToTarget;
     c.telegraphState = 'windup';
     c._banditSwingAnim = 'thrust';
+    function advanceCloud(current) {
+      if (!stillInOwningArea(c, api)) { current.cancel?.(); return; }
+      if (!current.strikeFired || state.hit) return;
+      const elapsed = Math.min(WIND_LIFETIME_S, Math.max(0, current.t - current.windupS));
+      const dt = elapsed - state.elapsed;
+      if (!(dt > 0)) return;
+      state.elapsed = elapsed;
+      const sweepSteps = Math.max(1, Math.ceil(WIND_SPEED_TILES_S * dt / 0.22)); // No more than 0.22 tiles per collision test: prevents fast clouds tunneling through cover or the target after frame hitches.
+      const stepDt = dt / sweepSteps; // Uses the same integrated flight distance at every frame rate.
+      for (let step = 0; step < sweepSteps; step++) {
+        state.angle += (random() - 0.5) * stepDt * 8 + Math.sin((elapsed - dt + stepDt * (step + 1)) * 23) * stepDt * 2.5;
+        const nextX = state.x + Math.cos(state.angle) * api.TILE * WIND_SPEED_TILES_S * stepDt;
+        const nextY = state.y + Math.sin(state.angle) * api.TILE * WIND_SPEED_TILES_S * stepDt;
+        if (api.canOccupyAt && !api.canOccupyAt(nextX, nextY, api.TILE * 0.18)) { state.hit = true; break; }
+        state.x = nextX; state.y = nextY;
+        if (target.health > 0 && (!target.areaId || target.areaId === c.areaId) && Math.hypot(target.x - nextX, target.y - nextY) <= api.TILE * 0.55) {
+          state.hit = true;
+          const randomPushAngle = random() * Math.PI * 2; // Random throw direction, independent of travel or initial aim.
+          api.damage(target, 2, target.x - Math.cos(randomPushAngle) * api.TILE, target.y - Math.sin(randomPushAngle) * api.TILE, WIND_KNOCKBACK_PX_S, { tag: 'blunt' });
+          break;
+        }
+      }
+      if (state.hit) { removeEffect(action); return; }
+      const visual = projectileGeometry.get(action);
+      if (visual) visual.position.set(state.x / api.TILE, visual.position.y + Math.sin(elapsed * 19) * dt * 0.12, state.y / api.TILE);
+    }
+
     const action = window.Combat.beginStagedAction({
       windupS: 0.43, strikeS: WIND_LIFETIME_S, recoverS: 0,
       data: { isBandit: true, attacker: c, silentSfx: true, wyrmWitch: TYPE_WIND },
@@ -73,33 +100,9 @@
         if (!stillInOwningArea(c, api)) { action.cancel?.(); return; }
         c.telegraphState = 'strike';
         projectileGeometry.set(action, cloudVisual(c, api.TILE));
+        advanceCloud(action); // The scheduler updates before firing strikes; sweep elapsed flight even if this frame also completes the entire cast.
       },
-      onUpdate: current => {
-        if (!stillInOwningArea(c, api)) { current.cancel?.(); return; }
-        if (!current.strikeFired || state.hit) return;
-        const elapsed = Math.min(WIND_LIFETIME_S, Math.max(0, current.t - current.windupS));
-        const dt = elapsed - state.elapsed;
-        if (!(dt > 0)) return;
-        state.elapsed = elapsed;
-        const sweepSteps = Math.max(1, Math.ceil(WIND_SPEED_TILES_S * dt / 0.22)); // No more than 0.22 tiles per collision test: prevents fast clouds tunneling through cover or the target after frame hitches.
-        const stepDt = dt / sweepSteps; // Uses the same integrated flight distance at every frame rate.
-        for (let step = 0; step < sweepSteps; step++) {
-          state.angle += (random() - 0.5) * stepDt * 8 + Math.sin((elapsed - dt + stepDt * (step + 1)) * 23) * stepDt * 2.5;
-          const nextX = state.x + Math.cos(state.angle) * api.TILE * WIND_SPEED_TILES_S * stepDt;
-          const nextY = state.y + Math.sin(state.angle) * api.TILE * WIND_SPEED_TILES_S * stepDt;
-          if (api.canOccupyAt && !api.canOccupyAt(nextX, nextY, api.TILE * 0.18)) { state.hit = true; break; }
-          state.x = nextX; state.y = nextY;
-          if (target.health > 0 && (!target.areaId || target.areaId === c.areaId) && Math.hypot(target.x - nextX, target.y - nextY) <= api.TILE * 0.55) {
-            state.hit = true;
-            const randomPushAngle = random() * Math.PI * 2; // Random throw direction, independent of travel or initial aim.
-            api.damage(target, 2, target.x - Math.cos(randomPushAngle) * api.TILE, target.y - Math.sin(randomPushAngle) * api.TILE, WIND_KNOCKBACK_PX_S, { tag: 'blunt' });
-            break;
-          }
-        }
-        if (state.hit) { removeEffect(action); return; }
-        const visual = projectileGeometry.get(action);
-        if (visual) visual.position.set(state.x / api.TILE, visual.position.y + Math.sin(elapsed * 19) * dt * 0.12, state.y / api.TILE);
-      },
+      onUpdate: advanceCloud,
       onComplete: () => { removeEffect(action); c._banditAction = null; c.telegraphState = null; c._wyrmCooldown = WIND_COOLDOWN_S; },
       onCancel: () => { removeEffect(action); c._banditAction = null; c.telegraphState = null; c._wyrmCooldown = 0.45; },
     });

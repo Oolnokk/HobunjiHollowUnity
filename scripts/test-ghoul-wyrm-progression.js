@@ -193,6 +193,19 @@ vm.runInContext(read('docs/js/town-mine.js'), mineContext);
     witches.update(extra, .016, target, 96, api);
   }
   assert(witches.debugSnapshot().active.length <= 24, 'repeated mine visits must not retain an unbounded list of old Wyrm-witch actors');
+  const schedulerContext = { window: {}, performance: resourceContext.performance, console, Math, THREE: { MathUtils: { degToRad: value => value * Math.PI / 180 } } }; // Runs the actual shared scheduler, including its update-before-strike callback order.
+  schedulerContext.window.GameRandom = { random: () => 0.5 };
+  vm.createContext(schedulerContext);
+  vm.runInContext(read('docs/js/combat/combat-core.js'), schedulerContext);
+  vm.runInContext(read('docs/js/combat/combat-ghoul-wyrm-witches.js'), schedulerContext);
+  let scheduledHits = 0; // Counts hits after one update spans the entire windup and projectile lifetime.
+  const scheduledApi = { ...api, getCurrentArea: () => 'farm', damage: () => { scheduledHits++; } }; // Isolates scheduler delivery from the damage transaction already exercised above.
+  schedulerContext.window.GhoulWyrmWitches.update(mage('shadow-wind'), .016, target, 128, scheduledApi);
+  schedulerContext.window.Combat.update(2);
+  assert.equal(scheduledHits, 1, 'a single scheduler frame crossing windup and completion must sweep the released cloud before disposing it');
+  schedulerContext.window.GhoulWyrmWitches.update(mage('shadow-wind'), .016, target, 128, { ...scheduledApi, canOccupyAt: x => x < 64 });
+  schedulerContext.window.Combat.update(2);
+  assert.equal(scheduledHits, 1, 'the real scheduler keeps cover interception during a complete-cast frame hitch');
   const configText = read('docs/config/config.js'); // Ensures new sacred-only Rent Health never silently appears as a white/unknown affliction.
   assert.match(configText, /rentHealth:\s*'#[0-9a-fA-F]{6}'/, 'Rent Health has its own authored HUD ring color');
   console.log('Ghoul tier progression, Wyrm-witch attacks, map-change cancellation and sacred Rent Health checks passed.');
