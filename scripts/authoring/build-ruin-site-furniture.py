@@ -181,7 +181,7 @@ piece('ruinSanctumCoffin', 'Ruin Coffin',
       [part('plinth', 'Plinth', x=0, y=.06, z=0, sx=1.66, sy=.12, sz=.96, color=STONE_DARK),
        part('body', 'Body', x=0, y=.31, z=0, sx=1.5, sy=.62, sz=.8, color='#6d675f'),
        part('lid', 'Lid', x=0, y=.69, z=0, sx=1.58, sy=.14, sz=.88)])
-TIERS = {1: ('Weathered', '#6b5a44', '#b8a78a'), 2: ('Iron-bound', '#7c858c', '#c9d6df'), 3: ('Gilded', '#d4a632', '#ffd66a'), 4: ('Ancient', '#6fd1c4', '#9ff5ff')}
+TIERS = {1: ('Weathered', '#6b5a44', '#b8a78a'), 2: ('Bronze-bound', '#7c858c', '#c9d6df'), 3: ('Gilded', '#d4a632', '#ffd66a'), 4: ('Ancient', '#6fd1c4', '#9ff5ff')}
 for tier, (label, band, glow) in TIERS.items():
     wood = dict(texture=None, materialRole='wood')
     piece(f'ruinDungeonChestT{tier}', f'{label} Dungeon Chest',
