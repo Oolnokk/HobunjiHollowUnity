@@ -296,7 +296,7 @@
             </select></label>
           </div>
           ${overpassUnlocked() ? `<div class="cp-grid" style="margin-top:7px">
-            <label>Overpass pattern<select data-field="overpass">
+            <label>Overpass pattern<select data-field="overpass" ${paintPatternStack(paint)[0] ? '' : 'disabled'}>
               <option value="">No overpass</option>
               ${!overpassKnown && overpassId ? `<option value="${esc(overpassId)}" selected>Saved snapshot (${esc(overpassId)})</option>` : ''}
               ${patterns.map(pattern => `<option value="${esc(pattern.id)}" ${overpassId === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
@@ -321,6 +321,7 @@
       });
       row.querySelector('[data-field="pattern"]')?.addEventListener('change', event => {
         setLibraryPattern(regionId, event.target.value);
+        renderRegions(); // Refreshes secondary enablement and preserved color after choosing or clearing the first pattern.
         drawPreview();
         refreshDebug();
       });
