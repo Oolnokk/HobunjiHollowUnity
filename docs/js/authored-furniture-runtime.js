@@ -79,6 +79,7 @@
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);
+    window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth);
     return group;
   }
 

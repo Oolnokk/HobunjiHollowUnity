@@ -33,6 +33,8 @@
   document.getElementById('surfaceEditor')?.parentElement?.appendChild(panel);
   const input = id => document.getElementById(id); // Every handler reads current values, rather than stale selected records.
 
+  const placement = api.placementControls(panel,input('fpBase'),input('fpDye')); // Same dye and layer placement controls as placed furniture.
+
   function target() {
     const surface = selectedSurface(); // Canonical recognized surface selection takes precedence over piece selection.
     return { surface, part: surface ? state.parts.find(part => part.id === surface.partId) : selectedPart() };
@@ -64,7 +66,7 @@
       record.selector = surface.recognizedType === 'upward top' ? 'top' : surface.recognizedType === 'underside' ? 'bottom' : 'sides'; // Curved recognized groups wrap their entire cap/side instead of clipping to one averaged normal.
       delete record.normal; delete record.localCentroid; delete record.dimensions;
     }
-    return record;
+    return placement.read(record);
   }
   function commit(record) {
     const { part } = target(); // Part metadata is already serialized by every author/runtime export path.
@@ -94,6 +96,7 @@
       input('fpScale').value = record.scale; input('fpRandom').checked = !!record.random;
       input('fpBase').value = record.palette?.[0] || '#b7a185'; input('fpDye').value = record.palette?.[1] || '#315b67';
     }
+    placement.refresh(record || {});
     input('fpDebug').textContent = JSON.stringify({ selectedPart: target().part?.id || null, selectedSurface: target().surface?.id || null, patterns: api.debug(root) }, null, 2);
   }
   function mountFurniturePreview(container, partId, record) {
@@ -133,7 +136,7 @@
         if(disposed)return;
         const request=++generation; // Ignore asynchronous work from a superseded draft.
         clearDraft();
-        for(const node of selected){const previous=new Set(node.children);api.applyPart(node,{...part,patternSurfaces:[{...record,patternId:null,pattern}]});for(const child of node.children)if(!previous.has(child))overlays.push(child);}
+        for(const node of selected){const previous=new Set(node.children);api.applyPart(node,{...part,patternSurfaces:[{...record,patternId:null,pattern,patterns:[pattern,...(record.patterns || []).slice(1)]}]});for(const child of node.children)if(!previous.has(child))overlays.push(child);}
         previewScene.updateMatrixWorld(true);
         for(const overlay of overlays)overlay.onBeforeRender?.(); // Resolve world-scale atlas sizing before waiting for pixels.
         const pending=[...overlays]; // Async edits cannot change this generation's readiness/error checks.
@@ -161,7 +164,7 @@
           get: id => window.RepoPatternLibrary.getCachedEditableById(id) || window.PatternLibrary?.getById?.(id) },
         mountPreview: container => mountFurniturePreview(container,partId,record),
         previewHint: 'Drag to rotate. Pinch or scroll to zoom. Draft changes appear on the selected surface.',
-        onSave: async (pattern, id) => commit({ ...record, patternId: id || null, pattern: await api.editablePattern({pattern}) }) });
+        onSave: async (pattern, id) => {const snapshot=await api.editablePattern({pattern});commit({ ...record, patternId: id || null, pattern:snapshot, patterns:[snapshot,...(record.patterns || []).slice(1)] });} });
     } catch (error) { log(`Furniture patterns: ${error.message}`, 'error'); }
   }
   async function exportPattern(kind) {
@@ -200,4 +203,5 @@
   input('fpCarpet').onclick=addCarpet; input('fpBanner').onclick=loadBannerPreset;
   window.FurniturePatternAuthor = { refresh, loadBannerPreset };
   rebuildFurnitureMeshes();
+  Promise.resolve(window.RepoPatternLibrary?.load?.()).then(refresh).catch(error=>log(`Furniture pattern library: ${error.message}`,'warn')); // Populate overpasses on a cold editor load.
 })();

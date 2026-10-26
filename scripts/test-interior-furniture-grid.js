@@ -129,8 +129,8 @@ assert.ok(
 );
 assert.match(
   gameSource,
-  /const floorSurfaceY = tileSurfaceYInArea\(bGrid\?\.\[f\.row\]\?\.\[f\.col\], mapId\);[\s\S]{0,700}const by = floorSurfaceY \+ authoredPostY;/,
-  'building furniture composes the authoritative floor surface with only its authored vertical offset'
+  /const floorSurfaceY = InteriorSceneBuilder\.furnitureFloorElevation\(f, tileSurfaceYInArea\(bGrid\?\.\[f\.row\]\?\.\[f\.col\], mapId\)\);[\s\S]{0,950}const by = floorSurfaceY \+ authoredPostY;/,
+  'building furniture uses shared floor grounding before composing its authored vertical offset'
 );
 assert.match(
   gameSource,

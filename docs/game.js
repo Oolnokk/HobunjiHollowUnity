@@ -13850,6 +13850,7 @@
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.userData.surfaceFoliageRole = "floors";
               fl.position.set(c + 0.5, -0.05, r + 0.5);
               if (farmNaturalColors) fl.userData.farmMaterialRole = 'wood';
               bScene.add(fl);
@@ -13970,7 +13971,7 @@
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
             const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
-            const floorSurfaceY = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId); // Used to ground this furniture on the authored floor surface even when its footprint tile is also collision-solid.
+            const floorSurfaceY = InteriorSceneBuilder.furnitureFloorElevation(f, tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId)); // Wall-attached windows keep the editor/opening Y even when their anchor tile is outside the floor.
             const authoredPostY = Number(f.postY) || 0; // Used to preserve intentional editor-authored stacking/lift above the floor.
             const by = floorSurfaceY + authoredPostY; // Final furniture root Y shared by the visual, light, and mobile grounding diagnostics below.
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
@@ -14015,6 +14016,7 @@
             }
             window.FurnitureTableSystem?.registerPlacement(mapId, { ...f, key:furnitureKey }, renderedFurniture, def); // Interior records use the same explicit chair-to-table ids as exterior and locale furniture.
             if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
+            renderedFurniture.userData.surfaceFoliageId = f.id; // Captured per-instance growth targets from the interior editor.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
@@ -14068,6 +14070,7 @@
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(seatFurnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
+          window.FoliageGenerator?.applySurfaceGrowth(bScene, mapData.surfaceGrowth); // Includes completed walls, generated gables, ceiling and selected furniture.
           // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
           await window.InteriorDoorTiles?.build({
             THREE, scene: bScene, mapId, floorSet,
