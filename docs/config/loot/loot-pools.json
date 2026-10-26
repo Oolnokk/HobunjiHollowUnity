@@ -148,7 +148,7 @@
       ]
     },
     "dungeonChest_tier2": {
-      "label": "Dungeon Chest — Tier 2 (Iron-bound)",
+      "label": "Dungeon Chest — Tier 2 (Bronze-bound)",
       "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
         {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":2, "chance":1, "conditions":{}},
