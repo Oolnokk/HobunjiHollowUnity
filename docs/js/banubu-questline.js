@@ -88,11 +88,13 @@
     }
     let migrated = false; // Used to persist only when an old five-fish-pie prototype state actually needs correction.
     if (Number(state.stage) >= 3 || state.status === 'finished') {
-      state.status = 'blocked';
-      state.stage = 3;
-      state.target = null;
-      state.nextTarget = null;
-      migrated = true;
+      if (state.status !== 'blocked' || Number(state.stage) !== 3 || state.target != null || state.nextTarget != null) {
+        state.status = 'blocked';
+        state.stage = 3;
+        state.target = null;
+        state.nextTarget = null;
+        migrated = true; // A completed Quest 2 save is normalized once, not re-written whenever Color Pools checks its reward.
+      }
     } else if (Number(state.stage) === 2 && state.target && state.target.questType !== 'nineLeafTea') {
       state.target = null; // Old prototype stage-two fish targets are invalid now that stage two is Nine Leaf Tea.
       migrated = true;
