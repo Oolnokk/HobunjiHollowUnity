@@ -13692,6 +13692,16 @@ async function addOmgurkuLowerRigActor() {
   }
   await initAnimationWorkspaceScene();
   if (!window.PNGPlaneAvatar?.buildAnimalPlaneAvatarModel) throw Error('Animal plane builder unavailable.');
+  // Older rig autosaves can predate this NPC-only lower-body species entirely.
+  // Supply its canonical 0.300 baseline only when absent; never replace a
+  // deliberately authored value (including zero/Auto).
+  const library = animationAuthor.attachmentRigProfiles?.creatures;
+  const canonical = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[OMGURKU_LOWER_RIG_KIND];
+  if (library && canonical) {
+    if (!library[OMGURKU_LOWER_RIG_KIND]) library[OMGURKU_LOWER_RIG_KIND] = structuredCloneSafe(canonical);
+    else if (!library[OMGURKU_LOWER_RIG_KIND].groundOffsets) library[OMGURKU_LOWER_RIG_KIND].groundOffsets = structuredCloneSafe(canonical.groundOffsets);
+  }
+  if (animationAuthor.actors.length) clearAnimationActors(); // Rig preview, like the other species pickers, edits one actor at a time.
   const placement = window.HobunjiOmgurkuSpecies?.debugSnapshot?.()?.placement || {}; // Current runtime calibration, when loaded in the tool.
   const width = Number(placement.lowerWidth) > 0 ? Number(placement.lowerWidth) : 1.77; // The actual hybrid lower width.
   const height = Number(placement.lowerHeight) > 0 ? Number(placement.lowerHeight) : 0.74; // The actual hybrid lower height.
