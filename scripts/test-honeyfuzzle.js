@@ -294,6 +294,13 @@ function fakeThree() {
   // Egg colors queue per world and survive in order.
   C.queueEggColors('w1', ['#111111', '#222222']); C.queueEggColors('w2', ['#333333']);
   assert.equal(C.takeEggColor('w1'), '#111111'); assert.equal(C.takeEggColor('w2'), '#333333'); assert.equal(C.takeEggColor('w1'), '#222222'); assert.equal(C.takeEggColor('w1'), null);
+  C.queueEggColors('legacy', ['#112233']);
+  assert.equal(C.takeEggAppearance('legacy').color, '#112233', 'old hex-only queues migrate to appearance objects without losing color');
+  const eggGenes = { base: { color: '#333333' }, tailfeathers: { color: '#008899', enabled: true, copies: 1 } };
+  C.queueEggAppearances('genetic', [{ color: '#ffeedd', genotype: eggGenes }]);
+  const storedEgg = C.takeEggAppearance('genetic');
+  assert.equal(storedEgg.color, '#ffeedd'); assert.equal(storedEgg.genotype.tailfeathers.color, '#008899', 'inherited markings survive the save-backed egg queue');
+  assert.equal(C.takeEggAppearance('genetic'), null, 'one appearance consumed per placed egg');
 }
 
 // ---- hive stumps ----------------------------------------------------------------------------
@@ -484,8 +491,14 @@ function hiveWorld({ night = false } = {}) {
   context.FarmProduction.load(save);
   const [a, b] = context.FarmProduction.entries();
   // Timed hatch. The egg's color comes from the queue filled when its stump was harvested.
-  context.HoneyfuzzleColors.queueEggColors('w1', ['#123a22']);
+  const sourceGenes = {
+    base: { color: '#cccccc', copies: 2 },
+    tailfeathers: { color: '#804400', copies: 1, enabled: true },
+    spectacles: { color: '#55aaee', copies: 1, enabled: true },
+  }; // Hive egg color remains authoritative; secondary markings must not be rerolled on hatching.
+  context.HoneyfuzzleColors.queueEggAppearances('w1', [{ color: '#123a22', genotype: sourceGenes }]);
   assert.equal(house.placeEgg(a).ok, true);
+  assert.equal(a.house.egg.genotype.tailfeathers.color, '#804400', 'a placed egg retains its source hive genes');
   calendar.day = 2; context.FarmProduction.tick();
   assert.equal(house.phase(a), 'egg', 'not hatched before its time');
   calendar.day = 3; calendar.time01 = 0.5; context.FarmProduction.tick();
@@ -496,10 +509,10 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(livestock[0].lifeStage, 'adult', 'a hatched swarm is not mistaken for a Nursery baby');
   assert.equal(livestock[0].swarmColor, '#123a22', 'the hatched swarm keeps its egg\'s color');
   assert.equal(livestock[0].genotype.base.color, '#123a22', 'hatch preserves the queued egg pigment in its base genotype');
-  assert.equal(livestock[0].genotype.tailfeathers.color, '#bb8833', 'secondary tail allele survives hatching');
+  assert.equal(livestock[0].genotype.tailfeathers.color, '#804400', 'secondary tail allele survives hatching');
   const houseMesh = added[0].children[0].children[0]; // Inspect the real swarm material attached by House.syncVisual.
-  assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#bb8833', 'house swarm displays inherited secondary tail pigment');
-  assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#335599', 'house swarm displays inherited spectacles pigment');
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#804400', 'house swarm displays inherited secondary tail pigment');
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#55aaee', 'house swarm displays inherited spectacles pigment');
   assert.equal(house.placeEgg(a).ok, false, 'the swarm fills the house');
   // The house survives a save/load round trip, keeping its swarm.
   const saved = JSON.parse(JSON.stringify(context.FarmProduction.serialize()));
@@ -516,6 +529,7 @@ function hiveWorld({ night = false } = {}) {
   inventory.growthTonic = 1;
   assert.equal(house.useTonic(b).ok, true);
   assert.equal(inventory.growthTonic, 0); assert.equal(house.phase(b), 'swarm'); assert.equal(livestock.length, 2); assert.equal(house.visualCount(), 2);
+  assert.equal(livestock[1].genotype.tailfeathers.color, '#bb8833', 'a legacy color-only egg still generates optional genes normally');
   // Moving the swarm to the stable (record removed) empties the house again.
   livestock = livestock.filter(l => l.houseId !== 'h2');
   assert.equal(house.phase(b), 'empty');
