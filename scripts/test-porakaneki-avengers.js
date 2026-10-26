@@ -17,7 +17,11 @@ const ZONES = cfg.wildernessZones;
 
 assert.equal(cfg.avengers.mountSpecies, 'nazgraku');
 assert.equal(cfg.avengers.quarryTribe, 'omgurku');
-assert.equal(cfg.avengers.quarryEscapeChance, 0.25);
+assert.equal(cfg.avengers.quarryEscapeChance, 0.05, 'mounted riders rarely lose their quarry');
+assert.equal(cfg.avengers.killsPerDay, 0, 'Avengers hunt without a daily limit by default');
+assert.equal(cfg.avengers.escapeReprieveHours, 2);
+assert.equal(cfg.avengers.groupRadiusTiles, 6);
+assert.equal(cfg.avengers.retreatHours, 1);
 assert.equal(cfg.avengers.riderLossChance, 0.1);
 assert(cfg.avengers.rideSpeedTilesPerSecond > cfg.behavior.travelSpeedTilesPerSecond, 'mounted riders outpace walking hunters');
 assert.equal(omgurkuCfg.avengers, undefined, 'only the Porakaneki keep an Avenger band');
@@ -146,7 +150,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert(debug.avengerEscapes > escapesBefore, 'a travelling Omgurku can simply escape');
   assert.equal(debug.avengerLosses, lossesBefore);
   assert.equal(debug.avengerKills, 0);
+  // An escapee only gets a short reprieve before the band rides it down again.
+  const escapedZone = ZONES.find(zone => pora.debugSnapshot().zones[zone].camps.find(camp => camp.avengers).avengers.lastEscapeId);
+  const bandOf = () => pora.debugSnapshot().zones[escapedZone].camps.find(camp => camp.avengers).avengers;
+  const escapedId = bandOf().lastEscapeId;
+  assert(escapedId, 'the band reports which quarry got away');
   combatDeps.rnd = seeded;
+  for (let i = 0; i < 5; i++) { tick(0.21); assert.notEqual(bandOf().quarryId, escapedId, 'the escapee is left alone during its reprieve'); }
+
   day += 2; // New day: escapees are fair game again and slain riders are replaced.
   tick(0.21);
   assert(riderRows().every(rider => rider.activity !== 'slain'), 'slain Avengers are replaced after a couple of days');
@@ -169,16 +180,47 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert(travellers.every(hunter => !hunter.slain), 'a slain hunter is never offered as a traveller again');
   assert(/avengers-slew/.test(debug.lastReason) || debug.avengerKills > 0);
 
-  // Each band kills at most killsPerDay a day; off-screen victims are replaced later.
+  // No daily limit: a band keeps hunting all day. Off-screen victims are replaced later.
   for (let i = 0; i < 300; i++) tick(4.1);
-  const perBand = Object.values(pora.debugSnapshot().zones).map(zone => zone.camps.find(camp => camp.avengers).avengers.kills);
-  assert(perBand.every(kills => kills <= cfg.avengers.killsPerDay), `daily kill quota holds (${perBand})`);
+  const perBand = () => Object.values(pora.debugSnapshot().zones).map(zone => zone.camps.find(camp => camp.avengers).avengers.kills);
+  assert(perBand().some(kills => kills > 1), `a band makes several kills in one day (${perBand()})`);
   const slainCount = () => Object.values(omg.debugSnapshot().zones).flatMap(zone => zone.camps.flatMap(camp => camp.hunters)).filter(h => h.activity === 'slain').length;
   const killsBefore = pora.debugSnapshot().avengerKills;
   assert.equal(slainCount(), killsBefore);
   day += 2;
-  tick(0.21); // The new day also resets each band's quota, so a fresh kill can land in this same tick.
+  tick(0.21); // A fresh kill can land in this same tick.
   assert.equal(slainCount(), pora.debugSnapshot().avengerKills - killsBefore, 'slain travellers are replaced in their camps after a couple of days');
+
+  // Outnumbered: if the quarry's group is bigger than the band, the riders
+  // break off and ride home to regroup instead of engaging.
+  let pursuing = null;
+  for (let i = 0; i < 400 && !pursuing; i++) {
+    tick(4.1);
+    pursuing = ZONES.find(zone => pora.debugSnapshot().zones[zone].camps.find(camp => camp.avengers).avengers.quarryId);
+  }
+  assert(pursuing, 'a band is riding at a quarry');
+  const pursuer = () => pora.debugSnapshot().zones[pursuing].camps.find(camp => camp.avengers);
+  const withdrawalsBefore = pora.debugSnapshot().avengerWithdrawals;
+  cfg.avengers.groupRadiusTiles = 500; // Every Omgurku on the map now counts as the quarry's group: far more than three riders.
+  tick(0.21);
+  assert(pora.debugSnapshot().avengerWithdrawals > withdrawalsBefore, 'an outnumbered band withdraws');
+  assert.equal(pursuer().avengers.retreating, true);
+  assert.equal(pursuer().avengers.quarryId, null, 'it drops the quarry');
+  assert(pursuer().hunters.filter(h => h.role === 'avenger').every(h => h.activity === 'withdraw'), 'every rider rides home');
+  hour += cfg.avengers.retreatHours + 0.1;
+  for (let i = 0; i < 20; i++) tick(4.1);
+  assert.equal(pursuer().avengers.retreating, false, 'the band regroups after retreatHours');
+  assert(ZONES.every(zone => !pora.debugSnapshot().zones[zone].camps.find(camp => camp.avengers).avengers.quarryId), 'a band never picks a quarry whose group outnumbers it');
+  cfg.avengers.groupRadiusTiles = 6;
+  hour = 12;
+
+  // An optional killsPerDay cap still holds when configured.
+  cfg.avengers.killsPerDay = 1; // Same object the runtime loaded.
+  day += 1;
+  const capStart = perBand();
+  for (let i = 0; i < 300; i++) tick(4.1);
+  assert(perBand().every((kills, i) => kills - capStart[i] <= 1), `a configured daily cap holds (${capStart} -> ${perBand()})`);
+  cfg.avengers.killsPerDay = 0;
 
   // Only hunters away from camp count as travelling; nobody travels at night.
   for (const traveller of ZONES.flatMap(zone => omg.travellingHunters(zone, 8))) {
@@ -205,6 +247,21 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(riderBuild.tier, cfg.avengers.tier);
   assert.equal(riderBuild.opts.extra.tribeId, 'porakaneki', 'riders fight Omgurku through the shared rival-tribe ecology');
   assert(builds.filter(build => !build.opts.extra.isTribeAvenger).every(build => !build.opts.mountSpecies), 'ordinary hunters stay on foot');
+
+  // On screen, a withdrawing rider disengages from the shared ecology fight
+  // (the Omgurku may still give chase).
+  const T = combatDeps.TILE;
+  const live = (id, extra) => ({ id, x: combatDeps.player.x, y: combatDeps.player.y, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, isTribeHunter: true, def: {}, ...extra });
+  const riderEntity = live('rider', { tribeId: 'porakaneki', isTribeAvenger: true, _porakanekiPlannerControlled: true });
+  const omgEntity = live('omg', { tribeId: 'omgurku', x: combatDeps.player.x + T, _porakanekiPlannerControlled: true });
+  hostileObjects.add(riderEntity); hostileObjects.add(omgEntity);
+  pora.__test.updateChunkEcology();
+  assert.equal(riderEntity._chunkCombatTarget, omgEntity, 'an engaged rider fights the Omgurku');
+  riderEntity._avengerRetreating = true;
+  pora.__test.updateChunkEcology();
+  assert.equal(riderEntity._chunkCombatTarget, null, 'a withdrawing rider breaks off');
+  assert.equal(omgEntity._chunkCombatTarget, riderEntity, 'the Omgurku can still chase it');
+  hostileObjects.delete(riderEntity); hostileObjects.delete(omgEntity);
 
   console.log('Porakaneki Avengers regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
