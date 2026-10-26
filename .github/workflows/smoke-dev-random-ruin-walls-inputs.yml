@@ -14,6 +14,9 @@ on:
       - 'docs/js/camera-look-clamp.js'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-24.04
