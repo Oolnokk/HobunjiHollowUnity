@@ -6,6 +6,30 @@
   function midpoint(line) {
     return { x: (line.start.x + line.end.x) / 2, y: (line.start.y + line.end.y) / 2 }; // Rotation pivot and move handle.
   }
+  function length(line) {
+    return Math.hypot(line.end.x - line.start.x, line.end.y - line.start.y); // Single Euclidean distance from arrow origin to tip.
+  }
+  function maxLength(line) {
+    const d = length(line);
+    if (d < 1) return 0; // A degenerate authored arrow has no direction in which to extend.
+    const ux = (line.end.x - line.start.x) / d, uy = (line.end.y - line.start.y) / d;
+    const xLimit = ux > 0 ? (FRAME.width - line.start.x) / ux
+      : ux < 0 ? -line.start.x / ux : Infinity;
+    const yLimit = uy > 0 ? (FRAME.height - line.start.y) / uy
+      : uy < 0 ? -line.start.y / uy : Infinity;
+    return Math.max(0, Math.min(xLimit, yLimit)); // Endpoint stays within its canvas, without moving the origin.
+  }
+  function setLength(line, desired) {
+    if (!Number.isFinite(desired) || desired < 2) return line; // Reject invalid lengths, preserving a valid source line.
+    const original = length(line);
+    if (original < 1) return line;
+    const actual = Math.min(desired, maxLength(line)); // Clamp only the tip to the sprite boundary.
+    if (actual < 2) return line;
+    const ratio = actual / original;
+    return { ...line, start: { ...line.start },
+      end: { x: line.start.x + (line.end.x - line.start.x) * ratio,
+        y: line.start.y + (line.end.y - line.start.y) * ratio } }; // Direction and origin remain unchanged.
+  }
   function rotationHandle(line) {
     const mid = midpoint(line), dx = line.end.x - line.start.x, dy = line.end.y - line.start.y; // Directed arrow axis.
     const length = Math.hypot(dx, dy) || 1; // Zero-length lines are rejected by config validation; avoid invalid preview coordinates.
@@ -41,5 +65,5 @@
     if (Math.hypot(start.x - mid.x, start.y - mid.y) < 0.001) return 0;
     return Math.atan2(now.y - mid.y, now.x - mid.x) - Math.atan2(start.y - mid.y, start.x - mid.x);
   }
-  global.ModularMountGizmos = Object.freeze({ midpoint, rotationHandle, move, rotate, rotationDelta, frame: FRAME });
+  global.ModularMountGizmos = Object.freeze({ midpoint, length, maxLength, setLength, rotationHandle, move, rotate, rotationDelta, frame: FRAME });
 })(typeof window === 'object' ? window : globalThis);
