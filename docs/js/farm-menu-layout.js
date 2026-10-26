@@ -544,7 +544,7 @@
     const roster = document.getElementById('farmLivestockList');
     const directRows = roster ? [...roster.querySelectorAll(':scope > .farm-row.livestock-trait-row')].filter(row => row.id !== WORLD_IDENTITY_SENTINEL_ID) : [];
     return {
-      mostRecentChange: 'Farm sections use the full width; the selected Nursery page hides breeding controls and fills the Farm content area.',
+      mostRecentChange: 'Farm identity stays visible; Customize Farm owns rename, materials and layout controls. Map fits the viewport and uses shared crop icons and animal chatheads.',
       installed,
       workspace: !!document.getElementById(WORKSPACE_ID),
       sections: [...document.querySelectorAll('#' + WORKSPACE_ID + ' > .farm-section')].map(section => section.dataset.farmMenuKind || classifySection(section)),

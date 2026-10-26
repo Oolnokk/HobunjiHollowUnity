@@ -355,20 +355,24 @@
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: used > 0, message: used ? 'Fertilized ' + used + ' crops for this harvest.' : 'Withdraw compost fertilizer and plant unfertilized crops first.' };
   }
-  function renderRows(list) {
+  function renderRows(list, customization = list) {
     if (!deps || !list) return;
     const button = (row, label, action) => { const element = document.createElement('button'); element.className = 'settings-small-btn'; element.textContent = label; element.onclick = action; row.append(element); }; // Farm menu row actions reuse existing small button styling.
     for (const entry of buildings) {
       const row = document.createElement('div'); row.className = 'farm-row'; row.style.flexWrap = 'wrap'; // Multi-tile production appears beside other farm buildings.
       const name = document.createElement('span'); name.className = 'farm-row-name'; name.textContent = catalog[entry.key].icon + ' ' + catalog[entry.key].label; row.append(name);
       button(row, 'Manage', () => open(entry.id));
-      if (deps.hasFarmPermission('alterFarm')) button(row, 'Move', () => arm(entry.key, entry.id));
+      if (deps.hasFarmPermission('alterFarm')) {
+        const editRow = document.createElement('div'); // Layout controls live separately from the working building's Manage action.
+        editRow.className = 'farm-row'; editRow.textContent = name.textContent;
+        button(editRow, 'Move', () => window.FarmLayoutEditor?.open?.(entry.id)); customization.append(editRow);
+      }
       list.append(row);
     }
     if (deps.hasFarmPermission('alterFarm')) for (const definition of Object.values(catalog)) {
       if (!(deps.inventory[definition.planItem] > 0)) continue;
       const row = document.createElement('div'); row.className = 'farm-row'; // Plans are placed through the farm map, never furniture placement.
-      row.textContent = definition.label + ' Plan · ' + deps.inventory[definition.planItem]; button(row, 'Place', () => arm(definition.key)); list.append(row);
+      row.textContent = definition.label + ' Plan · ' + deps.inventory[definition.planItem]; button(row, 'Place', () => { arm(definition.key); window.FarmPanel?.showMap?.(); }); customization.append(row);
     }
     if (placement) { const row = document.createElement('div'); row.className = 'farm-row'; row.textContent = 'Tap the map to place ' + catalog[placement.key].label; button(row, 'Cancel', () => { placement = null; window.FarmPanel.render(); }); list.append(row); }
   }

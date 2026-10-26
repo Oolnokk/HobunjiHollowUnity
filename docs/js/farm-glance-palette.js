@@ -97,7 +97,7 @@
       drawServiceMarker(ctx, col, row, pxX, pxY, MARKER_COLORS[obj.type], obj.type);
     });
 
-    for (const animal of panelDeps.animalObjects || []) drawLivestockMarker(ctx, animal, pxX, pxY);
+    if (!canvas.dataset?.iconMarkers) for (const animal of panelDeps.animalObjects || []) drawLivestockMarker(ctx, animal, pxX, pxY);
     recolorLegend();
     overlayPasses++;
     return true;

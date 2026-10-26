@@ -123,10 +123,16 @@
     };
   }
 
+  function showFarmMap() {
+    if (!window.ControllerUI?.showSection?.('mpFarm', 'farmSectionLayout')) document.getElementById('farmGlanceCanvas')?.scrollIntoView?.({ block: 'nearest' });
+  }
+
   function renderFarmHeader() {
     const input = document.getElementById('farmNameInput');
     const saveBtn = document.getElementById('farmNameSaveBtn');
     const ownerSpan = document.getElementById('farmOwnerName');
+    const display = document.getElementById('farmNameDisplay'); // Persistent identity without an editable control in the navigation path.
+    if (display) display.textContent = deps.getFarmName();
     const owner = deps.isFarmOwner();
     if (input) { input.value = deps.getFarmName(); input.disabled = !owner; }
     if (saveBtn) {
@@ -182,6 +188,18 @@
     const FARM_GLANCE_TILE_COLORS = _tileColors();
     canvas.width = deps.COLS * FARM_GLANCE_PX;
     canvas.height = deps.ROWS * FARM_GLANCE_PX;
+    canvas.dataset.iconMarkers = '1';
+    const markers = document.getElementById('farmGlanceMarkers') || document.createElement('div'); // Independent DOM icons reuse the inventory renderers without tainting the map canvas.
+    markers.id = 'farmGlanceMarkers';
+    markers.replaceChildren();
+    if (!markers.parentElement) canvas.parentElement.appendChild(markers);
+    const marker = (col, row, label, icon) => {
+      const element = document.createElement('span'); // Non-focusable map annotations never add navigation stops.
+      element.className = 'farm-map-icon'; element.title = label; element.setAttribute('aria-label', label);
+      element.style.left = `${(col + 0.5) / deps.COLS * 100}%`;
+      element.style.top = `${(row + 0.5) / deps.ROWS * 100}%`;
+      element.textContent = icon; markers.appendChild(element); return element;
+    };
     const ctx = canvas.getContext('2d');
     const PX = FARM_GLANCE_PX;
     const grid = deps.getGrid();
@@ -191,8 +209,11 @@
         ctx.fillStyle = tile ? (FARM_GLANCE_TILE_COLORS[tile.type] || '#3c6e3f') : '#1a1a1a';
         ctx.fillRect(c * PX, r * PX, PX, PX);
         if (tile?.crop) {
-          ctx.fillStyle = tile.cropReady ? '#f9e28a' : '#8fd66b';
-          ctx.fillRect(c * PX + 2, r * PX + 2, PX - 4, PX - 4);
+          const key = deps.cropData?.[tile.crop]?.cropKey || tile.crop; // Harvest item identity drives the same icon as the bag.
+          const def = deps.ITEM_DEFS[key] || {}; // Missing/modded crops retain a readable fallback.
+          const icon = marker(c, r, `${def.label || key}${tile.cropReady ? ' (ready)' : ' (growing)'}`, def.icon || '🌱'); // Crop status remains visible around its item artwork.
+          icon.classList.add(tile.cropReady ? 'crop-ready' : 'crop-growing');
+          deps.applyItemSpriteIcon?.(icon, def, key);
         }
         if (deps.isHouseFootprint(c, r)) {
           ctx.fillStyle = 'rgba(120,90,60,0.9)';
@@ -224,12 +245,12 @@
         : WORLD_OBJECT_TYPE_COLORS[obj.type] || WORLD_OBJECT_TYPE_COLORS.default;
       ctx.fillRect(c * PX, r * PX, PX, PX);
     });
-    // Livestock
+    // Shared chatheads preserve each animal's authored framing and genotype.
     deps.animalObjects.forEach(a => {
-      ctx.fillStyle = '#ffd27a';
-      ctx.beginPath();
-      ctx.arc(a.col * PX + PX / 2, a.row * PX + PX / 2, PX * 0.35, 0, Math.PI * 2);
-      ctx.fill();
+      const kind = a.animalKey || a.kind; // Live farm animals store their species under animalKey.
+      const icon = marker(a.col, a.row, a.name || kind || 'Animal', '🐾'); // Placeholder remains available if portrait assets fail.
+      icon.classList.add('farm-map-animal');
+      window.InventoryStacks?.applyHeadIcon(icon, kind, a.genotype);
     });
 
     const legend = document.getElementById('farmGridLegend');
@@ -274,13 +295,8 @@
     canvas.style.cursor = (_farmPlacementMode || window.FarmProduction?.hasPlacement()) ? 'crosshair' : '';
   }
 
-  // "Buildings" section of the Farm tab: one consolidated "House" row
-  // (every piece counts as a single entry here — see openHouseLayoutModal
-  // for per-piece move/place/build/demolish) plus every barn with a Move
-  // button (owner/alterFarm-gated), plus any owned-but-unplaced barn plans
-  // with a Place button. All arm _farmPlacementMode and wait for a click
-  // on the glance canvas above (see renderFarmGridGlance()'s click
-  // handler).
+  // Status and management stay on Buildings. Rename/materials and editing
+  // actions live on Customize Farm; owned plans open the map for placement.
   function renderFarmBuildings() {
     const list = document.getElementById('farmBuildingsList');
     const note = document.getElementById('farmBuildingsNote');
@@ -289,17 +305,19 @@
     const canAlter = deps.hasFarmPermission('alterFarm');
     const BARN_TIERS = deps.getBarnTiers();
     list.innerHTML = '';
+    const customization = document.getElementById('farmBuildingCustomizationList') || list; // Existing editor actions have a dedicated page; management stays in Buildings.
+    if (customization !== list) customization.replaceChildren();
 
     if (note) {
       note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can move or build here."
         : _farmPlacementMode
           ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.'
             : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
-          : 'Place or move buildings on the map. Little and medium barns connect as rooms when their edges touch. Open House Layout to edit your house.';
+          : 'Check and manage buildings here. Rename, materials and construction are on Customize Farm.';
     }
     if (cancelBtn) {
-      cancelBtn.hidden = !_farmPlacementMode;
-      cancelBtn.onclick = () => { _farmPlacementMode = null; renderFarmBuildings(); };
+      cancelBtn.hidden = !_farmPlacementMode && !window.FarmProduction?.hasPlacement();
+      cancelBtn.onclick = () => { _farmPlacementMode = null; window.FarmProduction?.cancelPlacement(); window.FarmPanel.render(); };
     }
 
     const addRow = (label, w, h, onMove) => {
@@ -307,16 +325,17 @@
       row.className = 'farm-row';
       row.innerHTML = `<span class="farm-row-name">${deps.esc(label)}</span><span class="farm-note">${w}×${h}</span>`;
       if (canAlter && onMove) {
+        const editRow = row.cloneNode(true); // Preserve a plain status row for everyday inspection.
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Move';
         btn.addEventListener('click', onMove);
-        row.appendChild(btn);
+        editRow.appendChild(btn); customization.appendChild(editRow);
       }
       list.appendChild(row);
     };
 
-    window.FarmLayoutEditor?.renderLauncher?.(list); // Whole-farm structure layout (house, barns, production buildings, shipping box).
+    window.FarmLayoutEditor?.renderLauncher?.(customization); // Whole-farm structure layout (house, barns, production buildings, shipping box).
 
     const pieces = deps.getHousePieces();
     if (pieces.length) {
@@ -332,14 +351,15 @@
       btn.className = 'settings-small-btn';
       btn.textContent = 'Edit Layout';
       btn.addEventListener('click', () => openHouseLayoutModal());
-      row.appendChild(btn);
+      const editRow = row.cloneNode(true); // Keep house status on Buildings while its editor lives on Customize Farm.
+      editRow.appendChild(btn); customization.appendChild(editRow);
       list.appendChild(row);
     }
 
     deps.getFarmBuildings().filter(b => b.kind === 'barn').forEach(b => {
       const tier = BARN_TIERS[b.tier];
       addRow(`🏚 ${tier.label}${b.stage === 'foundation' ? ' (foundation)' : ''}`, b.w, b.h,
-        () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
+        () => window.FarmLayoutEditor?.open?.('farm_barn_' + b.id));
     });
 
     if (canAlter) {
@@ -352,12 +372,12 @@
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Place';
-        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
+        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); showFarmMap(); });
         row.appendChild(btn);
-        list.appendChild(row);
+        customization.appendChild(row);
       });
     }
-    window.FarmProduction?.renderRows(list);
+    window.FarmProduction?.renderRows(list, customization);
   }
 
   // ── House Layout editor ─────────────────────────────────────────────
@@ -1739,6 +1759,7 @@
     ensureStarterFurnitureStorage: ensureStarterWindowsInFarmStorage,
     init,
     render: renderFarmPanel,
+    showMap: showFarmMap,
     renderStablePanel,
     renderFarmProcessors,
     activeStableIdForRole,

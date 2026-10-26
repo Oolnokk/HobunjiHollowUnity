@@ -1360,6 +1360,7 @@
     if (!list) return;
     ensureStyles();
     document.getElementById('barnLayoutEditorLaunchers')?.remove();
+    document.getElementById('farmBuildingCustomizationList')?.querySelectorAll('.farm-barn-layout-launcher').forEach(button => button.remove()); // Dedicated customization actions must not duplicate during decoration-only refreshes.
     const barns = regularBarns(); // Each built adult barn gets its own sub-editor launcher.
     const detached = allAdditions().filter(addition => additionHasBaby(addition) && !owningBarnOfAddition(addition.id)); // Layout replacement must not hide the only copy of a baby.
     if (!barns.length && !detached.length) return;
@@ -1369,15 +1370,15 @@
     wrap.style.marginTop = '8px';
     const heading = document.createElement('div'); // Explains the new barn-specific modular layout system.
     heading.className = 'farm-note';
-    heading.textContent = 'Barn layouts — attach purchased room additions along clear barn walls:';
+    heading.textContent = 'Incubator status and management — building edits are on Customize Farm:';
     wrap.appendChild(heading);
     barns.forEach((barn, index) => {
       const button = document.createElement('button'); // Mobile-friendly barn editor launcher.
-      button.className = 'settings-small-btn';
+      button.className = 'settings-small-btn farm-barn-layout-launcher';
       const label = buildingDeps?.getBarnTiers?.()?.[barn.tier]?.label || 'Barn'; // Human-readable tier.
       button.textContent = `Edit ${label}${barns.length > 1 ? ` ${index + 1}` : ''} Layout`;
       button.addEventListener('click', () => openBarnEditor(barn.id));
-      wrap.appendChild(button);
+      (document.getElementById('farmBuildingCustomizationList') || wrap).appendChild(button);
       for (const addition of additionsForBarn(barn.id)) {
         const card = document.createElement('div'); // Farm-tab status and direct management for this installed incubator.
         card.className = 'incubator-slot';

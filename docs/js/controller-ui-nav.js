@@ -329,7 +329,7 @@
   function navigationTargets(panel) {
     let targets = directTargets(navigationRoot(panel), panel).map(target => projectSingleChild(target, panel)); // Projects structural one-child paths before checking content ownership.
     if (automaticEntryEnabled && navigationRoot(panel) === panel) {
-      const automatic = targets.find(target => isGroup(target) && target.hasAttribute('data-ctrl-auto-enter') && releasedAutoGroup.get(panel) !== target); // Opt-in content owners still retain their sub-tabs and Back scope.
+      const automatic = targets.find(target => isGroup(target) && (target.hasAttribute('data-ctrl-auto-enter') || target.matches('.mp-pane')) && releasedAutoGroup.get(panel) !== target); // Pause pages and opt-in content owners retain their sub-tabs and Back scope.
       if (automatic) {
         rememberFocusPath(automatic);
         groupsByPanel.set(panel, [{ node: automatic, path: focusPath, explicit: true }]);
@@ -393,7 +393,7 @@
     const entries = enteredGroups(panel); // Recovers rebuilt groups before choosing the parent selection.
     const entry = entries.pop(); // Consumes Back before the panel's close button can run.
     if (!entry) return false;
-    if (entry.node.hasAttribute('data-ctrl-auto-enter')) releasedAutoGroup.set(panel, entry.node);
+    if (entry.node.hasAttribute('data-ctrl-auto-enter') || entry.node.matches('.mp-pane')) releasedAutoGroup.set(panel, entry.node);
     lastFocusedByGroup.set(entry.node, currentTarget);
     restoreSubtabs(entry.node);
     entry.node.classList.remove('ctrl-nav-group-active');
@@ -724,9 +724,11 @@
       const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
       for (const removed of entries.splice(entries.indexOf(local) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
       prepareSubtabs(local.node, panel, next.id || null, next.id ? 0 : nextIndex);
+      lastFocusedByGroup.set(state.selected, currentTarget);
       scrolledSelection = null;
       const targets = navigationTargets(panel); // Fresh controls may have appeared since the last section switch.
-      setFocus(pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: false });
+      const remembered = lastFocusedByGroup.get(next); // Switching back to a section restores its surviving control.
+      setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: false });
       updateHintBar(panel);
       return;
     }
@@ -753,7 +755,8 @@
     hintEl.innerHTML =
       '<span class="ctrl-nav-hint"><span class="ctrl-nav-glyph ctrl-nav-glyph-a">A</span>Select</span>' +
       '<span class="ctrl-nav-hint"><span class="ctrl-nav-glyph ctrl-nav-glyph-b">B</span>Back</span>' +
-      '<span class="ctrl-nav-hint ctrl-nav-hint-tabs"><span class="ctrl-nav-glyph">LB/RB</span>Switch Tabs</span>';
+      '<span class="ctrl-nav-hint ctrl-nav-hint-tabs"><span class="ctrl-nav-glyph">LB/RB</span>Switch Tabs</span>' +
+      '<span class="ctrl-nav-scroll-hint">Right stick: Scroll</span>';
     document.body.appendChild(hintEl);
     return hintEl;
   }
@@ -841,6 +844,31 @@
     return pressed;
   }
   let menuOpenEdge = false;
+  let cachedScrollHost = null; // Reused while a right-stick gesture remains inside the same visible navigation scope.
+  function findScrollHost(panel, direction) {
+    if (!panel) return null;
+    const scope = subtabsByGroup.get(localSubtabs(panel)?.node)?.selected || navigationRoot(panel); // Prefer the visible local page, including read-only pages.
+    const canScroll = element => {
+      if (!element || !panel.contains(element) || !isVisible(element)) return false;
+      const style = getComputedStyle(element); // Overflow:hidden clips content but must never become a manual scroll destination.
+      if (!/auto|scroll|overlay/.test(style.overflowY || style.overflow || '')) return false;
+      const max = element.scrollHeight - element.clientHeight; // Direction-aware bounds allow nested scroll regions to hand off at their edges.
+      return max > 1 && (direction > 0 ? element.scrollTop < max - 1 : element.scrollTop > 0);
+    };
+    const sign = Math.sign(direction); // Reversing the stick rechecks the innermost scroller before a previous outer handoff.
+    if (cachedScrollHost?.panel === panel && cachedScrollHost.scope === scope && cachedScrollHost.target === currentTarget && cachedScrollHost.sign === sign) {
+      if (canScroll(cachedScrollHost.host)) return cachedScrollHost.host;
+      if (!cachedScrollHost.host && Date.now() < cachedScrollHost.retryAt) return null;
+    }
+    const remember = host => { cachedScrollHost = { panel, scope, target: currentTarget, sign, host, retryAt: Date.now() + 150 }; return host; }; // Avoid a full descendant scan on each held-stick frame.
+    for (let node = currentTarget; node && panel.contains(node); node = node.parentElement) {
+      if ((scope.contains(node) || node.contains(scope)) && canScroll(node)) return remember(node);
+    }
+    for (const node of scope.querySelectorAll('*')) if (canScroll(node)) return remember(node);
+    for (let node = scope; node && panel.contains(node); node = node.parentElement) if (canScroll(node)) return remember(node);
+    return remember(null);
+  }
+
   let lastGamepadPollAt = 0; // Used to keep analog right-stick menu scrolling independent of display refresh rate.
 
   function pollGamepad(frame) {
@@ -894,12 +922,7 @@
     lastGamepadPollAt = now;
     if (Math.abs(scrollStick.y) > 0.02) {
       const panel = activePanel();
-      let scrollHost = currentTarget;
-      while (scrollHost && scrollHost !== panel && scrollHost.scrollHeight <= scrollHost.clientHeight) scrollHost = scrollHost.parentElement;
-      if (!scrollHost || !panel?.contains(scrollHost) || scrollHost.scrollHeight <= scrollHost.clientHeight) {
-        scrollHost = panel ? Array.from(panel.querySelectorAll('[data-ctrl-scroll], .mp-pane, .settings-pane, .cooking-body')).find(element => element.scrollHeight > element.clientHeight) : null;
-      }
-      scrollHost ||= panel; // Used to scroll the nearest useful menu region with the right stick without scanning every descendant each frame.
+      const scrollHost = findScrollHost(panel, scrollStick.y); // Information pages do not need a selectable control to scroll.
       if (scrollHost) {
         const previousTop = scrollHost.scrollTop; // Only an actual manual scroll invalidates directional focus's old anchor.
         scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;
@@ -1101,6 +1124,20 @@
         case 'tabNext': cycleTabs(1); break;
       }
     },
+    showSection(groupId, sectionId) {
+      const panel = activePanel(); // Explicit page jumps support legacy map-placement actions without leaving controls on the overview.
+      const group = document.getElementById(groupId); // Existing pause-pane scope retains normal Back behavior.
+      if (!panel || !group || !panel.contains(group)) return false;
+      clearGroups(panel);
+      automaticEntryEnabled = true;
+      enterGroup(group, panel);
+      prepareSubtabs(group, panel, sectionId);
+      scrolledSelection = null;
+      const targets = navigationTargets(panel); // Read-only pages can focus their scope while the right stick still scrolls.
+      setFocus(pickDefaultTarget(panel, targets) || group, { scroll: false });
+      updateHintBar(panel);
+      return true;
+    },
     debugState() {
       reconcileStack();
       const panel = activePanel();
@@ -1114,9 +1151,10 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Xbox 360 names across prompts and arch badges; nested subtabs survive live updates and whole-owner rebuilds.',
+        latestChange: 'Right stick scrolls visible information pages, skips hidden/clipped regions and hands off at scroll edges; section focus is remembered.',
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
+        scrollHostId: cachedScrollHost?.host?.id || null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,

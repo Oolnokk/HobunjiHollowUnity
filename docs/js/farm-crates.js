@@ -289,13 +289,10 @@
         btn.type = 'button';
         btn.dataset[ui.moveButtonDataKey] = '1';
         btn.textContent = ui.moveButtonText;
-        btn.addEventListener('click', () => {
-          const existingCancel = document.getElementById(ui.cancelButtonId);
-          if (existingCancel && !existingCancel.hidden && !shippingMoveArmed) existingCancel.click();
-          shippingMoveArmed = true;
-          syncShippingMoveUi();
-        });
-        row.appendChild(btn);
+        btn.addEventListener('click', () => window.FarmLayoutEditor?.open?.(shippingBoxInstance.id));
+        const editRow = document.createElement('div'); // Shipping relocation belongs to customization; its status stays with Buildings.
+        editRow.className = ui.rowClass; editRow.textContent = object.label; editRow.appendChild(btn);
+        (document.getElementById('farmBuildingCustomizationList') || row).appendChild(editRow);
       }
       const firstPlan = [...list.children].find(child => child.textContent?.trim?.().startsWith(ui.planPrefix));
       list.insertBefore(row, firstPlan || null);

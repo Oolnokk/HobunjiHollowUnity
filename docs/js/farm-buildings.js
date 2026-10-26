@@ -57,7 +57,7 @@
 
   function _decorateFarmPanelDemolishActions() {
     if (typeof document === 'undefined' || !deps?.hasFarmPermission?.('alterFarm')) return;
-    const list = document.getElementById('farmBuildingsList'); // Buildings-list anchor where each regular barn receives its destructive menu action.
+    const list = document.getElementById('farmBuildingCustomizationList') || document.getElementById('farmBuildingsList'); // Buildings-list anchor where each regular barn receives its destructive menu action.
     if (!list) return;
     const barns = deps.getFarmBuildings().filter(entry => entry?.kind === 'barn' && !_isProtectedNursery(entry)); // Regular barns eligible for the Farm-menu demolition control.
     const rows = Array.from(list.children).filter(row => row.classList?.contains('farm-row')); // Existing core-rendered building rows matched in authored order.
