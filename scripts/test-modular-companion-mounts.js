@@ -58,6 +58,17 @@ assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads)
 assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'weight',
   start: { x: 207, y: 319 }, end: { x: 207, y: 239 } }, 'Pick arrow stays straight and unrotated');
 
+// Preserve other independent artist calibration changes included in the uploaded editor export.
+assert.deepEqual(plain(committed.heads['work-hammer'].mount),
+  { type: 'weight', start: { x: 210, y: 952 }, end: { x: 210, y: 872 } },
+  'Work Hammer head repositioning must survive GitHub import.');
+assert.equal(committed.heads['war-cleaver'].editorOnly, false, 'Keep War Cleaver explicitly enabled.');
+assert.equal(committed.shafts.kylie.editorOnly, false, 'Keep calibrated Kylie shaft enabled for gameplay.');
+assert.equal(committed.shafts.bshuakauitl.overrides['work-hammer'].scaleX, 0.375);
+assert.equal(committed.shafts.bshuakauitl.overrides['work-hammer'].scaleY, 2);
+assert.equal(committed.shafts.kylie.overrides['work-hammer'].scaleX, 0.5);
+assert.equal(committed.shafts.kylie.overrides['work-hammer'].scaleY, 2.5);
+assert.equal(committed.shafts.kylie.overrides['fishing-mace'].scaleX, 0.75);
 // Upgrade earlier browser drafts once without losing unrelated manual calibration.
 const old = plain(committed);
 for (const shaft of Object.values(old.shafts)) {
