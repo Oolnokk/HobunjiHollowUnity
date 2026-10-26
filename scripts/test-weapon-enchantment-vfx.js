@@ -38,6 +38,10 @@ const vfxScriptAt = indexSource.search(/js\/combat\/weapon-enchantment-vfx\.js\?
 assert(enchantmentScriptAt >= 0 && vfxScriptAt > enchantmentScriptAt, 'weapon enchantment VFX must load directly after EnchantmentSystem with a cache-busted URL.');
 
 const gear = {}; // Used by the VM harness as the active character's persistent gear inventory.
+let activeSlot = 'weapon'; // Changes below to prove ranged, tools and holstered equipment never inherit a melee weapon's aura.
+let heldMode = 'tool'; // Changes below to test the game-wide drawn/holstered equipment state.
+let equippedMeleeKey = 'dagger_copper'; // Changes below to catch stale Combat weapon keys after swapping the actual equipped weapon.
+let scheduledVfxUpdate = null; // Captured from RuntimeFrameScheduler so the held-slot invalidation is exercised without browser devtools.
 let saves = 0; // Used to confirm player visual choices call the normal gear-save seam.
 const heldToolPlane = { isObject3D: true }; // Used by the runtime-shape test to stand in for the real held PNG plane without pulling THREE into this focused VM harness.
 const heldToolVisual = { visible: true, userData: { itemKey: 'dagger_copper', toolPlane: heldToolPlane } }; // Used to reproduce the supported gameplay dependency shape where toolHolder exists but toolMeshMap does not.
@@ -48,6 +52,9 @@ const context = {
         getGearInventory: () => gear,
         saveGearInventory: () => { saves += 1; },
         currentWeaponKey: () => 'dagger_copper',
+        getActiveTool: () => activeSlot,
+        getHeldMode: () => heldMode,
+        equipmentSlots: { get weapon() { return equippedMeleeKey; } },
       },
     },
     EnchantmentSystem: {
@@ -59,7 +66,7 @@ const context = {
         toolHolder: { children: [heldToolVisual] },
       },
     },
-    RuntimeFrameScheduler: { register() {} },
+    RuntimeFrameScheduler: { register(_id, callback) { scheduledVfxUpdate = callback; } },
   },
   document: { readyState: 'loading' },
   performance: { now: () => 1000 },
@@ -83,6 +90,45 @@ vm.runInContext(vfxSource, context, { filename: 'weapon-enchantment-vfx.js' });
 const api = context.window.WeaponEnchantmentVFX; // Used to exercise the public persistence/customization contract without THREE/DOM rendering.
 assert(api, 'WeaponEnchantmentVFX must install its public API.');
 assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, true, 'toolHolder-only runtime dependencies must resolve the live held weapon without scene traversal or toolMeshMap.');
+assert(scheduledVfxUpdate, 'weapon enchantment update must be registered with the existing frame scheduler.');
+const heldDeps = context.window.ProceduralHandAttachments.gameDeps; // The same holder the runtime reads when a melee weapon, ranged weapon or tool is drawn.
+const rangedVisual = { visible: true, userData: { itemKey: 'bow', toolPlane: { isObject3D: true } } }; // Unenchanted ranged weapon used to reproduce the leaking fallback.
+const hoeVisual = { visible: true, userData: { itemKey: 'hoe', toolPlane: { isObject3D: true } } }; // Unenchanted tool used to reproduce the same issue.
+
+activeSlot = 'ranged';
+heldDeps.toolHolder.children = [rangedVisual];
+heldDeps.toolMeshMap = { weapon: heldToolVisual, ranged: rangedVisual };
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'an enchanted equipped melee weapon must not decorate the active ranged slot.');
+scheduledVfxUpdate(1100);
+assert.strictEqual(api.debugSnapshot('dagger_copper').activeHeldWeaponKey, null, 'ranged weapon must stop the emission update immediately.');
+
+activeSlot = 'hoe';
+heldDeps.toolHolder.children = [hoeVisual];
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'any other tool slot must suppress the melee enchantment effect.');
+scheduledVfxUpdate(1116);
+assert.strictEqual(api.debugSnapshot('dagger_copper').emitters, 0, 'changing tools must not create a stray emitter.');
+
+activeSlot = 'weapon';
+heldDeps.toolHolder.children = [rangedVisual];
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'even with the weapon slot selected, the current held visual must match that weapon and be attached.');
+heldDeps.toolHolder.children = [heldToolVisual, rangedVisual];
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, true, 'the matching melee visual is still selected when another plane also exists.');
+scheduledVfxUpdate(1120); // Establish that the enchanted melee weapon is genuinely held before testing immediate holster cleanup.
+
+heldMode = 'none';
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'holstering a weapon must suppress particles.');
+scheduledVfxUpdate(1132);
+assert.match(api.debugSnapshot('dagger_copper').lastEvent, /aura cleared/, 'holstering should clear on the same frame, not after the next scheduled mask scan.');
+heldMode = 'item';
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'holding a bag item must suppress particles too.');
+heldMode = 'tool';
+equippedMeleeKey = 'hatchet';
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, false, 'an out-of-sync equipped weapon key must not adorn another weapon.');
+equippedMeleeKey = 'dagger_copper';
+heldDeps.toolHolder.children = [heldToolVisual];
+heldDeps.toolMeshMap = undefined;
+assert.strictEqual(api.debugSnapshot('dagger_copper').heldVisualFound, true, 're-equipping the matching melee weapon restores a valid particle target.');
+scheduledVfxUpdate(1148);
 assert.strictEqual(api.ALIGNMENTS.Tothal.dyeIds.length, 12, 'Tothal palette must mirror 3 lich hue families × 4 authored variants.');
 assert.strictEqual(api.ALIGNMENTS.Hronal.dyeIds.length, 20, 'Hronal palette must mirror 5 lich hue families × 4 authored variants.');
 assert.strictEqual(api.ALIGNMENTS.Kanthic.dyeIds.length, 15, 'Kanthic palette must mirror 3 hue families × 4 variants plus white/gray/charcoal.');

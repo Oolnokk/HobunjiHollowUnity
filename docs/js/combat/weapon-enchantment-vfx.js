@@ -23,6 +23,8 @@
   const EMITTERS = new Map(); // Used by updateEmitters() to retain pooled particles for each currently visible weapon plane.
 
   let lastScanAt = -Infinity; // Used by update() to throttle held-plane/config resolution.
+  let lastHeldWeaponKey = null; // Used by update() to clear existing particles immediately on a held-slot, holster, or weapon change.
+  let lastHeldWeaponVisual = null; // Used by update() to recognize hot-swapped/rebuilt weapon meshes even if the item key stays the same.
   let activeSnapshot = null; // Used by updateEmitters()/debugSnapshot() as the latest resolved weapon + planar visual state.
   let scanGeneration = 0; // Used by update()/forceRefresh() so an older async mask scan can never overwrite a newer weapon/config snapshot.
   let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler registration.
@@ -245,47 +247,38 @@
   }
 
   function sourceSpriteForWeapon(key) {
-    const defs = window.Combat?.deps?.TOOL_ITEM_DEFS; // Used as the same literal weapon definition source makeToolPlaneMesh consumes.
+    const defs = window.Combat?.deps?.TOOL_ITEM_DEFS; // EquipmentPanel.exposeInventoryMasteryBridge() populates this existing Combat dependency before the first game frame.
     return defs?.[key]?.sprite || defs?.[key]?.baseSprite || null;
   }
 
-  function directHeldVisual(key) {
-    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the same live player-held seams as hand grips and dual-wield presentation.
-    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Used to identify the active held slot without assuming 'weapon'.
-    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first optional toolMeshMap lookup key.
-    const meshMap = handDeps?.toolMeshMap; // Some runtime injections expose this map; others intentionally expose only toolHolder.
-    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Fast path when the equipment mesh map is present.
-    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane?.isObject3D) return visual;
-    const candidates = meshMap instanceof Map ? [...meshMap.values()] : Object.values(meshMap || {}); // Used as an equipment-slot fallback if the active-slot snapshot lags one frame.
-    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane?.isObject3D) || null;
-    if (visual) return visual;
-    const holder = handDeps?.toolHolder; // Real gameplay may omit toolMeshMap; the holder child is the canonical fallback used by dual-wield-weapon-visuals.js.
-    return holder?.children?.find(child => child?.visible !== false && child?.userData?.itemKey === key && child?.userData?.toolPlane?.isObject3D)
-      || holder?.children?.find(child => child?.visible !== false && child?.userData?.toolPlane?.isObject3D)
-      || null;
+  function activeHeldWeaponKey() {
+    const deps = window.Combat?.deps; // Gameplay's authoritative held mode, equipment slot, and per-weapon enchantment identity.
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Optional fallback for integrations without the Combat held-slot seams.
+    const activeSlot = deps?.getActiveTool?.() ?? handDeps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null; // Prefer cheap authoritative slot getters; avoid refreshing the full stance snapshot every frame.
+    const heldMode = deps?.getHeldMode?.() ?? handDeps?.getHeldMode?.() ?? null; // Holstering or holding a bag item suppresses the aura.
+    if (activeSlot !== 'weapon' || heldMode !== 'tool') return null; // Fail closed if held-slot metadata is missing; never guess from a nearby mesh.
+    const weaponKey = deps?.currentWeaponKey?.() || null; // The weapon whose stored enchantments and verdigris mask will be read.
+    const equippedKey = deps?.equipmentSlots?.weapon ?? handDeps?.equipmentSlots?.weapon ?? window.WeaponToolStances?.getRuntimeState?.()?.itemKey ?? null; // Reject a stale weapon key; borrow the stance's item identity only when slot registries are unavailable.
+    if (!weaponKey || weaponKey === 'none' || (equippedKey && equippedKey !== weaponKey)) return null;
+    return weaponKey;
   }
 
-  function sceneHeldVisual(key) {
-    const scene = window.Combat?.deps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // Used only when the shared hand dependency map is unavailable.
-    if (!scene?.traverse) return null;
-    const player = window.Combat?.deps?.player; // Used to prefer the matching weapon nearest the player if an enemy happens to carry the same item key.
-    const scratch = typeof THREE !== 'undefined' ? new THREE.Vector3() : null; // Used to score fallback scene candidates in world space without per-node allocation.
-    let best = null; // Used as the nearest valid player-held weapon candidate.
-    let bestDistance = Infinity; // Used to rank same-item candidates during fallback traversal.
-    scene.traverse(node => {
-      if (node?.userData?.itemKey !== key || !node?.userData?.toolPlane?.isObject3D) return;
-      let distance = 0; // Used as a player-proximity tie breaker; direct handDeps lookup normally avoids this path entirely.
-      if (scratch && Number.isFinite(Number(player?.x)) && Number.isFinite(Number(player?.y)) && node.getWorldPosition) {
-        node.getWorldPosition(scratch);
-        distance = Math.hypot(scratch.x - Number(player.x), scratch.z - Number(player.y));
-      }
-      if (!best || distance < bestDistance) { best = node; bestDistance = distance; }
-    });
-    return best;
+  function directHeldVisual(key) {
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Shares the live held visual with procedural hands and dual wield.
+    const holder = handDeps?.toolHolder; // A player-owned holder is mandatory; a free-standing mesh or NPC must never inherit the aura.
+    if (!holder?.children) return null;
+    const meshMap = handDeps?.toolMeshMap; // Some integrations expose an equipment map; the shipped hand dependencies expose only toolHolder.
+    const isHeldWeapon = candidate => candidate?.visible !== false
+      && candidate?.userData?.itemKey === key
+      && candidate?.userData?.toolPlane?.isObject3D
+      && (candidate.parent === holder || holder.children.includes(candidate)); // Both the literal key and attachment must agree.
+    const weaponVisual = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // If present, the authoritative melee slot wins over same-key ranged duplicates.
+    if (weaponVisual) return isHeldWeapon(weaponVisual) ? weaponVisual : null;
+    return holder.children.find(isHeldWeapon) || null;
   }
 
   function heldVisualForWeapon(key) {
-    return directHeldVisual(key) || sceneHeldVisual(key);
+    return activeHeldWeaponKey() === key ? directHeldVisual(key) : null; // No scene-wide fallback: it could attach an aura to an enemy carrying the same weapon.
   }
 
   function particlePlanesForVisual(visual) {
@@ -606,13 +599,15 @@
   }
 
   async function resolveActiveSnapshot() {
-    const weaponKey = window.Combat?.deps?.currentWeaponKey?.() || 'none'; // Used as the single enchantment/save/held-visual identity for this scan.
+    const weaponKey = activeHeldWeaponKey(); // Scans are valid only while this specific enchanted melee weapon is in hand.
+    if (!weaponKey) return null;
     const visual = normalizedState(weaponKey); // Used to decide whether this weapon should emit at all and which plane vocabulary to use.
     if (!visual) return null;
     const heldVisual = heldVisualForWeapon(weaponKey); // Used as the exact makeToolPlaneMesh object carrying the rendered PNG plane.
     const spritePath = sourceSpriteForWeapon(weaponKey); // Used to scan the untouched authored PNG for verdigris-compatible metal pixels.
     if (!heldVisual?.userData?.toolPlane || !spritePath) return { weaponKey, visual, heldVisual, spritePath, mask: null, counts: planarCounts(weaponKey), planes: [] };
     const mask = await metalMaskForSprite(spritePath); // Used as the exact legal particle-origin set.
+    if (activeHeldWeaponKey() !== weaponKey || directHeldVisual(weaponKey) !== heldVisual) return null; // A mask decoded after a same-key mesh rebuild must not bind to the old mesh.
     const planes = particlePlanesForVisual(heldVisual); // Used to target one normal blade or both visible dual-wield blade copies.
     return { weaponKey, visual, heldVisual, spritePath, mask, counts: planarCounts(weaponKey), planes };
   }
@@ -645,6 +640,18 @@
   }
 
   function update(nowMs) {
+    const heldWeaponKey = activeHeldWeaponKey(); // Checked every frame so tools, ranged weapons, and holstering clear particles without a 180-ms leak.
+    const heldWeaponVisual = heldWeaponKey ? directHeldVisual(heldWeaponKey) : null; // Used to detect replacement of the exact equipped weapon mesh.
+    if (heldWeaponKey !== lastHeldWeaponKey || heldWeaponVisual !== lastHeldWeaponVisual) {
+      lastHeldWeaponKey = heldWeaponKey;
+      lastHeldWeaponVisual = heldWeaponVisual;
+      scanGeneration++; // Invalidates any unresolved metal-mask scan from the previously held weapon or slot.
+      lastScanAt = -Infinity; // Rescan immediately when the actual melee weapon comes back into the player's hand.
+      activeSnapshot = null;
+      clearAllEmitters(); // Also clears overlay padding on the old blade rather than leaving drifting sprites on another item.
+      lastEvent = heldWeaponKey ? `held melee weapon: ${heldWeaponKey}` : 'melee weapon not held; aura cleared';
+    }
+    if (!heldWeaponKey) return;
     const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now(); // Used as scheduler/RAF-compatible wall time.
     const previous = activeSnapshot?.updatedAt ?? now; // Used to derive a bounded visual-only delta time.
     const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000)); // Used to keep tab-resume gaps from launching particles far from the weapon.
@@ -654,10 +661,16 @@
       lastScanAt = now;
       const generation = ++scanGeneration; // Captured by this async scan; any newer scan/config refresh invalidates its eventual result.
       resolveActiveSnapshot().then(snapshot => {
-        if (generation !== scanGeneration) return;
+        if (generation !== scanGeneration || activeHeldWeaponKey() !== heldWeaponKey) return;
         if (!snapshot) {
           activeSnapshot = null;
           clearAllEmitters();
+          return; // Unenchanted weapons legitimately have no snapshot; retain the normal scan throttle.
+        }
+        if (snapshot.heldVisual !== directHeldVisual(heldWeaponKey)) {
+          activeSnapshot = null;
+          clearAllEmitters();
+          lastScanAt = -Infinity; // Retry a transient mesh rebuild immediately, rather than waiting an extra throttle interval.
           return;
         }
         snapshot.updatedAt = performance.now();
@@ -824,6 +837,10 @@
       visual: state ? { ...state, colorHex: dyeHex(state.dyeId), opacity: ALIGNMENTS[state.alignment]?.opacity ?? null } : null,
       sourceSprite: sourceSpriteForWeapon(key),
       heldVisualFound: !!heldVisualForWeapon(key),
+      currentHeldVisualMatchesSnapshot: !!activeSnapshot?.heldVisual && activeSnapshot.heldVisual === heldVisualForWeapon(key), // True only when a real current visual matches a live snapshot.
+      activeHeldWeaponKey: activeHeldWeaponKey(), // Mobile diagnostics distinguish an enchanted weapon being equipped from actually drawn.
+      activeSlot: window.Combat?.deps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null,
+      heldMode: window.Combat?.deps?.getHeldMode?.() ?? null,
       matchedMetalPixels: activeSnapshot?.weaponKey === key ? (activeSnapshot.mask?.matchedMetalPixels || 0) : null,
       visibleParticlePlanes: activeSnapshot?.weaponKey === key ? (activeSnapshot.planes?.length || 0) : 0,
       emitters: EMITTERS.size,
@@ -831,7 +848,7 @@
       overlayPadding: [...EMITTERS.values()].map(emitter => Number((emitter.plane?.userData?.hobunjiHeldOverlayVfxPadding || 0).toFixed(4))), // Reveals the live out-of-weapon overdraw envelope on mobile.
       dualWield: window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.() || null,
       metalDetection: { sourceHex: SOURCE_HEX, hueToleranceDeg: SOURCE_HUE_TOL_DEG, saturationTolerance: SOURCE_SAT_TOL, alphaMin: SOURCE_ALPHA_MIN },
-      latestChange: 'Metal pixels restrict spawning only; drifting/growing sprites expand the held-overlay scissor beyond the blade.',
+      latestChange: 'An aura requires the exact player-held melee mesh and EquipmentPanel sprite source; slot, holster and same-key mesh rebuilds invalidate old emitters.',
       lastEvent,
     };
   }
