@@ -123,6 +123,8 @@ assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.le
 
 area = 'map_i_town_mine_f_1';
 draw();
+assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 0,
+  'a stray glass source never tints underground mine darkness (the building-area selector includes mines)');
 assert.equal(fills[0], 'rgba(0,0,0,0.99)', 'mine darkness is preserved');
 assert.equal(gradients[0].radius, 2.4, 'mine lantern radius keeps its existing tuning');
 assert.equal(gradients[0].stops.length, 4, 'mine lantern profile remains unchanged');
