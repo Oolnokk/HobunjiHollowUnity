@@ -695,7 +695,10 @@
       blocksBox(x, z, half = 0, worldY = null) {
         const zoneState = state.zones.get(zoneId); // The latest generated camp layout, not a captured stale seasonal reservation.
         if (!zoneState) return false;
-        for (const camp of activeCamps(zoneState)) {
+        const smallCamps = zoneState.smallCamps; // Reuses the existing camp array, avoiding per-probe activeCamps() allocations during NPC pathfinding.
+        for (let index = 0; index <= smallCamps.length; index++) {
+          const camp = index < smallCamps.length ? smallCamps[index] : zoneState.chiefCamp; // Seasonal chief is the optional final active camp.
+          if (!camp) continue;
           for (const prop of camp.props) {
             if (prop.type !== 'tent' || prop.destroyed || !tentWallsBlockBox(prop, x, z, half)) continue;
             if (worldY != null) {
