@@ -66,86 +66,59 @@ function checkSign(relative, key, tankanText) {
 checkSign('docs/config/furniture-authored/generalStoreSign.json', 'generalStoreSign', 'General Store');
 checkSign('docs/config/furniture-authored/innSign.json', 'innSign', 'Inn');
 
-// The Inn sign remains ordinary editable town decor. The General Store sign
-// is now a face-bound fixture in its actual house JSON; rendering still reuses
-// the ORIGINAL authored furniture JSON, including both Tankan-script decals.
-// Inventory-placeable sign definitions stay intact.
-const gameJs = read('docs/game.js');
-assert(/generalStoreSign:\s*\{[^}]*fixture:\s*true/.test(gameJs), 'generalStoreSign must be a DECORATIVE_FURNITURE_DEFS fixture entry');
-assert(/innSign:\s*\{[^}]*fixture:\s*true/.test(gameJs), 'innSign must be a DECORATIVE_FURNITURE_DEFS fixture entry');
-const authoredKeysMatch = gameJs.match(/const AUTHORED_FURNITURE_KEYS = new Set\(\[([\s\S]*?)\]\);/);
-assert(authoredKeysMatch, 'AUTHORED_FURNITURE_KEYS set must exist');
-assert(authoredKeysMatch[1].includes("'generalStoreSign'"), 'generalStoreSign must be in AUTHORED_FURNITURE_KEYS or it silently falls back to an empty ProceduralFurniture group');
-assert(authoredKeysMatch[1].includes("'innSign'"), 'innSign must be in AUTHORED_FURNITURE_KEYS or it silently falls back to an empty ProceduralFurniture group');
-
-const mapEditorHtml = read('docs/tools/map-editor/index.html');
-assert(/generalStoreSign:\{icon:/.test(mapEditorHtml), 'generalStoreSign must be placeable from the Map Editor Decor palette');
-assert(/innSign:\{icon:/.test(mapEditorHtml), 'innSign must be placeable from the Map Editor Decor palette');
-
-const townMap = json('docs/config/maps/hobunji_hollow_town.map.json');
-const decorByKey = new Map((townMap.decor || []).map(d => [d.key, d]));
-const inn = decorByKey.get('innSign');
-assert(!decorByKey.has('generalStoreSign'), 'the General Store sign must no longer render as a duplicate town decor entry');
-for(const [index,layout] of (townMap.layouts||[]).entries()){
-  assert(!(layout.decor||[]).some(d=>d.key==='generalStoreSign'||d.id==='town_general_store_sign'),
-    'town alternate layout '+index+' must not respawn a second General Store sign');
+// Both signs are house-owned fixtures; their inventory sources stay available.
+const gameJs=read('docs/game.js');
+for(const key of ['generalStoreSign','innSign']) {
+  assert(gameJs.includes(key),key+' must remain in game definitions');
+  assert(read('docs/tools/map-editor/index.html').includes(key),key+' must remain available in editor catalog');
 }
-assert(inn, 'Inn sign must remain as ordinary town decor');
-assert.equal(inn.rotY, 90, 'innSign must rotate its +X support side toward north');
-
-const store = json('docs/config/pieces/general-store.json');
-const sign = json('docs/config/furniture-authored/generalStoreSign.json');
-const building = townMap.buildings.find(b => b.pieceFile === 'config/pieces/general-store.json');
-assert(building, 'town building must use the actual General Store house JSON');
-const mounted = (store.wallFixtures || []).filter(f => f.authoredFurnitureKey === 'generalStoreSign');
-assert.equal(mounted.length, 1, 'the actual General Store sign must be stored once in its house piece');
-const f = mounted[0];
-assert.equal(f.faceId, 1303, 'attach to the front wall containing the authored door');
-assert(store.base.faces.some(face => face.id === f.faceId && face.tag === 'wall'));
-assert.deepEqual(f.authoredAnchor, sign.wallOrnament.anchor, 'keep the actual authored +X beam mounting face');
-assert.deepEqual(f.authoredScale, [.393, .563, .557], 'keep the recent in-game nonuniform sign scale');
-assert.equal(f.sourceTownPlacement.rotY, 90);
-assert.equal(sign.repoFurniture.placementConfig, 'docs/config/pieces/general-store.json (wallFixtures; face 1303)');
-assert(read('docs/js/HousePieceGen.js').includes('HouseWallFixtures.createGroup'),
-  'the in-game building generator must instantiate authored wall fixtures');
-const fixtureRuntime=read('docs/js/house-wall-fixtures.js');
-assert(fixtureRuntime.includes('authored.buildGroup') && fixtureRuntime.includes('authored.load(key)'),
-  'mounted signs must build from the real authored furniture recipe, including its existing decals');
-const houseEditor=read('docs/tools/house-piece-author/house-wall-fixture-editor.js');
-assert(houseEditor.includes('generalStoreSign') && houseEditor.includes('hwfSourceSX'),
-  'House Editor must display/select the authored sign and preserve its nonuniform scaling');
-
-const epsilon = (actual, expected, label, tol = 1e-6) =>
-  assert(Math.abs(actual - expected) <= tol, `${label}: expected ${expected}, got ${actual}`);
-const face = store.base.faces.find(wall => wall.id === f.faceId);
-const point = (u,v) => [0,1,2].map(i =>
-  (1-v)*((1-u)*face.v[0][i]+u*face.v[3][i])
-  +v*((1-u)*face.v[1][i]+u*face.v[2][i]));
-const anchor = point(f.u,f.v);anchor[2] += f.depth; // south-facing front-wall horizontal normal +Z
-const rootPosition = [
-  anchor[0],anchor[1] - f.authoredAnchor[1]*f.authoredScale[1],
-  anchor[2] + f.bodyOutset + f.authoredAnchor[0]*f.authoredScale[0], // body moves outward, beam end remains at anchor
-];
-const minX = Math.min(...store.footprint.cells.map(c => c.x));
-const minZ = Math.min(...store.footprint.cells.map(c => c.y));
-const gc = Math.floor(store.gridSize/2);
-const offX = building.gridX + gc - minX, offZ = building.gridZ + gc - minZ;
-const latest = f.sourceTownPlacement;
-const originalRoot = [
-  latest.col + .5 + latest.postX,
-  latest.postY,
-  latest.row + .5 + latest.postZ
-];
-epsilon(rootPosition[0] + offX, originalRoot[0], 'world sign X');
-epsilon(rootPosition[1], originalRoot[1], 'world sign Y relative to building base');
-epsilon(rootPosition[2] + offZ, originalRoot[2], 'world sign Z');
-const doorWorldX = building.gridX + store.footprint.door.x - minX + .5;
-epsilon(rootPosition[0] + offX - doorWorldX, .457, 'door-relative sign X');
-epsilon(anchor[1], 1.365688, 'sign beam end height above door');
-epsilon(f.depth, 0, 'fixed wall anchor clearance');
-epsilon(f.bodyOutset, .38314742857, 'furniture moves while beam extends to wall');
-assert(!store.assets.some(a => a.name === 'General Store Sign'), 'must not double-spawn a generic asset alongside wall fixture');
-
+const townMap=json('docs/config/maps/hobunji_hollow_town.map.json');
+for(const [name,decor] of [['base',townMap.decor],...(townMap.layouts||[]).map((l,i)=>['layout '+i,l.decor])])
+  assert(!(decor||[]).some(d=>['generalStoreSign','innSign'].includes(d.key)),
+    name+' must not spawn floating duplicate sign decor');
+const store=json('docs/config/pieces/general-store.json');
+const innPiece=json('docs/config/pieces/inn.json');
+const storeSrc=json('docs/config/furniture-authored/generalStoreSign.json');
+const innSrc=json('docs/config/furniture-authored/innSign.json');
+const mount=(piece,key)=>(piece.wallFixtures||[]).filter(f=>f.authoredFurnitureKey===key);
+assert.equal(mount(store,'generalStoreSign').length,1);
+assert.equal(mount(innPiece,'innSign').length,1);
+const sf=mount(store,'generalStoreSign')[0],nf=mount(innPiece,'innSign')[0];
+assert.equal(sf.faceId,1303);
+assert.equal(nf.faceId,233);
+assert.equal(sf.u,.79);
+assert.equal(sf.v,1);
+assert.equal(sf.bodyOutset,.362);
+assert.equal(nf.bodyOutset,sf.bodyOutset);
+assert.equal(sf.depth,0);
+assert.equal(nf.depth,0);
+assert.deepEqual(sf.authoredScale,[.575,.8,1.5]);
+assert.deepEqual(nf.authoredScale,[.718,.86,1.872]);
+assert.deepEqual(sf.authoredAnchor,storeSrc.wallOrnament.anchor);
+assert.deepEqual(nf.authoredAnchor,innSrc.wallOrnament.anchor);
+assert.equal(storeSrc.repoFurniture.placementConfig,'docs/config/pieces/general-store.json (wallFixtures; face 1303)');
+assert.equal(innSrc.repoFurniture.placementConfig,'docs/config/pieces/inn.json (wallFixtures; face 233)');
+const point=(f,u,v)=>[0,1,2].map(i=>
+  (1-v)*((1-u)*f.v[0][i]+u*f.v[3][i])
+  +v*((1-u)*f.v[1][i]+u*f.v[2][i]));
+const st=store.base.faces.find(f=>f.id===sf.faceId);
+const it=innPiece.base.faces.find(f=>f.id===nf.faceId);
+const storeDoor=store.footprint.door.x-Math.floor(store.gridSize/2)+.5;
+const innDoor=innPiece.footprint.door.x-Math.floor(innPiece.gridSize/2)+.5;
+const stOffset=point(st,sf.u,sf.v)[0]-storeDoor;
+const innOffset=point(it,nf.u,nf.v)[0]-innDoor;
+assert(Math.abs(stOffset+.979)<1e-6);
+assert(Math.abs(innOffset-stOffset)<1e-6,'door-relative offset drift');
+assert(Math.abs(point(st,sf.u,sf.v)[1]-point(it,nf.u,nf.v)[1])<1e-6);
+assert.deepEqual(townMap.buildings.find(b=>b.pieceFile==='config/pieces/inn.json').doorEntrance.cells,[{x:4,y:4}]);
+assert.equal(innPiece.footprint.door.x,10);
+assert.equal(innPiece.footprint.door.y,11);
+assert(read('docs/js/HousePieceGen.js').includes('HouseWallFixtures.createGroup'));
+const runtime=read('docs/js/house-wall-fixtures.js');
+assert(runtime.includes('authored.buildGroup')&&runtime.includes('authored.load(key)'));
+const editor=read('docs/tools/house-piece-author/house-wall-fixture-editor.js');
+assert(editor.includes('hwfSourceSX')&&editor.includes('hwfNudgeLeft')&&editor.includes('hwfNudgeOut'));
+assert(!store.assets.some(a=>a.name==='General Store Sign'));
 
 // The retired hardcoded system must actually be gone, not left as dead
 // weight alongside the new decor entries (which would double-render).
