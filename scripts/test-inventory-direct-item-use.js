@@ -15,6 +15,7 @@ const inventory = {
   combatManualBlinkDodge: 1,
   techniqueScrollTier1: 1,
   masteryTablet: 1,
+  masteryScroll: 1,
   mysteryDyeRed: 1,
   venomFlask: 1,
   breedingGigantism: 1,
@@ -29,6 +30,7 @@ const ITEM_DEFS = {
   combatManualBlinkDodge: { icon: '📕', label: 'Blink Dodge Combat Manual', combatManualAbilityId: 'blinkDodge' },
   techniqueScrollTier1: { icon: '📜', label: 'Tier 1 Technique Scroll', techniqueScrollTier: 1 },
   masteryTablet: { icon: '🪨', label: 'Test Mastery Tablet', masteryUnlock: { type: 'sharp', rank: 1, effectId: 'test' } },
+  masteryScroll: { icon: '📜', label: 'Test Mastery Scroll', masteryUnlock: { type: 'sharp', rank: 1, effectId: 'test' } },
   mysteryDyeRed: { icon: '🔴', label: 'Red Mystery Dye', mysteryDyePoolId: 'red' },
   venomFlask: { icon: '☠️', label: 'Venom Flask', useMode: 'throw' },
   breedingGigantism: { icon: '🐘', label: 'Breeding Potion of Gigantism', useMode: 'livestock' },
@@ -170,6 +172,7 @@ assert.equal(api.getInventoryUseAction('apple')?.kind, 'food', 'ordinary food ex
 assert.equal(api.getInventoryUseAction('combatManualBlinkDodge')?.kind, 'combatManual', 'combat manuals expose direct Read');
 assert.equal(api.getInventoryUseAction('techniqueScrollTier1')?.kind, 'techniqueScroll', 'technique scrolls expose direct Read');
 assert.equal(api.getInventoryUseAction('masteryTablet')?.kind, 'masteryUnlock', 'mastery tablets expose direct Read');
+assert.equal(api.getInventoryUseAction('masteryScroll')?.kind, 'masteryUnlock', 'mastery scrolls expose direct Read');
 assert.equal(api.getInventoryUseAction('mysteryDyeRed')?.kind, 'mysteryDye', 'mystery dyes expose direct Use');
 assert.equal(api.getInventoryUseAction('venomFlask'), null, 'throwing flasks remain Hold/aim only');
 assert.equal(api.getInventoryUseAction('breedingGigantism'), null, 'livestock potions remain Hold/target only');
@@ -199,6 +202,40 @@ api.refreshInventoryUseButton();
 directButton = elementMap.get('inventoryDirectUseBtn');
 assert.equal(directButton, undefined, 'a target-dependent flask removes the direct-use button instead of pretending it can fire from Inventory');
 assert.equal(api.getDebug().lastDirectUseUi?.reason, 'not-direct-usable', 'mobile diagnostics explain the missing target-dependent action');
+
+// The actual selected Pack tile is authoritative for generated mastery items.
+// Switching away from an ordinary item must resolve the tablet without scanning
+// every owned item or reusing the stale previous action.
+let selectedPackKey = 'apple'; // Emulates the grid's selected class after game.js handles a click.
+documentStub.querySelector = selector => selector.includes('.inv-item-box.selected') && selectedPackKey
+  ? { dataset: { key: selectedPackKey } } : null;
+elementMap.get('iiName').textContent = 'Apple ×1';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'apple');
+selectedPackKey = 'masteryTablet';
+elementMap.get('iiName').textContent = 'Test Mastery Tablet ×1';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryTablet', 'switching from food to a mastery tablet resolves its exact item');
+assert.equal(api.getDebug().lastDirectUseUi.reason, 'selected-slot');
+assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/);
+selectedPackKey = 'apple';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn'), undefined, 'stale mastery name cannot Read the newly selected food item');
+assert.equal(api.getDebug().lastDirectUseUi.reason, 'stale-selection');
+selectedPackKey = 'masteryTablet';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryTablet', 'tablet action returns when the matching slot is selected');
+selectedPackKey = 'masteryScroll';
+elementMap.get('iiName').textContent = 'Test Mastery Scroll ×1';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryScroll', 'switching directly from a tablet to a scroll resolves the new lesson');
+assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/);
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.onclick(), true, 'newly selected mastery scroll Read button invokes its own item key');
+assert.equal(inventory.masteryScroll, 0, 'reading the scroll does not consume the previously selected tablet or food');
+assert.equal(inventory.masteryTablet, 1, 'reading the scroll leaves the tablet for its own independent Read action');
+selectedPackKey = null; // Remaining direct-use tests simulate a programmatic panel, not a grid click.
+documentStub.querySelector = undefined;
+
 
 assert.equal(api.useInventoryItem('alchemy_recipe_healingPotion'), true);
 assert.equal(recipeReads, 1, 'recipe direct-use calls readRecipeItem exactly once');
