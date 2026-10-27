@@ -157,6 +157,12 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
     assert.notDeepEqual([Math.floor(point.x), Math.floor(point.z)], [22, 20], 'stationary trader does not overlap the market vendor');
   });
   assert.ok(caravan.members.every(member => member.gender === 'male'), 'new caravans contain only male traders');
+  // Starting within a footprint simulates a bad stale walker position. The
+  // runtime steering step must eject it rather than interpolate through walls.
+  caravan._walkers = [{ root: { position: { x: 17.5, y: 0, z: 17.5 } }, applyFacingDeadzone: () => {} }];
+  T.__test.steerWalkers(caravan, 0.001, (calendar.day + calendar.time01) * 24, null);
+  const walked = caravan._walkers[0].root.position;
+  assert.ok(grid.cost[Math.floor(walked.z) * grid.cols + Math.floor(walked.x)] >= 0, 'steering never leaves a walker inside a building');
 }
 
 // ── Rotated footprints and in-place map edits ────────────────────────
