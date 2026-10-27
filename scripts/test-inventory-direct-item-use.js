@@ -187,11 +187,12 @@ const actionsEl = {
 }; // Used as #iiActions without recreating the rest of the game's Inventory DOM.
 elementMap.set('iiActions', actionsEl);
 elementMap.set('iiDetail', { style: { display: '' } });
-elementMap.set('iiName', { textContent: 'Recipe: Healing Potion' });
+elementMap.set('iiName', { textContent: 'Recipe: Healing Potion ×1' }); // Matches game.js's real Pack detail, which appends ×count to the item name.
 api.refreshInventoryUseButton();
 let directButton = elementMap.get('inventoryDirectUseBtn');
 assert(directButton, 'a directly usable selected item gains an Inventory action button');
 assert.equal(directButton.dataset.itemKey, 'alchemy_recipe_healingPotion');
+assert.equal(api.getDebug().lastDirectUseUi.reason, 'resolved', 'quantity-suffixed Pack details still resolve their direct-use item');
 assert.match(directButton.textContent, /Read/, 'the Inventory button uses the resolved semantic verb');
 elementMap.get('iiName').textContent = 'Venom Flask';
 api.refreshInventoryUseButton();
@@ -245,10 +246,17 @@ inventory.chairBlueprint = 2;
 ITEM_DEFS.chairBlueprint = { label: 'Chair Blueprint', cat: 'blueprint', icon: '📜' };
 windowStub.CraftingPanel.init({ inventory, FURNITURE_BLUEPRINT_CATALOG: [furnitureBlueprint], clampInventoryStack() {}, saveMemberWorldData() { worldSaves++; } });
 assert.equal(api.getInventoryUseAction('chairBlueprint').verb, 'Read');
+elementMap.get('iiName').textContent = 'Chair Blueprint ×2'; // Real UI caption for two purchased copies.
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'chairBlueprint', 'a purchased furniture blueprint gets a Read button despite its displayed quantity');
+assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/, 'the furniture lesson is visibly readable from its Pack detail');
 assert.equal(api.useInventoryItem('chairBlueprint'), true, 'furniture lessons can be read directly from the bag');
 assert.equal(inventory.chairBlueprint, 1, 'learning consumes exactly one copy');
 assert.equal(windowStub.CraftingPanel.ownsBlueprint(furnitureBlueprint), true);
 assert.equal(api.getInventoryUseAction('chairBlueprint').allowed, false);
+elementMap.get('iiName').textContent = 'Chair Blueprint ×1'; // Remaining duplicate must display a disabled action, not spend another lesson.
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.disabled, true, 'duplicate physical blueprints cannot consume again after learning');
 assert.equal(api.useInventoryItem('chairBlueprint'), false, 'duplicates are not consumed');
 assert.equal(inventory.chairBlueprint, 1);
 const savedBlueprints = windowStub.CraftingPanel.serializeBlueprints(); // Round-trips the active member lessons without requiring a physical copy.
