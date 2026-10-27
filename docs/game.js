@@ -22090,6 +22090,18 @@
               ...(_zoneTreasureObjects.get(zone)?.values() || []),
             ]
             : currentArea === 'farm' ? [...new Set(worldObjects.values())] : [];
+          const nearbyOreRocks = []; // Scene-attached diggable rock roots for the active Sense Mode neighborhood.
+          const indexedOreRocks = _zoneMineableRockMeshes.get(currentArea); // Reuses the outdoor, mine and cavern tile indices; no world-scene traversal.
+          if (indexedOreRocks?.size) {
+            const senseRadius = window.PerceptionMode?.RANGE_TILES || 14; // Mirrors Perception Mode's configured range.
+            const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE); // Tile bounds for the nearby resource sweep.
+            for (let row = playerRow - senseRadius; row <= playerRow + senseRadius; row++) {
+              for (let col = playerCol - senseRadius; col <= playerCol + senseRadius; col++) {
+                const group = indexedOreRocks.get(`${col},${row}`);
+                if (group) nearbyOreRocks.push(group);
+              }
+            }
+          }
           const crops = [];
           if (currentArea === 'farm') {
             const cropMeshes = window.VegetationCropRendering?.cropMeshes || [];
@@ -22108,6 +22120,7 @@
             livestock: currentArea === 'farm' ? animalObjects : [],
             corpses: [...corpseObjects].filter(c => c.state === 'corpse' && c.areaId === currentArea && !c.corpseLooted),
             interactables,
+            oreRocks: nearbyOreRocks, // Kept separate from worldObjects because mineable terrain is scene-owned.
             crops,
           };
         },

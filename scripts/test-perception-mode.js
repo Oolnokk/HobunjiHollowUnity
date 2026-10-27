@@ -52,6 +52,7 @@ const angryDeer = { health: 10, def: { hostile: false }, _territorialBehavior: {
 const neutralHunter = { health: 10, isPorakanekiHunter: true, _porakanekiPlannerControlled: true, avatarRef: { group: entity({ x: 4, z: 0 }) } };
 const hostileHunter = { health: 10, isPorakanekiHunter: true, avatarRef: { group: entity({ x: 4.5, z: 0 }) } };
 const bandit = { health: 10, isBandit: true, avatarRef: { group: entity({ x: 5, z: 0 }) } };
+const denMother = { health: 10, isDenMother: true, def: { hostile: false }, avatarRef: { group: entity({ x: 5, z: 1 }) } }; // Guardian status overrides a normally peaceful species.
 const farWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 40, z: 0 }) } };
 const offSceneWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }, otherScene) } };
 const companion = { health: 10, isCompanion: true, avatarRef: { group: entity({ x: 1, z: 1 }) } };
@@ -59,6 +60,12 @@ const npc = { root: entity({ x: 1, z: 2 }) };
 const cow = { livestockId: 'live1', type: 'animal', avatarRef: { group: entity({ x: 2, z: 2 }) } };
 const chest = { promptRoot: entity({ x: 3, z: 3 }) };
 const bigBarn = { mesh: entity({ x: 4, z: 4 }) };
+// Real feature providers own these roots independently of worldObjects/getSources.
+const ore = entity({ x: 6, z: 1 }), separator = entity({ x: 6, z: 2 });
+const shattercask = entity({ x: 6, z: 3 }), nest = entity({ x: 3, z: 5 }), hive = entity({ x: 2, z: 5 });
+const mushroom = entity({ x: 7, z: 1 }), ruinEntrance = entity({ x: 8, z: 1 });
+const wildOre = entity({ x: 9, z: 2 }); // Existing tile-indexed wilderness/mine rock, not a cave-site module target.
+const farRock = entity({ x: 40, z: 0 }), staleRock = entity({ x: 3, z: 1 }, otherScene);
 bigBarn.mesh.userData.size = 8;
 const growing = { col: 1, row: 1, root: entity({ x: 1, z: 1.5 }), tile: { crop: 'garlink', cropAge: 1.5, water: 0.9, cropReady: false, stress: '' }, data: { label: 'garlink', growDays: 3, idealMin: 0.15, idealMax: 0.45 }, maxWater: 3 };
 const ripe = { col: 2, row: 1, root: entity({ x: 2, z: 1.5 }), tile: { crop: 'needlegrain', cropAge: 3, water: 0, cropReady: true, stress: 'too dry' }, data: { label: 'needlegrain', growDays: 3, idealMin: 0.2, idealMax: 0.5 }, maxWater: 3 };
@@ -86,6 +93,11 @@ const sandbox = {
 };
 sandbox.window.THREE = THREE;
 sandbox.window.WorldPopupText = { syncInfoLists: entries => { synced.push(entries); return entries.length; }, clearInfoLists: () => synced.push('cleared') };
+sandbox.window.CavernOreRocks = { senseTargets: () => [ore, separator, farRock, staleRock] };
+sandbox.window.Shattercasks = { senseTargets: () => [shattercask] };
+sandbox.window.DenNestSystem = { senseTargets: () => [nest] };
+sandbox.window.HoneyfuzzleHives = { senseTargets: () => [hive] };
+sandbox.window.CaveSiteSystem = { senseTargets: () => [mushroom, ruinEntrance, chest.promptRoot] }; // A registered chest must never glow twice.
 sandbox.window.FarmAnimals = {
   livestockStatus: ids => new Map(ids.map(id => [id, {
     name: 'Mabel', hearts: 3.2, heartMax: 5, hasTrough: true, fed: false, feedDays: 0, pettedToday: true,
@@ -104,8 +116,8 @@ PM.init({
   getActiveScene: () => scene,
   getPlayerTile: () => ({ x: 0, z: 0 }),
   getSources: () => ({
-    creatures: [wolf, deer, angryDeer, neutralHunter, hostileHunter, bandit, farWolf, offSceneWolf, { health: 0, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }) } }],
-    companions: [companion], npcs: [npc], livestock: [cow], corpses: [], interactables: [chest, bigBarn, cow], crops: [growing, ripe],
+    creatures: [wolf, deer, angryDeer, neutralHunter, hostileHunter, bandit, denMother, farWolf, offSceneWolf, { health: 0, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }) } }],
+    companions: [companion], npcs: [npc], livestock: [cow], corpses: [], interactables: [chest, bigBarn, cow], oreRocks: [wildOre], crops: [growing, ripe],
   }),
   onToggle: on => toggles.push(on),
 });
@@ -114,8 +126,13 @@ assert.strictEqual(PM.toggle(), true);
 assert.strictEqual(PM.speedMultiplier(), 0.5, 'movement is halved while active');
 PM.update(5000);
 const snap = PM.debugSnapshot();
-assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.byCategory)), { hostile: 4, neutral: 2, friendly: 4, interact: 2 },
-  'wolf/angry deer/hostile hunter/bandit red; deer/neutral hunter yellow; companion/npc/cow/growing crop white; chest/ripe crop green; far, off-scene, dead and oversized excluded');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.byCategory)), { hostile: 5, neutral: 2, friendly: 4, interact: 10 },
+  'hostiles including Den-Mother red; harmless animals yellow; creatures/crops white; live scene-owned interactables green; far/off-scene/dead/oversized excluded');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.specialSources)),
+  { oreRocks: 4, shattercasks: 1, nests: 1, hives: 1, caveFeatures: 3 },
+  'mobile Sense Mode diagnostics show registered providers before range/scene filtering');
+assert.equal(snap.sources.oreRocks, 1, 'outdoor/mine ore rock roots flow through the game-owned source list');
+assert(snap.rejected.offScene >= 1 && snap.rejected.outOfRange >= 1, 'stale cave roots and out-of-range rocks are rejected');
 
 // Info lists: both crops and the cow, nothing else.
 const entries = Array.from(synced[synced.length - 1], e => ({ key: e.key, rows: JSON.parse(JSON.stringify(e.rows)) })); // vm-realm arrays → this realm (roots are circular, so only keys/rows).

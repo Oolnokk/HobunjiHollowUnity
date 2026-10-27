@@ -911,8 +911,21 @@
     });
   }
 
+  function senseTargets(scene) {
+    if (!deps || !scene) return [];
+    const area = deps.getCurrentArea?.(); // The player can only interact with clutches in the current cave/zone.
+    const roots = []; // Rendered nest furniture, not phantom eggs or an entire tree/cavern.
+    const cavern = deps._denNests?.get?.(area);
+    if (Number(cavern?.remaining) > 0 && cavern.mesh) roots.push(cavern.mesh);
+    for (const branch of window.ClimbSystem?.debugBranchesFor?.(area) || []) {
+      const nest = branch?.nest;
+      if (Number(nest?.remaining) > 0 && nest.mesh) roots.push(nest.mesh);
+    }
+    return roots;
+  }
+
   window.DenNestSystem = {
-    ensureCavernNestFurniture,
+    ensureCavernNestFurniture, senseTargets,
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
     teleportToRandomDen, warpToDenAnchor,
     isPlayerNearDenNest, aimedCavernNest, currentAimedNest,

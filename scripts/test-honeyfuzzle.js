@@ -334,6 +334,7 @@ function hiveWorld({ night = false } = {}) {
 {
   const { H, grid, state, context } = hiveWorld();
   assert.deepEqual(Array.from(H.hivesInLayout({ tiles: [{ c: 5, r: 4, floraKind: 'beehive' }, { c: 1, r: 1, floraKind: 'bush' }] }), h => `${h.col},${h.row}`), ['5,4'], 'only beehive stumps count');
+  assert.equal(H.senseTargets({}).length, 1, 'a live hive stump is registered for Sense Mode even when no swarm is present');
   // A: by day, exactly one swarm comes out of the stump, near it, and it is not duplicated.
   H.ensureCurrentZone(); H.ensureCurrentZone();
   assert.equal(state.created.length, 1);
@@ -385,6 +386,7 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(state.removedVisual, 1);
   assert.equal(H.harvest('map_test', 5, 4).ok, false, 'a collapsed stump cannot be harvested twice');
   assert.equal(H.getHoldTarget(5, 4), null);
+  assert.equal(H.senseTargets({}).length, 0, 'collapsed hives no longer highlight');
   assert.equal(swarm.hiveKey, null, 'its swarm is homeless');
   state.night = true; assert.equal(H.control(swarm, 0.1), false, 'a homeless swarm has no hive to return to');
 }
@@ -405,6 +407,7 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(west.state.created.length, 0);
   assert.equal(west.context.HoneyfuzzleHives.getAimedHive(5, 4), null);
   assert.equal(west.context.HoneyfuzzleHives.getHoldTarget(5, 4), null);
+  assert.equal(west.context.HoneyfuzzleHives.senseTargets({}).length, 0, 'excluded Western Slope scenery is never a hive highlight');
   assert.equal(west.context.HoneyfuzzleColors.zonePalette('map_western_slope').length, 0);
 }
 
