@@ -55,6 +55,9 @@ assert.equal(api.isManagedTile('map_hobunji_town', 5, 5), true);
 assert.equal(api.isManagedTile('map_hobunji_town', 10, 10), true);
 assert.equal(api.isManagedTile('map_hobunji_town', 20, 20), false);
 assert.equal(api.isManagedTile('map_hobunji_town', 1, 1), false);
+api.registerMap('map_seed_only', [{ id: 'seeder_only', kind: 'till', crop: 'needlegrain', tiles: [[22, 22]], tillers: [], seeders: ['seedy'] }]);
+assert.equal(api.isManagedTile('map_seed_only', 22, 22), true, 'plots with seeders but no tillers remain managed');
+api.registerMap('map_seed_only', []);
 
 const rec = id => ({ id });
 const target = id => overrides['farm-plots'](rec(id));
@@ -112,7 +115,11 @@ assert.ok(claimant('aliri'));
 assert.equal(claimant('backup'), null, 'backup idle while the primary is free');
 date.npcId = 'aliri'; assert.ok(claimant('backup')); assert.equal(claimant('aliri'), null); date.npcId = null;
 companions.add('aliri'); assert.ok(claimant('backup')); companions.clear();
-spouse = { npcId: 'aliri' }; assert.ok(claimant('backup')); spouse = null;
+spouse = { npcId: 'aliri' }; assert.ok(claimant('backup'), 'married town worker yields to backup outside visit window');
+win.RomanceSystem.spouseTownVisitNow = id => id === 'aliri';
+assert.ok(claimant('aliri'), 'married Ginju can work their original plot during an authorized town visit');
+win.RomanceSystem.spouseTownVisitNow = () => false;
+spouse = null;
 
 // Dig plots: the player's dig animation; rain fills the trench and the water stays; rain can silt it back in.
 walkers.digger = { area: 'town', rec: rec('digger'), root: { position: { x: 10.5, z: 12.5 } } };
@@ -173,31 +180,33 @@ spouse = { npcId: 'spouse1' };
 hour.value = 10;
 walkers.spouse1 = { area: 'farm', rec: rec('spouse1'), root: { position: { x: 2.5, z: 4.5 } } };
 walkers.kid1 = { area: 'farm', rec: rec('kid1'), root: { position: { x: 6.5, z: 8.5 } } };
-let fam = api.targetFor(rec('spouse1'));
+assert.equal(target('spouse1'), null, 'global plot override must not preempt family scheduling');
+let fam = api.targetFor(rec('spouse1'), { familyOnly: true });
 assert.ok(fam, 'a married spouse still works the family plots (unlike town hands)');
 assert.equal(fam.area, 'farm');
 assert.equal(api.targetFor(rec('stranger')), null);
-assert.equal(api.targetFor(rec('kid1')).toolActivity, 'dig', 'the child digs the trench group');
+assert.equal(target('kid1'), null, 'global plot override must not preempt child sleeping or vat work');
+assert.equal(api.targetFor(rec('kid1'), { familyOnly: true }).toolActivity, 'dig', 'the child digs the trench group');
 // Tick through: spouse tills both tiles, then seeds one (only one seed in storage), then has nothing more to do.
 const claimFam = id => api.snapshot().claims.find(c => c.npc === id);
 for (let step = 0; step < 6; step += 1) {
-  const c = claimFam('spouse1') || (api.targetFor(rec('spouse1')), claimFam('spouse1'));
+  const c = claimFam('spouse1') || (api.targetFor(rec('spouse1'), { familyOnly: true }), claimFam('spouse1'));
   if (!c) break;
   walkers.spouse1.root.position.x = c.standC + 0.5; walkers.spouse1.root.position.z = c.standR + 0.5;
   for (let i = 0; i < 10; i += 1) tick();
-  api.targetFor(rec('spouse1'));
+  api.targetFor(rec('spouse1'), { familyOnly: true });
 }
 assert.equal(farm.jobs.filter(j => j === 'till').length, 2);
 assert.equal(farm.jobs.filter(j => j === 'seed').length, 1, 'only the one seed in storage is sown');
 assert.equal(farm.storage.needlegrainSeed, 0);
-assert.equal(api.targetFor(rec('spouse1')), null, 'no seeds left: nothing more to do');
+assert.equal(api.targetFor(rec('spouse1'), { familyOnly: true }), null, 'no seeds left: nothing more to do');
 // The spouse yields to a backup only while on a date / following you.
 date.npcId = 'spouse1';
-assert.equal(api.targetFor(rec('spouse1')), null);
+assert.equal(api.targetFor(rec('spouse1'), { familyOnly: true }), null);
 date.npcId = null;
 // Trenches silted below the threshold get redug.
 farmTile(6, 6).type = 'trench'; farmTile(6, 6).depth = 0.3;
-assert.equal(api.targetFor(rec('kid1')).toolActivity, 'dig');
+assert.equal(api.targetFor(rec('kid1'), { familyOnly: true }).toolActivity, 'dig');
 assert.equal(api.targetFor(rec('stranger')), null);
 console.log('ok - farm family plots');
 process.exit(0);
