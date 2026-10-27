@@ -174,8 +174,10 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.ok(after.cost[13 * after.cols + 14] >= 0, 'old footprint is unblocked after moving');
   assert.equal(after.cost[19 * after.cols + 14], -1, 'new rotated footprint is blocked');
   const { T: shared, window } = makeHarness({ townBuildings: [rotated] });
+  const priorGrid = shared.__test.gridForArea('town');
   window.BuildingGrassSuppression = { authoredBuildingFootprintKeys: () => new Set(['12,12', '13,12']) };
   const sharedGrid = shared.__test.gridForArea('town');
+  assert.notEqual(sharedGrid, priorGrid, 'late-loaded footprint authority invalidates prior town grid');
   assert.equal(sharedGrid.cost[12 * sharedGrid.cols + 12], -1, 'shared footprint includes placement extensions');
   assert.ok(sharedGrid.cost[19 * sharedGrid.cols + 14] >= 0, 'shared footprint authority wins over the generic rectangular fallback');
 }
