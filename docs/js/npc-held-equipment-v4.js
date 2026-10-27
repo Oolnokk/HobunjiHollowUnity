@@ -16,6 +16,7 @@
     spearhead_unumanuk: Object.freeze({ name: 'Spearhead', toolKey: 'fishingspear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', stance: 'light', mastery: 5, xp: 300, verdigris: 1 }),
   });
 
+  const activityPose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, sweep: false, dirSign: 1 }; // Scratch for ToolActivityStages.poseAt.
   const states = new Set(); // Managed live walkers, iterable for cleanup/debug.
   const stateByWalker = new WeakMap(); // Prevents duplicate update wrappers.
   const claimedRigs = new WeakMap(); // Per-hand ownership so walk/idle fallback cannot overwrite a held right hand.
