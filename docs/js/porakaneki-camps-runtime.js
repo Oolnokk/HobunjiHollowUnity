@@ -351,6 +351,10 @@
         ramp: source.type === combatDeps.TileType?.RAMP || !!source.incline,
         waterfall: source.type === combatDeps.TileType?.WATERFALL,
         terrain: source.type,
+        rockKind: source.rockKind || null, // Preserved so displaced camp boulders can be cleared/restored along with their terrain type.
+        boulderId: source.boulderId || null, // Identifies all tiles belonging to the same procedural boulder shell.
+        generatedObjectId: source.generatedObjectId || null, // Preserves a source resource footprint for reversible camp clearing.
+        generatedObjectType: source.generatedObjectType || null, // Paired with generatedObjectId for exact live-grid restoration.
         occupiedBy: null,
       };
       tiles[source.r][source.c] = tile;
@@ -453,6 +457,7 @@
   }
   function clearCampMeshes(camp) {
     for (const entry of camp?.propMeshes?.values?.() || []) {
+      if (entry.record) window.FoliageFurnitureRuntime?.unregisterExternalInstance?.(camp.zoneId, entry.record.id); // Releases the same player Sit actions registered when this log mesh loaded.
       if (entry.light) entry.light.parent?.remove?.(entry.light);
       if (entry.sharedFoliage) entry.mesh?.parent?.remove?.(entry.mesh);
       else disposeObject3D(entry.mesh);
@@ -590,6 +595,7 @@
       window.__farmLog?.(`[${KEY}] ERROR: zone "${zoneId}" has no legal hunting-camp site even after the minimum fallback.`, 'warn');
     }
     state.zones.set(zoneId, zoneState);
+    registerTentCollisionProvider(zoneId); // The shared sub-tile blocker now follows both tribes' live camp footprints, including seasonal chief migration.
     return zoneState;
   }
 
@@ -642,6 +648,33 @@
     return zoneState ? [...zoneState.smallCamps, ...(zoneState.chiefCamp ? [zoneState.chiefCamp] : [])] : [];
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
+
+  function registerTentCollisionProvider(zoneId) {
+    if (!window.AreaFootprintBlockers?.register) return false;
+    window.AreaFootprintBlockers.register(`${KEY}-camp-tents:${zoneId}`, {
+      area: zoneId,
+      blocksBox(x, z, half = 0, worldY = null) {
+        const zoneState = state.zones.get(zoneId); // The latest generated camp layout, not a captured stale seasonal reservation.
+        if (!zoneState) return false;
+        for (const camp of activeCamps(zoneState)) {
+          for (const prop of camp.props) {
+            if (prop.type !== 'tent' || prop.destroyed) continue;
+            const w = Math.max(1, num(prop.w, 2)), h = Math.max(1, num(prop.h, 2)); // Exact stamped tent footprint used for walker and projectile overlap.
+            if (x + half <= prop.x || x - half >= prop.x + w || z + half <= prop.y || z - half >= prop.y + h) continue;
+            if (worldY != null) {
+              const grid = combatDeps?.zoneScenes?.get?.(zoneId)?.grid || (currentArea() === zoneId ? combatDeps?.getActiveGrid?.() : null); // Only used to let high projectiles clear tent roofs.
+              const tile = grid?.[Math.floor(prop.y + h * 0.5)]?.[Math.floor(prop.x + w * 0.5)];
+              const groundY = tile && combatDeps?.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, zoneId), 0) : 0;
+              if (worldY > groundY + 1.275 * TENT_HEIGHT_SCALE) continue;
+            }
+            return true;
+          }
+        }
+        return false;
+      },
+    });
+    return true;
+  }
 
   function reservedSites(zoneId) {
     const zoneState = state.zones.get(zoneId);
@@ -780,6 +813,7 @@
       instance.userData.porakanekiCampId = camp.id;
       markOutline(instance);
       zone.scene.add(instance);
+      window.FoliageFurnitureRuntime?.registerExternalInstance?.(camp.zoneId, record, data, instance); // Shared wilderness seating buttons and anchors, not just NPC schedule stations.
       camp.propMeshes.set(prop.id, { mesh: instance, light: null, pending: false, record, data, sharedFoliage: true });
     }).catch(error => {
       if (generation !== buildGeneration || camp.propMeshes.get(prop.id) !== entry) return;
@@ -800,6 +834,7 @@
       if (prior?.retryAtMs > performance.now()) continue;
       if (prior) {
         if (prior.light) prior.light.parent?.remove?.(prior.light);
+        if (prior.record) window.FoliageFurnitureRuntime?.unregisterExternalInstance?.(camp.zoneId, prior.record.id); // Avoid stale seat hitboxes during asynchronous mesh retries.
         disposeObject3D(prior.mesh);
         camp.propMeshes.delete(prop.id);
       }
