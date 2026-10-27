@@ -12,11 +12,17 @@ load('docs/js/town-mine.js');
 load('docs/js/foundry-shop.js');
 load('docs/js/hand-tool-grips.js');
 const api = window.ModularWeapons, mine = window.TownMine; // Public feature APIs under test.
-assert.equal(api.getConfig().heads.kylie.dmgType, 'blunt', 'the shipped modular Kylie head must be blunt');
+assert.equal(api.getConfig().heads.kylie.dmgType, 'blunt', 'historic modular Kylie weapons retain blunt damage');
+assert.equal(api.getConfig().heads.kylie.craftDisabled, true, 'Kylie is retired as a forgeable head');
+assert.equal(api.getConfig().shafts.kylie.editorOnly, false, 'Kylie remains a forgeable shaft');
 const staleKylieDraft = JSON.parse(JSON.stringify(api.getConfig())); // Simulates a player-authored attachment draft saved before Kylies became blunt.
 staleKylieDraft.heads.kylie.dmgType = 'sharp';
+staleKylieDraft.heads.kylie.craftDisabled = false; // Old authoring data must not override shipped retirement metadata.
 api.replace(staleKylieDraft);
 assert.equal(api.getConfig().heads.kylie.dmgType, 'blunt', 'imported older attachment drafts cannot silently restore sharp Kylie damage');
+assert.equal(api.getConfig().heads.kylie.craftDisabled, true, 'imported drafts cannot re-enable the Kylie head');
+assert.equal(api.isDisallowed('warhammer', 'kylie'), true, 'retired Kylie head combinations are disallowed');
+assert.equal(api.isDisallowed('kylie', 'dagger'), false, 'Kylie shaft retains compatible heads');
 const modularEditorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8'); // Checks that the standalone editor loads the same committed Kylie catalog as gameplay.
 const gameplayHtml = fs.readFileSync('docs/index.html', 'utf8');
 const modularEditorConfigVersion = modularEditorHtml.match(/\.\.\/\.\.\/config\/modular-weapons\.js\?v=([^"']+)/)?.[1]; // Referenced only in this runtime/editor version parity assertion.
@@ -25,6 +31,13 @@ assert(modularEditorConfigVersion && modularEditorConfigVersion === gameplayConf
 const defs = {}, shapes = { dagger: { animStyle: 'thrust', weaponIdleClass: 'light' }, bshuakauitl: { animStyle: 'sweep', weaponIdleClass: 'light' } }; // Donor behavior must remain independent of head type.
 const metals = { nativeCopper: { label: 'Copper', hex: '#B87333' } }; // Single tier is enough to exercise deterministic registration.
 api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
+const retiredHeadKey = api.itemKey('warhammer', 'kylie', 'nativeCopper'); // Existing saved weapons with Kylie heads retain definitions.
+const kylieShaftKey = api.itemKey('kylie', 'dagger', 'nativeCopper'); // Kylie shafts still use their donor grip and attack identity.
+assert.equal(defs[retiredHeadKey].dmgType, 'blunt', 'retired Kylie-head gear retains its gameplay definition');
+assert.equal(defs[kylieShaftKey].shapeKey, 'kylie', 'Kylie shaft assembly retains its donor identity');
+const kylieParts = api.unlockedParts(['kylie', 'dagger'], { tools: {} }, defs); // Verifies Foundry choice construction with both source shapes unlocked.
+assert(!kylieParts.heads.includes('kylie'), 'Kylie does not appear in the forgeable head choices');
+assert(kylieParts.shafts.includes('kylie'), 'Kylie remains a forgeable shaft');
 const key = api.itemKey('dagger', 'warhammer', 'nativeCopper'); // Blunt head on a dual-wield donor.
 assert.equal(defs[key].dmgType, 'blunt');
 assert.equal(defs[key].animStyle, 'thrust');
@@ -106,7 +119,8 @@ const gear = { tools: {} }, unlocked = ['dagger']; // Live unlock authority may 
 window.FoundryShop.init({ inventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES: unlocked, VERDIGRIS_METAL_KEYS: ['nativeCopper'], getGearInventory: () => gear,
   metalBarItemKey: metal => `bar_${metal}`, clampInventoryStack() {}, saveGearInventory() {}, buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData: () => saves++ });
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
-unlocked.push('warhammer', 'bshuakauitl');
+unlocked.push('warhammer', 'bshuakauitl', 'kylie');
+assert.equal(window.FoundryShop.craft('warhammer', 'kylie', 'nativeCopper').ok, false, 'direct crafting cannot bypass the retired Kylie head');
 assert.equal(window.FoundryShop.craft('bshuakauitl', 'dagger', 'nativeCopper').ok, false);
 const blockedInventory = plain(inventory); // A direct call with both parts unlocked still must enforce the pair policy.
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
