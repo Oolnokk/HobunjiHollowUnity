@@ -9,10 +9,11 @@
   const MAX_DRAG_YAW = 0.85; // Keeps the game's intentionally flat PNG weapon visible while the player turns it.
   const MAX_DRAG_PITCH = 0.35; // Allows modest 3D inspection without losing the weapon edge-on.
   const SOURCE_RETRY_MS = 450; // Retries game-created equipment meshes after asynchronous startup or equip changes.
+  const FRAME_INTERVAL_MS = 1000 / 30; // Limits the separate WebGL viewport to 30 fps; gameplay keeps its own unchanged render rate.
   const state = {
-    key: null, sourcePlane: null, sourceGeometryVersion: -1, sourceMap: null,
+    key: null, sourcePlane: null, sourceGeometryVersion: -1, sourceMap: null, sourceMaterial: null,
     renderer: null, scene: null, camera: null, model: null, plane: null,
-    vfx: null, frame: 0, lastTime: 0, lastSourceCheck: -Infinity,
+    vfx: null, frame: 0, lastTime: 0, lastRenderAt: -Infinity, lastSourceCheck: -Infinity, contextLost: false,
     yaw: 0, pitch: 0, dragPointer: null, dragX: 0, dragY: 0,
     status: 'idle', error: null, frames: 0,
   }; // Shared by the fixed viewport, visibility handlers and mobile diagnostics.
@@ -63,6 +64,7 @@
     state.plane = null;
     state.sourcePlane = null;
     state.sourceMap = null;
+    state.sourceMaterial = null;
     state.sourceGeometryVersion = -1;
   }
 
@@ -73,16 +75,18 @@
       return false;
     }
     try {
-      state.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' });
+      state.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: 'low-power' }); // Pixel-art planes need no expensive edge multisampling.
       state.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PREVIEW_MAX_PIXEL_RATIO));
       state.renderer.setClearColor(0x000000, 0);
       state.renderer.domElement.setAttribute('aria-hidden', 'true');
       state.renderer.domElement.addEventListener('webglcontextlost', event => {
         event.preventDefault();
+        state.contextLost = true; // Avoid restarting the animation loop while the preview's GPU context is unavailable.
         setStatus('3D preview context lost');
         stop();
       });
       state.renderer.domElement.addEventListener('webglcontextrestored', () => {
+        state.contextLost = false;
         state.error = null;
         resume();
       });
@@ -152,6 +156,7 @@
     state.plane = plane;
     state.sourcePlane = source;
     state.sourceMap = source.material.map;
+    state.sourceMaterial = source.material; // Detect an equipment material replacement even when it reuses the old texture.
     state.sourceGeometryVersion = geometryVersion(source);
     fitCamera();
     state.vfx = window.WeaponEnchantmentVFX?.createPreviewEmitter?.(plane, state.key) || null;
@@ -170,7 +175,7 @@
       setStatus('Preparing equipped weapon…');
       return;
     }
-    if (source !== state.sourcePlane || geometryVersion(source) !== state.sourceGeometryVersion) {
+    if (source !== state.sourcePlane || source.material !== state.sourceMaterial || geometryVersion(source) !== state.sourceGeometryVersion) {
       rebuildFromSource(source);
     } else if (state.sourceMap !== source.material.map) {
       // A ranged loaded/unloaded state or live equip rebuild can swap maps without replacing the mesh.
@@ -182,7 +187,12 @@
 
   function tick(now) {
     state.frame = 0;
-    if (!isVisible() || !state.renderer) return; // No RAF/rendering work when another menu tab is active or menu is closed.
+    if (!isVisible() || !state.renderer || state.contextLost) return; // No GPU work when the panel is hidden or its WebGL context is lost.
+    if (now - state.lastRenderAt < FRAME_INTERVAL_MS) {
+      state.frame = requestAnimationFrame(tick); // Skip every other display frame while retaining responsive pointer input.
+      return;
+    }
+    state.lastRenderAt = now;
     const dt = Math.min(0.05, Math.max(0, (now - (state.lastTime || now)) / 1000));
     state.lastTime = now;
     if (now - state.lastSourceCheck >= SOURCE_RETRY_MS) { // Missing sprites retry on a short timer, not on every animation frame.
@@ -213,11 +223,12 @@
     if (state.frame) cancelAnimationFrame(state.frame);
     state.frame = 0;
     state.lastTime = 0;
+    state.lastRenderAt = -Infinity;
   }
 
   function resume() {
     if (!isVisible()) { stop(); return; }
-    if (!initializeRenderer()) return;
+    if (!initializeRenderer() || state.contextLost) return;
     if (!state.frame) {
       state.lastSourceCheck = -Infinity; // First visible frame immediately resolves the equipped weapon.
       state.frame = requestAnimationFrame(tick);
@@ -287,7 +298,7 @@
       modelLoaded: !!state.model, sourceMatched: !!equippedPlane(),
       verdigrisTextureShared: !!state.sourceMap && state.sourceMap === state.sourcePlane?.material?.map,
       enchantment: state.vfx?.debugSnapshot?.() || null,
-      frames: state.frames, rendererActive: !!state.frame,
+      frames: state.frames, rendererActive: !!state.frame, contextLost: state.contextLost, targetFps: 30,
       latestChange: 'A fixed, independent 3D loadout viewport reuses the equipped weapon texture and the enchantment particle integrator.',
     };
   }
