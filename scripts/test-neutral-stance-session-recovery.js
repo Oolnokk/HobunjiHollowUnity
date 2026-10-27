@@ -149,8 +149,12 @@ function testEditorExtensionScriptRecovery() {
   scripts[0].onerror();
   scripts[0].onload();
   assert.equal(timers.tasks.size, 1, 'stale extension callbacks cannot disrupt the new request');
+  scripts[1].onload(); // A CDN/script parse failure can fire onload without installing the editor extension.
+  assert.ok(messages.some(message => message.includes('extension did not initialize')), 'successful transport cannot mask failed initialization');
+  timers.run(2000);
+  assert.equal(scripts.length, 3, 'invalid initialization triggers another request');
   window.AttackIdleStanceEditor = { getConfig() {} };
-  scripts[1].onload();
+  scripts[2].onload();
   assert.equal(timers.tasks.size, 0, 'loaded extension has no remaining retry or timeout tasks');
 }
 
