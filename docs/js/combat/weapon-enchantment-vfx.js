@@ -213,6 +213,25 @@
 
   function metalMaskForSprite(spritePath) {
     if (!spritePath || typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const modularParts = window.ModularWeapons?.decode?.(spritePath); // Virtual modular sprite keys must be composed, not loaded as image URLs.
+    if (modularParts) {
+      const revision = window.ModularWeapons.diagnostics?.(spritePath)?.revision ?? 0; // Separates cached masks after foundry authoring changes.
+      const cacheKey = `modular-mask:${revision}:${spritePath}`; // Reuses one source-metal scan for each assembled weapon configuration.
+      if (MASK_CACHE.has(cacheKey)) return MASK_CACHE.get(cacheKey);
+      const task = window.ModularWeapons.compose(modularParts.shaft, modularParts.head).then(canvas => {
+        const context = canvas?.getContext?.('2d', { willReadFrequently: true }); // Scan the exact assembled, unrecolored sprite used by tool-metal-recolor.
+        if (!context || !canvas.width || !canvas.height) throw new Error('Modular weapon composition has no readable pixels');
+        const mask = buildMetalMask(context.getImageData(0, 0, canvas.width, canvas.height));
+        if (!mask) throw new Error('Metal pixel scanner unavailable');
+        return mask;
+      }).catch(error => {
+        MASK_CACHE.delete(cacheKey); // Let later scans retry missing donor assets or transient canvas failures.
+        lastEvent = `modular metal mask failed: ${error?.message || error}`;
+        return null;
+      });
+      MASK_CACHE.set(cacheKey, task);
+      return task;
+    }
     const url = resolveSpriteUrl(spritePath); // Used as the stable per-source cache key and image URL.
     if (MASK_CACHE.has(url)) return MASK_CACHE.get(url);
     const promise = new Promise(resolve => {
