@@ -46,12 +46,11 @@
   }
 
   function equippedPlane() {
-    const deps = window.ProceduralHandAttachments?.gameDeps; // Holds the same toolMeshMap used to draw the actual player equipment.
-    const fromHands = deps?.toolMeshMap?.weapon;
-    const fromCombat = window.Combat?.deps?.toolMeshMap?.weapon; // Optional compatibility seam for development harnesses.
-    const source = fromHands || fromCombat;
-    if (!source || source.userData?.itemKey !== state.key) return null;
-    return source.userData?.toolPlane || null;
+    const equipped = window.EquipmentPanel?.getEquippedWeaponPreviewPlane?.(state.key); // Canonical holstered/equipped mesh, including the current verdigris/plating texture.
+    if (equipped) return equipped;
+    const deps = window.ProceduralHandAttachments?.gameDeps; // Compatibility fallback for standalone integration harnesses.
+    const mesh = deps?.toolMeshMap?.weapon || window.Combat?.deps?.toolMeshMap?.weapon;
+    return mesh?.userData?.itemKey === state.key ? mesh.userData.toolPlane || null : null;
   }
 
   function disposeModel() {
