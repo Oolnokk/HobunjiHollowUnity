@@ -102,6 +102,14 @@
     } catch (error) {
       state.error = String(error?.message || error);
       setStatus('3D preview could not start');
+      sizeObserver?.disconnect?.(); // A partial renderer initialization must not leave an orphan resize callback.
+      sizeObserver = null;
+      window.removeEventListener?.('resize', resize);
+      state.renderer?.domElement?.remove?.();
+      state.renderer?.dispose?.();
+      state.renderer = null; // Later attempts must retry construction rather than drawing with a half-initialized context.
+      state.scene = null;
+      state.camera = null;
       window.__farmLog?.('[loadout-preview] ' + state.error, 'warn');
       return false;
     }
