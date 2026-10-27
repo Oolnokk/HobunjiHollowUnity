@@ -1515,7 +1515,9 @@
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
     for(const vase of allActive().values()) {
-      if(vase.exploded||vase.carried)continue;
+      // Hanging Soursap must be plucked from its branch or knocked down by a
+      // ranged projectile; a melee swing through the canopy cannot bypass the fall.
+      if(vase.exploded||vase.carried||vase.hanging)continue;
       const box=worldHitbox(vase);
       const cx=box?(box.min.x+box.max.x)/2:vase.col+.5;
       const cz=box?(box.min.z+box.max.z)/2:vase.row+.5;
