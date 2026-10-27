@@ -181,7 +181,7 @@
     if (!document?.createElement || !document.head || document.querySelector?.('script[data-hobunji-devotion-rest="1"]')) return false;
     const script = document.createElement('script'); // Used to keep the prayer/rest feature modular while piggybacking on the existing guaranteed sleep bridge bootstrap.
     script.dataset.hobunjiDevotionRest = '1';
-    script.src = new URL('devotion-rest-buffs.js?v=20261017h0f9f1fe', BRIDGE_SCRIPT_URL || document.baseURI).href;
+    script.src = new URL('devotion-rest-buffs.js?v=20261027hca4d5dd', BRIDGE_SCRIPT_URL || document.baseURI).href;
     document.head.appendChild(script);
     return true;
   }

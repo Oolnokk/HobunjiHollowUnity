@@ -26836,6 +26836,7 @@
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
+          `Weekly prayer: ${JSON.stringify(window.DevotionRestBuffs?.debugSnapshot?.() || { coreLoaded: !!window.TemplePrayerRestBlessings, reason: 'Prayer integration is not loaded.' })}`,
           `Flask aim/projectile: ${JSON.stringify(window.AlchemyFlasks?.diagnostics?.() || null)}`,
           `Voice render timing: ${JSON.stringify(window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering || null)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
