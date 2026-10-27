@@ -82,4 +82,11 @@ close(visual.opts.holdS, 0.47 / 2, 'dagger strike hold speed');
 close(visual.opts.coneRangePx, 64 * 1.15 * 0.6 * 0.25, 'dagger cone radial size');
 close(visual.opts.coneHalfConeRad, 9 * Math.PI / 180 * 0.25, 'dagger cone angle');
 close(lunge.distancePx, 32 * 2 * 1.5, 'dagger range leaves lunge distance unchanged');
-console.log('Weapon shape stats: material independence, Foundry blending, power, pose speed, stamina, range, lunge: PASS');
+// These subsystems use separate clocks/effect paths, so keep explicit integration checks alongside the executable combo test.
+const vocalSource = fs.readFileSync('docs/js/combat/combat-vocalizations.js', 'utf8'); // Charged Breaker's stretched voice is paced by the same weapon-speed multiplier.
+assert.match(vocalSource, /if \(authoritative > 0\) return authoritative \/ \(window\.WeaponShapeStats\?\.current\?\.\(\)\?\.speed \|\| 1\)/, 'live charged voice must match 100% windup pose timing');
+const npcSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Independent counter riposte action must not bypass NPC shape tempo.
+assert.match(npcSource, /windupS: 0\.05 \/ \(def\.weaponShapeStats\?\.speed \|\| 1\), strikeS: 0\.15 \/ \(def\.weaponShapeStats\?\.speed \|\| 1\)/, 'NPC counterstrike stages must follow weapon speed');
+const enchantSource = fs.readFileSync('docs/js/combat/combat-enchantments.js', 'utf8'); // Living Gust's peripheral knockback is outside the normal attack's hit modifiers.
+assert.match(enchantSource, /PERIPHERAL_KNOCKBACK_MULTIPLIER\s*\n\s*\* \(window\.WeaponShapeStats\?\.forKey/, 'peripheral Gust knockback must inherit Power once');
+console.log('Weapon shape stats: Foundry blending, Power, shape timings, audio, NPC counters, stamina, range, lunge, special knockback: PASS');
