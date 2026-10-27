@@ -111,6 +111,7 @@ assert.equal(tile('plot_a', other[0], other[1]).tilled, false);
 // Backups: the primary tiller is skipped while on a date, following you, or married to you.
 const claimant = id => api._test.pickJob(id, null);
 api.registerMap('map_hobunji_town', [field, trench, plain]); // fresh claims/state keep the same ids
+assert.equal(api.snapshot().claims.some(c => c.plotId === 'plot_a'), false, 'reloading a map releases its old plot work claims');
 assert.ok(claimant('aliri'));
 assert.equal(claimant('backup'), null, 'backup idle while the primary is free');
 date.npcId = 'aliri'; assert.ok(claimant('backup')); assert.equal(claimant('aliri'), null); date.npcId = null;
@@ -209,4 +210,15 @@ farmTile(6, 6).type = 'trench'; farmTile(6, 6).depth = 0.3;
 assert.equal(api.targetFor(rec('kid1'), { familyOnly: true }).toolActivity, 'dig');
 assert.equal(api.targetFor(rec('stranger')), null);
 console.log('ok - farm family plots');
+
+// The player's farm editor must release assignments immediately when painting over a group.
+context.document = { getElementById: () => null };
+vm.runInContext(fs.readFileSync(path.join(root, 'js/farm-plot-editor.js'), 'utf8'), context, { filename: 'farm-plot-editor.js' });
+const editor = win.FarmPlotEditor;
+editor.init({ save() {}, cropLabel: crop => crop });
+editor.restore([{ id: 'painted', kind: 'till', tiles: [[12, 12]], crop: 'needlegrain', workers: ['spouse1'], hours: [8, 17] }]);
+assert.ok(api.plots().some(p => p.id === 'painted'), 'restored family plot exists in runtime');
+editor.onTerrainPaint(12, 12, 'grass');
+assert.equal(api.plots().some(p => p.id === 'painted'), false, 'erasing the last plot tile unassigns the live worker immediately');
+console.log('ok - family plot editor live erase');
 process.exit(0);
