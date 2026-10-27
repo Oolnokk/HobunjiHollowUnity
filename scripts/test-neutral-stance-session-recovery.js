@@ -106,10 +106,48 @@ function testDynamicScriptRecovery() {
   assert.equal(scripts[0].isConnected, false, 'failed scripts must be removed to permit retries');
   timers.run(1000);
   assert.equal(scripts.length, 2, 'a missing stance module is retried in the same session');
+  scripts[0].onerror();
+  scripts[0].onload();
+  assert.equal(timers.tasks.size, 1, 'stale script events cannot cancel or duplicate the active load deadline');
   window.WeaponToolStances = { init(value) { initialized.push(value); } };
   scripts[1].onload();
   assert.deepEqual(initialized, [deps], 'recovered module receives the captured EquipmentPanel deps');
   assert.equal(timers.tasks.size, 0, 'successful script load clears its deadline');
+}
+
+function testEditorExtensionScriptRecovery() {
+  const source = fs.readFileSync('docs/js/panel-ui-core.js', 'utf8'); // Production attack-editor-only script loader.
+  const start = source.indexOf('// The attack editor has a small extension');
+  const end = source.indexOf('// The procedural animator', start);
+  assert.ok(start >= 0 && end > start, 'PanelUI routes the stance editor extension');
+  const timers = timerHarness(); // Runs in-page retry timers without a real network.
+  const scripts = []; // Captures the editor's dynamic script tags to simulate their lifecycle.
+  const messages = []; // User-visible debug messages for mobile.
+  const window = { logDebug: message => messages.push(message) };
+  const document = {
+    head: { appendChild(script) { script.isConnected = true; scripts.push(script); } },
+    createElement(tag) {
+      assert.equal(tag, 'script');
+      return { isConnected: false, remove() { this.isConnected = false; } };
+    },
+  };
+  vm.runInNewContext(source.slice(start, end), {
+    window, document, location: { pathname: '/tools/attack-animation-editor/index.html' },
+    setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout,
+    Math,
+  });
+  assert.equal(scripts.length, 1, 'stance editor extension starts immediately');
+  scripts[0].onerror();
+  assert.equal(scripts[0].isConnected, false, 'failed extension must be removable for retry');
+  assert.ok(messages.some(message => message.includes('retrying in 1s')), 'extension errors appear in mobile editor diagnostics');
+  timers.run(1000);
+  assert.equal(scripts.length, 2, 'extension retries without reloading the page');
+  scripts[0].onerror();
+  scripts[0].onload();
+  assert.equal(timers.tasks.size, 1, 'stale extension callbacks cannot disrupt the new request');
+  window.AttackIdleStanceEditor = { getConfig() {} };
+  scripts[1].onload();
+  assert.equal(timers.tasks.size, 0, 'loaded extension has no remaining retry or timeout tasks');
 }
 
 async function testAttackEditorStillPresetRecovery() {
@@ -154,6 +192,7 @@ async function testAttackEditorStillPresetRecovery() {
 (async () => {
   await testStanceJsonRecovery();
   testDynamicScriptRecovery();
+  testEditorExtensionScriptRecovery();
   await testAttackEditorStillPresetRecovery();
   console.log('Neutral stance JSON, module and editor retries, local overrides and init ordering PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
