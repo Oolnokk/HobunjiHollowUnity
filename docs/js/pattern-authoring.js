@@ -410,6 +410,7 @@
 
     let previewTimer = 0;
     function schedulePreview() {
+      ++previewToken; // Reject an older asynchronous preview immediately, rather than waiting for the 160ms redraw debounce.
       window.clearTimeout(previewTimer);
       previewTimer = window.setTimeout(runPreview, 160);
     }
