@@ -1471,7 +1471,7 @@
     // dedicated weapon-pose animation (rather than adding a second
     // parallel progress channel just for this) is an acceptable gap.
     window.Combat.beginStagedAction({
-      windupS: 0.05, strikeS: 0.15, recoverS: 0,
+      windupS: 0.05 / (def.weaponShapeStats?.speed || 1), strikeS: 0.15 / (def.weaponShapeStats?.speed || 1), recoverS: 0, // NPC counterstrike duration follows its weapon shape instead of a fixed 0.2s.
       data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: 'counterShield' }, // Counter ripostes are active NPC voice events too.
       onStrike: () => {
         // def.attackTag (bandit's real weapon material) drives both the
