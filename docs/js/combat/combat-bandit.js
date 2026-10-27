@@ -229,9 +229,10 @@
   // NpcAvatarPreview.buildProfileFromNpcExport, plus a `cosmeticSlots`
   // side table the corpse-loot step reads to rebuild each worn item as a
   // packClothing entry without re-deriving its slot.
-  async function rollBanditRoster(cfg, rank, nameOverride) {
+  async function rollBanditRoster(cfg, rank, nameOverride, genderOverride = null) {
     const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
-    const gender = deps.rnd() < 0.5 ? 'male' : 'female';
+    const gender = genderOverride === 'male' || genderOverride === 'female'
+      ? genderOverride : (deps.rnd() < 0.5 ? 'male' : 'female'); // Only callers such as male Slagothim traders supply an override.
     const speciesDef = await loadBanditSpeciesDef(speciesId);
     const slots = cfg?.clothingPool?.slots || [];
     const fillP = Number(cfg?.clothingPool?.fillProbabilityByRank?.[rank] ?? 0.5);

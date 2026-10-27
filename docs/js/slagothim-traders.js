@@ -90,7 +90,8 @@
   let schedulerRegistered = false;
   let lastWorldHours = null;
   let passCheckAccum = 0;
-  const gridCache = new Map(); // area -> routing grid (rebuilt when the zone layout/town grid object changes).
+  const gridCache = new Map(); // area -> routing grid (rebuilt when the zone layout/town grid or building placement changes).
+  const townPieceShapeLoads = new WeakSet(); // Town maps already queued for authoritative piece-footprint loading.
   const state = {
     lastRollDay: null,
     seq: 0,
@@ -170,20 +171,89 @@
   function currentArea() { return deps?.getCurrentArea?.() || null; }
 
   // ── Routing grids ───────────────────────────────────────────────────
+  function townZoneData() {
+    // Reuse the active authored town layout, including building footprints and market stations.
+    try { return deps?.getTownZone?.() || window.TownZoneBuildings?.grassContext?.()?.getTownZone?.() || null; }
+    catch (_) { return null; }
+  }
+
+  function blockFootprint(cost, cols, rows, x, y, w = 1, h = 1) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    for (let r = Math.floor(y); r < Math.floor(y) + Math.max(1, Math.ceil(h)); r++) {
+      for (let c = Math.floor(x); c < Math.floor(x) + Math.max(1, Math.ceil(w)); c++) {
+        if (c >= 0 && c < cols && r >= 0 && r < rows) cost[r * cols + c] = -1;
+      }
+    }
+  }
+
+  function townLayoutStamp(zone) {
+    let hash = 2166136261; // Tracks in-place building/station edits so a cached town route cannot use stale footprints.
+    const mix = value => { hash = Math.imul(hash ^ (Math.round(num(value, 0) * 256) | 0), 16777619); };
+    for (const building of (zone?.buildings || [])) {
+      mix(building.gridX); mix(building.gridZ);
+      mix(building.footprintW ?? building.w); mix(building.footprintD ?? building.h);
+      mix(building.rotationDeg ?? building.rotation);
+    }
+    for (const station of (zone?.npcStations || [])) {
+      mix(station.col); mix(station.row);
+      const id = String(station.id || station.name || '');
+      for (let i = 0; i < id.length; i++) mix(id.charCodeAt(i));
+    }
+    return hash >>> 0;
+  }
+
+  function loadTownPieceFootprints(zone) {
+    const load = window.BuildingGrassSuppression?.ensureAuthoredPieceShapes;
+    if (!zone || typeof load !== 'function' || townPieceShapeLoads.has(zone)) return;
+    townPieceShapeLoads.add(zone);
+    Promise.resolve(load(zone)).then(changed => {
+      if (changed && gridCache.get('town')?.townZone === zone) gridCache.delete('town');
+    }).catch(error => window.__farmLog?.(`[slagothim] town footprint loading failed: ${error?.message || error}`, 'warn'));
+  }
+
+  function blockTownFootprints(cost, cols, rows, zone) {
+    if (!zone) return;
+    // This is the same rotated, piece-shaped building/furniture occupancy used by
+    // town grass suppression; the old rectangle-only test missed 90°/270° wings.
+    const keys = window.BuildingGrassSuppression?.authoredBuildingFootprintKeys?.(zone, 'town');
+    if (keys) {
+      for (const key of keys) {
+        const comma = key.indexOf(',');
+        const c = Number(key.slice(0, comma)), r = Number(key.slice(comma + 1));
+        if (comma > 0 && Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < cols && r < rows) cost[r * cols + c] = -1;
+      }
+      return;
+    }
+    const occupiedCells = window.BuildingSubtleElevation?.worldFootprintCells;
+    for (const building of (zone.buildings || [])) {
+      if (typeof occupiedCells === 'function') {
+        for (const { c, r } of occupiedCells(building)) {
+          if (c >= 0 && r >= 0 && c < cols && r < rows) cost[r * cols + c] = -1;
+        }
+      } else blockFootprint(cost, cols, rows, building.gridX, building.gridZ, building.footprintW ?? building.w ?? 1, building.footprintD ?? building.h ?? 1);
+    }
+  }
+
   function gridForArea(area) {
     if (!deps) return null;
     if (area === 'town') {
       const townGrid = deps.getTownGrid?.();
       if (!Array.isArray(townGrid) || !townGrid.length) return null;
+      const townZone = townZoneData(); // Authored buildings/stations determine safe caravan routes.
+      loadTownPieceFootprints(townZone);
+      const stamp = townLayoutStamp(townZone);
+      const footprintAuthority = window.BuildingGrassSuppression?.authoredBuildingFootprintKeys
+        || window.BuildingSubtleElevation?.worldFootprintCells || null; // A late-loaded building helper must invalidate older rectangular routing.
       const cached = gridCache.get('town');
-      if (cached?.source === townGrid) return cached;
+      if (cached?.source === townGrid && cached.townZone === townZone && cached.stamp === stamp && cached.footprintAuthority === footprintAuthority) return cached;
       const rows = townGrid.length, cols = townGrid[0]?.length || 0;
       const cost = new Float32Array(cols * rows).fill(-1);
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
         if (!deps.isTownTileWalkable?.(c, r)) continue;
         cost[r * cols + c] = townGrid[r][c]?.type === 'path' ? 1 : 3;
       }
-      const grid = { area, source: townGrid, cols, rows, cost, tier: null, incline: null, routes: new Map() };
+      blockTownFootprints(cost, cols, rows, townZone);
+      const grid = { area, source: townGrid, townZone, stamp, footprintAuthority, stations: townZone?.npcStations, cols, rows, cost, tier: null, incline: null, routes: new Map() };
       gridCache.set('town', grid);
       return grid;
     }
@@ -208,14 +278,7 @@
       if (base == null) continue;
       cost[index] = base + (tile.incline ? INCLINE_EXTRA_COST : 0);
     }
-    const block = (x, y, w = 1, h = 1) => {
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      for (let r = Math.floor(y); r < Math.floor(y) + Math.max(1, Math.ceil(h)); r++) {
-        for (let c = Math.floor(x); c < Math.floor(x) + Math.max(1, Math.ceil(w)); c++) {
-          if (c >= 0 && c < cols && r >= 0 && r < rows) cost[r * cols + c] = -1;
-        }
-      }
-    };
+    const block = (x, y, w = 1, h = 1) => blockFootprint(cost, cols, rows, x, y, w, h);
     for (const building of (layout.buildings || [])) block(building.gridX, building.gridZ, building.footprintW ?? building.w ?? 1, building.footprintD ?? building.h ?? 1);
     for (const den of (layout.dens || [])) block(den.x, den.y, den.w, den.h);
     for (const instance of (layout.localeInstances || [])) for (const object of (instance.objects || [])) block(object.x, object.y, object.w, object.h);
@@ -374,13 +437,53 @@
   }
 
   // ── Itinerary ───────────────────────────────────────────────────────
+  function isMarketStation(station) {
+    return /market/i.test(String(station?.id || station?.name || station?.label || ''));
+  }
+
+  function isReservedMarketTile(grid, c, r) {
+    return grid.area === 'town' && (grid.stations || []).some(station =>
+      isMarketStation(station) && station.col === c && station.row === r);
+  }
+
+  function townMarketPoint(grid) {
+    // Authored Ginju market stations anchor the market, but their exact tiles
+    // are occupied by those vendors. Park alongside them on clear ground.
+    const stations = (grid.stations || []).filter(isMarketStation);
+    let best = null;
+    for (const station of stations) {
+      if (!Number.isFinite(station.col) || !Number.isFinite(station.row)) continue;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+        const distanceSq = dc * dc + dr * dr;
+        if (!distanceSq || distanceSq > 5) continue;
+        const c = station.col + dc, r = station.row + dr;
+        if (!passable(grid, c, r) || isReservedMarketTile(grid, c, r)) continue;
+        let clearance = 0;
+        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+          if (dx * dx + dz * dz <= 5 && passable(grid, c + dx, r + dz) && !isReservedMarketTile(grid, c + dx, r + dz)) clearance++;
+        }
+        const score = clearance * 2 - distanceSq * 3 + (grid.cost[r * grid.cols + c] === 1 ? 5 : 0);
+        if (!best || score > best.score) best = { point: { c, r }, score };
+      }
+    }
+    if (best) return best.point;
+    // Extremely crowded custom markets still keep the caravan on walkable ground.
+    for (const station of stations) {
+      const point = snapToPassable(grid, station.col, station.row, 3);
+      if (point) return point;
+    }
+    return null;
+  }
+
   function resolvePoint(grid, area, spec) {
     const zones = deps?.EXTERIOR_ZONES || {};
     let c = null, r = null;
     if (area === 'town') {
       if (spec.k === 'townGate') { c = zones[spec.zone]?.townReturnCol; r = zones[spec.zone]?.townReturnRow; }
       else if (spec.k === 'market') {
-        const gates = [CLOUD_FOREST, ...DESTINATION_ZONES].map(id => zones[id]).filter(z => Number.isFinite(z?.townReturnCol));
+        const authored = townMarketPoint(grid);
+        if (authored) return authored;
+        const gates = [CLOUD_FOREST, ...DESTINATION_ZONES].map(id => zones[id]).filter(z => Number.isFinite(z?.townReturnCol) && Number.isFinite(z?.townReturnRow));
         c = gates.reduce((sum, z) => sum + z.townReturnCol, 0) / Math.max(1, gates.length);
         r = gates.reduce((sum, z) => sum + z.townReturnRow, 0) / Math.max(1, gates.length);
       }
@@ -451,15 +554,20 @@
     const a = resolvePoint(grid, leg.area, leg.from), b = resolvePoint(grid, leg.area, leg.to);
     if (!a || !b) return null;
     const base = cachedRoute(grid, a, b);
+    if (leg.area === 'town' && !base.ok) return null; // Never use a straight-line fallback through town buildings.
     let points = base.points;
     const pauses = [];
     if (leg.camp) {
       const campStop = chooseCampStop(grid, leg.area, base.points, !!leg.campAny);
       if (campStop) {
         const first = cachedRoute(grid, a, campStop), second = cachedRoute(grid, campStop, b);
-        const firstLen = withLengths(first.points).length;
-        points = [...first.points, ...second.points.slice(1)];
-        pauses.push({ at: firstLen, hours: TUNING.CAMP_STOP_HOURS, kind: 'camp' });
+        if (first.ok && second.ok) {
+          const firstLen = withLengths(first.points).length;
+          points = [...first.points, ...second.points.slice(1)];
+          pauses.push({ at: firstLen, hours: TUNING.CAMP_STOP_HOURS, kind: 'camp' });
+        } else if (leg.campAny) {
+          pauses.push({ at: 0, hours: TUNING.CAMP_STOP_HOURS, kind: 'rest' });
+        }
       } else if (leg.campAny) {
         pauses.push({ at: 0, hours: TUNING.CAMP_STOP_HOURS, kind: 'rest' }); // No camp in that zone this generation: rest at the gate and turn back.
       }
@@ -570,7 +678,7 @@
     const memberCount = intRoll(rng, TUNING.MEMBERS_MIN, TUNING.MEMBERS_MAX);
     const members = [];
     for (let i = 0; i < memberCount; i++) {
-      const gender = rng() < 0.5 ? 'male' : 'female';
+      const gender = 'male'; // Slagothim caravan merchants are exclusively male; other Slagothim remain unrestricted.
       members.push({ index: i, gender, name: memberName(`${worldSeedLabel()}:${id}:${i}`, gender), roster: null });
     }
     return {
@@ -744,12 +852,12 @@
     try {
       const base = await window.BanditCombat?.loadGangConfig?.();
       const roster = base && window.BanditCombat?.rollRoster
-        ? await window.BanditCombat.rollRoster({ ...base, speciesWeights: { tletingan: 1 } }, 'grunt', member.name)
+        ? await window.BanditCombat.rollRoster({ ...base, speciesWeights: { tletingan: 1 } }, 'grunt', member.name, 'male')
         : null;
       if (roster?.appearance) {
-        if (roster.appearance.gender && roster.appearance.gender !== member.gender) {
-          member.gender = roster.appearance.gender; // Clothing was rolled for this body; keep the name matching it.
-          member.name = memberName(`${member.name}:${member.gender}`, member.gender);
+        if (roster.appearance.gender !== 'male') {
+          window.__farmLog?.('[slagothim] discarded non-male trader roster', 'warn');
+          return null; // Do not display a female roster if an older avatar factory ignores the override.
         }
         member.roster = { appearance: roster.appearance, equippedCosmetics: roster.equippedCosmetics || [], appliedDyes: roster.appliedDyes || {} };
       }
@@ -800,18 +908,40 @@
     caravan._walkerArea = null;
   }
 
+  // Keep follower offsets and the market ring out of occupied structures.
+  function safeMemberPoint(route, x, z) {
+    const grid = route?.grid;
+    if (!grid || (passable(grid, Math.floor(x), Math.floor(z)) && !isReservedMarketTile(grid, Math.floor(x), Math.floor(z)))) return { x, z };
+    const c0 = Math.round(x - 0.5), r0 = Math.round(z - 0.5);
+    // Prefer the closest road-adjacent tile that does not belong to a town vendor.
+    let best = null, bestScore = Infinity;
+    for (let radius = 0; radius <= 5; radius++) {
+      for (let dr = -radius; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+        if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+        const c = c0 + dc, r = r0 + dr;
+        if (!passable(grid, c, r) || isReservedMarketTile(grid, c, r)) continue;
+        const score = Math.hypot(dc, dr) + (grid.cost[r * grid.cols + c] > 1 ? 0.5 : 0);
+        if (score < bestScore) { bestScore = score; best = { c, r }; }
+      }
+      if (best) break;
+    }
+    if (best) return { x: best.c + 0.5, z: best.r + 0.5 };
+    const fallback = route.points[0];
+    return { x: fallback?.x ?? x, z: fallback?.z ?? z };
+  }
+
   // Desired tile-space position for one member: single file behind the
   // leader while walking, a loose ring around the leader while stopped.
   function memberTarget(caravan, index, route, nowHours = worldHours()) {
     const lead = pointAt(route, caravan.dist);
     if (isStopped(caravan, nowHours ?? 0)) {
-      if (index === 0) return { x: lead.x, z: lead.z, moving: false };
+      if (index === 0) return { ...safeMemberPoint(route, lead.x, lead.z), moving: false };
       const angle = (index / Math.max(1, caravan.members.length - 1)) * Math.PI * 2;
-      return { x: lead.x + Math.cos(angle) * 1.2, z: lead.z + Math.sin(angle) * 1.2, moving: false };
+      return { ...safeMemberPoint(route, lead.x + Math.cos(angle) * 1.2, lead.z + Math.sin(angle) * 1.2), moving: false };
     }
     const along = pointAt(route, caravan.dist - index * TUNING.MEMBER_SPACING_TILES);
     const side = index === 0 ? 0 : (index % 2 ? 0.35 : -0.35);
-    return { x: along.x - along.dz * side, z: along.z + along.dx * side, dx: along.dx, dz: along.dz, moving: true };
+    return { ...safeMemberPoint(route, along.x - along.dz * side, along.z + along.dx * side), dx: along.dx, dz: along.dz, moving: true };
   }
 
   function steerWalkers(caravan, dt, nowHours, playerTile) {
@@ -828,6 +958,10 @@
         const step = Math.min(gap, Math.max(TUNING.WALK_TILES_PER_SECOND * 1.6, gap * 2) * dt);
         root.position.x += dx / gap * step; root.position.z += dz / gap * step;
       }
+      // Steering interpolates between safe targets; a turn can otherwise cut
+      // across a blocked building corner between those positions.
+      const safe = safeMemberPoint(route, root.position.x, root.position.z);
+      root.position.x = safe.x; root.position.z = safe.z;
       root.position.y = num(deps.npcSurfaceY?.(area, Math.floor(root.position.x), Math.floor(root.position.z)), root.position.y);
       let facing = null;
       if (gap > 0.05) facing = -Math.atan2(dz, dx) + Math.PI / 2;
@@ -1069,7 +1203,13 @@
       if (!Array.isArray(raw?.legs) || !raw.legs.length || !Array.isArray(raw.members)) continue;
       state.caravans.push({
         id: String(raw.id), day: num(raw.day, 0), legs: raw.legs, destination: raw.destination || null,
-        members: raw.members.map((member, index) => ({ index, gender: member.gender === 'female' ? 'female' : 'male', name: String(member.name || FALLBACK_NAMES[index % FALLBACK_NAMES.length]), roster: member.roster || null })),
+        members: raw.members.map((member, index) => ({
+          index, gender: 'male',
+          name: member.gender === 'female'
+            ? memberName(`${worldSeedLabel()}:${raw.id}:${index}`, 'male')
+            : String(member.name || FALLBACK_NAMES[index % FALLBACK_NAMES.length]),
+          roster: member.roster?.appearance?.gender === 'male' ? member.roster : null,
+        })),
         legIndex: clamp(Math.floor(num(raw.legIndex, 0)), 0, raw.legs.length - 1),
         dist: Math.max(0, num(raw.dist, 0)), pauseIdx: Math.max(0, Math.floor(num(raw.pauseIdx, 0))), pauseLeft: Math.max(0, num(raw.pauseLeft, 0)),
         stock: Array.isArray(raw.stock) ? raw.stock.filter(entry => entry && entry.id && num(entry.qty, 0) >= 0) : [],
@@ -1250,6 +1390,6 @@
     buy,
     spawnCaravan, // Dev/testing: force a caravan in at the southern road now.
     debugSnapshot,
-    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget }),
+    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, rollMemberRoster, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget, steerWalkers }),
   });
 })();
