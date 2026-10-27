@@ -13836,6 +13836,19 @@
               exitTileSet.add(`${t.col},${t.row}`); // Interior map-switch doors need wall openings just like front doors.
             }
           }
+          // The painted floor is visual; an exit-only tile may remain reachable
+          // immediately outside its boundary without rendering a floor slab.
+          const manualExitBlockers = new Set((mapData.colliders || []).map(([c, r]) => `${c},${r}`));
+          for (const transition of transitions) {
+            const key = `${transition.col},${transition.row}`;
+            if (floorSet.has(key) || manualExitBlockers.has(key)) continue;
+            const inner = window.InteriorDoorTiles?.insideFloorForExit?.(floorSet, transition.col, transition.row, transition.direction);
+            const cell = bGrid[transition.row]?.[transition.col];
+            if (!inner || !cell) continue; // Prevent distant or ambiguous exit markers from creating fake traversable tiles.
+            cell.type = TileType.GRASS;
+            cell.surfaceY = bGrid[inner.row]?.[inner.col]?.surfaceY ?? 0;
+            cell.exitOnlyNoVisualFloor = true;
+          }
           const entranceLightTileSet = Array.isArray(mapData.entranceLightTiles) && mapData.entranceLightTiles.length
             ? new Set(mapData.entranceLightTiles.map(([c, r]) => c + ',' + r))
             : exitTileSet; // Secret/keyed exits must not drag the daylight glow away from the actual cave mouth.
@@ -14126,7 +14139,7 @@
           // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
           await window.InteriorDoorTiles?.build({
             THREE, scene: bScene, mapId, floorSet,
-            mapData: { ...mapData, exits: transitions.map(t => ({ id: t.exitId, tiles: [[t.col, t.row]], direction: t.direction, generateDoor: t.generateDoor })) }, // Door placement follows the same effective transitions that drive travel, including workspace overrides.
+            mapData: { ...mapData, exits: transitions.map(t => ({ id: t.exitId, tiles: [[t.col, t.row]], direction: t.direction, generateDoor: t.generateDoor, doorwayTiles: (mapData.exits || []).find(e => e.id === t.exitId)?.doorwayTiles || [] })) }, // Doors preserve authored outside markers and effective workspace transitions.
             surfaceYAt: (c, r) => tileSurfaceYInArea(bGrid?.[r]?.[c], mapId),
             registerInteractable: (c, r, interactable) => _buildingInteractables.set(mapId + ',' + c + ',' + r, interactable),
             decorate: group => { _markOutline(group); _markFurnitureEdgeId(group); },

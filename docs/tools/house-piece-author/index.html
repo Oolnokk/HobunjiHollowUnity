@@ -26,7 +26,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
-<script src="../../js/panel-ui.js?v=20261026hstanceaudit10"></script>
+<script src="../../js/panel-ui.js?v=20261027hf6c0d43"></script>
 <script src="../../js/repo-picker.js"></script>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <!-- Classic global-THREE (r128) build, loaded alongside the ES-module three
@@ -2158,6 +2158,7 @@ function rebuildRoofPreview(){
   for(const f of roofFaces){
     const faceRoofGroup=new THREE.Group();
     faceRoofGroup.userData.roofFaceId=f.id;
+    faceRoofGroup.userData.surfaceFoliageRole='shingles'; // Roof-GLB vines preview on the same eligible geometry as the game.
     for(const t of roofTargetsForFace(f,config)){
       faceRoofGroup.add(state.roofShingleTemplate ? makeShingleInstance(t,config) : makeTubePreview(t,config));
       count++;
@@ -2263,7 +2264,7 @@ $('refreshExportBtn').onclick=refreshExport; $('downloadJsonBtn').onclick=downlo
 $('jsonInput').onchange=e=>{ const file=e.target.files?.[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ try{ importPayload(JSON.parse(reader.result)); }catch(err){ log(`JSON import failed: ${err.message}`, 'error'); } }; reader.readAsText(file); e.target.value=''; };
 for(const id of ['pieceName','pieceType','basePreset','baseHeight','wallThickness','groundY']) $(id).addEventListener('input',()=>{ syncPieceFromInputs(); refreshExport(); });
 
-SurfaceFoliageAuthoring.mount($('hpaLeftPanel'),{targets:[['all','House surfaces + gables']],read:()=>state.piece.surfaceGrowth,selectedIds:()=>[],write:recipes=>{pushUndo('Surface roots/vines');state.piece.surfaceGrowth=recipes;refreshExport();return rebuildHouseSurfaceFoliage();},log});
+SurfaceFoliageAuthoring.mount($('hpaLeftPanel'),{targets:[['all','House surfaces + gables'],['walls','Walls + gables'],['shingles','Highland roof shingles']],read:()=>state.piece.surfaceGrowth,selectedIds:()=>[],write:recipes=>{pushUndo('Surface roots/vines');state.piece.surfaceGrowth=recipes;refreshExport();return rebuildHouseSurfaceFoliage();},log});
 try{ updateUndoRedoButtons(); syncSetsFromPiece(); syncRoofInputsFromPiece(); if(!state.piece.base.faces.length && !footprintSet.size) applyBasePreset('highland', false); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildRoofPreview(); renderAssetList(); renderPieceList(); refreshExport(); resize(); renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); animate(); window.__MHPA_READY__ = true; log('Ready. Default Highland architecture preset loaded. Blue footprint cells drive a tapered Highland frustum shell; same-height adjacent entry-tunnel markers now fuse into continuous multi-tile mouths, including markers authored directly in blue boundary cells; cyan tall-entry markers use 150% regular tunnel height and stay distinct from regular green runs.'); }catch(err){ log('BOOT ERROR: '+(err?.stack||err?.message||err),'error'); resize(); try{ renderer.setClearColor(0x0b0f16,1); renderer.clear(true,true,true); renderer.render(scene,camera); }catch(e){ log('FALLBACK RENDER ERROR: '+(e?.message||e),'error'); } }
 
 // ── Interior furniture mode ───────────────────────────────────────────────────

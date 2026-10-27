@@ -1,8 +1,9 @@
 'use strict';
 const assert=require('node:assert'),fs=require('node:fs'),vm=require('node:vm');
 const temple=JSON.parse(fs.readFileSync('docs/config/maps/map_i_temple.json','utf8')),exterior=JSON.parse(fs.readFileSync('docs/config/pieces/temple.json','utf8')); // Verify the supplied authored recipe rather than a separate renderer preset.
-const recipe={kind:'vines',seed:'surface-1',count:68,length:6,radius:.1,offset:.008,curl:.4,color:'#406040',texture:'assets/textures/carved_smooth.png',target:'walls',targetIds:[]};
-assert.deepStrictEqual(temple.surfaceGrowth,[recipe]);assert.deepStrictEqual(exterior.surfaceGrowth,[recipe]);
+const rootRecipe={kind:'roots',seed:'surface-1',count:68,length:6,radius:.15,offset:.008,curl:.4,color:'#4a3b33',texture:'assets/textures/wibbly_surface.png',target:'walls',targetIds:[]}; // The former wall vines are now 50%-thicker roots indoors and outdoors.
+const shingleVines={kind:'vines',seed:'temple-highland-shingle-weave',count:56,length:3.4,radius:.04,offset:.006,curl:1.1,color:'#406040',texture:'assets/textures/carved_smooth.png',target:'shingles',targetIds:[]}; // Fine vines follow the exterior's real HighlandLongshingle surfaces, not the masonry.
+assert.deepStrictEqual(temple.surfaceGrowth,[rootRecipe]);assert.deepStrictEqual(exterior.surfaceGrowth,[rootRecipe,shingleVines]);
 const north=temple.furniture.find(record=>record.id==='fwall_mv74tcm0luv6'); // This window is intentionally outside the walkable floor, where gameplay previously sampled wall elevation.
 assert(!temple.floor.some(([col,row])=>col===north.col&&row===north.row));
 const sceneWindow={THREE:{},DaylightWindowRuntime:{windowSilhouette:()=>({minX:-.55,maxX:.55,minY:.5,maxY:1.74,width:1.1,height:1.24})}};
@@ -26,4 +27,4 @@ vm.runInNewContext(fs.readFileSync('docs/js/daylight-window-runtime.js','utf8'),
 assert.equal(runtimeWindow.DaylightWindowRuntime.drawProjectedLight,undefined); // The legacy floor projection was removed; the shared daylight compositor owns blended glass light.
 const patternsWindow={},canvas={width:0,height:0,getContext:()=>({fillStyle:'',fillRect(){}})}; // Solid glass must remain valid without loading an unrelated motif or compositor.
 vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window:patternsWindow,document:{createElement:()=>canvas}});
-patternsWindow.FurniturePatternSurfaces.renderTile({mode:'glass',solid:true,palette:['#8844dd','#eeaa22']},null,[16,24]).then(result=>{assert.strictEqual(result,canvas);assert.equal(result.width,16);assert.equal(result.height,24);console.log('Temple vine recipes, north window room elevation, colored light projection, scratch reuse and solid glass passed.');}).catch(error=>{console.error(error);process.exitCode=1;});
+patternsWindow.FurniturePatternSurfaces.renderTile({mode:'glass',solid:true,palette:['#8844dd','#eeaa22']},null,[16,24]).then(result=>{assert.strictEqual(result,canvas);assert.equal(result.width,16);assert.equal(result.height,24);console.log('Temple roots and shingle-vines, north window room elevation, colored light projection, scratch reuse and solid glass passed.');}).catch(error=>{console.error(error);process.exitCode=1;});

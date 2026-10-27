@@ -518,6 +518,7 @@
     if (opts.scroll !== false) {
       try { currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch {}
     }
+    updateHintBar(activePanel());
   }
 
   function refreshFocusIfStale(availableTargets = null) {
@@ -746,25 +747,31 @@
     cachedScrollHost = null;
   }
 
+  function selectLocalSection(group, panel, nextIndex) {
+    if (activePanel() !== panel || !subtabsByGroup.has(group)) return;
+    const entries = enteredGroups(panel); // Switching sections drops only descendants of the local owner.
+    const state = subtabsByGroup.get(group); // Retains index even for authored sections without ids.
+    const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
+    if (!next || !entries.some(entry => entry.node === group)) return;
+    for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
+    saveSectionScroll(state.selected, panel);
+    prepareSubtabs(group, panel, next.id || null, next.id ? 0 : nextIndex);
+    restoreSectionScroll(next, panel);
+    lastFocusedByGroup.set(state.selected, currentTarget);
+    scrolledSelection = null;
+    const targets = navigationTargets(panel); // Fresh controls may have appeared since the last section switch.
+    const remembered = lastFocusedByGroup.get(next); // Switching back to a section restores its surviving control.
+    setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: false });
+    updateHintBar(panel);
+  }
+
   function cycleTabs(delta) {
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
     const local = localSubtabs(panel); // The deepest entered section borrows configured tab actions until Back leaves it.
     if (local) {
-      const entries = enteredGroups(panel); // Switching sections drops only descendants of the local owner.
-      const state = subtabsByGroup.get(local.node); // Retains index even for authored sections without ids.
-      const nextIndex = (state.sections.indexOf(state.selected) + delta + state.sections.length) % state.sections.length; // Wraps negative/positive bumper direction.
-      const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
-      for (const removed of entries.splice(entries.indexOf(local) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
-      saveSectionScroll(state.selected, panel);
-      prepareSubtabs(local.node, panel, next.id || null, next.id ? 0 : nextIndex);
-      restoreSectionScroll(next, panel);
-      lastFocusedByGroup.set(state.selected, currentTarget);
-      scrolledSelection = null;
-      const targets = navigationTargets(panel); // Fresh controls may have appeared since the last section switch.
-      const remembered = lastFocusedByGroup.get(next); // Switching back to a section restores its surviving control.
-      setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: false });
-      updateHintBar(panel);
+      const state = subtabsByGroup.get(local.node); // The visible choice strip and bumpers share the same section owner.
+      selectLocalSection(local.node, panel, (state.sections.indexOf(state.selected) + delta + state.sections.length) % state.sections.length);
       return;
     }
     const group = findTabGroup(panel);
@@ -786,12 +793,15 @@
     if (hintEl) return hintEl;
     hintEl = document.createElement('div');
     hintEl.className = 'ctrl-nav-hint-bar';
-    hintEl.setAttribute('aria-hidden', 'true');
+    hintEl.setAttribute('aria-label', 'Controller navigation');
+    hintEl.setAttribute('role', 'group');
+    hintEl.setAttribute('data-ctrl-skip', '');
     hintEl.innerHTML =
       '<span class="ctrl-nav-hint"><span class="ctrl-nav-glyph ctrl-nav-glyph-a">A</span>Select</span>' +
       '<span class="ctrl-nav-hint"><span class="ctrl-nav-glyph ctrl-nav-glyph-b">B</span>Back</span>' +
       '<span class="ctrl-nav-hint ctrl-nav-hint-tabs"><span class="ctrl-nav-glyph">LB/RB</span>Switch Tabs</span>' +
-      '<span class="ctrl-nav-scroll-hint">Right stick: Scroll</span>';
+      '<span class="ctrl-nav-scroll-hint">Right stick: Scroll</span>' +
+      '<div class="ctrl-nav-section-choices" role="group" aria-label="Sections in this page" hidden></div>';
     document.body.appendChild(hintEl);
     return hintEl;
   }
@@ -799,9 +809,44 @@
   let padEverSeen = false;
   window.addEventListener('gamepadconnected', () => { padEverSeen = true; updateHintBar(activePanel()); });
 
+  function navigationLabel(node) {
+    const authored = node?.getAttribute('aria-label') || node?.querySelector('.settings-section-title, .menu-section-title, .progress-section-title, .farm-storage-col-title, h2, h3')?.textContent; // Uses the same headings players see within each section.
+    return String(authored || node?.id?.replace(/^(mp|inv|farm|tasks|settings|stable)(Section)?/, '').replace(/([a-z])([A-Z])/g, '$1 $2') || 'Section').trim();
+  }
+
+  function updateSectionChoices(host, local, state, panel) {
+    if (!host) return;
+    if (!state) {
+      if (!host.hidden) host.hidden = true;
+      return;
+    }
+    if (host.hidden) host.hidden = false;
+    const signature = state.sections.map(navigationLabel).join('\n'); // Label changes and rebuilt sections refresh the strip only on navigation events.
+    if (host._sectionOwner !== local.node || host._sectionSignature !== signature) {
+      host.replaceChildren();
+      state.sections.forEach((section, index) => {
+        const button = document.createElement('button'); // Pointer players can choose an otherwise hidden controller section directly.
+        button.type = 'button';
+        button.textContent = navigationLabel(section);
+        button.addEventListener('click', () => selectLocalSection(local.node, panel, index));
+        host.appendChild(button);
+      });
+      host._sectionOwner = local.node;
+      host._sectionSignature = signature;
+    }
+    Array.from(host.children).forEach((button, index) => {
+      const selected = String(state.sections[index] === state.selected); // Visible selection follows the same section state as LB/RB.
+      const changed = button.getAttribute('aria-pressed') !== selected; // Unchanged focus updates must not undo a player's manual horizontal scrolling.
+      if (changed) button.setAttribute('aria-pressed', selected);
+      if (changed && selected === 'true') button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
   function updateHintBar(panel) {
     if (!panel || !padEverSeen) { hideHintBar(); return; }
     const el = ensureHintEl();
+    const host = panel.id === 'menuPanel' ? panel : document.body; // The main menu reserves footer space; other panels retain their existing floating hints.
+    if (el.parentElement !== host) host.appendChild(el);
     el.classList.toggle('ctrl-nav-hint-bar-visible', true);
     const local = localSubtabs(panel); // Also advertises local sections while the outer tab bar is borrowed.
     const hasTabs = !!local || !!findTabGroup(panel); // The hint advertises bumpers wherever the menu has a visible tab bar.
@@ -814,11 +859,19 @@
     glyphs.forEach((glyph, index) => { if (glyph.textContent !== labels[index]) glyph.textContent = labels[index]; });
     const tabHint = el.querySelector('.ctrl-nav-hint-tabs'); // Include section position/name so hidden siblings remain discoverable.
     const state = local && subtabsByGroup.get(local.node); // Used only while updating menu hints, never on idle gameplay frames.
-    const sectionLabel = state && (state.selected.getAttribute('aria-label') || state.selected.querySelector('.settings-section-title, .menu-section-title, .progress-section-title, .farm-storage-col-title')?.textContent || state.selected.id || 'Section'); // Prefer authored human-facing labels.
-    const hintText = state ? ` ${String(sectionLabel).trim()} (${state.sections.indexOf(state.selected) + 1}/${state.sections.length})` : ' Switch Tabs'; // Communicates the currently borrowed scope.
+    updateSectionChoices(el.querySelector('.ctrl-nav-section-choices'), local, state, panel);
+    const sectionLabel = state && navigationLabel(state.selected); // Prefer authored human-facing labels.
+    const hintText = state ? ` ${String(sectionLabel).trim()} (${state.sections.indexOf(state.selected) + 1}/${state.sections.length})` : ' Switch pages'; // Communicates the currently borrowed scope.
     if (tabHint.lastChild?.nodeType === 3 && tabHint.lastChild.textContent !== hintText) tabHint.lastChild.textContent = hintText;
     const bBtn = el.querySelectorAll('.ctrl-nav-hint')[1];
-    if (bBtn) bBtn.style.display = hasCancel ? '' : 'none';
+    if (bBtn) {
+      bBtn.style.display = hasCancel ? '' : 'none';
+      const backText = enteredGroups(panel).length ? ' Back to sections' : ' Close'; // Makes the consequence of Back visible at each depth.
+      if (bBtn.lastChild?.nodeType === 3 && bBtn.lastChild.textContent !== backText) bBtn.lastChild.textContent = backText;
+    }
+    const confirmHint = el.querySelector('.ctrl-nav-hint'); // Distinguishes entering a section from activating an item.
+    const confirmText = currentTarget && isGroup(currentTarget) ? ' Enter section' : ' Select';
+    if (confirmHint?.lastChild?.nodeType === 3 && confirmHint.lastChild.textContent !== confirmText) confirmHint.lastChild.textContent = confirmText;
   }
 
   function hideHintBar() {
@@ -1011,7 +1064,7 @@
   // Keep the tracked focus target in sync with real mouse/touch clicks too,
   // so switching input devices mid-session (controller ↔ mouse) never
   // leaves the highlighted target pointing somewhere stale.
-  document.addEventListener('pointerdown', () => { automaticEntryEnabled = false; const panel = activePanel(); if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } }, true);
+  document.addEventListener('pointerdown', event => { if (event.target?.closest?.('.ctrl-nav-section-choices')) return; automaticEntryEnabled = false; const panel = activePanel(); if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } }, true);
 
   document.addEventListener('focusin', (event) => {
     const panel = activePanel();
@@ -1188,7 +1241,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Right stick scrolls visible information pages, skips hidden/clipped regions and hands off at scroll edges; section focus and per-page scroll positions are remembered.',
+        latestChange: 'Controller section choices are accessible and dock inside the main menu without covering content; unchanged focus updates preserve manual section scrolling.',
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         scrollHostId: cachedScrollHost?.host?.id || null,

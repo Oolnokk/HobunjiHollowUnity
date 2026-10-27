@@ -25,8 +25,8 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
-  <script src="js/HousePieceGen.js?v=20261026ha263432&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261026cavewalls2&window=20260926rebase1"></script>
+  <script src="js/HousePieceGen.js?v=20261027htemple-roof-a2&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
   <script src="js/tile-pathfinding.js?v=20261018a"></script>
@@ -162,7 +162,7 @@
   <script src="js/metal-armor-system.js?v=20261024haceb249"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261027loadoutsplit1">
+  <link rel="stylesheet" href="style.css?v=20261027menucompartments2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -237,12 +237,12 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20261026hcavegrowth2"></script>
+  <script src="js/foliage-generator.js?v=20261027htemple-foliage-a2"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261025hab1da68"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
-  <script src="js/interior-door-tiles.js?v=20261026h273015f"></script>
+  <script src="js/interior-door-tiles.js?v=20261027hfloorlessdoors1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
@@ -847,7 +847,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
-  <script src="js/zone-den-totem-features.js?v=20261022hf96da11"></script>
+  <script src="js/zone-den-totem-features.js?v=20261027htemple-zone-a2"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -1195,17 +1195,17 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist" data-ctrl-tabs>
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
+        <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
+        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
+        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
         <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
-        <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
-        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
-        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
-        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
-        <!-- Shipping and Supplies open from their objects in the world; they are not ordinary pause-menu tabs. -->
+        <!-- Shipping and Supplies remain contextual world-object menus. -->
         <button class="mp-tab"        data-mpanel="debug"         data-dev-only role="tab">🐛 Debug</button>
         <button class="mp-tab"        data-mpanel="wildlife"      data-dev-only role="tab">🧬 Wildlife</button>
       </div>
@@ -2839,7 +2839,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261027h7c74a77"></script>
+  <script src="js/controller-ui-nav.js?v=20261027h8b1a883"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
