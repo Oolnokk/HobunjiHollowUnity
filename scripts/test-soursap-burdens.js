@@ -118,6 +118,76 @@ now = 4100;
 assert.equal(statuses.movementDirectionMultiplier(actor),1,
   'Disorient also expires naturally');
 
+// Exercise real Burden-stage functions with focused fake scene/physics owners.
+// This catches regressions that only checking the Cloud Forest action labels would miss.
+function isolateFunction(start, next) {
+  const first=burdenCode.indexOf('  function '+start+'('); // Exact source range for this production implementation.
+  const until=burdenCode.indexOf('  function '+next+'(',first);
+  assert(first>=0&&until>first,'production Burden stage '+start+' is present');
+  return burdenCode.slice(first,until);
+}
+const stage = isolateFunction('startFruitFall','releaseFruitFromTree') +
+  isolateFunction('updateFruitFalls','spawnRandomInDevArena');
+let fallBursts=0, harvestMarks=0;
+const falling = new Map();
+const fruitWorld = {x:4.32,y:3.1,z:5.15};
+const flightFruit = {id:'soursap_4_5',mapId:zone,kind:'soursap',fruitBranch:{col:4,row:5},flying:false,exploded:false,
+  group:{
+    position:{...fruitWorld,copy(v){Object.assign(this,{x:v.x,y:v.y,z:v.z});}},
+    rotation:{z:0},quaternion:{identity(){}},scale:{setScalar(){}},
+    updateWorldMatrix(){},getWorldPosition(out){Object.assign(out,this.position);return out;},
+  },
+};
+const stageScene = {add(){}};
+const fallRecords = new Map([[zone,{scene:stageScene,vases:new Map([[flightFruit.id,flightFruit]])}]]);
+const runtimeStage = vm.runInNewContext(stage + '\n({startFruitFall,updateFruitFalls})', {
+  THREE:{Vector3:class {}}, records:fallRecords,fallingFruits:falling,held:null,
+  markFruitHarvested(fruit){fruit.fruitBranch=null;fruit.hanging=false;harvestMarks++;},
+  thrownGround:()=>0,area:()=>zone,detonate(fruit,cause){fallBursts++;fruit.exploded=true;assert(cause.includes('ground-impact'));},
+  lastEvent:'',Math,Number,Map,
+});
+assert(runtimeStage.startFruitFall(flightFruit,'projectile'),
+  'a shot begins physical free fall, rather than exploding in the air');
+assert.equal(fallBursts,0,'a dislodged fruit does not explode immediately');
+for(let frame=0;frame<35;frame++)runtimeStage.updateFruitFalls(.1);
+assert.equal(fallBursts,1,'gravity triggers one burst when the fruit touches the ground');
+assert.equal(falling.size,0,'the falling-fruit state is removed on ground impact');
+assert.equal(harvestMarks,1,'a detached fruit is removed from the branch only once');
+
+const fellCode=isolateFunction('releaseFruitFromTree','updateFruitFalls');
+let persistedFruit=0, markedOnFell=0;
+const felledFruit={
+  id:'soursap_tree',kind:'soursap',hanging:true,flying:false,
+  fruitBranch:{col:7,row:8},group:{position:{set(x,y,z){this.x=x;this.y=y;this.z=z;}}},
+};
+const standingFruits=new Map([[felledFruit.id,felledFruit]]);
+const looseFruits=new Map();
+const felled = vm.runInNewContext(fellCode + '\nreleaseFruitFromTree', {
+  records:new Map([[zone,{vases:standingFruits}]]),
+  nearestOpen:()=>({col:6,row:8}),grid:()=>[],baseHeight:()=>1,
+  markFruitHarvested(obj){obj.hanging=false;obj.fruitBranch=null;markedOnFell++;},
+  refreshMeshBounds(){},looseFruitHistory:looseFruits,persistWorld(){persistedFruit++;},
+  Math,Map,
+});
+assert(felled(zone,7,8),'felling a fruit-bearing tree releases the hanging fruit');
+assert.equal(felledFruit.group.position.x,6.5,'the intact fruit is placed on adjacent safe ground');
+assert.equal(felledFruit.group.position.y,1.16,'the safe fruit lands above the local terrain');
+assert.equal(felledFruit.exploded,undefined,'chopping the tree must not burst the fruit');
+assert.equal(markedOnFell,1);
+assert.equal(persistedFruit,1,'intact fruit is saved after felling the tree');
+assert.equal(looseFruits.get(zone).size,1);
+assert(!felled(zone,7,8),'a second felling event cannot duplicate the same fruit');
+
+const melee = isolateFunction('sweepMelee','projectileHit');
+let meleeBursts=0;
+const meleeFruit={kind:'soursap',hanging:true,carried:false,exploded:false};
+vm.runInNewContext(melee + '\nsweepMelee({actor:{},rangePx:60})', {
+  held:null,deps:()=>({}),allActive:()=>new Map([['fruit',meleeFruit]]),
+  window:{Combat:{meleeColliderVolume:()=>({origin:{x:0,y:0,z:0}})}},
+  detonate(){meleeBursts++;}, Math,Map,
+});
+assert.equal(meleeBursts,0,'ground melee cannot explode hanging fruit or bypass climbing/ranged harvesting');
+
 assert(gameCode.includes('soursapFruitFlesh: { icon:') &&
   gameCode.includes("label: 'Soursap Fruit Flesh'"),
   'impact flesh is a real inventory definition, not a toast-only reward');
