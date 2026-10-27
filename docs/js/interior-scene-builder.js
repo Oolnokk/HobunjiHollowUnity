@@ -69,10 +69,15 @@
     return fallbackMaterial;
   }
 
+  const DOORWAY_TOP_Y = 1.30; // The authored woodenDoor Doorway Header reaches y=1.1832 + 0.2271/2 = 1.29675; this slight clearance keeps masonry above its frame.
+
   // ── Wall panel derivation — exact port of game.js's buildWallPanelsFromFloorSet ──
   function buildWallPanels(floorSet, exitTileSet, wallHeight) {
     exitTileSet = exitTileSet || new Set();
-    const nMap = {}, sMap = {}, eMap = {}, wMap = {};
+    const nMap = {}, sMap = {}, eMap = {}, wMap = {}; // Full-height wall runs remain merged on either side of an exit.
+    const nLintels = {}, sLintels = {}, eLintels = {}, wLintels = {}; // Runs above doorway tiles are merged separately so the wall continues over single/double doors.
+    const lintelBottomY = Math.min(Math.max(0, Number(wallHeight) || 0), DOORWAY_TOP_Y); // Shared authored door-header cutoff, bounded by short rooms.
+    const lintelHeight = Math.max(0, (Number(wallHeight) || 0) - lintelBottomY); // A short room keeps its existing full-height doorway opening.
     function pushH(map, key, x0, x1) { if (!map[key]) map[key] = []; map[key].push({ x0, x1 }); }
     function pushV(map, key, z0, z1) { if (!map[key]) map[key] = []; map[key].push({ z0, z1 }); }
     function mergeH(segs) {
@@ -97,10 +102,13 @@
       const parts = key.split(',');
       const c = Number(parts[0]), r = Number(parts[1]);
       const isExit = exitTileSet.has(key);
-      if (!floorSet.has(`${c},${r - 1}`) && !isExit) pushH(nMap, r,     c, c + 1);
-      if (!floorSet.has(`${c},${r + 1}`) && !isExit) pushH(sMap, r + 1, c, c + 1);
-      if (!floorSet.has(`${c + 1},${r}`) && !isExit) pushV(eMap, c + 1, r, r + 1);
-      if (!floorSet.has(`${c - 1},${r}`) && !isExit) pushV(wMap, c,     r, r + 1);
+      // A marked exit may sit directly outside the floor. In that case its
+      // neighboring floor cell owns the boundary wall and must receive the
+      // same doorway-height lintel as an older in-floor exit.
+      if (!floorSet.has(`${c},${r - 1}`)) pushH((isExit || exitTileSet.has(`${c},${r - 1}`)) ? nLintels : nMap, r, c, c + 1);
+      if (!floorSet.has(`${c},${r + 1}`)) pushH((isExit || exitTileSet.has(`${c},${r + 1}`)) ? sLintels : sMap, r + 1, c, c + 1);
+      if (!floorSet.has(`${c + 1},${r}`)) pushV((isExit || exitTileSet.has(`${c + 1},${r}`)) ? eLintels : eMap, c + 1, r, r + 1);
+      if (!floorSet.has(`${c - 1},${r}`)) pushV((isExit || exitTileSet.has(`${c - 1},${r}`)) ? wLintels : wMap, c, r, r + 1);
     }
     const panels = [];
     let pid = 0;
@@ -132,6 +140,20 @@
         panels.push({ id: `ww_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, 90, 0] });
       }
     }
+    if (lintelHeight > 1e-4) { // Door headers no longer imply a missing wall all the way to the ceiling.
+      for (const [rStr, segs] of Object.entries(nLintels)) for (const seg of mergeH(segs)) {
+        panels.push({ id: `wn_lintel_${pid++}`, width: seg.x1 - seg.x0, height: lintelHeight, position: [(seg.x0 + seg.x1) / 2, lintelBottomY, Number(rStr)], rotationDeg: [0, 0, 0] });
+      }
+      for (const [rStr, segs] of Object.entries(sLintels)) for (const seg of mergeH(segs)) {
+        panels.push({ id: `ws_lintel_${pid++}`, width: seg.x1 - seg.x0, height: lintelHeight, position: [(seg.x0 + seg.x1) / 2, lintelBottomY, Number(rStr)], rotationDeg: [0, 180, 0] });
+      }
+      for (const [cStr, segs] of Object.entries(eLintels)) for (const seg of mergeV(segs)) {
+        panels.push({ id: `we_lintel_${pid++}`, width: seg.z1 - seg.z0, height: lintelHeight, position: [Number(cStr), lintelBottomY, (seg.z0 + seg.z1) / 2], rotationDeg: [0, -90, 0] });
+      }
+      for (const [cStr, segs] of Object.entries(wLintels)) for (const seg of mergeV(segs)) {
+        panels.push({ id: `ww_lintel_${pid++}`, width: seg.z1 - seg.z0, height: lintelHeight, position: [Number(cStr), lintelBottomY, (seg.z0 + seg.z1) / 2], rotationDeg: [0, 90, 0] });
+      }
+    }
     return panels;
   }
 
@@ -159,6 +181,7 @@
         const gapEnd   = Math.min(cols, gapStart + DOOR_W);
         if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
         if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
+        if (wallHeight > DOORWAY_TOP_Y && gapEnd > gapStart) panels.push({ id: wallId + '_lintel', width: gapEnd - gapStart, height: wallHeight - DOORWAY_TOP_Y, position: [(gapStart + gapEnd) / 2, DOORWAY_TOP_Y, z], rotationDeg: rot }); // Retain masonry above the rectangular-room doorway.
       } else {
         panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
       }
@@ -169,6 +192,7 @@
         const gapEnd   = Math.min(rows, gapStart + DOOR_W);
         if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
         if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
+        if (wallHeight > DOORWAY_TOP_Y && gapEnd > gapStart) panels.push({ id: wallId + '_lintel', width: gapEnd - gapStart, height: wallHeight - DOORWAY_TOP_Y, position: [x, DOORWAY_TOP_Y, (gapStart + gapEnd) / 2], rotationDeg: rot }); // Pair or single exits share one overhead strip.
       } else {
         panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
       }
@@ -660,6 +684,7 @@
     if (wallStyle === 'mine') {
       const base = texturesBasePath || 'assets/'; // Used to resolve the same stone texture from both the game and editor tool paths.
       new THREE.TextureLoader().load(base + 'textures/carved_smooth.png', (tex) => {
+        if (mat.userData?.hobunjiFloorStyleSignature) { tex.dispose?.(); mat.userData.floorDefaultTextureSkipped = true; return; } // An authored floor style loaded later takes precedence over this pending mine fallback.
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         tex.repeat.set(.42, .42);
         if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
@@ -668,6 +693,7 @@
     } else if (wallStyle !== 'cavern' && wallStyle !== 'canvas') {
       const base = texturesBasePath || 'assets/';
       new THREE.TextureLoader().load(base + 'textures/boards.png', (tex) => {
+        if (mat.userData?.hobunjiFloorStyleSignature) { tex.dispose?.(); mat.userData.floorDefaultTextureSkipped = true; return; } // Prevent a late default-board load from overwriting the temple's saved stone surface.
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         mat.map = tex;
         if (isFarmWood) root.FarmWorldSettings?.tintMaterial?.(mat, 'wood', root.FarmWorldSettings.current());
@@ -679,7 +705,7 @@
   }
 
   root.InteriorSceneBuilder = {
-    DEFAULT_WB_OPTS, furnitureFloorElevation, windowWallOpenings, openingExcludeQuads, buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
+    DEFAULT_WB_OPTS, DOORWAY_TOP_Y, furnitureFloorElevation, windowWallOpenings, openingExcludeQuads, buildWallPanels, buildRoomWallPanels, buildWallGroup, buildFloorMaterial, applyWallOpenings,
     buildCavernWalls, buildCanvasWalls, buildFallbackBoxWalls, panelCornersFor,
     buildCarvedCavernMesh, buildCavernFloorMesh,
   };

@@ -687,7 +687,11 @@
     var roofFaces = faces.filter(function (f) { return f.tag === 'roof'; });
     var roofChildStart = group.children.length; // Tags this structure's shingle instances independently of shared source materials.
     _addShingles(group, roofFaces, faces, opts);
-    for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) group.children[childIndex].traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+    for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) {
+      var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
+      shingleLayer.userData.surfaceFoliageRole = 'shingles';
+      shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+    }
 
     // Brick or generated-log cladding on frustum body walls + gable ends.
     var generatedLogStyle = ['log', 'logs', 'stackedlogs', 'stacked-logs'].includes(String(opts.wallStyle || '').toLowerCase()); // Exterior construction selector shared with authored pieces.
@@ -1485,7 +1489,11 @@
     // Shingles on roof faces (same as buildGroup)
     var roofChildStart = group.children.length; // Marks only the newly emitted roof shingles for optional farm finishes.
     _addShingles(group, roofFaces, allOff, Object.assign({ matTube: matTube }, opts));
-    for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) group.children[childIndex].traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+    for (var childIndex = roofChildStart; childIndex < group.children.length; childIndex++) {
+      var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
+      shingleLayer.userData.surfaceFoliageRole = 'shingles';
+      shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+    }
 
     // Authored body/gable walls can use exact-length generated foliage logs instead of bricks.
     if (generatedLogMode) {
