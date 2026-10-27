@@ -602,13 +602,13 @@
   function markFruitHarvested(burden) {
     if (!burden?.fruitBranch) return;
     const branch = burden.fruitBranch;
-    if (branch.fruit) {
+    if (window.HobunjiCloudForestWildlife?.markFruitHarvested)
+      window.HobunjiCloudForestWildlife.markFruitHarvested(branch);
+    else if (branch.fruit) {
       branch.fruit.available = false;
       branch.fruit.reserved = false;
-      branch.fruit.eatenAtHours = (Number(window.CalendarSystem?.getHour?.()) || 0)
-        + 24 * ((Number(window.CalendarSystem?.getDay?.()) || 1) - 1);
+      branch.fruit.eatenAtHours = Infinity; // Without the biome clock, never duplicate a detached fruit.
     }
-    window.HobunjiCloudForestWildlife?.detachFruitMesh?.(branch);
     burden.fruitBranch = null;
     burden.hanging = false;
   }
@@ -1215,7 +1215,7 @@
   }
   function syncPileVisuals(rec) {
     if(!rec)return;
-    if(!sharedPileArt)sharedPileArt={
+    if(!sharedPileArt?.rock)sharedPileArt={...sharedPileArt,
       rock:{geometry:new THREE.DodecahedronGeometry(.18,0),
         material:new THREE.MeshLambertMaterial({color:0x817b74})},
       tree:{geometry:new THREE.CylinderGeometry(.045,.065,.55,5),
@@ -1256,9 +1256,13 @@
       state.mesh.computeBoundingSphere?.(); // Keep normal camera frustum culling after matrix changes.
     }
   }
-  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null,sourceId=null) {
-    const id=kind+'_'+col+'_'+row+(sourceId?'_'+sourceId:'');
-    if(rec.piles.has(id))return;
+  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null,sourceId=null,restoredId=null) {
+    const baseId=kind+'_'+col+'_'+row+(sourceId?'_'+sourceId:''); // Unique source keeps nearby fruit piles distinct.
+    let id=restoredId||baseId;
+    if(!restoredId && kind==='fruit'){
+      let serial=2;
+      while(rec.piles.has(id))id=baseId+'_'+serial++;
+    } else if(rec.piles.has(id))return;
     rec.piles.set(id,{id,col,row,kind,woodKey,oreKey,y,mapId}); // Logical loot records are distinct from the pooled GPU instance geometry.
     if(!pileHistory.has(mapId))pileHistory.set(mapId,new Map());
     pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey}); // Persist once after the full blast, not once per pile.
@@ -1326,7 +1330,7 @@
       chunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
     }
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
-      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null);
+      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null,null,id);
     if(rec.piles.size)syncPileVisuals(rec);
     if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
       if(window.WildernessChunks)for(const cell of chunks.values())
@@ -1398,7 +1402,7 @@
     }
     burstEffects.push({group,shardMeshes:[spray],parts,flash,age:0,duration:.90,radius:FRUIT_RADIUS,
       dummy:new THREE.Object3D()});
-    window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),mapId,undefined,'medium');
+    window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'medium');
   }
   function detonateFruit(fruit,cause) {
     if(!fruit||fruit.exploded)return false;
