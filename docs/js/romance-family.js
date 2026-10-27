@@ -290,6 +290,41 @@
     return child.vatId ? (window.DewVats?.listSqueezingVats?.() || []).find(obj => obj.id === child.vatId) || null : null;
   }
 
+  function childVisitDay(child) {
+    const town = cfg().childTown || {}; // Tunable share of days/afternoons spent in town.
+    const hour = H.clockHour();
+    if (hour < num(town.startHour, 11) || hour >= num(town.endHour, 16)) return false;
+    const chance = clamp(num(town.visitPercent, 65), 0, 100);
+    return H.hashInt(`${child.id}:${H.rawDay()}:town-visit`) % 100 < chance; // Stable all day; no per-frame rerolls.
+  }
+  function childTownTarget(child) {
+    if (!childVisitDay(child)) return null;
+    const town = cfg().childTown || {};
+    const friendIds = Array.isArray(town.friendNpcIds) ? town.friendNpcIds : ['gantami_ginju'];
+    const childIds = new Set(fam.children.map(entry => entry.id)); // Siblings aren't moving anchors: prevents circular chasing.
+    const peers = (deps().npcWalkers || []).filter(walker => walker?.area === 'town' && walker.root?.position && !childIds.has(walker.rec?.id)
+      && (friendIds.includes(walker.rec?.id) || walker.rec?.isChild || walker.rec?.tags?.includes?.('child')))
+      .sort((a, b) => String(a.rec.id).localeCompare(String(b.rec.id)));
+    const preferred = peers.filter(walker => friendIds.includes(walker.rec.id));
+    const roll = H.hashInt(`${child.id}:${H.rawDay()}:friend-visit`) % 100;
+    const peerPool = preferred.length && roll < clamp(num(town.peerMeetPercent, 85), 0, 100) ? preferred : peers;
+    if (peerPool.length) {
+      const peer = peerPool[H.hashInt(`${child.id}:${H.rawDay()}:peer`) % peerPool.length];
+      const pos = peer.root.position;
+      const spot = H.nearestWalkable('town', Math.floor(pos.x) + 1, Math.floor(pos.z), 3);
+      if (spot) return { area: 'town', c: spot.c, r: spot.r, activity: `playing with ${peer.rec.name || 'friends'}`,
+        stationId: `family_child_peer_${child.id}_${peer.rec.id}`, wanderMode: 'radius', wanderRadiusTiles: Math.max(1, num(town.wanderRadiusTiles, 3)) };
+    }
+    const roles = Array.isArray(town.stationRoles) ? town.stationRoles : ['play', 'socialize', 'sit']; // Reuse known safe locations; don't invent town coordinates.
+    const stations = roles.flatMap(role => window.NpcScheduling?.findStationsByRole?.(role, { area: 'town' }) || [])
+      .filter(station => Number.isFinite(station.c) && Number.isFinite(station.r));
+    if (!stations.length) return null; // When no town anchors exist, let the child safely stay at the farm.
+    const block = Math.floor(H.clockHour() / 2);
+    const station = stations[H.hashInt(`${child.id}:${H.rawDay()}:${block}:town-station`) % stations.length];
+    const spot = H.nearestWalkable('town', station.c, station.r, 3);
+    return spot ? { area: 'town', c: spot.c, r: spot.r, activity: 'playing around the village',
+      stationId: `family_child_town_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: Math.max(1, num(town.wanderRadiusTiles, 3)) } : null;
+  }
   function childTarget(child) {
     const phase = phaseOf(child);
     const hour = H.clockHour();
@@ -307,6 +342,10 @@
         : { ...anchor, activity: 'sleeping' };
     }
     const vat = vatObject(child);
+    if (!child.vatId) {
+      const townTarget = childTownTarget(child); // A vat assignment has priority over social visits.
+      if (townTarget) return townTarget;
+    }
     if (vat && hour >= 8 && hour < 18 && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
       const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
       if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat' };
