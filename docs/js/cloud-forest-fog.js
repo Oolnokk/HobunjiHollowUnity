@@ -858,6 +858,9 @@
     // is instant. Re-enabling needs no counterpart: the very next update()
     // call sets group.visible from isCloudForestArea() itself.
     setEnabled: (enabled) => { if (!enabled && group) group.visible = false; },
+    // True only while the mist group is attached and showing, so game.js can
+    // skip its layer-5 mist redraw (a full extra scene render) everywhere else.
+    isActive: () => !!(group?.visible && attachedScene),
     getDebugState: () => {
       const debugScene = skyPolicyDeps?.getActiveScene?.(); // Used below to expose the actual runtime player-lantern light state for mobile QA.
       const debugArea = skyPolicyDeps?.getCurrentArea?.() ?? null; // Used below to show which underground-area rule is currently active.
