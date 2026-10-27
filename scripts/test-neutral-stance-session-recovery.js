@@ -115,6 +115,46 @@ function testDynamicScriptRecovery() {
   assert.equal(timers.tasks.size, 0, 'successful script load clears its deadline');
 }
 
+function testOptionalSpacingDependencyTimeout() {
+  const timers = timerHarness(); // Optional spacing must have a bounded wait even when its script tag already exists.
+  const existingSpacingListeners = {}; // Event callbacks from an already-inserted, possibly stale spacing script.
+  const scriptTags = []; // Requests for the real stance module after the timeout opens the dependency gate.
+  const initialized = []; // Records delayed handoff to EquipmentPanel.
+  const existingSpacing = {
+    addEventListener(type, callback) { existingSpacingListeners[type] = callback; },
+  };
+  const window = {
+    Combat: {},
+    EquipmentPanel: { init(deps) { return deps; } },
+  };
+  const document = {
+    addEventListener() {},
+    querySelector(query) {
+      if (query === 'script[data-melee-pose-spacing]') return existingSpacing;
+      return scriptTags.find(tag => tag.isConnected && query === 'script[data-weapon-tool-stances]') || null;
+    },
+    createElement(tag) {
+      assert.equal(tag, 'script');
+      return { dataset: {}, isConnected: false, remove() { this.isConnected = false; } };
+    },
+    head: { appendChild(tag) { tag.isConnected = true; scriptTags.push(tag); } },
+  };
+  vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-loadout.js', 'utf8'), {
+    window, document, console, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout,
+  });
+  const deps = { id: 'delayed-stance-init' }; // EquipmentPanel may initialize long before the optional spacing request settles.
+  window.EquipmentPanel.init(deps);
+  assert.equal(scriptTags.length, 0, 'loader initially waits for optional spacing');
+  timers.run(10000);
+  assert.equal(scriptTags.length, 1, 'missing spacing load event must not strand weapon stances for the session');
+  window.WeaponToolStances = { init(payload) { initialized.push(payload); } };
+  scriptTags[0].onload();
+  existingSpacingListeners.load(); // A late spacing signal must not start the module a second time.
+  assert.deepEqual(initialized, [deps], 'the delayed stance module keeps the original equipment dependencies');
+  assert.equal(scriptTags.length, 1, 'late spacing completion cannot duplicate the module request');
+  assert.equal(timers.tasks.size, 0, 'the dependency timeout and script deadline are both cleared');
+}
+
 function testEditorExtensionScriptRecovery() {
   const source = fs.readFileSync('docs/js/panel-ui-core.js', 'utf8'); // Production attack-editor-only script loader.
   const start = source.indexOf('// The attack editor has a small extension');
@@ -200,6 +240,7 @@ async function testAttackEditorStillPresetRecovery() {
 (async () => {
   await testStanceJsonRecovery();
   testDynamicScriptRecovery();
+  testOptionalSpacingDependencyTimeout();
   testEditorExtensionScriptRecovery();
   await testAttackEditorStillPresetRecovery();
   console.log('Neutral stance JSON, module and editor retries, local overrides and init ordering PASS');
