@@ -245,7 +245,15 @@
     refreshDeps?.buildInventoryGrid?.();
     refreshDeps?.refreshActionBar?.();
     refreshDeps?.saveMemberWorldData?.();
-    if (!(Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) > 0)) equipmentDeps?.clearInventoryDetail?.();
+    const remaining = Math.max(0, Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) || 0); // Remaining stack count used to synchronize the selected blueprint detail after reading.
+    if (!remaining) equipmentDeps?.clearInventoryDetail?.();
+    else if (window.CraftingPanel?.blueprintForItem?.(key)) {
+      const detailName = document.getElementById('iiName'); // Live Pack detail currently selected when a blueprint is read.
+      const itemLabel = canonicalDef(key)?.label; // Canonical name without the displayed quantity suffix.
+      if (detailName && itemLabel && normalizeDetailLabel(detailName.textContent).replace(/\s+×\s*\d+$/, '') === normalizeDetailLabel(itemLabel)) {
+        detailName.textContent = `${itemLabel} ×${remaining}`; // Avoid displaying the old stack size until the next selection.
+      }
+    }
     scheduleDirectUseUi();
   }
 
