@@ -263,6 +263,7 @@ const npcScheduling = {
   registerNpcStations(list) { stations.push(...list); },
 };
 const banditCamps = { updateCampBanners() { return 'camp-tick'; } };
+const tentCollisionProviders = new Map(); // Captures registered tribe tent collision providers for movement/projectile and migration checks.
 
 const contextWindow = {
   fetch: async url => {
@@ -273,6 +274,9 @@ const contextWindow = {
   BanditCombat: banditCombat,
   NpcScheduling: npcScheduling,
   BanditCamps: banditCamps,
+  AreaFootprintBlockers: {
+    register(id, provider) { tentCollisionProviders.set(id, provider); return () => tentCollisionProviders.delete(id); },
+  },
   TemporaryLocales: { stamp: fakeStamp },
   CalendarSystem: {
     getHour: () => hour,
@@ -345,6 +349,23 @@ function hunterDebug(api, zoneId, campId, index) {
   await flush();
   const api = contextWindow.PorakanekiCamps;
   assert.equal(api.version, 8);
+  const rawRockLayout = { cols: 5, rows: 5, tiles: [ // Generated wilderness may not have created its live-grid rockKind/boulderId yet.
+    { c: 0, r: 0, type: 'rock', generatedObjectType: 'undiggableBoulder', generatedObjectId: 'source-boulder' },
+    { c: 1, r: 0, type: 'rock', generatedObjectType: 'undiggableBoulder', generatedObjectId: 'source-boulder' },
+    { c: 2, r: 0, type: 'rock' }, // An untyped rock cliff is not a replaceable resource.
+    { c: 3, r: 0, type: 'grass', mapBoundary: true },
+    { c: 4, r: 0, type: 'rock', rockKind: 'diggableRockOre', generatedObjectId: 'source-ore' },
+    { c: 1, r: 1, type: 'rock', rockKind: 'undiggableBoulder', boulderId: 'map-prefixed:boulder' },
+  ], buildings: [], dens: [], decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [] };
+  const rawRockView = api.__test.buildZoneView('map_western_slope', rawRockLayout); // Validates real camp placement metadata against pre-merged generator output.
+  assert.equal(rawRockView.tiles[0][0].rockKind, 'undiggableBoulder');
+  assert.equal(rawRockView.tiles[0][0].boulderId, 'source-boulder', 'unmerged generator rock identities survive into camp placement');
+  assert.equal(rawRockView.tiles[0][1].boulderId, 'source-boulder', 'multiple tiles of one boulder share the same removal identity');
+  assert.equal(rawRockView.tiles[1][1].boulderId, 'map-prefixed:boulder', 'live-grid boulder IDs take priority when already available');
+  assert.equal(rawRockView.tiles[0][2].occupiedBy?.includes('natural_cliff'), true, 'unidentified cliff rock cannot be bulldozed as ordinary camp clutter');
+  assert.equal(rawRockView.tiles[0][3].borderEscarpment, true, 'boundary escarpments remain forbidden camp footprint tiles');
+  assert.equal(rawRockView.tiles[0][4].occupiedBy?.includes('clutter'), true, 'ordinary identified resource rocks remain replaceable');
+
   let outlinedLayer = null; // Captures the render layer enabled by the camp outline helper under test.
   api.__test.markOutline({
     traverse(visitor) {
@@ -394,6 +415,24 @@ function hunterDebug(api, zoneId, campId, index) {
   }
   assert.equal(api.__test.MIN_HUNTING_CAMPS_PER_ZONE, 1, 'runtime exposes the hard hunting-camp floor used by generation and bandit conflict resolution');
   assert.equal(debug.chiefZoneId, 'map_southern_cloud_forest');
+  const tentCollision = tentCollisionProviders.get('porakaneki-camp-tents:map_southern_cloud_forest'); // Provider tracks current active tents rather than stale off-season reservations.
+  assert(tentCollision, 'Porakaneki and Omgurku runtime registers physical tent blockers for wilderness');
+  assert.equal(tentCollision.area, 'map_southern_cloud_forest');
+  const authoredChiefTent = chiefLocale.objects.find(prop => prop.kind === 'tent'); // Fake chief camp stamp uses its exact authored 2x2 shelter.
+  const tentWorldCol = 4 + authoredChiefTent.col + 1;
+  const tentWorldRow = 4 + authoredChiefTent.row + 1;
+  const wallCol = 4 + authoredChiefTent.col + 0.09; // Canvas corner is always structurally solid regardless of which wall owns the entrance.
+  const wallRow = 4 + authoredChiefTent.row + 0.09; // Paired with wallCol for perimeter and roof-height checks.
+  assert(tentCollision.blocksBox(wallCol, wallRow, 0.1), 'walking actors collide with physical tent canvas walls');
+  assert(tentCollision.blocksBox(wallCol, wallRow, 0.1, 0.8), 'low projectiles hit the canvas rather than passing through');
+  assert(!tentCollision.blocksBox(wallCol, wallRow, 0.1, 50), 'high projectiles clear the tent roof');
+  assert(!tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1), 'chief can still reach the sleeping position inside the tent');
+  const sampleTent = { x: 10, y: 10, w: 2, h: 2, rot: 0 }; // Exercises the physical doorway facing +row, as authored in HousePieceGen.
+  assert(!api.__test.tentWallsBlockBox(sampleTent, 11, 11.95, 0.1), 'the front doorway has enough room for NPC-sized actors');
+  assert(api.__test.tentWallsBlockBox(sampleTent, 11, 10.05, 0.1), 'the back wall stays solid');
+  assert(api.__test.tentWallsBlockBox({ ...sampleTent, rot: 90 }, 10.05, 11, 0.1), 'rotating the entrance rotates its physical walls');
+  assert(!api.__test.tentWallsBlockBox({ ...sampleTent, rot: 90 }, 11.95, 11, 0.1), 'rotated front doorway stays passable');
+  assert(!tentCollision.blocksBox(0.25, 0.25, 0.1), 'tent collision is limited to real stamped canvas wall footprints');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1, 'exactly one large chief camp is active');
   const firstChiefDebug = debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief'); // Used below to verify redesigned chief-camp structural diagnostics.
   assert.equal(firstChiefDebug.residents, 6);
@@ -420,6 +459,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1);
   assert.equal(debug.zones.map_western_slope.chiefActive, true);
   assert.equal(debug.zones.map_southern_cloud_forest.chiefActive, false);
+  assert(!tentCollision.blocksBox(wallCol, wallRow, 0.1), 'the migrated chief tent no longer blocks movement in its old map');
   assert.equal(JSON.stringify(smallCenters(debug)), originalSmallCenters, 'small camps remain stable when the chief camp changes maps');
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_western_slope');
   assert(chief.rec.agenda.every(beat => !beat.destinationArea || beat.destinationArea === 'map_western_slope'));

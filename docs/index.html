@@ -258,7 +258,7 @@
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
-  <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
+  <script src="js/foliage-furniture-runtime.js?v=20261027campseats1"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
@@ -461,7 +461,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261027hhouse1&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261027campwallcache8&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -827,7 +827,7 @@
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20261015hdb728fc"></script>
+  <script src="js/zone-terrain-features.js?v=20261027campboulders1"></script>
   <script src="js/character-ground-shadow.js?v=20261012cgs1"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
