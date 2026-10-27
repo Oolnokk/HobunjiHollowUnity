@@ -790,7 +790,7 @@
     // with, so a library pattern authored before some newer field existed
     // still loads sane values for it.
     function applyPatternData(data) {
-      Object.assign(cfg, PATTERN_DEFAULTS, legacyFrameFields(data) || {});
+      Object.assign(cfg, PATTERN_DEFAULTS, { motifDataUrl: null, motifUrl: null }, legacyFrameFields(data) || {}); // Clear the previous image source: repo PNGs must not reuse a preceding saved motif's embedded data URL.
       cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Library/legacy loads retain their stored normalized value when valid and clamp only outside the authored range.
       cfg.overpassClearanceMultiplier = clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX); // Old patterns without the field inherit the former fixed 3× behavior.
       syncInputsFromCfg();
