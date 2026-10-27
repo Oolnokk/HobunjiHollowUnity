@@ -550,7 +550,58 @@
       for(const fx of vase.emitters||[])fx.update(dt,true);
     }
   }
+  const FRUIT_CARRY_FALLBACK = {
+    // Matches the authored Shattercask body and carry rig until its actual furniture data loads.
+    carryable: {
+      billboardAnchor: { coordinateSpace:'posterior-relative',
+        position:{x:-.004,y:-.0788,z:-.1535},rotation:{x:0,y:0,z:0},
+        posteriorOffset:{x:0,y:0,z:0},size:.6 },
+      handTargets: {
+        left:{x:.1701,y:.123,z:.016,rotation:{x:-180,y:0,z:-90}},
+        right:{x:-.1132,y:.12,z:.006,rotation:{x:0,y:0,z:90}},
+      },
+    },
+    parts:[{kind:'barrel',transform:{x:.0156,y:.1274,z:.0002}}],
+  }; // Startup carry pose for fruit; replaced with furniture-authored values when available.
+  let fruitCarryTemplate = FRUIT_CARRY_FALLBACK; // Shared authored Shattercask attachment data for every fruit burden.
+  let fruitCarryLoad = null; // One cached async model read, never one request per fruit.
+  function fruitCarryableFromShattercask(model) {
+    const carry=model?.carryable || FRUIT_CARRY_FALLBACK.carryable;
+    const anchor=carry.billboardAnchor || FRUIT_CARRY_FALLBACK.carryable.billboardAnchor;
+    const center=model?.parts?.find(part=>part.kind==='barrel')?.transform
+      ||FRUIT_CARRY_FALLBACK.parts[0].transform; // Original Shattercask barrel center in furniture-local coordinates.
+    const shift=point=>({x:finite(point?.x)-finite(center.x),
+      y:finite(point?.y)-finite(center.y),z:finite(point?.z)-finite(center.z)});
+    // Fruit geometry is centered at its Burden origin: subtract the barrel's
+    // local center from the reference anchor AND grips to preserve identical
+    // world-space barrel/fruit centers and hand poses, including throw motion.
+    return {
+      billboardAnchor:{...anchor,position:shift(anchor.position),
+        rotation:{...anchor.rotation},posteriorOffset:{...anchor.posteriorOffset}},
+      handTargets:Object.fromEntries(['left','right'].map(side=>[side,{
+        ...carry.handTargets?.[side],...shift(carry.handTargets?.[side]),
+        rotation:{...carry.handTargets?.[side]?.rotation},
+      }])),
+      hitbox:{enabled:true,center:{x:0,y:0,z:0},size:{x:.32,y:.32,z:.32}},
+    };
+  }
+  function adoptFruitCarryTemplate(model) {
+    if(!model?.carryable?.billboardAnchor || !model?.parts?.some(part=>part.kind==='barrel'))return;
+    fruitCarryTemplate=model; // Follow future edits to the authored Shattercask without another hardcoded fruit pose.
+    for(const record of records.values())for(const burden of record.vases.values()){
+      if(burden.kind!=='soursap'||burden.exploded)continue;
+      burden.data.carryable=fruitCarryableFromShattercask(model);
+      if(held===burden)alignHeldVase(burden);
+    }
+  }
+  function ensureFruitCarryTemplate() {
+    if(fruitCarryLoad || typeof window.AuthoredFurniture?.load!=='function')return;
+    fruitCarryLoad=Promise.resolve().then(()=>window.AuthoredFurniture.load('shattercaskBlasting'))
+      .then(adoptFruitCarryTemplate)
+      .catch(error=>window.__farmLog?.('[soursap] Shattercask carry profile fallback: '+error.message,'warn'));
+  }
   function createVase(rec,p,data) {
+    adoptFruitCarryTemplate(data); // The real authored model owns the shared fruit carry pose.
     // Shared construction for procedural and dev-spawned charges: identical model,
     // hit detection, pickup/drop, blast, and cleanup behavior.
     const group=window.AuthoredFurniture.buildGroup(data);
@@ -570,6 +621,7 @@
   // impact strategy. The gameplay module owns its mesh after registration.
   function registerFruit(mapId, branch, mesh) {
     if (!branch?.fruit?.available || !mesh || !mapId) return null;
+    ensureFruitCarryTemplate(); // Can also hydrate the exact authored pose in zones without Shattercask spawns.
     const targetScene = mesh.parent || scene();
     if (!targetScene) return null;
     const rec = recordFor(mapId, targetScene);
@@ -587,14 +639,7 @@
     mesh.position.set(0, 0, 0);
     group.add(mesh);
     targetScene.add(group);
-    const carryable = {
-      billboardAnchor: { position: { x: 0, y: 0, z: 0 }, posteriorOffset: { x: 0, y: 0, z: 0 }, size: 1 },
-      handTargets: {
-        left: { x: .11, y: .02, z: 0, rotation: { x: 0, y: 0, z: -80 } },
-        right: { x: -.11, y: .02, z: 0, rotation: { x: 0, y: 0, z: 80 } },
-      },
-      hitbox: { enabled: true, center: { x: 0, y: 0, z: 0 }, size: { x: .32, y: .32, z: .32 } },
-    }; // Shared authored-world hand alignment, with a fruit-sized grip and collider.
+    const carryable = fruitCarryableFromShattercask(fruitCarryTemplate); // Same posterior placement, hand grip and throw socket as the authored Shattercask.
     const burden = new Burden({
       id, mapId, col: Math.floor(group.position.x), row: Math.floor(group.position.z),
       group, data: { carryable }, kind: 'soursap', fruitBranch: branch, hanging: true,
@@ -1793,7 +1838,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Soursap and Shattercasks share Burden interactions; tree fruit falls on shot, safe-drops on felling, and applies Disorient+Sticky on impact.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Soursap uses Shattercask-authored carry/throw alignment and a shared PNG rind; original burst and Sticky behavior preserved.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       savedLooseFruit:[...(looseFruitHistory.get(area())?.keys()||[])],
