@@ -658,26 +658,34 @@
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
   function tentWallsBlockBox(prop, x, z, half = 0) {
-    const w = Math.max(1, num(prop.w, 2)), h = Math.max(1, num(prop.h, 2)); // The authored square-taper canvas base, in world tiles.
-    const left = prop.x, right = prop.x + w, top = prop.y, bottom = prop.y + h; // Tent perimeter retains an opening toward the bonfire.
-    if (x + half <= left || x - half >= right || z + half <= top || z - half >= bottom) return false;
-    const thickness = 0.16; // Approximate canvas side-wall collision; preserves navigable tent interiors and the chief's sleeping destination.
-    const front = ((Math.round(num(prop.rot, 0) / 90) % 4) + 4) % 4; // HousePieceGen facing: 0=+row, 1=+col, 2=-row, 3=-col.
-    const overlaps = (x1, z1, x2, z2) => x + half > x1 && x - half < x2 && z + half > z1 && z - half < z2;
-    const horizontal = (row, isEntrance) => {
-      if (!isEntrance) return overlaps(left, row, right, row + thickness);
-      const cx = (left + right) * 0.5, gapHalf = Math.min(w * 0.43, 0.85); // Enough room for NPC tile-center approaches (chief's lie station) and player collision radius.
-      return overlaps(left, row, cx - gapHalf, row + thickness)
-        || overlaps(cx + gapHalf, row, right, row + thickness);
-    };
-    const vertical = (col, isEntrance) => {
-      if (!isEntrance) return overlaps(col, top, col + thickness, bottom);
-      const cz = (top + bottom) * 0.5, gapHalf = Math.min(h * 0.43, 0.85);
-      return overlaps(col, top, col + thickness, cz - gapHalf)
-        || overlaps(col, cz + gapHalf, col + thickness, bottom);
-    };
-    return horizontal(top, front === 2) || horizontal(bottom - thickness, front === 0)
-      || vertical(left, front === 3) || vertical(right - thickness, front === 1);
+    const w = Math.max(1, num(prop.w, 2)), h = Math.max(1, num(prop.h, 2)); // Cheap footprint rejection precedes any canvas wall tests.
+    const left = prop.x, top = prop.y; // World-space tent origin used by the cached wall rectangles.
+    if (x + half <= left || x - half >= left + w || z + half <= top || z - half >= top + h) return false;
+    let walls = prop._tentCollisionWalls; // Per-stamped-tent geometry cache avoids creating collision-probe closures/rectangles on every NPC movement step.
+    if (!walls) {
+      const right = left + w, bottom = top + h, t = 0.16; // Thin solid canvas perimeter with an entrance facing the central bonfire.
+      const front = ((Math.round(num(prop.rot, 0) / 90) % 4) + 4) % 4; // HousePieceGen yaw: 0=+row, 1=+col, 2=-row, 3=-col.
+      const cx = left + w * 0.5, cz = top + h * 0.5; // Entrance opening center aligned to the authored front panel.
+      const gapX = Math.min(w * 0.43, 0.85), gapZ = Math.min(h * 0.43, 0.85); // Wide enough for the NPC sleeping waypoint inside each 2x2 tent.
+      walls = []; // Collision rectangles [[minX,minZ,maxX,maxZ]] checked without allocating closures in the hot path.
+      const horizontal = (row, entrance) => {
+        if (!entrance) walls.push([left, row, right, row + t]);
+        else walls.push([left, row, cx - gapX, row + t], [cx + gapX, row, right, row + t]);
+      };
+      const vertical = (col, entrance) => {
+        if (!entrance) walls.push([col, top, col + t, bottom]);
+        else walls.push([col, top, col + t, cz - gapZ], [col, cz + gapZ, col + t, bottom]);
+      };
+      horizontal(top, front === 2);
+      horizontal(bottom - t, front === 0);
+      vertical(left, front === 3);
+      vertical(right - t, front === 1);
+      Object.defineProperty(prop, '_tentCollisionWalls', { value: walls, configurable: true }); // Cache belongs to this immutable stamped prop, not the shared authored locale data.
+    }
+    for (const rect of walls) {
+      if (x + half > rect[0] && x - half < rect[2] && z + half > rect[1] && z - half < rect[3]) return true;
+    }
+    return false;
   }
 
   function registerTentCollisionProvider(zoneId) {
