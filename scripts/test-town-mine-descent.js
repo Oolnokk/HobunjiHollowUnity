@@ -140,6 +140,25 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   assert.equal(Object.keys(recipes.lowTinBronze).join(','), 'tinCopper', 'Crude Bronze Ore is the only direct low-tin ingredient');
   assert.equal(Object.keys(recipes.tinBronze).join(','), 'mushistonite', 'Natural Bronze Ore is the only direct tin-bronze ingredient');
   assert.equal(Object.keys(recipes.highTinBronze).join(','), 'tin', 'Tin Ore (cassiterite) directly smelts into high-tin bronze');
+
+  // A conservative twelve-rock floor supplies four mineral-bearing nodes: each has a 1.5-ore base yield,
+  // spread evenly across the tier's mineral types. Ladder costs must leave spare ore without Mining perks.
+  const baselineRocksPerFloor = 12; // Used to guard ladder affordability even below the normal 24-rock cap.
+  const expectedOrePerRock = 1.5; // Used to match TownMine.rollOreYield's unmodified average.
+  const expectedOreNodesPerFloor = Math.ceil(baselineRocksPerFloor / 3); // Uses TownMine's index % 3 === 0 ore placement rule.
+  for (const upgrade of config.ladderUpgrades) {
+    const metalKey = config.ladderMetalKeys[upgrade.tier - 1]; // Used to inspect the actual bar recipe required by this extension.
+    const recipe = recipes[metalKey]; // Used to compare each input ore independently, including mixed-metal alloys.
+    const mineOres = config.oreTierOreKeys[upgrade.tier - 1]; // Only ores spawned within this ten-floor band count toward the price.
+    assert.ok(recipe, `Tier ${upgrade.tier} ladder metal ${metalKey} needs a valid smelting recipe`);
+    const expectedEachOre = config.floorsPerTier * expectedOreNodesPerFloor * expectedOrePerRock / mineOres.length; // Conservative average from fully mining the tier once.
+    for (const [oreKey, orePerBar] of Object.entries(recipe)) {
+      assert.ok(mineOres.includes(oreKey), `Tier ${upgrade.tier}: ${metalKey} uses ${oreKey}, which cannot spawn in that tier`);
+      assert.ok(upgrade.metalBars * orePerBar < expectedEachOre,
+        `Tier ${upgrade.tier}: ${upgrade.metalBars} ${metalKey} bars need too much ${oreKey} (average supply ${expectedEachOre})`);
+    }
+  }
+
   let townValue = 0; // Deliberately varied below: metallurgy crafting must ignore it after this change.
   const craftingInventory = { ore_copper: 5, ore_tin: 5, ore_tinCopper: 5, ore_mushistonite: 5 };
   const craftingContext = {
@@ -189,6 +208,20 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   assert.deepStrictEqual(visibleRecipeKeys(), atZero, 'Increasing Town Value never changes registered metallurgy recipes');
   townValue = 0;
   assert.deepStrictEqual(visibleRecipeKeys(), atZero, 'Dropping Town Value cannot revoke available recipes');
+  // The built-in ladder UI and purchase path must consume the same tuned amount shown in config.
+  const firstUpgrade = config.ladderUpgrades[0]; // Used to test an exact-stockpile Tier 1 build with no surplus bars.
+  const ladderInventory = { gold: firstUpgrade.gold, stone: firstUpgrade.stone, woodLog: firstUpgrade.wood, bar_nativeCopper: firstUpgrade.metalBars }; // Exact costs exercise both the UI affordability check and resource subtraction.
+  mine.init({ inventory: ladderInventory, woodItemKeys: ['woodLog'], metalBarItemKey: key => 'bar_' + key,
+    metalLabel: key => key, refreshInventory() {}, save() {} });
+  mine.restore({ deepestFloor: 10, unlockedShortcutTiers: [], townValue: 0 });
+  const ladderOptions = await mine.ladderRows(); // Used to prove ladderRows applies the new config costs and Tier 7 alloy.
+  assert.strictEqual(ladderOptions[0].metalBars, firstUpgrade.metalBars);
+  assert.strictEqual(ladderOptions[0].affordable, true);
+  assert.strictEqual(ladderOptions[6].metalKey, 'arsenicalBronze', 'Tier 7 must use the metal produced from copper + arsenic');
+  assert.strictEqual((await mine.buildLadderTier(1)).ok, true, 'A full Tier 1 ore harvest should finance its metal share');
+  assert.strictEqual(ladderInventory.bar_nativeCopper, 0, 'The ladder should consume only the revised bar count');
+  assert.strictEqual((await mine.buildLadderTier(1)).ok, false, 'An already built tier cannot charge again');
+
   console.log('Town mine descent/regeneration checks passed.');
 })().catch(error => {
   console.error(error);
