@@ -548,7 +548,7 @@
       if (bed) return { area: bed.area, c: bed.c, r: bed.r, rotY: bed.rotY, activity: 'sleeping', stationId: 'spouse_bed' };
     }
     if (spouseTownVisitNow(rec.id)) return null; // Resume this NPC's authored town agenda.
-    const chore = window.NpcFarmPlots?.targetFor?.(rec); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
+    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
     if (chore) return chore;
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
