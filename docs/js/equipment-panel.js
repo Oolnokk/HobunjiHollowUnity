@@ -1196,8 +1196,16 @@
     window.TrinketSystem?.renderEquipmentSection?.(sec); // Attunement-budget trinkets (js/trinket-system.js).
   }
 
+  // Read-only bridge for the Loadout's 3D viewport. The equipment panel
+  // already owns the complete map, including meshes that are currently holstered.
+  function getEquippedWeaponPreviewPlane(itemKey) {
+    const mesh = deps?.toolMeshMap?.weapon; // Same cached weapon mesh used by the real player, even when another slot is active.
+    return mesh?.userData?.itemKey === itemKey ? mesh.userData.toolPlane || null : null;
+  }
+
   window.EquipmentPanel = {
     init,
+    getEquippedWeaponPreviewPlane,
     squareToolIcon,
     getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
     setEquipmentSlot,
