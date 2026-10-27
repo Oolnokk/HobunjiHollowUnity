@@ -158,7 +158,7 @@
     }
     if (!ambientRecords.size) {
       ambientLastNow = 0;
-      window.RuntimeFrameScheduler?.setEnabled?.(AMBIENT_SCHEDULER_ID, false); // No live emitters left; tolerate a standalone editor without a world scheduler.
+      if (window.RuntimeFrameScheduler?.setEnabled) window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, false); // No live emitters left; tolerate standalone editors without a scheduler.
     }
   }
 
