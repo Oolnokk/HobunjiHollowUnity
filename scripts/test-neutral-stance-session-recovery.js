@@ -23,8 +23,12 @@ function timerHarness() {
 
 async function testStanceJsonRecovery() {
   const committed = JSON.parse(fs.readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8')); // Committed baseline fetched after the simulated outage.
+  committed.stances.lightWeapon.z = 0.23; // Simulates a newly authored committed stance that an older local override lacks.
   const local = JSON.parse(JSON.stringify(committed)); // Browser override must remain stronger than the downloaded JSON.
+  delete local.stances.lightWeapon;
   local.stances.heavyWeapon.y = 0.71;
+  const incomplete = JSON.parse(JSON.stringify(committed)); // A cached/partial JSON response must not silently lock one stance to fallback.
+  delete incomplete.stances.lightWeapon;
   const timers = timerHarness(); // Controls retry backoff independently of real wall time.
   const logs = []; // Diagnostic lines emitted by the production stance loader.
   let requests = 0; // Count the attempted JSON fetches to detect a permanent one-shot failure.
@@ -35,7 +39,7 @@ async function testStanceJsonRecovery() {
     fetch() {
       requests += 1;
       if (requests === 1) return Promise.reject(new Error('temporary connection failure'));
-      return Promise.resolve({ ok: true, json: async () => committed });
+      return Promise.resolve({ ok: true, json: async () => requests === 2 ? incomplete : committed });
     },
     setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout,
   });
@@ -52,15 +56,21 @@ async function testStanceJsonRecovery() {
   timers.run(1000);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(requests, 2, 'a failed request must retry without another init');
+  assert.equal(runtime.debugSnapshot().stanceConfigLoaded, false, 'partial config cannot claim success while missing one stance');
+  assert.equal(runtime.debugSnapshot().stanceConfigFailures, 2);
+  timers.run(2000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 3, 'an incomplete config must retry until all authored stances exist');
   assert.equal(runtime.debugSnapshot().stanceConfigLoaded, true);
   assert.equal(runtime.debugSnapshot().stanceConfigFailures, 0);
   assert.equal(runtime.debugSnapshot().stanceConfigLastError, null);
   assert.equal(runtime.debugSnapshot().stanceConfigSource, 'local-override');
   assert.equal(runtime.poses.heavyWeapon.y, 0.71, 'fetch success must not discard local authored stance');
+  assert.equal(runtime.poses.lightWeapon.z, 0.23, 'a partial local override cannot mask a newer committed stance');
   assert.ok(logs.some(line => line.includes('retry in 1000ms')), 'failures should be diagnosable on mobile');
   assert.equal(timers.tasks.size, 0, 'success must clear all retry timers');
   await runtime.reloadConfig();
-  assert.equal(requests, 3, 'manual reload still allows refreshing after success');
+  assert.equal(requests, 4, 'manual reload still allows refreshing after success');
 }
 
 function testDynamicScriptRecovery() {
