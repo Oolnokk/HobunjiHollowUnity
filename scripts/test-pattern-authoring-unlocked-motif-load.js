@@ -19,7 +19,7 @@ const loadSource = section('    function drawMotifImageIntoSketch(source) {', ' 
 const applySource = section('    function applyPatternData(data) {', '\n    if (cfg.motifDataUrl'); // Includes the actual unlocked-library selection handler.
 const images = []; // Simulated browser PNG requests, completed manually to exercise races.
 const draws = []; // Records which artwork the real draw function actually put on the sketch.
-let undoCount = 0; // Ensures a failed load does not erase the previous sketch.
+let undoCount = 0; // Ensures each selection is undoable, even when the PNG fails.
 class TestImage {
   constructor() { images.push(this); }
   set src(value) {
@@ -37,13 +37,17 @@ const harness = vm.runInContext(`(() => {
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const legacyFrameFields = value => value;
   const cfg = {};
+  let ink = false; // Tracks whether the active sketch has any source artwork while imports are loading.
   const sketchCtx = {
-    clearRect() {},
-    drawImage(image) { draws.push(image.src); },
+    clearRect() { ink = false; },
+    drawImage(image) { draws.push(image.src); ink = true; },
     globalCompositeOperation: 'destination-out',
   };
   const previewStatus = { textContent: '' };
-  let closed = false, loadedLibraryId = 'unlocked-id', motifLoadRevision = 0, motifLoadPending = false;
+  const previewCanvas = { width: 230, height: 230 }; // Existing rendered preview surface cleared while switching motifs.
+  const previewCtx = { clearRect() { previewClears++; } };
+  let previewClears = 0; // Recorded so tests catch stale visual previews on a new selection.
+  let closed = false, loadedLibraryId = 'unlocked-id', motifLoadRevision = 0, motifLoadPending = false, motifLoadError = '';
   let frames = 0, previews = 0;
   const pushUndo = () => undo();
   const drawFrameCanvas = () => { frames++; };
@@ -58,6 +62,9 @@ const harness = vm.runInContext(`(() => {
     cancelPending() { motifLoadRevision++; motifLoadPending = false; },
     pending: () => motifLoadPending,
     status: () => previewStatus.textContent,
+    ink: () => ink,
+    previewClears: () => previewClears,
+    loadError: () => motifLoadError,
     cfg,
     frames: () => frames,
     previews: () => previews,
@@ -70,6 +77,7 @@ harness.select({ motifUrl: 'https://static.example.org/motif_unlocked.png', moti
 assert.equal(images[0].src, 'https://static.example.org/motif_unlocked.png', 'unlocked repository PNG loads instead of drawing a blank sketch');
 assert.equal(harness.cfg.motifScale, 1.5, 'repo pattern placement settings survive selection');
 assert.equal(harness.pending(), true, 'saving must wait for the PNG');
+assert.equal(harness.ink(), false, 'selecting a new PNG clears the previous sketch immediately');
 images[0].width = images[0].naturalWidth = 192;
 images[0].height = images[0].naturalHeight = 192;
 images[0].onload();
@@ -94,12 +102,16 @@ images[4].onload();
 assert.equal(draws.length, 3, 'manual drawing cancels an unfinished PNG load');
 
 harness.select({ motifUrl: 'https://static.example.org/missing.png' });
+assert.equal(harness.ink(), false, 'failed imports cannot leave previous motif artwork behind');
 const undosBeforeError = undoCount;
 images[5].onerror();
 assert.match(harness.status(), /Could not load motif artwork/);
 assert.equal(harness.pending(), false);
 assert.equal(harness.libraryId(), null, 'a failed PNG cannot be saved with the unlocked library ID');
-assert.equal(undoCount, undosBeforeError, 'a failed PNG does not erase the old canvas');
+assert.equal(undoCount, undosBeforeError, 'an error does not add another undo checkpoint');
+assert.equal(harness.ink(), false, 'after a failed PNG no old motif can be saved under the new pattern');
+assert(harness.previewClears() >= 6, 'each new selection clears stale artwork from the preview');
+assert.match(harness.loadError(), /Could not load motif artwork/, 'failure remains visible during scheduled preview updates');
 
 // The initial applied-treatment path must also accept a PNG URL.
 assert.match(source, /if \(cfg\.motifDataUrl \|\| cfg\.motifUrl\) drawMotifImageIntoSketch/);
