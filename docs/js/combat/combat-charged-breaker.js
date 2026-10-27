@@ -164,18 +164,19 @@
         glowFlare: 0,
       };
       const deps = window.Combat.deps;
+      const shapeStats = window.WeaponShapeStats.current(); // Weapon speed controls the full authored charge-pose clock.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
 
       setGlow(0);
       deps.showToast('Charged Breaker charging — release to strike.', true);
-      deps.triggerWeaponHoldVisual(MAX_CHARGE_S + STRIKE_S, {
+      deps.triggerWeaponHoldVisual((MAX_CHARGE_S + STRIKE_S) / shapeStats.speed, {
         anim: 'sweep',
         pose: window.AttackPoseTemplates?.poseFor('hatchet_swing', POWER), // The editor's Charged Breaker pose, POWER already applied.
         windupFrac: MAX_CHARGE_S / (MAX_CHARGE_S + STRIKE_S),
         strikeFrac: 1,
         power: 1,
-        holdS: HOLD_S,
+        holdS: HOLD_S / shapeStats.speed,
         windupSlowdown: WINDUP_SLOWDOWN,
         afflictionIds: Object.keys(effects.afflictions),
         afflictions: effects.afflictions,
@@ -186,6 +187,7 @@
       startedAt = -1;
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
+      const shapeStats = window.WeaponShapeStats.current(); // Release keeps the same weapon profile as the live pose.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null); // Capture the accelerated visible pose first, then release that exact authored partial pose.
       debugState.active = false;
       debugState.heldSeconds = heldSeconds;
@@ -210,7 +212,7 @@
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
       if (!forced) {
-        const targetPaid = chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)); // Interruptible total cost at the exact released pose.
+        const targetPaid = window.WeaponShapeStats.stamina(chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)), shapeStats); // Interruptible total cost at the exact released pose.
         const remainder = Math.max(0, targetPaid - paidChargeCost);
         if (remainder > 0) {
           const payment = window.ResourceSystem?.spendStamina(
@@ -235,9 +237,9 @@
         * (1 + (effects.stats.damageMul || 0)); // Existing charge-scaled damage before cross-cutting enchantment modifiers.
       const rangePx = baseAbil.rangePx
         * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, poseCharge)
-        * (1 + (effects.stats.rangeMul || 0));
+        * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
       const halfConeDeg = lerp(HALF_CONE_DEG_MIN, HALF_CONE_DEG_MAX, poseCharge);
-      const halfConeRad = halfConeDeg * Math.PI / 180;
+      const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range);
       const baseKnockbackPxS = baseAbil.knockbackPxS
         * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, poseCharge)
         * (1 + (effects.stats.knockbackMul || 0));
@@ -273,7 +275,7 @@
         LUNGE_DIRECT_FLIGHT_MAX,
         poseCharge,
       );
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
@@ -290,7 +292,7 @@
         poseCharge,
         damage,
         rangePx,
-        halfConeDeg,
+        halfConeDeg: halfConeRad * 180 / Math.PI,
         knockbackPxS,
         lungePx,
         pitchDistanceResistance,
@@ -371,6 +373,7 @@
     function onHoldUpdate(_slot, dt) {
       if (startedAt < 0) return;
       const deps = window.Combat.deps;
+      const shapeStats = window.WeaponShapeStats.current(); // This update funds the same charge percentage visible to the player.
       const heldSeconds = now() - startedAt;
       const poseCharge = poseChargeFromRuntime();
       debugState.heldSeconds = heldSeconds;
@@ -379,7 +382,7 @@
 
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
-      const targetPaid = chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)); // One interruptible total cost: each newly reached slice is paid exactly once.
+      const targetPaid = window.WeaponShapeStats.stamina(chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)), shapeStats); // One interruptible total cost: each newly reached slice is paid exactly once.
       const segmentCost = Math.max(0, targetPaid - paidChargeCost);
       if (segmentCost > 0) {
         const payment = window.ResourceSystem?.spendStamina(
@@ -391,7 +394,7 @@
         paidChargeCost += Math.max(0, Number(payment.enhancedPaid || 0) + Number(payment.spent || 0) + Number(payment.excess || 0));
         const tempo = Math.max(1, Number(payment.tempoMultiplier) || 1);
         if (tempo > 1 && MAX_CHARGE_S > 0) {
-          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
+          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * shapeStats.speed / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
         }
       }
       const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
