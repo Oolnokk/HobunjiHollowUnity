@@ -1377,6 +1377,21 @@
       if (rotDeg === 90 || rotDeg === 270) { txAdj = (fd0 - fw0) / 2; tzAdj = (fw0 - fd0) / 2; }
     }
 
+    // Shared wall-fixture contract is owned by house-wall-fixtures.js, not a duplicate
+    // editor-only preview implementation. The uncut source faces keep their stable IDs.
+    var fixtureCuts = global.HouseWallFixtures?.cutFaces?.(faces, piece.wallFixtures) || null;
+    if (fixtureCuts) faces = fixtureCuts.faces;
+    var fixtureWorldPoint = function(p) {
+      var wx = p[0] + offX, wz = p[2] + offZ;
+      if (rotDeg) {
+        var px = wx - pivX, pz = wz - pivZ;
+        wx = px * cosR - pz * sinR + pivX + txAdj;
+        wz = px * sinR + pz * cosR + pivZ + tzAdj;
+      }
+      return [wx, p[1] + offY, wz];
+    };
+    var fixtureExclusions = fixtureCuts ? fixtureCuts.openingQuads.map(function(q) { return q.map(fixtureWorldPoint); }) : [];
+
     var matRoof   = opts.matRoof   || new THREE.MeshLambertMaterial({ color: 0x6b3e26, side: THREE.FrontSide });
     var matFloor  = opts.matFloor  || new THREE.MeshLambertMaterial({ color: 0xa89878, side: THREE.FrontSide });
     var matBoards = opts.matBoards || new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
@@ -1497,7 +1512,9 @@
 
     // Authored body/gable walls can use exact-length generated foliage logs instead of bricks.
     if (generatedLogMode) {
-      var authoredLogGroup = global.StackedLogWalls.buildGroup(THREE, bodyPanels.concat(gablePanels), authoredLogSettings); // Horizontal courses are regenerated to each face's actual span, including gables.
+      var authoredLogGroup = global.StackedLogWalls.buildGroup(THREE, bodyPanels.concat(gablePanels), Object.assign({}, authoredLogSettings, {
+        excludeQuads: (authoredLogSettings.excludeQuads || []).concat(fixtureExclusions)
+      })); // Horizontal courses are regenerated to each face's actual span, including gables.
       authoredLogGroup.userData.isWallLogs = true;
       _markOutlineLayer(authoredLogGroup);
       group.add(authoredLogGroup);
@@ -1507,20 +1524,27 @@
                                      preScale: [1, 1, 0.6],
                                      brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
       if (bodyPanels.length) {
-        var wbGrp = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra));
+        var wbGrp = opts.wallBuilder.build(bodyPanels, Object.assign({ usePlaceholder: wbUse }, wbExtra, {
+          excludeQuads: (wbExtra.excludeQuads || []).concat(fixtureExclusions)
+        }));
         wbGrp.userData.isWallBricks = true;
         _markOutlineLayer(wbGrp);
         group.add(wbGrp);
       }
       if (gablePanels.length) {
         var gblExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
-        var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra));
+        var gblGrp   = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gblExtra, {
+          excludeQuads: (gblExtra.excludeQuads || []).concat(fixtureExclusions)
+        }));
         gblGrp.userData.isWallBricks = true;
         _markOutlineLayer(gblGrp);
         group.add(gblGrp);
       }
     }
 
+    if (global.HouseWallFixtures && Array.isArray(piece.wallFixtures) && piece.wallFixtures.length) {
+      group.add(global.HouseWallFixtures.createGroup(THREE, piece, fixtureWorldPoint));
+    }
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
     global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
     return group;
