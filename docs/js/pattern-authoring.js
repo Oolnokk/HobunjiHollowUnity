@@ -243,6 +243,8 @@
     let drawing = false;
     let lastPt = null;
     let previewToken = 0;
+    let motifLoadRevision = 0; // Invalidates a pending PNG load when a newer selection or sketch edit takes precedence.
+    let motifLoadPending = false; // Prevents saving a previous sketch while a selected library motif is still loading.
     let previewView = 'front'; // 'front' | 'behind' — only meaningful when options.renderPreviewBehind exists.
     // Tracks whether the pattern currently loaded is an UNMODIFIED library
     // entry (options.initialPatternLibraryId at open, or a "Load" click) —
@@ -650,6 +652,8 @@
     }
     undoBtn.addEventListener('click', () => {
       if (!undoStack.length) return;
+      motifLoadRevision++;
+      motifLoadPending = false;
       const current = snapshotSketch();
       const previous = undoStack.pop();
       if (current) redoStack.push(current);
@@ -661,6 +665,8 @@
     });
     redoBtn.addEventListener('click', () => {
       if (!redoStack.length) return;
+      motifLoadRevision++;
+      motifLoadPending = false;
       const current = snapshotSketch();
       const next = redoStack.pop();
       if (current) undoStack.push(current);
@@ -706,6 +712,8 @@
     }
     sketchCanvas.addEventListener('pointerdown', evt => {
       evt.preventDefault();
+      motifLoadRevision++;
+      motifLoadPending = false;
       pushUndo();
       drawing = true;
       lastPt = null;
@@ -733,23 +741,40 @@
     // Shared by the initial load below and by "Load" in the Library card —
     // NOT used by "Reset placement", which deliberately leaves whatever is
     // currently drawn on the sketchpad untouched.
-    function drawMotifImageIntoSketch(dataUrl) {
-      pushUndo();
-      sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
-      if (!dataUrl) { drawFrameCanvas(); schedulePreview(); return; }
-      const img = new Image();
-      img.onload = () => {
+    function drawMotifImageIntoSketch(source) {
+      const revision = ++motifLoadRevision;
+      motifLoadPending = !!source;
+      if (!source) {
+        pushUndo();
         sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
+        drawFrameCanvas();
+        schedulePreview();
+        return;
+      }
+      const img = new Image();
+      img.crossOrigin = 'anonymous'; // Repo-unlocked patterns use PNG URLs; their pixels must stay readable for saving and previewing.
+      img.onload = () => {
+        if (closed || revision !== motifLoadRevision) return;
+        pushUndo();
+        sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
+        sketchCtx.globalCompositeOperation = 'source-over';
         // Drawn at native size, centered on the canvas — a legacy SKETCH_SIZE
         // (192x192) motif from before this margin existed lands centered
         // inside the dashed boundary exactly where it always was, rather than
         // being stretched to fill the new, larger canvas.
         const w = img.naturalWidth || img.width || SKETCH_SIZE, h = img.naturalHeight || img.height || SKETCH_SIZE;
         sketchCtx.drawImage(img, (SKETCH_CANVAS_SIZE - w) / 2, (SKETCH_CANVAS_SIZE - h) / 2, w, h);
+        motifLoadPending = false;
         drawFrameCanvas();
         schedulePreview();
       };
-      img.src = dataUrl;
+      img.onerror = () => {
+        if (closed || revision !== motifLoadRevision) return;
+        motifLoadPending = false;
+        loadedLibraryId = null;
+        previewStatus.textContent = 'Could not load motif artwork. Check your connection and try Load again.';
+      };
+      img.src = source;
     }
     function syncInputsFromCfg() {
       overlay.querySelectorAll('.pa-in[data-field]').forEach(input => {
@@ -770,10 +795,10 @@
       cfg.overpassClearanceMultiplier = clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX); // Old patterns without the field inherit the former fixed 3× behavior.
       syncInputsFromCfg();
       updateValLabels();
-      drawMotifImageIntoSketch(cfg.motifDataUrl);
+      drawMotifImageIntoSketch(cfg.motifDataUrl || cfg.motifUrl);
     }
 
-    if (cfg.motifDataUrl) drawMotifImageIntoSketch(cfg.motifDataUrl);
+    if (cfg.motifDataUrl || cfg.motifUrl) drawMotifImageIntoSketch(cfg.motifDataUrl || cfg.motifUrl);
     else drawFrameCanvas();
     updateUndoRedoButtons();
 
@@ -788,6 +813,8 @@
       overlay.querySelector('.pa-brushSizeVal').textContent = `${brushSize}px`;
     });
     overlay.querySelector('[data-act="clearSketch"]').addEventListener('click', () => {
+      motifLoadRevision++;
+      motifLoadPending = false;
       pushUndo();
       sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
       loadedLibraryId = null;
@@ -905,6 +932,7 @@
     if (options.library) {
       renderLibraryList();
       overlay.querySelector('[data-act="saveToLibrary"]')?.addEventListener('click', () => {
+        if (motifLoadPending) { previewStatus.textContent = 'Motif is still loading; save once it appears.'; return; }
         const data = currentPatternData();
         if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving to the library.'; return; }
         const nameInput = overlay.querySelector('.pa-libraryName');
@@ -918,6 +946,8 @@
     function close() {
       if (closed) return;
       closed = true;
+      motifLoadRevision++;
+      motifLoadPending = false;
       window.clearTimeout(previewTimer);
       previewController?.dispose?.(); // Release caller-owned WebGL resources on save, cancel, Escape, or backdrop close.
       overlay.remove();
@@ -933,6 +963,7 @@
     overlay.addEventListener('click', evt => { if (evt.target === overlay) { options.onCancel?.(); close(); } });
 
     overlay.querySelector('[data-act="save"]').addEventListener('click', async () => {
+      if (motifLoadPending) { previewStatus.textContent = 'Motif is still loading; save once it appears.'; return; }
       const data = currentPatternData();
       if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving.'; return; }
       if (typeof options.onSave !== 'function') { close(); return; }
