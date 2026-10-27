@@ -99,12 +99,66 @@
     ];
   }
 
-  function deriveTransform(attachment, placement, base = null) {
+  // Same beam geometry authority as HousePieceGen. The wall target remains
+  // stationary; `normalOffset` now means outward furniture travel for any
+  // authored wall ornament with an extendable support (plain torches unchanged).
+  function stretchWallSupport(mesh, attachment, placement, sourceKey) {
+    const spec=attachment?.extendableSupport, api=window.HouseWallFixtures;
+    if(!mesh||!spec||!api?.extendAuthoredSupport)return false;
+    const key=sourceKeyFor(sourceKey);
+    const authored=window.AuthoredFurniture;
+    const scale=[finite(mesh.scale?.x,1),finite(mesh.scale?.y,1),finite(mesh.scale?.z,1)];
+    const travel=Math.max(0,Math.min(finite(spec.maxOutset,6),finite(placement?.normalOffset)));
+    const update=(data,outset=travel)=>{
+      if(!data||!mesh)return false;
+      const fixture={authoredAttachmentNormal:attachment.normal,
+        supportExtension:spec,bodyOutset:outset};
+      if(api.extendAuthoredSupport(mesh,data,fixture,scale))return true;
+      let applied=false;
+      mesh.traverse?.(node=>{
+        if(!applied&&node!==mesh&&node.userData?.meshById)
+          applied=api.extendAuthoredSupport(node,data,fixture,scale);
+      });
+      return applied;
+    };
+    mesh.userData ||= {};
+    mesh.userData.wallSupportOutset=travel;
+    const cached=authored?.peek?.(key);
+    if(update(cached))return true;
+    if(!authored?.load)return false;
+    // Only one pending load/retry per mesh: dragging must not queue a hundred
+    // asynchronous replacements. Deferred application reads the NEWEST
+    // outward offset rather than overwriting it with a stale frame.
+    if(mesh.userData.wallSupportPendingKey===key)return false;
+    mesh.userData.wallSupportPendingKey=key;
+    Promise.resolve(authored.load(key)).then(data=>{
+      if(!data)return;
+      const applyLatest=()=>{
+        const live=mesh.userData?.wallSupportOutset;
+        if(Number.isFinite(live))update(data,live);
+      };
+      if(typeof window.setTimeout==='function')window.setTimeout(applyLatest,0);
+      else applyLatest();
+    }).catch(error=>{lastError='support extension: '+String(error?.message||error);})
+      .finally(()=>{if(mesh.userData?.wallSupportPendingKey===key)delete mesh.userData.wallSupportPendingKey;});
+    return false;
+  }
+
+  function constrainedOutset(attachment,value) {
+    if(!attachment?.extendableSupport)return finite(value);
+    return Math.max(0,Math.min(6,finite(attachment.extendableSupport.maxOutset,6),finite(value)));
+  }
+
+  function deriveTransform(attachment, placement, base = null, sourceScale = [1,1,1]) {
     if (!attachment || !placement) return null;
     const wallNormal = normalizeXZ(placement.wallNormal); // Target wall's outward normal; attachment face points the opposite way.
     const rootYaw = normalizeDegrees(yawOf(wallNormal) + 180 - yawOf(attachment.normal)); // Delta aligns the SELECTED face rather than assuming a furniture-forward axis.
-    const rotatedAnchor = rotateY(attachment.anchor, rootYaw); // Required to place the furniture origin so the chosen face actually lands on targetPoint.
-    const target = targetPoint(placement); // Wall point plus U/V/normal gizmo offsets.
+    const scaledAnchor=(attachment.anchor||[0,0,0]).map((value,i)=>finite(value)*Math.max(.001,finite(sourceScale[i],1)));
+    const rotatedAnchor = rotateY(scaledAnchor, rootYaw); // Scaled + rotated authored beam end must meet the actual wall point.
+    const effective=attachment.extendableSupport
+      ?{...placement,normalOffset:constrainedOutset(attachment,placement.normalOffset)}
+      :placement;
+    const target = targetPoint(effective); // Keep the body inside the actual beam's maximum reach.
     const position = [target[0] - rotatedAnchor[0], target[1] - rotatedAnchor[1], target[2] - rotatedAnchor[2]]; // Furniture root position in scene/world space.
     const result = { position, rotY: rootYaw, target, wallNormal }; // Used directly for player meshes and converted to post fields for map records.
     if (base) {
@@ -115,12 +169,13 @@
     return result;
   }
 
-  function placementFromExistingTransform(attachment, rootPosition, rotY, normalOffset = 0) {
+  function placementFromExistingTransform(attachment, rootPosition, rotY, normalOffset = 0, sourceScale=[1,1,1]) {
     const yaw = finite(rotY); // Existing ordinary furniture yaw is inverted back into a wall normal for lossless conversion.
     const attachmentNormalYaw = yawOf(attachment?.normal); // Authored selected-face yaw before the existing root rotation.
     const wallYaw = normalizeDegrees(yaw + attachmentNormalYaw - 180); // Inverse of deriveTransform's rootYaw equation.
     const wallNormal = [Math.sin(wallYaw * DEG), 0, Math.cos(wallYaw * DEG)]; // Reconstructed wall outward normal.
-    const rotatedAnchor = rotateY(attachment?.anchor, yaw); // Finds the current world attachment point without moving the furniture.
+    const scaledAnchor=(attachment?.anchor||[0,0,0]).map((value,i)=>finite(value)*Math.max(.001,finite(sourceScale[i],1)));
+    const rotatedAnchor = rotateY(scaledAnchor, yaw); // Preserve old nonuniform furniture scale when converting placements.
     const attachmentPoint = [finite(rootPosition?.x) + rotatedAnchor[0], finite(rootPosition?.y) + rotatedAnchor[1], finite(rootPosition?.z) + rotatedAnchor[2]]; // Exact current face center in world space.
     return {
       version: VERSION,
@@ -312,7 +367,8 @@
   function setMeshTransform(object, attachment, placement) {
     const mesh = object?.mesh; // Ordinary furniture root remains the only visual object transformed by the wall system.
     if (!mesh || !attachment || !placement) return null;
-    const derived = deriveTransform(attachment, placement); // Same pure solver powers player and Map Editor placement.
+    const meshScale=[finite(mesh.scale?.x,1),finite(mesh.scale?.y,1),finite(mesh.scale?.z,1)];
+    const derived = deriveTransform(attachment, placement, null, meshScale); // Attachment solves scaled + rotated beam endpoint.
     if (!derived) return null;
     const oldPosition = mesh.position?.clone?.(); // Used to keep any legacy separately-parented light/sfx helpers translated with the visible group.
     mesh.position?.set?.(derived.position[0], derived.position[1], derived.position[2]);
@@ -327,6 +383,7 @@
       object.sfxSource.x = derived.position[0]; // Keeps furniture-local audio approximately co-located with a mounted object.
       object.sfxSource.z = derived.position[2];
     }
+    stretchWallSupport(mesh,attachment,placement,sourceKeyFor(object.key,objectDef(object)));
     const signature = JSON.stringify(placement); // Cheap marker prevents the restore timer from rewriting unchanged meshes.
     mesh.userData.wallOrnamentPlacementSignature = signature;
     mesh.userData.wallOrnamentMounted = true;
@@ -770,7 +827,7 @@
     const panel = document.createElement('div'); // Companion panel avoids editing the very large Map Editor HTML.
     panel.id = 'wallOrnamentMapControls';
     panel.style.cssText = 'margin:6px 0;padding:8px;border:1px solid #394450;border-radius:7px;background:#151a20;font-size:12px';
-    panel.innerHTML = `<div style="font-weight:700;margin-bottom:5px">Wall Ornaments</div><div style="display:flex;gap:5px;flex-wrap:wrap"><select id="wallOrnamentMapPreset"><option value="innSign">Inn Sign</option><option value="generalStoreSign">General Store Sign</option><option value="wallTorch">Wall Torch</option></select><button id="wallOrnamentMapPlace">Place on wall</button><button id="wallOrnamentMapConvert">Convert selected</button></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:6px"><label>Wall X<input id="wallOrnamentMapU" type="number" step="0.01" style="width:100%"></label><label>Wall Y<input id="wallOrnamentMapV" type="number" step="0.01" style="width:100%"></label><label>Wall distance<input id="wallOrnamentMapN" type="number" step="0.005" style="width:100%"></label></div><div id="wallOrnamentMapReadout" style="opacity:.72;margin-top:5px">Select a wall ornament or arm placement.</div>`;
+    panel.innerHTML = `<div style="font-weight:700;margin-bottom:5px">Wall Ornaments</div><div style="display:flex;gap:5px;flex-wrap:wrap"><select id="wallOrnamentMapPreset"><option value="innSign">Inn Sign</option><option value="generalStoreSign">General Store Sign</option><option value="wallTorch">Wall Torch</option></select><button id="wallOrnamentMapPlace">Place on wall</button><button id="wallOrnamentMapConvert">Convert selected</button></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:6px"><label>Wall X<input id="wallOrnamentMapU" type="number" step="0.01" style="width:100%"></label><label>Wall Y<input id="wallOrnamentMapV" type="number" step="0.01" style="width:100%"></label><label>Outward reach / wall clearance<input id="wallOrnamentMapN" type="number" step="0.005" style="width:100%"></label></div><div id="wallOrnamentMapReadout" style="opacity:.72;margin-top:5px">Select a wall ornament or arm placement.</div>`;
     bar.parentElement.insertBefore(panel, bar.nextSibling);
     document.getElementById('wallOrnamentMapPlace').addEventListener('click', () => {
       mapEditorArmKey = document.getElementById('wallOrnamentMapPreset')?.value || 'wallTorch'; // Next 3D click samples target wall point/normal.
@@ -796,6 +853,8 @@
     const v = document.getElementById('wallOrnamentMapV'); // Surface-vertical direct value.
     const n = document.getElementById('wallOrnamentMapN'); // Surface-normal distance direct value.
     for (const input of [u, v, n]) if (input) input.disabled = !placement;
+    if(n){const support=mapProxyState?.attachment?.extendableSupport;
+      n.min=support?'0':'';n.max=support?String(Math.min(6,finite(support.maxOutset,6))):'';}
     if (placement) {
       if (u) u.value = round(placement.offsetU);
       if (v) v.value = round(placement.offsetV);
@@ -809,7 +868,9 @@
     if (!record?.wallAttachment || !mesh?.userData?.placementBase) return false;
     const metadata = attachment || await loadAttachment(record.key, mapRecordDef(record)); // Authoring-selected face frame is the same one used by player mounting.
     if (!metadata) return false;
-    const derived = deriveTransform(metadata, record.wallAttachment, mesh.userData.placementBase); // Produces ordinary map post fields for backward-compatible runtime rendering.
+    const meshScale=[finite(record.postSX,finite(mesh.scale?.x,1)),
+      finite(record.postSY,finite(mesh.scale?.y,1)),finite(record.postSZ,finite(mesh.scale?.z,1))];
+    const derived = deriveTransform(metadata, record.wallAttachment, mesh.userData.placementBase, meshScale); // Exact authored beam-end position, even after uneven sizing.
     if (!derived) return false;
     record.postX = derived.postX;
     record.postY = derived.postY;
@@ -817,6 +878,7 @@
     record.rotY = round(derived.rotY, 1);
     mesh.position.set(derived.position[0], derived.position[1], derived.position[2]);
     mesh.rotation.y = derived.rotY * DEG;
+    stretchWallSupport(mesh,metadata,record.wallAttachment,sourceKeyFor(record.key,mapRecordDef(record)));
     return true;
   }
 
@@ -828,7 +890,8 @@
     const basis = wallBasis(placement.wallNormal); // Local proxy X/Y/Z and these projection axes are identical.
     placement.offsetU = round(delta[0] * basis.tangent[0] + delta[2] * basis.tangent[2]);
     placement.offsetV = round(delta[1]);
-    placement.normalOffset = round(delta[0] * basis.normal[0] + delta[2] * basis.normal[2]);
+    placement.normalOffset = round(constrainedOutset(mapProxyState.attachment,
+      delta[0] * basis.normal[0] + delta[2] * basis.normal[2]));
     applyMapRecord(mapProxyState.record, mapProxyState.mesh, mapProxyState.attachment).then(() => updateMapPanel(mapProxyState.record));
   }
 
@@ -880,7 +943,7 @@
     if (!state?.record?.wallAttachment) return;
     state.record.wallAttachment.offsetU = mapUiValue('wallOrnamentMapU');
     state.record.wallAttachment.offsetV = mapUiValue('wallOrnamentMapV');
-    state.record.wallAttachment.normalOffset = mapUiValue('wallOrnamentMapN');
+    state.record.wallAttachment.normalOffset = constrainedOutset(state.attachment,mapUiValue('wallOrnamentMapN'));
     const target = targetPoint(state.record.wallAttachment); // Moves proxy without dispatching a synthetic TransformControls event.
     state.mesh && applyMapRecord(state.record, state.mesh, state.attachment);
     if (mapProxy) mapProxy.position.set(target[0], target[1], target[2]);
@@ -895,7 +958,8 @@
     if (!record || !mesh || !isWallOrnamentKey(record.key, mapRecordDef(record))) { try { setStatus('Select a wall ornament first.'); } catch (_) {} return; }
     const attachment = await loadAttachment(record.key, mapRecordDef(record)); // Selected-surface frame determines the inferred wall normal.
     if (!attachment) return;
-    record.wallAttachment = placementFromExistingTransform(attachment, mesh.position, mesh.rotation.y / DEG, finite(attachment.defaultNormalOffset, 0.01));
+    record.wallAttachment = placementFromExistingTransform(attachment, mesh.position, mesh.rotation.y / DEG,
+      finite(attachment.defaultNormalOffset, 0.01),[finite(mesh.scale?.x,1),finite(mesh.scale?.y,1),finite(mesh.scale?.z,1)]);
     record.wallAttachment.normalOffset = finite(attachment.defaultNormalOffset, 0.01);
     const basis = wallBasis(record.wallAttachment.wallNormal); // Rebase wallPoint so adding default normal offset still leaves the visible furniture unmoved.
     record.wallAttachment.wallPoint[0] = round(record.wallAttachment.wallPoint[0] - basis.normal[0] * record.wallAttachment.normalOffset);
@@ -1023,6 +1087,7 @@
     deriveTransform,
     placementFromExistingTransform,
     wallBasis,
+    stretchWallSupport,
     syncStoredPlayerPlacements,
     debugSnapshot,
     __test: Object.freeze({ normalizeDegrees, normalizeXZ, yawOf, rotateY, targetPoint, deriveTransform, placementFromExistingTransform, FALLBACK_ATTACHMENTS }),
