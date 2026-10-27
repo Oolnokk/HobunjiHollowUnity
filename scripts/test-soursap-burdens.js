@@ -17,6 +17,7 @@ const zone = 'map_southern_cloud_forest';
 const branch = { col: 3, row: 4, baseX: 3.5 * 64, baseY: 4.5 * 64,
   tipX: 4.5 * 64, tipY: 4.5 * 64, baseWorldY: 2, tipWorldY: 2.8 };
 const player = { x: 4 * 64, y: 4.5 * 64, onBranch: null };
+let activeBranch = branch; // Simulates streaming replacement of the tree branch without rebuilding its fruit.
 const worldMeshes = new Set(); // Live test fruit meshes as kept by the Cloud Forest scene.
 const scene = {
   add(mesh) { worldMeshes.add(mesh); mesh.parent = scene; },
@@ -25,11 +26,11 @@ const scene = {
 const pos = () => ({ x:0, y:0, z:0, set(x,y,z) { this.x=x; this.y=y; this.z=z; } });
 class FruitMesh { constructor() { this.position = pos(); } }
 const THREE = { SphereGeometry: class {}, MeshStandardMaterial: class {}, Mesh: FruitMesh };
-let registeredFruit = 0, liftedFruit = 0;
+let registeredFruit = 0, liftedFruit = 0, reboundFruit = 0; // Counts physical fruit registrations, pickups, and streaming reattachments.
 const game = {
   THREE, console, performance, Math,
   WildlifeSpawn: { init() {}, updateHostileSpawning() {} },
-  ClimbSystem: { debugBranchesFor: () => [branch], groundYAt: () => 0 },
+  ClimbSystem: { debugBranchesFor: () => [activeBranch], groundYAt: () => 0 },
   WildernessMapGenerator: { makeRng: () => () => .4 },
   CalendarSystem: { getHour: () => 12 },
   Music: { isNightTime: () => false },
@@ -40,8 +41,15 @@ const game = {
       scene.add(mesh);
       return mesh;
     },
+    rebindFruitBranch(source, mapId, position) {
+      assert.strictEqual(source, activeBranch);
+      assert.equal(mapId,zone);
+      assert(Number.isFinite(position.y));
+      reboundFruit++;
+      return true;
+    },
     pickUpFruit(source) {
-      assert.strictEqual(source, branch);
+      assert.strictEqual(source, activeBranch);
       liftedFruit++;
       game.HobunjiCloudForestWildlife.markFruitHarvested(source);
       return true;
@@ -65,7 +73,12 @@ const fruitRow = Math.floor((branch.baseY + (branch.tipY - branch.baseY) * .82)/
 assert.equal(game.HobunjiCloudForestWildlife.fruitObjectAt(zone,fruitCol,fruitRow),null,
   'standing underneath the fruit no longer makes the branch fruit lootable');
 
-player.onBranch = branch;
+const replacement = { ...branch, fruit: branch.fruit }; // A new branch instance retains the existing hanging fruit's state.
+activeBranch = replacement;
+game.WildlifeSpawn.updateHostileSpawning(.6);
+assert.equal(registeredFruit, 1, 'chunk reload must not register a duplicate Soursap burden');
+assert.equal(reboundFruit,1,'chunk reload rebinds the existing physical fruit to the new branch');
+player.onBranch = replacement;
 const pickable = game.HobunjiCloudForestWildlife.fruitObjectAt(zone,fruitCol,fruitRow);
 assert(pickable && pickable.label.includes('Soursap Fruit'),
   'climbing the fruit-bearing branch grants the correctly named interaction');
@@ -111,7 +124,7 @@ assert(gameCode.includes('soursapFruitFlesh: { icon:') &&
 assert(gameCode.includes('window.RangedWeapons?.movementSpeedMultiplier?.(player)') &&
   gameCode.includes('window.RangedWeapons?.movementSpeedMultiplier?.(c)'),
   'native player and creature locomotion both consume Sticky slowdown');
-assert(burdenCode.includes('class Burden') && burdenCode.includes('registerFruit') &&
+assert(burdenCode.includes('class Burden') && burdenCode.includes('rebindFruitBranch') && burdenCode.includes('registerFruit') &&
   burdenCode.includes('releaseFruitFromTree') && burdenCode.includes('fruitBurstVisual'),
   'Shattercasks and Soursap use the same physical Burden pipeline');
 assert(climbCode.includes('window.Shattercasks?.releaseFruitFromTree?.(area, col, row)'),
