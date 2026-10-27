@@ -127,6 +127,7 @@
       }
       tile.type = deps.TileType.GRASS; tile.crop = deps.CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
       if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
+      window.FarmPlotEditor?.onTerrainPaint?.(col, row, 'grass');
       deps.markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
     }
   }
@@ -332,6 +333,7 @@
 
   function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
     if (!layout || layout.version !== 3) return;
+    window.FarmPlotEditor?.restore?.(layout.farmPlots);
     const grid = deps.getGrid();
     (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady, fertilized }) => {
       if (grid[r]?.[c]) {
@@ -556,6 +558,7 @@
       if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || !deps.getFarmEditMode() || deps.getCurrentArea() !== 'farm') return;
       e.stopPropagation();
       _editorPainting = true;
+      window.FarmPlotEditor?.beginStroke?.();
       const t = deps._screenToFarmTile(e.clientX, e.clientY);
       if (t) applyFarmEditBrush(t.col, t.row);
     });
@@ -565,7 +568,7 @@
       const t = deps._screenToFarmTile(e.clientX, e.clientY);
       if (t) applyFarmEditBrush(t.col, t.row);
     });
-    window.addEventListener('pointerup', () => { _editorPainting = false; });
+    window.addEventListener('pointerup', () => { _editorPainting = false; window.FarmPlotEditor?.endStroke?.(); });
 
     // Expose farm editor to the HTML panel buttons
     window._farmEditor = {
