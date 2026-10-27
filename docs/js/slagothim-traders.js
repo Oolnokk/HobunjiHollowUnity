@@ -958,6 +958,10 @@
         const step = Math.min(gap, Math.max(TUNING.WALK_TILES_PER_SECOND * 1.6, gap * 2) * dt);
         root.position.x += dx / gap * step; root.position.z += dz / gap * step;
       }
+      // Steering interpolates between safe targets; a turn can otherwise cut
+      // across a blocked building corner between those positions.
+      const safe = safeMemberPoint(route, root.position.x, root.position.z);
+      root.position.x = safe.x; root.position.z = safe.z;
       root.position.y = num(deps.npcSurfaceY?.(area, Math.floor(root.position.x), Math.floor(root.position.z)), root.position.y);
       let facing = null;
       if (gap > 0.05) facing = -Math.atan2(dz, dx) + Math.PI / 2;
@@ -1386,6 +1390,6 @@
     buy,
     spawnCaravan, // Dev/testing: force a caravan in at the southern road now.
     debugSnapshot,
-    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, rollMemberRoster, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget }),
+    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, rollMemberRoster, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget, steerWalkers }),
   });
 })();
