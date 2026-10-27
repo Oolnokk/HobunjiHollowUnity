@@ -69,7 +69,8 @@ assert.equal(tactics.setTactics('mount', {}).ok, false);
 assert.equal(tactics.setTactics('missing', {}).ok, false);
 assert(tactics.setTactics('hound', { tempo: 'relentless', abilities: { guardCharge: { frequency: 0 }, pounce: { frequency: 4, effect: 'power' }, rearKick: { frequency: 4 } } }).ok);
 assert(!('rearKick' in stable[0].companionTactics.abilities), 'edited saves cannot grant another species move');
-assert.equal(tactics.chooseAttack(actor).id, 'pounce', 'disabled guard charge is never chosen');
+assert.equal(tactics.tacticsForEntry(stable[0]).abilities.guardCharge.frequency, 1, 'Guard Charge cannot be turned Off');
+assert.equal(tactics.chooseAttack(actor).id, 'pounce');
 assert.equal(tactics.combatTempo(actor).stamina, 1.3);
 const hit = context.CompanionOffense.scaleHit(actor, {}, 10, { footingDamageMultiplier: 2, afflictionBonuses: { poison: 10 } }); // Shared hit path must keep Footing independent of Health scaling.
 assert.equal(hit.amount, 13.5);
@@ -100,17 +101,17 @@ const serialized = JSON.stringify(stable[0]); // Save/reload uses the existing S
 stable[0] = JSON.parse(serialized);
 assert.equal(tactics.tacticsForEntry(stable[0]).tempo, 'relentless');
 assert.equal(tactics.chooseAttack(actor).id, 'pounce');
-const kick = { ...actor, stableId: 'kick', creatureKey: 'voorg-ass', def: definitions['voorg-ass'] }; // Kick-only loadouts wait for the existing hard cooldown.
+const kick = { ...actor, stableId: 'kick', creatureKey: 'voorg-ass', def: definitions['voorg-ass'] }; // Guard Charge covers the kick's hard cooldown.
 tactics.setTactics('kick', { abilities: { guardCharge: { frequency: 0 }, rearKick: { frequency: 4, effect: 'drive' } } });
 kickReady = false;
-assert.equal(tactics.chooseAttack(kick).waiting, true);
+assert.equal(tactics.chooseAttack(kick).id, 'guardCharge', 'a cooling-down kick falls back to Guard Charge instead of idling');
 kickReady = true;
 assert.equal(tactics.chooseAttack(kick).id, 'rearKick');
 let actualKnockback = 0; // Captures the payload that reaches the ordinary damage function.
 context.CompanionOffense.damageCreature((target, amount, x, y, kb) => { actualKnockback = kb; }, kick, {}, 2, 0, 0, 100, {});
 assert.equal(actualKnockback, 160);
 tactics.setTactics('grehlr', { abilities: { guardCharge: { frequency: 0 }, grehlrBurrow: { frequency: 0 }, grehlrStink: { frequency: 4, effect: 'affliction' } } });
-const grehlr = { ...actor, stableId: 'grehlr', creatureKey: 'grehlr', def: definitions.grehlr }; // Spray can be deliberately chosen without allowing random substitution.
+const grehlr = { ...actor, _companionTacticSchedule: null, stableId: 'grehlr', creatureKey: 'grehlr', def: definitions.grehlr }; // Spray can be deliberately chosen without allowing random substitution.
 assert.equal(tactics.chooseAttack(grehlr).id, 'grehlrStink');
 assert.equal(context.CompanionOffense.getModifiers(grehlr, {}).affliction, 1.5);
 // Each move's allow-list must reject options that its real hit payload cannot apply.

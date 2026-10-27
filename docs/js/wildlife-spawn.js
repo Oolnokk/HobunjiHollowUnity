@@ -112,7 +112,7 @@
       return false;
     }
     const creatureDb = injectedDeps?.CREATURE_DB;
-    registration.ensureCreatureDefs(creatureDb);
+    registration.ensureCreatureDefs(creatureDb, injectedDeps?.TILE);
     const rendererSpecies = window.CreatureGeneticsRender?.SPECIES;
     if (rendererSpecies && !rendererSpecies[registration.KIND]) registration.ensureRendererSpecies(rendererSpecies);
     const herds = registration.ensureNorthernCliffsHerds(injectedDeps);
