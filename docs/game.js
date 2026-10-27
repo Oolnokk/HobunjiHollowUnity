@@ -16392,14 +16392,16 @@
         if (cat === 'all' || def.cat === cat) return true;
         const tags = new Set((def.tags || []).map(tag => String(tag).toLowerCase())); // Classifies item families without changing their existing crafting/shipping categories.
         switch (cat) {
-          case 'food': return def.isCookedFood === true || ['food', 'meal', 'drink', 'meat', 'egg', 'milk'].some(tag => tags.has(tag));
+          case 'food': return def.isCookedFood === true || ['food', 'meal', 'drink', 'beverage', 'alcohol', 'ingredient', 'meat', 'egg', 'milk'].some(tag => tags.has(tag));
           case 'fish': return tags.has('fish') || key.startsWith('fish_');
           case 'ore': return tags.has('ore') || tags.has('metal bar');
           case 'reagent': return tags.has('reagent') || tags.has('alchemy');
           case 'tool': return def.cat === 'instrument';
           case 'plans': return ['blueprint', 'buildingPlan'].includes(def.cat) || ['blueprint', 'plan', 'deed', 'scroll', 'tablet'].some(tag => tags.has(tag));
           case 'dye': return tags.has('dye');
-          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'tool', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'dye'].includes(def.cat);
+          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'tool', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'dye'].includes(def.cat)
+            && !def.isCookedFood
+            && !['food', 'fish', 'ore', 'metal bar', 'reagent', 'alchemy', 'plan', 'deed', 'blueprint', 'scroll', 'tablet', 'dye'].some(tag => tags.has(tag));
           default: return false;
         }
       }
