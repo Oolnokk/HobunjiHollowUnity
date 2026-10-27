@@ -147,6 +147,24 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     ensureAmmoState();
+    // Sticky and Disorient come from the existing ranged-ammo state; this
+    // provider displays both without introducing a second status-effect owner.
+    window.EffectBuffBar?.registerProvider?.('rangedImpact', () => {
+      const state = deps?.player?._rangedAmmoDebuffs;
+      if (!state) return [];
+      const now = performance.now(); // Shared monotonic clock for status countdowns and movement effects.
+      const entries = []; // Player-only HUD entries; hostile debuffs stay on the actor.
+      if (state.stickyUntil > now) entries.push({
+        key:'sticky',label:'Sticky · 20% movement speed',icon:'🍈',kind:'bane',
+        sourceLabel:'Soursap Fruit',durationS:2.2,remainingS:(state.stickyUntil-now)/1000,
+      });
+      if (state.disorientUntil > now) entries.push({
+        key:'disorient',label:'Disoriented · reversed movement',icon:'💫',kind:'bane',
+        sourceLabel:'Concussive impact',durationS:DISORIENT_DURATION_MS/1000,
+        remainingS:(state.disorientUntil-now)/1000,
+      });
+      return entries;
+    });
     deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
   }
 
