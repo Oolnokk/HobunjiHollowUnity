@@ -303,23 +303,38 @@
     (document.head || document.documentElement).appendChild(script);
   }
 
+  let spacingGateOpened = false; // Prevents late spacing-script events from initializing stances twice.
+  let spacingGateTimer = null; // Guarantees an optional spacing script cannot block the stance module forever.
+  function startStancesAfterSpacing() {
+    if (spacingGateOpened) return;
+    spacingGateOpened = true;
+    if (spacingGateTimer !== null) clearTimeout(spacingGateTimer);
+    spacingGateTimer = null;
+    loadWeaponToolStancesRuntime();
+  }
+
   if (!window.MeleePoseSpacing && typeof document !== 'undefined') {
+    spacingGateTimer = setTimeout(() => {
+      window.__farmLog?.('[melee-pose-spacing] loading delayed; starting weapon stances with optional spacing fallback', 'warn');
+      startStancesAfterSpacing();
+    }, 10000); // Applies equally to existing, failed, or stalled spacing script tags.
     const existingSpacing = document.querySelector('script[data-melee-pose-spacing]');
     if (existingSpacing) {
-      existingSpacing.addEventListener('load', loadWeaponToolStancesRuntime, { once: true });
+      existingSpacing.addEventListener('load', startStancesAfterSpacing, { once: true });
+      existingSpacing.addEventListener('error', startStancesAfterSpacing, { once: true });
     } else {
-      const spacingScript = document.createElement('script'); // Pure canonical Mao'ao-space pose calibration shared by player, enemies, and editor.
+      const spacingScript = document.createElement('script'); // Shared Mao'ao-space pose calibration.
       spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing2';
       spacingScript.async = false;
       spacingScript.dataset.meleePoseSpacing = 'true';
-      spacingScript.onload = loadWeaponToolStancesRuntime;
+      spacingScript.onload = startStancesAfterSpacing;
       spacingScript.onerror = () => {
-        window.__farmLog?.('[melee-pose-spacing] failed to load; weapon stance runtime continues without spacing calibration', 'warn');
-        loadWeaponToolStancesRuntime();
+        window.__farmLog?.('[melee-pose-spacing] failed to load; weapon stances continue without spacing calibration', 'warn');
+        startStancesAfterSpacing();
       };
       (document.head || document.documentElement).appendChild(spacingScript);
     }
   } else {
-    loadWeaponToolStancesRuntime();
+    startStancesAfterSpacing();
   }
 })();
