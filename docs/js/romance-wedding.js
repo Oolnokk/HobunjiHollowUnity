@@ -72,17 +72,17 @@
     const stages = [
       { id: 'wedding_fade_in', type: 'fade', direction: 'in', duration: 1.2, next: '__next__' },
       { id: 'wedding_gathered', type: 'caption', speakerName: '', text: 'Friends and neighbors fill every pew of the Life Temple.', cameraMode: 'authored', camera: CAMERAS.wide, next: '__next__' },
-      { id: 'wedding_welcome', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: 'We gather beneath the Life that runs through soil and star, to bind two lives into one household.', cameraMode: 'authored', camera: CAMERAS.altar, next: '__next__' },
+      { id: 'wedding_welcome', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: "We gather here in Nao'ung's temple, with those who have helped you flourish. Today, you choose to put down roots beside one another.", cameraMode: 'authored', camera: CAMERAS.altar, next: '__next__' },
       { id: 'wedding_face_spouse', type: 'turn', actorId: 'player', mode: 'actor', targetActorId: 'spouse', duration: 0.35, next: '__next__' },
       { id: 'wedding_face_player', type: 'turn', actorId: 'spouse', mode: 'actor', targetActorId: 'player', duration: 0.35, next: '__next__' },
-      { id: 'wedding_ask_player', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: `${playerName}, will you share your hearth, your harvests and your hardships with ${spouseName}?`, ...overShoulder('spouse', 'player', -0.6, 0.2), next: '__next__' },
+      { id: 'wedding_ask_player', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: `${playerName}, will you stand with ${spouseName} through bloom and blight, sharing the harvest and tending one another when times are lean?`, ...overShoulder('spouse', 'player', -0.6, 0.2), next: '__next__' },
       { id: 'wedding_player_vow', type: 'choice', speakerId: 'player', text: 'How do you answer?', options: [
         { text: 'I will.', next: 'wedding_ask_spouse' },
         { text: '…Not today.', next: 'wedding_postpone' },
       ] },
-      { id: 'wedding_ask_spouse', type: 'talk', speakerId: 'hunundi', addressedActorId: 'spouse', text: `And you, ${spouseName}?`, ...overShoulder('player', 'spouse', 0.25), next: '__next__' },
+      { id: 'wedding_ask_spouse', type: 'talk', speakerId: 'hunundi', addressedActorId: 'spouse', text: `And you, ${spouseName}, will you offer ${playerName} that same care, through every season yet to come?`, ...overShoulder('player', 'spouse', 0.25), next: '__next__' },
       { id: 'wedding_spouse_vow', type: 'talk', speakerId: 'spouse', addressedActorId: 'player', text: 'I will. With all my heart.', ...overShoulder('player', 'spouse', 0.25), next: '__next__' },
-      { id: 'wedding_pronounce', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: 'Then by the Life in the soil and the Life in the stars — you are wed!', cameraMode: 'authored', camera: CAMERAS.altar, next: '__next__' },
+      { id: 'wedding_pronounce', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: "Then before your neighbors, and in Nao'ung's name, I pronounce you wed. May your roots hold firm, and may you always give one another room to grow.", cameraMode: 'authored', camera: CAMERAS.altar, next: '__next__' },
       { id: 'wedding_love', type: 'animation', actorId: 'spouse', animKind: 'emote', emoteName: 'love', resultPose: 'unchanged', duration: 1.2, next: '__next__' },
       // Recessional: the couple step into the centre aisle and walk out
       // between the pews under the cheering (the wide shot looks down the
@@ -93,7 +93,7 @@
       { id: 'wedding_recess_player', type: 'move', actorId: 'player', targetWorld: { c: SPOTS.aisle.c, r: SPOTS.recessionalRow, facing: SOUTH }, speed: 'slow', waitForArrival: false, next: '__next__' },
       { id: 'wedding_cheer', type: 'caption', speakerName: '', text: 'The whole temple bursts into cheers.', cameraMode: 'authored', camera: CAMERAS.wide, next: '__next__' },
       { id: 'wedding_fade_out', type: 'fade', direction: 'out', duration: 1, next: '__end__' },
-      { id: 'wedding_postpone', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: 'No matter. The Totem has waited this long; it will wait for you both.', cameraMode: 'authored', camera: CAMERAS.altar, next: 'wedding_postpone_fade' },
+      { id: 'wedding_postpone', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: 'No blossom opens just because we ask it to. Take your time, both of you. The temple will welcome you when you are ready.', cameraMode: 'authored', camera: CAMERAS.altar, next: 'wedding_postpone_fade' },
       { id: 'wedding_postpone_fade', type: 'fade', direction: 'out', duration: 1, next: '__end__' },
     ];
     return {

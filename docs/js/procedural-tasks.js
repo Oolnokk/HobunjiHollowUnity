@@ -308,7 +308,7 @@
       roll: () => ({ items: pickTaskItems(['alchemy'], 2, 3, 5, 2), timerDays: 4 }),
       ask: (task, nick) => {
         const [a, b] = task.items;
-        return `Ah, yes, ${nick}. Would you be willing to help gather herbs for incense? I need about ${a.qty} ${itemLabel(a.itemKey)}, and ${b.qty} ${itemLabel(b.itemKey)}. The fresher the better.`;
+        return `Ah, yes, ${nick}. Nao'ung's clerics keep remedies ready for the sick, and our stores are low. Would you gather about ${a.qty} ${itemLabel(a.itemKey)} and ${b.qty} ${itemLabel(b.itemKey)}? Fresh supplies would help us greatly.`;
       },
     },
     teacup_unumanuk: {
