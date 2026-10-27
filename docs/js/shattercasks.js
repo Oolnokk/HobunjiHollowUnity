@@ -586,7 +586,7 @@
     };
   }
   function adoptFruitCarryTemplate(model) {
-    if(!model?.carryable?.billboardAnchor || !model?.parts?.some(part=>part.kind==='barrel'))return;
+    if(model===fruitCarryTemplate || !model?.carryable?.billboardAnchor || !model?.parts?.some(part=>part.kind==='barrel'))return;
     fruitCarryTemplate=model; // Follow future edits to the authored Shattercask without another hardcoded fruit pose.
     for(const record of records.values())for(const burden of record.vases.values()){
       if(burden.kind!=='soursap'||burden.exploded)continue;
