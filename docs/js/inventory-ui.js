@@ -191,6 +191,10 @@
     });
     inventoryObserver.observe(pane, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] }); // Async clothing composites finish by changing <img src>; observe only that attribute so Pack clones refresh once without polling/per-frame work.
     pane.addEventListener('click', scheduleDecorate, true);
+    pane.addEventListener('click', event => {
+      const categoryButton = event.target.closest?.('.inv-cat'); // Keeps the chosen filter in view when gamepad bumpers or touch move along the wider category row.
+      categoryButton?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'instant' });
+    }, true);
   }
 
   function installMenuReadability() {
@@ -378,9 +382,13 @@
       grid.dataset.packClothingFingerprint = fingerprint;
     }
 
-    const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all';
-    const visible = activeCategory === 'all';
-    grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => { tile.style.display = visible ? '' : 'none'; });
+    const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all'; // Pack clothing belongs to All and the dedicated Clothing tab.
+    const showClothing = activeCategory === 'all' || activeCategory === 'clothing'; // Regular game.js stack filtering stays unchanged for clothing, which has no ITEM_DEFS entry.
+    const searchQuery = window.InventorySearch?.query || ''; // Clothing tiles now honor the same pack search as ordinary stacks.
+    grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => {
+      const matchesSearch = !searchQuery || (tile.title + ' ' + tile.dataset.key).toLowerCase().includes(searchQuery); // Uses authored clothing name/id without rebuilding hidden source buttons.
+      tile.style.display = showClothing && matchesSearch ? '' : 'none';
+    });
     // decorate() (this function's ultimate caller) reruns on every childList change
     // inside the pane. Unlike classList.toggle(), .remove()/.add() re-serialize and
     // re-set the class attribute even when the token being removed/added is
@@ -388,8 +396,9 @@
     // class on the very same elements every single pass was a real per-frame
     // attribute-mutation cost for no actual state change.
     const reservedEmpty = [...grid.querySelectorAll('.inventory-clothing-reserved-empty')];
-    const emptySlots = visible ? [...grid.querySelectorAll('.inv-item-box.empty')] : [];
-    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length));
+    const emptySlots = showClothing ? [...grid.querySelectorAll('.inv-item-box.empty')] : []; // Reclaims only slots occupied by currently visible clothing.
+    const visibleClothingCount = [...grid.querySelectorAll('.pack-clothing-tile')].filter(tile => tile.style.display !== 'none').length; // Keeps search-filtered clothing from reserving phantom slots.
+    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - visibleClothingCount));
     for (const empty of reservedEmpty) if (!nextReservedEmpty.includes(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
     for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
   }
