@@ -21,6 +21,7 @@
   const persisted = new Set(); // Already shattered/looted IDs, saved per player world.
   const terrainHistory = new Map(); // Area -> Map(tile -> original resource kind), preserves blasted openings on reload.
   const pileHistory = new Map(); // Area -> Map(pile id -> unlooted debris), restores one-input collectible piles.
+  const looseFruitHistory = new Map(); // Area -> Map(burden id -> intact safely dropped fruit); restores unthrown fruit after reload.
   const lastEquipment = { weapon:null, tool:null, item:null }; // Pickup-time equipment snapshot used to drop carried vases on selection changes.
   // All physical carryables share this record and Shattercask's pickup/drop/throw state machine.
   // 'kind' chooses the impact payload, not a different input or animation system.
@@ -119,7 +120,7 @@
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
-    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();records.clear();placementCache.clear();
+    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();looseFruitHistory.clear();records.clear();placementCache.clear();
     if(held||backXray.size)setHeldRearXray(null); // Never leak held portrait depth state into the next world.
     held=null; // A different world must never inherit another world's held charge.
     promptClaim='';
@@ -130,6 +131,8 @@
       for(const [area,tiles] of Object.entries(savedTerrain))terrainHistory.set(area,new Map(Object.entries(tiles)));
       const savedPiles=JSON.parse(localStorage.getItem('hobunji.shattercasks.piles.v1:'+identity)||'{}');
       for(const [area,piles] of Object.entries(savedPiles))pileHistory.set(area,new Map(Object.entries(piles)));
+      const savedFruit=JSON.parse(localStorage.getItem('hobunji.burdens.looseFruit.v1:'+identity)||'{}');
+      for(const [area,fruits] of Object.entries(savedFruit))looseFruitHistory.set(area,new Map(Object.entries(fruits)));
     }catch(error){window.__farmLog?.('[shattercask] partial persistence recovery: '+error.message,'warn');}
   }
   function persistWorld() {
@@ -140,6 +143,8 @@
         JSON.stringify(Object.fromEntries([...terrainHistory].map(([area,tiles])=>[area,Object.fromEntries(tiles)]))));
       localStorage.setItem('hobunji.shattercasks.piles.v1:'+storeIdentity,
         JSON.stringify(Object.fromEntries([...pileHistory].map(([area,piles])=>[area,Object.fromEntries(piles)]))));
+      localStorage.setItem('hobunji.burdens.looseFruit.v1:'+storeIdentity,
+        JSON.stringify(Object.fromEntries([...looseFruitHistory].map(([area,fruits])=>[area,Object.fromEntries(fruits)]))));
     }catch(error){window.__farmLog?.('[shattercask] failed to persist blast/loot history: '+error.message,'warn');}
   }
   function saveConsumed(id) {
@@ -668,6 +673,9 @@
     fruit.group.position.set(spot.col + .5, baseHeight(spot.col, spot.row) + .16, spot.row + .5);
     fruit.hanging = false; fruit.flying = false;
     refreshMeshBounds(fruit);
+    if(!looseFruitHistory.has(mapId))looseFruitHistory.set(mapId,new Map());
+    looseFruitHistory.get(mapId).set(fruit.id,{col:spot.col,row:spot.row,treeCol:col,treeRow:row});
+    persistWorld(); // Safe fruit survives departure/return without exploding or respawning in the tree.
     lastEvent = 'tree-felled safe Soursap Fruit ' + fruit.id;
     return true;
   }
@@ -1317,9 +1325,29 @@
     if(count){syncPileVisuals(rec);persistWorld();} // Two debris draw calls, one batched persistence write per explosion.
     return count;
   }
+  function restoreLooseFruit(mapId, rec) {
+    const history=looseFruitHistory.get(mapId);
+    if(!history?.size)return;
+    for(const [id,info] of history) {
+      if(rec.vases.has(id)||!Number.isFinite(info?.col)||!Number.isFinite(info?.row))continue;
+      const mesh=new THREE.Mesh(new THREE.SphereGeometry(.15,8,6),
+        new THREE.MeshStandardMaterial({color:0xd9542b,roughness:.6,metalness:.05}));
+      mesh.position.set(info.col+.5,baseHeight(info.col,info.row)+.16,info.row+.5);
+      const branch={col:info.treeCol??info.col,row:info.treeRow??info.row,
+        fruit:{available:true,reserved:false}}; // Constructor-only stand-in; never registered as a climbable branch.
+      registerFruit(mapId,branch,mesh); // Reuse the same collider, Burden, world grip and throw setup.
+      const fruit=fruitForBranch(branch,mapId);
+      if(!fruit)continue;
+      rec.vases.delete(fruit.id);
+      fruit.id=id;fruit.group.name='soursap_fruit_'+id;
+      fruit.fruitBranch=null;fruit.hanging=false;
+      fruit.col=info.col;fruit.row=info.row;
+      rec.vases.set(id,fruit);
+    }
+  }
   function restoreSceneHistory(mapId,rec) {
-    const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId);
-    if(!savedTerrain?.size&&!savedPiles?.size)return;
+    const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId),savedFruit=looseFruitHistory.get(mapId);
+    if(!savedTerrain?.size&&!savedPiles?.size&&!savedFruit?.size)return;
     const g=grid(),types=deps()?.TileType||{},chunks=new Map();
     for(const [tileKey,info] of savedTerrain||[]) {
       const [col,row]=tileKey.split(',').map(Number),tile=g?.[row]?.[col];
@@ -1339,6 +1367,7 @@
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
       spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null,null,id);
     if(rec.piles.size)syncPileVisuals(rec);
+    restoreLooseFruit(mapId,rec);
     if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
       if(window.WildernessChunks)for(const cell of chunks.values())
         window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
@@ -1417,6 +1446,7 @@
     const world=fruit.group.getWorldPosition(new THREE.Vector3());
     if(held===fruit){held=null;cancelShatterAim();setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
     fallingFruits.delete(fruit.id);
+    looseFruitHistory.get(fruit.mapId)?.delete(fruit.id);
     const rec=records.get(fruit.mapId);
     fruit.exploded=true;fruit.flying=false;
     markFruitHarvested(fruit);
@@ -1744,6 +1774,7 @@
     debugSnapshot:()=>({lastEvent,latestChange:'Soursap and Shattercasks share Burden interactions; tree fruit falls on shot, safe-drops on felling, and applies Disorient+Sticky on impact.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
+      savedLooseFruit:[...(looseFruitHistory.get(area())?.keys()||[])],
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
       rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
