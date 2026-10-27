@@ -168,7 +168,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   rotated.gridZ = 15; // Existing Map Editor objects may be updated without replacing the buildings array.
   const after = T.__test.gridForArea('town');
   assert.notEqual(after, before, 'in-place building relocation invalidates the cached grid');
-  assert.ok(after.cost[17 * after.cols + 14] >= 0, 'old footprint is unblocked after moving');
+  assert.ok(after.cost[13 * after.cols + 14] >= 0, 'old footprint is unblocked after moving');
   assert.equal(after.cost[19 * after.cols + 14], -1, 'new rotated footprint is blocked');
   const { T: shared, window } = makeHarness({ townBuildings: [rotated] });
   window.BuildingGrassSuppression = { authoredBuildingFootprintKeys: () => new Set(['12,12', '13,12']) };
