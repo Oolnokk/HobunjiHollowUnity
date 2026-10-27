@@ -316,7 +316,7 @@
     const actionsEl = document.getElementById('iiActions');
     const detailEl = document.getElementById('iiDetail');
     if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
-    const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\\s+×\\s*\\d+$/, ''); // Pack displays "Tablet ×2" while metadata stores "Tablet".
+    const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\s+×\s*\d+$/, ''); // Pack displays "Tablet ×2" while metadata stores "Tablet".
     if (!detailName) return null;
 
     // The selected Pack slot is the item identity. Looking it up by name through
