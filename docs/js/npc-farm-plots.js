@@ -44,7 +44,9 @@
   function init(injected) {
     deps = injected || {};
     for (const plot of plotsById.values()) plot.area = area(plot.mapId); // Maps can register before the area names are known.
-    window.NpcScheduling?.registerTargetOverride?.('farm-plots', targetFor);
+    // Town farmwork is a world-level override. Family work must run *inside* RomanceSystem /
+    // RomanceFamily's own overrides, otherwise it preempts sleep, town visits and child vat duties.
+    window.NpcScheduling?.registerTargetOverride?.('farm-plots', rec => targetFor(rec));
     if (!timer) timer = setInterval(() => { try { tick(); } catch (error) { console.warn('[NpcFarmPlots] tick failed', error); } }, TICK_MS);
     return api;
   }
@@ -57,7 +59,14 @@
 
   // Called when an exterior map loads. Replaces that map's plots (a map reload must not duplicate them).
   function registerMap(mapId, rawPlots) {
+    // A workspace/map reload must not retain jobs, claims, or overlay meshes from the old map.
+    const staleIds = new Set([...plotsById.values()].filter(plot => plot.mapId === mapId).map(plot => plot.id));
+    for (const [npcId, claim] of [...claims]) if (staleIds.has(claim.plotId)) releaseClaim(npcId);
     for (const [id, plot] of [...plotsById]) if (plot.mapId === mapId) plotsById.delete(id);
+    for (const v of visuals.values()) for (const key of [...v.tiles.keys()]) {
+      if (staleIds.has(key.split(':')[0])) disposeTile(v, key);
+    }
+    syncedVersion = 0;
     for (const key of [...managedKeys.keys()]) if (key.startsWith(`${mapId}:`)) managedKeys.delete(key);
     for (const raw of Array.isArray(rawPlots) ? rawPlots : []) {
       if (!raw?.id || !Array.isArray(raw.tiles) || !raw.tiles.length) continue;
@@ -69,7 +78,7 @@
         hours: Array.isArray(raw.hours) && raw.hours.length === 2 ? [num(raw.hours[0], DEFAULT_HOURS[0]), num(raw.hours[1], DEFAULT_HOURS[1])] : DEFAULT_HOURS.slice(),
         tiles: raw.tiles.map(t => ({ c: Math.floor(num(t[0], 0)), r: Math.floor(num(t[1], 0)) })),
       };
-      plot.managed = kind === 'till' ? plot.tillers.length > 0 : plot.diggers.length > 0;
+      plot.managed = kind === 'till' ? !!(plot.tillers.length || plot.seeders.length || plot.harvesters.length) : plot.diggers.length > 0;
       plotsById.set(plot.id, plot);
       if (plot.managed) for (const t of plot.tiles) managedKeys.set(`${mapId}:${keyOf(t.c, t.r)}`, plot.id);
     }
@@ -80,6 +89,8 @@
   // children. These act on the live farm grid (real tilled soil, trenches and crops, with the real water sim), so nothing
   // is drawn or simulated here; seeds come out of Farm Storage.
   function registerFarmPlots(rawPlots) {
+    const staleIds = new Set([...plotsById.values()].filter(plot => plot.grid).map(plot => plot.id));
+    for (const [npcId, claim] of [...claims]) if (staleIds.has(claim.plotId)) releaseClaim(npcId);
     for (const [id, plot] of [...plotsById]) if (plot.grid) plotsById.delete(id);
     for (const raw of Array.isArray(rawPlots) ? rawPlots : []) {
       if (!raw?.id || !Array.isArray(raw.tiles) || !raw.tiles.length) continue;
@@ -105,7 +116,11 @@
   // A lineup NPC is skipped while they are following you (companion), on a date with you, or married to you.
   function unavailable(npcId, plot) {
     if (window.RomanceSystem?.isOnDateWith?.(npcId)) return true;
-    if (!plot?.family && window.RomanceSystem?.getSpouse?.()?.npcId === npcId) return true; // Town hands step aside for their spouse; your own family is who the farm plots are for.
+    if (!plot?.family && window.RomanceSystem?.getSpouse?.()?.npcId === npcId) {
+      // Only the spouse's scheduled town visit may operate their previous town field. The
+      // farmhouse, bed, pregnancy, and date retain priority at every other time.
+      if (!window.RomanceSystem?.spouseTownVisitNow?.(npcId)) return true;
+    }
     if (window.NpcFollowing?.isCompanion?.(npcId)) return true;
     return false;
   }
@@ -170,11 +185,11 @@
   }
 
   const JOB_PRIORITY = { harvest: 0, seed: 1, till: 2, dig: 0 };
-  function pickJob(npcId, walker) {
+  function pickJob(npcId, walker, { familyOnly = false } = {}) {
     const here = walker?.root?.position;
     let best = null;
     for (const plot of plotsById.values()) {
-      if (!plot.managed || !inHours(plot)) continue;
+      if (!plot.managed || !!plot.family !== familyOnly || !inHours(plot)) continue;
       for (const job of jobsFor(plot, npcId)) {
         if (claimedKeys.has(`${plot.id}:${keyOf(job.c, job.r)}`)) continue;
         const sameArea = walker && walker.area === plot.area;
@@ -201,16 +216,16 @@
   }
   const plotTileAt = (plot, c, r) => plot.tiles.some(t => t.c === c && t.r === r);
 
-  function claimFor(npcId, walker) {
+  function claimFor(npcId, walker, { familyOnly = false } = {}) {
     let claim = claims.get(npcId);
     if (claim) {
       const plot = plotsById.get(claim.plotId);
       // Drop claims whose plot/hours/worker changed (e.g. the NPC just started following you).
-      const stale = !plot || !plot.managed || !inHours(plot) || !jobsFor(plot, npcId).some(j => j.c === claim.c && j.r === claim.r && j.job === claim.job);
+      const stale = !plot || !plot.managed || !!plot.family !== familyOnly || !inHours(plot) || !jobsFor(plot, npcId).some(j => j.c === claim.c && j.r === claim.r && j.job === claim.job);
       if (!stale) return claim;
       releaseClaim(npcId);
     }
-    const picked = pickJob(npcId, walker);
+    const picked = pickJob(npcId, walker, { familyOnly });
     if (!picked) return null;
     const spot = standSpot(picked.plot, picked, walker);
     claim = { plotId: picked.plot.id, area: picked.plot.area, c: picked.c, r: picked.r, job: picked.job, standC: spot.c, standR: spot.r, workedS: 0, ageS: 0 };
@@ -226,11 +241,11 @@
   }
 
   // ── Schedule override ─────────────────────────────────────────────────
-  function targetFor(rec) {
+  function targetFor(rec, { familyOnly = false } = {}) {
     if (!rec?.id || !workerIds.has(rec.id)) return null;
     const walker = deps?.findWalker?.(rec.id) || null;
     if (walker?._doorstepVisitor) return null;
-    const claim = claimFor(rec.id, walker);
+    const claim = claimFor(rec.id, walker, { familyOnly });
     if (!claim) return null;
     const tool = claim.job === 'till' ? { toolKey: 'bronzehoe', toolIntervalSec: 1.6 }
       : claim.job === 'dig' ? { toolKey: window.ToolActivityStages?.toolKeyFor?.('dig') || 'pickshovel', toolActivity: 'dig', toolFlip: true }
@@ -332,8 +347,8 @@
 
   function visualFor(areaId) {
     let v = visuals.get(areaId);
-    if (v?.group.parent) return v;
     const scene = deps?.getAreaScene?.(areaId);
+    if (v?.group.parent === scene && scene) return v;
     if (!scene || !window.THREE) return null;
     if (!v) v = { group: new window.THREE.Group(), tiles: new Map() };
     v.group.name = 'npc_farm_plots';
@@ -405,7 +420,7 @@
   function syncVisuals(currentArea) {
     if (!currentArea) return;
     if (lastSyncedArea !== currentArea) { lastSyncedArea = currentArea; syncedVersion = 0; }
-    if (syncedVersion > 0 && !visuals.get(currentArea)?.group.parent) syncedVersion = 0; // Scene was rebuilt.
+    if (syncedVersion > 0 && visuals.get(currentArea)?.group.parent !== deps?.getAreaScene?.(currentArea)) syncedVersion = 0; // Scene was rebuilt.
     if (syncedVersion > 0) return;
     let any = false;
     for (const plot of plotsById.values()) {
