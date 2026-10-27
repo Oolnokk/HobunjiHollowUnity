@@ -16598,7 +16598,16 @@
           if (selected) selectInventoryItem(invSelectedKey, false, selected);
           else clearInventoryDetail();
         }
-        else clearInventoryDetail(keys.length ? '← Select an item' : window.InventorySearch?.query ? 'No items match your search' : invActiveCat === 'clothing' ? '← Select clothing' : 'Bag is empty');
+        else {
+          window.EquipmentPanel.buildPackClothingSection();
+          const packClothingVisible = (invActiveCat === 'all' || invActiveCat === 'clothing')
+            && [...document.querySelectorAll('#invPackClothing .inv-pcloth-item')].some(button =>
+              window.InventorySearch?.matches?.(button.getAttribute('data-key'), { label:button.textContent }) ?? true); // Clothing may be the only thing matching a search/category.
+          clearInventoryDetail(keys.length || packClothingVisible ? '← Select an item'
+            : window.InventorySearch?.query ? 'No items match your search'
+            : invActiveCat === 'clothing' ? 'No clothing in pack' : 'No items in this category');
+          return; // Clothing source has already been rebuilt for this empty/detail state.
+        }
         window.EquipmentPanel.buildPackClothingSection();
       }
 
