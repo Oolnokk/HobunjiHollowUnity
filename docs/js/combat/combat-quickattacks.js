@@ -204,6 +204,7 @@
     function onTap() {
       if (busyAction) return; // previous strike's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      const shapeStats = window.WeaponShapeStats.current(); // Shared equipped-weapon modifiers for jab cadence and hit geometry.
       // Footing/impact stagger lockout — see combat-combo.js's matching guard.
       if (window.Combat.isStaggered(deps.player)) return;
 
@@ -212,7 +213,7 @@
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
-      const requestedCost = COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
+      const requestedCost = window.WeaponShapeStats.stamina(COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)), shapeStats); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
@@ -220,12 +221,12 @@
       // windup/strike down.
       const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label) || { spent: 0, excess: 0 };
       const actualCost = round1((Number(spendResult.spent) || 0) + (Number(spendResult.excess) || 0)); // Actual post-perk/alchemy resource commitment used to calculate the conditional refund.
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = def.halfConeDeg * Math.PI / 180;
+      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, def.halfConeDeg * Math.PI / 180 * shapeStats.range);
       const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
@@ -249,7 +250,7 @@
         pose: window.AttackPoseTemplates?.poseFor('pickshovel_swing'), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
-        holdS: HOLD_S,
+        holdS: HOLD_S / shapeStats.speed,
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
