@@ -300,6 +300,7 @@
   function isWheelEligible(key) {
     const def = deps.ITEM_DEFS[key];
     if (!def) return false;
+    if (def.masteryUnlock) return false; // Mastery tablets/scrolls are readable lessons, never wheel ingredients; skip processor discovery on Pack selection.
     if (def.isCookedFood || def.isInstrument) return true;
     if (def.alchemyRecipeScrollId) return true;
     if (HELD_PLACEMENT_ITEM_KEYS.has(key)) return true;
