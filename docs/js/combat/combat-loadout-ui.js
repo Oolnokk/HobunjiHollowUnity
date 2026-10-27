@@ -111,6 +111,7 @@
       focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
       controller: window.ControllerUI?.debugState?.() || null,
       lastLoadoutControlChange,
+      weaponShapeStats: window.WeaponShapeStats?.snapshot?.() || null, // Mobile-copyable live weapon profile, including Foundry head mitigation.
       weaponPreview: window.CombatLoadoutWeaponPreview?.debugSnapshot?.() || null, // Includes GPU/mesh/VFX status in the existing mobile-copyable debug report.
     };
   }
