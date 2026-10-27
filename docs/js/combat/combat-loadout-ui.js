@@ -111,6 +111,7 @@
       focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
       controller: window.ControllerUI?.debugState?.() || null,
       lastLoadoutControlChange,
+      weaponPreview: window.CombatLoadoutWeaponPreview?.debugSnapshot?.() || null, // Includes GPU/mesh/VFX status in the existing mobile-copyable debug report.
     };
   }
 
@@ -283,6 +284,7 @@
     if (!pane) return;
     const requestedFocusId = typeof preferredFocusId === 'string' ? preferredFocusId : null; // Used to ignore CustomEvent objects when render is registered directly as an event listener.
     const restoreFocusId = requestedFocusId || focusedLoadoutControlId(pane); // Used to keep repeated controller swaps on the same slot instead of snapping focus back to the menu header.
+    const previousScroll = pane.scrollTop; // Only the left loadout list scrolls; rerenders retain its scroll position while the right preview remains fixed.
     pane.innerHTML = '';
 
     const title = document.createElement('div');
@@ -418,6 +420,8 @@
     window.EnchantmentSystem?.renderLoadoutUI?.(pane, toolKey); // Base/Flourish slots, planar alignment, Immundanity + diagnostics (js/combat/combat-enchantments.js).
     window.WeaponEnchantmentVFX?.renderControls?.(pane, toolKey); // Enchantment visuals use the loadout's authoritative render path so menu-tab/internal rerenders cannot bypass them.
     renderRangedLoadout(pane);
+    pane.scrollTop = previousScroll; // Changing an attack or enchantment must not jump the scrollable left half back to its top.
+    window.CombatLoadoutWeaponPreview?.sync?.(toolKey, weaponLabel); // Never recreates the persistent 3D right-hand viewport for a same-weapon rerender.
     restoreLoadoutControlFocus(pane, restoreFocusId);
   }
 
