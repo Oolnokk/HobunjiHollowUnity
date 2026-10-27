@@ -148,7 +148,7 @@ const instance = contextWindow.TemporaryLocales.stamp(denseZone, chiefLocale, {
 assert(instance, 'Porakaneki chief camp must still receive a site in shrub/rock-dense wilderness');
 assert(instance.removedObjectSnapshots.length > 0, 'placement records the ordinary clutter displaced by the camp');
 assert(instance.removedObjectSnapshots.every(snapshot => snapshot.type === 'shrub' || snapshot.srcBoulderId === 'test-boulder'), 'only procedural clutter and whole displaced boulder components become clearable');
-assert(instance.removedObjectSnapshots.some(snapshot => snapshot.srcBoulderId === 'test-boulder' && (snapshot.x < instance.site.x || snapshot.x >= instance.site.x + instance.site.w || snapshot.y < instance.site.y || snapshot.y >= instance.site.y + instance.site.h)), 'a boulder extending beyond the camp clearing is removed in its entirety');
+assert(contextWindow.PorakanekiCampPlacementPolicy.debugSnapshot().placements.some(placement => placement.id === instance.id && placement.clearedTiles > instance.removedObjectSnapshots.length), 'a boulder extending beyond the stamped clearing is tracked in the full live-grid removal');
 assert(instance.removedObjectSnapshots.every(snapshot => snapshot.srcType === 'shrub' || snapshot.srcType === 'rock'), 'original terrain type is retained for live-grid restoration');
 
 // The adapter must not weaken TemporaryLocales globally. The same synthetic
@@ -171,6 +171,8 @@ assert.equal(contextWindow.BanditCamps.updateCampBanners(0.2), 'bandit-tick');
 assert.equal(banditTickCount, 1);
 assert(refreshCount >= 1, 'active camp clearing refreshes the current wilderness visuals');
 assert(boulderCacheInvalidations >= 1, 'clearing a camp invalidates cached welded boulder meshes');
+assert.equal(liveGrid[0][0].type, 'grass', 'a boulder belonging to the camp but extending outside its stamped footprint is also cleared');
+assert.equal(liveGrid[0][0].boulderId, undefined, 'extended boulder cells lose their collider metadata');
 for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
   const tile = liveGrid[snapshot.y][snapshot.x]; // Cleared live terrain must not still contain an invisible rock collider.
   assert.equal(tile.type, 'grass', 'active camp removes procedural clutter from its live footprint');
@@ -183,6 +185,8 @@ for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
 campSnapshot.zones.map_western_slope.camps = [];
 contextWindow.BanditCamps.updateCampBanners(0.2);
 assert.equal(banditTickCount, 2);
+assert.equal(liveGrid[0][0].type, 'rock', 'the entire boulder, including cells outside the chief camp, returns after migration');
+assert.equal(liveGrid[0][0].boulderId, 'test-boulder', 'restoring the full boulder also restores its authored identity');
 for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
   const tile = liveGrid[snapshot.y][snapshot.x]; // Migration restores the original world terrain, not merely its visible paint.
   assert.equal(tile.type, snapshot.srcType, 'inactive seasonal chief reservation restores its prior terrain type');
