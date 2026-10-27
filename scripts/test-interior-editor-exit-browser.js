@@ -90,6 +90,7 @@ async function tapCell(page,col,row,touch=false) {
     assert.equal(await page.evaluate(room=>window._biaBridge.loadData(room,'browser smoke'),exported),true);
     snapshot=await readExit(page);
     assert.deepEqual(snapshot.exits[0].tiles,[[5,0]],'reload must preserve the manually authored outside marker');
+    await page.locator('#canvasExitSelect').selectOption(exported.exits[0].id);
     await page.locator('#toolMoveExit').click();
     await tapCell(page,0,0); // Blank outer corner with NO neighboring floor; must reject with visible feedback.
     snapshot=await readExit(page);
