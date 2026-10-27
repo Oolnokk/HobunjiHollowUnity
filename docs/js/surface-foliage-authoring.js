@@ -21,7 +21,7 @@ window.SurfaceFoliageAuthoring = (() => {
     const field = name => panel.querySelector('[data-field="'+name+'"]'), report = panel.querySelector('[data-report]'); // Scoped selectors allow more than one panel without ID collisions.
     const updateStyleControls=()=>{ // Wrap alone exposes the coverage-density slider.
       const wrap=field('style').value==='wrap';
-      panel.querySelector('[data-wrap-controls]').hidden=!wrap;
+      panel.querySelector('[data-wrap-controls]').style.display=wrap?'':'none'; // Explicit display prevents editor-specific .row CSS from overriding the hidden attribute.
       panel.querySelector('[data-density-label]').textContent=Math.round(Number(field('density').value)*100)+'%';
       panel.querySelector('[data-count-label]').textContent=wrap?'Strand budget':'Strands'; // Wrap's count sets a geometric complexity budget rather than a fixed number of strands.
     };
