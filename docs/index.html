@@ -25,8 +25,8 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
-  <script src="js/house-wall-fixtures.js?v=20261027templewindows2"></script>
-  <script src="js/HousePieceGen.js?v=20261027htemple-roof-a2&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
+  <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
+  <script src="js/HousePieceGen.js?v=20261027hb02f628&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
   <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
@@ -250,7 +250,7 @@
   <script src="js/authored-furniture-runtime.js?v=20261025h9b3cc58"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261027hglassC1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261027h02f64e7"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -642,12 +642,12 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261026h79345d6"></script>
+  <script src="js/town-zone-buildings.js?v=20261027h07bdab3"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
-  <script src="js/wall-ornament-placement.js?v=20261025h54c9ae0"></script>
+  <script src="js/wall-ornament-placement.js?v=20261027h8bf7bae"></script>
   <script src="js/map-live-preview-runtime.js?v=20261002hb01296f"></script>
   <!-- Dev Companion map furniture: palette + reticle placement (floor and wall) into town/building interiors via a dev overlay. -->
   <script src="js/dev-map-furniture.js?v=20261002devfurniture1"></script>
