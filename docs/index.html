@@ -245,7 +245,7 @@
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
   <script src="js/authored-furniture-runtime.js?v=20261025h9b3cc58"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261026hOverpassInk3"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261027hglassC1"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -376,7 +376,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261026h9b05972"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261027heaa9256"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -688,7 +688,7 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20261018indoorweather"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20261026hf5024af"></script>
+  <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
   <script src="js/house-window-linkage.js?v=20261013h3535ff0"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
@@ -711,7 +711,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261026h04430a8"></script>
+  <script src="js/cloud-forest-fog.js?v=20261027hglassA1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -1187,21 +1187,17 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist" data-ctrl-tabs>
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
-        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
-        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
-        <!-- Shipping and Supplies are meant to open as their own windows when
-             interacting with their associated objects in the world, not as
-             menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
-             buildShippingTransferUI()/renderSupplyPage() are left intact
-             below for that future hookup. -->
+        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
         <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
-        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
-        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
-        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
+        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
+        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
+        <!-- Shipping and Supplies open from their objects in the world; they are not ordinary pause-menu tabs. -->
         <button class="mp-tab"        data-mpanel="debug"         data-dev-only role="tab">🐛 Debug</button>
         <button class="mp-tab"        data-mpanel="wildlife"      data-dev-only role="tab">🧬 Wildlife</button>
       </div>
@@ -1232,11 +1228,21 @@
         <!-- Category tab bar (Pack only): x:1/54 y:3/28 w:35 h:3 -->
         <div class="inv-cats" data-ctrl-tabs>
           <button class="inv-cat active" data-cat="all">All</button>
-          <button class="inv-cat" data-cat="seed">Seeds</button>
-          <button class="inv-cat" data-cat="crop">Crops</button>
+          <button class="inv-cat" data-cat="food">Food</button>
           <button class="inv-cat" data-cat="material">Materials</button>
-          <button class="inv-cat" data-cat="furniture">Furniture</button>
+          <button class="inv-cat" data-cat="crop">Crops</button>
+          <button class="inv-cat" data-cat="seed">Seeds</button>
           <button class="inv-cat" data-cat="processed">Processed</button>
+          <button class="inv-cat" data-cat="fish">Fish</button>
+          <button class="inv-cat" data-cat="ore">Ores &amp; Bars</button>
+          <button class="inv-cat" data-cat="reagent">Reagents</button>
+          <button class="inv-cat" data-cat="livestock">Animals</button>
+          <button class="inv-cat" data-cat="tool">Tools</button>
+          <button class="inv-cat" data-cat="clothing">Clothing</button>
+          <button class="inv-cat" data-cat="furniture">Furniture</button>
+          <button class="inv-cat" data-cat="plans">Plans &amp; Scrolls</button>
+          <button class="inv-cat" data-cat="dye">Dyes</button>
+          <button class="inv-cat" data-cat="other">Other</button>
         </div>
         <!-- Pack search (js/inventory-search.js): sits to the right of the category tabs. -->
         <input type="search" class="inv-search" id="invSearch" placeholder="🔍 Search pack" aria-label="Search pack" autocomplete="off" spellcheck="false">
@@ -1255,7 +1261,7 @@
         </div>
 
         <!-- Item grid (Pack only): x:1/54 y:13/28 w:33 h:14 -->
-        <div class="inv-grid-area inv-grid-area--short" aria-label="Pack">
+        <div class="inv-grid-area inv-grid-area--short" id="invGridArea" aria-label="Pack">
           <div class="inv-grid" id="invGrid"></div>
         </div>
 
@@ -1667,18 +1673,18 @@
            happens by talking to the quest giver. See renderTasksPanel()/
            ProceduralTasks.acceptRequest()/turnInTask() in game.js. ─────── -->
       <div class="mp-pane" id="mpTasks">
-        <div class="menu-section">
+        <div class="menu-section" id="tasksSectionRumors">
           <div class="menu-section-title">Word Around Town</div>
           <div id="tasksBoardPosting" class="supply-list"></div>
         </div>
         <!-- Wanted poster for a bandit captain -- separate slot from the
              board notice above, own refresh rule (maybeRefreshBountyPosting
              in game.js): stays up until claimed, not replaced daily. -->
-        <div class="menu-section">
+        <div class="menu-section" id="tasksSectionWanted">
           <div class="menu-section-title">Wanted</div>
           <div id="tasksBountyPosting" class="supply-list"></div>
         </div>
-        <div class="menu-section">
+        <div class="menu-section" id="tasksSectionQuestLog">
           <div class="menu-section-title">Quest Log</div>
           <div id="tasksList" class="supply-list"></div>
         </div>
@@ -2632,7 +2638,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261026h8475cb2"></script>
+  <script src="js/pixel-probe.js?v=20261027hglassProbe1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2811,7 +2817,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261026h56d9f4d"></script>
+  <script src="game.js?v=20261027hc0445b5"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

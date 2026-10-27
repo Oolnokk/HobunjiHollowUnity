@@ -191,6 +191,10 @@
     });
     inventoryObserver.observe(pane, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] }); // Async clothing composites finish by changing <img src>; observe only that attribute so Pack clones refresh once without polling/per-frame work.
     pane.addEventListener('click', scheduleDecorate, true);
+    pane.addEventListener('click', event => {
+      const categoryButton = event.target.closest?.('.inv-cat'); // Keeps the chosen filter in view when gamepad bumpers or touch move along the wider category row.
+      categoryButton?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'auto' });
+    }, true);
   }
 
   function installMenuReadability() {
@@ -350,7 +354,7 @@
     const sourceButtons = [...source.querySelectorAll('.inv-pcloth-item')];
     const fingerprint = sourceButtons.map((button) => {
       const img = button.querySelector('img');
-      return `${button.textContent.trim()}|${img?.getAttribute('src') || ''}`;
+      return `${button.getAttribute('data-key') || ''}|${button.textContent.trim()}|${img?.getAttribute('src') || ''}`; // Item UID prevents visually identical clothing from retaining an old action target.
     }).join('||');
     const existing = [...grid.querySelectorAll('.pack-clothing-tile')];
     const needsRebuild = grid.dataset.packClothingFingerprint !== fingerprint || existing.length !== sourceButtons.length;
@@ -368,7 +372,9 @@
         tile.title = sourceButton.textContent.trim() || 'Clothing';
         [...sourceButton.children].forEach((child) => tile.appendChild(child.cloneNode(true)));
         tile.addEventListener('click', () => {
-          sourceButton.click();
+          const liveSourceButton = [...source.querySelectorAll('.inv-pcloth-item')].find(button => button.getAttribute('data-key') === tile.dataset.key); // Rebinds to the current renderer after any inventory rebuild.
+          if (!liveSourceButton) return; // Clothing may have been consumed or moved since the last decoration frame.
+          liveSourceButton.click();
           document.querySelectorAll('#invGrid .pack-clothing-tile.selected').forEach((other) => other.classList.remove('selected'));
           tile.classList.add('selected');
         });
@@ -378,9 +384,13 @@
       grid.dataset.packClothingFingerprint = fingerprint;
     }
 
-    const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all';
-    const visible = activeCategory === 'all';
-    grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => { tile.style.display = visible ? '' : 'none'; });
+    const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all'; // Pack clothing belongs to All and the dedicated Clothing tab.
+    const showClothing = activeCategory === 'all' || activeCategory === 'clothing'; // Regular game.js stack filtering stays unchanged for clothing, which has no ITEM_DEFS entry.
+    const searchQuery = window.InventorySearch?.query || ''; // Clothing tiles now honor the same pack search as ordinary stacks.
+    grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => {
+      const matchesSearch = !searchQuery || (window.InventorySearch?.matches?.(tile.dataset.key, { label:tile.title }) ?? (tile.title + ' ' + tile.dataset.key).toLowerCase().includes(searchQuery)); // Uses exactly the ordinary Pack search normalization (including accents).
+      tile.style.display = showClothing && matchesSearch ? '' : 'none';
+    });
     // decorate() (this function's ultimate caller) reruns on every childList change
     // inside the pane. Unlike classList.toggle(), .remove()/.add() re-serialize and
     // re-set the class attribute even when the token being removed/added is
@@ -388,8 +398,9 @@
     // class on the very same elements every single pass was a real per-frame
     // attribute-mutation cost for no actual state change.
     const reservedEmpty = [...grid.querySelectorAll('.inventory-clothing-reserved-empty')];
-    const emptySlots = visible ? [...grid.querySelectorAll('.inv-item-box.empty')] : [];
-    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length));
+    const emptySlots = showClothing ? [...grid.querySelectorAll('.inv-item-box.empty')] : []; // Reclaims only slots occupied by currently visible clothing.
+    const visibleClothingCount = [...grid.querySelectorAll('.pack-clothing-tile')].filter(tile => tile.style.display !== 'none').length; // Keeps search-filtered clothing from reserving phantom slots.
+    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - visibleClothingCount));
     for (const empty of reservedEmpty) if (!nextReservedEmpty.includes(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
     for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
   }

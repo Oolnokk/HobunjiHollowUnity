@@ -4,7 +4,7 @@
   if (Number(window.DevotionRestBuffs?.version) >= 5) return;
 
   const CHANGE_SUMMARY = 'Prayer remains anchored in world space with action-slot-safe input hints, and temple benches now permit prayer throughout Anan, including Spirit Communion; Well Rested integration remains shared with food, potion, movement, and Stamina systems.'; // Used by mobile diagnostics to identify the latest integration layer.
-  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261017h927d425'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
+  const CORE_URL = 'js/temple-prayer-rest-blessings.js?v=20261027ha2bea94'; // Used to load the single blessing/save/menu authority before installing integration-only fixes.
   const state = { coreLoaded: false, sitAliasInstalled: false, promptHookInstalled: false, movementHookInstalled: false, potionHooksInstalled: false, lastPromptAnchor: null, lastPrayerSlot: null, lastError: null }; // Used by the in-game diagnostic snapshot.
   let prayerPromptAnchor = null; // Reused world-space anchor that makes Pray float ahead of the player like a targeted-object interaction.
 

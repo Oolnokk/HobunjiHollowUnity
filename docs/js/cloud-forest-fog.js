@@ -445,7 +445,7 @@
   let lastUnifiedLightingDraw = 0;
   const lightCamRight = new window.THREE.Vector3();
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
-  const windowMaskStats = { sources: 0, drawn: 0, glows: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
+  const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
 
   function lightScreenRadius(x, z, y, tiles) {
     lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -667,7 +667,7 @@
   }
 
   function ordinaryBuildingInterior(area) {
-    return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks only.
+    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area)); // _isBuildingArea includes mine/den IDs; keep daylight glows out of their underground lighting.
   }
 
   // Daylight windows reveal the stable enclosed darkness locally, exactly like
@@ -691,6 +691,36 @@
     ctx.fill();
   }
 
+  const STAINED_GLASS_AURA_ALPHA = 0.2; // Used only by diffuse window-color washes; keeps normal daylight and lamp masks dominant.
+  const STAINED_GLASS_AURA_SPREAD = 1.18; // Broad overlapping colors deliberately never reproduce a window motif or floor footprint.
+
+  function drawStainedGlassAura(ctx, source, center, radius, daylightStrength) {
+    const palette = source.projectionPalette; // Existing glass-pattern dyes supply the colors without rasterizing or projecting its exact design.
+    const tint = source.glassTint; // Solid tinted windows have no authored pattern palette.
+    const colors = Array.isArray(palette) && palette.length ? palette : tint?.getHexString ? [`#${tint.getHexString()}`] : []; // Fallback uses Three.Color only for solid colored glass.
+    const amount = Math.min(0.25, STAINED_GLASS_AURA_ALPHA * daylightStrength / Math.sqrt(Math.max(1, colors.length))); // Each color remains subtle as multiple windows overlap.
+    if (!(radius > 0) || !(amount > 0)) return false;
+    let drawn = false;
+    for (let i = 0; i < Math.min(3, colors.length); i++) {
+      const hex = colors[i]; // Authoring normalizes palettes to #rrggbb; reject missing/invalid colors rather than tinting clear windows.
+      if (typeof hex !== 'string' || !/^#[a-f0-9]{6}$/i.test(hex)) continue;
+      const rgb = parseInt(hex.slice(1), 16); // One dye becomes the center hue of a very broad, feathered daylight variation.
+      const red = rgb >> 16 & 255, green = rgb >> 8 & 255, blue = rgb & 255;
+      const offsetX = (i - (colors.length - 1) * 0.5) * radius * 0.23; // Closely spaced centers blend glass dyes rather than preserving their shapes.
+      const offsetY = (i % 2 ? 0.12 : -0.12) * radius;
+      const x = center.x + offsetX, y = center.y + offsetY;
+      const spread = radius * STAINED_GLASS_AURA_SPREAD;
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, spread);
+      gradient.addColorStop(0, `rgba(${red},${green},${blue},${amount})`);
+      gradient.addColorStop(0.45, `rgba(${red},${green},${blue},${amount * 0.42})`);
+      gradient.addColorStop(1, `rgba(${red},${green},${blue},0)`);
+      ctx.fillStyle = gradient;
+      ctx.beginPath(); ctx.arc(x, y, spread, 0, Math.PI * 2); ctx.fill();
+      drawn = true;
+    }
+    return drawn;
+  }
+
   function drawWindowLightMasks() {
     const runtime = window.DaylightWindowRuntime;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // Without a scene filter the farm-side exterior window would also reveal the interior overlay.
@@ -699,6 +729,7 @@
     windowMaskStats.sources = sources.length;
     windowMaskStats.drawn = 0;
     windowMaskStats.glows = 0;
+    windowMaskStats.colorAuras = 0;
     if (!sources.length) { windowMaskStats.daylight = 0; return; }
     const outdoor = getFullDayLighting(); // Same day/night + lunar state the windows' pane tint uses, without its debug-state round trip.
     const daylight = clamp01(1 - clamp01(outdoor.a)); // Outdoor overlay darkness alpha: night windows admit little light.
@@ -720,8 +751,18 @@
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
       if (!(shineR > 0) || !(strength > 0)) continue;
       drawWindowRevealCircle(ctx, center, shineR, strength, 0.35, true); // Daylight pool spreading into the room.
-      runtime.drawProjectedLight?.(ctx,source,lightingDeps.worldToOverlay,strength); // Stained panes cast their exact motif/palette through the existing daylight pass.
       windowMaskStats.drawn += 1;
+    }
+    ctx.globalCompositeOperation = 'screen'; // Add only soft color to the shared fake-daylight mask; never draw an exact textured floor projection.
+    if (daylight > 0.02) for (const source of sources) {
+      if (!source.projectionPalette?.length && !source.glassTint) continue; // Plain daylight windows keep their existing neutral illumination.
+      source.mesh?.getWorldPosition?.(ambientWindowScratch);
+      const center = lightingDeps.worldToOverlay(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z);
+      if (!center?.visible) continue;
+      const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
+      const radius = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER);
+      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
+      if (drawStainedGlassAura(ctx, source, center, radius, strength)) windowMaskStats.colorAuras++;
     }
     ctx.globalCompositeOperation = 'source-over';
   }

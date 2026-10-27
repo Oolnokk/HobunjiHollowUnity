@@ -67,7 +67,7 @@
     "highTinBronze",
     "arsenicalBronze",
     "leadedBronze",
-    "leadedBronze",
+    "arsenicalBronze",
     "silver",
     "silver"
   ],
@@ -78,7 +78,7 @@
       "gold": 500,
       "stone": 55,
       "wood": 60,
-      "metalBars": 20
+      "metalBars": 9
     },
     {
       "tier": 2,
@@ -86,7 +86,7 @@
       "gold": 1000,
       "stone": 60,
       "wood": 75,
-      "metalBars": 28
+      "metalBars": 4
     },
     {
       "tier": 3,
@@ -94,7 +94,7 @@
       "gold": 2000,
       "stone": 65,
       "wood": 90,
-      "metalBars": 36
+      "metalBars": 3
     },
     {
       "tier": 4,
@@ -102,7 +102,7 @@
       "gold": 4000,
       "stone": 70,
       "wood": 105,
-      "metalBars": 44
+      "metalBars": 2
     },
     {
       "tier": 5,
@@ -110,7 +110,7 @@
       "gold": 6500,
       "stone": 75,
       "wood": 120,
-      "metalBars": 52
+      "metalBars": 3
     },
     {
       "tier": 6,
@@ -118,7 +118,7 @@
       "gold": 10000,
       "stone": 80,
       "wood": 135,
-      "metalBars": 60
+      "metalBars": 3
     },
     {
       "tier": 7,
@@ -126,7 +126,7 @@
       "gold": 14500,
       "stone": 85,
       "wood": 150,
-      "metalBars": 68
+      "metalBars": 4
     },
     {
       "tier": 8,
@@ -134,7 +134,7 @@
       "gold": 19500,
       "stone": 90,
       "wood": 165,
-      "metalBars": 76
+      "metalBars": 2
     },
     {
       "tier": 9,
@@ -142,7 +142,7 @@
       "gold": 25000,
       "stone": 95,
       "wood": 180,
-      "metalBars": 84
+      "metalBars": 4
     }
   ]
 }

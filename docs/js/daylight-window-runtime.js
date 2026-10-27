@@ -5,9 +5,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.DaylightWindowRuntime?.version) >= 4) return;
+  if (Number(window.DaylightWindowRuntime?.version) >= 5) return;
 
-  const VERSION = 4; // v3 keeps mullions coplanar with the authored frame while preserving the shared construction-time visual root.
+  const VERSION = 5; // v5 removes obsolete floor-projection buffers and delegates blended glass colors to the shared daylight compositor.
   const ROLE = 'daylightWindow'; // Recognized-surface role authored by Furniture + Avatar Author.
   const PREVIEW_TINT = '#dce9f4'; // Neutral daylight shown by authored presets before runtime weather/time tinting.
   const DEFAULT_RADIUS_TILES = 2.8; // Used when an older authored daylight surface has no explicit radius.
@@ -184,17 +184,11 @@
         mesh: pane,
         width, height,
         glassTint: /^#[0-9a-f]{6}$/i.test(surface.daylightColor||'') ? new THREE.Color(surface.daylightColor) : null,
-        projectionCorners: [new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3()], // Reused by the existing lighting compositor, not another animation loop.
-        projectionNormal: new THREE.Vector3(),
-        projectionScreens: [{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}], // Stable screen coordinates avoid per-frame point-array allocation.
         surfaceId: surface.id || null,
         furnitureKey: data?.key || data?.id || null,
         radiusTiles: Math.max(0.25, finite(surface.daylightRadiusTiles, DEFAULT_RADIUS_TILES)),
         strength: clamp01(surface.daylightStrength == null ? DEFAULT_STRENGTH : surface.daylightStrength),
       }; // Lighting pass reads only these small stable fields plus live world position.
-      if(descriptor.glassTint){
-        const canvas=document.createElement('canvas');canvas.width=canvas.height=2;const ctx=canvas.getContext('2d');ctx.fillStyle=surface.daylightColor;ctx.fillRect(0,0,2,2);descriptor.solidProjectionImage=descriptor.projectionImage=canvas;
-      }
       pane.userData.daylightWindowSource = descriptor;
       descriptors.push(descriptor);
       registeredSources.add(descriptor);
@@ -239,30 +233,6 @@
       if (material?.color) { material.color.copy(tint); if(source.glassTint)material.color.multiply(source.glassTint); } // color is a uniform; needsUpdate would only force a needless program re-check every tick.
       for (const pattern of source.patternMeshes || []) pattern.material?.color?.copy?.(tint); // Stained glass shares the same outdoor tint/aperture rather than a second lighting source.
     }
-  }
-
-  function drawProjectedTriangle(ctx,image,a,b,c,second=false){
-    const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Two affine triangles preserve the projected pane quadrilateral.
-    ctx.save();ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.closePath();ctx.clip();
-    if(!second)ctx.transform((b.x-a.x)/width,(b.y-a.y)/width,(c.x-a.x)/height,(c.y-a.y)/height,a.x,a.y);
-    else ctx.transform((b.x-c.x)/width,(b.y-c.y)/width,(b.x-a.x)/height,(b.y-a.y)/height,a.x+c.x-b.x,a.y+c.y-b.y);
-    ctx.drawImage(image,0,0,width,height);ctx.restore();
-  }
-
-  function drawProjectedLight(ctx,source,worldToOverlay,strength){
-    const image=source?.projectionImage; // Shared composed glass canvas supplies both the pattern and its exact palette.
-    if(!image||!(image.naturalWidth||image.width)||!source.projectionCorners||!(strength>0))return false;
-    source.mesh.updateWorldMatrix(true,false);
-    const normal=source.projectionNormal.setFromMatrixColumn(source.mesh.matrixWorld,2); // Pane-local +Z points from the window into the room.
-    normal.y=0;if(normal.lengthSq()<1e-8)return false;normal.normalize();
-    const corners=source.projectionCorners,halfW=source.width*.5,halfH=source.height*.5; // Trace each pane corner down to the room floor at a common daylight slope.
-    corners[0].set(-halfW,halfH,0);corners[1].set(halfW,halfH,0);corners[2].set(halfW,-halfH,0);corners[3].set(-halfW,-halfH,0);
-    for(const corner of corners){corner.applyMatrix4(source.mesh.matrixWorld);corner.addScaledVector(normal,Math.max(0,corner.y)*.8);corner.y=.015;}
-    const projected=source.projectionScreens; // Reuse descriptor-owned coordinates in the existing low-frequency lighting pass.
-    for(let i=0;i<4;i++){const point=worldToOverlay(corners[i].x,corners[i].y,corners[i].z);if(!point||point.visible===false||!Number.isFinite(point.x+point.y))return false;projected[i].x=point.x;projected[i].y=point.y;}
-    ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=Math.min(.65,strength*.65);
-    drawProjectedTriangle(ctx,image,projected[0],projected[1],projected[3]);drawProjectedTriangle(ctx,image,projected[1],projected[2],projected[3],true);
-    ctx.restore();return true;
   }
 
   function isOrdinaryBuildingInterior(area) {
@@ -472,7 +442,6 @@
     currentOutdoorLighting,
     updatePaneTint,
     drawAtmosphere,
-    drawProjectedLight,
     registerDecorDefs,
     windowSilhouette,
     debugSnapshot,
