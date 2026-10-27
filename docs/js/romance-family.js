@@ -529,6 +529,46 @@
     return uiOverlay;
   }
 
+  // Delay the adoption dream without changing the wedding date or biological births.
+  // These saved day offsets are checked only at a later farmhouse sleep.
+  function postponeDream(days) {
+    const p = fam.pregnancy;
+    if (!p || p.kind !== 'adoption' || p.born) return false;
+    p.nextDreamRawDay = H.rawDay() + Math.max(1, Math.floor(num(days, 1)));
+    closeUi();
+    H.toast('You decide to give the thought of a child more time.', true);
+    H.persist();
+    return true;
+  }
+  function openDreamDecision() {
+    const p = fam.pregnancy;
+    if (!p || p.kind !== 'adoption' || p.born || fam.pendingAdoption) return false;
+    const delays = H.cfg().family?.dreamPostponeDays || { soon: 1, time: 14, month: 28 };
+    const root = openOverlay(`
+      <h2>🌙 A child in your dream</h2>
+      <p>A child waits for you, familiar and yet unknown. Are you ready to welcome them into your family?</p>
+      <div class="rf-actions" style="flex-direction:column">
+        <button class="rf-primary" data-rf-ready>Yes. I want to meet them.</button>
+        <button data-rf-postpone="soon">Soon, but not yet (ask again in 24 hours)</button>
+        <button data-rf-postpone="time">I need some time (ask again in 2 weeks)</button>
+        <button data-rf-postpone="month">I'm not ready yet (ask again in 1 month)</button>
+      </div>`);
+    root.querySelectorAll('[data-rf-postpone]').forEach(button => button.addEventListener('click',
+      () => postponeDream(delays[button.dataset.rfPostpone] || 1)));
+    root.querySelector('[data-rf-ready]').addEventListener('click', () => {
+      closeUi();
+      const opened = openDreamPicker(choice => {
+        if (fam.pregnancy !== p || p.born) return;
+        p.born = true; // Only commit when the player finishes character creation.
+        fam.pendingAdoption = { ...choice, spouseId: p.spouseId };
+        H.toast('You wake from a vivid dream of a child you have never met…', true);
+        H.persist();
+      });
+      if (!opened) H.toast('The dream could not open. You can try again after another sleep.', false);
+    });
+    return true;
+  }
+
   async function renderPreview(canvas, choice) {
     const preview = window.NpcAvatarPreview;
     if (!canvas || !preview?.buildProfileFromNpcExport || !preview?.renderProfileToCanvas) return;
