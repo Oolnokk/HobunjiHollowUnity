@@ -29,6 +29,8 @@
   let doorstepRegistered = false;
   let frameRegistered = false;
   let uiOverlay = null;
+  let registeredSocialGraph = null; // Previously linked social graph, used to detect world changes.
+  let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
     return { pregnancy: null, children: [], pendingAdoption: null };
@@ -53,9 +55,10 @@
   function ensurePlan() {
     const spouse = R.getSpouse();
     if (!spouse) return null;
-    if (fam.pregnancy?.spouseId === spouse.npcId) return fam.pregnancy;
-    if (fam.children.some(child => child.otherParentId === spouse.npcId)) return null; // One child per marriage.
-    const married = num(spouse.marriedRawDay, H.rawDay());
+    const existingChildren = fam.children.filter(child => child.otherParentId === spouse.npcId); // Existing children count toward a per-marriage limit.
+    if (existingChildren.length >= Math.max(0, Math.floor(num(cfg().maxChildrenPerMarriage, 1)))) return null;
+    if (fam.pendingAdoption || (fam.pregnancy?.spouseId === spouse.npcId && (!fam.pregnancy.born || !existingChildren.length))) return fam.pregnancy;
+    const married = Math.max(num(spouse.marriedRawDay, H.rawDay()), ...existingChildren.map(child => num(child.bornRawDay, 0))); // Later siblings would begin a fresh wait.
     fam.pregnancy = {
       spouseId: spouse.npcId,
       kind: resolveKind(spouse.npcId),
@@ -149,17 +152,12 @@
     if (detail.kind !== 'sleep') return;
     const p = fam.pregnancy;
     if (!p || p.born || H.rawDay() < p.dueRawDay) return;
+    if (p.kind === 'adoption' && H.rawDay() < num(p.nextDreamRawDay, p.dueRawDay)) return; // Save-compatible deferred dream.
     if (deps().getCurrentArea?.() !== 'interior') return; // Only sleeping in your own farmhouse bed counts.
     if (!p.announced) p.announced = true;
     const spouseName = H.npcName(p.spouseId);
     if (p.kind === 'adoption') {
-      p.born = true;
-      H.persist();
-      setTimeout(() => openDreamPicker(choice => {
-        fam.pendingAdoption = { ...choice, spouseId: p.spouseId };
-        H.toast('You wake from a vivid dream of a child you have never met…', true);
-        H.persist();
-      }), 900);
+      setTimeout(() => { if (fam.pregnancy === p && !p.born) openDreamDecision(); }, 900);
       return;
     }
     p.born = true;
@@ -215,6 +213,7 @@
     const age = ageDays(child);
     if (age < basketDays()) return 'basket';
     if (age < basketDays() + toddlingDays()) return 'toddler';
+    if (age < Math.max(basketDays() + toddlingDays(), num(cfg().independentAfterDays, 168))) return 'toddler';
     return 'child';
   }
   // 99 (barely any usable Footing) → 0 over the toddling span. Hidden: children have no resource bars.
@@ -238,7 +237,8 @@
       equippedCosmetics: [...(child.equippedCosmetics || [])],
       appliedDyes: { ...(child.appliedDyes || {}) },
       role: 'child',
-      tags: ['child', 'family'],
+      homeId: 'farmhouse', // Keeps village children anchored to their farm household.
+      tags: phaseOf(child) === 'child' ? ['child', 'family', 'villager'] : ['child', 'family'], // Join village activities only when old enough.
       ...phaseScaleFields(phaseOf(child)),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
@@ -257,6 +257,7 @@
     if (placed?.id) child.basketId = placed.id;
     if (placed?.stored) H.toast(`📦 Moved your ${placed.stored} into farm storage to make room for the baby basket.`, true);
     fam.children.push(child);
+    syncChildFriendships(); // Connects each new child to Gantami via the shared social graph.
     registerChildDialogue(child);
     H.toast(`👶 Welcome home, ${child.name}!`, true);
     window.HobunjiActivityEvents?.emit('child_born', { childId: id, origin });
@@ -395,6 +396,25 @@
       const status = window.DewVats?.squeezePileWithExternalWorker?.(child.vatId);
       if (status === 'started') H.toast(`🥛 ${child.name} squeezed a batch of dew at the vat (2x yield).`, true);
     }
+  }
+
+  // ── Village friendships ──────────────────────────────────────────────
+  function syncChildFriendships() {
+    const relationships = window.SCRATCHBONES_CONFIG?.game?.socialRelationships?.relationships;
+    if (!Array.isArray(relationships)) return;
+    const friends = cfg().childTown?.friendNpcIds || ['gantami_ginju']; // Authored first friend; configurable without changing NPC AI.
+    const signature = JSON.stringify(fam.children.map(child => child.id).sort()) + JSON.stringify(friends);
+    if (relationships === registeredSocialGraph && signature === registeredChildFriends) return;
+    for (let i = relationships.length - 1; i >= 0; i--) {
+      if (relationships[i]?.familyChildFriend === true) relationships.splice(i, 1); // Remove links left by a different loaded world.
+    }
+    for (const child of fam.children) {
+      for (const friendId of friends) {
+        if (friendId !== child.id) relationships.push({ type: 'friend', members: [child.id, friendId], familyChildFriend: true });
+      }
+    }
+    registeredSocialGraph = relationships;
+    registeredChildFriends = signature;
   }
 
   // ── Dialogue for children ─────────────────────────────────────────────
@@ -555,6 +575,7 @@
     lastRawDay = day;
     ensurePlan();
     maybeAnnounce();
+    syncChildFriendships();
     for (const child of fam.children) updateChild(child);
     syncFrameSubscriber();
   }
@@ -574,6 +595,7 @@
       : defaultFamily();
     clearAnnounceTimers();
     lastRawDay = null;
+    syncChildFriendships();
     for (const child of fam.children) registerChildDialogue(child);
   }
   function snapshot() {
@@ -588,7 +610,7 @@
     init, tick, serialize, restore, snapshot,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg,
     openDreamPicker, openNamingPrompt, createChild,
-    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childTarget, childRecord, onTimePassage, getFamily: () => fam },
+    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, getFamily: () => fam },
   };
   window.RomanceFamily = api;
 })();
