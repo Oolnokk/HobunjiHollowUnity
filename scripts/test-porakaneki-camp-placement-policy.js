@@ -9,17 +9,17 @@ const banditCampSource = fs.readFileSync('docs/js/bandit-camps.js', 'utf8'); // 
 const loaderSource = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Production parser-time ordering contract.
 
 function makeDenseZone(cols = 30, rows = 30) {
-  const tiles = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => ({
+  const tiles = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => ({ // Contiguous left-side boulder must be removed as one shell if a large camp touches it.
     height: 0,
     water: false,
     path: false,
     ramp: false,
     waterfall: false,
-    terrain: (col + row) % 2 ? 'shrub' : 'rock',
-    rockKind: (col + row) % 2 ? null : 'undiggableBoulder', // Shared fixture boulder should disappear as one shell, even beyond a stamped footprint.
-    boulderId: (col + row) % 2 ? null : 'test-boulder', // Identifies the whole artificial rock component across the dense zone.
-    generatedObjectId: (col + row) % 2 ? null : 'test-boulder', // Tests cleanup of the source collider metadata.
-    generatedObjectType: (col + row) % 2 ? null : 'undiggableBoulder',
+    terrain: (col >= 15) ? 'shrub' : 'rock',
+    rockKind: (col >= 15) ? null : 'undiggableBoulder', // Shared fixture boulder should disappear as one shell, even beyond a stamped footprint.
+    boulderId: (col >= 15) ? null : 'test-boulder', // Identifies the whole artificial rock component across the dense zone.
+    generatedObjectId: (col >= 15) ? null : 'test-boulder', // Tests cleanup of the source collider metadata.
+    generatedObjectType: (col >= 15) ? null : 'undiggableBoulder',
     occupiedBy: `porakaneki_clutter_${col}_${row}`,
   })));
   const objects = [];
@@ -61,8 +61,8 @@ function makeChiefLocale() {
 let currentArea = 'map_western_slope';
 let campSnapshot = { zones: { map_western_slope: { camps: [] } } };
 let liveGrid = Array.from({ length: 30 }, (_, row) => Array.from({ length: 30 }, (_, col) => ({
-  type: (col + row) % 2 ? 'shrub' : 'rock',
-  ...((col + row) % 2 ? {} : { rockKind: 'undiggableBoulder', boulderId: 'test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
+  type: (col >= 15) ? 'shrub' : 'rock',
+  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
 })));
 let refreshCount = 0;
 let banditTickCount = 0;
@@ -196,8 +196,8 @@ for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
 // A rebuilt/re-entered grid is a new object, so the policy must not assume an
 // old applied-set means the clearing is still present.
 liveGrid = Array.from({ length: 30 }, (_, row) => Array.from({ length: 30 }, (_, col) => ({
-  type: (col + row) % 2 ? 'shrub' : 'rock',
-  ...((col + row) % 2 ? {} : { rockKind: 'undiggableBoulder', boulderId: 'test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
+  type: (col >= 15) ? 'shrub' : 'rock',
+  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
 })));
 campSnapshot.zones.map_western_slope.camps = [{ id: instance.id }];
 contextWindow.BanditCamps.updateCampBanners(0.2);
