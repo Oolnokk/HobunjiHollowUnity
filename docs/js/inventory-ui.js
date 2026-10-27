@@ -354,7 +354,7 @@
     const sourceButtons = [...source.querySelectorAll('.inv-pcloth-item')];
     const fingerprint = sourceButtons.map((button) => {
       const img = button.querySelector('img');
-      return `${button.textContent.trim()}|${img?.getAttribute('src') || ''}`;
+      return `${button.getAttribute('data-key') || ''}|${button.textContent.trim()}|${img?.getAttribute('src') || ''}`; // Item UID prevents visually identical clothing from retaining an old action target.
     }).join('||');
     const existing = [...grid.querySelectorAll('.pack-clothing-tile')];
     const needsRebuild = grid.dataset.packClothingFingerprint !== fingerprint || existing.length !== sourceButtons.length;
@@ -372,7 +372,9 @@
         tile.title = sourceButton.textContent.trim() || 'Clothing';
         [...sourceButton.children].forEach((child) => tile.appendChild(child.cloneNode(true)));
         tile.addEventListener('click', () => {
-          sourceButton.click();
+          const liveSourceButton = [...source.querySelectorAll('.inv-pcloth-item')].find(button => button.getAttribute('data-key') === tile.dataset.key); // Rebinds to the current renderer after any inventory rebuild.
+          if (!liveSourceButton) return; // Clothing may have been consumed or moved since the last decoration frame.
+          liveSourceButton.click();
           document.querySelectorAll('#invGrid .pack-clothing-tile.selected').forEach((other) => other.classList.remove('selected'));
           tile.classList.add('selected');
         });
@@ -386,7 +388,7 @@
     const showClothing = activeCategory === 'all' || activeCategory === 'clothing'; // Regular game.js stack filtering stays unchanged for clothing, which has no ITEM_DEFS entry.
     const searchQuery = window.InventorySearch?.query || ''; // Clothing tiles now honor the same pack search as ordinary stacks.
     grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => {
-      const matchesSearch = !searchQuery || (tile.title + ' ' + tile.dataset.key).toLowerCase().includes(searchQuery); // Uses authored clothing name/id without rebuilding hidden source buttons.
+      const matchesSearch = !searchQuery || (window.InventorySearch?.matches?.(tile.dataset.key, { label:tile.title }) ?? (tile.title + ' ' + tile.dataset.key).toLowerCase().includes(searchQuery)); // Uses exactly the ordinary Pack search normalization (including accents).
       tile.style.display = showClothing && matchesSearch ? '' : 'none';
     });
     // decorate() (this function's ultimate caller) reruns on every childList change
