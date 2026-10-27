@@ -11,7 +11,7 @@
   const toolHubCombatVocalizations = new URL('./tool-hub-combat-vocalization-tab.js?v=20261013vocal1', src).href; // Adds the Combat Vocalizations tab after the hub's own static tab list initializes.
   const toolHubCombatVocalizationsTag = isToolHub ? `<script src="${toolHubCombatVocalizations}"></script>` : '';
   const isCutsceneDirector = /\/tools\/cutscene-director\//.test(location.pathname); // Used to keep repo-scene authoring hooks isolated to the Cutscene Director iframe.
-  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261027hblossom3', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
+  const cutsceneRepoScenes = new URL('./cutscene-director-repo-scenes.js?v=20261027hbreath6', src).href; // Used only by Cutscene Director to load shipping repo cutscene builders into its existing JSON import path.
   const cutsceneRepoTag = isCutsceneDirector ? `<script src="${cutsceneRepoScenes}"></script>` : '';
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname); // Used to preload portrait-utils.js's synchronous ColorFill dependency only for Animation Author.
   const animationAuthorColorFill = new URL('./color-fill.js?v=20260923colorfill7', src).href; // Used before Animation Author's repository-runtime loader can execute portrait-utils.js.
