@@ -241,20 +241,50 @@
     });
   }
 
+  let stanceScriptRetryTimer = null; // Reschedules a failed dynamic stance module without reloading the game.
+  let stanceScriptLoadDeadline = null; // Recovers when a script request hangs without load/error events.
+  let stanceScriptFailures = 0; // Provides exponential backoff for repeated script/network failures.
+
+  function clearStanceScriptDeadline() {
+    if (stanceScriptLoadDeadline !== null) clearTimeout(stanceScriptLoadDeadline);
+    stanceScriptLoadDeadline = null;
+  }
+
+  function retryStanceScript(script, reason) {
+    clearStanceScriptDeadline();
+    script.remove();
+    if (window.WeaponToolStances?.init || stanceScriptRetryTimer !== null) return;
+    stanceScriptFailures += 1;
+    const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceScriptFailures - 1, 5))); // Repeat every 30s at most until the stance module loads.
+    window.__farmLog?.(`[weapon-stance] module unavailable (${reason}); retry in ${retryMs}ms`, 'warn');
+    stanceScriptRetryTimer = setTimeout(() => {
+      stanceScriptRetryTimer = null;
+      loadWeaponToolStancesRuntime();
+    }, retryMs);
+  }
+
   function loadWeaponToolStancesRuntime() {
-    if (window.WeaponToolStances || typeof document === 'undefined') {
+    if (window.WeaponToolStances?.init || typeof document === 'undefined') {
+      clearStanceScriptDeadline();
       initializeStancesIfReady();
       return;
     }
-    const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
-    if (existingScript) return;
-    const script = document.createElement('script'); // Loads after the shared melee-spacing math so every attack wrapper sees the same calibrated endpoint rule.
+    if (document.querySelector('script[data-weapon-tool-stances]')) return; // A current load is already in flight.
+    const script = document.createElement('script'); // Loads after shared melee-spacing math; a transient failed script must not strand the session.
     script.src = 'js/weapon-tool-stances.js?v=20261019ha33698b';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
-    script.onload = initializeStancesIfReady;
-    script.onerror = () => window.__farmLog?.('[weapon-stance] failed to load js/weapon-tool-stances.js', 'warn');
+    script.onload = () => {
+      clearStanceScriptDeadline();
+      if (!window.WeaponToolStances?.init) { retryStanceScript(script, 'module did not initialize'); return; }
+      stanceScriptFailures = 0;
+      initializeStancesIfReady();
+    };
+    script.onerror = () => retryStanceScript(script, 'network or script error');
     (document.head || document.documentElement).appendChild(script);
+    stanceScriptLoadDeadline = setTimeout(() => {
+      if (!window.WeaponToolStances?.init && script.isConnected) retryStanceScript(script, 'load timeout');
+    }, 10000); // Detect pending script requests that otherwise never dispatch an error.
   }
 
   if (!window.MeleePoseSpacing && typeof document !== 'undefined') {
