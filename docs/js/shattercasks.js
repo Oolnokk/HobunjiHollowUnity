@@ -608,8 +608,17 @@
   function fruitForBranch(branch, mapId=area()) {
     if (!branch) return null;
     const rec = records.get(mapId);
-    return [...(rec?.vases.values() || [])].find(fruit => fruit.kind === 'soursap' && fruit.hanging
-      && fruit.fruitBranch?.col === branch.col && fruit.fruitBranch?.row === branch.row) || null;
+    for (const fruit of rec?.vases.values() || []) {
+      if (fruit.kind === 'soursap' && fruit.hanging
+        && fruit.fruitBranch?.col === branch.col && fruit.fruitBranch?.row === branch.row) return fruit;
+    }
+    return null;
+  }
+  function rebindFruitBranch(branch, mapId=area()) {
+    const fruit=fruitForBranch(branch,mapId); // Chunk rebuilding can replace branch objects without replacing the fruit mesh.
+    if (!fruit || fruit.exploded) return false;
+    fruit.fruitBranch=branch;
+    return true;
   }
   function markFruitHarvested(burden) {
     if (!burden?.fruitBranch) return;
@@ -1366,7 +1375,9 @@
       chunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
     }
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
-      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null,null,id,
+      spawnPile(mapId,rec,info.col,info.row,info.kind,
+        info.kind==='fruit'?thrownGround(info.x??info.col+.5,info.z??info.row+.5):baseHeight(info.col,info.row),
+        info.woodKey,info.oreKey||null,null,id,
         Number.isFinite(info.x)&&Number.isFinite(info.z)?{x:info.x,z:info.z}:null);
     if(rec.piles.size)syncPileVisuals(rec);
     restoreLooseFruit(mapId,rec);
@@ -1459,7 +1470,7 @@
     applyFruitBlast(fruit.mapId,x,z);
     if(rec){
       const col=Math.floor(x),row=Math.floor(z);
-      spawnPile(fruit.mapId,rec,col,row,'fruit',baseHeight(col,row),'pineLog',null,fruit.id,null,{x,z});
+      spawnPile(fruit.mapId,rec,col,row,'fruit',thrownGround(x,z),'pineLog',null,fruit.id,null,{x,z});
       syncPileVisuals(rec);persistWorld();
     }
     lastEvent='Soursap burst ' + fruit.id + ' via ' + cause;
@@ -1768,7 +1779,7 @@
   // selector gesture. A separate frame subscriber here would race that
   // dispatcher and accidentally recall equipment after pickup.
   window.Shattercasks=Object.freeze({
-    init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,pickUpFruit,discardFruit,releaseFruitFromTree,
+    init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
