@@ -44,8 +44,9 @@
   // Adult + Herd-Mother entries in the live CREATURE_DB. Prey behavior is
   // borrowed from the Uumkao'ii it replaced; existing authored overrides win
   // except for the identity/art fields the species requires.
-  function ensureCreatureDefs(creatureDb) {
+  function ensureCreatureDefs(creatureDb, tilePx) {
     if (!creatureDb) return false;
+    const tile = Number(tilePx) > 0 ? Number(tilePx) : 55; // game.js TILE; the prey baseline defines no attack reach of its own.
     const preyBaseline = creatureDb['uumkaoii-wild'] || creatureDb.uumkaoii || creatureDb.drenkirra || {};
     const existing = creatureDb[KIND] || {};
     creatureDb[KIND] = {
@@ -58,6 +59,8 @@
       spriteAspect: Number(existing.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
       lootPool: 'creature_voorg-ass',
       attackDamage: 1, attackTag: 'blunt', // Rear kick prioritizes knockback/Footing rather than Health.
+      attackRangePx: Number(existing.attackRangePx) || tile * 1.1, // Companion AI gates chase and attack on this; without it (Uumkao'ii-wild has none) the companion never closes in or kicks.
+      attackHalfConeRad: Number(existing.attackHalfConeRad) || Math.PI / 3, // Matches the kick's own cone.
       attackStaminaCost: 10, attackCooldownS: 1.3, // Existing ordinary animal-attack resource/cadence gates.
       attacks: ['rearKick'], realAttackEvery: 1, // Wild retaliation uses only this kick; companions fall back to Guard Charge during cooldown.
       rearKickCooldownS: 9, // Used by the companion-only signature-attack timer in the animal attack module.
