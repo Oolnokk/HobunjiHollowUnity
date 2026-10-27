@@ -25,10 +25,12 @@ function makeZoneLayout() {
   return { cols, rows, tiles, toTownExit: { col: 20, row: 0 }, tradeExit: { col: 20, row: 59, side: 'south' }, buildings: [], dens: [], localeInstances: [] };
 }
 
-function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
+function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], marketStations = [] } = {}) {
   const toasts = [];
+  const townZone = { buildings: townBuildings, npcStations: marketStations }; // Active authoring layout queried by caravan pathfinding.
   const window = {
     __farmLog: () => {},
+    TownZoneBuildings: { grassContext: () => ({ getTownZone: () => townZone }) },
     CalendarSystem: { constants: { TARGET_DAY_LENGTH_SECONDS: 672 }, currentSeason: () => ({ name: season }) },
     PorakanekiCamps: { occupiedSites: zoneId => zoneId === CF ? [{ x: 24, y: 40, w: 4, h: 4 }] : [] },
     FishCatalog: { entries: [
@@ -124,6 +126,35 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.ok(route.every(index => grid.cost[index] >= 0), 'route never crosses blocked tiles');
 }
 
+// ── Authored market and footprint safety ───────────────────────────
+{
+  const building = { gridX: 13, gridZ: 13, footprintW: 5, footprintD: 5 }; // Occupies the old average-of-gates market point.
+  const { T, calendar } = makeHarness({ townBuildings: [building], marketStations: [{ id: 'station_ginju_market_test', col: 22, row: 20 }] });
+  const caravan = T.__test.createCaravan(10);
+  const grid = T.__test.gridForArea('town');
+  for (let row = 13; row < 18; row++) for (let col = 13; col < 18; col++) {
+    assert.equal(grid.cost[row * grid.cols + col], -1, 'every authored building footprint cell is blocked');
+  }
+  const route = T.__test.legRoute(caravan, 1);
+  assert.ok(route, 'a routed approach to the authored market is available');
+  assert.deepEqual([route.points.at(-1).x, route.points.at(-1).z], [22.5, 20.5], 'market is the authored station, not the gate centroid');
+  for (let i = 1; i < route.points.length; i++) {
+    const a = route.points[i - 1], b = route.points[i];
+    for (let t = 0; t <= 1; t += 0.1) {
+      const c = Math.floor(a.x + (b.x - a.x) * t), r = Math.floor(a.z + (b.z - a.z) * t);
+      assert.ok(grid.cost[r * grid.cols + c] >= 0, 'town route never clips a building footprint');
+    }
+  }
+  caravan.legIndex = 1;
+  caravan.dist = route.length;
+  caravan.pauseLeft = 1;
+  caravan.members.forEach((_, i) => {
+    const point = T.__test.memberTarget(caravan, i, route, (calendar.day + calendar.time01) * 24);
+    assert.ok(grid.cost[Math.floor(point.z) * grid.cols + Math.floor(point.x)] >= 0, 'stationary trader is outside all buildings');
+  });
+  assert.ok(caravan.members.every(member => member.gender === 'male'), 'new caravans contain only male traders');
+}
+
 // ── A full trip: arrival notice, road camp, market, home ────────────
 {
   const { T, toasts, step, calendar } = makeHarness();
@@ -194,6 +225,12 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.equal(restored.id, caravan.id);
   assert.equal(restored.dist, 12.5);
   assert.deepEqual([...restored.stock], ['Winter Fish×0@66g']);
+  saved.caravans[0].members[0] = { index: 0, gender: 'female', name: 'Old Female', roster: { appearance: { speciesId: 'tletingan', gender: 'female' } } };
+  T.restore(saved);
+  const migrated = T.__test.state.caravans[0].members[0];
+  assert.equal(migrated.gender, 'male', 'female traders in existing saves migrate to male');
+  assert.notEqual(migrated.name, 'Old Female', 'migrated trader name matches male naming');
+  assert.equal(migrated.roster, null, 'female cosmetics are re-rolled for male anatomy');
 }
 
 // ── Dev Companion panel ──────────────────────────────────────────────
@@ -217,5 +254,18 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.equal(refused.ok, false, 'Go to fails cleanly instead of teleporting within the wrong area');
   assert.equal((await panel.onAction('dismiss', { id: spawned.id })).ok, true);
   assert.equal(T.debugSnapshot().caravans.length, 0, 'dismiss removes it');
+  const { T: traders, window: traderWindow } = makeHarness();
+  let genderOverride = null;
+  traderWindow.BanditCombat = {
+    loadGangConfig: async () => ({}),
+    rollRoster: async (_cfg, _rank, _name, gender) => {
+      genderOverride = gender;
+      return { appearance: { speciesId: 'tletingan', gender }, equippedCosmetics: [], appliedDyes: {} };
+    },
+  };
+  const member = traders.__test.createCaravan(3).members[0];
+  await traders.__test.rollMemberRoster(member);
+  assert.equal(genderOverride, 'male', 'shared bandit clothing generator receives a male-only override');
+  assert.equal(member.roster.appearance.gender, 'male', 'roster never switches a trader to female');
   console.log('slagothim traders: ok');
 })().catch(error => { console.error(error); process.exit(1); });
