@@ -547,7 +547,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
   function loadIdleStanceEditor() {
     if (window.AttackIdleStanceEditor || pendingIdleStanceScript) return;
     const script = document.createElement('script'); // Same existing editor module, now with a recoverable load lifecycle.
-    script.src = '../../js/attack-idle-stance-editor.js?v=20261026hb0af5b2';
+    script.src = '../../js/attack-idle-stance-editor.js?v=20261026hstanceaudit2';
     script.defer = true;
     pendingIdleStanceScript = script;
     function endAttempt() {
