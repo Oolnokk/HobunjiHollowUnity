@@ -87,12 +87,22 @@
   function applyStanceConfig(raw, sourceLabel) {
     if (!raw || raw.kind !== 'hobunji_weapon_idle_stances' || !raw.stances) return false;
     for (const key of Object.keys(idleStances)) {
-      const normalized = normalizePose(raw.stances[key], DEFAULT_IDLE_STANCES[key]);
+      const incoming = raw.stances[key]; // Only explicit local overrides should replace a committed stance.
+      if (sourceLabel === 'local-override' && (!incoming || typeof incoming !== 'object')) continue;
+      const baseline = sourceLabel === 'local-override' ? idleStances[key] : DEFAULT_IDLE_STANCES[key]; // Missing local channels inherit the actual loaded stance.
+      const normalized = normalizePose(incoming, baseline);
       if (key === 'lightWeapon' && isPreviousLightWeaponPose(raw.stances[key])) normalized.y = 0; // Migrate only the exact former committed default; authored local overrides remain intact.
       Object.assign(idleStances[key], normalized);
     }
     stanceConfigSource = sourceLabel;
     return true;
+  }
+
+  function hasCompleteCommittedStances(config) {
+    return config?.kind === 'hobunji_weapon_idle_stances'
+      && config.stances && typeof config.stances === 'object'
+      && Object.keys(idleStances).every(key => POSE_KEYS.every(field =>
+        typeof config.stances[key]?.[field] === 'number' && Number.isFinite(config.stances[key][field])));
   }
 
   function loadLocalStanceOverride() {
@@ -109,6 +119,7 @@
   function loadStanceConfig({ force = false } = {}) {
     if (stanceConfigRequest) return stanceConfigRequest;
     if (stanceConfigLoaded && !force) return Promise.resolve(true);
+    if (stanceRetryTimer !== null && !force) return Promise.resolve(false); // Respect scheduled backoff across repeated EquipmentPanel init calls.
     if (stanceRetryTimer !== null) {
       clearTimeout(stanceRetryTimer);
       stanceRetryTimer = null;
@@ -121,7 +132,7 @@
         const response = await fetch(STANCE_CONFIG_URL, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const parsed = await response.json();
-        if (!applyStanceConfig(parsed, 'committed-json')) throw new Error('schema mismatch');
+        if (!hasCompleteCommittedStances(parsed) || !applyStanceConfig(parsed, 'committed-json')) throw new Error('incomplete stance config');
         if (localStanceOverride) applyStanceConfig(localStanceOverride, 'local-override');
         stanceConfigLoaded = true;
         stanceConfigFailures = 0;
