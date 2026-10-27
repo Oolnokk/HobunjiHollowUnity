@@ -16386,13 +16386,31 @@
       const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
       window.InventorySearch.init({ rebuild: () => buildInventoryGrid(), getItemDefs: () => ITEM_DEFS });
+      function matchesPackCategory(cat, key) {
+        const def = ITEM_DEFS[key]; // The same item metadata feeds regular Pack, filtered Pack and the item wheel.
+        if (!def) return false;
+        if (cat === 'all' || def.cat === cat) return true;
+        const tags = new Set((def.tags || []).map(tag => String(tag).toLowerCase())); // Classifies item families without changing their existing crafting/shipping categories.
+        switch (cat) {
+          case 'food': return def.isCookedFood === true || ['food', 'meal', 'drink', 'meat', 'egg', 'milk'].some(tag => tags.has(tag));
+          case 'fish': return tags.has('fish') || key.startsWith('fish_');
+          case 'ore': return tags.has('ore') || tags.has('metal bar');
+          case 'reagent': return tags.has('reagent') || tags.has('alchemy');
+          case 'tool': return def.cat === 'instrument';
+          case 'plans': return ['blueprint', 'buildingPlan'].includes(def.cat) || ['blueprint', 'plan', 'deed', 'scroll', 'tablet'].some(tag => tags.has(tag));
+          case 'dye': return tags.has('dye');
+          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'tool', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'dye'].includes(def.cat);
+          default: return false;
+        }
+      }
+
       function getInventoryStackKeys(cat = 'all') {
         // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
         const ranks = new Map(); // Resolves catalog order once instead of scanning it in every sort comparison.
         inventoryItems.forEach((item, index) => { if (!ranks.has(item.key)) ranks.set(item.key, index); });
         return Object.keys(inventory)
           .filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0)
-          .filter(key => cat === 'all' || ITEM_DEFS[key].cat === cat)
+          .filter(key => matchesPackCategory(cat, key))
           .sort((a, b) => (ranks.get(a) ?? 9999) - (ranks.get(b) ?? 9999) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
       }
 
@@ -16572,7 +16590,7 @@
           if (selected) selectInventoryItem(invSelectedKey, false, selected);
           else clearInventoryDetail();
         }
-        else clearInventoryDetail(keys.length ? '← Select an item' : window.InventorySearch?.query ? 'No items match your search' : 'Bag is empty');
+        else clearInventoryDetail(keys.length ? '← Select an item' : window.InventorySearch?.query ? 'No items match your search' : invActiveCat === 'clothing' ? '← Select clothing' : 'Bag is empty');
         window.EquipmentPanel.buildPackClothingSection();
       }
 
