@@ -2664,6 +2664,12 @@
         alwaysKnown: !!item.alwaysKnown, // Preserves automatically known starter designs in CraftingPanel.
       }));
 
+      // Synchronize module-added furniture before the Pack registers its item definitions.
+      // The Butter Churn's late init hooks alone run after ITEM_DEFS/inventoryItems are built,
+      // which otherwise leaves purchased churn recipes invisible or unreadable in the Pack.
+      window.HobunjiFoodProcessing?.ensureProcessingFurnitureDef?.(PROCESSING_FURNITURE_DEFS);
+      window.HobunjiFoodProcessing?.ensureBlueprint?.(FURNITURE_BLUEPRINT_CATALOG);
+
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelkCrate', icon: '🦎', name: 'Nelk Crate', desc: 'A Nelk for your farm. Add the crate from the Farm tab and assign the animal to a barn.', price: 90, gives: { nelkCrate: 1 }, category: 'livestock' },
