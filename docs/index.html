@@ -457,7 +457,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261027hhouse1&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261027h59d4754&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -813,6 +813,7 @@
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
   <script src="js/zone-plateau-mesa.js?v=20260930globalground2"></script>
+  <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
@@ -2817,7 +2818,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261027hc0445b5"></script>
+  <script src="game.js?v=20261027h4949a64"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

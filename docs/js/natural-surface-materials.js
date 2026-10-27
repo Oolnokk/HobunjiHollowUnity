@@ -630,6 +630,7 @@
     installed: true,
     config,
     naturalizeMesh,
+    naturalizeMaterialSlot, // Lets non-mesa builders (js/wilderness-bedrock.js) fetch the exact cliff-slot material through a proxy mesh.
     surfaceDefaults(surface, sourceHex) {
       const surfaceCfg = cfgFor(surface); // Authoring defaults use the same texture and source-color treatment as ordinary Shadewood.
       const path = texturePath(surfaceCfg), prefix = assetBase ? new URL('assets/', assetBase).href : null; // Some editor bridges absolutize config paths; save repository defaults portably.
