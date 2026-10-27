@@ -6604,7 +6604,8 @@
             if (c.isBandit) {
               c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
               window.EnemyDodge?.cancel?.(c); // Dodge only advances inside chase AI; leaving chase mid-roll otherwise froze the avatar tilted.
-              window.BanditCombat?.restNeckLook?.(c, entityDt);
+              // Defer the noncombat neck reset until movement has been resolved.
+              // Resetting here and then reaiming later cancels the carrot every frame.
             }
           }
 
@@ -7036,7 +7037,10 @@
           }
 
           const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
-          if (skipDistantVisualUpdate) continue;
+          if (skipDistantVisualUpdate) {
+            if (c.isBandit && c.state !== 'chase') window.BanditCombat?.restNeckLook?.(c, entityDt); // Off-screen hostiles can cheaply return their neck to neutral.
+            continue;
+          }
           window.WildlifeFoodWeb?.applyPose?.(c, entityDt); // Burrow-first-phase reversal and staggered chewing applied before final creature mesh placement.
           updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
@@ -7048,7 +7052,14 @@
           // same frame, since it always hard-sets grp.rotation.y from
           // c.groupRot. Also lets feetY read this frame's fresh avatar Y
           // position instead of last frame's.
-          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, entityDt); }
+          if (c.isBandit) {
+            // Combat-head tracking wins during engagement; outside combat, moving
+            // humanoids get the same hidden forward carrot as town NPCs.
+            const hasMovementGaze = window.BanditCombat?.updateMovementHeadLook?.(c, entityDt, moving, aimAngle); // A travel gaze owns the neck instead of fighting the idle reset.
+            if (c.state !== 'chase' && !hasMovementGaze) window.BanditCombat?.restNeckLook?.(c, entityDt); // Clear only after there is neither combat nor movement gaze.
+            window.BanditCombat.updateToolMesh(c);
+            window.BanditCombat.updateTrailArc(c, entityDt);
+          }
           // A modular attack in its leap stage owns the sprite frame (locked
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
@@ -11564,6 +11575,23 @@
         }
       }
 
+      // Allocation-free callbacks for the invisible movement head target. The
+      // walker simulation owns priority/area, while the tiny shared module
+      // owns the travel threshold, carrot position and restoration boundary.
+      const npcMovementHeadLookOptions = {
+        currentArea: '', // Set per update pass to skip off-area cosmetic neck solves.
+        hasScriptedGaze: false, // Set per walker: cutscene/dialogue have higher priority than locomotion.
+        eyeHeightRatio: PLAYER_FACE_HEIGHT_RATIO, // Same upright eye-height convention used by dialogue.
+        getFaceWorld: _npcFaceWorldPosition, // Samples the live skinned head after the body-lean pivot is rotated.
+        makeWorldPoint: point => new THREE.Vector3(point.x, point.y, point.z), // Converts the lightweight carrot target to the existing THREE solver.
+        aimAtWorldPoint: (walker, point, eye) => _aimNeckAtWorldPoint(
+          walker.neckJoint, walker.root.position, walker.avatarHeight, point,
+          window.NpcMovementHeadTarget.MAX_YAW_DEG,
+          window.NpcMovementHeadTarget.MAX_PITCH_DEG,
+          walker, eye,
+        ), // Reuses ordinary dialogue yaw/pitch limits and the mobile head-look debug ray.
+      };
+
       function applyNpcDialogueFacingExact(walker, rawRot, lerp) {
         if (!walker?.root || !Number.isFinite(rawRot)) return;
         walker.desiredRot = rawRot;
@@ -13048,8 +13076,16 @@
             if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
             if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
             try {
+              const oldHeadX = w.root?.position?.x, oldHeadZ = w.root?.position?.z; // Real travel this frame drives the head target, not a stale requested speed.
+              const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(dt);
-              if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+              if (npcWalkers[i] === w) {
+                npcMovementHeadLookOptions.currentArea = currentArea;
+                npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
+                  || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
+                window.NpcMovementHeadTarget?.updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions);
+                _tickNpcPortraitLife(w, dt);
+              }
               if (w._npcUpdateError) w._npcUpdateError = null;
             } catch (error) {
               const message = String(error?.message || error); // Identifies repeated failures while retaining the full location in the mobile Debug report.
