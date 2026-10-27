@@ -657,6 +657,29 @@
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
+  function tentWallsBlockBox(prop, x, z, half = 0) {
+    const w = Math.max(1, num(prop.w, 2)), h = Math.max(1, num(prop.h, 2)); // The authored square-taper canvas base, in world tiles.
+    const left = prop.x, right = prop.x + w, top = prop.y, bottom = prop.y + h; // Tent perimeter retains an opening toward the bonfire.
+    if (x + half <= left || x - half >= right || z + half <= top || z - half >= bottom) return false;
+    const thickness = 0.16; // Approximate canvas side-wall collision; preserves navigable tent interiors and the chief's sleeping destination.
+    const front = ((Math.round(num(prop.rot, 0) / 90) % 4) + 4) % 4; // HousePieceGen facing: 0=+row, 1=+col, 2=-row, 3=-col.
+    const overlaps = (x1, z1, x2, z2) => x + half > x1 && x - half < x2 && z + half > z1 && z - half < z2;
+    const horizontal = (row, isEntrance) => {
+      if (!isEntrance) return overlaps(left, row, right, row + thickness);
+      const cx = (left + right) * 0.5, gapHalf = Math.min(w * 0.43, 0.85); // Enough room for NPC tile-center approaches (chief's lie station) and player collision radius.
+      return overlaps(left, row, cx - gapHalf, row + thickness)
+        || overlaps(cx + gapHalf, row, right, row + thickness);
+    };
+    const vertical = (col, isEntrance) => {
+      if (!isEntrance) return overlaps(col, top, col + thickness, bottom);
+      const cz = (top + bottom) * 0.5, gapHalf = Math.min(h * 0.43, 0.85);
+      return overlaps(col, top, col + thickness, cz - gapHalf)
+        || overlaps(col, cz + gapHalf, col + thickness, bottom);
+    };
+    return horizontal(top, front === 2) || horizontal(bottom - thickness, front === 0)
+      || vertical(left, front === 3) || vertical(right - thickness, front === 1);
+  }
+
   function registerTentCollisionProvider(zoneId) {
     if (!window.AreaFootprintBlockers?.register) return false;
     window.AreaFootprintBlockers.register(`${KEY}-camp-tents:${zoneId}`, {
@@ -666,12 +689,12 @@
         if (!zoneState) return false;
         for (const camp of activeCamps(zoneState)) {
           for (const prop of camp.props) {
-            if (prop.type !== 'tent' || prop.destroyed) continue;
-            const w = Math.max(1, num(prop.w, 2)), h = Math.max(1, num(prop.h, 2)); // Exact stamped tent footprint used for walker and projectile overlap.
-            if (x + half <= prop.x || x - half >= prop.x + w || z + half <= prop.y || z - half >= prop.y + h) continue;
+            if (prop.type !== 'tent' || prop.destroyed || !tentWallsBlockBox(prop, x, z, half)) continue;
             if (worldY != null) {
-              const grid = combatDeps?.zoneScenes?.get?.(zoneId)?.grid || (currentArea() === zoneId ? combatDeps?.getActiveGrid?.() : null); // Only used to let high projectiles clear tent roofs.
-              const tile = grid?.[Math.floor(prop.y + h * 0.5)]?.[Math.floor(prop.x + w * 0.5)];
+              const grid = combatDeps?.zoneScenes?.get?.(zoneId)?.grid || (currentArea() === zoneId ? combatDeps?.getActiveGrid?.() : null); // High projectiles still clear the canvas roof.
+              const col = Math.floor(prop.x + Math.max(1, num(prop.w, 2)) * 0.5);
+              const row = Math.floor(prop.y + Math.max(1, num(prop.h, 2)) * 0.5);
+              const tile = grid?.[row]?.[col];
               const groundY = tile && combatDeps?.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, zoneId), 0) : 0;
               if (worldY > groundY + 1.275 * TENT_HEIGHT_SCALE) continue;
             }
@@ -2133,7 +2156,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
 
   tribeRuntimes.push(api);
