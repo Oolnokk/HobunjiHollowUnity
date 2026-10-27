@@ -57,13 +57,13 @@
       "bodyYaw": -40
     },
     "topHeavyTool": {
-      "x": -0.14,
-      "y": -0.07,
-      "z": -0.18,
-      "pitch": -22,
-      "yaw": -21,
+      "x": 0.21,
+      "y": -0.12,
+      "z": -0.08,
+      "pitch": 17,
+      "yaw": -49,
       "bodyYaw": -8,
-      "roll": -99
+      "roll": -96
     },
     "longHaftedTool": {
       "x": 0.21,

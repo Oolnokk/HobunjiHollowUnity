@@ -31,7 +31,7 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261017toolstance1';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261027hcarryjson1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   // The pose schema, the legacy rest poses and the stance-baking policy (power,
   // spacing, Neutral handedness) are window.SharedAttackPose's, shared with
@@ -54,13 +54,14 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-    topHeavyTool: Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }),
+    topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
   });
+  const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
 
   // Keep these objects stable so external debug/editor references do not go stale
@@ -92,6 +93,10 @@
       const baseline = sourceLabel === 'local-override' ? idleStances[key] : DEFAULT_IDLE_STANCES[key]; // Missing local channels inherit the actual loaded stance.
       const normalized = normalizePose(incoming, baseline);
       if (key === 'lightWeapon' && isPreviousLightWeaponPose(raw.stances[key])) normalized.y = 0; // Migrate only the exact former committed default; authored local overrides remain intact.
+      if (key === 'topHeavyTool' && sourceLabel === 'local-override' && POSE_KEYS.every(field =>
+        Math.abs((Number(incoming?.[field]) || 0) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field]) < 1e-9)) {
+        Object.assign(normalized, DEFAULT_IDLE_STANCES.topHeavyTool); // An untouched saved default should receive the working Pick-Shovel copy; user edits remain untouched.
+      }
       Object.assign(idleStances[key], normalized);
     }
     stanceConfigSource = sourceLabel;

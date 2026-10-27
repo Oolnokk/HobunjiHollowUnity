@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261017toolstance1';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261027hcarryjson1';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const STANCE_ORDER = ['tool', 'hoeTool', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
@@ -30,7 +30,7 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
-      topHeavyTool: Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }),
+      topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
       lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
@@ -39,6 +39,7 @@
     }),
   });
 
+  const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
   const clone = value => JSON.parse(JSON.stringify(value));
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -60,6 +61,11 @@
       Math.abs(numberOr(incomingLight[field.key]) - PREVIOUS_LIGHT_WEAPON_STANCE[field.key]) < 1e-9
     );
     if (wasPreviousDefault) out.stances.lightWeapon.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
+    const incomingTopHeavy = raw?.stances?.topHeavyTool; // An older browser's unedited Top-heavy saved pose should inherit the new Pick-Shovel copy.
+    if (incomingTopHeavy && FIELD_DEFS.every(field =>
+      Math.abs(numberOr(incomingTopHeavy[field.key]) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field.key]) < 1e-9)) {
+      out.stances.topHeavyTool = { ...fallback.stances.topHeavyTool }; // Preserve any user-customized pose instead of overwriting it.
+    }
     out.stances.dualWieldOffhand.bodyYaw = out.stances.dualWieldMain.bodyYaw; // Body yaw is shared; only the offhand weapon transform is independently authored.
     return out;
   }
