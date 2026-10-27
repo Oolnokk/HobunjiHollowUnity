@@ -4,8 +4,8 @@
 
   const OLD_KICKER = 'Not active progression yet';
   const OLD_TEXT = 'Stable rows currently show a level value, but the Stable UI explicitly marks creature leveling as coming later. Do not expect that number to advance through normal play yet.';
-  const NEW_KICKER = 'Level 10 animal training';
-  const NEW_TEXT = 'Stabled companions, mounts, and shoulder pets gain XP while active, up to level 10, from role-specific activities. Mounts train through exploration, travel, and completed quests. Animal companions train through enemy defeats, buried treasure, bandit camps, Den-Mothers, and stolen den eggs or babies. Shoulder pets train through enemy defeats and positive Rapport gains. Each level grants a training point. Tap an animal in the Stable to expand its perk tree; companions also have species-specific combat training.';
+  const NEW_KICKER = 'Companion training and tactics';
+  const NEW_TEXT = 'Animal companions train up to level 30; mounts and shoulder pets retain a level 10 cap. All gain XP while active from role-specific activities. Mounts train through exploration, travel, and completed quests. Animal companions train through enemy defeats, buried treasure, bandit camps, Den-Mothers, and stolen den eggs or babies. Shoulder pets train through enemy defeats and positive Rapport gains. Each level grants a training point. Tap an animal in the Stable to expand its perk tree; companions also have species-specific combat training and a saved Tactical Loadout. Cycle each existing move’s relative frequency and effect focus, plus combat tempo. Relentless attacks more often at higher base Stamina cost; Measured conserves base Stamina with longer recovery. Cooldowns and special attack costs still apply.';
 
   function rewriteVisibleCopy() {
     const root = document.getElementById?.('mpCompendium');

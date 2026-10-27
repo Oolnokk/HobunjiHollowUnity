@@ -133,11 +133,12 @@ const companionSpecies = { id: 'species_dabinggi_toxicPounce', name: 'Toxic Poun
 const mountSpeed = { id: 'mountSpeed', name: 'Fleet Stride', maxRank: 5, desc: '+4% base riding speed per rank.' };
 
 const progression = {
-  maxLevel: 10,
+  maxLevel: 30,
   install() {},
+  maxLevelForEntry: entry => entry.role === 'companion' ? 30 : 10,
   roleForEntry: entry => entry.role,
   normalizeEntry(entry) {
-    entry.level = Math.max(0, Math.min(10, Math.floor(Number(entry.level) || 0)));
+    entry.level = Math.max(0, Math.min(this.maxLevelForEntry(entry), Math.floor(Number(entry.level) || 0)));
     entry.stableXp = Math.max(0, Math.floor(Number(entry.stableXp) || 0));
     entry.animalPerks ||= {};
     return entry;
@@ -175,12 +176,18 @@ const petRapport = {
 };
 
 const refinements = {
-  maxLevel: 10,
+  maxLevel: 30,
   install() {},
   ensureStableCaps() {
-    stable.forEach(entry => { entry.level = Math.max(0, Math.min(10, entry.level)); if (entry.level >= 10) entry.stableXp = 0; });
+    stable.forEach(entry => { entry.level = Math.max(0, Math.min(progression.maxLevelForEntry(entry), entry.level)); if (entry.level >= progression.maxLevelForEntry(entry)) entry.stableXp = 0; });
   },
   syncCompanionCombatPerks() {},
+  appendTacticalLoadout(panel, entry) {
+    const loadout = new FakeElement('div'); // Verifies the native Stable renderer calls the tactical builder inside the correct animal's detail panel.
+    loadout.className = 'stable-tactical-loadout';
+    loadout.textContent = 'Tactical Loadout for ' + entry.id;
+    panel.appendChild(loadout);
+  },
   companionCombatModifiers() { return { damage: 1, cooldown: 1, range: 1, staminaCost: 1 }; },
 };
 
@@ -308,9 +315,9 @@ let babyRow = stableRowById(stableList, 'hound1'); // Re-read after each native 
 let companionRow = stableRowById(stableList, 'hound2'); // Used for companion training expansion assertions.
 let mountRow = stableRowById(stableList, 'mount1'); // Used for mount training expansion assertions.
 assert.ok(babyRow && companionRow && mountRow, 'all saved Stable animals render inside an age section');
-assert.match(babyRow.innerHTML, /Baby · Companion · Lv\. 0\/10/, 'baby row is visibly labeled and keeps the level cap');
+assert.match(babyRow.innerHTML, /Baby · Companion · Lv\. 0\/30/, 'baby row is visibly labeled and keeps the level cap');
 assert.equal(descendantsByClass(babyRow, 'stable-grow-btn').length, 1, 'baby row exposes the Growth Tonic maturation control');
-assert.match(companionRow.innerHTML, /Companion · Lv\. 1\/10/, 'adult companion directly shows the level-10 cap');
+assert.match(companionRow.innerHTML, /Companion · Lv\. 1\/30/, 'adult companion directly shows the level-30 companion cap');
 assert.doesNotMatch(companionRow.innerHTML, /leveling coming soon/i, 'authoritative Stable row no longer contains the placeholder');
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 0, 'tree starts collapsed');
 
@@ -323,6 +330,7 @@ companionRow = stableRowById(stableList, 'hound2');
 mountRow = stableRowById(stableList, 'mount1');
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'tapping an adult companion expands its tree');
 assert.equal(descendantsByClass(mountRow, 'stable-entry-perk-tree').length, 0, 'other adult animal remains collapsed');
+assert.equal(descendantsByClass(companionRow, 'stable-tactical-loadout').length, 1, 'native companion detail mounts the tactical loadout');
 assert.match(allText(companionRow), /General Companion Training/, 'expanded companion shows general training');
 assert.match(allText(companionRow), /Dabinggi Hound Combat/, 'expanded companion shows its species combat branch');
 assert.match(allText(companionRow), /Toxic Pounce/, 'species combat perk is rendered inside the actual card');

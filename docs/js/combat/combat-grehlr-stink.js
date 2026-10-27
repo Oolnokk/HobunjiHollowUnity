@@ -194,10 +194,11 @@
     return targets;
   }
 
-  function applyWindedStamina(target) {
+  function applyWindedStamina(target, creature) {
     const resourceSystem = window.ResourceSystem; // Used to apply the live affliction that replaced the older Choked Stamina name.
     if (!resourceSystem?.AFFLICTIONS?.windedStamina) return 0;
-    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT) || 0;
+    const multiplier = window.CompanionOffense?.getModifiers?.(creature, target)?.affliction ?? 1; // Direct status moves share training, Whistle, Sicced and tactical buildup scaling.
+    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT * multiplier) || 0;
     resourceSystem.enforceCaps?.(target);
     return amount;
   }
@@ -211,7 +212,7 @@
     for (const target of gatherTargets(creature, deps)) {
       if (!deps.inCone(creature.x, creature.y, state.sprayAngle, target.x, target.y, rangePx, halfConeRad)) continue;
       state.hitCount += 1;
-      state.windedApplied += applyWindedStamina(target);
+      state.windedApplied += applyWindedStamina(target, creature);
     }
     updateDebug(creature, state, true);
   }
@@ -346,6 +347,7 @@
   }
 
   function shouldUseStink(creature, attackId, context, deps) {
+    if (window.StableAnimalTrainingRefinements?.tacticsForEntry && creature._companionTacticLastMove === attackId && creature.isCompanion && !creature.banditCompanion) return false; // Explicit loadout choices bypass the legacy random Burrow-to-Spray substitution.
     if (!isGrehlr(creature) || (attackId !== 'pounce' && attackId !== 'grehlrBurrow')) return false;
     if (creature.isCompanion && !isMediumCompanionGrehlr(creature)) return false; // Medium animal companions share the wild Grehlr stink selector; other companion sizes keep their normal behavior.
     const target = context?.target;

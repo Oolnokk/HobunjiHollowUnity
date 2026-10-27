@@ -21,6 +21,8 @@
     return () => providers.delete(key);
   }
 
+  registerProvider('companionTactics', companion => window.StableAnimalTrainingRefinements?.hitModifiers?.(companion));
+
   function isPlayerCompanion(companion) {
     if (!companion?.isCompanion || companion.banditCompanion === true) return false;
     const player = window.Combat?.deps?.player;
@@ -35,18 +37,20 @@
   // Aggregated multipliers for one companion→target hit. `sources` lists
   // every provider that contributed something other than 1× (debug UI).
   function getModifiers(companion, target) {
-    const out = { damage: 1, footing: 1, affliction: 1, sources: [] };
+    const out = { damage: 1, footing: 1, affliction: 1, knockback: 1, sources: [] };
     if (!isPlayerCompanion(companion)) return out;
     for (const [id, provider] of providers) {
       let result = null;
       try { result = provider(companion, target); } catch (_) { result = null; }
       if (!result) continue;
       const damage = channel(result.damage), footing = channel(result.footing), affliction = channel(result.affliction);
-      if (damage === 1 && footing === 1 && affliction === 1) continue;
+      const knockback = channel(result.knockback); // Tactical Drive focus scales the existing impulse independently of damage.
+      if (damage === 1 && footing === 1 && affliction === 1 && knockback === 1) continue;
       out.damage *= damage;
       out.footing *= footing;
       out.affliction *= affliction;
-      out.sources.push({ id, damage, footing, affliction });
+      out.knockback *= knockback;
+      out.sources.push({ id, damage, footing, affliction, knockback });
     }
     return out;
   }
@@ -77,7 +81,7 @@
     if (typeof damageFn !== 'function') return undefined;
     const scaled = scaleHit(companion, target, amount, opts);
     const hitOpts = scaled.opts?.fromCompanion ? scaled.opts : { ...(scaled.opts || {}), fromCompanion: companion }; // Lets kill-credit systems (Second Wind) know a companion landed the hit.
-    return damageFn(target, scaled.amount, fromX, fromY, knockbackPxS, hitOpts);
+    return damageFn(target, scaled.amount, fromX, fromY, knockbackPxS * scaled.modifiers.knockback, hitOpts);
   }
 
   window.CompanionOffense = Object.freeze({

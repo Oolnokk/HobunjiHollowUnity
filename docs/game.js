@@ -8164,6 +8164,7 @@
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
           if (!tickCreatureResources(c, dt)) continue;
+          const companionTempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Saved tempo changes recovery/base Stamina while species attack timelines stay intact.
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
@@ -8265,48 +8266,51 @@
               // Tamed companions cycle plain active-vs-backing-up (no
               // evasive-orbit stage — that's wild-creature-only, see
               // updateCreatureBehaviorStage) so every attack/charge is still
-              // separated from the next by the same global ~2s backup beat.
+              // separated from the next by a tempo-scaled backup beat.
               const st = c._stage || (c._stage = { mode: 'active', t: 0 });
               st.t += dt;
               if (st.mode === 'backingUp') {
                 const awayAngle = aimAngle + Math.PI;
                 moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
-                if (st.t >= STAGE_BACKUP_S) { st.mode = 'active'; st.t = 0; }
+                if (st.t >= STAGE_BACKUP_S * (companionTempo?.recovery || 1)) { st.mode = 'active'; st.t = 0; }
               } else {
                 if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
-                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
-                  window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
-                  c.attackCooldownT = def.attackCooldownS;
-                  // Tamed behavior: the real species attack set (e.g. Pounce)
-                  // fires only once every 4 behavior actions; the other 3 use
-                  // the short 0-damage/high-knockback guard charge instead.
-                  c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
-                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
-                  const kickSpecies = window.VoorgAssRearKick?.isVoorgAss?.(c) && def.attacks?.includes('rearKick'); // Only Voorg-Ass companions use a distinct special cooldown.
-                  const attackId = kickSpecies
-                    ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
-                    : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge');
-                  const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
-                  if (startedModular) {
-                    aimAngle = c.facing;
-                  } else {
-                    window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
-                    window.Combat.telegraph.start(c, {
-                      windupS: BITE_TELEGRAPH_WINDUP_S,
-                      strikeS: BITE_TELEGRAPH_STRIKE_S,
-                      onStrike: () => {
-                        if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                          const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
-                          if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
-                          else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
-                          else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
-                          window.AudioSystem?.playCreatureClawHit(c);
-                        }
-                      },
-                    });
+                const companionAttackCost = def.attackStaminaCost * (companionTempo?.stamina || 1); // Same scaled amount is checked and paid, including empty Stamina edge cases.
+                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= companionAttackCost && !isCreatureSwimming(c)) {
+                  const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
+                  if (!tacticalAttack?.waiting) {
+                    window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack');
+                    c.attackCooldownT = def.attackCooldownS * (companionTempo?.cooldown || 1);
+                    // Saved tactics choose the action for trained companions;
+                    // legacy actors retain their existing species cadence.
+                    c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
+                    const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
+                    const kickSpecies = window.VoorgAssRearKick?.isVoorgAss?.(c) && def.attacks?.includes('rearKick'); // Only Voorg-Ass companions use a distinct special cooldown.
+                    const attackId = tacticalAttack?.id || (kickSpecies
+                      ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
+                      : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge')); // Legacy cadence remains the fallback for enemy pets or unavailable training.
+                    const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                    if (startedModular) {
+                      aimAngle = c.facing;
+                    } else {
+                      window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
+                      window.Combat.telegraph.start(c, {
+                        windupS: BITE_TELEGRAPH_WINDUP_S,
+                        strikeS: BITE_TELEGRAPH_STRIKE_S,
+                        onStrike: () => {
+                          if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
+                            if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
+                            else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            window.AudioSystem?.playCreatureClawHit(c);
+                          }
+                        },
+                      });
+                    }
+                    st.mode = 'backingUp';
+                    st.t = 0;
                   }
-                  st.mode = 'backingUp';
-                  st.t = 0;
                 }
               }
             }

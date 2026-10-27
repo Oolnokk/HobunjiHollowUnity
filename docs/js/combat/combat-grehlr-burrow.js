@@ -395,6 +395,7 @@
       const damageOptions = { tag: damageTag, afflictionBonuses, attacker: creature }; // Used to route affliction and damage-type footing behavior through existing combat code.
 
       if (state.targetKind === 'player') deps.damagePlayer?.(damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
+      else if (creature.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
       else deps.damageCreature?.(target, damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
       state.damageAttempted = true;
       deps.playCreatureClawHit?.(creature);
