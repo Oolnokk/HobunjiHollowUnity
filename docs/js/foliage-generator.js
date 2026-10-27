@@ -2,8 +2,8 @@
 // Generates Three.js meshes for needlegrain (NeedleShrub) and heftroot (RootTuber).
 // Depends on THREE being a global (loaded via CDN before this script).
 
-window.FoliageGenerator = (() => {
-  const T = window.THREE;
+window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
+  const runtimeInstances = new WeakMap(); // Reuse editor-native builders without changing window.THREE or the game's generator.
 
   // ─── RNG ─────────────────────────────────────────────────────────────────
   function xfnv1a(str) {
@@ -1851,7 +1851,7 @@ window.FoliageGenerator = (() => {
   // share the same tube/noise generation as the foliage generator's own vines.
   function surfaceGrowthDefaults(kind) {
     const roots = kind === 'roots', sourceHex = roots ? TREE_PRESETS.shadewood.barkColorHex : TREE_PRESETS.shadewood.vineColorHex; // Roots inherit Shadewood's wood; vines inherit its vine finish.
-    return window.NaturalSurfaceMaterials?.surfaceDefaults?.(roots ? 'trunks' : 'vines', sourceHex) || {
+    return (naturalSurfaces || window.NaturalSurfaceMaterials)?.surfaceDefaults?.(roots ? 'trunks' : 'vines', sourceHex) || {
       texture: roots ? 'assets/textures/wibbly_surface.png' : 'assets/textures/carved_smooth.png',
       color: '#' + sourceHex.toString(16).padStart(6, '0')
     };
@@ -2026,8 +2026,9 @@ window.FoliageGenerator = (() => {
     if(geometries.length){
       const mesh=new T.Mesh(mergeGeomsWithUV(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Keep each strand's own 0..1 PNG wrap through the merge.
       const originalMaterial = mesh.material; // Release the temporary color source after the shared renderer has read it.
-      if (settings.texture && window.NaturalSurfaceMaterials?.naturalizeMesh) {
-        window.NaturalSurfaceMaterials.naturalizeMesh(mesh, settings.kind==='roots'?'trunks':'vines', 'strand-stretch', {texture:settings.texture,tint:settings.color,tintTreatment:'body-sprite-tint'});
+      const surfaces = naturalSurfaces || window.NaturalSurfaceMaterials; // Match the material/texture constructors to the geometry and renderer.
+      if (settings.texture && surfaces?.naturalizeMesh) {
+        surfaces.naturalizeMesh(mesh, settings.kind==='roots'?'trunks':'vines', 'strand-stretch', {texture:settings.texture,tint:settings.color,tintTreatment:'body-sprite-tint'});
         mesh.material = mesh.material.clone(); // Growth owns this material; the natural-surface cache and PNG texture remain shared.
       } else {
         const sprite = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Solid-color layers still follow the canonical unlit surface appearance.
@@ -2072,7 +2073,15 @@ window.FoliageGenerator = (() => {
   }
 
   // ─── Public API ───────────────────────────────────────────────────────────
-  return {
+  const api = { // Public builders and their runtime-scoped caches.
+    forThree(runtime) {
+      if (runtime === T) return api;
+      if (!runtimeInstances.has(runtime)) {
+        const surfaces = window.NaturalSurfaceMaterials?.forThree(runtime); // Native textures/materials must follow the requested Three.js runtime too.
+        runtimeInstances.set(runtime, createFoliageGenerator(runtime, surfaces));
+      }
+      return runtimeInstances.get(runtime);
+    },
     surfaceGrowthDefaults, normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
     buildLogMesh(options) {
@@ -2136,4 +2145,5 @@ window.FoliageGenerator = (() => {
       return buildTreeInstance('stump', TREE_PRESETS.stump, seedU32);
     }
   };
-})();
+  return api;
+})(window.THREE);

@@ -1,9 +1,8 @@
-(() => {
+(function createNaturalSurfaceMaterials(THREE, installGlobals, sourceAssetBase) {
   'use strict';
 
-  const THREE = window.THREE;
   if (!THREE) return;
-  if (window.NaturalSurfaceMaterials?.installed) return;
+  if (installGlobals && window.NaturalSurfaceMaterials?.installed) return window.NaturalSurfaceMaterials;
 
   const DEFAULTS = {
     texture: 'assets/textures/carved_smooth.png',
@@ -16,7 +15,7 @@
   };
 
   const config = window.NaturalSurfaceMaterialConfig || DEFAULTS;
-  const assetBase = typeof document !== 'undefined' && document.currentScript?.src ? new URL('../', document.currentScript.src).href : null; // Resolve repository PNGs consistently from nested editor URLs.
+  const assetBase = sourceAssetBase || (typeof document !== 'undefined' && document.currentScript?.src ? new URL('../', document.currentScript.src).href : null); // Resolve repository PNGs consistently from nested editor URLs.
   const materialCache = new Map();
   const textureCache = new Map();
   const appliedCounts = { trunks: 0, vines: 0, rocks: 0, cliffs: 0 };
@@ -621,13 +620,21 @@
     } catch (_) {}
   }
 
-  installGlobal('FoliageGenerator', wrapFoliage);
-  installGlobal('ZoneTerrainFeatures', wrapTerrainFeatures);
-  installGlobal('ZonePlateauMesa', wrapPlateauMesa);
-  installGlobal('BorderTerrain', wrapBorderTerrain);
+  if (installGlobals) {
+    installGlobal('FoliageGenerator', wrapFoliage);
+    installGlobal('ZoneTerrainFeatures', wrapTerrainFeatures);
+    installGlobal('ZonePlateauMesa', wrapPlateauMesa);
+    installGlobal('BorderTerrain', wrapBorderTerrain);
+  }
 
-  window.NaturalSurfaceMaterials = {
+  const runtimeInstances = new WeakMap(); // Keep textures and materials isolated by Three.js runtime in mixed-version editors.
+  const api = { // Shared material authority for this runtime; only the default instance installs game hooks.
     installed: true,
+    forThree(runtime) {
+      if (runtime === THREE) return api;
+      if (!runtimeInstances.has(runtime)) runtimeInstances.set(runtime, createNaturalSurfaceMaterials(runtime, false, assetBase));
+      return runtimeInstances.get(runtime);
+    },
     config,
     naturalizeMesh,
     naturalizeMaterialSlot, // Lets non-mesa builders (js/wilderness-bedrock.js) fetch the exact cliff-slot material through a proxy mesh.
@@ -648,4 +655,6 @@
       };
     },
   };
-})();
+  if (installGlobals) window.NaturalSurfaceMaterials = api;
+  return api;
+})(window.THREE, true);
