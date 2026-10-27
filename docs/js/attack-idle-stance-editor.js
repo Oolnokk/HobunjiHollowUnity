@@ -69,7 +69,7 @@
     else callback();
   }
 
-  whenReady(async () => {
+  whenReady(() => {
     const sidebar = document.getElementById('sidebar');
     if (!sidebar || document.getElementById('idleStanceCard')) return;
 
@@ -77,6 +77,11 @@
     let workingConfig = clone(FALLBACK_CONFIG);
     let selectedKey = 'lightWeapon';
     let editingNeutral = false;
+    let savedLocalOverride = null; // Kept so a later committed-config retry cannot overwrite the local user's chosen poses.
+    let lastAutoAppliedConfig = JSON.stringify(workingConfig); // Tracks only automatic loads; user edits remain untouched after delayed fetches.
+    let configRequest = null; // Coalesces concurrent editor config retries.
+    let configRetryTimer = null; // Retries a temporary failure without asking the user to reload the editor.
+    let configFailures = 0; // Backoff grows to a 30-second ceiling during network outages.
     const dualPairPreviewActive = () => window.HobunjiHandToolGrips?.getEditorIdlePreview?.() === true;
     let lastNeutralSignature = '';
 
@@ -111,6 +116,7 @@
       <div class="row" style="margin-top:6px">
         <button id="idleSaveOverrideBtn" class="secondary">💾 Save as Local Override</button>
         <button id="idleClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
+        <button id="idleReloadConfigBtn" class="secondary">↻ Retry Committed Config</button>
       </div>
       <div class="help" id="idleStanceStatus" style="margin-top:7px"></div>
       <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. <b>Mirror Main → Offhand</b> performs the same stance mirror as the editor's <b>Mirror Animation</b> operation—X/Yaw/Roll mirror, Y/Z/Pitch stay—but intentionally leaves Body Yaw unchanged and assigns the result to the other hand. The runtime also mirrors the hand-side anchor and grip direction. Afterward the offhand x/y/z and pitch/yaw/roll remain fully custom and saved explicitly. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
@@ -333,7 +339,9 @@
 
     function saveLocalOverride() {
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(exportPayload()));
+        savedLocalOverride = exportPayload();
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(savedLocalOverride));
+        lastAutoAppliedConfig = JSON.stringify(workingConfig);
         setStatus('Saved Local Override. Reload the game on this origin to use it.');
       } catch (error) {
         setStatus(`Local Override save failed: ${error?.message || error}`);
@@ -342,7 +350,9 @@
 
     function clearLocalOverride() {
       try { localStorage.removeItem(LOCAL_STORAGE_KEY); } catch (_) {}
+      savedLocalOverride = null;
       workingConfig = clone(fileConfig);
+      lastAutoAppliedConfig = JSON.stringify(workingConfig);
       syncFieldsFromPose();
       if (editingNeutral) writeNeutralPose(currentPose());
       setStatus('Cleared Local Override and restored committed idle stances.');
@@ -438,33 +448,74 @@
     }
     requestAnimationFrame(pollNeutralGizmoEdits);
 
+    // Apply the locally-authored stance immediately: remote JSON may be slow or unavailable.
     try {
-      const response = await fetch(CONFIG_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      fileConfig = normalizeConfig(await response.json(), FALLBACK_CONFIG);
-      workingConfig = clone(fileConfig);
-      setStatus('Loaded committed idle stance config.');
-    } catch (error) {
-      fileConfig = clone(FALLBACK_CONFIG);
-      workingConfig = clone(FALLBACK_CONFIG);
-      setStatus(`Using built-in idle stance defaults (${error?.message || error}).`);
-    }
-
-    try {
-      const localRaw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const localRaw = localStorage.getItem(LOCAL_STORAGE_KEY); // Cached override for this browser origin, separate from the committed JSON.
       if (localRaw) {
-        workingConfig = normalizeConfig(JSON.parse(localRaw), fileConfig);
-        setStatus('Loaded Local Override over the committed idle stance config.');
+        savedLocalOverride = JSON.parse(localRaw);
+        if (savedLocalOverride?.kind !== 'hobunji_weapon_idle_stances' || !savedLocalOverride.stances) throw new Error('schema mismatch');
+        workingConfig = normalizeConfig(savedLocalOverride, fileConfig);
+        setStatus('Loaded Local Override; checking committed stance config.');
       }
     } catch (error) {
+      savedLocalOverride = null;
       setStatus(`Ignored invalid Local Override: ${error?.message || error}`);
     }
+    lastAutoAppliedConfig = JSON.stringify(workingConfig);
+
+    function refreshCommittedConfig() {
+      if (configRequest) return configRequest;
+      if (configRetryTimer !== null) {
+        clearTimeout(configRetryTimer);
+        configRetryTimer = null;
+      }
+      configRequest = (async () => {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null; // Stops a hung editor fetch from locking fallback stances forever.
+        const deadline = controller ? setTimeout(() => controller.abort(), 10000) : null; // Ten-second cap per request before backing off.
+        try {
+          const response = await fetch(CONFIG_URL, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const parsed = await response.json();
+          const complete = parsed?.kind === 'hobunji_weapon_idle_stances'
+            && parsed.stances && STANCE_ORDER.every(key => FIELD_DEFS.every(field =>
+              typeof parsed.stances[key]?.[field.key] === 'number' && Number.isFinite(parsed.stances[key][field.key]))); // Missing committed poses must retry, not silently fall back for this session.
+          if (!complete) throw new Error('incomplete stance config');
+          fileConfig = normalizeConfig(parsed, FALLBACK_CONFIG);
+          if (JSON.stringify(workingConfig) === lastAutoAppliedConfig) {
+            workingConfig = savedLocalOverride ? normalizeConfig(savedLocalOverride, fileConfig) : clone(fileConfig);
+            lastAutoAppliedConfig = JSON.stringify(workingConfig);
+            syncFieldsFromPose();
+            if (editingNeutral) writeNeutralPose(currentPose());
+          }
+          configFailures = 0;
+          setStatus(savedLocalOverride
+            ? 'Loaded committed stance config; Local Override retained.'
+            : 'Loaded committed stance config (existing unsaved edits preserved).');
+          return true;
+        } catch (error) {
+          configFailures += 1;
+          const retryMs = Math.min(30000, 1000 * (2 ** Math.min(configFailures - 1, 5))); // A persistent outage no longer locks the editor for a full session.
+          setStatus(`Using local/built-in stance defaults (${error?.message || error}); retrying in ${Math.round(retryMs / 1000)}s.`);
+          configRetryTimer = setTimeout(() => {
+            configRetryTimer = null;
+            void refreshCommittedConfig();
+          }, retryMs);
+          return false;
+        } finally {
+          if (deadline !== null) clearTimeout(deadline);
+        }
+      })().finally(() => { configRequest = null; });
+      return configRequest;
+    }
+
+    $('idleReloadConfigBtn').addEventListener('click', () => { void refreshCommittedConfig(); });
 
     syncFieldsFromPose();
     updateEditButton();
 
     window.AttackIdleStanceEditor = {
       getConfig: () => clone(exportPayload()),
+      reloadCommittedConfig: refreshCommittedConfig,
       getSelected: () => selectedKey,
       previewSelected: () => writeNeutralPose(currentPose()),
       captureSelected: () => captureNeutralPose(),
@@ -501,5 +552,6 @@
         if (editingNeutral) writeNeutralPose(currentPose());
       },
     };
+    void refreshCommittedConfig();
   });
 })();

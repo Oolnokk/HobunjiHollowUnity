@@ -13,7 +13,12 @@
   let combatVisualState = null;
   let lastDebugSignature = '';
   let stanceApplied = false;
-  let stanceConfigLoadStarted = false;
+  let stanceConfigRequest = null; // Shares the in-flight JSON fetch across repeated init/reload calls.
+  let stanceConfigLoaded = false; // Prevents repeated fetches after a successful committed-config load.
+  let stanceRetryTimer = null; // Retries transient fetch failures without requiring a page reload.
+  let stanceConfigFailures = 0; // Powers bounded exponential retry delays and diagnostic snapshots.
+  let stanceConfigLastError = null; // Exposes the latest recoverable fetch error to mobile debug UI.
+  let localStanceOverride = null; // Reapplied after each successful fetch so local changes keep priority.
   let stanceConfigSource = 'built-in-defaults';
   // toolHolder.matrixWorld as actually baked by the most recent
   // updateMatrixWorld() call below (idle stance included, when one applied).
@@ -82,7 +87,10 @@
   function applyStanceConfig(raw, sourceLabel) {
     if (!raw || raw.kind !== 'hobunji_weapon_idle_stances' || !raw.stances) return false;
     for (const key of Object.keys(idleStances)) {
-      const normalized = normalizePose(raw.stances[key], DEFAULT_IDLE_STANCES[key]);
+      const incoming = raw.stances[key]; // Only explicit local overrides should replace a committed stance.
+      if (sourceLabel === 'local-override' && (!incoming || typeof incoming !== 'object')) continue;
+      const baseline = sourceLabel === 'local-override' ? idleStances[key] : DEFAULT_IDLE_STANCES[key]; // Missing local channels inherit the actual loaded stance.
+      const normalized = normalizePose(incoming, baseline);
       if (key === 'lightWeapon' && isPreviousLightWeaponPose(raw.stances[key])) normalized.y = 0; // Migrate only the exact former committed default; authored local overrides remain intact.
       Object.assign(idleStances[key], normalized);
     }
@@ -90,30 +98,63 @@
     return true;
   }
 
-  async function loadStanceConfig() {
-    if (stanceConfigLoadStarted) return;
-    stanceConfigLoadStarted = true;
+  function hasCompleteCommittedStances(config) {
+    return config?.kind === 'hobunji_weapon_idle_stances'
+      && config.stances && typeof config.stances === 'object'
+      && Object.keys(idleStances).every(key => POSE_KEYS.every(field =>
+        typeof config.stances[key]?.[field] === 'number' && Number.isFinite(config.stances[key][field])));
+  }
 
+  function loadLocalStanceOverride() {
     try {
-      const response = await fetch(STANCE_CONFIG_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const parsed = await response.json();
-      if (!applyStanceConfig(parsed, 'committed-json')) throw new Error('schema mismatch');
+      const saved = localStorage.getItem(STANCE_LOCAL_STORAGE_KEY); // Existing saved stance settings, available even if the network is offline.
+      localStanceOverride = saved ? JSON.parse(saved) : null;
+      if (localStanceOverride && !applyStanceConfig(localStanceOverride, 'local-override')) throw new Error('schema mismatch');
     } catch (error) {
-      window.__farmLog?.(`[weapon-stance] idle config fallback: ${error?.message || error}`, 'warn');
-    }
-
-    try {
-      const localRaw = localStorage.getItem(STANCE_LOCAL_STORAGE_KEY);
-      if (localRaw) {
-        const parsed = JSON.parse(localRaw);
-        if (!applyStanceConfig(parsed, 'local-override')) throw new Error('schema mismatch');
-      }
-    } catch (error) {
+      localStanceOverride = null;
       window.__farmLog?.(`[weapon-stance] ignored invalid local idle override: ${error?.message || error}`, 'warn');
     }
+  }
 
-    window.__farmLog?.(`[weapon-stance] idle config source=${stanceConfigSource}`, 'combat');
+  function loadStanceConfig({ force = false } = {}) {
+    if (stanceConfigRequest) return stanceConfigRequest;
+    if (stanceConfigLoaded && !force) return Promise.resolve(true);
+    if (stanceRetryTimer !== null && !force) return Promise.resolve(false); // Respect scheduled backoff across repeated EquipmentPanel init calls.
+    if (stanceRetryTimer !== null) {
+      clearTimeout(stanceRetryTimer);
+      stanceRetryTimer = null;
+    }
+
+    stanceConfigRequest = (async () => {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null; // Bounds stalled requests so retries can actually happen.
+      const deadline = controller ? setTimeout(() => controller.abort(), 10000) : null; // Ten-second network deadline for each attempt.
+      try {
+        const response = await fetch(STANCE_CONFIG_URL, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const parsed = await response.json();
+        if (!hasCompleteCommittedStances(parsed) || !applyStanceConfig(parsed, 'committed-json')) throw new Error('incomplete stance config');
+        if (localStanceOverride) applyStanceConfig(localStanceOverride, 'local-override');
+        stanceConfigLoaded = true;
+        stanceConfigFailures = 0;
+        stanceConfigLastError = null;
+        window.__farmLog?.(`[weapon-stance] idle config source=${stanceConfigSource}`, 'combat');
+        return true;
+      } catch (error) {
+        stanceConfigLoaded = false;
+        stanceConfigLastError = String(error?.message || error);
+        stanceConfigFailures += 1;
+        const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceConfigFailures - 1, 5))); // Back off up to 30s; keep recovering during long sessions.
+        window.__farmLog?.(`[weapon-stance] idle config unavailable (${stanceConfigLastError}); retry in ${retryMs}ms`, 'warn');
+        stanceRetryTimer = setTimeout(() => {
+          stanceRetryTimer = null;
+          void loadStanceConfig();
+        }, retryMs);
+        return false;
+      } finally {
+        if (deadline !== null) clearTimeout(deadline);
+      }
+    })().finally(() => { stanceConfigRequest = null; });
+    return stanceConfigRequest;
   }
 
   function shapeFor(itemKey, def) {
@@ -598,6 +639,10 @@
         ? Math.round(90 * neutralWeightForVisual(visual))
         : (state.activeSlot === 'weapon' && state.def?.animStyle === 'sweep' ? 90 : 0),
       stanceConfigSource,
+      stanceConfigLoaded,
+      stanceConfigFailures,
+      stanceConfigLastError,
+      stanceConfigRetryPending: stanceRetryTimer !== null,
       hoeWeaponEligible: !!deps?.TOOL_ITEM_DEFS?.bronzehoe?.slots?.includes('weapon'),
       hoeDamageType: deps?.TOOL_ITEM_DEFS?.bronzehoe?.dmgType || null,
       poses: {
@@ -648,7 +693,8 @@
     augmentToolDefinitions();
     installCombatVisualHooks();
     installHolderMatrixHook();
-    loadStanceConfig();
+    if (!stanceConfigLoaded && !stanceConfigRequest) loadLocalStanceOverride();
+    void loadStanceConfig();
     window.__farmLog?.(
       `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} neutral=attack-cycle sweep-plane=local hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
       'combat'
@@ -659,8 +705,8 @@
     init,
     refreshDefinitions: augmentToolDefinitions,
     reloadConfig() {
-      stanceConfigLoadStarted = false;
-      return loadStanceConfig();
+      loadLocalStanceOverride();
+      return loadStanceConfig({ force: true });
     },
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,

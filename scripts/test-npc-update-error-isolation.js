@@ -15,6 +15,7 @@ const context = {
   window: { __farmLog: () => { logs++; }, InteriorDoorTiles: { update: () => { doorCalls++; } } },
   performance: { now: () => now },
   npcWalkers: [healthy, broken], nearbyNpcWalker: null,
+  npcMovementHeadLookOptions: {}, cutscenePreviewActive: false, npcDialogueStaging: null, _dialogueWalker: null,
   player: { x: 0, y: 0 }, TILE: 1,
   currentArea: 'town', npcMovementConfig: () => ({}),
   isPlayerInCombat: () => false, // The real NPC-update frame consults combat before exposing aimed social interactions.

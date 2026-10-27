@@ -535,10 +535,71 @@
 // The attack editor has a small extension for shared tool/weapon idle stances.
 // Load it only there so the generic PanelUI helper remains harmless elsewhere.
 if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
-  const idleStanceScript = document.createElement('script');
-  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20261019h1b912db';
-  idleStanceScript.defer = true;
-  document.head.appendChild(idleStanceScript);
+  let idleStanceLoadAttempt = 0; // Retries a missing editor extension without affecting other PanelUI users.
+  let idleStanceRetryTimer = null; // Only one pending retry after a failed extension script.
+  let pendingIdleStanceScript = null; // Identity guard against late events from an abandoned attempt.
+  let idleStanceLoadDeadline = null; // Handles script requests that never fire onload/onerror.
+
+  const logIdleStanceFailure = message => { // Reports failed module loads without requiring mobile browser devtools.
+    if (typeof window.logDebug === 'function') { window.logDebug(message); return; }
+    const log = document.getElementById('logBody'); // Attack Editor defines logDebug inside an ES module, so it is not necessarily a global.
+    if (log) {
+      const line = document.createElement('div'); // Append one visible diagnostic even if the editor's module has not initialized.
+      line.className = 'logLine';
+      line.textContent = message;
+      log.prepend(line);
+    } else window.__farmLog?.(message, 'warn');
+  };
+  function loadIdleStanceEditor() {
+    if (window.AttackIdleStanceEditor || pendingIdleStanceScript) return;
+    const script = document.createElement('script'); // Same existing editor module, now with a recoverable load lifecycle.
+    script.src = '../../js/attack-idle-stance-editor.js?v=20261026hstanceaudit2';
+    script.defer = true;
+    pendingIdleStanceScript = script;
+    function endAttempt() {
+      if (pendingIdleStanceScript !== script) return false;
+      pendingIdleStanceScript = null;
+      if (idleStanceLoadDeadline !== null) clearTimeout(idleStanceLoadDeadline);
+      idleStanceLoadDeadline = null;
+      return true;
+    }
+    const retry = reason => {
+      if (!endAttempt()) return;
+      script.remove();
+      if (window.AttackIdleStanceEditor || idleStanceRetryTimer !== null) return;
+      idleStanceLoadAttempt += 1;
+      const delay = Math.min(30000, 1000 * (2 ** Math.min(idleStanceLoadAttempt - 1, 5))); // Retry at most every 30s.
+      logIdleStanceFailure(`Idle Stances editor extension failed (${reason}); retrying in ${Math.round(delay / 1000)}s.`);
+      idleStanceRetryTimer = setTimeout(() => {
+        idleStanceRetryTimer = null;
+        loadIdleStanceEditor();
+      }, delay);
+    };
+    script.onload = () => {
+      if (pendingIdleStanceScript !== script) return;
+      if (idleStanceLoadDeadline !== null) clearTimeout(idleStanceLoadDeadline);
+      idleStanceLoadDeadline = null;
+      const verifyInstallation = () => {
+        if (pendingIdleStanceScript !== script) return;
+        if (!window.AttackIdleStanceEditor) { retry('extension did not initialize'); return; }
+        endAttempt();
+        idleStanceLoadAttempt = 0;
+        if (idleStanceRetryTimer !== null) clearTimeout(idleStanceRetryTimer);
+        idleStanceRetryTimer = null;
+      };
+      // The extension publishes its API on DOMContentLoaded; a successfully fetched but invalid
+      // script must still retry, without falsely treating early parsing as an initialization failure.
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', verifyInstallation, { once: true });
+      else verifyInstallation();
+    };
+    script.onerror = () => retry('network or script error');
+    idleStanceLoadDeadline = setTimeout(() => {
+      if (window.AttackIdleStanceEditor && endAttempt()) return; // Module initialized even if its load signal was lost.
+      retry('load timeout');
+    }, 10000);
+    document.head.appendChild(script);
+  }
+  loadIdleStanceEditor();
 }
 
 // The procedural animator's embedded data makes its HTML too large for safe

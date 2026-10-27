@@ -241,39 +241,100 @@
     });
   }
 
+  let stanceScriptRetryTimer = null; // Retry timer for a failed dynamic stance module request.
+  let stanceScriptLoadDeadline = null; // Times out an active script request that never settles.
+  let stanceScriptFailures = 0; // Backoff counter for transient module failures.
+  let pendingStanceScript = null; // Identifies the current request so stale onload/onerror events cannot disrupt retries.
+
+  function clearStanceScriptDeadline() {
+    if (stanceScriptLoadDeadline !== null) clearTimeout(stanceScriptLoadDeadline);
+    stanceScriptLoadDeadline = null;
+  }
+
+  function completeStanceScript(script) {
+    if (pendingStanceScript !== script) return; // Ignore callbacks from a script removed by a previous timeout.
+    clearStanceScriptDeadline();
+    pendingStanceScript = null;
+    stanceScriptFailures = 0;
+    if (stanceScriptRetryTimer !== null) clearTimeout(stanceScriptRetryTimer);
+    stanceScriptRetryTimer = null;
+    initializeStancesIfReady();
+  }
+
+  function retryStanceScript(script, reason) {
+    if (pendingStanceScript !== script) return; // Late events may arrive after a newer script has started.
+    clearStanceScriptDeadline();
+    pendingStanceScript = null;
+    script.remove();
+    if (window.WeaponToolStances?.init) { initializeStancesIfReady(); return; } // A late-executing module may already be ready.
+    if (stanceScriptRetryTimer !== null) return;
+    stanceScriptFailures += 1;
+    const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceScriptFailures - 1, 5))); // Back off until the module loads.
+    window.__farmLog?.(`[weapon-stance] module unavailable (${reason}); retry in ${retryMs}ms`, 'warn');
+    stanceScriptRetryTimer = setTimeout(() => {
+      stanceScriptRetryTimer = null;
+      loadWeaponToolStancesRuntime();
+    }, retryMs);
+  }
+
   function loadWeaponToolStancesRuntime() {
-    if (window.WeaponToolStances || typeof document === 'undefined') {
+    if (window.WeaponToolStances?.init || typeof document === 'undefined') {
+      clearStanceScriptDeadline();
       initializeStancesIfReady();
       return;
     }
-    const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
-    if (existingScript) return;
-    const script = document.createElement('script'); // Loads after the shared melee-spacing math so every attack wrapper sees the same calibrated endpoint rule.
-    script.src = 'js/weapon-tool-stances.js?v=20261019ha33698b';
+    if (pendingStanceScript || document.querySelector('script[data-weapon-tool-stances]')) return; // One active script request per session.
+    const script = document.createElement('script'); // Dynamic module loaded after shared melee spacing.
+    script.src = 'js/weapon-tool-stances.js?v=20261027h4faa545';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
-    script.onload = initializeStancesIfReady;
-    script.onerror = () => window.__farmLog?.('[weapon-stance] failed to load js/weapon-tool-stances.js', 'warn');
+    pendingStanceScript = script;
+    script.onload = () => {
+      if (pendingStanceScript !== script) return;
+      if (!window.WeaponToolStances?.init) { retryStanceScript(script, 'module did not initialize'); return; }
+      completeStanceScript(script);
+    };
+    script.onerror = () => retryStanceScript(script, 'network or script error');
+    stanceScriptLoadDeadline = setTimeout(() => {
+      if (pendingStanceScript !== script) return;
+      if (window.WeaponToolStances?.init) completeStanceScript(script); // Missing load event must not strand a ready module.
+      else retryStanceScript(script, 'load timeout');
+    }, 10000);
     (document.head || document.documentElement).appendChild(script);
   }
 
+  let spacingGateOpened = false; // Prevents late spacing-script events from initializing stances twice.
+  let spacingGateTimer = null; // Guarantees an optional spacing script cannot block the stance module forever.
+  function startStancesAfterSpacing() {
+    if (spacingGateOpened) return;
+    spacingGateOpened = true;
+    if (spacingGateTimer !== null) clearTimeout(spacingGateTimer);
+    spacingGateTimer = null;
+    loadWeaponToolStancesRuntime();
+  }
+
   if (!window.MeleePoseSpacing && typeof document !== 'undefined') {
+    spacingGateTimer = setTimeout(() => {
+      window.__farmLog?.('[melee-pose-spacing] loading delayed; starting weapon stances with optional spacing fallback', 'warn');
+      startStancesAfterSpacing();
+    }, 10000); // Applies equally to existing, failed, or stalled spacing script tags.
     const existingSpacing = document.querySelector('script[data-melee-pose-spacing]');
     if (existingSpacing) {
-      existingSpacing.addEventListener('load', loadWeaponToolStancesRuntime, { once: true });
+      existingSpacing.addEventListener('load', startStancesAfterSpacing, { once: true });
+      existingSpacing.addEventListener('error', startStancesAfterSpacing, { once: true });
     } else {
-      const spacingScript = document.createElement('script'); // Pure canonical Mao'ao-space pose calibration shared by player, enemies, and editor.
+      const spacingScript = document.createElement('script'); // Shared Mao'ao-space pose calibration.
       spacingScript.src = 'js/combat/melee-pose-spacing.js?v=20260920spacing2';
       spacingScript.async = false;
       spacingScript.dataset.meleePoseSpacing = 'true';
-      spacingScript.onload = loadWeaponToolStancesRuntime;
+      spacingScript.onload = startStancesAfterSpacing;
       spacingScript.onerror = () => {
-        window.__farmLog?.('[melee-pose-spacing] failed to load; weapon stance runtime continues without spacing calibration', 'warn');
-        loadWeaponToolStancesRuntime();
+        window.__farmLog?.('[melee-pose-spacing] failed to load; weapon stances continue without spacing calibration', 'warn');
+        startStancesAfterSpacing();
       };
       (document.head || document.documentElement).appendChild(spacingScript);
     }
   } else {
-    loadWeaponToolStancesRuntime();
+    startStancesAfterSpacing();
   }
 })();
