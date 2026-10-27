@@ -245,6 +245,7 @@
     let previewToken = 0;
     let motifLoadRevision = 0; // Invalidates a pending PNG load when a newer selection or sketch edit takes precedence.
     let motifLoadPending = false; // Prevents saving a previous sketch while a selected library motif is still loading.
+    let motifLoadError = ''; // Persist PNG import errors in the editor's preview/status area on mobile.
     let previewView = 'front'; // 'front' | 'behind' — only meaningful when options.renderPreviewBehind exists.
     // Tracks whether the pattern currently loaded is an UNMODIFIED library
     // entry (options.initialPatternLibraryId at open, or a "Load" click) —
@@ -414,13 +415,15 @@
     }
 
     async function runPreview() {
+      const token = ++previewToken; // Even an empty sketch invalidates older asynchronous render results.
       const data = currentPatternData();
       const renderFn = previewView === 'behind' ? options.renderPreviewBehind : options.renderPreview;
       if (!data.motifDataUrl || typeof renderFn !== 'function' && !previewController) {
-        previewStatus.textContent = data.motifDataUrl ? 'Rendering preview…' : 'Draw a motif to preview.';
+        if (!data.motifDataUrl) previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height); // Do not display an old preview beside a loading/failed motif.
+        previewStatus.textContent = motifLoadPending ? 'Loading motif artwork…'
+          : motifLoadError || (data.motifDataUrl ? 'Rendering preview…' : 'Draw a motif to preview.');
         return;
       }
-      const token = ++previewToken;
       previewStatus.textContent = 'Rendering preview…';
       try {
         const rendered = previewController ? await previewController.update(data) : await renderFn(data);
@@ -654,6 +657,7 @@
       if (!undoStack.length) return;
       motifLoadRevision++;
       motifLoadPending = false;
+      motifLoadError = '';
       const current = snapshotSketch();
       const previous = undoStack.pop();
       if (current) redoStack.push(current);
@@ -667,6 +671,7 @@
       if (!redoStack.length) return;
       motifLoadRevision++;
       motifLoadPending = false;
+      motifLoadError = '';
       const current = snapshotSketch();
       const next = redoStack.pop();
       if (current) undoStack.push(current);
@@ -714,6 +719,7 @@
       evt.preventDefault();
       motifLoadRevision++;
       motifLoadPending = false;
+      motifLoadError = '';
       pushUndo();
       drawing = true;
       lastPt = null;
@@ -744,18 +750,17 @@
     function drawMotifImageIntoSketch(source) {
       const revision = ++motifLoadRevision;
       motifLoadPending = !!source;
-      if (!source) {
-        pushUndo();
-        sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
-        drawFrameCanvas();
-        schedulePreview();
-        return;
-      }
+      motifLoadError = '';
+      pushUndo();
+      sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE); // A new selection replaces the old sketch immediately; failed imports cannot reuse its pixels.
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      drawFrameCanvas();
+      schedulePreview();
+      if (!source) return;
       const img = new Image();
       img.crossOrigin = 'anonymous'; // Repo-unlocked patterns use PNG URLs; their pixels must stay readable for saving and previewing.
       img.onload = () => {
         if (closed || revision !== motifLoadRevision) return;
-        pushUndo();
         sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
         sketchCtx.globalCompositeOperation = 'source-over';
         // Drawn at native size, centered on the canvas — a legacy SKETCH_SIZE
@@ -772,7 +777,8 @@
         if (closed || revision !== motifLoadRevision) return;
         motifLoadPending = false;
         loadedLibraryId = null;
-        previewStatus.textContent = 'Could not load motif artwork. Check your connection and try Load again.';
+        motifLoadError = 'Could not load motif artwork. Check your connection and try Load again.';
+        previewStatus.textContent = motifLoadError;
       };
       img.src = source;
     }
@@ -815,6 +821,7 @@
     overlay.querySelector('[data-act="clearSketch"]').addEventListener('click', () => {
       motifLoadRevision++;
       motifLoadPending = false;
+      motifLoadError = '';
       pushUndo();
       sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
       loadedLibraryId = null;
