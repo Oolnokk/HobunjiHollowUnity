@@ -15,6 +15,7 @@ const inventory = {
   combatManualBlinkDodge: 1,
   techniqueScrollTier1: 1,
   masteryTablet: 1,
+  masteryScroll: 1,
   mysteryDyeRed: 1,
   venomFlask: 1,
   breedingGigantism: 1,
@@ -29,6 +30,7 @@ const ITEM_DEFS = {
   combatManualBlinkDodge: { icon: '📕', label: 'Blink Dodge Combat Manual', combatManualAbilityId: 'blinkDodge' },
   techniqueScrollTier1: { icon: '📜', label: 'Tier 1 Technique Scroll', techniqueScrollTier: 1 },
   masteryTablet: { icon: '🪨', label: 'Test Mastery Tablet', masteryUnlock: { type: 'sharp', rank: 1, effectId: 'test' } },
+  masteryScroll: { icon: '📜', label: 'Test Mastery Scroll', masteryUnlock: { type: 'sharp', rank: 1, effectId: 'test' } },
   mysteryDyeRed: { icon: '🔴', label: 'Red Mystery Dye', mysteryDyePoolId: 'red' },
   venomFlask: { icon: '☠️', label: 'Venom Flask', useMode: 'throw' },
   breedingGigantism: { icon: '🐘', label: 'Breeding Potion of Gigantism', useMode: 'livestock' },
@@ -170,6 +172,7 @@ assert.equal(api.getInventoryUseAction('apple')?.kind, 'food', 'ordinary food ex
 assert.equal(api.getInventoryUseAction('combatManualBlinkDodge')?.kind, 'combatManual', 'combat manuals expose direct Read');
 assert.equal(api.getInventoryUseAction('techniqueScrollTier1')?.kind, 'techniqueScroll', 'technique scrolls expose direct Read');
 assert.equal(api.getInventoryUseAction('masteryTablet')?.kind, 'masteryUnlock', 'mastery tablets expose direct Read');
+assert.equal(api.getInventoryUseAction('masteryScroll')?.kind, 'masteryUnlock', 'mastery scrolls expose direct Read');
 assert.equal(api.getInventoryUseAction('mysteryDyeRed')?.kind, 'mysteryDye', 'mystery dyes expose direct Use');
 assert.equal(api.getInventoryUseAction('venomFlask'), null, 'throwing flasks remain Hold/aim only');
 assert.equal(api.getInventoryUseAction('breedingGigantism'), null, 'livestock potions remain Hold/target only');
@@ -222,6 +225,11 @@ assert.equal(api.getDebug().lastDirectUseUi.reason, 'stale-selection');
 selectedPackKey = 'masteryTablet';
 api.refreshInventoryUseButton();
 assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryTablet', 'tablet action returns when the matching slot is selected');
+selectedPackKey = 'masteryScroll';
+elementMap.get('iiName').textContent = 'Test Mastery Scroll ×1';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryScroll', 'switching directly from a tablet to a scroll resolves the new lesson');
+assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/);
 selectedPackKey = null; // Remaining direct-use tests simulate a programmatic panel, not a grid click.
 documentStub.querySelector = undefined;
 
