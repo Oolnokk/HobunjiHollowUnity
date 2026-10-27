@@ -158,6 +158,9 @@
   const BOULDER_SUBDIVISIONS = 4; // Shared surface resolution used to make one welded skin for each generated boulder.
   const boulderComponentCache = new WeakMap(); // One footprint index per live zone grid prevents a full-map scan for every streamed chunk.
   const boulderShellStats = { indexBuilds: 0, indexHits: 0, gridTilesScanned: 0, shellBuilds: 0 }; // Exposed for mobile-friendly performance verification.
+  function invalidateBoulderIndex(grid) {
+    return !!grid && boulderComponentCache.delete(grid); // Called after a tribal-camp footprint replaces whole boulders on a live wilderness grid.
+  }
 
   function isUndiggableBoulderTile(zGrid, c, r) {
     const tile = zGrid?.[r]?.[c]; // Tile inspected by component collection and perimeter tests.
@@ -735,6 +738,7 @@
     buildUndiggableBoulderMeshes,
     buildUndiggableBoulderShellData,
     collectUndiggableBoulderComponents,
+    invalidateBoulderIndex,
     boulderShellSnapshot,
     buildRockFormationMeshes,
     buildWaterfallCurtainMeshes,

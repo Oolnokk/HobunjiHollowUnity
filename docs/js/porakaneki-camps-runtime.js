@@ -344,6 +344,8 @@
     const objects = [];
     for (const source of (layout.tiles || [])) {
       if (!(source.r >= 0 && source.r < rows && source.c >= 0 && source.c < cols)) continue;
+      const rockKind = source.rockKind || (source.type === combatDeps.TileType?.ROCK ? source.generatedObjectType : null); // Some generated layouts retain object type but derive rockKind only when the live grid is built.
+      const boulderId = source.boulderId || (rockKind === 'undiggableBoulder' ? source.generatedObjectId : null); // The source object ID groups every tile of a boulder even before live-grid rendering adds its map prefix.
       const tile = {
         height: source.elevTier || 0,
         water: !!combatDeps.WATERWAY_TYPES?.has?.(source.type),
@@ -351,11 +353,21 @@
         ramp: source.type === combatDeps.TileType?.RAMP || !!source.incline,
         waterfall: source.type === combatDeps.TileType?.WATERFALL,
         terrain: source.type,
+        rockKind: rockKind || null, // Retains the true source rock classification through reversible camp placement.
+        boulderId: boulderId || null, // Identifies the whole generated boulder even when its original layout has not acquired a runtime boulderId.
+        generatedObjectId: source.generatedObjectId || null, // Source resource identity required for restoration when a chief camp migrates.
+        generatedObjectType: source.generatedObjectType || null, // Resource kind is carried separately from the live grid's rockKind.
+        borderEscarpment: !!(source.borderEscarpment || source.mapBoundary), // Map-boundary rock/cliff walls are never bulldozed by a fallback camp.
         occupiedBy: null,
       };
       tiles[source.r][source.c] = tile;
-      if (source.type === combatDeps.TileType?.SHRUB || source.type === combatDeps.TileType?.ROCK) {
+      const ordinaryRock = source.type === combatDeps.TileType?.ROCK && (!!boulderId || ['diggableRockOre', 'rockOutcrop', 'resourceNode'].includes(rockKind)); // Only identified replaceable rocks are ordinary camp clutter; untyped cliff rock stays protected.
+      if (source.type === combatDeps.TileType?.SHRUB || ordinaryRock) {
         const id = `${KEY}_clutter_${source.c}_${source.r}`;
+        tile.occupiedBy = id;
+        objects.push({ id, type: 'unique', x: source.c, y: source.r, w: 1, h: 1, localeMeta: true });
+      } else if (source.type === combatDeps.TileType?.ROCK) {
+        const id = `${KEY}_natural_cliff_${source.c}_${source.r}`; // Hard blocker, intentionally excluded from prepareClutter's mutable prefix.
         tile.occupiedBy = id;
         objects.push({ id, type: 'unique', x: source.c, y: source.r, w: 1, h: 1, localeMeta: true });
       }
@@ -453,6 +465,7 @@
   }
   function clearCampMeshes(camp) {
     for (const entry of camp?.propMeshes?.values?.() || []) {
+      if (entry.record) window.FoliageFurnitureRuntime?.unregisterExternalInstance?.(camp.zoneId, entry.record.id); // Releases the same player Sit actions registered when this log mesh loaded.
       if (entry.light) entry.light.parent?.remove?.(entry.light);
       if (entry.sharedFoliage) entry.mesh?.parent?.remove?.(entry.mesh);
       else disposeObject3D(entry.mesh);
@@ -590,6 +603,7 @@
       window.__farmLog?.(`[${KEY}] ERROR: zone "${zoneId}" has no legal hunting-camp site even after the minimum fallback.`, 'warn');
     }
     state.zones.set(zoneId, zoneState);
+    registerTentCollisionProvider(zoneId); // The shared sub-tile blocker now follows both tribes' live camp footprints, including seasonal chief migration.
     return zoneState;
   }
 
@@ -642,6 +656,67 @@
     return zoneState ? [...zoneState.smallCamps, ...(zoneState.chiefCamp ? [zoneState.chiefCamp] : [])] : [];
   }
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
+
+  function tentWallsBlockBox(prop, x, z, half = 0) {
+    const w = Math.max(1, num(prop.w, 2)), h = Math.max(1, num(prop.h, 2)); // Cheap footprint rejection precedes any canvas wall tests.
+    const left = prop.x, top = prop.y; // World-space tent origin used by the cached wall rectangles.
+    if (x + half <= left || x - half >= left + w || z + half <= top || z - half >= top + h) return false;
+    let walls = prop._tentCollisionWalls; // Per-stamped-tent geometry cache avoids creating collision-probe closures/rectangles on every NPC movement step.
+    if (!walls) {
+      const right = left + w, bottom = top + h, t = 0.16; // Thin solid canvas perimeter with an entrance facing the central bonfire.
+      const front = ((Math.round(num(prop.rot, 0) / 90) % 4) + 4) % 4; // HousePieceGen yaw: 0=+row, 1=+col, 2=-row, 3=-col.
+      const cx = left + w * 0.5, cz = top + h * 0.5; // Entrance opening center aligned to the authored front panel.
+      const gapX = Math.min(w * 0.43, 0.85), gapZ = Math.min(h * 0.43, 0.85); // Wide enough for the NPC sleeping waypoint inside each 2x2 tent.
+      walls = []; // Collision rectangles [[minX,minZ,maxX,maxZ]] checked without allocating closures in the hot path.
+      const horizontal = (row, entrance) => {
+        if (!entrance) walls.push([left, row, right, row + t]);
+        else walls.push([left, row, cx - gapX, row + t], [cx + gapX, row, right, row + t]);
+      };
+      const vertical = (col, entrance) => {
+        if (!entrance) walls.push([col, top, col + t, bottom]);
+        else walls.push([col, top, col + t, cz - gapZ], [col, cz + gapZ, col + t, bottom]);
+      };
+      horizontal(top, front === 2);
+      horizontal(bottom - t, front === 0);
+      vertical(left, front === 3);
+      vertical(right - t, front === 1);
+      Object.defineProperty(prop, '_tentCollisionWalls', { value: walls, configurable: true }); // Cache belongs to this immutable stamped prop, not the shared authored locale data.
+    }
+    for (const rect of walls) {
+      if (x + half > rect[0] && x - half < rect[2] && z + half > rect[1] && z - half < rect[3]) return true;
+    }
+    return false;
+  }
+
+  function registerTentCollisionProvider(zoneId) {
+    if (!window.AreaFootprintBlockers?.register) return false;
+    window.AreaFootprintBlockers.register(`${KEY}-camp-tents:${zoneId}`, {
+      area: zoneId,
+      blocksBox(x, z, half = 0, worldY = null) {
+        const zoneState = state.zones.get(zoneId); // The latest generated camp layout, not a captured stale seasonal reservation.
+        if (!zoneState) return false;
+        const smallCamps = zoneState.smallCamps; // Reuses the existing camp array, avoiding per-probe activeCamps() allocations during NPC pathfinding.
+        for (let index = 0; index <= smallCamps.length; index++) {
+          const camp = index < smallCamps.length ? smallCamps[index] : zoneState.chiefCamp; // Seasonal chief is the optional final active camp.
+          if (!camp) continue;
+          for (const prop of camp.props) {
+            if (prop.type !== 'tent' || prop.destroyed || !tentWallsBlockBox(prop, x, z, half)) continue;
+            if (worldY != null) {
+              const grid = combatDeps?.zoneScenes?.get?.(zoneId)?.grid || (currentArea() === zoneId ? combatDeps?.getActiveGrid?.() : null); // High projectiles still clear the canvas roof.
+              const col = Math.floor(prop.x + Math.max(1, num(prop.w, 2)) * 0.5);
+              const row = Math.floor(prop.y + Math.max(1, num(prop.h, 2)) * 0.5);
+              const tile = grid?.[row]?.[col];
+              const groundY = tile && combatDeps?.tileSurfaceYInArea ? num(combatDeps.tileSurfaceYInArea(tile, zoneId), 0) : 0;
+              if (worldY > groundY + 1.275 * TENT_HEIGHT_SCALE) continue;
+            }
+            return true;
+          }
+        }
+        return false;
+      },
+    });
+    return true;
+  }
 
   function reservedSites(zoneId) {
     const zoneState = state.zones.get(zoneId);
@@ -780,6 +855,7 @@
       instance.userData.porakanekiCampId = camp.id;
       markOutline(instance);
       zone.scene.add(instance);
+      window.FoliageFurnitureRuntime?.registerExternalInstance?.(camp.zoneId, record, data, instance); // Shared wilderness seating buttons and anchors, not just NPC schedule stations.
       camp.propMeshes.set(prop.id, { mesh: instance, light: null, pending: false, record, data, sharedFoliage: true });
     }).catch(error => {
       if (generation !== buildGeneration || camp.propMeshes.get(prop.id) !== entry) return;
@@ -800,7 +876,9 @@
       if (prior?.retryAtMs > performance.now()) continue;
       if (prior) {
         if (prior.light) prior.light.parent?.remove?.(prior.light);
-        disposeObject3D(prior.mesh);
+        if (prior.record) window.FoliageFurnitureRuntime?.unregisterExternalInstance?.(camp.zoneId, prior.record.id); // Avoid stale seat hitboxes during asynchronous mesh retries.
+        if (prior.sharedFoliage) prior.mesh?.parent?.remove?.(prior.mesh); // Foliage's cloned prototype shares cached V27 geometry; never dispose that shared geometry on a scene rebuild.
+        else disposeObject3D(prior.mesh);
         camp.propMeshes.delete(prop.id);
       }
       const col = prop.x + (prop.w || 1) * 0.5; // Runtime center used by fire/crate meshes and terrain sampling.
@@ -1894,6 +1972,7 @@
 
     initializeReputation();
     authorChiefBehavior();
+    window.PorakanekiCampPlacementPolicy?.syncCurrentZoneClutter?.(); // Clear rock/boulder footprints before any tent or sitting log samples its ground elevation.
     ensureCurrentCampMeshes();
     // Start/promote nearby residents before attempting territory speech. Async
     // portrait construction may still finish on a later tick, in which case the
@@ -2088,7 +2167,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
 
   tribeRuntimes.push(api);

@@ -337,6 +337,13 @@ will need addressing.
 - Saved per character per world as `member.romanceState`. Executable coverage:
   `scripts/test-romance-dating.js`.
 
+### Family roadmap and hybrid schedules
+
+- An adoption dream now offers a direct decision before opening child creation. You may accept, or postpone until a later farmhouse sleep after **1, 14, or 28 in-game days**; the chosen earliest day persists through saves. Biological pregnancy and eggs are unchanged.
+- One child per marriage remains the present cap (`romance.family.maxChildrenPerMarriage`). The cap is data-driven for eventual siblings, but changing it alone does not add sibling dialogue or authored household interactions.
+- Once children finish toddlerhood, they become tagged villagers, form a social friendship with **Gantami Ginju**, and may visit town between 11:00 and 16:00 on a stable roll of 65% of days. They react to live village-child locations, prefer their listed friends, or use valid public stations; they stay at the farm when no safe town spot exists. Vat work has priority.
+- Spouses continue their existing authored NPC agenda during town visits (normally noon–17:00 every third day), returning to the farm routine for the other hours. `romance.spouse.townVisitsByNpc` permits authoring visits by weekday/time per spouse. Neither spouse nor child schedule has player-facing controls yet.
+
 ## Child proportions
 
 NPCs marked as children (`role`/`tags` `child`, e.g. Gantami and the family's

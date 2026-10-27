@@ -2222,6 +2222,60 @@
     .ranged-loadout-select { width: 100%; min-width: 0; }
     .ranged-loadout-dev-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 
+    /* The Loadout owns its own split-pane scroll model; only its left list
+       scrolls. The right-side three.js stage never moves with ability cards. */
+    #mpLoadout.active { display: flex; overflow: hidden; align-items: stretch; }
+    #mpLoadout #combatLoadoutPane {
+      box-sizing: border-box;
+      flex: 0 0 50%; width: 50%; max-width: none; min-width: 0; min-height: 0;
+      overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+      scrollbar-width: thin;
+    }
+    #combatLoadoutPane .loadout-slot-head { flex-wrap: wrap; align-items: stretch; }
+    #combatLoadoutPane .loadout-slot-head > .settings-label { flex: 1 1 140px; }
+    #combatLoadoutPane .loadout-slot-head > div:not(.settings-label) {
+      flex: 1 1 150px; max-width: 100%;
+    }
+    #combatLoadoutPane .loadout-levels { flex-wrap: wrap; }
+    #combatLoadoutPane .loadout-level { flex: 1 1 44px; }
+    #combatLoadoutPane .ranged-rank-card { grid-template-columns: minmax(0, 1fr); }
+    #combatLoadoutPane .settings-select { max-width: 100%; }
+    #combatLoadoutPreview {
+      box-sizing: border-box; position: relative;
+      flex: 1 1 50%; width: 50%; min-width: 0; min-height: 0;
+      display: flex; flex-direction: column; overflow: hidden;
+      border-left: 1px solid var(--border-bright);
+      background: radial-gradient(ellipse at 50% 44%, rgba(110, 136, 137, .14), rgba(8, 12, 19, .35) 66%);
+    }
+    .loadout-preview-title {
+      flex: 0 0 auto; padding: 8px 8px 4px;
+      font-size: clamp(9px, 1.5vmin, 12px);
+      text-align: center; color: var(--accent);
+      border-bottom: 1px solid var(--border);
+    }
+    .loadout-preview-title span {
+      display: block; color: var(--text); font-size: 10px; margin-top: 2px;
+      overflow-wrap: anywhere;
+    }
+    #combatLoadoutPreviewStage {
+      position: relative; flex: 1 1 auto; min-height: 0; min-width: 0;
+      overflow: hidden; touch-action: none; cursor: grab;
+    }
+    #combatLoadoutPreviewStage:active { cursor: grabbing; }
+    #combatLoadoutPreviewStage canvas {
+      display: block; width: 100%; height: 100%; touch-action: none;
+    }
+    #combatLoadoutPreviewStatus {
+      position: absolute; left: 8px; right: 8px; top: 49%;
+      transform: translateY(-50%); text-align: center;
+      color: var(--muted); font-size: 10px; pointer-events: none;
+    }
+    #combatLoadoutPreviewStatus[hidden] { display: none; }
+    .loadout-preview-help {
+      flex: 0 0 auto; padding: 4px 6px 6px; color: var(--muted);
+      font-size: 9px; text-align: center; border-top: 1px solid var(--border);
+    }
+
     /* ── Inventory pane ─────────────────────────────────────────
        Uses the same locked 16:9 grid math as gameplay controls.
        The panel is 27×14 parent cells; this pane is a 54×28 sub-grid. */

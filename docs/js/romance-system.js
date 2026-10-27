@@ -515,6 +515,24 @@
     return [...find('sit', { area: 'interior' }), ...find('sit', { area: 'farm' })];
   }
 
+  // Single source of truth for town visits, also consumed by farm-plot workers so marriage
+  // never suppresses the Ginju's real field work on an authorized town afternoon.
+  function spouseTownVisitNow(npcId) {
+    if (!npcId || state.spouse?.npcId !== npcId || state.date?.npcId === npcId) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.()) return false;
+    const scfg = cfg().spouse || {};
+    const sleep = scfg.sleepHours || { start: 22, end: 7 };
+    const hour = clockHour();
+    if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) return false;
+    const town = scfg.townVisitsByNpc?.[npcId] || scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
+    const weekdays = Array.isArray(town.weekdays) ? town.weekdays : null;
+    const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
+    const visitDay = weekdays?.length
+      ? weekdays.includes(window.CalendarSystem?.currentWeekdayName?.())
+      : (rawDay() + hashInt(npcId)) % mod === 0;
+    return visitDay && inHourWindow(hour, num(town.start, 12), num(town.end, 17));
+  }
+
   // Spouse target: sleep in the farmhouse bed, sit in chairs, potter around
   // the farm, and spend some afternoons in town (their pre-marriage schedule).
   function spouseTarget(rec) {
@@ -529,9 +547,9 @@
       const bed = bedSpot();
       if (bed) return { area: bed.area, c: bed.c, r: bed.r, rotY: bed.rotY, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    const town = scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
-    const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
-    if (inHourWindow(hour, num(town.start, 12), num(town.end, 17)) && (rawDay() + hashInt(rec.id)) % mod === 0) return null; // Back in town on their old schedule.
+    if (spouseTownVisitNow(rec.id)) return null; // Resume this NPC's authored town agenda.
+    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
+    if (chore) return chore;
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
@@ -686,6 +704,7 @@
     engage,
     completeWedding,
     getSpouse: () => state.spouse ? { ...state.spouse } : null,
+    spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
     getEngagement: () => state.engagement ? { ...state.engagement } : null,
     // Shared helpers for js/romance-family.js
     helpers: {

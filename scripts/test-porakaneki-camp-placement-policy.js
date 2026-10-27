@@ -9,13 +9,17 @@ const banditCampSource = fs.readFileSync('docs/js/bandit-camps.js', 'utf8'); // 
 const loaderSource = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Production parser-time ordering contract.
 
 function makeDenseZone(cols = 30, rows = 30) {
-  const tiles = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => ({
+  const tiles = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => ({ // Contiguous left-side boulder must be removed as one shell if a large camp touches it.
     height: 0,
     water: false,
     path: false,
     ramp: false,
     waterfall: false,
-    terrain: (col + row) % 2 ? 'shrub' : 'rock',
+    terrain: (col >= 15) ? 'shrub' : 'rock',
+    rockKind: (col >= 15) ? null : 'undiggableBoulder', // Shared fixture boulder should disappear as one shell, even beyond a stamped footprint.
+    boulderId: (col >= 15) ? null : 'test-boulder', // Identifies the whole artificial rock component across the dense zone.
+    generatedObjectId: (col >= 15) ? null : 'test-boulder', // Tests cleanup of the source collider metadata.
+    generatedObjectType: (col >= 15) ? null : 'undiggableBoulder',
     occupiedBy: `porakaneki_clutter_${col}_${row}`,
   })));
   const objects = [];
@@ -57,10 +61,12 @@ function makeChiefLocale() {
 let currentArea = 'map_western_slope';
 let campSnapshot = { zones: { map_western_slope: { camps: [] } } };
 let liveGrid = Array.from({ length: 30 }, (_, row) => Array.from({ length: 30 }, (_, col) => ({
-  type: (col + row) % 2 ? 'shrub' : 'rock',
+  type: (col >= 15) ? 'shrub' : 'rock',
+  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'map_western_slope:test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
 })));
 let refreshCount = 0;
 let banditTickCount = 0;
+let boulderCacheInvalidations = 0; // Verifies that clearing live rock tiles invalidates the cached welded shell index.
 
 const contextWindow = {
   BanditCamps: {
@@ -78,6 +84,9 @@ const contextWindow = {
   },
   PorakanekiCamps: {
     debugSnapshot: () => campSnapshot,
+  },
+  ZoneTerrainFeatures: {
+    invalidateBoulderIndex(grid) { assert.equal(grid, liveGrid); boulderCacheInvalidations++; },
   },
 };
 contextWindow.window = contextWindow;
@@ -97,7 +106,7 @@ const context = vm.createContext({
 vm.runInContext(temporaryLocalesSource, context, { filename: 'temporary-locales.js' });
 vm.runInContext(policySource, context, { filename: 'porakaneki-camp-placement-policy.js' });
 
-assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 3);
+assert.equal(contextWindow.PorakanekiCampPlacementPolicy.version, 4);
 assert.match(loaderSource, /\['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy\.js\?v=[A-Za-z0-9_.-]+'\]/, 'placement policy is parser-loaded');
 assert(loaderSource.indexOf("['PorakanekiCampPlacementPolicy'") < loaderSource.indexOf("['PorakanekiCamps'"), 'placement policy loads before camp generation');
 assert(loaderSource.indexOf("['PorakanekiCamps'") < loaderSource.indexOf("['PorakanekiMapMarkers'"), 'camp state still updates before map proxies');
@@ -138,7 +147,8 @@ const instance = contextWindow.TemporaryLocales.stamp(denseZone, chiefLocale, {
 });
 assert(instance, 'Porakaneki chief camp must still receive a site in shrub/rock-dense wilderness');
 assert(instance.removedObjectSnapshots.length > 0, 'placement records the ordinary clutter displaced by the camp');
-assert(instance.removedObjectSnapshots.every(snapshot => snapshot.type === 'shrub'), 'only the feature-tagged procedural clutter becomes clearable');
+assert(instance.removedObjectSnapshots.every(snapshot => snapshot.type === 'shrub' || snapshot.srcBoulderId === 'test-boulder'), 'only procedural clutter and whole displaced boulder components become clearable');
+assert(contextWindow.PorakanekiCampPlacementPolicy.debugSnapshot().placements.some(placement => placement.id === instance.id && placement.clearedTiles > instance.removedObjectSnapshots.length), 'a boulder extending beyond the stamped clearing is tracked in the full live-grid removal');
 assert(instance.removedObjectSnapshots.every(snapshot => snapshot.srcType === 'shrub' || snapshot.srcType === 'rock'), 'original terrain type is retained for live-grid restoration');
 
 // The adapter must not weaken TemporaryLocales globally. The same synthetic
@@ -160,21 +170,46 @@ campSnapshot.zones.map_western_slope.camps = [{ id: instance.id }];
 assert.equal(contextWindow.BanditCamps.updateCampBanners(0.2), 'bandit-tick');
 assert.equal(banditTickCount, 1);
 assert(refreshCount >= 1, 'active camp clearing refreshes the current wilderness visuals');
+assert(boulderCacheInvalidations >= 1, 'clearing a camp invalidates cached welded boulder meshes');
+assert.equal(liveGrid[0][0].type, 'grass', 'a boulder belonging to the camp but extending outside its stamped footprint is also cleared');
+assert.equal(liveGrid[0][0].boulderId, undefined, 'extended boulder cells lose their collider metadata');
 for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
-  assert.equal(liveGrid[snapshot.y][snapshot.x].type, 'grass', 'active camp removes procedural clutter from its live footprint');
+  const tile = liveGrid[snapshot.y][snapshot.x]; // Cleared live terrain must not still contain an invisible rock collider.
+  assert.equal(tile.type, 'grass', 'active camp removes procedural clutter from its live footprint');
+  assert.equal(tile.rockKind, undefined, 'camp clearing removes rockKind so camps stay at ground height');
+  assert.equal(tile.boulderId, undefined, 'camp clearing removes boulderId so rebuilt shell meshes cannot return');
+  assert.equal(tile.generatedObjectId, undefined, 'camp clearing removes the old procedural resource object');
+  assert.equal(tile.generatedObjectType, undefined, 'camp clearing removes the resource classification');
 }
+
+// A newly regrown rock is still not allowed to occupy an already-active tent clearing.
+const regrowSnapshot = instance.removedObjectSnapshots.find(entry => entry.srcBoulderId); // Previously cleared boulder tile used to simulate live rock regrowth.
+assert(regrowSnapshot, 'fixture includes a replaced boulder tile');
+const regrowTile = liveGrid[regrowSnapshot.y][regrowSnapshot.x]; // Live-grid terrain may change independently via ZoneRegrowth.
+regrowTile.type = 'rock';
+regrowTile.rockKind = 'undiggableBoulder';
+regrowTile.boulderId = 'map_western_slope:test-boulder';
+contextWindow.BanditCamps.updateCampBanners(0.2);
+assert.equal(regrowTile.type, 'grass', 'an active camp re-clears a regenerated rock instead of allowing it to raise the tent');
+assert.equal(regrowTile.boulderId, undefined, 'regenerated boulder collision metadata is removed again');
 
 campSnapshot.zones.map_western_slope.camps = [];
 contextWindow.BanditCamps.updateCampBanners(0.2);
-assert.equal(banditTickCount, 2);
+assert.equal(banditTickCount, 3);
+assert.equal(liveGrid[0][0].type, 'rock', 'the entire boulder, including cells outside the chief camp, returns after migration');
+assert.equal(liveGrid[0][0].boulderId, 'map_western_slope:test-boulder', 'restoring the full boulder preserves its exact map-prefixed live-grid identity');
 for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
-  assert.equal(liveGrid[snapshot.y][snapshot.x].type, snapshot.srcType, 'inactive seasonal chief reservation restores its prior terrain type');
+  const tile = liveGrid[snapshot.y][snapshot.x]; // Migration restores the original world terrain, not merely its visible paint.
+  assert.equal(tile.type, snapshot.srcType, 'inactive seasonal chief reservation restores its prior terrain type');
+  if (snapshot.srcBoulderId) assert.equal(tile.boulderId, 'map_western_slope:test-boulder', 'migration restores the real merged boulder ID rather than the placement-view ID');
+  else assert.equal(tile.boulderId, undefined, 'migration keeps shrub tiles free of boulder metadata');
 }
 
 // A rebuilt/re-entered grid is a new object, so the policy must not assume an
 // old applied-set means the clearing is still present.
 liveGrid = Array.from({ length: 30 }, (_, row) => Array.from({ length: 30 }, (_, col) => ({
-  type: (col + row) % 2 ? 'shrub' : 'rock',
+  type: (col >= 15) ? 'shrub' : 'rock',
+  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'map_western_slope:test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
 })));
 campSnapshot.zones.map_western_slope.camps = [{ id: instance.id }];
 contextWindow.BanditCamps.updateCampBanners(0.2);

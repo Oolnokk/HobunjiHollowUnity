@@ -650,8 +650,8 @@
   // attack poses show the camera either face, and from behind, the opaque blade
   // depth-hid every particle, so each emitter is mirrored onto the visible face.
   let faceScratch = null; // Lazily created { normal, toCamera, planePos, cameraPos }; this runs every frame.
-  function faceEmittersTowardCamera(emitters = EMITTERS.values()) {
-    const camera = window.Combat?.deps?.camera; // Live game camera handed to Combat.init.
+  function faceEmittersTowardCamera(emitters = EMITTERS.values(), cameraOverride = null) {
+    const camera = cameraOverride || window.Combat?.deps?.camera; // A menu preview supplies its own camera; gameplay keeps using the live combat camera. // Live game camera handed to Combat.init.
     if (!camera?.matrixWorld || typeof THREE === 'undefined') return;
     if (!faceScratch) faceScratch = { normal: new THREE.Vector3(), toCamera: new THREE.Vector3(), planePos: new THREE.Vector3(), cameraPos: new THREE.Vector3() };
     const { normal, toCamera, planePos, cameraPos } = faceScratch;
@@ -887,6 +887,62 @@
     };
   }
 
+  // A separate emitter uses the same metal mask, authored particle shapes,
+  // colors, and motion as the held weapon. It never enters gameplay's EMITTERS
+  // map, which is intentionally limited to the actually drawn melee weapon.
+  function createPreviewEmitter(plane, key) {
+    if (!plane?.isObject3D || !key) return null;
+    const emitter = makeEmitter(plane); // Owned exclusively by the loadout's miniature 3D scene.
+    if (!emitter) return null;
+    let disposed = false; // Blocks late mask-decoding promises from attaching to a closed preview.
+    let generation = 0; // Invalidates an older preview scan whenever enchantments or visual choices change.
+    let activeToken = null; // Tracks the saved visual, enchantment counts and source sprite while this preview stays open.
+    let snapshot = null; // Supplies the existing particle integrator with the preview's independent metal mask.
+
+    function refresh() {
+      if (disposed) return;
+      const visual = normalizedState(key); // Same validated effect/plane/dye choice as the real held-weapon renderer.
+      const counts = planarCounts(key); // A newly applied or removed planar enchantment changes emission density.
+      const spritePath = sourceSpriteForWeapon(key); // Use the untouched sprite, never the already-verdigris-colored texture.
+      const token = JSON.stringify([visual, counts, spritePath]);
+      if (token === activeToken) return;
+      activeToken = token;
+      const request = ++generation;
+      clearEmitter(emitter);
+      emitter.accumulator = 0;
+      snapshot = null;
+      if (!visual || !spritePath) return; // Unenchanted weapons legitimately show no particles.
+      metalMaskForSprite(spritePath).then(mask => {
+        if (disposed || request !== generation) return;
+        snapshot = { weaponKey: key, visual, counts, spritePath, mask };
+      }).catch(error => {
+        if (disposed || request !== generation) return;
+        lastEvent = 'preview mask failed: ' + (error?.message || error);
+      });
+    }
+    refresh();
+    return {
+      update(dt, camera) {
+        if (disposed) return;
+        refresh();
+        if (!snapshot?.mask?.indices?.length) return;
+        updateEmitters(Math.min(0.05, Math.max(0, Number(dt) || 0)), snapshot, [emitter]);
+        if (camera) faceEmittersTowardCamera([emitter], camera); // Preview particles face its own camera, not the paused game camera.
+      },
+      refresh,
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        generation++;
+        disposeEmitter(emitter); // Dispose only this preview's sprite materials/pool; shared shape textures remain cached.
+      },
+      debugSnapshot() {
+        return { weaponKey: key, active: !disposed, visual: snapshot?.visual || null,
+          matchedMetalPixels: snapshot?.mask?.matchedMetalPixels || 0, particles: emitter.particles.length };
+      },
+    };
+  }
+
   function bootstrap() {
     installUpdateLoop();
   }
@@ -899,6 +955,7 @@
     activeAlignments,
     buildMetalMask,
     renderControls,
+    createPreviewEmitter,
     debugSnapshot,
     copyDebug,
     forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },

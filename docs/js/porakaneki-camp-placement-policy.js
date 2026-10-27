@@ -20,6 +20,7 @@
   const placements = new Map(); // instanceId -> { zoneId, snapshots }; used to clear/restore the live grid when that camp is active.
   const appliedByZone = new Map(); // zoneId -> Set(instanceId) currently reflected in that live grid reference.
   const gridRefByZone = new Map(); // Detects a rebuilt/re-entered zone grid so active camp clearings are re-applied.
+  const originalGridTiles = new WeakMap(); // Live grid -> coordinate metadata before the first camp clearing; avoids restoring unprefixed generator boulder IDs over map-prefixed runtime IDs.
 
   function isPorakanekiInstance(instanceId) {
     const text = String(instanceId || '');
@@ -40,6 +41,10 @@
       object.type = 'shrub'; // TemporaryLocales' clearable-type vocabulary; source terrain is retained separately below.
       object.localeMeta = false;
       object.srcType = tile?.terrain || object.srcType || 'shrub';
+      object.srcRockKind = tile?.rockKind || null; // Original terrain collider flags to restore when a chief camp migrates.
+      object.srcBoulderId = tile?.boulderId || null; // All cells of a boulder shell must be cleared together, not just those beneath tent tiles.
+      object.srcGeneratedObjectId = tile?.generatedObjectId || null; // Retained for restoring the displaced source resource footprint.
+      object.srcGeneratedObjectType = tile?.generatedObjectType || null; // Accompanies srcGeneratedObjectId during a reversible clearing.
       converted += 1;
     }
     return converted;
@@ -109,14 +114,39 @@
     return [compact, tentOnly];
   }
 
-  function registerPlacement(instance) {
+  function registerPlacement(instance, zone) {
     if (!instance?.id || !isPorakanekiInstance(instance.id)) return;
     const zoneId = zoneIdFromInstanceId(instance.id);
     if (!zoneId) return;
-    placements.set(instance.id, {
-      zoneId,
-      snapshots: (instance.removedObjectSnapshots || []).filter(snapshot => snapshot?.type === 'shrub').map(snapshot => ({ ...snapshot })),
-    });
+    const snapshots = (instance.removedObjectSnapshots || []).filter(snapshot => snapshot?.type === 'shrub').map(snapshot => ({ ...snapshot })); // Source clutter cells already removed by TemporaryLocales.
+    const covered = new Set(snapshots.map(snapshot => `${snapshot.x},${snapshot.y}`)); // Initial locale clearing occupies this set; expanded boulder cells must not be snapshotted twice.
+    const visited = new Set(); // Prevents rescanning the same connected boulder through multiple displaced tiles.
+    for (const origin of snapshots) {
+      if (origin.srcRockKind !== 'undiggableBoulder') continue;
+      const groupId = origin.srcBoulderId || null; // A boulder may have no ID in legacy layouts; the renderer groups those by connected component.
+      const queue = [[origin.x, origin.y]]; // Floods only physically connected boulder cells, avoiding other submaps that reuse the same generated object ID.
+      for (let i = 0; i < queue.length; i++) {
+        const [col, row] = queue[i];
+        if (col < 0 || row < 0 || col >= (zone?.cols || 0) || row >= (zone?.rows || 0)) continue;
+        const key = `${col},${row}`;
+        if (visited.has(key)) continue;
+        const tile = zone?.tiles?.[row]?.[col]; // The immutable source terrain survives a TemporaryLocales stamp.
+        if (tile?.rockKind !== 'undiggableBoulder' || (tile.boulderId || null) !== groupId) continue;
+        visited.add(key);
+        if (!covered.has(key)) {
+          snapshots.push({
+            x: col, y: row, srcType: tile.terrain || 'rock',
+            srcRockKind: tile.rockKind || null,
+            srcBoulderId: tile.boulderId || null,
+            srcGeneratedObjectId: tile.generatedObjectId || null,
+            srcGeneratedObjectType: tile.generatedObjectType || null,
+          }); // Preserve complete connected shell metadata for migration restoration.
+          covered.add(key);
+        }
+        queue.push([col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]);
+      }
+    }
+    placements.set(instance.id, { zoneId, snapshots });
   }
 
   function installTemporaryLocales(api = window.TemporaryLocales) {
@@ -146,7 +176,7 @@
           if (instance) break;
         }
       }
-      if (instance) registerPlacement(instance);
+      if (instance) registerPlacement(instance, zone);
       return instance;
     };
     wrappedStamp.__porakanekiPlacementWrapped = true;
@@ -168,9 +198,35 @@
   function setSnapshotType(grid, snapshot, restore) {
     const tile = grid?.[snapshot.y]?.[snapshot.x];
     if (!tile) return false;
-    const nextType = restore ? (snapshot.srcType || 'shrub') : 'grass';
-    if (tile.type === nextType) return false;
-    tile.type = nextType;
+    let originals = originalGridTiles.get(grid); // One shared source for overlapping chief/hunting camp clearings on this live grid.
+    if (!originals) { originals = new Map(); originalGridTiles.set(grid, originals); }
+    const key = `${snapshot.x},${snapshot.y}`; // Coordinate key ensures overlapping camps restore the *first* untouched tile, not another camp's temporary grass.
+    if (!restore && !originals.has(key)) {
+      originals.set(key, {
+        type: tile.type, rockKind: tile.rockKind, boulderId: tile.boulderId,
+        generatedObjectId: tile.generatedObjectId, generatedObjectType: tile.generatedObjectType,
+      }); // Preserve exact live-grid identities, including map-prefixed boulder IDs that the source locale cannot reconstruct.
+    }
+    const original = originals.get(key); // May be absent when restoring a legacy/preexisting clearing, so retain the source snapshot fallback.
+    let changed = false;
+    const assign = (field, value) => {
+      if (value == null) {
+        if (Object.prototype.hasOwnProperty.call(tile, field)) { delete tile[field]; changed = true; }
+      } else if (tile[field] !== value) { tile[field] = value; changed = true; }
+    };
+    assign('type', restore ? (original?.type ?? snapshot.srcType ?? 'shrub') : 'grass');
+    assign('rockKind', restore ? (original ? original.rockKind : snapshot.srcRockKind) : null);
+    assign('boulderId', restore ? (original ? original.boulderId : snapshot.srcBoulderId) : null);
+    assign('generatedObjectId', restore ? (original ? original.generatedObjectId : snapshot.srcGeneratedObjectId) : null);
+    assign('generatedObjectType', restore ? (original ? original.generatedObjectType : snapshot.srcGeneratedObjectType) : null);
+    return changed;
+  }
+
+  function clearingStillApplied(grid, snapshots) {
+    for (const snapshot of snapshots) {
+      const tile = grid?.[snapshot.y]?.[snapshot.x]; // Checks the live terrain because daily rock regrowth can otherwise rebuild a boulder under an occupied camp.
+      if (tile && (tile.type !== 'grass' || tile.rockKind || tile.boulderId || tile.generatedObjectId || tile.generatedObjectType)) return false;
+    }
     return true;
   }
 
@@ -189,25 +245,34 @@
     appliedByZone.set(zoneId, applied);
     const desired = activeCampIdsForZone(zoneId);
     let changed = false;
+    let restored = false; // Forces all still-active camps to re-clear a rock shared with a migrating chief reservation.
 
     // Restore a seasonal chief clearing if the camp has migrated away while
     // the player is still standing in the old map.
     for (const instanceId of [...applied]) {
       if (desired.has(instanceId)) continue;
       const placement = placements.get(instanceId);
-      if (placement?.zoneId === zoneId) for (const snapshot of placement.snapshots) changed = setSnapshotType(grid, snapshot, true) || changed;
+      if (placement?.zoneId === zoneId) for (const snapshot of placement.snapshots) {
+        const altered = setSnapshotType(grid, snapshot, true);
+        changed = altered || changed;
+        restored = altered || restored;
+      }
       applied.delete(instanceId);
     }
 
     for (const instanceId of desired) {
-      if (applied.has(instanceId)) continue;
       const placement = placements.get(instanceId);
       if (!placement || placement.zoneId !== zoneId) continue;
+      if (applied.has(instanceId) && !restored && clearingStillApplied(grid, placement.snapshots)) continue; // Re-clear rock regrowth without rebuilding unchanged camps.
       for (const snapshot of placement.snapshots) changed = setSnapshotType(grid, snapshot, false) || changed;
       applied.add(instanceId);
     }
 
-    if (changed) window.ZoneRegrowth?.refreshZoneGroundVisuals?.(zoneId);
+    if (changed) {
+      window.ZoneTerrainFeatures?.invalidateBoulderIndex?.(grid); // Cached welded shells otherwise survive a tile.type change and raise newly stamped tents.
+      window.ZoneRegrowth?.refreshZoneGroundVisuals?.(zoneId);
+    }
+    if (!desired.size && !applied.size) originalGridTiles.delete(grid); // A fully vacated grid can capture newer regenerated/mined terrain on the next camp clearing.
     return changed;
   }
 
@@ -246,7 +311,7 @@
   }
 
   window.PorakanekiCampPlacementPolicy = Object.freeze({
-    version: 3,
+    version: 4,
     syncCurrentZoneClutter,
     debugSnapshot: () => ({
       placements: [...placements].map(([id, entry]) => ({ id, zoneId: entry.zoneId, clearedTiles: entry.snapshots.length })),

@@ -2664,6 +2664,12 @@
         alwaysKnown: !!item.alwaysKnown, // Preserves automatically known starter designs in CraftingPanel.
       }));
 
+      // Synchronize module-added furniture before the Pack registers its item definitions.
+      // The Butter Churn's late init hooks alone run after ITEM_DEFS/inventoryItems are built,
+      // which otherwise leaves purchased churn recipes invisible or unreadable in the Pack.
+      window.HobunjiFoodProcessing?.ensureProcessingFurnitureDef?.(PROCESSING_FURNITURE_DEFS);
+      window.HobunjiFoodProcessing?.ensureBlueprint?.(FURNITURE_BLUEPRINT_CATALOG);
+
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelkCrate', icon: '🦎', name: 'Nelk Crate', desc: 'A Nelk for your farm. Add the crate from the Farm tab and assign the animal to a barn.', price: 90, gives: { nelkCrate: 1 }, category: 'livestock' },
@@ -8732,6 +8738,7 @@
         member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
         member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
         member.romanceState = window.RomanceSystem?.serialize?.() || null;
+        member.npcFarmPlotState = window.NpcFarmPlots?.serialize?.() || null; // Persist NPC-tended field state.
         // Only ever consumed on the next boot if it lands in a wilderness
         // zone with a still-active campfire there (see spawnPlayerAvatar) —
         // saved unconditionally anyway since it's cheap and harmless
@@ -12756,10 +12763,12 @@
               _applyNpcAmbientLook(this, target);
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
-                if (this.stationToolKey !== target.toolKey) {
+                const toolFlip = target.toolFlip === true;
+                if (this.stationToolKey !== target.toolKey || this.stationToolFlip !== toolFlip) {
                   if (this.stationToolMesh) this.stationToolMesh.parent?.remove(this.stationToolMesh);
-                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: toolFlip });
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  this.stationToolFlip = toolFlip; // Same pick-shovel sprite must rebuild when switching between shovel and pick orientation.
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) (avatarGroup.userData?.proceduralHandParent || root).add(this.stationToolMesh);
                 }
@@ -12815,12 +12824,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
+                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
+            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
@@ -13322,6 +13331,7 @@
                 continue;
               }
               let type = t.type || 'grass';
+              if (!offsetC && !offsetR && (type === 'tilled' || type === 'trench') && window.NpcFarmPlots?.isManagedTile(m.id, c, r)) type = 'grass'; // Worked by NPCs instead.
               // Decorative (non-plateau) rock tiles are always-solid in the engine
               // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
               // them across the walkable ground — turn the un-tagged ones back to
@@ -13395,6 +13405,7 @@
             if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
+            window.NpcFarmPlots?.registerMap(zoneMapId, zm.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
             mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
             window.MapBoundaryGuard?.markMergedTiles?.(zm, outTiles); // Border escarpments stay unclimbable/unwalkable (js/map-boundary-guard.js).
@@ -13445,10 +13456,11 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
+          window.NpcFarmPlots?.registerMap(townM.id, townM.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
           const layout = { id: townM.id, version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
-            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+            if (t) layout.tiles.push({ c, r, type: window.NpcFarmPlots?.isManagedTile(townM.id, c, r) && (t.type === 'tilled' || t.type === 'trench') ? 'grass' : (t.type || 'grass') });
           }
           layout.routes = [];
           (townM.routes || townM.npcPaths || []).forEach(p => {
@@ -25676,6 +25688,7 @@
         calendar.day += 1;
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
+        window.NpcFarmPlots?.onNewDay?.();
         // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
@@ -29742,6 +29755,59 @@
         toast: showToast,
         now: () => performance.now(),
       });
+      window.NpcFarmPlots?.init?.({
+        findWalker: npcId => findNpcWalker(npcId),
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        cropData,
+        isRaining: () => !!calendar.isRaining,
+        surfaceY: (areaId, c, r) => npcSurfaceY(areaId, c, r),
+        getAreaScene: areaId => areaId === 'town' ? townScene : areaId === 'farm' ? scene : (_isZoneArea(areaId) ? (_zoneScenes.get(areaId)?.scene || null) : null),
+        buildCropMesh: (crop, growth, ready, c, r) => window.VegetationCropRendering?.buildStandaloneCropMesh?.(crop, growth, ready, c, r) || null,
+        saveMemberWorldData,
+        // The player's farm grid, for plots worked by the spouse and children (see FarmPlotEditor). The live farm tiles are
+        // edited directly — no tool-mastery or Farming XP goes to the player for an NPC's work.
+        farmTileInfo: (c, r) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return null;
+          const free = !window.GridTileAccessors.isHouseFootprint(c, r) && !worldObjects.has(c + ',' + r) && !tile.dewPile;
+          const trench = tile.type === TileType.TRENCH;
+          return {
+            tilled: tile.type === TileType.TILLED || tile.type === TileType.RAISED, crop: tile.crop || '', ready: !!tile.cropReady,
+            dug: trench && (tile.depth ?? 1) >= 0.6, // Rain silts a trench shallower; below this it needs redigging.
+            canTill: free && (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) && !tile.crop, // Weeds are cleared as they till.
+            canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
+          };
+        },
+        seedAvailable: crop => {
+          const seedKey = cropData[crop]?.seedKey;
+          return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
+        },
+        applyFarmJob: (job, c, r, crop) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return false;
+          if (job === 'till') {
+            if ((tile.type !== TileType.GRASS && tile.type !== TileType.WEEDS) || tile.crop) return false;
+            tile.type = TileType.TILLED;
+          } else if (job === 'dig') {
+            if (tile.crop || tile.type === TileType.ROCK) return false;
+            tile.type = TileType.TRENCH; tile.depth = 1; tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          } else if (job === 'seed') {
+            const data = cropData[crop];
+            const store = _loadWorldStorage() || {};
+            if (!data || tile.crop || !(Number(store[data.seedKey]) > 0) || ![TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
+            store[data.seedKey] -= 1;
+            if (store[data.seedKey] <= 0) delete store[data.seedKey];
+            _saveWorldStorage(store); // Seeds come out of Farm Storage, not your pockets.
+            tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
+          } else return false;
+          markTileDirty(c, r);
+          if (currentArea === 'farm') window.WaterSystem.recomputeWater(false);
+          window.FarmEditor.saveFarmLayout();
+          return true;
+        },
+      });
+      window.FarmPlotEditor?.init?.({ save: () => window.FarmEditor.saveFarmLayout(), cropLabel: crop => cropData[crop] ? `${cropData[crop].emoji || ''} ${cropData[crop].label || crop}`.trim() : crop });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,
         isCombatActive: isPlayerInCombat,
@@ -31463,6 +31529,7 @@
         }
         const _worldLayout = window.FarmEditor.loadFarmLayout();
         if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
+        else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
@@ -31525,6 +31592,7 @@
         questProgress = { ...(playerData.questProgress || {}) };
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
         window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
+        window.NpcFarmPlots?.restore?.(playerData.npcFarmPlotState); // NPC-tended field/trench state (js/npc-farm-plots.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
