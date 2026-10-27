@@ -179,4 +179,54 @@ assert.equal(clockWindow.TemplePrayerRestBlessings.skillStackBonus('fishing'), 3
 calendarDay += 7;
 assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer(), null, 'the granted prayer expires after one week');
 
+// The ordinary save-select flow assigns the profile after parser-time modules boot.
+calendarDay = 10;
+calendarTime = .25;
+calendarReady = false;
+const lateStorage = new Map([['hobunjiSaveMeta', JSON.stringify({ characters: [
+  ...savedMeta.characters,
+  { id: 'other-farmer', templePrayerRestBlessings: { prayer: { id: 'krurenic', startedAtGameHour: 240, expiresAtGameHour: 300 }, wellRested: null } },
+] })]]); // Independent persisted characters expose missing hydration and accidental cross-character writes.
+const lateListeners = new Map(); // Executes the actual unload and Escape listeners registered by the module.
+const lateNodes = new Map(); // Supplies just the visible modal for keyboard-close coverage without emulating the chooser renderer.
+const lateWindow = {
+  CalendarSystem: clockWindow.CalendarSystem,
+  __hobunjiFurnitureDebug: clockWindow.__hobunjiFurnitureDebug,
+  addEventListener: (type, listener) => lateListeners.set(type, listener),
+  setInterval() {},
+}; // Starts without a profile, matching the real onboarding order.
+const lateContext = {
+  window: lateWindow,
+  document: { addEventListener() {}, getElementById: id => lateNodes.get(id) || null },
+  localStorage: { getItem: key => lateStorage.get(key) ?? null, setItem: (key, value) => lateStorage.set(key, value) },
+}; // Reuses the shipped core in a fresh runtime instead of mutating internal module state.
+vm.runInNewContext(core, lateContext);
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer(), null);
+assert.equal(lateWindow.TemplePrayerRestBlessings._test.grantWellRested(), false, 'an uninitialized calendar cannot create a NaN expiry');
+lateWindow.__hobunjiPlayerProfile = { characterId: 'clock-test' };
+calendarReady = true;
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine', 'late save selection restores its saved prayer');
+assert.equal(lateWindow.TemplePrayerRestBlessings.isWellRested(), true, 'late save selection restores Well Rested too');
+lateWindow.__hobunjiPlayerProfile = { characterId: 'other-farmer' };
+lateListeners.get('beforeunload')();
+assert.equal(JSON.parse(lateStorage.get('hobunjiSaveMeta')).characters[1].templePrayerRestBlessings.prayer.id, 'krurenic', 'unload before the next sync cannot overwrite another farmer');
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'krurenic', 'character changes replace the active prayer');
+assert.equal(lateWindow.TemplePrayerRestBlessings.isWellRested(), false, 'another farmer cannot inherit Well Rested');
+assert.equal(lateWindow.TemplePrayerRestBlessings._test.choosePrayer('narshangetic'), true);
+assert.equal(JSON.parse(lateStorage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer.id, 'naoine', 'selection changes only the active farmer');
+lateWindow.__hobunjiPlayerProfile = { characterId: 'clock-test' };
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine');
+lateWindow.__hobunjiPlayerProfile = null;
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer(), null, 'returning to save select clears the previous character effects');
+
+let modalOpen = true; // Observable visibility state changed by the actual Escape handler.
+let escaped = false; // Confirms Escape is consumed before it can reach world controls.
+lateNodes.set('templePrayerBackdrop', {
+  classList: { contains: () => modalOpen, remove: () => { modalOpen = false; } },
+  setAttribute() {},
+});
+lateListeners.get('keydown')({ key: 'Escape', preventDefault: () => { escaped = true; }, stopImmediatePropagation() {} });
+assert.equal(modalOpen, false, 'Escape closes the prayer chooser even after prayer eligibility is lost');
+assert.equal(escaped, true);
+
 console.log('temple prayer and Well Rested regression passed');
