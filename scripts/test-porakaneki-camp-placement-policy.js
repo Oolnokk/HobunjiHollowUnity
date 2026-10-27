@@ -62,7 +62,7 @@ let currentArea = 'map_western_slope';
 let campSnapshot = { zones: { map_western_slope: { camps: [] } } };
 let liveGrid = Array.from({ length: 30 }, (_, row) => Array.from({ length: 30 }, (_, col) => ({
   type: (col >= 15) ? 'shrub' : 'rock',
-  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
+  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'map_western_slope:test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
 })));
 let refreshCount = 0;
 let banditTickCount = 0;
@@ -186,18 +186,19 @@ campSnapshot.zones.map_western_slope.camps = [];
 contextWindow.BanditCamps.updateCampBanners(0.2);
 assert.equal(banditTickCount, 2);
 assert.equal(liveGrid[0][0].type, 'rock', 'the entire boulder, including cells outside the chief camp, returns after migration');
-assert.equal(liveGrid[0][0].boulderId, 'test-boulder', 'restoring the full boulder also restores its authored identity');
+assert.equal(liveGrid[0][0].boulderId, 'map_western_slope:test-boulder', 'restoring the full boulder preserves its exact map-prefixed live-grid identity');
 for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
   const tile = liveGrid[snapshot.y][snapshot.x]; // Migration restores the original world terrain, not merely its visible paint.
   assert.equal(tile.type, snapshot.srcType, 'inactive seasonal chief reservation restores its prior terrain type');
-  assert.equal(tile.boulderId, snapshot.srcBoulderId || undefined, 'migration restores displaced procedural boulders');
+  if (snapshot.srcBoulderId) assert.equal(tile.boulderId, 'map_western_slope:test-boulder', 'migration restores the real merged boulder ID rather than the placement-view ID');
+  else assert.equal(tile.boulderId, undefined, 'migration keeps shrub tiles free of boulder metadata');
 }
 
 // A rebuilt/re-entered grid is a new object, so the policy must not assume an
 // old applied-set means the clearing is still present.
 liveGrid = Array.from({ length: 30 }, (_, row) => Array.from({ length: 30 }, (_, col) => ({
   type: (col >= 15) ? 'shrub' : 'rock',
-  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
+  ...((col >= 15) ? {} : { rockKind: 'undiggableBoulder', boulderId: 'map_western_slope:test-boulder', generatedObjectId: 'test-boulder', generatedObjectType: 'undiggableBoulder' }),
 })));
 campSnapshot.zones.map_western_slope.camps = [{ id: instance.id }];
 contextWindow.BanditCamps.updateCampBanners(0.2);
