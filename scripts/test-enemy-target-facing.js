@@ -20,6 +20,10 @@ const BanditCombat = {
     entity.facing = desired;
     entity._banditLungeDirX = Math.cos(desired);
     entity._banditLungeDirY = Math.sin(desired);
+    if (entity._simulateBeginSwing) {
+      entity._banditAction = { name: 'newly-started-swing' }; // Simulates the staged attack being created on this same AI update.
+      entity._banditLunging = true; // The lunge must remain consistent with its attack cone from the first frame.
+    }
     return { aimAngle: desired, moving: true };
   },
 };
@@ -80,6 +84,14 @@ assert(Math.abs(factionResult.aimAngle) < 1e-9);
 factionOpponent.areaId = 'other-zone';
 BanditCombat.updateCombatAI(factionFighter, 0.1, wrongWayPlayer, 10);
 assert(Math.abs(factionFighter.facing - 0.6) < 1e-9, 'invalid cross-area NPC targets fall back to ordinary player targeting');
+
+const newSwing = { id: 'new-swing', x: 0, y: 0, facing: 0, _simulateBeginSwing: true };
+const newSwingResult = BanditCombat.updateCombatAI(newSwing, 0.1, wrongWayPlayer, 10);
+assert(Math.abs(Math.abs(newSwing.facing) - Math.PI) < 1e-9, 'a newly created swing must not be turned after its initial target lock');
+assert(Math.abs(newSwing._banditLungeDirX + 1) < 1e-9, 'new attack lunge X keeps its committed direction on the start frame');
+assert(Math.abs(newSwing._banditLungeDirY) < 1e-9, 'new attack lunge Y keeps its committed direction on the start frame');
+assert.equal(newSwing._targetFacingDebug.attackLocked, true);
+assert.equal(newSwingResult.aimAngle, newSwing.facing);
 
 const committedSwing = { id: 'mid-swing', x: 0, y: 0, facing: 0.4,
   _banditAction: {}, _banditLunging: true, _banditLungeDirX: Math.cos(0.4), _banditLungeDirY: Math.sin(0.4) };

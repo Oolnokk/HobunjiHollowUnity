@@ -34,14 +34,16 @@
   const originalUpdateCombatAI = banditApi.updateCombatAI.bind(banditApi); // Underlying AI preserved so this module changes facing only.
   banditApi.updateCombatAI = function targetFacingDragCombatAI(entity, dt, targetPlayer, distToPlayer) {
     const before = Number(entity?.facing) || 0; // Facing at frame start, before BanditCombat gets a chance to snap/ease it.
-    const attackAlreadyCommitted = !!(entity?._banditAction || entity?._banditLunging); // An ongoing melee attack owns its fixed yaw and lunge vector.
     const result = originalUpdateCombatAI(entity, dt, targetPlayer, distToPlayer) || {};
 
     // Ranged weapons need exact projectile aim, and prone state is owned by the
     // later prone-exclusivity wrapper. The drag is specifically for melee
     // pursuit/attacks where circling behind the target must remain meaningful.
     if (!entity || entity.prone || entity._rangedMode) return result;
-    if (attackAlreadyCommitted && (entity._banditAction || entity._banditLunging)) {
+    // The core may START a lunge or staged swing inside originalUpdateCombatAI.
+    // Check after that call too: post-processing a newly committed attack would
+    // turn its facing and movement axes away from the strike's fixed hit cone.
+    if (entity._banditAction || entity._banditLunging) {
       entity._targetFacingDebug = { before, after: Number(entity.facing) || 0, attackLocked: true, targetId: entity._chunkCombatTarget?.id || targetPlayer?.id || null, turnRateRadS }; // Readable on mobile when a strike holds its original bearing.
       result.aimAngle = entity.facing;
       return result;
