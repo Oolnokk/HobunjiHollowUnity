@@ -557,6 +557,12 @@
         ? combatDeps.weaponDamageTypeForTool(itemKey)
         : def?.dmgType;
       if (parsed.slot === 'weapon' && damageType) addStatChip(chips, titleCase(String(damageType)));
+      if (parsed.slot === 'weapon' && itemKey && window.WeaponShapeStats) {
+        const stats = window.WeaponShapeStats.forKey(itemKey, def || combatDeps?.getWeaponDefinition?.(itemKey)); // Same stat math as the combat runtime and the Foundry.
+        for (const [label, value] of [['Power', stats.power], ['Speed', stats.speed], ['Stamina eff.', stats.efficiency], ['Range', stats.range]]) {
+          addStatChip(chips, `${label} ×${value.toFixed(2)}`);
+        }
+      }
 
       if (!chips.children.length) addStatChip(chips, 'Current tool data');
       item.appendChild(chips);
