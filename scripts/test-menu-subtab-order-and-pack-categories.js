@@ -123,10 +123,10 @@ const clothingDocument = {
 };
 const clothingWindow = { InventorySearch:{
   get query() { return clothingSearch; },
-  matches(key, def) { return (key + ' ' + def.label).toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').includes(clothingSearch); },
+  matches(key, def) { return (key + ' ' + def.label).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').includes(clothingSearch); },
 } };
 const clothingSourceCode = between(inventorySource, '  function syncPackClothingTiles() {', '  function decoratePackSlots() {'); // Exercises the real Pack clothing tile synchronization.
-const syncClothingTiles = vm.runInNewContext(clothingSourceCode + '\\n syncPackClothingTiles', { document:clothingDocument, window:clothingWindow });
+const syncClothingTiles = vm.runInNewContext(clothingSourceCode + '\n syncPackClothingTiles', { document:clothingDocument, window:clothingWindow });
 syncClothingTiles();
 assert.equal(clothingGrid.tiles.length, 1, 'Clothing appears even when the stack grid has no items');
 const originalButton = sourceButtons[0]; // Captured only for verifying it is no longer used after a rebuild.
