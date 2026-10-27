@@ -603,6 +603,33 @@
     "line": 214
   },
   {
+    "file": "docs/js/combat/loadout-weapon-preview.js",
+    "owner": "LoadoutWeaponPreview",
+    "classification": "isolated-context",
+    "function": "tick (throttle re-arm)",
+    "reason": "Loadout weapon preview render loop confined to the inventory panel's own WebGL canvas; it is visibility-gated, throttled to FRAME_INTERVAL_MS, and stops on hidden/context-loss/render error, so it is an isolated animation context rather than world frame work.",
+    "migrationStage": "not-planned",
+    "line": 200
+  },
+  {
+    "file": "docs/js/combat/loadout-weapon-preview.js",
+    "owner": "LoadoutWeaponPreview",
+    "classification": "isolated-context",
+    "function": "tick",
+    "reason": "Loadout weapon preview render loop confined to the inventory panel's own WebGL canvas; it is visibility-gated, throttled to FRAME_INTERVAL_MS, and stops on hidden/context-loss/render error, so it is an isolated animation context rather than world frame work.",
+    "migrationStage": "not-planned",
+    "line": 227
+  },
+  {
+    "file": "docs/js/combat/loadout-weapon-preview.js",
+    "owner": "LoadoutWeaponPreview",
+    "classification": "isolated-context",
+    "function": "resume",
+    "reason": "Loadout weapon preview render loop confined to the inventory panel's own WebGL canvas; it is visibility-gated, throttled to FRAME_INTERVAL_MS, and stops on hidden/context-loss/render error, so it is an isolated animation context rather than world frame work.",
+    "migrationStage": "not-planned",
+    "line": 242
+  },
+  {
     "file": "docs/js/furniture-puzzle-runtime.js",
     "owner": "FurniturePuzzleRuntimeEmitterVfx",
     "classification": "scheduler",
