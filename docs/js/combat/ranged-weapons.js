@@ -1189,6 +1189,15 @@
     }
   }
 
+  function applySticky(entity, durationMs = 2200) {
+    if (!entity) return;
+    if (!entity._rangedAmmoDebuffs) entity._rangedAmmoDebuffs = {};
+    const duration = Math.max(0, Math.min(15000, Number(durationMs) || 0)); // Used to bound impact Sticky duration.
+    entity._rangedAmmoDebuffs.stickyUntil = Math.max(entity._rangedAmmoDebuffs.stickyUntil || 0, performance.now() + duration);
+  }
+  function movementSpeedMultiplier(entity) {
+    return entity?._rangedAmmoDebuffs?.stickyUntil > performance.now() ? .2 : 1;
+  }
   function movementDirectionMultiplier(entity) {
     return entity?._rangedAmmoDebuffs?.disorientUntil > performance.now() ? -1 : 1;
   }
@@ -1213,6 +1222,7 @@
       delete state.shrapnelY;
     }
     if (!(state.disorientUntil > now)) delete state.disorientUntil;
+    if (!(state.stickyUntil > now)) delete state.stickyUntil;
     if (!Object.keys(state).length) delete entity._rangedAmmoDebuffs;
   }
 
@@ -1767,7 +1777,7 @@
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
-    movementDirectionMultiplier,
+    applySpecialAmmoDebuff,applySticky,movementSpeedMultiplier,movementDirectionMultiplier,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
     devBumpMastery: itemKey => deps?.devBumpToolMasteryLevel?.(itemKey),
     getLoadoutView: itemKey => ({ itemKey, mastery: rangedMastery(itemKey), loadout: JSON.parse(JSON.stringify(ammoLoadout(itemKey))), unlockedSpecialAmmo: [...(ensureAmmoState()?.unlockedSpecialAmmo || [])], specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX }),
@@ -1822,6 +1832,7 @@
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
+      playerStickySpeedMultiplier: movementSpeedMultiplier(deps?.player),
       activeProjectiles: projectiles.length,
       embeddedProjectiles: projectiles.filter(p => p.embedded && !p.dead).length,
       fadingEmbeddedProjectiles: projectiles.filter(p => p.embedded && p.fading && !p.dead).length,
