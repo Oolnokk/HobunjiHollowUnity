@@ -59,20 +59,30 @@
   }
 
   function applyHostileRunPitch(avatar, lean, localHeading, undo) {
-    // Bandit/ghoul portraits have TWO camera-facing cards, each with its own neck bone.
-    // Project the body lean onto each card's forward axis; their rear card needs
-    // the opposite sign. Leave the existing combat yaw untouched.
+    // The hostile's run lean rotates its whole portrait parent in 3D. Each
+    // front/back skin then has its own ±90° plane yaw: correcting only the
+    // neck's X pitch misses the in-plane Z roll at many headings.
     const front = avatar?.neckJoint?.front;
     const back = avatar?.neckJoint?.back;
-    if (!front?.rotation || !back?.rotation || !Array.isArray(undo)) return false;
     const pitch = Number(lean);
-    if (!Number.isFinite(pitch) || Math.abs(pitch) < 0.0001 || !Number.isFinite(localHeading)) return false;
-    const frontOld = front.rotation.x, backOld = back.rotation.x; // Restored immediately after the actual 3D render, never carried into AI calculations.
-    const frontYaw = Number(avatar.frontPlane?.rotation?.y) || 0;
-    const backYaw = Number(avatar.backPlane?.rotation?.y) || 0;
-    front.rotation.x = frontOld - pitch * Math.cos(localHeading - frontYaw);
-    back.rotation.x = backOld - pitch * Math.cos(localHeading - backYaw);
-    undo.push(() => { front.rotation.x = frontOld; back.rotation.x = backOld; });
+    if (!front?.quaternion || !back?.quaternion || !Array.isArray(undo)
+      || !Number.isFinite(pitch) || Math.abs(pitch) < 0.0001
+      || !Number.isFinite(localHeading)) return false;
+    const frontYaw = Number(avatar.frontPlane?.rotation?.y);
+    const backYaw = Number(avatar.backPlane?.rotation?.y);
+    if (!Number.isFinite(frontYaw) || !Number.isFinite(backYaw)) return false;
+    const oldFront = front.quaternion.clone(); // Restore pre-render combat yaw and authored head pose exactly.
+    const oldBack = back.quaternion.clone(); // Distinct back-skin quaternion; never mirror by reusing the front transform.
+    const sinHalf = -Math.sin(pitch * 0.5); // Inverse of the run-lean quaternion, expressed per portrait card.
+    const cosHalf = Math.cos(pitch * 0.5); // Both front/back use the same lean magnitude.
+    const frontRelative = localHeading - frontYaw; // Transforms the world-forward tilt axis into the front neck's local frame.
+    const backRelative = localHeading - backYaw; // Back plane points the other way, so its Z correction reverses sign.
+    front.quaternion.set(Math.cos(frontRelative) * sinHalf, 0, -Math.sin(frontRelative) * sinHalf, cosHalf).multiply(oldFront);
+    back.quaternion.set(Math.cos(backRelative) * sinHalf, 0, -Math.sin(backRelative) * sinHalf, cosHalf).multiply(oldBack);
+    undo.push(() => {
+      front.quaternion.copy(oldFront);
+      back.quaternion.copy(oldBack);
+    });
     return true;
   }
 
