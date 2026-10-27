@@ -66,7 +66,7 @@ const ctx = { // Minimal Canvas2D draw recorder.
   clearRect() {}, beginPath() {}, arc() {}, fill() {},
   fillRect() { fills.push(this.fillStyle); },
   createRadialGradient(x, y, inner, outerX, outerY, radius) {
-    const gradient = { radius, stops: [], addColorStop(at, color) { this.stops.push([at, color]); } }; // Inspectable CanvasGradient substitute.
+    const gradient = { radius, mode: this.globalCompositeOperation, stops: [], addColorStop(at, color) { this.stops.push([at, color]); } }; // Records light-compositing mode as well as the palette, so glass tints cannot revert to floor decals.
     gradients.push(gradient);
     return gradient;
   },
@@ -78,7 +78,7 @@ let sources = []; // Active daylight windows only.
 const lightingWindow = { // Loads the complete lighting module, without initializing unrelated mist geometry.
   THREE: { Vector3 },
   WeatherFX: { init() {}, getLightingState: () => ({ r: 255, g: 255, b: 255, a: 0.04 }) },
-  DaylightWindowRuntime: { getActiveSources: () => sources },
+  DaylightWindowRuntime: { getActiveSources: () => sources, drawProjectedLight() { throw new Error('legacy stained-glass floor projection must not run'); } },
 };
 vm.runInNewContext(read('docs/js/cloud-forest-fog.js'), { window: lightingWindow, performance: { now: () => now }, console });
 lightingWindow.WeatherFX.init({
@@ -108,6 +108,19 @@ sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { poin
 draw();
 assert.equal(gradients.at(-1).radius, 6, 'window daylight has a broad pool');
 assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 1], 'window daylight pool uses linear falloff');
+
+sources = [{ radiusTiles: 3, strength: 1, projectionPalette: ['#ff2040', '#20a0ff', '#ffe060'], mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }]; // A patterned Life Temple pane supplies dye colors, not a screen-projected texture.
+draw();
+for (const rgb of ['255,32,64', '32,160,255', '255,224,96']) {
+  const aura = gradients.find(entry => entry.stops.some(([, color]) => color.startsWith(`rgba(${rgb},`)));
+  assert(aura, `diffuse daylight keeps glass dye ${rgb} rather than losing all color to white light`);
+  assert.equal(aura.mode, 'screen', 'glass dye is a light wash over the existing fake-daylight compositor');
+  assert(aura.radius > 6, 'window colors spread beyond the existing daylight reveal, rather than outlining the window motif');
+  assert.deepEqual(aura.stops.map(([at]) => at), [0, 0.45, 1], 'glass dye glows have broad overlapping gradients, not hard-edged panes');
+}
+assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 3,
+  'one stained pane softly blends its three palette colors without a separate floor-projection draw');
+
 area = 'map_i_town_mine_f_1';
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.99)', 'mine darkness is preserved');
