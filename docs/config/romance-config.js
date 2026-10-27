@@ -100,16 +100,26 @@
       sleepHours: { start: 22, end: 7 },
       townAfternoon: { start: 12, end: 17, daysOfWeekMod: 3 }, // Visits town (their old schedule) on roughly every third day's afternoon.
       farmWanderRadiusTiles: 6,
+      // Per-NPC overrides use weekday names; otherwise resume original town agenda every third afternoon.
+      townVisitsByNpc: {},
       seatBlockMinutes: 90, // How long the spouse sticks with one chair before picking another.
     },
 
     // ── Family ───────────────────────────────────────────────────────────
     family: {
+      maxChildrenPerMarriage: 1, // Intended to become two later; this is today's one-child cap.
+      dreamPostponeDays: { soon: 1, time: 14, month: DAYS_PER_MONTH }, // Earliest new dream by in-game day.
+      childTown: {
+        startHour: 11, endHour: 16, visitPercent: 65, // Seeded daily roll; mornings/evenings remain at home.
+        peerMeetPercent: 85, friendNpcIds: ['gantami_ginju'],
+        stationRoles: ['play', 'socialize', 'sit', 'freeTime'],
+        wanderRadiusTiles: 3,
+      },
       announceAfterDays: 3 * DAYS_PER_MONTH,
       birthAfterDays: 6 * DAYS_PER_MONTH,
       basketDays: 1 * DAYS_PER_MONTH,
       toddlingDays: 5 * DAYS_PER_MONTH, // Toddling Footing eases 99 → 0 over this span after leaving the basket.
-      independentAfterDays: 12 * DAYS_PER_MONTH, // Age (from birth) at which children walk normally and leave the house.
+      independentAfterDays: 6 * DAYS_PER_MONTH, // Basket month + five toddler months, then village-child phase.
       eggLayingSpecies: ['kenkari'],
       // Child proportions per growth phase, fed to PNGPlaneAvatar.childScaleFor
       // as the record's childBodyScale / childHeadScale: `body` scales the whole

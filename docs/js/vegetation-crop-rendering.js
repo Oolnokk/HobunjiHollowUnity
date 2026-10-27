@@ -778,7 +778,25 @@
     _rebuildFarmBillboards();
   }
 
+  // A crop's plant mesh with no farm-grid tile behind it (NPC-tended plots on town/zone maps, js/npc-farm-plots.js).
+  // Returns { mesh, lift } — place at (col + 0.5, surfaceY + lift, row + 0.5); null if the crop has no visual.
+  function buildStandaloneCropMesh(crop, growth, ready, col, row) {
+    const g = Math.max(0, Math.min(1, growth));
+    const size = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * g;
+    if (FOLIAGE_CROPS.has(crop)) {
+      const group = _buildFoliageMesh(crop, g, col, row);
+      if (!group) return null;
+      group.scale.setScalar(size);
+      return { mesh: group, lift: 0.01 };
+    }
+    const colors = CROP_COLORS[crop] || CROP_COLORS.garlink;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: ready ? colors.ripe : g < 0.15 ? colors.sprout : colors.body }));
+    mesh.scale.setScalar(size);
+    return { mesh, lift: size / 2 + 0.02 };
+  }
+
   window.VegetationCropRendering = {
+    buildStandaloneCropMesh,
     init(injectedDeps) {
       init(injectedDeps);
       cropMeshes       = new Array(deps.ROWS * deps.COLS).fill(null);
