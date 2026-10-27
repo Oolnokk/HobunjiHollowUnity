@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 32826
+    "line": 32900
   },
   {
     "file": "docs/game.js",

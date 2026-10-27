@@ -73,7 +73,7 @@
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
-  <script src="js/den-nest-system.js?v=20261023hd6bad6f"></script>
+  <script src="js/den-nest-system.js?v=20261027sense1"></script>
   <script src="js/corpse-hold-loot.js?v=20261010corpsehold1"></script>
   <script src="js/companion-downed.js?v=20261024downed1"></script> <!-- Downed animal companion: auto-revive timer, held revive, Root Totem recall. Initialised by game.js. -->
   <script src="js/player-downed.js?v=20261026hf60fe42"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
@@ -227,7 +227,7 @@
   <script src="js/creature-genetics-render.js?v=20261026honeyStatic3"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261026honeyAudit3"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
-  <script src="js/honeyfuzzle-hives.js?v=20261026honeyEggGenes3"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
+  <script src="js/honeyfuzzle-hives.js?v=20261027sense1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -811,7 +811,7 @@
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261026cavewalls1"></script>
   <script src="js/ore-rock-textures.js?v=20261026orelegacycheck3"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
-  <script src="js/cavern-ore-rocks.js?v=20261026orepalcheck3"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261027sense1"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -843,14 +843,14 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261025oreveins2"></script>
+  <script src="js/cave-site-system.js?v=20261027extension4"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <script src="js/shattercasks.js?v=20261027soursap2"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
-  <script src="js/zone-den-totem-features.js?v=20261027htemple-zone-a2"></script>
+  <script src="js/zone-den-totem-features.js?v=20261027scheduler-a1"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -875,7 +875,7 @@
   <script src="js/crop-growth.js?v=20261015hcrop001"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261022h908ed08"></script>
+  <script src="js/perception-mode.js?v=20261027sense2"></script>
   <script src="js/world-portrait-life.js?v=20261020hf6210b5"></script>
 </head>
 <body>
@@ -2836,7 +2836,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261027h457479c"></script>
+  <script src="game.js?v=20261027sense2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

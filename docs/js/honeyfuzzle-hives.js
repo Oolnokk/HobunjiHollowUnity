@@ -249,6 +249,20 @@
     };
   }
 
+  function senseTargets(scene) {
+    if (!deps || !scene) return [];
+    const zoneId = deps.getCurrentArea?.(); // Only the active wilderness zone can supply live, harvestable stumps.
+    if (!deps.isZoneArea?.(zoneId) || window.HoneyfuzzleColors?.isExcludedZone?.(zoneId)) return [];
+    const grid = deps.getGrid?.();
+    const roots = []; // Tile-indexed live hive stump visuals, never the hidden swarm or collapsed stump.
+    for (const hive of hivesInLayout(deps.zoneLayouts?.get?.(zoneId))) {
+      if (!isLiveHiveTile(grid, hive.col, hive.row)) continue;
+      const root = deps.getVegetationGroup?.(zoneId, hive.col, hive.row);
+      if (root) roots.push(root);
+    }
+    return roots;
+  }
+
   // Every hive stump in the active zone's layout: whether it still stands,
   // and whether its swarm is out right now. Read by the AI snapshot.
   function census() {
@@ -266,7 +280,7 @@
 
   window.HoneyfuzzleHives = {
     SPECIES, EGG_ITEM, HONEY_ITEM, HOLD_SECONDS, HIVE_REGROW_DAYS, EGG_MIN, EGG_MAX, HONEY_MIN, HONEY_MAX,
-    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, census,
+    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, senseTargets, census,
     debugSnapshot: () => ({ killedOn: [...killedOn], spawned: spawnedOnce.size }),
   };
 })();

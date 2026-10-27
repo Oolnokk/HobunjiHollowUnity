@@ -93,6 +93,26 @@ function baseMap(id) {
     denMotherKind: 'gar-wolf-den-mother',
   };
 }
+// Real cave maps have solid rim/collider tiles on both edges of every corridor.
+// That rim cannot prohibit the very wall-to-wall cut that defines a separator.
+function withRockRim(map) {
+  const floors = new Set(map.floor.map(tile => tile.join(','))); // Authoritative walkable footprint for synthetic cave boundary construction.
+  const rim = new Set(); // Nonwalkable rock cells exactly surrounding the cavern, as produced by CavernGenerator.
+  for (const [col, row] of map.floor) for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    const key = (col + dc) + ',' + (row + dr);
+    if (!floors.has(key)) rim.add(key);
+  }
+  map.outerRimTiles = [...rim].map(key => key.split(',').map(Number));
+  map.colliders = map.outerRimTiles.map(cell => [...cell]);
+  return map;
+}
+const rimmed = withRockRim(baseMap('rimmed_separator_test'));
+const rimReservations = new Set(rimmed.outerRimTiles.map(cell => cell.join(',')));
+const rimPlan = { separator: null };
+assert(Cave.__test.installMineableSeparator(rimmed, rngFactory('rimmed-cave'), rimReservations, rimPlan),
+  'realistic rim/colliders no longer reject the cave corridor');
+assert(rimPlan.separator.cells.some(tile => tile.layer === 5), 'the rimmed corridor still receives five contiguous mineable rock strata');
+assert(rimReservations.has('6,3'), 'installed wall is reserved for later features');
 const separator = Cave.__test.findMineableSeparator(baseMap('separator_test'));
 assert(separator && separator.col === 6 && separator.row === 3, 'separator finder picks the existing corridor as a mineable partition');
 assert(separator.nearKeys.length >= 20 && separator.farKeys.length >= 20, 'separator preserves substantial chambers on both sides');
@@ -183,6 +203,72 @@ assert(cacheMap.caveBanditSpawns.length >= 2 && cacheMap.caveBanditSpawns.every(
 
 const mushroomMap = decorate(profile('map_i_test_mushroom', 'mushroom_cave'));
 assert(mushroomMap.caveMushrooms.length >= 6 && mushroomMap.caveMushrooms.every(m => m.reagentKey === 'duskcapMushroom'), 'mushroom cave grows Duskcap Mushroom clusters');
+
+// Compact test caves keep their original spawn budget instead of spending scarce
+// floor tiles on an optional rock barricade. Real generated caves are bigger.
+assert(catMap.floor.length < Cave.__test.MIN_OPTIONAL_EXTENSION_FLOOR && !catMap.caveSitePlan.extension, 'compact catacomb does not lose its minimum skeleton population');
+
+// Wide paired chambers are a realistic fixture for the new optional extension.
+// They leave room for the original content on both sides of the blastable wall.
+function extendedCave(p) {
+  installProfile(p);
+  const map = baseMap(p.mapId);
+  map.floor = [];
+  for (let row = 1; row <= 11; row++) {
+    for (let col = 1; col <= 11; col++) map.floor.push([col, row]);
+    for (let col = 15; col <= 25; col++) map.floor.push([col, row]);
+  }
+  for (let col = 12; col <= 14; col++) for (let row = 5; row <= 6; row++) map.floor.push([col, row]);
+  map.cols = 27; map.rows = 13;
+  withRockRim(map); // Extend feature tests over a physical rock boundary, not an impossible rim-free cave.
+  map.exitCol = 1; map.exitRow = 5;
+  map.exits[0].tiles = [[1, 5]];
+  return Cave.decorateCavernMapData(p.mapId, map);
+}
+
+// Any standard cave history can contain an optional blastable side chamber;
+// contents-specific rewards must actually spawn on its inaccessible side.
+// The deterministic extension stream must not depend on the ordinary loot RNG.
+for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
+  let extended = null; // First eligible seeded cave exercising this history.
+  for (let index = 0; index < 32 && !extended; index++) {
+    const candidate = extendedCave(profile(`map_i_side_${contents}_${index}`, contents));
+    if (candidate.caveSitePlan.separatorRock) extended = candidate;
+  }
+  assert(extended, `${contents}: multiple seeds can produce a mineable side chamber`);
+  const plan = Cave.__test.plansByMapId.get(extended.id);
+  const hidden = new Set(plan.separator.farKeys); // Confirms the reward lies behind the actual mined barrier, not just nearby.
+  const far = item => hidden.has(item.col + ',' + item.row);
+  assert(extended.caveSitePlan.extension?.contentType === contents, `${contents}: extension metadata is recorded`);
+  assert(extended.oreRocks.some(rock => rock.caveSeparator && rock.caveSeparatorLayer === 1), `${contents}: its entrance wall is mineable`);
+  assert(extended.caveShattercasks.some(charge => charge.guaranteed && plan.separator.nearKeys.includes(charge.col + ',' + charge.row)),
+    `${contents}: reachable shattercask is provided on the entrance side`);
+  if (contents === 'ore_mine') assert(extended.oreRocks.some(rock => !rock.caveSeparator && far(rock)), 'ore vein rewards the excavation');
+  if (contents === 'catacomb') assert(extended.caveProps.some(prop => prop.key === 'ruinSanctumCoffin' && far(prop)), 'buried coffin rewards the excavation');
+  if (contents === 'mushroom_cave') assert(extended.caveMushrooms.some(far), 'hidden grotto includes a pickable Duskcap');
+}
+
+// Ruin-door caves are also eligible, provided the extension doesn't wall off the
+// mandatory doorway. Use an explicit near-side doorway fixture to isolate that
+// safety rule from the more restrictive full SDF ruin-door placement.
+{
+  const ruinSide = baseMap('ruin_side_extension');
+  const plan = { ruinEntrance: { col: 3, row: 3 }, separator: null };
+  const reserved = new Set();
+  assert(Cave.__test.EXTENSION_CHANCES.ruin_entrance > 0, 'ruin caves are eligible for side extensions');
+  assert(Cave.__test.installMineableSeparator(ruinSide, rngFactory('ruin-side'), reserved, plan), 'near-side ruin door permits a mined annex');
+  assert(plan.separator.nearKeys.includes('3,3'), 'the original ruin door remains accessible before any rock is broken');
+  assert(!plan.separator.farKeys.includes('3,3'), 'the ruin doorway is never sealed behind the annex wall');
+
+  // An animal Den-Mother and her eggs must never be locked inside a pocket:
+  // the optional extension adds loot, it must not alter the boss encounter.
+  const denSide = baseMap('den_side_extension');
+  denSide.nestCol = 9; denSide.nestRow = 3;
+  const denPlan = { ruinEntrance: null, separator: null };
+  Cave.__test.installMineableSeparator(denSide, rngFactory('den-side'), new Set(), denPlan);
+  assert(!denPlan.separator || denPlan.separator.nearKeys.includes('9,3'), 'Den-Mother nest is on the reachable side of any extension');
+}
+
 
 const ruinMap = decorate(profile('map_i_test_ruin', 'ruin_entrance'));
 assert(ruinMap.caveProps.some(item => item.key === 'ruinEntranceDoor'), 'ruin cave places the authored ruin entrance door');
@@ -332,7 +418,12 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
 // Mine path); stone-look rocks stay stone-only. No iron/crystal looks remain.
 {
   const oreSource = fs.readFileSync(path.join(root, 'docs/js/cavern-ore-rocks.js'), 'utf8');
-  class Obj { constructor() { this.position = { set() {} }; this.children = []; } add(c) { this.children.push(c); } }
+  class Obj {
+    constructor() { this.position = { set() {} }; this.children = []; this.userData = {}; this.parent = null; }
+    add(c) { this.children.push(c); c.parent = this; }
+    remove(c) { this.children = this.children.filter(node => node !== c); c.parent = null; }
+    traverse(fn) { fn(this); for (const child of this.children) child.traverse(fn); }
+  }
   let fittedFaces = 0; // Verifies both random-cave builds reach the shared ore-rock face fitting helper.
   const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) }, OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }), fitRockMesh: () => { fittedFaces++; } } };
   oreCtx.window = oreCtx;
@@ -341,13 +432,18 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   const ORE_DEFS = { copper: {}, tinCopper: {}, mushistonite: {}, tin: {}, arsenic: {}, lead: {}, silver: {}, gold: {} };
   oreCtx.CavernOreRocks.init({ TileType: { ROCK: 'rock' }, markOutline() {}, zoneMineableRockMeshes: new Map(), oreDefs: ORE_DEFS });
   const grid = [[{}, {}]];
-  oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, new Obj(), grid);
+  const oreScene = new Obj(); // Scene-local Sense Mode tests reject the old cave and accept only intact mounds.
+  oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, oreScene, grid);
+  assert.equal(oreCtx.CavernOreRocks.senseTargets(oreScene).length, 2, 'Sense Mode highlights every intact cave mound, including stone');
+  assert.equal(oreCtx.CavernOreRocks.senseTargets(new Obj()).length, 0, 'stale cave scenes cannot leak highlights');
   assert.equal(grid[0][0].oreKey, 'copper', 'copper-look cavern rock drops copper ore');
   assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tin, 0xc8ccd0, 'Cassiterite rock cave swatch uses its contained tin metal color');
   assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.copper, 0xb87333, 'Cave diagnostic swatch shows metallic copper underneath patina');
   assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tinCopper, 0xb66a2e, 'Crude bronze cave swatch uses low-tin bronze metal beneath patina');
   assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.mushistonite, 0xcd7f32, 'Natural bronze cave swatch uses tin-bronze metal beneath patina');
   assert.equal(grid[0][1].oreKey, null, 'stone-look cavern rock drops stone only');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual('map_i_den_test', 0, 0), true);
+  assert.equal(oreCtx.CavernOreRocks.senseTargets(oreScene).length, 1, 'mining removes that exact mound from Sense Mode');
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
   const newGrid = [[{}, {}, {}]];
   oreCtx.CavernOreRocks.build('map_i_new_ores', { oreRocks: [{ col: 0, row: 0, oreKind: 'tinCopper' }, { col: 1, row: 0, oreKind: 'mushistonite' }, { col: 2, row: 0, oreKind: 'tin' }] }, new Obj(), newGrid);
@@ -359,6 +455,26 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   }
   for (const kind of mineKinds) assert(kind === 'stone' || ORE_DEFS[kind], `ore-mine rock kind ${kind} is stone or a real ore`);
   console.log(`PASS cavern-ore-rocks: real ore drops; mine kinds ${[...mineKinds].sort().join(', ')}`);
+}
+
+// Cave mushrooms have their own visuals rather than a permanent worldObjects entry.
+{
+  const oldArea = deps.getCurrentArea; // Restored before the combat tests that follow.
+  const mushroomScene = { add(group) { group.parent = this; } };
+  context.THREE = { Group: class {
+    constructor() { this.children = []; this.position = { set() {} }; this.userData = {}; this.parent = null; }
+    add(child) { this.children.push(child); child.parent = this; }
+  } };
+  context.ReagentPlants = { buildReagentPlantMesh: () => ({ position: { set() {} }, scale: { multiplyScalar() {} } }) };
+  deps.getCurrentArea = () => mushroomMap.id;
+  deps.calendar.day = 30;
+  Cave.buildInteriorProps(mushroomMap.id, mushroomMap, mushroomScene);
+  assert.equal(Cave.senseTargets(mushroomScene).length, mushroomMap.caveMushrooms.length, 'every standing mushroom cluster glows green in Sense Mode');
+  assert.equal(Cave.senseTargets({}).length, 0, 'no cave feature highlights in another scene');
+  const mushroomState = Cave.__test.runtimeStateBySignature.get(profile(mushroomMap.id, 'mushroom_cave').signature);
+  mushroomState.mushroomsPickedDay[mushroomMap.caveMushrooms[0].id] = 30;
+  assert.equal(Cave.senseTargets(mushroomScene).length, mushroomMap.caveMushrooms.length - 1, 'recently harvested clusters do not glow');
+  deps.getCurrentArea = oldArea;
 }
 
 // Catacomb bodies: laid out as settled corpses with a short loot hold; a
