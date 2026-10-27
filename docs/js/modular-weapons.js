@@ -160,6 +160,7 @@
   function settings(shaft, head) { return { ...NEUTRAL, ...(config.shafts[shaft]?.overrides[head] || {}) }; } // Only selected combination's corrections.
   function isDisallowed(shaft, head) {
     return !config.shafts?.[shaft] || !config.heads?.[head] ||
+      config.heads[head].craftDisabled === true || // Retired heads still render on saved gear, but cannot form new forgeable pairs.
       !matchingMounts(config.shafts[shaft], config.heads[head]).length ||
       config.shafts[shaft].overrides[head]?.disallow === true;
   }
@@ -293,7 +294,7 @@
       if (shaft.editorOnly) continue; // Incomplete upload previews cannot create forgeable weapon items.
       const source = shapes[shaft.sourceShape] || { animStyle: 'sweep', weaponIdleClass: 'heavy' }; // Future/relic source shapes still get a usable baseline.
       for (const [headKey, head] of Object.entries(config.heads)) for (const metalKey of metalKeys) {
-        if (head.editorOnly) continue; // Register old weapon keys even when now unforgeable, to preserve existing inventory saves. // Uncalibrated uploaded head has no gameplay definition.
+        if (head.editorOnly) continue; // Uncalibrated previews lack definitions; craftDisabled heads retain definitions for existing saved weapons.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
@@ -315,7 +316,7 @@
       if (record.shape === 'broadsword') sources.add('harlyaoBroadsword');
     }
     const shafts = Object.keys(config.shafts).filter(key => !config.shafts[key].editorOnly && sources.has(config.shafts[key].sourceShape)); // Known donor shapes only.
-    const heads = Object.keys(config.heads).filter(key => !config.heads[key].editorOnly && sources.has(config.heads[key].sourceShape)
+    const heads = Object.keys(config.heads).filter(key => !config.heads[key].editorOnly && !config.heads[key].craftDisabled && sources.has(config.heads[key].sourceShape)
       && shafts.some(shaft => !isDisallowed(shaft, key))); // Avoid exposing heads incompatible with every unlocked shaft.
     return { heads, shafts: shafts.filter(shaft => heads.some(head => !isDisallowed(shaft, head))) };
   }
