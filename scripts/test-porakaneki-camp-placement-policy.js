@@ -182,9 +182,20 @@ for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
   assert.equal(tile.generatedObjectType, undefined, 'camp clearing removes the resource classification');
 }
 
+// A newly regrown rock is still not allowed to occupy an already-active tent clearing.
+const regrowSnapshot = instance.removedObjectSnapshots.find(entry => entry.srcBoulderId); // Previously cleared boulder tile used to simulate live rock regrowth.
+assert(regrowSnapshot, 'fixture includes a replaced boulder tile');
+const regrowTile = liveGrid[regrowSnapshot.y][regrowSnapshot.x]; // Live-grid terrain may change independently via ZoneRegrowth.
+regrowTile.type = 'rock';
+regrowTile.rockKind = 'undiggableBoulder';
+regrowTile.boulderId = 'map_western_slope:test-boulder';
+contextWindow.BanditCamps.updateCampBanners(0.2);
+assert.equal(regrowTile.type, 'grass', 'an active camp re-clears a regenerated rock instead of allowing it to raise the tent');
+assert.equal(regrowTile.boulderId, undefined, 'regenerated boulder collision metadata is removed again');
+
 campSnapshot.zones.map_western_slope.camps = [];
 contextWindow.BanditCamps.updateCampBanners(0.2);
-assert.equal(banditTickCount, 2);
+assert.equal(banditTickCount, 3);
 assert.equal(liveGrid[0][0].type, 'rock', 'the entire boulder, including cells outside the chief camp, returns after migration');
 assert.equal(liveGrid[0][0].boulderId, 'map_western_slope:test-boulder', 'restoring the full boulder preserves its exact map-prefixed live-grid identity');
 for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
