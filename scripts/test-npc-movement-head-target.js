@@ -112,6 +112,12 @@ const combat = fs.readFileSync(path.join(root, 'docs/js/combat/combat-bandit.js'
 const html = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'); // Checks the new browser module is loaded before the game.
 assert(game.includes('updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions)'));
 assert(game.includes('updateMovementHeadLook?.(c, entityDt, moving, aimAngle)'));
+assert.match(game,
+  /const hasMovementGaze = window\\.BanditCombat\\?\\.updateMovementHeadLook\\?\\.\\(c, entityDt, moving, aimAngle\\);[\\s\\S]{0,160}if \\(c\\.state !== 'chase' && !hasMovementGaze\\) window\\.BanditCombat\\?\\.restNeckLook/,
+  'visible hostile resolves movement gaze before its idle head reset');
+assert.match(game,
+  /if \\(skipDistantVisualUpdate\\) \\{[\\s\\S]{0,170}restNeckLook\\?\\.\\(c, entityDt\\)/,
+  'unrendered hostiles still settle their neck safely during distance LOD');
 assert(bridge.includes('applyHostileRunPitch?.(entity.avatarRef, runLean, localHeading, undo)'));
 assert(combat.includes('updateMovementHeadLook,'));
 assert(html.indexOf('js/npc-movement-head-target.js') > 0 && html.indexOf('js/npc-movement-head-target.js') < html.indexOf('js/combat/combat-bandit.js'));
