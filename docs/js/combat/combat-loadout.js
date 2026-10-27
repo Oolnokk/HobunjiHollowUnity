@@ -241,21 +241,35 @@
     });
   }
 
-  let stanceScriptRetryTimer = null; // Reschedules a failed dynamic stance module without reloading the game.
-  let stanceScriptLoadDeadline = null; // Recovers when a script request hangs without load/error events.
-  let stanceScriptFailures = 0; // Provides exponential backoff for repeated script/network failures.
+  let stanceScriptRetryTimer = null; // Retry timer for a failed dynamic stance module request.
+  let stanceScriptLoadDeadline = null; // Times out an active script request that never settles.
+  let stanceScriptFailures = 0; // Backoff counter for transient module failures.
+  let pendingStanceScript = null; // Identifies the current request so stale onload/onerror events cannot disrupt retries.
 
   function clearStanceScriptDeadline() {
     if (stanceScriptLoadDeadline !== null) clearTimeout(stanceScriptLoadDeadline);
     stanceScriptLoadDeadline = null;
   }
 
-  function retryStanceScript(script, reason) {
+  function completeStanceScript(script) {
+    if (pendingStanceScript !== script) return; // Ignore callbacks from a script removed by a previous timeout.
     clearStanceScriptDeadline();
+    pendingStanceScript = null;
+    stanceScriptFailures = 0;
+    if (stanceScriptRetryTimer !== null) clearTimeout(stanceScriptRetryTimer);
+    stanceScriptRetryTimer = null;
+    initializeStancesIfReady();
+  }
+
+  function retryStanceScript(script, reason) {
+    if (pendingStanceScript !== script) return; // Late events may arrive after a newer script has started.
+    clearStanceScriptDeadline();
+    pendingStanceScript = null;
     script.remove();
-    if (window.WeaponToolStances?.init || stanceScriptRetryTimer !== null) return;
+    if (window.WeaponToolStances?.init) { initializeStancesIfReady(); return; } // A late-executing module may already be ready.
+    if (stanceScriptRetryTimer !== null) return;
     stanceScriptFailures += 1;
-    const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceScriptFailures - 1, 5))); // Repeat every 30s at most until the stance module loads.
+    const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceScriptFailures - 1, 5))); // Back off until the module loads.
     window.__farmLog?.(`[weapon-stance] module unavailable (${reason}); retry in ${retryMs}ms`, 'warn');
     stanceScriptRetryTimer = setTimeout(() => {
       stanceScriptRetryTimer = null;
@@ -269,22 +283,24 @@
       initializeStancesIfReady();
       return;
     }
-    if (document.querySelector('script[data-weapon-tool-stances]')) return; // A current load is already in flight.
-    const script = document.createElement('script'); // Loads after shared melee-spacing math; a transient failed script must not strand the session.
+    if (pendingStanceScript || document.querySelector('script[data-weapon-tool-stances]')) return; // One active script request per session.
+    const script = document.createElement('script'); // Dynamic module loaded after shared melee spacing.
     script.src = 'js/weapon-tool-stances.js?v=20261026h95fc1e5';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
+    pendingStanceScript = script;
     script.onload = () => {
-      clearStanceScriptDeadline();
+      if (pendingStanceScript !== script) return;
       if (!window.WeaponToolStances?.init) { retryStanceScript(script, 'module did not initialize'); return; }
-      stanceScriptFailures = 0;
-      initializeStancesIfReady();
+      completeStanceScript(script);
     };
     script.onerror = () => retryStanceScript(script, 'network or script error');
-    (document.head || document.documentElement).appendChild(script);
     stanceScriptLoadDeadline = setTimeout(() => {
-      if (!window.WeaponToolStances?.init && script.isConnected) retryStanceScript(script, 'load timeout');
-    }, 10000); // Detect pending script requests that otherwise never dispatch an error.
+      if (pendingStanceScript !== script) return;
+      if (window.WeaponToolStances?.init) completeStanceScript(script); // Missing load event must not strand a ready module.
+      else retryStanceScript(script, 'load timeout');
+    }, 10000);
+    (document.head || document.documentElement).appendChild(script);
   }
 
   if (!window.MeleePoseSpacing && typeof document !== 'undefined') {
