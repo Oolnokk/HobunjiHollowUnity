@@ -197,12 +197,13 @@
   }
 
   function blocksPoint(mapId, x, z) {
-    const natural = recordsForMap(mapId); // Naturally generated stumps and fallen logs retain their existing collision contract.
-    const external = externalRecordsByMapId.get(mapId); // Camp logs share that contract while their meshes are alive.
-    const records = external?.size ? [...natural, ...[...external.values()].map(entry => entry.record)] : natural;
-    return records.some(record =>
-      x >= record.col && x < record.col + record.footprintW
-      && z >= record.row && z < record.row + record.footprintD);
+    const overlaps = record => x >= record.col && x < record.col + record.footprintW
+      && z >= record.row && z < record.row + record.footprintD; // Same collision footprint for natural logs and externally registered camp benches.
+    if (recordsForMap(mapId).some(overlaps)) return true;
+    for (const entry of externalRecordsByMapId.get(mapId)?.values() || []) {
+      if (overlaps(entry.record)) return true; // Avoids allocating another record array on every movement collision query.
+    }
+    return false;
   }
 
   async function spawnForMap(mapId) {
