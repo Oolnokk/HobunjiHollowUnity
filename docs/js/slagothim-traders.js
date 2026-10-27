@@ -242,8 +242,10 @@
       const townZone = townZoneData(); // Authored buildings/stations determine safe caravan routes.
       loadTownPieceFootprints(townZone);
       const stamp = townLayoutStamp(townZone);
+      const footprintAuthority = window.BuildingGrassSuppression?.authoredBuildingFootprintKeys
+        || window.BuildingSubtleElevation?.worldFootprintCells || null; // A late-loaded building helper must invalidate older rectangular routing.
       const cached = gridCache.get('town');
-      if (cached?.source === townGrid && cached.townZone === townZone && cached.stamp === stamp) return cached;
+      if (cached?.source === townGrid && cached.townZone === townZone && cached.stamp === stamp && cached.footprintAuthority === footprintAuthority) return cached;
       const rows = townGrid.length, cols = townGrid[0]?.length || 0;
       const cost = new Float32Array(cols * rows).fill(-1);
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
@@ -251,7 +253,7 @@
         cost[r * cols + c] = townGrid[r][c]?.type === 'path' ? 1 : 3;
       }
       blockTownFootprints(cost, cols, rows, townZone);
-      const grid = { area, source: townGrid, townZone, stamp, stations: townZone?.npcStations, cols, rows, cost, tier: null, incline: null, routes: new Map() };
+      const grid = { area, source: townGrid, townZone, stamp, footprintAuthority, stations: townZone?.npcStations, cols, rows, cost, tier: null, incline: null, routes: new Map() };
       gridCache.set('town', grid);
       return grid;
     }
