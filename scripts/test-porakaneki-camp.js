@@ -349,6 +349,23 @@ function hunterDebug(api, zoneId, campId, index) {
   await flush();
   const api = contextWindow.PorakanekiCamps;
   assert.equal(api.version, 8);
+  const rawRockLayout = { cols: 5, rows: 5, tiles: [ // Generated wilderness may not have created its live-grid rockKind/boulderId yet.
+    { c: 0, r: 0, type: 'rock', generatedObjectType: 'undiggableBoulder', generatedObjectId: 'source-boulder' },
+    { c: 1, r: 0, type: 'rock', generatedObjectType: 'undiggableBoulder', generatedObjectId: 'source-boulder' },
+    { c: 2, r: 0, type: 'rock' }, // An untyped rock cliff is not a replaceable resource.
+    { c: 3, r: 0, type: 'grass', mapBoundary: true },
+    { c: 4, r: 0, type: 'rock', rockKind: 'diggableRockOre', generatedObjectId: 'source-ore' },
+    { c: 1, r: 1, type: 'rock', rockKind: 'undiggableBoulder', boulderId: 'map-prefixed:boulder' },
+  ], buildings: [], dens: [], decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [] };
+  const rawRockView = api.__test.buildZoneView('map_western_slope', rawRockLayout); // Validates real camp placement metadata against pre-merged generator output.
+  assert.equal(rawRockView.tiles[0][0].rockKind, 'undiggableBoulder');
+  assert.equal(rawRockView.tiles[0][0].boulderId, 'source-boulder', 'unmerged generator rock identities survive into camp placement');
+  assert.equal(rawRockView.tiles[0][1].boulderId, 'source-boulder', 'multiple tiles of one boulder share the same removal identity');
+  assert.equal(rawRockView.tiles[1][1].boulderId, 'map-prefixed:boulder', 'live-grid boulder IDs take priority when already available');
+  assert.equal(rawRockView.tiles[0][2].occupiedBy?.includes('natural_cliff'), true, 'unidentified cliff rock cannot be bulldozed as ordinary camp clutter');
+  assert.equal(rawRockView.tiles[0][3].borderEscarpment, true, 'boundary escarpments remain forbidden camp footprint tiles');
+  assert.equal(rawRockView.tiles[0][4].occupiedBy?.includes('clutter'), true, 'ordinary identified resource rocks remain replaceable');
+
   let outlinedLayer = null; // Captures the render layer enabled by the camp outline helper under test.
   api.__test.markOutline({
     traverse(visitor) {
