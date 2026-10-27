@@ -32,12 +32,17 @@ async function testStanceJsonRecovery() {
   const timers = timerHarness(); // Controls retry backoff independently of real wall time.
   const logs = []; // Diagnostic lines emitted by the production stance loader.
   let requests = 0; // Count the attempted JSON fetches to detect a permanent one-shot failure.
+  let failNextRequest = false; // Exercises a temporary refresh failure after the committed config has already loaded.
   const window = { __farmLog: message => logs.push(message) };
   const context = vm.createContext({
     window, console, performance: { now: () => 0 },
     localStorage: { getItem(key) { return key === 'hobunji.weaponIdleStances.v1' ? JSON.stringify(local) : null; } },
     fetch() {
       requests += 1;
+      if (failNextRequest) {
+        failNextRequest = false;
+        return Promise.reject(new Error('temporary refresh failure'));
+      }
       if (requests === 1) return Promise.reject(new Error('temporary connection failure'));
       return Promise.resolve({ ok: true, json: async () => requests === 2 ? incomplete : committed });
     },
@@ -71,6 +76,17 @@ async function testStanceJsonRecovery() {
   assert.equal(timers.tasks.size, 0, 'success must clear all retry timers');
   await runtime.reloadConfig();
   assert.equal(requests, 4, 'manual reload still allows refreshing after success');
+  failNextRequest = true;
+  assert.equal(await runtime.reloadConfig(), false, 'manual refresh reports a temporary failure');
+  assert.equal(requests, 5);
+  assert.equal(runtime.debugSnapshot().stanceConfigLoaded, false, 'a failed refresh must reopen automatic recovery');
+  assert.equal(runtime.poses.heavyWeapon.y, 0.71, 'failed refresh preserves the previously usable local stance');
+  timers.run(1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 6, 'a failed refresh retries even after an earlier successful load');
+  assert.equal(runtime.debugSnapshot().stanceConfigLoaded, true);
+  assert.equal(runtime.debugSnapshot().stanceConfigFailures, 0);
+  assert.equal(timers.tasks.size, 0, 'successful refresh recovery leaves no pending timers');
 }
 
 function testDynamicScriptRecovery() {

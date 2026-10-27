@@ -140,6 +140,7 @@
         window.__farmLog?.(`[weapon-stance] idle config source=${stanceConfigSource}`, 'combat');
         return true;
       } catch (error) {
+        stanceConfigLoaded = false;
         stanceConfigLastError = String(error?.message || error);
         stanceConfigFailures += 1;
         const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceConfigFailures - 1, 5))); // Back off up to 30s; keep recovering during long sessions.
