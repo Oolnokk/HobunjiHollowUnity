@@ -343,7 +343,7 @@
     }
     const vat = vatObject(child);
     if (!child.vatId) {
-      const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }); // Farm assignments on a family day preempt optional town play.
+      const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }, { familyOnly: true }); // Farm assignments on a family day preempt optional town play.
       if (chore) return chore;
       const townTarget = childTownTarget(child);
       if (townTarget) return townTarget;
