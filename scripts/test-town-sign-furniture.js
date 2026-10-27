@@ -67,10 +67,11 @@ checkSign('docs/config/furniture-authored/generalStoreSign.json', 'generalStoreS
 checkSign('docs/config/furniture-authored/innSign.json', 'innSign', 'Inn');
 
 // Both signs are house-owned fixtures; their inventory sources stay available.
-const gameJs=read('docs/game.js');
 for(const key of ['generalStoreSign','innSign']) {
-  assert(gameJs.includes(key),key+' must remain in game definitions');
-  assert(read('docs/tools/map-editor/index.html').includes(key),key+' must remain available in editor catalog');
+  assert(json('docs/config/furniture-authored/'+key+'.json').key===key,
+    key+' must remain a valid authored furniture definition');
+  assert(read('docs/tools/map-editor/index.html').includes(key),
+    key+' must remain available in the editor catalog');
 }
 const townMap=json('docs/config/maps/hobunji_hollow_town.map.json');
 for(const [name,decor] of [['base',townMap.decor],...(townMap.layouts||[]).map((l,i)=>['layout '+i,l.decor])])
