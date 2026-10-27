@@ -264,6 +264,31 @@ assert.equal(context.window.__heldStrike, 1, 'original held strike must still ex
 assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_releasegrunt'));
 
 
+// Release grunts may layer through the next attack's windup without cutting off their predecessors.
+W.CharacterVoiceOwner.stop(player, 0); // Earlier timed strike fixtures deliberately leave claims active; isolate this overlap probe.
+const releaseA = W.CombatVocalizations.playStrikeGrunt(player, 'quickAttack', 'overlap-a');
+const releaseEntryA = played.at(-1);
+const releaseB = W.CombatVocalizations.playStrikeGrunt(player, 'offensiveHold', 'overlap-b');
+const releaseEntryB = played.at(-1);
+assert(releaseA?.claim && releaseB?.claim, 'each release starts an owned voice');
+assert.equal(releaseEntryA.stopped, false, 'second release must not interrupt first release');
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 2);
+const followupWindup = W.CombatVocalizations.beginCharge({ entity: player, abilityId: 'overlap-windup', targetDurationS: 0.2, preserveGroup: 'release-grunt' });
+assert.equal(releaseEntryA.stopped, false, 'next attack windup must preserve the first release');
+assert.equal(releaseEntryB.stopped, false, 'next attack windup must preserve the second release');
+const releaseC = W.CombatVocalizations.playStrikeGrunt(player, 'quickAttack', 'overlap-c');
+const releaseEntryC = played.at(-1);
+assert(releaseC?.claim);
+assert.equal(followupWindup.cancelled, true, 'release preempts the charge windup');
+assert.equal(releaseEntryA.stopped, false);
+assert.equal(releaseEntryB.stopped, false);
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 3);
+releaseEntryA.handle.finish();
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 2, 'finishing older release does not free younger voices');
+releaseEntryB.handle.finish();
+releaseEntryC.handle.finish();
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 0);
+
 // One owned voice per character: active grunts beat pain and breathing.
 const priorityPlayer = context.window.CombatVocalizations.playStrikeGrunt(player, 'combo', 'priority-test');
 const activeEntry = played.at(-1);
@@ -513,7 +538,7 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
   const audioContext = { // Minimal Web Audio graph executes the real timed combat playback path.
     currentTime: 0, state: 'running', destination: {},
     decodeAudioData(_bytes, done) { done({ duration: 1.2 }); },
-    createBufferSource() { return { playbackRate: {}, connect() {}, start() {}, stop() {}, disconnect() {} }; },
+    createBufferSource() { return { playbackRate: {}, stopped: false, connect() {}, start() {}, stop() { this.stopped = true; }, disconnect() {} }; },
     createGain() {
       const output = { gain: { value: 1 }, connect() {}, disconnect() {} }; // Captures the authored species gain used by chargeOutputGain.
       outputs.push(output);
@@ -555,5 +580,43 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
       }
     }
   }
+  // Time-stretched release playback uses independently owned Web Audio sources too, not just the one-shot backend.
+  const overlappingActor = { id: 'timed-overlap-actor', appearance: { speciesId: 'nuhongan', gender: 'female' } }; // Keeps this audio-only probe separate from the species modulation loops.
+  const startTimedRelease = (id, category = 'quickAttack') => W.CombatVocalizations.playStrikeGrunt(
+    overlappingActor, category, id, 0.6, 0, { url: `${id}.m4a`, pitchOffsetSemitones: 0 },
+  ); // Unique URLs exercise full decode/render and independent source creation instead of the failed offline cache.
+  const awaitReady = async token => {
+    for (let turn = 0; turn < 32 && !token.ready && !token.done; turn++) await Promise.resolve();
+    assert.equal(token.ready, true, 'time-stretched grunt must create a playing Web Audio source');
+  };
+  const timedReleaseA = startTimedRelease('timed-overlap-a');
+  await awaitReady(timedReleaseA);
+  const timedReleaseB = startTimedRelease('timed-overlap-b', 'offensiveHold');
+  await awaitReady(timedReleaseB);
+  assert.equal(timedReleaseA.source.stopped, false, 'second timed release does not stop the first audio source');
+  assert.equal(timedReleaseA.cancelled, false);
+  const timedWindup = W.CombatVocalizations.beginCharge({
+    entity: overlappingActor, abilityId: 'followup-windup', targetDurationS: 0.5,
+    assetUrl: 'timed-followup-windup.m4a', preserveGroup: 'release-grunt',
+  }); // A non-release attack phase must retain already playing release tails.
+  await awaitReady(timedWindup);
+  assert.equal(timedReleaseA.source.stopped, false);
+  assert.equal(timedReleaseB.source.stopped, false);
+  const timedReleaseC = startTimedRelease('timed-overlap-c');
+  await awaitReady(timedReleaseC);
+  assert.equal(timedWindup.cancelled, true, 'new release stops its own windup');
+  assert.equal(timedReleaseA.source.stopped, false, 'newest timed release must not truncate the oldest');
+  assert.equal(timedReleaseB.source.stopped, false, 'newest timed release must not truncate the middle');
+  const claims = () => W.CharacterVoiceOwner.debugSnapshot().filter(c => c.key === 'actor:timed-overlap-actor' && c.overlapGroup === 'release-grunt');
+  assert.equal(claims().length, 3, 'all three time-stretched sources retain concurrent ownership');
+  timedReleaseA.source.onended();
+  assert.equal(claims().length, 2, 'older source completion must not release younger voices');
+  assert.equal(timedReleaseB.source.stopped, false);
+  assert.equal(timedReleaseC.source.stopped, false);
+  W.CombatVocalizations.forgetEntity(overlappingActor);
+  assert.equal(timedReleaseB.cancelled, true, 'despawn must clean up the middle release');
+  assert.equal(timedReleaseC.cancelled, true, 'despawn must clean up the newest release');
+  assert.equal(claims().length, 0, 'despawn must clear all release claims');
+  console.log('time-stretched release grunts overlap through followup attacks and clean up independently: ok');
   console.log('all species/gender profiles reach timed charge/combo/quick/held renderers: ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
