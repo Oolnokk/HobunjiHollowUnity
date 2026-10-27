@@ -73,9 +73,25 @@ assert.equal(tactics.chooseAttack(actor).id, 'pounce', 'disabled guard charge is
 assert.equal(tactics.combatTempo(actor).stamina, 1.3);
 const hit = context.CompanionOffense.scaleHit(actor, {}, 10, { footingDamageMultiplier: 2, afflictionBonuses: { poison: 10 } }); // Shared hit path must keep Footing independent of Health scaling.
 assert.equal(hit.amount, 13.5);
-assert.equal(hit.opts.afflictionBonuses.poison, 7.5);
+assert(Math.abs(hit.amount * hit.opts.afflictionBonuses.poison - 75) < 1e-9, 'damage and affliction focus scale independent channels');
 assert(Math.abs(hit.amount * hit.opts.footingDamageMultiplier - 15) < 1e-9);
 assert.equal(definitions['dabinggi-hound'].attackDamage, 10, 'shared species definition remains untouched');
+// Test final buildup through ResourceSystem, whose affliction coefficients multiply the actual hit damage.
+context.performance = performance;
+context.dispatchEvent = () => {};
+context.CustomEvent = class { constructor(type, options) { this.type = type; this.detail = options.detail; } };
+vm.runInContext(fs.readFileSync('docs/js/combat/resource-system.js', 'utf8'), context);
+const resources = context.ResourceSystem; // Real terminal damage transaction, instead of inspecting only an intermediate coefficient.
+const victim = { health: 1000, maxHealth: 1000, stamina: 100, maxStamina: 100, footing: 100, maxFooting: 100 }; // Plenty of capacity prevents caps obscuring the channel calculation.
+resources.initEntity(victim);
+context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
+assert.equal(resources.getAffliction(victim, 'bleedingHealth'), 7.5, 'Power reduces final buildup by precisely 25%, independently of its damage boost');
+const removeStackedProvider = context.CompanionOffense.registerProvider('stacked-test', () => ({ damage: 1.3, affliction: 1.4 })); // Simulates existing Whistle/training bonuses alongside a tactical focus.
+resources.removeAffliction(victim, 'bleedingHealth', 1000);
+context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
+assert.equal(resources.getAffliction(victim, 'bleedingHealth'), 10.5, 'stacked providers scale buildup once, rather than also applying their Health multiplier');
+removeStackedProvider();
+
 const enemy = { ...actor, banditCompanion: true }; // Enemy pets must retain baseline species behavior and hit strength.
 assert.equal(tactics.chooseAttack(enemy), null);
 assert.equal(context.CompanionOffense.scaleHit(enemy, {}, 10).amount, 10);
@@ -97,6 +113,23 @@ tactics.setTactics('grehlr', { abilities: { guardCharge: { frequency: 0 }, grehl
 const grehlr = { ...actor, stableId: 'grehlr', creatureKey: 'grehlr', def: definitions.grehlr }; // Spray can be deliberately chosen without allowing random substitution.
 assert.equal(tactics.chooseAttack(grehlr).id, 'grehlrStink');
 assert.equal(context.CompanionOffense.getModifiers(grehlr, {}).affliction, 1.5);
+// Each move's allow-list must reject options that its real hit payload cannot apply.
+for (const [id, kind, effect] of [['guardCharge', 'dabinggi-hound', 'affliction'], ['swarm', 'honeyfuzzle', 'stagger'], ['swarm', 'honeyfuzzle', 'drive'], ['causticPellet', 'drenkirra', 'stagger']]) {
+  const entry = { role: 'companion', kind, companionTactics: { abilities: { [id]: { frequency: 1, effect } } } }; // Old loadouts normalize unsupported focus choices back to Balanced.
+  const normalized = tactics.tacticsForEntry(entry, { def: { attacks: [id] } }); // Uses the same species-move normalization as the live AI.
+  assert.equal(normalized.abilities[id].effect, 'balanced', id + ' rejects ineffective ' + effect + ' focus');
+}
+const swarmEntry = { id: 'swarm', role: 'companion', kind: 'honeyfuzzle', lifeStage: 'adult', animalPerks: {} }; // Drives every advertised Swarm effect through actual controller/touch button listeners.
+stable.push(swarmEntry);
+definitions.honeyfuzzle = { attacks: ['swarm'], realAttackEvery: 1 };
+const swarmPanel = new Element('div'); // Same production builder used by the native Stable detail.
+tactics.appendTacticalLoadout(swarmPanel, swarmEntry);
+const swarmEffectButton = swarmPanel.children[0].children.find(element => element.textContent?.startsWith('Swarm effect:')); // Swarm has damage and poison, but no Footing or knockback channels.
+for (const label of ['Power', 'Afflict', 'Balanced']) {
+  swarmEffectButton.listeners.click({ stopPropagation() {} });
+  assert(swarmEffectButton.textContent.includes(label));
+  assert(!/Footing|knockback/.test(swarmEffectButton.textContent), 'Swarm copy never advertises inactive hit channels');
+}
 tactics.setTactics('hound', { tempo: 'bogus', abilities: { guardCharge: { frequency: -1 }, pounce: { frequency: 0, effect: 'bogus' } } });
 assert.equal(tactics.tacticsForEntry(stable[0]).abilities.guardCharge.frequency, 1, 'all-off saves retain one safe move');
 assert.equal(tactics.tacticsForEntry(stable[0]).tempo, 'steady');

@@ -65,7 +65,7 @@
       const scaled = {};
       for (const [id, value] of Object.entries(next.afflictionBonuses)) {
         const n = Number(value);
-        if (Number.isFinite(n)) scaled[id] = n * mods.affliction;
+        if (Number.isFinite(n)) scaled[id] = n * mods.affliction / (mods.damage || 1); // ResourceSystem multiplies these coefficients by hit damage; keep buildup independent of Health boosts.
       }
       next.afflictionBonuses = scaled;
     }

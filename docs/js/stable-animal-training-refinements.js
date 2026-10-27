@@ -219,9 +219,21 @@
 
   function effectIds(attackId) {
     if (attackId === 'grehlrStink') return ['balanced', 'affliction'];
-    if (attackId === 'guardCharge') return ['balanced', 'drive', 'affliction']; // Zero damage means damage/Footing focuses cannot help this move.
+    if (attackId === 'guardCharge') return ['balanced', 'drive']; // Zero-damage charges apply knockback, but ResourceSystem does not apply damage-derived afflictions.
+    if (attackId === 'swarm') return ['balanced', 'power', 'affliction']; // Attached ticks explicitly suppress Footing damage and knockback.
+    if (attackId === 'causticPellet') return ['balanced', 'power', 'drive', 'affliction']; // Ranged pellets explicitly have zero Footing damage.
     if (attackId === 'rearKick') return ['balanced', 'stagger', 'drive', 'power'];
     return Object.keys(EFFECTS);
+  }
+
+  function effectLabel(attackId, effect) {
+    if (attackId === 'grehlrStink' && effect === 'affliction') return 'Concentrated (+50% Winded Stamina)';
+    if (attackId === 'guardCharge' && effect === 'drive') return 'Drive (+60% knockback)';
+    if ((attackId === 'swarm' || attackId === 'causticPellet') && effect === 'power') return 'Power (+35% damage, -25% afflictions)';
+    if (attackId === 'swarm' && effect === 'affliction') return 'Afflict (+50% buildup, -20% damage)';
+    if (attackId === 'causticPellet' && effect === 'drive') return 'Drive (+60% knockback, -20% damage / afflictions)';
+    if (attackId === 'causticPellet' && effect === 'affliction') return 'Afflict (+50% buildup, -20% damage / knockback)';
+    return EFFECTS[effect].label;
   }
 
   function tacticsForEntry(entry, actor) {
@@ -321,7 +333,7 @@
     const tempoUpdate = addCycle('Combat tempo', Object.keys(TEMPOS), () => settings.tempo, value => { settings.tempo = value; }, value => `${TEMPOS[value].label}${value === 'relentless' ? ' (25% shorter cooldown, 35% shorter retreat, +30% base Stamina)' : value === 'measured' ? ' (30% longer cooldown, 25% longer retreat, -20% base Stamina)' : ' (normal recovery and Stamina)'}`);
     for (const def of abilityDefs(entry)) {
       frequencyButtons.push(addCycle(`${def.label} frequency`, [0, 1, 2, 3, 4], () => settings.abilities[def.id].frequency, value => { settings.abilities[def.id].frequency = value; }, value => FREQUENCIES[value]));
-      addCycle(`${def.label} effect`, effectIds(def.id), () => settings.abilities[def.id].effect, value => { settings.abilities[def.id].effect = value; }, value => def.id === 'grehlrStink' && value === 'affliction' ? 'Concentrated (+50% Winded Stamina)' : EFFECTS[value].label);
+      addCycle(`${def.label} effect`, effectIds(def.id), () => settings.abilities[def.id].effect, value => { settings.abilities[def.id].effect = value; }, value => effectLabel(def.id, value));
     }
     function refresh() {
       const total = Object.values(settings.abilities).reduce((sum, value) => sum + value.frequency, 0); // Exact steady-state share, before move cooldowns and Stamina requirements.
