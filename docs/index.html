@@ -1187,21 +1187,17 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist" data-ctrl-tabs>
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
-        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
-        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
-        <!-- Shipping and Supplies are meant to open as their own windows when
-             interacting with their associated objects in the world, not as
-             menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
-             buildShippingTransferUI()/renderSupplyPage() are left intact
-             below for that future hookup. -->
+        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
         <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
-        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
-        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
-        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
+        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
+        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
+        <!-- Shipping and Supplies open from their objects in the world; they are not ordinary pause-menu tabs. -->
         <button class="mp-tab"        data-mpanel="debug"         data-dev-only role="tab">🐛 Debug</button>
         <button class="mp-tab"        data-mpanel="wildlife"      data-dev-only role="tab">🧬 Wildlife</button>
       </div>
