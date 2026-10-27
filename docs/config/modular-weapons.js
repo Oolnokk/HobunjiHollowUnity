@@ -160,6 +160,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "sourceShape": "kylie",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_kylie.png",
       "dmgType": "blunt",
+      "craftDisabled": true,
       "mount": {
         "type": "weight",
         "start": {
