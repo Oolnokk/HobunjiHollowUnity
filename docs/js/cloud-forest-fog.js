@@ -667,7 +667,7 @@
   }
 
   function ordinaryBuildingInterior(area) {
-    return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks only.
+    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area)); // _isBuildingArea includes mine/den IDs; keep daylight glows out of their underground lighting.
   }
 
   // Daylight windows reveal the stable enclosed darkness locally, exactly like
