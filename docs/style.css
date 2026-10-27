@@ -3787,3 +3787,18 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
 }
 
 .ctrl-nav-subtabs .farm-pane { max-width: none; }
+
+/* Visible choices explain which pages the controller's local bumpers cycle. */
+.ctrl-nav-section-choices {
+  display: flex; flex: 1 0 100%; gap: 6px;
+  overflow-x: auto; max-width: min(86vw, 760px); pointer-events: auto;
+}
+.ctrl-nav-section-choices[hidden] { display: none; }
+.ctrl-nav-section-choices button {
+  flex: 0 0 auto; min-height: 36px; padding: 6px 10px; font: inherit;
+  color: var(--text, #e8e8e0); background: #ffffff0c;
+  border: 1px solid var(--border, #ffffff30); border-radius: 8px;
+}
+.ctrl-nav-section-choices button[aria-pressed="true"] {
+  color: var(--accent, #f9e28a); border-color: currentColor; background: #f9e28a18;
+}
