@@ -213,6 +213,25 @@
 
   function metalMaskForSprite(spritePath) {
     if (!spritePath || typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const modularParts = window.ModularWeapons?.decode?.(spritePath); // Virtual modular sprite keys must be composed, not loaded as image URLs.
+    if (modularParts) {
+      const revision = window.ModularWeapons.diagnostics?.(spritePath)?.revision ?? 0; // Separates cached masks after foundry authoring changes.
+      const cacheKey = `modular-mask:${revision}:${spritePath}`; // Reuses one source-metal scan for each assembled weapon configuration.
+      if (MASK_CACHE.has(cacheKey)) return MASK_CACHE.get(cacheKey);
+      const task = window.ModularWeapons.compose(modularParts.shaft, modularParts.head).then(canvas => {
+        const context = canvas?.getContext?.('2d', { willReadFrequently: true }); // Scan the exact assembled, unrecolored sprite used by tool-metal-recolor.
+        if (!context || !canvas.width || !canvas.height) throw new Error('Modular weapon composition has no readable pixels');
+        const mask = buildMetalMask(context.getImageData(0, 0, canvas.width, canvas.height));
+        if (!mask) throw new Error('Metal pixel scanner unavailable');
+        return mask;
+      }).catch(error => {
+        MASK_CACHE.delete(cacheKey); // Let later scans retry missing donor assets or transient canvas failures.
+        lastEvent = `modular metal mask failed: ${error?.message || error}`;
+        return null;
+      });
+      MASK_CACHE.set(cacheKey, task);
+      return task;
+    }
     const url = resolveSpriteUrl(spritePath); // Used as the stable per-source cache key and image URL.
     if (MASK_CACHE.has(url)) return MASK_CACHE.get(url);
     const promise = new Promise(resolve => {
@@ -294,13 +313,31 @@
   }
 
   function geometrySize(plane) {
-    const geometry = plane?.geometry; // Used to convert source-PNG normalized coordinates to this literal rendered plane's local coordinates.
+    const geometry = plane?.geometry; // Used to map source pixels onto the exact local quad, including the offset of a modular head/haft.
     const width = Number(geometry?.parameters?.width);
     const height = Number(geometry?.parameters?.height);
-    if (width > 0 && height > 0) return { width, height };
+    const layout = geometry?.userData?.modularLayout; // ModularWeapons.fitPlaneGeometry shifts quad vertices; width/height alone lose that offset.
+    const box = geometry?.boundingBox; // An existing bounding box also supports custom non-centered plane geometry.
+    const centerX = Number(layout?.x ?? (box ? (box.min.x + box.max.x) / 2 : 0)); // Used by spawnParticle() and scissor padding.
+    const centerY = Number(layout?.y ?? (box ? (box.min.y + box.max.y) / 2 : 0)); // Used by spawnParticle() and scissor padding.
+    if (width > 0 && height > 0) return { width, height, centerX, centerY };
     geometry?.computeBoundingBox?.();
-    const box = geometry?.boundingBox; // Used as a fallback for cloned/custom plane geometry lacking constructor parameters.
-    return box ? { width: Math.max(0.001, box.max.x - box.min.x), height: Math.max(0.001, box.max.y - box.min.y) } : { width: 0.5, height: 0.5 };
+    const bounds = geometry?.boundingBox; // Fallback for cloned/custom planes without constructor parameters.
+    return bounds
+      ? { width: Math.max(0.001, bounds.max.x - bounds.min.x), height: Math.max(0.001, bounds.max.y - bounds.min.y),
+        centerX: (bounds.min.x + bounds.max.x) / 2, centerY: (bounds.min.y + bounds.max.y) / 2 }
+      : { width: 0.5, height: 0.5, centerX: 0, centerY: 0 };
+  }
+
+  function metalPixelToLocal(index, mask, plane) {
+    const px = index % mask.width; // Source pixel index converted to the assembled sprite's X coordinate.
+    const py = Math.floor(index / mask.width); // Source pixel index converted to the assembled sprite's Y coordinate.
+    const size = geometrySize(plane); // Returned frame includes both logical dimensions and local-quad center.
+    return {
+      x: size.centerX + ((px + 0.5) / mask.width - 0.5) * size.width,
+      y: size.centerY + (0.5 - (py + 0.5) / mask.height) * size.height,
+      size,
+    };
   }
 
   function drawShape(context, shape) {
@@ -451,11 +488,8 @@
     else sprite.layers?.set?.(0);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
-    const px = index % mask.width; // Used to map the selected source pixel into plane-local X.
-    const py = Math.floor(index / mask.width); // Used to map the selected source pixel into plane-local Y.
-    const size = geometrySize(emitter.plane); // Used so effects scale with the actual rendered weapon plane, not with source PNG dimensions.
-    const baseX = ((px + 0.5) / mask.width - 0.5) * size.width; // Spawn X on the authored metal pixel.
-    const baseY = (0.5 - (py + 0.5) / mask.height) * size.height; // Spawn Y on the authored metal pixel.
+    const origin = metalPixelToLocal(index, mask, emitter.plane); // Pixel emission follows even offset/expanded modular weapon geometry.
+    const { x: baseX, y: baseY, size } = origin;
     const particleSize = Math.max(0.008, Math.min(size.width, size.height) * effect.size * (0.76 + random() * 0.55)); // Used as a bounded local sprite size with slight natural variation.
     sprite.position.set(baseX, baseY, 0.004 + random() * 0.015);
     sprite.scale.set(particleSize, particleSize, 1);
@@ -588,8 +622,8 @@
         const sprite = particle.sprite; // Used to measure current motion and sprite growth, not its original metal pixel.
         const radius = Math.max(sprite.scale.x, sprite.scale.y) * BILLBOARD_RADIUS_FACTOR; // Includes rotated billboard corners in every view.
         const outside = Math.max(
-          Math.abs(sprite.position.x) - size.width * 0.5,
-          Math.abs(sprite.position.y) - size.height * 0.5,
+          Math.abs(sprite.position.x - size.centerX) - size.width * 0.5,
+          Math.abs(sprite.position.y - size.centerY) - size.height * 0.5,
           Math.abs(sprite.position.z) + Math.abs(emitter.group.position.z),
         ); // Used to retain front/back face clearance even when the blade turns edge-on.
         padding = Math.max(padding, outside + radius);
@@ -868,7 +902,7 @@
     debugSnapshot,
     copyDebug,
     forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },
-    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter, faceEmittersTowardCamera }), // Particle lifecycle/pooling regression hooks.
+    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter, faceEmittersTowardCamera, metalPixelToLocal }), // Particle lifecycle/pooling regression hooks.
   });
 
   bootstrap();
