@@ -421,10 +421,18 @@ function hunterDebug(api, zoneId, campId, index) {
   const authoredChiefTent = chiefLocale.objects.find(prop => prop.kind === 'tent'); // Fake chief camp stamp uses its exact authored 2x2 shelter.
   const tentWorldCol = 4 + authoredChiefTent.col + 1;
   const tentWorldRow = 4 + authoredChiefTent.row + 1;
-  assert(tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1), 'walking actors cannot move through a chief tent');
-  assert(tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1, 0.8), 'low projectiles hit the tent instead of passing through');
-  assert(!tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1, 50), 'high projectiles can travel above the tent roof');
-  assert(!tentCollision.blocksBox(0.25, 0.25, 0.1), 'tent collision is limited to real stamped tent footprints');
+  const wallCol = 4 + authoredChiefTent.col + 0.09; // Canvas corner is always structurally solid regardless of which wall owns the entrance.
+  const wallRow = 4 + authoredChiefTent.row + 0.09; // Paired with wallCol for perimeter and roof-height checks.
+  assert(tentCollision.blocksBox(wallCol, wallRow, 0.1), 'walking actors collide with physical tent canvas walls');
+  assert(tentCollision.blocksBox(wallCol, wallRow, 0.1, 0.8), 'low projectiles hit the canvas rather than passing through');
+  assert(!tentCollision.blocksBox(wallCol, wallRow, 0.1, 50), 'high projectiles clear the tent roof');
+  assert(!tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1), 'chief can still reach the sleeping position inside the tent');
+  const sampleTent = { x: 10, y: 10, w: 2, h: 2, rot: 0 }; // Exercises the physical doorway facing +row, as authored in HousePieceGen.
+  assert(!api.__test.tentWallsBlockBox(sampleTent, 11, 11.95, 0.1), 'the front doorway has enough room for NPC-sized actors');
+  assert(api.__test.tentWallsBlockBox(sampleTent, 11, 10.05, 0.1), 'the back wall stays solid');
+  assert(api.__test.tentWallsBlockBox({ ...sampleTent, rot: 90 }, 10.05, 11, 0.1), 'rotating the entrance rotates its physical walls');
+  assert(!api.__test.tentWallsBlockBox({ ...sampleTent, rot: 90 }, 11.95, 11, 0.1), 'rotated front doorway stays passable');
+  assert(!tentCollision.blocksBox(0.25, 0.25, 0.1), 'tent collision is limited to real stamped canvas wall footprints');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1, 'exactly one large chief camp is active');
   const firstChiefDebug = debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief'); // Used below to verify redesigned chief-camp structural diagnostics.
   assert.equal(firstChiefDebug.residents, 6);
@@ -451,7 +459,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1);
   assert.equal(debug.zones.map_western_slope.chiefActive, true);
   assert.equal(debug.zones.map_southern_cloud_forest.chiefActive, false);
-  assert(!tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1), 'the migrated chief tent no longer blocks movement in its old map');
+  assert(!tentCollision.blocksBox(wallCol, wallRow, 0.1), 'the migrated chief tent no longer blocks movement in its old map');
   assert.equal(JSON.stringify(smallCenters(debug)), originalSmallCenters, 'small camps remain stable when the chief camp changes maps');
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_western_slope');
   assert(chief.rec.agenda.every(beat => !beat.destinationArea || beat.destinationArea === 'map_western_slope'));
