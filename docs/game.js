@@ -6604,7 +6604,8 @@
             if (c.isBandit) {
               c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
               window.EnemyDodge?.cancel?.(c); // Dodge only advances inside chase AI; leaving chase mid-roll otherwise froze the avatar tilted.
-              window.BanditCombat?.restNeckLook?.(c, entityDt);
+              // Defer the noncombat neck reset until movement has been resolved.
+              // Resetting here and then reaiming later cancels the carrot every frame.
             }
           }
 
@@ -7036,7 +7037,10 @@
           }
 
           const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
-          if (skipDistantVisualUpdate) continue;
+          if (skipDistantVisualUpdate) {
+            if (c.isBandit && c.state !== 'chase') window.BanditCombat?.restNeckLook?.(c, entityDt); // Off-screen hostiles can cheaply return their neck to neutral.
+            continue;
+          }
           window.WildlifeFoodWeb?.applyPose?.(c, entityDt); // Burrow-first-phase reversal and staggered chewing applied before final creature mesh placement.
           updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
@@ -7051,7 +7055,8 @@
           if (c.isBandit) {
             // Combat-head tracking wins during engagement; outside combat, moving
             // humanoids get the same hidden forward carrot as town NPCs.
-            window.BanditCombat?.updateMovementHeadLook?.(c, entityDt, moving, aimAngle);
+            const hasMovementGaze = window.BanditCombat?.updateMovementHeadLook?.(c, entityDt, moving, aimAngle); // A travel gaze owns the neck instead of fighting the idle reset.
+            if (c.state !== 'chase' && !hasMovementGaze) window.BanditCombat?.restNeckLook?.(c, entityDt); // Clear only after there is neither combat nor movement gaze.
             window.BanditCombat.updateToolMesh(c);
             window.BanditCombat.updateTrailArc(c, entityDt);
           }
