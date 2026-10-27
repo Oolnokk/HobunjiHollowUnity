@@ -476,7 +476,10 @@
           const response = await fetch(CONFIG_URL, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const parsed = await response.json();
-          if (parsed?.kind !== 'hobunji_weapon_idle_stances' || !parsed.stances) throw new Error('schema mismatch');
+          const complete = parsed?.kind === 'hobunji_weapon_idle_stances'
+            && parsed.stances && STANCE_ORDER.every(key => FIELD_DEFS.every(field =>
+              typeof parsed.stances[key]?.[field.key] === 'number' && Number.isFinite(parsed.stances[key][field.key]))); // Missing committed poses must retry, not silently fall back for this session.
+          if (!complete) throw new Error('incomplete stance config');
           fileConfig = normalizeConfig(parsed, FALLBACK_CONFIG);
           if (JSON.stringify(workingConfig) === lastAutoAppliedConfig) {
             workingConfig = savedLocalOverride ? normalizeConfig(savedLocalOverride, fileConfig) : clone(fileConfig);
