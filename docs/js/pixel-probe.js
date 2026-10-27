@@ -977,7 +977,7 @@
     const lines = [];
     lines.push('Pixel Probe report');
     const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
-    if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0}; ${interiorLightingDebug.latestChange}`);
+    if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; ${interiorLightingDebug.latestChange}`); // Existing copyable mobile report now confirms colored daylight actually reached the shared compositor.
     const portraitSpeciesDebug = window.portraitSpeciesLoadSnapshot?.(); // Identifies incomplete data loads directly in copied mobile reports.
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
