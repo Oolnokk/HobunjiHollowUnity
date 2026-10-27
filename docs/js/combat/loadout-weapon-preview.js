@@ -12,7 +12,7 @@
   const state = {
     key: null, sourcePlane: null, sourceGeometryVersion: -1, sourceMap: null,
     renderer: null, scene: null, camera: null, model: null, plane: null,
-    vfx: null, frame: 0, lastTime: 0, lastSourceCheck: 0,
+    vfx: null, frame: 0, lastTime: 0, lastSourceCheck: -Infinity,
     yaw: 0, pitch: 0, dragPointer: null, dragX: 0, dragY: 0,
     status: 'idle', error: null, frames: 0,
   }; // Shared by the fixed viewport, visibility handlers and mobile diagnostics.
@@ -185,7 +185,7 @@
     if (!isVisible() || !state.renderer) return; // No RAF/rendering work when another menu tab is active or menu is closed.
     const dt = Math.min(0.05, Math.max(0, (now - (state.lastTime || now)) / 1000));
     state.lastTime = now;
-    if (now - state.lastSourceCheck >= SOURCE_RETRY_MS || !state.model) {
+    if (now - state.lastSourceCheck >= SOURCE_RETRY_MS) { // Missing sprites retry on a short timer, not on every animation frame.
       state.lastSourceCheck = now;
       checkSource();
     }
@@ -219,7 +219,7 @@
     if (!isVisible()) { stop(); return; }
     if (!initializeRenderer()) return;
     if (!state.frame) {
-      state.lastSourceCheck = 0;
+      state.lastSourceCheck = -Infinity; // First visible frame immediately resolves the equipped weapon.
       state.frame = requestAnimationFrame(tick);
     }
   }
@@ -274,7 +274,7 @@
       state.key = nextKey;
       state.yaw = 0;
       state.pitch = 0;
-      state.lastSourceCheck = 0;
+      state.lastSourceCheck = -Infinity;
       disposeModel();
     }
     resume();
