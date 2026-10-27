@@ -112,8 +112,48 @@ function testDynamicScriptRecovery() {
   assert.equal(timers.tasks.size, 0, 'successful script load clears its deadline');
 }
 
+async function testAttackEditorStillPresetRecovery() {
+  const html = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Production still-preset loader embedded in the editor page.
+  const start = html.indexOf('const WEAPON_IDLE_POSE_FIELDS = '); // Module boundary that can be executed without constructing a WebGL preview.
+  const end = html.indexOf('function applyPreset(preset)', start); // Excludes the independent animation template/UI handler.
+  assert.ok(start >= 0 && end > start, 'editor idle preset fetch loader exists');
+  const config = JSON.parse(fs.readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8')); // A changed authored stance used to verify live preview refresh.
+  config.stances.heavyWeapon.y = 0.93;
+  const fallback = { ...config.stances.heavyWeapon, y: 0.27 }; // Original in-page placeholder pose.
+  const presets = [
+    { id: 'heavy_weapon_idle', neutral: { ...fallback }, windup: { ...fallback }, strike: { ...fallback } },
+    { id: 'light_weapon_idle', neutral: { ...config.stances.lightWeapon }, windup: { ...config.stances.lightWeapon }, strike: { ...config.stances.lightWeapon } },
+  ]; // The two real action templates that the loader modifies.
+  const anim = { poses: { neutral: { ...fallback }, windup: { ...fallback }, strike: { ...fallback } } }; // Active still-action preview must recover in-place.
+  const timers = timerHarness(); // Simulates the editor's recoverable network outage.
+  let requests = 0; // Verifies a failed fetch is followed by another fetch.
+  let panelSyncs = 0; // Verifies the live action's three pose panels are refreshed.
+  const logs = []; // Tracks mobile-visible diagnostic messages.
+  vm.runInNewContext(html.slice(start, end), {
+    TOOL_PRESETS: presets, anim, AbortController: undefined,
+    fetch: async () => {
+      requests += 1;
+      if (requests === 1) throw new Error('temporary error');
+      return { ok: true, json: async () => config };
+    },
+    setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout,
+    currentAction: () => ({ templateId: 'heavy_weapon_idle' }),
+    syncPosePanelFromState() { panelSyncs += 1; },
+    refreshJsonView() {}, refreshPreviewDebug() {}, logDebug: msg => logs.push(msg),
+    Number, Math, console,
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  timers.run(1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 2, 'still-action presets must recover without navigating away');
+  assert.equal(anim.poses.neutral.y, 0.93, 'active fallback still stance must update when committed config recovers');
+  assert.equal(panelSyncs, 3, 'all three visible phases must resynchronize');
+  assert.ok(logs.some(line => line.includes('retrying in 1s')), 'the editor reports recovery attempts in its on-screen log');
+}
+
 (async () => {
   await testStanceJsonRecovery();
   testDynamicScriptRecovery();
-  console.log('Neutral stance JSON and module retries, local overrides and init ordering PASS');
+  await testAttackEditorStillPresetRecovery();
+  console.log('Neutral stance JSON, module and editor retries, local overrides and init ordering PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
