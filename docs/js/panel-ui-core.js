@@ -563,12 +563,6 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
       idleStanceLoadDeadline = null;
       return true;
     }
-    script.onload = () => {
-      if (!endAttempt()) return;
-      idleStanceLoadAttempt = 0;
-      if (idleStanceRetryTimer !== null) clearTimeout(idleStanceRetryTimer);
-      idleStanceRetryTimer = null;
-    };
     const retry = reason => {
       if (!endAttempt()) return;
       script.remove();
@@ -580,6 +574,23 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
         idleStanceRetryTimer = null;
         loadIdleStanceEditor();
       }, delay);
+    };
+    script.onload = () => {
+      if (pendingIdleStanceScript !== script) return;
+      if (idleStanceLoadDeadline !== null) clearTimeout(idleStanceLoadDeadline);
+      idleStanceLoadDeadline = null;
+      const verifyInstallation = () => {
+        if (pendingIdleStanceScript !== script) return;
+        if (!window.AttackIdleStanceEditor) { retry('extension did not initialize'); return; }
+        endAttempt();
+        idleStanceLoadAttempt = 0;
+        if (idleStanceRetryTimer !== null) clearTimeout(idleStanceRetryTimer);
+        idleStanceRetryTimer = null;
+      };
+      // The extension publishes its API on DOMContentLoaded; a successfully fetched but invalid
+      // script must still retry, without falsely treating early parsing as an initialization failure.
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', verifyInstallation, { once: true });
+      else verifyInstallation();
     };
     script.onerror = () => retry('network or script error');
     idleStanceLoadDeadline = setTimeout(() => {
