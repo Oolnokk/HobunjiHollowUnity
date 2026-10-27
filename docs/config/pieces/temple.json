@@ -2943,16 +2943,29 @@
   },
   "surfaceGrowth": [
     {
-      "kind": "vines",
+      "kind": "roots",
       "seed": "surface-1",
       "count": 68,
       "length": 6,
-      "radius": 0.1,
+      "radius": 0.15,
       "offset": 0.008,
       "curl": 0.4,
+      "color": "#4a3b33",
+      "texture": "assets/textures/wibbly_surface.png",
+      "target": "walls",
+      "targetIds": []
+    },
+    {
+      "kind": "vines",
+      "seed": "temple-highland-shingle-weave",
+      "count": 56,
+      "length": 3.4,
+      "radius": 0.04,
+      "offset": 0.006,
+      "curl": 1.1,
       "color": "#406040",
       "texture": "assets/textures/carved_smooth.png",
-      "target": "walls",
+      "target": "shingles",
       "targetIds": []
     }
   ]

@@ -31,6 +31,7 @@ const BROWSER = new Set([
   'test-dev-random-ruin-browser.js',
   'test-dev-random-ruin-collision-browser.js',
   'test-controller-ui-modal-pin.js',
+  'test-interior-editor-exit-browser.js', // Runs after Chromium installation in regression-suite.yml.
   'test-omgurku-gameplay-browser.js', // Full game NPC spawn/transfer/despawn coverage.
   'test-omgurku-calibration-browser.js', // Runs in the existing browser workflow step.
   'test-omgurku-tribe-browser.js', // Full game Omgurku-vs-Porakaneki hostile fight and camp placement.

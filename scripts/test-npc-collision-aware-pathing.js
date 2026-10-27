@@ -303,6 +303,14 @@ const cutWalker = {
   const map=JSON.parse(fs.readFileSync(path.join(repo,'docs/config/maps',name+'.json'),'utf8'));
   const floor=new Set(map.floor.map(p=>p.join(','))),walls=new Set(map.colliders.map(p=>p.join(','))); // Authored structural cells stay impassable.
   const grid=Array.from({length:map.rows},(_,r)=>Array.from({length:map.cols},(_,c)=>({type:floor.has(c+','+r)&&!walls.has(c+','+r)?0:1})));
+  // Mirror game.js: authoring a transition immediately outside the floor
+  // keeps that one logical destination traversable without rendering floor.
+  const inward={north:[0,-1],south:[0,1],east:[1,0],west:[-1,0]};
+  for(const exit of map.exits||[])for(const [col,row] of exit.tiles||[]){
+   const d=inward[exit.direction];
+   if(!d||floor.has(col+','+row)||!floor.has((col+d[0])+','+(row+d[1]))||walls.has(col+','+row))continue;
+   if(grid[row]?.[col])grid[row][col].type=0;
+  }
   const owner={};
   const env={window:owner,console,Math,Number,Date,Object,Array,Map,Set,WeakMap,WeakSet,Promise};
   vm.runInNewContext(fs.readFileSync(path.join(repo,'docs/js/furniture-table-system.js'),'utf8'),env);

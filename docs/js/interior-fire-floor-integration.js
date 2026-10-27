@@ -182,7 +182,9 @@
 
   function editorStyleFromControls() {
     return normalizedStyle({
-      texture: document.getElementById('biaFloorTexture')?.value || '',
+      texture: document.getElementById('biaFloorTexture')?.value === '__custom' 
+        ? document.getElementById('biaFloorTextureCustom')?.value || ''
+        : document.getElementById('biaFloorTexture')?.value || '',
       tint: document.getElementById('biaFloorTint')?.value || '#ffffff',
       tilesPerTile: document.getElementById('biaFloorRepeat')?.value || 1,
       stretchToSurface: document.getElementById('biaFloorStretch')?.checked === true,
@@ -195,7 +197,14 @@
     const tint = document.getElementById('biaFloorTint');
     const repeat = document.getElementById('biaFloorRepeat');
     const stretch = document.getElementById('biaFloorStretch'); // Used to preserve authored one-PNG-per-floor behavior when a canvas interior is reopened and resaved.
-    if (texture) texture.value = normalized?.texture || '';
+    if (texture) {
+      const filename = normalized?.texture || ''; // Restored map texture, including new custom PNGs, is selectable without editing JSON.
+      const custom = document.getElementById('biaFloorTextureCustom');
+      const known = [...texture.options].some(option => option.value === filename);
+      texture.value = known ? filename : '__custom';
+      if (custom) custom.value = known ? '' : filename;
+      if (custom) custom.hidden = known;
+    }
     if (tint) tint.value = normalized?.tint || '#ffffff';
     if (repeat) repeat.value = normalized?.tilesPerTile ?? 1;
     if (stretch) stretch.checked = normalized?.stretchToSurface === true;
@@ -272,7 +281,17 @@
     section.id = 'biaFloorSurfaceSection';
     section.innerHTML = `
       <h2>1b. Floor surface</h2>
-      <div class="field"><label>PNG texture (assets/textures)</label><input id="biaFloorTexture" placeholder="boards.png"></div>
+      <div class="field"><label>Floor material (assets/textures)</label>
+        <select id="biaFloorTexture">
+          <option value="">Flat color (no texture)</option>
+          <option value="boards.png">Wooden boards</option>
+          <option value="carved_smooth.png">Carved stone (temple)</option>
+          <option value="canvas.png">Canvas</option>
+          <option value="log.png">Log</option>
+          <option value="wavy_surface.png">Wavy stone</option>
+          <option value="wibbly_surface.png">Rough stone</option>
+          <option value="__custom">Other PNG…</option>
+        </select><input id="biaFloorTextureCustom" type="text" placeholder="custom_texture.png" hidden></div>
       <div class="grid2" style="margin-top:6px">
         <div class="field"><label>Tint</label><input id="biaFloorTint" type="color" value="#ffffff"></div>
         <div class="field"><label>Textures per tile</label><input id="biaFloorRepeat" type="number" min="0.05" max="64" step="0.05" value="1"></div>
@@ -284,6 +303,10 @@
       </div>
       <p class="hint" id="biaFloorStatus">Blank texture uses a flat tint. PNG names resolve from docs/assets/textures/.</p>`;
     identity.insertAdjacentElement('afterend', section);
+    document.getElementById('biaFloorTexture').addEventListener('change', () => {
+      const custom = document.getElementById('biaFloorTextureCustom'); // Reveal the PNG filename field only when the authored preset is not in the list.
+      custom.hidden = document.getElementById('biaFloorTexture').value !== '__custom';
+    });
 
     document.getElementById('biaFloorApply').addEventListener('click', () => {
       const interior = editorReadInterior();

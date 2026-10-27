@@ -46,6 +46,8 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1
           npx playwright install --with-deps chromium
+      - name: Interior Editor floorless exit mouse and touch browser regression
+        run: node scripts/test-interior-editor-exit-browser.js
       - name: Controller modal pin browser regression
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Omgurku hybrid calibration browser smoke
