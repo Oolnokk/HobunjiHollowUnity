@@ -79,7 +79,7 @@ for (const sectionId of ['tasksSectionQuestLog', 'tasksSectionWanted', 'tasksSec
   assert(htmlSource.includes(`id="${sectionId}"`), `Stable navigation target ${sectionId} exists`);
 }
 const mainTabs = [...htmlSource.matchAll(/class="mp-tab(?: active)?"\s+data-mpanel="([^"]+)"/g)].map(match => match[1]); // DOM order drives actual bumper navigation between main pages.
-assert.deepEqual(mainTabs.slice(0, 11), ['inventory', 'map', 'tasks', 'farm', 'stable', 'loadout', 'crafting', 'calendar', 'progress', 'relationships', 'settings'], 'Frequently checked main tabs lead the controller sequence');
+assert.deepEqual(mainTabs.slice(0, 11), ['inventory', 'loadout', 'progress', 'crafting', 'map', 'tasks', 'calendar', 'farm', 'stable', 'relationships', 'settings'], 'Main tabs keep Character, World, Home and System destinations together');
 assert.equal(new Set(mainTabs).size, mainTabs.length, 'No main tab is duplicated or lost');
 assert(inventorySource.includes("activeCategory === 'clothing'"), 'Clothing tiles appear on their dedicated filter');
 assert(inventorySource.includes('const searchQuery = window.InventorySearch?.query'), 'Clothing respects the Pack search field');

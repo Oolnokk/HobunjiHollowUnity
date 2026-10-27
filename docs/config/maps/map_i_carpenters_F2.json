@@ -8,10 +8,7 @@
     {"id": "f_car_f2_lamp", "itemKey": "standingLampFurniture", "col": 10, "row": 2, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1}
   ],
   "floor": [
-  [
-    9,
-    1
-  ],
+  
   [
     6,
     2
@@ -68,10 +65,7 @@
     12,
     3
   ],
-  [
-    5,
-    4
-  ],
+  
   [
     6,
     4
@@ -100,10 +94,7 @@
     12,
     4
   ],
-  [
-    13,
-    4
-  ],
+  
   [
     6,
     5

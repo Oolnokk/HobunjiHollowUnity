@@ -775,6 +775,9 @@
           15
         ]
       ],
+      "doorwayTiles": [
+        [10, 16]
+      ],
       "targetMap": "",
       "spawnCol": 9,
       "spawnRow": 14,
@@ -1327,10 +1330,6 @@
     [
       12,
       14
-    ],
-    [
-      15,
-      4
     ]
   ],
   "entryPoints": [
@@ -3376,15 +3375,15 @@
   },
   "surfaceGrowth": [
     {
-      "kind": "vines",
+      "kind": "roots",
       "seed": "surface-1",
       "count": 68,
       "length": 6,
-      "radius": 0.1,
+      "radius": 0.15,
       "offset": 0.008,
       "curl": 0.4,
-      "color": "#406040",
-      "texture": "assets/textures/carved_smooth.png",
+      "color": "#4a3b33",
+      "texture": "assets/textures/wibbly_surface.png",
       "target": "walls",
       "targetIds": []
     }

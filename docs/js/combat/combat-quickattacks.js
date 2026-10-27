@@ -204,6 +204,7 @@
     function onTap() {
       if (busyAction) return; // previous strike's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Shared equipped-weapon modifiers for jab cadence and hit geometry.
       // Footing/impact stagger lockout — see combat-combo.js's matching guard.
       if (window.Combat.isStaggered(deps.player)) return;
 
@@ -212,7 +213,7 @@
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
-      const requestedCost = COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
+      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
@@ -220,12 +221,12 @@
       // windup/strike down.
       const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label) || { spent: 0, excess: 0 };
       const actualCost = round1((Number(spendResult.spent) || 0) + (Number(spendResult.excess) || 0)); // Actual post-perk/alchemy resource commitment used to calculate the conditional refund.
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = def.halfConeDeg * Math.PI / 180;
+      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, def.halfConeDeg * Math.PI / 180 * shapeStats.range);
       const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
@@ -246,10 +247,10 @@
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
-        pose: window.AttackPoseTemplates?.poseFor('pickshovel_swing'), // The editor's Quick Attack template.
+        pose: quickAttackPose(), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
-        holdS: HOLD_S,
+        holdS: HOLD_S / shapeStats.speed,
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
@@ -405,11 +406,16 @@
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);
 
+  // Every quick attack is the editor's pickshovel_swing jab. Shared with
+  // BanditCombat so an enemy's quick attack swings exactly like the player's.
+  // Allocates a fresh pose: call once per swing.
+  function quickAttackPose() { return window.AttackPoseTemplates?.poseFor('pickshovel_swing') || null; }
+
   // Read-only data export for game.js's bandit AI and diagnostics.
   window.Combat.quickAttackData = {
     TECHNIQUES, WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
     BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
+    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
     bonusEffectCooldownS, bonusEffectCooldownRemaining, isBonusEffectReady, beginBonusEffectCooldown, resetBonusEffectCooldowns,
     cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([enemy, until]) => [enemy?.id || enemy?.name || 'enemy', Math.max(0, round1((until - performance.now()) / 1000))])),
     lastResolution: null,
@@ -442,7 +448,7 @@
     Object.assign(window.Combat.quickAttackData, {
       WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
       BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
+      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
     });
   };
 })();

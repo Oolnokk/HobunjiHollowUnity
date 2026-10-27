@@ -23,7 +23,13 @@ const reachable = (map, start) => {
 const hallReachable = reachable(hall, [3, 8]); // Starts at the ground-floor stairs' actual destination.
 for (const door of hall.exits) {
   const destination = readMap(door.targetMap); // Loads the real target of every upstairs exit.
-  for (const tile of door.tiles) assert(hallReachable.has(tile.join(',')), `${door.id} is connected to stairs`);
+  for (const [c,r] of door.tiles) {
+    // The exit's authored coordinate may be a floorless wall marker; its one
+    // inward neighbor must still connect to the hall's main walkable area.
+    const inward = { north:[0,-1],south:[0,1],east:[1,0],west:[-1,0] }[door.direction];
+    const approach = inward && [c+inward[0],r+inward[1]];
+    assert(hallReachable.has(`${c},${r}`) || (approach && hallReachable.has(approach.join(','))),`${door.id} is connected to stairs`);
+  }
   assert(onFloor(destination, door.spawnCol, door.spawnRow), `${door.id} lands on floor`);
   assert(!destination.exits.some(exit => exit.tiles.some(([c, r]) => c === door.spawnCol && r === door.spawnRow)), 'arrival avoids immediate exit retrigger');
   if (door.targetMap === 'map_i_inn') continue;

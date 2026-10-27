@@ -285,7 +285,7 @@
     }
     if (pendingStanceScript || document.querySelector('script[data-weapon-tool-stances]')) return; // One active script request per session.
     const script = document.createElement('script'); // Dynamic module loaded after shared melee spacing.
-    script.src = 'js/weapon-tool-stances.js?v=20261027h4faa545';
+    script.src = 'js/weapon-tool-stances.js?v=20261027h813a1ed';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
     pendingStanceScript = script;

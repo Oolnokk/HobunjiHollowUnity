@@ -817,7 +817,7 @@ function stopSource(source, when = 0) {
 function liveChargeTargetDurationS(abilityId) {
   if (abilityId === 'chargedBreaker') {
     const authoritative = Number(window.Combat?.chargedBreakerData?.MAX_CHARGE_S);
-    if (authoritative > 0) return authoritative;
+    if (authoritative > 0) return authoritative / (window.WeaponShapeStats?.current?.()?.speed || 1); // The live charged pose and its stretch-grunt must reach 100% together.
   }
   const fallback = Number(config.chargePlayback?.fullChargeDurationByAbility?.[abilityId]);
   return fallback > 0 ? fallback : null;

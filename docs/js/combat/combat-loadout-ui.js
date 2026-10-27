@@ -111,6 +111,7 @@
       focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
       controller: window.ControllerUI?.debugState?.() || null,
       lastLoadoutControlChange,
+      weaponShapeStats: window.WeaponShapeStats?.snapshot?.() || null, // Mobile-copyable live weapon profile, including Foundry head mitigation.
       weaponPreview: window.CombatLoadoutWeaponPreview?.debugSnapshot?.() || null, // Includes GPU/mesh/VFX status in the existing mobile-copyable debug report.
     };
   }
@@ -304,6 +305,15 @@
     weaponNote.style.marginBottom = '6px';
     weaponNote.textContent = `${weaponLabel} — Mastery ${mastery}/5 · ${motes}◆ Motes of Prowess`;
     pane.appendChild(weaponNote);
+    if (toolKey !== 'none') {
+      const stats = window.WeaponShapeStats?.forKey?.(toolKey, window.Combat.deps?.getWeaponDefinition?.(toolKey)); // Live equipped shape modifiers for the mobile loadout inspection pane.
+      if (stats) {
+        const statsNote = document.createElement('div'); // Readable stat breakdown next to the weapon's mastery and ability selections.
+        statsNote.className = 'loadout-slot-combo-note';
+        statsNote.textContent = `Power ×${stats.power.toFixed(2)} · Speed ×${stats.speed.toFixed(2)} · Stamina efficiency ×${stats.efficiency.toFixed(2)} · Range ×${stats.range.toFixed(2)}`;
+        pane.appendChild(statsNote);
+      }
+    }
 
     if (window.Combat.deps?.isDevMode?.()) {
       const devRow = document.createElement('div'); // Used to keep loadout test actions together without introducing another stylesheet dependency.

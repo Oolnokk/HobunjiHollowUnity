@@ -52,7 +52,7 @@ assert.match(deathFn, /EnemyDodge\?\.cancel\?\.\(c\)/, 'death ends any in-flight
 // ── Enemy dodge cancel ────────────────────────────────────────────────
 assert.match(dodge, /function cancel\(entity\)[\s\S]{0,200}finishDodge\(entity\)/, 'EnemyDodge.cancel finishes an active roll');
 assert.match(dodge, /threatStatus, cancel, debugSnapshot/, 'EnemyDodge exposes cancel');
-assert.match(game, /c\._banditLunging = false;\s*\n\s*window\.EnemyDodge\?\.cancel\?\.\(c\)/, 'leaving chase ends a bandit dodge');
+assert.match(game, /window\.BanditCombat\?\.cancelLunge\?\.\(c\);\s*\n\s*window\.EnemyDodge\?\.cancel\?\.\(c\)/, 'leaving chase ends a bandit dodge');
 
 // ── Projectile exclusion no longer drops id-less hostiles ─────────────
 assert.doesNotMatch(ranged, /c\.id === exclude\?\.id/, 'a null exclude no longer matches every hostile without an id');

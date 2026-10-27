@@ -58,8 +58,54 @@
     return out;
   }
 
+  // An exit's authored doorwayTiles sit OUTSIDE the painted floor. The exit's
+  // ordinary tiles remain the actual walkable transition triggers. A matched
+  // exterior tile moves only the visible frame onto the wall boundary.
+  const OFFSET_INWARD = Object.freeze({ north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] });
+  // Floorless exit coordinates remain authored exactly where placed. The adjoining
+  // painted floor is only used to orient the wooden door on the wall boundary.
+  function insideFloorForExit(floorSet, col, row, direction) {
+    const requested = SIDES[direction];
+    const candidates = Object.entries(SIDES)
+      .filter(([, [dx, dr]]) => floorSet.has(keyOf(col + dx, row + dr)))
+      .map(([side, [dx, dr]]) => ({ col: col + dx, row: row + dr, direction: side }));
+    if (requested) return candidates.find(cell => cell.col === col + requested[0] && cell.row === row + requested[1]) || null;
+    return candidates.length === 1 ? candidates[0] : null; // At an ambiguous corner, an authored inward direction is required.
+  }
+  function outsideTileForExit(exit, col, row) {
+    const authored = Array.isArray(exit?.doorwayTiles) ? exit.doorwayTiles : [];
+    const found = authored.filter(tile => {
+      const dc = Number(col) - Number(tile?.[0]), dr = Number(row) - Number(tile?.[1]);
+      if (Math.abs(dc) + Math.abs(dr) !== 1) return false;
+      const inward = OFFSET_INWARD[exit?.direction];
+      return !inward || (dc === inward[0] && dr === inward[1]);
+    });
+    return found.length === 1 ? [Number(found[0][0]), Number(found[0][1])] : null; // Ambiguous exterior markers never shift a physical frame.
+  }
+
+  function doorPosition(record) {
+    const inside = Array.isArray(record?.tiles) && record.tiles.length ? record.tiles : [record]; // Also supports single-door candidates.
+    const pairs = inside.filter(tile => Array.isArray(tile.outsideTile)).map(tile => tile.outsideTile);
+    if (pairs.length !== inside.length) {
+      const floorless = inside.filter(tile => tile.insideTile);
+      if (floorless.length === inside.length) {
+        const cx = inside.reduce((sum, tile) => sum + tile.col + 0.5, 0) / inside.length;
+        const cz = inside.reduce((sum, tile) => sum + tile.row + 0.5, 0) / inside.length;
+        const ix = floorless.reduce((sum, tile) => sum + tile.insideTile.col + 0.5, 0) / inside.length;
+        const iz = floorless.reduce((sum, tile) => sum + tile.insideTile.row + 0.5, 0) / inside.length;
+        return { x: (cx + ix) / 2, z: (cz + iz) / 2 }; // Floorless exit marker stays outside, while its frame follows the actual boundary.
+      }
+      return { x: Number(record.col) + 0.5, z: Number(record.row) + 0.5 }; // Legacy ordinary door or in-floor exit.
+    }
+    const cx = inside.reduce((sum, tile) => sum + Number(tile.col) + 0.5, 0) / inside.length;
+    const cz = inside.reduce((sum, tile) => sum + Number(tile.row) + 0.5, 0) / inside.length;
+    const ex = pairs.reduce((sum, tile) => sum + tile[0] + 0.5, 0) / pairs.length;
+    const ez = pairs.reduce((sum, tile) => sum + tile[1] + 0.5, 0) / pairs.length;
+    return { x: (cx + ex) * 0.5, z: (cz + ez) * 0.5 }; // Physical door sits exactly on the floor boundary, not at either tile center.
+  }
+
   // Exit directions point inward on this map, shared by door alignment and arrivals.
-  function doorRecordsOf(mapData) {
+  function doorRecordsOf(mapData, floorSet = new Set((mapData?.floor || []).map(([c, r]) => keyOf(c, r)))) {
     const records = new Map(); // Coordinate-keyed records prevent a painted door duplicating an exit door.
     for (const [col, row] of doorTilesOf(mapData)) records.set(keyOf(col, row), { col, row });
     for (const exit of mapData?.exits || []) {
@@ -67,7 +113,10 @@
       for (const tile of exit.tiles || []) {
         const col = Number(tile?.[0]), row = Number(tile?.[1]); // Validated tile coordinates used by both previews and scene construction.
         if (!Number.isInteger(col) || !Number.isInteger(row)) continue;
-        records.set(keyOf(col, row), { col, row, exitId: exit.id || 'exit', direction: exit.direction });
+        const floorless = !floorSet.has(keyOf(col, row));
+        const insideTile = floorless ? insideFloorForExit(floorSet, col, row, exit.direction) : null;
+        records.set(keyOf(col, row), { col, row, exitId: exit.id || 'exit', direction: exit.direction,
+          insideTile, outsideTile: floorless ? null : outsideTileForExit(exit, col, row) });
       }
     }
     return [...records.values()];
@@ -75,7 +124,7 @@
 
   function roomFloorOf(mapData, floorSet) {
     const roomFloor = new Set(floorSet); // Doorway siblings must not be mistaken for the room's inward floor.
-    for (const record of doorRecordsOf(mapData)) roomFloor.delete(keyOf(record.col, record.row));
+    for (const record of doorRecordsOf(mapData, floorSet)) roomFloor.delete(keyOf(record.col, record.row));
     return roomFloor;
   }
 
@@ -99,8 +148,8 @@
   // Only a complete two-tile opening becomes a double door; longer runs stay separate.
   function doorGroupsOf(mapData, floorSet) {
     const roomFloor = roomFloorOf(mapData, floorSet); // Infer both leaves from actual room space instead of each other.
-    const records = doorRecordsOf(mapData)
-      .filter(record => floorSet.has(keyOf(record.col, record.row)))
+    const records = doorRecordsOf(mapData, floorSet)
+      .filter(record => floorSet.has(keyOf(record.col, record.row)) || !!record.insideTile)
       .map(record => ({ ...record, direction: recordOrientation(roomFloor, record).facing })); // Resolve singles too, so runtime and previews share the corrected orientation.
     const pending = new Map(records.map(record => [keyOf(record.col, record.row), record])); // Unclaimed tiles in each transverse run.
     const groups = []; // One placement per single or paired doorway.
@@ -219,7 +268,8 @@
       const facing = recordOrientation(floorSet, record); // Explicit inward direction wins over inferred floor adjacency.
       const id = `door_${c}_${r}`;
       group.name = `interior_door_${c}_${r}`;
-      group.position.set(c + 0.5, Number(surfaceYAt?.(record.tiles[0].col, record.tiles[0].row)) || 0, r + 0.5);
+      const placement = doorPosition(record); // Outside-of-floor authoring moves the door to the real wall edge without changing its walkable trigger.
+      group.position.set(placement.x, Number(surfaceYAt?.(record.tiles[0].col, record.tiles[0].row)) || 0, placement.z);
       group.rotation.y = -facing.rotationDeg * Math.PI / 180;
       group.userData = Object.assign(group.userData || {}, { interiorDoorTile: { col: c, row: r }, interiorDoorFacing: facing.facing, interiorDoorWidth: record.tiles.length });
       scene.add(group);
@@ -285,5 +335,5 @@
     }));
   }
 
-  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
+  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
 })();

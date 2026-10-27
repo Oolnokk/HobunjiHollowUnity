@@ -201,7 +201,41 @@
     out.scale = 1;
     out.mirrorBlend = 1;
     out.hasMirrorSequence = false;
+    out.headRelative = false;
     return out;
+  }
+
+  // The legacy sweep: only the whole body turns (windup -> strike -> hold -> back
+  // to 0), the hand rides at LEGACY_SWEEP.z, and Backhand mirrors the hand attach
+  // point itself -- reported through mirrorBlend, which callers multiply into the
+  // hand-attach X exactly like a midline-flip pose. game.js updateToolMesh's
+  // sweep branch is the reference.
+  function sampleLegacySweep(out, progress, wf, sf, hf, sign = 1, power = 1) {
+    const S = LEGACY_SWEEP;
+    const dir = sign === -1 ? -1 : 1;
+    out.x = 0;
+    out.y = 0;
+    out.z = S.z;
+    out.pitchRad = 0;
+    out.yawRad = 0;
+    out.rollRad = 0;
+    out.bodyYawRad = fourPhaseLerp(progress, wf, sf, hf, S.windupRad * power * dir, S.strikeRad * power * dir);
+    out.scale = 1;
+    out.mirrorBlend = dir;
+    out.hasMirrorSequence = false;
+    out.headRelative = false;
+    return out;
+  }
+
+  // Any melee swing as the player's updateToolMesh plays it: an authored pose
+  // (any style) through samplePose over the style's neutral, else the legacy
+  // chop pose, sweep turn or thrust jab. Actors that draw a swing without the
+  // player's tool-only branches (every BanditCombat humanoid) sample here.
+  function sampleSwing(out, anim, pose, progress, wf, sf, hf, sign = 1, power = 1, sequence = 'attack') {
+    if (pose) return samplePose(out, pose, STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust, progress, wf, sf, hf, sign, power, sequence);
+    if (anim === 'chop') return samplePose(out, LEGACY_CHOP_POSE, STYLE_NEUTRAL_POSE.chop, progress, wf, sf, hf, 1, power, 'attack');
+    if (anim === 'sweep') return sampleLegacySweep(out, progress, wf, sf, hf, sign, power);
+    return sampleLegacyThrust(out, progress, wf, sf, hf, power);
   }
 
   // ── Baking an attack against a replacement Neutral (Light/Heavy stances) ──
@@ -527,6 +561,8 @@
     createSample,
     samplePose,
     sampleLegacyThrust,
+    sampleLegacySweep,
+    sampleSwing,
     normalizePose,
     legacyProceduralEndpoints,
     bakeAuthoredEndpoint,

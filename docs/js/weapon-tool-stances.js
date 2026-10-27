@@ -327,14 +327,10 @@
     const duration = Math.max(0, Number(durationS) || 0);
     const windupFrac = Number.isFinite(Number(opts?.windupFrac)) ? Number(opts.windupFrac) : 0.16;
     const strikeFrac = Number.isFinite(Number(opts?.strikeFrac)) ? Number(opts.strikeFrac) : 0.28;
-    const returnTailS = strikeFrac < 0.999 ? 0 : Math.max(0.12, duration * 0.35);
     const holdS = Math.max(0, Number(opts?.holdS) || 0);
-    const totalS = Math.max(0.05, duration + returnTailS + holdS);
-    const wf = Math.max(0, Math.min(0.99, windupFrac * duration / totalS));
-    const sf = Math.max(wf, Math.min(0.99, strikeFrac * duration / totalS));
-    const hf = holdS > 0
-      ? Math.min(0.99, sf + holdS / totalS)
-      : Math.min(0.99, sf + (1 - sf) * 0.3);
+    // The exact clock game.js's triggerWeaponSwingVisual (and every enemy) builds for this swing, so hands, grips and
+    // the Neutral blend can't drift from the weapon pose they accompany.
+    const { totalS, wf, sf, hf } = SAP.swingTimeline({}, duration, windupFrac, strikeFrac, holdS);
     const activeMirrorSign = opts?.dirSign === -1 ? -1 : 1;
     const neutralMirrorSign = Number(opts?.pose?.neutralMirrorSign) === -1 ? -1 : 1;
     const returnNeutralMirrorSign = Number(opts?.pose?.returnNeutralMirrorSign) === -1 ? -1 : 1;

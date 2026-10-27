@@ -70,11 +70,12 @@
       // glow continues to reflect how long the stance itself has been held.
       if (window.Combat.isStaggered(deps.player)) return;
 
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Held flurry strikes share the current weapon's physical stat profile.
       const effects = window.CombatProgression?.getEffects(
         deps.currentWeaponKey(), 'acceleratingFlurry',
       ) || { afflictions: {}, stats: {} };
       const cost = (COST_BASE + count * COST_PER_STRIKE)
-        * (1 + (effects.stats.staminaCostMul || 0));
+        * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency;
       const spendResult = window.ResourceSystem?.spendStamina(
         deps.player,
         cost,
@@ -82,7 +83,7 @@
         { actionKind: 'offensiveHeldFlurry', abilityId: 'acceleratingFlurry' },
       ) || { tempoMultiplier: 1 };
       const fundedTempo = Math.max(1, Number(spendResult.tempoMultiplier) || 1); // Furious Stamina accelerates only the effective-cost portion it actually funded.
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const windupS = WINDUP_S * timeScale / fundedTempo;
       const strikeS = STRIKE_S * timeScale / fundedTempo;
       const dirSign = count % 2 === 0 ? -1 : 1;
@@ -91,10 +92,10 @@
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const baseDamage = baseAbil.damage * (DAMAGE_MUL_BASE + count * DAMAGE_MUL_PER_STRIKE)
         * (1 + (effects.stats.damageMul || 0)); // Existing flurry scaling before cross-cutting enchantment modifiers.
-      const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0));
+      const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
       const halfConeDeg = HALF_CONE_DEG_BASE
         + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
-      const halfConeRad = halfConeDeg * Math.PI / 180;
+      const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range);
       const baseKnockbackPxS = baseAbil.knockbackPxS
         * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE)
         * (1 + (effects.stats.knockbackMul || 0));
@@ -126,7 +127,7 @@
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         pose: window.AttackPoseTemplates?.poseFor('hatchet_swing'), // The editor's Flurry template.
-        holdS: HOLD_S,
+        holdS: HOLD_S / shapeStats.speed,
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
@@ -197,7 +198,7 @@
       active = true;
       count = 0;
       startedAt = now();
-      nextStrikeAt = startedAt + FIRST_STRIKE_DELAY_S;
+      nextStrikeAt = startedAt + FIRST_STRIKE_DELAY_S / (window.WeaponShapeStats?.current?.()?.speed || 1);
       debugState = { active: true, heldSeconds: 0, glowIntensity: 0, strikes: 0 };
       setGlow(0);
       window.Combat.setMovementSpeedMul(speedMul);

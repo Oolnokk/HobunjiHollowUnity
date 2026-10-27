@@ -21,7 +21,7 @@
   ensureCompanionScript('HOBUNJI_ROOT_TOTEM_CONFIG', '../config/root-totem-config.js');
   ensureCompanionScript('NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js');
   ensureCompanionScript('NaturalSurfaceMaterials', 'natural-surface-materials.js');
-  ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js?v=20261022h17f665c');
+  ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js?v=20261027htemple-vessel-a2');
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js?v=20261003h3fbafdb');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
   ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js?v=20260926a');

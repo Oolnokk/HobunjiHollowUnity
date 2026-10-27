@@ -91,10 +91,10 @@
     { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.5175, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 0.41375, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
-  // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
-  // push the weapon out farther than the first two (plain) pokes, per the
-  // demo's "third one rotates even farther, pushes even farther forward" spec.
-  // Same low-early-knockback rationale as SWING_STEPS above. Step/Long
+  // Every poke plays the editor's pickshovel_swing template (comboStepPose
+  // below). The template's power rule only scales a SWEEP's body turn, so Long
+  // Lunge's power:1.35 does not change its animation -- the player's swing is
+  // the reference and enemies now match it. Same low-early-knockback rationale as SWING_STEPS above. Step/Long
   // Thrust's cone also widens a little over Short Thrust's — by the time
   // those land, the target has already reacted to (or been nudged by) the
   // opener, so the follow-ups bias toward forgiving the combo continuing
@@ -120,7 +120,19 @@
 
   // templateId: the attack-animation editor template these steps show (see
   // the editor's ACTION_DEFS), so in-game poses match the editor exactly.
+  const COMBO_TEMPLATE_IDS = {}; // Combo id -> attack-editor template, filled by registerCombo.
+
+  // The authored pose a combo step plays, with the editor's power rule already
+  // applied (so callers pass power 1). The ONE source for the player's onTap,
+  // BanditCombat combo steps and lich casts, so every actor swings a step alike.
+  // Allocates a fresh pose: call once per swing, not per frame.
+  function comboStepPose(comboId, step) {
+    const templateId = COMBO_TEMPLATE_IDS[comboId];
+    return (templateId && window.AttackPoseTemplates?.poseFor(templateId, step?.power || 1)) || step?.pose || null;
+  }
+
   function registerCombo(id, label, steps, templateId) {
+    COMBO_TEMPLATE_IDS[id] = templateId;
     let comboIndex = 0;
     let lastTapAt = -99;
     let busyAction = null;
@@ -128,6 +140,7 @@
     function onTap() {
       if (busyAction) return; // previous step's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Applies this equipped weapon's tempo, stamina, and hit geometry.
       // Footing/impact stagger lockout (see combat-core.js's isStaggered/
       // beginStagger, set by game.js's damagePlayer) — a staggered player
       // can't start a new combo step until it clears.
@@ -167,15 +180,15 @@
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
-      window.ResourceSystem?.spendStamina(deps.player, step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)), step.name);
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency), step.name);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = step.halfConeDeg * Math.PI / 180;
+      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range);
       const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
@@ -207,8 +220,8 @@
         windupFrac: windupS / totalVisual,
         strikeFrac: (windupS + strikeS) / totalVisual,
         power: 1, // poseFor already applied the editor's power rule to this pose.
-        pose: window.AttackPoseTemplates?.poseFor(templateId, step.power || 1),
-        holdS: step.holdS || 0,
+        pose: comboStepPose(id, step),
+        holdS: (step.holdS || 0) / shapeStats.speed,
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
@@ -319,6 +332,7 @@
   // Keyed by the same ability ids ('swingCombo'/'pokeCombo') a loadout slot
   // stores, not the raw step-array constant names, so a lookup by loadout
   // value works directly.
+  window.Combat.comboStepPose = comboStepPose;
   window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, sfxPitchByStep: SFX_PITCH_BY_STEP, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
 
   // Applies docs/config/combat/attack-values.json's `combo` section (called
