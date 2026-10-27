@@ -187,10 +187,63 @@
     if (candidates.includes(committed) && validChunkCombatTarget(entity, committed)) return committed;
     return nearestEcologyTarget(entity, candidates);
   }
+  // The player outranks the ecology. An actor that is already fighting the
+  // player, just got hit by the player or their companion, or has the player
+  // inside its own aggro range must never be handed to an actor-vs-actor fight:
+  // that silently dropped the bandit's attack on the player (it read as
+  // "non-hostile") and, because ecology-fight chasers are exempt from
+  // isPlayerInCombat, cut the combat music mid-fight.
+  const PLAYER_ENGAGEMENT_HOLD_MS = 6000;
+  function engagedWithPlayer(entity) {
+    if (!entity || !(entity.health > 0)) return false;
+    if (tribeOf(entity)) return entity._porakanekiPlannerControlled !== true; // Neutral hunters ignore the player (crossfire hits are forgiven by design); a provoked one is already hostile and stays so.
+    const pursuingPlayer = (entity.state === 'chase' || entity.state === 'searching') && !entity._chunkCombatTarget; // A target reference, even a just-dead one, means the ecology (not the player) set this 'chase'; the pass below releases it.
+    if (pursuingPlayer) return true;
+    if (nowMs() - num(entity._teamHitAt, -Infinity) <= PLAYER_ENGAGEMENT_HOLD_MS) return true; // Stamped by PlayerDowned.noteTeamHit for every player/companion hit.
+    const player = playerTilePosition();
+    const aggroTiles = num(entity.def?.aggroRangePx, 0) / (combatDeps?.TILE || 1);
+    return !!player && aggroTiles > 0 && Math.hypot(entity.x / combatDeps.TILE - player.col, entity.y / combatDeps.TILE - player.row) <= aggroTiles;
+  }
+  // A fight that outlasts its camp leash would otherwise send the actor
+  // straight home ('return') the moment it turns on the player, so the leash
+  // anchor moves to where the player fight starts and is restored afterwards.
+  function rebaseHomeForPlayerFight(entity) {
+    const leash = num(entity.def?.leashRangePx, 0);
+    if (!(leash > 0) || !Number.isFinite(entity.homeX) || !Number.isFinite(entity.homeY)) return;
+    if (Math.hypot(entity.x - entity.homeX, entity.y - entity.homeY) <= leash * 0.85) return;
+    entity._ecologyHome ??= { x: entity.homeX, y: entity.homeY };
+    entity.homeX = entity.x;
+    entity.homeY = entity.y;
+  }
+  function restoreEcologyHome(entity) {
+    if (!entity?._ecologyHome) return;
+    entity.homeX = entity._ecologyHome.x;
+    entity.homeY = entity._ecologyHome.y;
+    entity._ecologyHome = null;
+  }
+  function yieldToPlayer(entity) {
+    const factionTarget = entity._chunkFactionEcologyTarget;
+    if (!entity._chunkCombatTarget && !factionTarget) return; // Already on the ordinary player-hostility path.
+    entity._chunkCombatTarget = null;
+    if (factionTarget) {
+      entity._chunkFactionEcologyTarget = null;
+      if (entity.targetCreature === factionTarget) entity.targetCreature = null;
+    }
+    entity.targetPlayer = null; // Re-acquired as the nearest player by the ordinary hostile loop.
+    entity.state = 'chase';
+    rebaseHomeForPlayerFight(entity);
+  }
   function setHumanoidEcologyTarget(entity, target) {
     if (!entity) return;
+    const prior = entity._chunkCombatTarget;
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
-    if (!target) return;
+    if (!target) {
+      // A finished fight must not leave the actor in 'chase' with no target: that
+      // reads as the player being in combat (music blip) and, past the leash,
+      // trips a 'return' that looks like the bandit going passive.
+      if (prior && (entity.state === 'chase' || entity.state === 'searching')) entity.state = 'return';
+      return;
+    }
     if (tribeOf(entity)) {
       entity._porakanekiPlannerControlled = true; // Ecology combat must not make neutral hunters hostile/targetable to the player.
       entity._porakanekiActivity = 'ecology-combat';
@@ -244,17 +297,21 @@
     // leaves the player's ecology radius. No actor-vs-actor simulation continues offscreen.
     for (const entity of combatDeps.hostileObjects) {
       if (active.has(entity)) continue;
-      if (entity._chunkCombatTarget) entity._chunkCombatTarget = null;
+      if (entity._chunkCombatTarget) setHumanoidEcologyTarget(entity, null);
       if (entity._chunkFactionEcologyTarget) setPredatorEcologyTarget(entity, null);
+      restoreEcologyHome(entity);
     }
 
     for (const bandit of groups.bandit) {
+      if (engagedWithPlayer(bandit)) { yieldToPlayer(bandit); continue; }
+      restoreEcologyHome(bandit);
       const target = committedEcologyTarget(bandit, [...groups.tribe, ...groups.predator]);
       setHumanoidEcologyTarget(bandit, target);
       if (target) humanoidTargets++;
     }
     for (const hunter of groups.tribe) {
       if (hunter._avengerRetreating === true) { setHumanoidEcologyTarget(hunter, null); continue; } // Outnumbered Avengers disengage and ride off.
+      if (engagedWithPlayer(hunter)) { hunter._chunkCombatTarget = null; continue; } // Provoked hunters fight the player only; updateDetailedHunter keeps them hostile.
       const rivals = groups.tribe.filter(other => tribeOf(other) !== tribeOf(hunter)); // Rival tribes fight on sight inside the observed chunk.
       const threat = committedEcologyTarget(hunter, [...groups.bandit, ...groups.predator, ...rivals]);
       const prey = threat ? null : committedEcologyTarget(hunter, groups.prey); // Genuine threats can still interrupt a hunt, but not another fight of equal priority.
@@ -263,6 +320,8 @@
       if (target) humanoidTargets++;
     }
     for (const predator of groups.predator) {
+      if (engagedWithPlayer(predator)) { yieldToPlayer(predator); continue; }
+      restoreEcologyHome(predator);
       const target = committedEcologyTarget(predator, [...groups.tribe, ...groups.bandit], '_chunkFactionEcologyTarget');
       setPredatorEcologyTarget(predator, target);
       if (target) predatorTargets++;

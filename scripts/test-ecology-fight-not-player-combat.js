@@ -28,4 +28,11 @@ assert.equal(context.isPlayerInCombat(), true, 'a hunter chasing the player is c
 omgurku._chunkCombatTarget = { health: 0 };
 assert.equal(context.isPlayerInCombat(), true, 'a dead ecology target no longer exempts the chaser');
 
+const neutral = { health: 10, areaId: 'map_western_slope', state: 'chase', _porakanekiPlannerControlled: true, _chunkCombatTarget: null };
+context.hostileObjects.length = 0;
+context.hostileObjects.push(neutral);
+assert.equal(context.isPlayerInCombat(), false, 'a neutral tribe hunter between ecology targets (still in chase for up to one 5 Hz tick) is not player combat');
+neutral._porakanekiPlannerControlled = false; // Provoked: hostile to the player again.
+assert.equal(context.isPlayerInCombat(), true, 'a provoked hunter chasing the player is combat');
+
 console.log('ecology fight combat-state tests passed');
