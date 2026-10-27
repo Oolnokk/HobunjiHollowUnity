@@ -66,6 +66,7 @@
     c.facing = angleToTarget;
     c.telegraphState = 'windup';
     c._banditSwingAnim = 'thrust';
+    c._banditSwingPose = null; // A plain jab gesture: never a leftover sweep pose (a pose plays for any style).
     function advanceCloud(current) {
       if (!stillInOwningArea(c, api)) { current.cancel?.(); return; }
       if (!current.strikeFired || state.hit) return;

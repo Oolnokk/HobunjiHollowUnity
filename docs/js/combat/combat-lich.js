@@ -1662,11 +1662,14 @@
     const targetY = Number(target?.y); // Target Z-plane coordinate sampled only to face the cast before its authored Windup begins.
     if (Number.isFinite(targetX) && Number.isFinite(targetY)) lich.facing = Math.atan2(targetY - lich.y, targetX - lich.x);
     lich.telegraphState = 'windup';
+    // The authored pose the player's combo plays for this same step (power already applied), so casts swing like it.
+    const stepPose = window.Combat?.comboStepPose?.(LICH_CAST_COMBO_ID, step) || null;
     lich._banditSwingAnim = step.anim || 'thrust';
-    lich._banditSwingPose = step.pose || null;
+    lich._banditSwingPose = stepPose || step.pose || null;
     lich._banditSwingDirSign = step.dirSign || 1;
-    lich._banditSwingPower = Number(step.power) || 1;
+    lich._banditSwingPower = stepPose ? 1 : (Number(step.power) || 1);
     lich._banditSwingPoseScale = 1;
+    lich._banditSwingWindupCurve = null;
     lich._lichCastingAbility = ability; // Mobile diagnostics distinguish projectile and summon gestures while the shared staged action is active.
     const onStrike = () => {
       lich.telegraphState = 'strike';

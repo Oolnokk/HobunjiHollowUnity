@@ -246,7 +246,7 @@
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
-        pose: window.AttackPoseTemplates?.poseFor('pickshovel_swing'), // The editor's Quick Attack template.
+        pose: quickAttackPose(), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         holdS: HOLD_S,
@@ -405,11 +405,16 @@
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);
 
+  // Every quick attack is the editor's pickshovel_swing jab. Shared with
+  // BanditCombat so an enemy's quick attack swings exactly like the player's.
+  // Allocates a fresh pose: call once per swing.
+  function quickAttackPose() { return window.AttackPoseTemplates?.poseFor('pickshovel_swing') || null; }
+
   // Read-only data export for game.js's bandit AI and diagnostics.
   window.Combat.quickAttackData = {
     TECHNIQUES, WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
     BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
+    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
     bonusEffectCooldownS, bonusEffectCooldownRemaining, isBonusEffectReady, beginBonusEffectCooldown, resetBonusEffectCooldowns,
     cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([enemy, until]) => [enemy?.id || enemy?.name || 'enemy', Math.max(0, round1((until - performance.now()) / 1000))])),
     lastResolution: null,
@@ -442,7 +447,7 @@
     Object.assign(window.Combat.quickAttackData, {
       WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
       BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
+      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
     });
   };
 })();

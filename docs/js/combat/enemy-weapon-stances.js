@@ -66,15 +66,18 @@
 
   // How much of the sweep style's -90 degree plane twist is cancelled by the weapon's resting stance:
   // 1 at rest, fading out over the windup, 0 through strike and hold, fading back in over the return --
-  // the same rule the attack editor applies at Neutral. BanditCombat publishes the live swing timeline it
-  // just drew; the action-only formula below is the fallback for a renderer that does not.
+  // the same rule the attack editor applies at Neutral. A partial charge (Charged Breaker's poseScale)
+  // only fades it by that fraction, exactly like the player's partial release (WeaponToolStances
+  // neutralWeightForVisual). BanditCombat publishes the live swing timeline it just drew (windup progress
+  // already eased); the action-only formula below is the fallback for a renderer that does not.
   function attackNeutralWeight(entity) {
     const timeline = entity?._banditToolTimeline; // Fresh: the renderer ran immediately before this read.
     if (timeline) {
       if (!timeline.live) return 1;
-      if (timeline.progress <= timeline.wf) return timeline.wf > 0.000001 ? 1 - timeline.progress / timeline.wf : 0;
-      if (timeline.progress > timeline.hf) return Math.max(0, Math.min(1, (timeline.progress - timeline.hf) / Math.max(0.000001, 1 - timeline.hf)));
-      return 0;
+      const poseScale = Math.max(0, Math.min(1, Number(timeline.poseScale ?? 1) || 0));
+      if (timeline.progress <= timeline.wf) return timeline.wf > 0.000001 ? 1 - (timeline.progress / timeline.wf) * poseScale : 1 - poseScale;
+      if (timeline.progress > timeline.hf) return (1 - poseScale) + poseScale * Math.max(0, Math.min(1, (timeline.progress - timeline.hf) / Math.max(0.000001, 1 - timeline.hf)));
+      return 1 - poseScale;
     }
     const action = entity?._banditAction; // Current staged action whose windup defines how quickly the neutral-plane compensation fades.
     if (!action) return 1;
