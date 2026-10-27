@@ -333,10 +333,12 @@
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
   <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261019h420f48e"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261027fixedpreview1"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261026modularmaskoffset4"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261027previewemitter1"></script>
+  <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
+  <script src="js/combat/loadout-weapon-preview.js?v=20261027fixedpreview1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261015h91b22f2"></script>
@@ -1699,9 +1701,16 @@
         </div>
       </div><!-- /mpRelationships -->
 
-      <!-- ── Combat loadout pane (filled by combat-loadout-ui.js) ── -->
+      <!-- ── Combat loadout: scrolling left controls, permanently visible right 3D weapon ── -->
       <div class="mp-pane" id="mpLoadout">
-        <div class="settings-pane" id="combatLoadoutPane"></div>
+        <div class="settings-pane" id="combatLoadoutPane" aria-label="Weapon attacks and enchantment settings"></div>
+        <aside id="combatLoadoutPreview" role="group" aria-label="Equipped weapon 3D preview">
+          <div class="loadout-preview-title">Equipped Weapon <span id="combatLoadoutPreviewName">No weapon equipped</span></div>
+          <div id="combatLoadoutPreviewStage">
+            <div id="combatLoadoutPreviewStatus" role="status">Preparing weapon preview…</div>
+          </div>
+          <div class="loadout-preview-help">Drag the weapon to turn it</div>
+        </aside>
       </div>
 
       <!-- ── Settings pane ──────────────────────────────── -->
