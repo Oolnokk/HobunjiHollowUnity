@@ -49,16 +49,62 @@ options.currentArea = 'mine';
 assert.equal(gaze.updateWalker(walker, 0.5, 0.7, options), false);
 assert.equal(walker._npcMotionLookActive, false, 'off-area LOD does not strand the last gait gaze');
 
-const front = { rotation: { x: 0.05, y: 0.2 } }, back = { rotation: { x: -0.02, y: -0.3 } }; // Existing front/back combat neck bones.
-const avatar = { neckJoint: { front, back }, frontPlane: { rotation: { y: Math.PI / 2 } }, backPlane: { rotation: { y: -Math.PI / 2 } } };
-const undo = []; // The renderer restores the exact pitch after every world/depth pass.
-assert.equal(gaze.applyHostileRunPitch(avatar, 0.25, Math.PI / 2, undo), true);
-assert(near(front.rotation.x, -0.2) && near(back.rotation.x, 0.23), 'enemy head pitch cancels lean on both portrait cards');
-assert.equal(front.rotation.y, 0.2, 'combat yaw remains untouched');
-assert.equal(back.rotation.y, -0.3, 'rear-card combat yaw remains untouched');
-undo.forEach(fn => fn());
-assert(near(front.rotation.x, 0.05) && near(back.rotation.x, -0.02), 'no accumulated head pitch across renders');
-assert.equal(gaze.applyHostileRunPitch(avatar, 0, 0, []), false, 'stationary bodies receive no extra pitch');
+// Minimal Three.js quaternion composition; tests actual head orientation,
+// not only whether one local Euler pitch happened to change.
+class MockQuaternion {
+  constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); }
+  set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; }
+  clone() { return new MockQuaternion(this.x, this.y, this.z, this.w); }
+  copy(other) { return this.set(other.x, other.y, other.z, other.w); }
+  multiply(q) {
+    const { x, y, z, w } = this;
+    return this.set(w * q.x + x * q.w + y * q.z - z * q.y,
+      w * q.y - x * q.z + y * q.w + z * q.x,
+      w * q.z + x * q.y - y * q.x + z * q.w,
+      w * q.w - x * q.x - y * q.y - z * q.z);
+  }
+}
+const sameRotation = (a, b) => ['x', 'y', 'z', 'w'].every(key => near(a[key], b[key])); // Covers all 3 axes and the scalar quaternion term.
+const yawQuaternion = yaw => new MockQuaternion(0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)); // Front/back portrait plane orientation.
+const leanQuaternion = (lean, heading) => new MockQuaternion(
+  Math.cos(heading) * Math.sin(lean / 2), 0, -Math.sin(heading) * Math.sin(lean / 2), Math.cos(lean / 2),
+); // Exactly the runtime's world-forward run-lean axis.
+
+for (const heading of [0, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+  for (const lean of [-0.48, 0.1, 0.3]) {
+    const frontBone = { quaternion: new MockQuaternion() }; // The original combat-yaw pose survives in the neck bone.
+    const backBone = { quaternion: new MockQuaternion() }; // Independent back portrait card has opposite ±90° yaw.
+    const avatar = { neckJoint: { front: frontBone, back: backBone },
+      frontPlane: { rotation: { y: Math.PI / 2 } }, backPlane: { rotation: { y: -Math.PI / 2 } } };
+    const undo = []; // Actual 3D renderer restores neck transforms between independent passes.
+    assert.equal(gaze.applyHostileRunPitch(avatar, lean, heading, undo), true);
+    const bodyLean = leanQuaternion(lean, heading);
+    for (const [bone, yaw] of [[frontBone, Math.PI / 2], [backBone, -Math.PI / 2]]) {
+      const restPlane = yawQuaternion(yaw);
+      const renderedHead = bodyLean.clone().multiply(restPlane).multiply(bone.quaternion);
+      assert(sameRotation(renderedHead, restPlane), 'head stays exactly level for all run headings and both cameras');
+    }
+    for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+    assert(sameRotation(frontBone.quaternion, new MockQuaternion()), 'front render cleanup is exact');
+    assert(sameRotation(backBone.quaternion, new MockQuaternion()), 'rear render cleanup is exact');
+  }
+}
+
+// Pre-existing combat yaw must be preserved AFTER correction and render cleanup.
+const combatYaw = yawQuaternion(0.2);
+const front = { quaternion: combatYaw.clone() }, back = { quaternion: yawQuaternion(-0.3) };
+const yawAvatar = { neckJoint: { front, back }, frontPlane: { rotation: { y: Math.PI / 2 } }, backPlane: { rotation: { y: -Math.PI / 2 } } };
+const yawUndo = [];
+assert.equal(gaze.applyHostileRunPitch(yawAvatar, 0.28, 0, yawUndo), true);
+assert(sameRotation(
+  leanQuaternion(0.28, 0).multiply(yawQuaternion(Math.PI / 2)).multiply(front.quaternion),
+  yawQuaternion(Math.PI / 2).multiply(combatYaw),
+), 'running correction preserves committed combat neck yaw while canceling lean');
+yawUndo.forEach(fn => fn());
+assert(sameRotation(front.quaternion, combatYaw), 'restores exact combat yaw');
+assert(sameRotation(back.quaternion, yawQuaternion(-0.3)), 'restores independent rear combat yaw');
+assert.equal(gaze.applyHostileRunPitch(yawAvatar, 0, 0, []), false, 'stationary bodies receive no extra pitch');
+assert.equal(gaze.applyHostileRunPitch({ neckJoint: { front, back } }, .25, 0, []), false, 'missing card yaw does not mutate the head');
 
 const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8'); // Verifies the actual walker/hostile simulation invokes the new API.
 const bridge = fs.readFileSync(path.join(root, 'docs/js/drunk-prone-composition-bridge.js'), 'utf8'); // Ensures hostile correction runs inside the render boundary.
