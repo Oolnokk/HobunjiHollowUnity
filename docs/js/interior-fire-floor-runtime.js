@@ -37,6 +37,7 @@
   let bonfirePromise = null; // Caches the one campfire->bonfire derivation request shared by all bonfire instances.
   let bonfireData = null; // Stores the resolved derived bonfire object for synchronous peek() calls.
   let ambientLastNow = 0; // Stores the previous scheduler timestamp for frame-rate-independent particle updates.
+  let ambientSubscriberRegistered = false; // Defers registration only on standalone editor pages where the game scheduler is not installed.
   const AMBIENT_SCHEDULER_ID = 'interior-ambient-vfx'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
   let buildingSceneMap = null; // Stores the live game building-scene Map once GridTileAccessors exposes it.
   let lastFloorMapId = null; // Included in the mobile-friendly debug snapshot after a floor style is applied.
@@ -157,20 +158,34 @@
     }
     if (!ambientRecords.size) {
       ambientLastNow = 0;
-      window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, false); // No live emitters left; stop running this subscriber until one reattaches.
+      if (window.RuntimeFrameScheduler?.setEnabled) window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, false); // No live emitters left; tolerate standalone editors without a scheduler.
     }
   }
 
-  function ensureAmbientLoop() {
-    if (ambientRecords.size) window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, true);
+  function registerAmbientSubscriber() {
+    if (ambientSubscriberRegistered) return true;
+    if (typeof window.RuntimeFrameScheduler?.register !== 'function') return false; // Interior Editor doesn't always load the game scheduler.
+    window.RuntimeFrameScheduler.register(AMBIENT_SCHEDULER_ID, ambientTick, {
+      phase: 'post-game',
+      owner: 'InteriorFireFloorRuntime',
+      description: 'Updates ambient fire/candle particle emitters attached to placed furniture.',
+      enabled: false,
+    });
+    ambientSubscriberRegistered = true;
+    return true;
   }
 
-  window.RuntimeFrameScheduler.register(AMBIENT_SCHEDULER_ID, ambientTick, {
-    phase: 'post-game',
-    owner: 'InteriorFireFloorRuntime',
-    description: 'Updates ambient fire/candle particle emitters attached to placed furniture.',
-    enabled: false,
-  });
+  function ensureAmbientLoop() {
+    if (ambientRecords.size && registerAmbientSubscriber()) window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, true);
+  }
+
+  registerAmbientSubscriber(); // Regular game script order registers once, unchanged.
+  if (!ambientSubscriberRegistered && typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+      if (ambientRecords.size) ensureAmbientLoop(); // Recovery when the scheduler becomes available after the furniture module.
+      else registerAmbientSubscriber();
+    }, { once: true });
+  }
 
   function ambientEmitterTargetsReady(group, emitters) {
     const meshById = group?.userData?.meshById; // Authored part map is installed only after FurnitureVesselRuntime finishes replacing a procedural fallback.

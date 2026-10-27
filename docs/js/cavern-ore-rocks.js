@@ -12,6 +12,7 @@
 
   const separatorCracks = new Map(); // Map id -> scene and live crack set, allowing O(1) removals when one mineable wall rock breaks.
   const rockMaps = new Map(); // Map id -> live ore mesh index; explosions never traverse the entire cave scene.
+  const rockScenes = new Map(); // Map id -> scene owning the indexed ore meshes, used by Sense Mode to avoid stale caves.
   function crackRibbons(THREE, col, row) {
     const group = new THREE.Group(); // Individual fracture faces, separate from the parent rock's solid hitbox.
     const vertices = []; // Batched ragged ribbons are the non-glowing analogue of Hronal exploding-pillar fissures.
@@ -44,12 +45,12 @@
     return group;
   }
   function senseTargets(scene) {
-    // Perception refreshes several times per second; avoid walking every fracture's
-    // entire parent chain or scanning other caves' old meshes.
-    const roots = [];
-    for (const record of separatorCracks.values()) {
-      if (record.scene !== scene) continue;
-      for (const root of record.meshes) if (root.parent?.parent === scene) roots.push(root);
+    // Every intact, diggable ore mound (including a separator's actual rock)
+    // highlights, but the giant surrounding cave shell never does.
+    const roots = []; // Scene-local ore groups; the per-tile index is already maintained by build/removeVisual.
+    for (const [mapId, rocks] of rockMaps) {
+      if (rockScenes.get(mapId) !== scene) continue;
+      for (const group of rocks.values()) if (group.parent === scene) roots.push(group);
     }
     return roots;
   }
@@ -85,6 +86,7 @@
     const oreRockMeshes = new Map();
     separatorCracks.delete(mapId); // The new scene replaces the old registry without retaining old render roots.
     rockMaps.set(mapId, oreRockMeshes); // Direct tile lookup for blasting, independent of scene graph size.
+    rockScenes.set(mapId, scene); // Ignore leftover registries from other cave scenes during Sense Mode refresh.
     const cracks = new Set(); // O(1) removal from active Sense Mode fracture registration.
     if (mapData.oreRocks?.length) deps.zoneMineableRockMeshes.set(mapId, oreRockMeshes);
     for (const rock of (mapData.oreRocks || [])) {

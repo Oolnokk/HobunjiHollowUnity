@@ -154,6 +154,7 @@
   // ── Classification ───────────────────────────────────────────────────
   function creatureCategory(c) {
     if (c.isCompanion) return 'friendly';
+    if (c.isDenMother) return 'hostile'; // A guarding Den-Mother stays a threat even when its base species is prey.
     if (c.isTribeHunter || c.isPorakanekiHunter) return c._porakanekiPlannerControlled === true ? 'neutral' : 'hostile';
     if (c.isBandit || c.banditCompanion) return 'hostile';
     const territorial = c._territorialBehavior?.phase;
@@ -193,14 +194,24 @@
     for (const walker of sources.npcs || []) consider(walker?.root || rootOf(walker), 'friendly');
     for (const animal of sources.livestock || []) consider(rootOf(animal), 'friendly', { livestockId: animal.livestockId || null });
     for (const c of sources.corpses || []) consider(rootOf(c), 'interact');
+    for (const root of sources.oreRocks || []) consider(root, 'interact'); // Indexed wild, mine and cavern ore mounds near the player.
     for (const obj of sources.interactables || []) {
       if (!obj || obj.type === 'animal' || obj.livestockId) continue;
       const root = rootOf(obj);
       if (!root || horizontalSize(root) > MAX_INTERACTABLE_SIZE_TILES) continue;
       consider(root, 'interact');
     }
-    for (const root of window.CavernOreRocks?.senseTargets?.(scene) || []) consider(root, 'interact'); // The wall stays unlit; only its matte crack geometry highlights in Sense Mode.
-    for (const root of window.Shattercasks?.senseTargets?.(scene) || []) consider(root, 'interact'); // Intact blast vases read as interactable objects.
+    // Independent scene owners expose small, live targets without forcing game.js
+    // to copy their registries or traversing the whole cave every 150 ms.
+    const specialSources = { // Provider counts are visible in debugSnapshot for mobile diagnosis.
+      oreRocks: window.CavernOreRocks?.senseTargets?.(scene) || [],
+      shattercasks: window.Shattercasks?.senseTargets?.(scene) || [],
+      nests: window.DenNestSystem?.senseTargets?.(scene) || [],
+      hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
+      caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
+    };
+    lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
+    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }

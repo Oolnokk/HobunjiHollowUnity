@@ -71,12 +71,15 @@ const start = editor.indexOf('let editingLayoutId =');
 const end = editor.indexOf('// Every decor array', start);
 vm.runInContext(editor.slice(start, end), editorContext);
 editorContext.map = structuredClone(town);
-vm.runInContext(`editingLayoutId = map.layouts[0].id; activeDecor(map)[2].col = 31; activeStations(map)[0].col = 29;`, editorContext);
-assert.equal(editorContext.map.layouts[0].decor[2].col, 31);
+const welcomeId = town.layouts[0].decor.find(prop => prop.activity?.type === 'welcome')?.id;
+assert(welcomeId, 'first festival must provide a welcome activity');
+editorContext.welcomeId = welcomeId;
+vm.runInContext(`editingLayoutId = map.layouts[0].id; activeDecor(map).find(prop => prop.id === welcomeId).col = 31; activeStations(map)[0].col = 29;`, editorContext);
+assert.equal(editorContext.map.layouts[0].decor.find(prop => prop.id === welcomeId).col, 31);
 assert.deepEqual(editorContext.map.npcStations, town.npcStations);
 assert.deepEqual(editorContext.map.decor, town.decor);
 editorContext.exported = JSON.parse(JSON.stringify(editorContext.map));
-assert.equal(editorContext.exported.layouts[0].decor[2].activity.type, 'welcome');
+assert.equal(editorContext.exported.layouts[0].decor.find(prop => prop.id === welcomeId).activity.type, 'welcome');
 vm.runInContext(`editingLayoutId = null; setActiveStations(map, [{ id: 'newBase', col: 1, row: 1 }]);`, editorContext);
 assert.equal(editorContext.map.layouts[0].npcStations[0].col, 29);
 // Map-owned station replacement removes expired festival roles, preserving stations owned by other areas/tools.
@@ -118,7 +121,7 @@ assert(scheduling.resolveNpcStationTarget('other'));
   await context.refreshTownCalendarLayout(); assert.equal(context._layoutSwapInProgress, false, 'failure releases swap lock');
   await context.refreshTownCalendarLayout();
   assert.equal(context._townZone.activeLayoutId, 'default'); assert.strictEqual(context.townScene.actors, actors);
-  assert.equal(builds, 2); assert.equal(transitions, 3); assert.equal(context._workspaceDefinition.maps[0].decor.length, 2);
+  assert.equal(builds, 2); assert.equal(transitions, 3); assert.equal(context._workspaceDefinition.maps[0].decor.length, town.decor.length, 'calendar layout cycling must preserve base decorations without respawning retired floating signs');
   console.log('Festival spacing, open exits, editor round-trip, station cleanup, and live layout lifecycle passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
