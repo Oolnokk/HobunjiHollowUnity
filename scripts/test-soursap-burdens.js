@@ -122,7 +122,8 @@ assert.equal(statuses.movementDirectionMultiplier(actor),1,
 // This catches regressions that only checking the Cloud Forest action labels would miss.
 function isolateFunction(start, next) {
   const first=burdenCode.indexOf('  function '+start+'('); // Exact source range for this production implementation.
-  const until=burdenCode.indexOf('  function '+next+'(',first);
+  const plainUntil=burdenCode.indexOf('  function '+next+'(',first); // Function boundaries also include async functions.
+  const until=plainUntil>=0?plainUntil:burdenCode.indexOf('  async function '+next+'(',first);
   assert(first>=0&&until>first,'production Burden stage '+start+' is present');
   return burdenCode.slice(first,until);
 }
