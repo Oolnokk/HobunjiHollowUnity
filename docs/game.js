@@ -16389,19 +16389,25 @@
       function matchesPackCategory(cat, key) {
         const def = ITEM_DEFS[key]; // The same item metadata feeds regular Pack, filtered Pack and the item wheel.
         if (!def) return false;
-        if (cat === 'all' || def.cat === cat) return true;
+        if (cat === 'all') return true;
         const tags = new Set((def.tags || []).map(tag => String(tag).toLowerCase())); // Classifies item families without changing their existing crafting/shipping categories.
+        if (cat !== 'other' && def.cat === cat) return true; // "Other" must never swallow items already covered by a more useful filter.
         switch (cat) {
-          case 'food': return def.isCookedFood === true || ['food', 'meal', 'drink', 'beverage', 'alcohol', 'ingredient', 'meat', 'egg', 'milk'].some(tag => tags.has(tag));
+          case 'food': return def.isCookedFood === true || def.cat === 'crop' || def.cat === 'ingredient'
+            || (Array.isArray(def.cookingCategories) && def.cookingCategories.length > 0)
+            || ['food', 'meal', 'drink', 'beverage', 'alcohol', 'ingredient', 'meat', 'egg', 'milk', 'fish', 'fruit', 'berry', 'vegetable', 'grain', 'honey', 'wine', 'sake', 'vodka', 'airag', 'nectar', 'cheese', 'butter', 'cream', 'jam', 'juice', 'bread', 'lard'].some(tag => tags.has(tag));
           case 'fish': return tags.has('fish') || key.startsWith('fish_');
           case 'ore': return tags.has('ore') || tags.has('metal bar');
-          case 'reagent': return tags.has('reagent') || tags.has('alchemy');
-          case 'tool': return def.cat === 'instrument';
-          case 'plans': return ['blueprint', 'buildingPlan'].includes(def.cat) || ['blueprint', 'plan', 'deed', 'scroll', 'tablet'].some(tag => tags.has(tag));
+          case 'reagent': return tags.has('reagent'); // "Alchemy" alone also labels finished potions and recipes.
+          case 'livestock': return tags.has('livestock') || (def.cat === 'material' && /Baby$/.test(key));
+          case 'tool': return ['instrument', 'weapon'].includes(def.cat) || tags.has('tool') || tags.has('weapon') || tags.has('instrument');
+          case 'plans': return ['blueprint', 'buildingPlan', 'scroll', 'tablet'].includes(def.cat)
+            || ['blueprint', 'plan', 'building plan', 'deed', 'recipe', 'scroll', 'tablet'].some(tag => tags.has(tag))
+            || /^(?:alchemy_recipe_|recipe_)/.test(key);
           case 'dye': return tags.has('dye');
-          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'tool', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'dye'].includes(def.cat)
-            && !def.isCookedFood
-            && !['food', 'fish', 'ore', 'metal bar', 'reagent', 'alchemy', 'plan', 'deed', 'blueprint', 'scroll', 'tablet', 'dye'].some(tag => tags.has(tag));
+          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'ingredient', 'tool', 'weapon', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'scroll', 'tablet', 'dye'].includes(def.cat)
+            && !def.isCookedFood && !(Array.isArray(def.cookingCategories) && def.cookingCategories.length > 0)
+            && !['food', 'fish', 'ore', 'metal bar', 'reagent', 'livestock', 'tool', 'weapon', 'instrument', 'plan', 'deed', 'blueprint', 'building plan', 'recipe', 'scroll', 'tablet', 'dye'].some(tag => tags.has(tag));
           default: return false;
         }
       }
