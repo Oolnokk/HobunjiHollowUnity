@@ -7776,7 +7776,7 @@
                               "entries": [
                                     {
                                           "id": "pe_hunundi_greeting_1",
-                                          "text": "A gentle morning to you, {{pool:Hunundi Nicknames}}.",
+                                          "text": "Good morning, {{pool:Hunundi Nicknames}}. What are you tending today?",
                                           "conditions": {
                                                 "weekdays": [],
                                                 "seasons": [],
@@ -7810,7 +7810,7 @@
                                     },
                                     {
                                           "id": "pe_hunundi_greeting_2",
-                                          "text": "Life keep you, {{pool:Hunundi Nicknames}}. How is your spirit today?",
+                                          "text": "Nao'ung's blessings on your work, {{pool:Hunundi Nicknames}}. Have you been keeping well?",
                                           "conditions": {
                                                 "weekdays": [],
                                                 "seasons": [],
@@ -7844,7 +7844,7 @@
                                     },
                                     {
                                           "id": "pe_hunundi_greeting_3",
-                                          "text": "A peaceful evening to you, {{pool:Hunundi Nicknames}}.",
+                                          "text": "Good evening, {{pool:Hunundi Nicknames}}. Even the flowers fold their petals and rest.",
                                           "conditions": {
                                                 "weekdays": [],
                                                 "seasons": [],
