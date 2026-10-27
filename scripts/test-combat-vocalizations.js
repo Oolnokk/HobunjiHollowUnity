@@ -264,6 +264,30 @@ assert.equal(context.window.__heldStrike, 1, 'original held strike must still ex
 assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_releasegrunt'));
 
 
+// Release grunts may layer through the next attack's windup without cutting off their predecessors.
+const releaseA = W.CombatVocalizations.playStrikeGrunt(player, 'quickAttack', 'overlap-a');
+const releaseEntryA = played.at(-1);
+const releaseB = W.CombatVocalizations.playStrikeGrunt(player, 'offensiveHold', 'overlap-b');
+const releaseEntryB = played.at(-1);
+assert(releaseA?.claim && releaseB?.claim, 'each release starts an owned voice');
+assert.equal(releaseEntryA.stopped, false, 'second release must not interrupt first release');
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 2);
+const followupWindup = W.CombatVocalizations.beginCharge({ entity: player, abilityId: 'overlap-windup', targetDurationS: 0.2, preserveGroup: 'release-grunt' });
+assert.equal(releaseEntryA.stopped, false, 'next attack windup must preserve the first release');
+assert.equal(releaseEntryB.stopped, false, 'next attack windup must preserve the second release');
+const releaseC = W.CombatVocalizations.playStrikeGrunt(player, 'quickAttack', 'overlap-c');
+const releaseEntryC = played.at(-1);
+assert(releaseC?.claim);
+assert.equal(followupWindup.cancelled, true, 'release preempts the charge windup');
+assert.equal(releaseEntryA.stopped, false);
+assert.equal(releaseEntryB.stopped, false);
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 3);
+releaseEntryA.handle.finish();
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 2, 'finishing older release does not free younger voices');
+releaseEntryB.handle.finish();
+releaseEntryC.handle.finish();
+assert.equal(W.CombatVocalizations.debugSnapshot().activeReleaseGrunts, 0);
+
 // One owned voice per character: active grunts beat pain and breathing.
 const priorityPlayer = context.window.CombatVocalizations.playStrikeGrunt(player, 'combo', 'priority-test');
 const activeEntry = played.at(-1);
