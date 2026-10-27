@@ -21,15 +21,9 @@ class Vector3 {
  applyMatrix4(){this.x+=10;this.y+=2;this.z+=2;return this;}
  addScaledVector(v,n){this.x+=v.x*n;this.y+=v.y*n;this.z+=v.z*n;return this;}
 }
-const runtimeWindow={THREE:{Vector3},setTimeout:()=>0}; // Execute only the authoritative projection math; no renderer or alternate frame owner is needed.
+const runtimeWindow={THREE:{Vector3},setTimeout:()=>0}; // Load only the daylight runtime; no renderer or alternate frame owner is needed.
 vm.runInNewContext(fs.readFileSync('docs/js/daylight-window-runtime.js','utf8'),{window:runtimeWindow,console,URL});
-const draws=[],transforms=[],ctx={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){},transform(...values){transforms.push(values);},drawImage(image){draws.push(image);}}; // Captures the exact colored canvas submitted by both projected triangles.
-const image={width:16,height:16},source={projectionImage:image,width:1,height:1,mesh:{matrixWorld:{},updateWorldMatrix(){}},projectionNormal:new Vector3(),projectionCorners:Array.from({length:4},()=>new Vector3()),projectionScreens:Array.from({length:4},()=>({x:0,y:0}))};
-const project=(x,y,z)=>({x:x*20,y:z*20,visible:true});
-assert(runtimeWindow.DaylightWindowRuntime.drawProjectedLight(ctx,source,project,1));assert.equal(draws.length,2);assert.strictEqual(draws[0],image);assert.strictEqual(draws[1],image);assert(transforms.flat().every(Number.isFinite));
-assert.equal(runtimeWindow.DaylightWindowRuntime.drawProjectedLight(ctx,source,project,0),false);
-assert.equal(runtimeWindow.DaylightWindowRuntime.drawProjectedLight(ctx,source,()=>({visible:false}),1),false);
-const corners=source.projectionCorners,screens=source.projectionScreens;runtimeWindow.DaylightWindowRuntime.drawProjectedLight(ctx,source,project,1);assert.strictEqual(source.projectionCorners,corners);assert.strictEqual(source.projectionScreens,screens);
+assert.equal(runtimeWindow.DaylightWindowRuntime.drawProjectedLight,undefined); // The legacy floor projection was removed; the shared daylight compositor owns blended glass light.
 const patternsWindow={},canvas={width:0,height:0,getContext:()=>({fillStyle:'',fillRect(){}})}; // Solid glass must remain valid without loading an unrelated motif or compositor.
 vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window:patternsWindow,document:{createElement:()=>canvas}});
 patternsWindow.FurniturePatternSurfaces.renderTile({mode:'glass',solid:true,palette:['#8844dd','#eeaa22']},null,[16,24]).then(result=>{assert.strictEqual(result,canvas);assert.equal(result.width,16);assert.equal(result.height,24);console.log('Temple vine recipes, north window room elevation, colored light projection, scratch reuse and solid glass passed.');}).catch(error=>{console.error(error);process.exitCode=1;});
