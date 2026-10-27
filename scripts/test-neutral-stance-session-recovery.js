@@ -122,11 +122,15 @@ function testEditorExtensionScriptRecovery() {
   assert.ok(start >= 0 && end > start, 'PanelUI routes the stance editor extension');
   const timers = timerHarness(); // Runs in-page retry timers without a real network.
   const scripts = []; // Captures the editor's dynamic script tags to simulate their lifecycle.
-  const messages = []; // User-visible debug messages for mobile.
-  const window = { logDebug: message => messages.push(message) };
+  const messages = []; // User-visible debug lines for mobile, even when logDebug is ES-module-scoped.
+  const window = {};
   const document = {
     head: { appendChild(script) { script.isConnected = true; scripts.push(script); } },
+    getElementById(id) {
+      return id === 'logBody' ? { prepend(line) { messages.push(line.textContent); } } : null;
+    },
     createElement(tag) {
+      if (tag === 'div') return { className: '', textContent: '' };
       assert.equal(tag, 'script');
       return { isConnected: false, remove() { this.isConnected = false; } };
     },
