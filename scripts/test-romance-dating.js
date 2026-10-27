@@ -285,6 +285,25 @@ W.NpcScheduling.registerNpcStations([{ id: 'chair_1', area: 'interior', c: 2, r:
 const daytime = new Set();
 for (let h = 7; h < 22; h += 0.5) { clock.hour = h; const t = W.RomanceSystem._test.scheduleOverride(tooth.rec); daytime.add(t ? t.activity : 'town'); }
 assert.ok(daytime.has('relaxing at home'), 'the spouse sits in the farmhouse chairs during the day');
+const townCfg = W.SCRATCHBONES_CONFIG.game.romance.spouse.townAfternoon;
+const oldTownMod = townCfg.daysOfWeekMod;
+townCfg.daysOfWeekMod = 1; // Force a scheduled town day and check farming cannot override it.
+clock.hour = 14;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), true, 'shared town visit eligibility is available to the Ginju work planner');
+const plotTarget = { area: 'farm', c: 12, r: 14, activity: 'tilling family plot' };
+let plotLookups = 0;
+W.NpcFarmPlots = { targetFor(_rec, options) { plotLookups++; assert.equal(options?.familyOnly, true); return plotTarget; } };
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec), null, 'authored town visits beat assigned family plot jobs');
+assert.equal(plotLookups, 0, 'farmwork not consulted on town-visit afternoons');
+clock.hour = 11;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, plotTarget.activity, 'morning assigned chores beat idle farm routines');
+clock.hour = 23;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, 'sleeping', 'bedtime beats assigned family plot jobs');
+delete W.NpcFarmPlots;
+townCfg.daysOfWeekMod = oldTownMod;
+
 
 // ── Family ──────────────────────────────────────────────────────────────
 const fam = W.RomanceFamily._test;
