@@ -83,6 +83,9 @@
     const farmEditBrush = deps.getFarmEditBrush();
 
     if (farmEditBrushType === 'terrain') {
+      // Tilled / trench strokes build family plot groups (js/farm-plot-editor.js). Painting into a plot that already has
+      // someone assigned only designates the tile — they till or dig it themselves instead of it becoming tilled at once.
+      if (window.FarmPlotEditor?.onTerrainPaint?.(col, row, farmEditBrush) === 'designate') { saveFarmLayout(); return; }
       const typeMap = {
         grass: deps.TileType.GRASS, weeds: deps.TileType.WEEDS, rock: deps.TileType.ROCK,
         shrub: deps.TileType.SHRUB, tilled: deps.TileType.TILLED, raised: deps.TileType.RAISED, trench: deps.TileType.TRENCH
