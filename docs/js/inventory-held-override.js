@@ -245,7 +245,15 @@
     refreshDeps?.buildInventoryGrid?.();
     refreshDeps?.refreshActionBar?.();
     refreshDeps?.saveMemberWorldData?.();
-    if (!(Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) > 0)) equipmentDeps?.clearInventoryDetail?.();
+    const remaining = Math.max(0, Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) || 0); // Remaining stack count used to synchronize the selected blueprint detail after reading.
+    if (!remaining) equipmentDeps?.clearInventoryDetail?.();
+    else if (window.CraftingPanel?.blueprintForItem?.(key)) {
+      const detailName = document.getElementById('iiName'); // Live Pack detail currently selected when a blueprint is read.
+      const itemLabel = canonicalDef(key)?.label; // Canonical name without the displayed quantity suffix.
+      if (detailName && itemLabel && normalizeDetailLabel(detailName.textContent).replace(/\s+×\s*\d+$/, '') === normalizeDetailLabel(itemLabel)) {
+        detailName.textContent = `${itemLabel} ×${remaining}`; // Avoid displaying the old stack size until the next selection.
+      }
+    }
     scheduleDirectUseUi();
   }
 
@@ -307,7 +315,7 @@
     const actionsEl = document.getElementById('iiActions');
     const detailEl = document.getElementById('iiDetail');
     if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
-    const detailName = normalizeDetailLabel(nameEl.textContent);
+    const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\s+×\s*\d+$/, ''); // Pack displays "Blueprint ×2" while ITEM_DEFS stores just "Blueprint".
     if (!detailName) return null;
     const inventory = itemDeps?.inventory || equipmentDeps?.inventory || {};
     const candidates = Object.keys(inventory).filter(key => Number(inventory[key]) > 0).map(key => {
@@ -335,10 +343,11 @@
     const { key, action } = resolved;
     const button = existing || document.createElement('button'); // Used as the one shared direct-action control beside Sell/Hold/Transfer actions.
     button.id = 'inventoryDirectUseBtn';
-    button.className = 'ii-btn inventory-direct-use';
+    if (button.className !== 'ii-btn inventory-direct-use') button.className = 'ii-btn inventory-direct-use'; // Avoid self-triggering the Inventory MutationObserver.
     button.dataset.itemKey = key;
     button.disabled = action.allowed === false;
-    button.textContent = `${action.icon || '✦'} ${action.verb}`;
+    const buttonLabel = `${action.icon || '✦'} ${action.verb}`; // Used to skip redundant child mutations that would schedule another render.
+    if (button.textContent !== buttonLabel) button.textContent = buttonLabel;
     button.title = `${action.verb} ${action.itemLabel} directly from Inventory`;
     button.onclick = () => useInventoryItem(key);
     if (!existing) actionsEl?.prepend?.(button);
