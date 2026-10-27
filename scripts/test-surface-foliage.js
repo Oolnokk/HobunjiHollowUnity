@@ -42,9 +42,9 @@ assert.match(sourceOfStyles,/appendDenseCover\(group,triangles,settings\)/,'Maxi
 assert.match(sourceOfStyles,/Math\.min\(settings\.density>=\.995\?24:96/,'Strand geometry must stay capped for mobile');
 assert.match(sourceOfStyles,/Math\.round\(settings\.count\*\(\.25\+settings\.density\*1\.75\)\)/,'Wrap count must remain an effective strand-complexity budget');
 assert.match(sourceOfStyles,/const coverageKey=\(p,n\)=>/,'Occupancy must distinguish perpendicular surface faces');
+const authorSource=fs.readFileSync('docs/js/surface-foliage-authoring.js','utf8');
 assert.match(authorSource,/data-count-label/,'Every editor must explain Wrap strand-budget behavior');
 assert.match(authorSource,/\[data-wrap-controls\]'\)\.style\.display/,'Wrap-only controls must be hidden reliably even with flex-row editor CSS');
-const authorSource=fs.readFileSync('docs/js/surface-foliage-authoring.js','utf8');
 assert.match(authorSource,/value="cornerFill"/);
 assert.match(authorSource,/value="wrap"/);
 assert.match(authorSource,/data-field="density"/);
