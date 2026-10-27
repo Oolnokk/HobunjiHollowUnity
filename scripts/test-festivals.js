@@ -60,7 +60,10 @@ for (const festival of calendar.festivals) {
   assert.notEqual(calendar.forOrdinal(start + 7)?.id, festival.id);
 }
 assert.equal(calendar.festivals.reduce((count, festival) => count + 7, 0), 35);
-assert.equal(window.MapLayoutSystem.getEffectiveMapData(town, { dateOrdinal: 1 }).decor.length, 2, 'normal day restores base decor');
+const normalDay = window.MapLayoutSystem.getEffectiveMapData(town, { dateOrdinal: 1 });
+assert.equal(normalDay.activeLayoutId, 'default', 'ordinary date must leave festival layout');
+assert.equal(normalDay.decor.length, town.decor.length, 'normal day restores authored base decor without retired floating signs');
+assert(!normalDay.decor.some(prop => prop.festivalLocale || prop.festivalLocaleParent || prop.activity?.type === 'welcome'), 'festival-only dressing must not persist on an ordinary day');
 // Test the actual region/calendar conversion; visual months must not move regional seasons.
 const actualCalendar = vm.createContext({ window: {}, THREE: { Color: class { setHSL() { return this; } } }, console });
 load(actualCalendar, 'calendar-system');
