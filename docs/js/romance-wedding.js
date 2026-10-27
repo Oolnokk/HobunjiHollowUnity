@@ -72,7 +72,7 @@
     const stages = [
       { id: 'wedding_fade_in', type: 'fade', direction: 'in', duration: 1.2, next: '__next__' },
       { id: 'wedding_gathered', type: 'caption', speakerName: '', text: 'Friends and neighbors fill every pew of the Life Temple.', cameraMode: 'authored', camera: CAMERAS.wide, next: '__next__' },
-      { id: 'wedding_welcome', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: "We gather here in Nao'ung's temple, with those who have helped you flourish. Today, you choose to put down roots beside one another.", cameraMode: 'authored', camera: CAMERAS.altar, next: '__next__' },
+      { id: 'wedding_welcome', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: "We gather here, in this Life Temple of the Breath, dedicated also to Nao'ung, under the watchful, loving gaze of the Tianlong of Fate, with those who have helped you flourish. Today, you choose to put down roots beside one another.", cameraMode: 'authored', camera: CAMERAS.altar, next: '__next__' },
       { id: 'wedding_face_spouse', type: 'turn', actorId: 'player', mode: 'actor', targetActorId: 'spouse', duration: 0.35, next: '__next__' },
       { id: 'wedding_face_player', type: 'turn', actorId: 'spouse', mode: 'actor', targetActorId: 'player', duration: 0.35, next: '__next__' },
       { id: 'wedding_ask_player', type: 'talk', speakerId: 'hunundi', addressedActorId: 'player', text: `${playerName}, will you stand with ${spouseName} through bloom and blight, sharing the harvest and tending one another when times are lean?`, ...overShoulder('spouse', 'player', -0.6, 0.2), next: '__next__' },

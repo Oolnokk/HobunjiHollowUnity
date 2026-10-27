@@ -76,7 +76,8 @@ assert.deepEqual(plain(vow.options.map(o => o.next)), ['wedding_ask_spouse', 'we
 assert.equal(stage('wedding_pronounce').type, 'talk', 'the pronouncement is the Continue that completes the marriage');
 
 const hunundiCeremony = scene.stages.filter(s => s.speakerId === 'hunundi').map(s => s.text).join(' '); // Keeps every officiant line aligned with Nao'ung and the Canonry's botanical imagery.
-assert.match(hunundiCeremony, /Nao'ung/, 'Hunundi invokes the actual Guardian of Life');
+assert.match(hunundiCeremony, /Nao'ung/, 'Hunundi invokes the Tianlong of Fate');
+assert.match(stage('wedding_welcome').text, /Life Temple of the Breath.*dedicated also to Nao'ung.*Tianlong of Fate/i, 'the Life Temple honors the Breath and is also dedicated to Nao\'ung in the Tianlong\'s vicarious role');
 assert.match(hunundiCeremony, /blossom|roots|bloom/i, 'the ceremony uses the imagery of the Canonry of Blossoms');
 assert.doesNotMatch(hunundiCeremony, /\bstars?\b|\bcosmic\b|\bheavens?\b/i, 'the ceremony avoids generic astral invocations');
 const hunundiRecord = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')).npcs.find(n => n.id === 'father_hunundi_hodu'); // Guards live general-chat alongside the ceremony.
