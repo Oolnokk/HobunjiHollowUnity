@@ -53,6 +53,6 @@ Everything on the per-frame path (`fourPhaseLerp`, `samplePose`, `sampleLegacyTh
 
 ## Held windups and hands
 
-An enemy's Charged Breaker covers the first part of the player's decelerating held-windup curve (`Combat.windupCurve`, the bare curve) over its own windup, so its pose, hands and blade twist reach the charge at the same rate the player's do. `Combat.windupPoseProgress` additionally applies the player's own held-ability transforms (Furious Charged Breaker); enemies never use it, and their hand-grip calls pass `heldTransforms: false` and the charge fraction as `poseScale`.
+An enemy's Charged Breaker covers the first part of the player's decelerating held-windup curve (`Combat.windupCurve`, the bare curve) over its own windup, so its pose, hands and blade twist reach the charge at the same rate the player's do. Weapon shape speed (`weapon-shape-stats.js`) shortens both sides' windup alike, so the enemy's curve span is its windup times speed over `MAX_CHARGE_S`. `Combat.windupPoseProgress` additionally applies the player's own held-ability transforms (Furious Charged Breaker); enemies never use it, and their hand-grip calls pass `heldTransforms: false` and the charge fraction as `poseScale`.
 
 Tests: `node scripts/run-tests.js shared-attack-pose player-pose-golden attack-editor-shared enemy-weapon-stances dual-wield enemy-player-attack-parity`. `test-enemy-player-attack-parity.js` runs the player's real combo/quick-attack code and the enemy's real fire functions and renderer, and checks they sample the same swing.

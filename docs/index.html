@@ -308,6 +308,7 @@
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261027h6ae7521"></script>
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
+  <script src="js/combat/weapon-shape-stats.js?v=20261027shapeaudit2"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261027h0d54145"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
@@ -324,21 +325,21 @@
   <script src="js/combat/combat-progression.js?v=20261019h586a5e1"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
-  <script src="js/combat/combat-attack-events.js?v=20261001quickbonus1"></script>
+  <script src="js/combat/combat-attack-events.js?v=20261027shape2"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20261027h464fa30"></script>
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
-  <script src="js/combat/combat-combo.js?v=20261027h87cd68f"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261027h9ec9ca5"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20261019hc4df62e"></script>
+  <script src="js/combat/combat-combo.js?v=20261027h5c49c6e"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261027hc561d51"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20261027shape2"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
-  <script src="js/combat/combat-flurry.js?v=20261017hbebab7d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261027fixedpreview1"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20261027shape2"></script>
+  <script src="js/combat/combat-flurry.js?v=20261027shape2"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261027shape2"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
-  <script src="js/combat/combat-enchantments.js?v=20261015hd36e95d"></script>
+  <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261027previewemitter1"></script>
   <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
   <script src="js/combat/loadout-weapon-preview.js?v=20261027fixedpreview2"></script>
@@ -361,7 +362,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261027hf77336d"></script>
+  <script src="js/combat/combat-bandit.js?v=20261027h8b5b8e5"></script>
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
@@ -381,7 +382,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261027h9a121d9"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261027hee1f0b0"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -766,7 +767,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261027hb26d643"></script>
+  <script src="js/equipment-panel.js?v=20261027shape2"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2832,7 +2833,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261027h35fcbb1"></script>
+  <script src="game.js?v=20261027h457479c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

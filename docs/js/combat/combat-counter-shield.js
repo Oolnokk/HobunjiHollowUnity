@@ -665,7 +665,8 @@
     }
 
     function raiseBlockPose(deps) {
-      deps.triggerWeaponHoldVisual(BLOCK_WINDUP_S + BLOCK_STRIKE_S, {
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Defensive raise uses the weapon's real animation speed.
+      deps.triggerWeaponHoldVisual((BLOCK_WINDUP_S + BLOCK_STRIKE_S) / shapeStats.speed, {
         anim: 'sweep',
         pose: BLOCK_POSE,
         meleeSpacing: false, // Defensive raised-block stance is not an attack; the automatic thrust counter still receives normal melee spacing.
@@ -679,8 +680,7 @@
       const deps = window.Combat.deps;
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')
         || { afflictions: {}, stats: {} };
-      const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5)
-        * (1 + (effects.stats.absorbMul || 0));
+      const staminaCost = (Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5) * (1 + (effects.stats.absorbMul || 0)) / (window.WeaponShapeStats?.current?.()?.efficiency || 1));
       window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.playCounterShieldBlockSfx?.(deps.player.x, deps.player.y, deps.getCurrentArea());
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
@@ -700,7 +700,8 @@
 
     function triggerCounter(effects) {
       const t = now();
-      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0));
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Separate counter lockout must follow the visual attack tempo.
+      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0)) / shapeStats.speed;
       if (t - lastCounterAt < cooldownS) return;
       const deps = window.Combat.deps;
       if (window.Combat.isStaggered(deps.player)) return;
@@ -708,8 +709,8 @@
       const baseAbil = deps.weaponAbility('cut')
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const baseDamage = baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)); // Existing riposte payload before cross-cutting enchantment modifiers.
-      const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
-      const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
+      const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, COUNTER_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range);
       const baseKnockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
@@ -726,24 +727,24 @@
       const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
-      const counterDurationS = COUNTER_WINDUP_S + COUNTER_STRIKE_S;
+      const counterDurationS = (COUNTER_WINDUP_S + COUNTER_STRIKE_S) / shapeStats.speed;
 
       deps.triggerWeaponSwingVisual(counterDurationS, {
         anim: 'thrust',
         windupFrac: COUNTER_WINDUP_S / counterDurationS,
         strikeFrac: 1,
-        holdS: COUNTER_HOLD_S,
+        holdS: COUNTER_HOLD_S / shapeStats.speed,
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
       const counterReturnTailS = Math.max(0.12, counterDurationS * 0.35);
-      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S;
+      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S / shapeStats.speed;
 
       window.Combat.beginStagedAction({
-        windupS: COUNTER_WINDUP_S,
-        strikeS: COUNTER_STRIKE_S,
+        windupS: COUNTER_WINDUP_S / shapeStats.speed,
+        strikeS: COUNTER_STRIKE_S / shapeStats.speed,
         recoverS: 0,
         onStrike: () => {
           deps.clearVegetationInAttackCone?.(
@@ -800,7 +801,7 @@
 
     function onHoldStart() {
       const deps = window.Combat.deps;
-      if (deps.player.stamina <= MIN_STAMINA_TO_RAISE) {
+      if (deps.player.stamina <= (MIN_STAMINA_TO_RAISE / (window.WeaponShapeStats?.current?.()?.efficiency || 1))) {
         restorePlayerPresentationScene(deps);
         logPresentationSnapshot('raise-failed', true);
         deps.showToast('Counter Shield failed: no stamina.', false);
@@ -826,7 +827,7 @@
       );
       window.ResourceSystem?.spendStamina(
         deps.player,
-        Math.min(deps.player.stamina, DRAIN_PER_S * drainMul * dt),
+        Math.min(deps.player.stamina, (DRAIN_PER_S * drainMul * dt / (window.WeaponShapeStats?.current?.()?.efficiency || 1))),
         'Counter Shield (holding)'
       );
       if (deps.player.stamina <= 0) {

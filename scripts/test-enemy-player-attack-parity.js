@@ -101,6 +101,45 @@ for (const comboId of ['swingCombo', 'pokeCombo']) {
   }
 }
 
+// ── Weapon shape speed: the player's and the enemy's swing clocks for the same weapon ──
+// weapon-shape-stats.js scales both sides' timing; every combo step and quick attack must still build the same
+// SharedAttackPose.swingTimeline (same total length and phase fractions) for a fast and a slow weapon.
+{
+  const timelineOf = (durationS, windupFrac, strikeFrac, holdS) => SAP.swingTimeline({}, durationS, windupFrac, strikeFrac, holdS);
+  const banditTimeline = (c, action) => {
+    const durationS = action.windupS + action.strikeS + (c._banditSwingReturnS || 0);
+    return timelineOf(durationS, action.windupS / durationS, (action.windupS + action.strikeS) / durationS, c._banditSwingHoldS);
+  };
+  const sameTimeline = (label, a, b) => { for (const key of ['totalS', 'wf', 'sf', 'hf']) approx(b[key], a[key], `${label} ${key}`, 1e-9); };
+  for (const speed of [1.25, 0.8]) {
+    const stats = { power: 1, speed, range: 1, efficiency: 1 };
+    runtime.WeaponShapeStats = { current: () => stats, forShape: () => stats, DEFAULT: { power: 1, speed: 1, range: 1, efficiency: 1 } };
+    for (const comboId of ['swingCombo', 'pokeCombo']) {
+      const bandit = makeBandit();
+      bandit.def.weaponShapeStats = stats;
+      for (let i = 0; i < Combat.comboData[comboId].length; i += 1) {
+        visualCall = null;
+        registered[comboId].onTap();
+        stagedCall?.onComplete?.();
+        const playerClock = timelineOf(visualCall.durationS, visualCall.opts.windupFrac, visualCall.opts.strikeFrac, visualCall.opts.holdS);
+        banditScope.fireBanditComboStep(bandit, bandit.def, { tap1: comboId }, target);
+        sameTimeline(`speed ${speed} ${comboId} step ${i}`, playerClock, banditTimeline(bandit, stagedCall));
+      }
+    }
+    for (const id of Object.keys(Combat.quickAttackData.TECHNIQUES)) {
+      visualCall = null;
+      try { registered[id].onTap(); } catch (error) { if (!visualCall) throw error; }
+      stagedCall?.onComplete?.();
+      const playerClock = timelineOf(visualCall.durationS, visualCall.opts.windupFrac, visualCall.opts.strikeFrac, visualCall.opts.holdS);
+      const bandit = makeBandit();
+      bandit.def.weaponShapeStats = stats;
+      banditScope.fireBanditQuickAttack(bandit, bandit.def, { tap2: id }, target);
+      sameTimeline(`speed ${speed} quick ${id}`, playerClock, banditTimeline(bandit, stagedCall));
+    }
+  }
+  delete runtime.WeaponShapeStats;
+}
+
 // Long Lunge specifically: the enemy no longer pulls back farther or reaches farther than the player.
 {
   const longLunge = Combat.comboData.pokeCombo[2];
@@ -172,26 +211,32 @@ for (const id of Object.keys(Combat.quickAttackData.TECHNIQUES)) {
     LUNGE_TILE_MUL_MIN: 1, LUNGE_TILE_MUL_MAX: 1, LUNGE_GRAVITY_RESIST_MIN: 0, LUNGE_GRAVITY_RESIST_MAX: 0 };
   Combat.poses = { SWEEP_POSE: runtime.AttackPoseTemplates.poseFor('hatchet_swing') };
   const holder = { visible: true, children: [{ scale: { x: 1 }, userData: {} }], quaternion: { copy() { return this; }, multiply() { return this; } }, position: { set() {} } };
-  const c = { ...makeBandit(), def: { weaponKey: 'axe', attackTag: 'blunt' }, halfHeight: 0.4, _banditToolHolder: holder,
-    avatarRef: { group: { position: { x: 0, y: 1, z: 0 }, rotation: { y: 0 }, userData: {} }, handAttachX: -0.2, handAttachY: 0.5, handRigAvatarRoot: { userData: {} } } };
-  assert.equal(banditScope.fireBanditChargedBreaker(c, c.def, target), true);
-  const action = c._banditAction;
-  assert.equal(c._banditSwingWindupCurve.action, action, 'the curve is bound to this one windup');
-  const windupS = action.windupS;
-  approx(windupS, holdSecondsForPoseCharge(chargeT), 'bandit windup lasts as long as the player needs to reach this charge', 1e-12);
-  for (const u of [0.1, 0.25, 0.5, 0.75, 0.95]) {
-    sampled.length = 0; gripCalls.length = 0;
-    action.t = u * windupS;
-    sandbox.BanditCombat.updateToolMesh(c);
-    const { progress, wf, power } = sampled[0];
-    const enemyVisibleFraction = (progress / wf) * c._banditSwingPoseScale; // Fraction of the FULL Windup pose on screen.
-    const playerVisibleFraction = windupCurve(action.t / MAX_CHARGE_S, SLOWDOWN); // The player holding for the same time.
-    approx(enemyVisibleFraction, playerVisibleFraction, `charged breaker windup at ${u}`, 1e-9);
-    approx(power, 1.7 * chargeT, 'charge still scales the pose amplitude');
-    assert.equal(gripCalls[0].timing.heldTransforms, false, 'enemy hands ignore the player-only held transforms');
-    approx(gripCalls[0].timing.poseScale, chargeT, 'enemy hands use the charge fraction, not the ability power');
-    approx(gripCalls[0].progress, progress, 'hands and weapon share one eased windup clock');
-    approx(c._banditToolTimeline.poseScale, chargeT, 'the blade-twist fade sees the charge fraction');
+  const makeChargingBandit = shapeStats => ({ ...makeBandit(), def: { weaponKey: 'axe', attackTag: 'blunt', ...(shapeStats ? { weaponShapeStats: shapeStats } : {}) }, halfHeight: 0.4, _banditToolHolder: holder,
+    avatarRef: { group: { position: { x: 0, y: 1, z: 0 }, rotation: { y: 0 }, userData: {} }, handAttachX: -0.2, handAttachY: 0.5, handRigAvatarRoot: { userData: {} } } });
+  // Weapon shape speed (weapon-shape-stats.js) shortens the player's whole held windup to MAX_CHARGE_S / speed
+  // (combat-charged-breaker.js), so at hold time t the player shows windupCurve(t * speed / MAX_CHARGE_S).
+  let c = null;
+  for (const speed of [1, 1.25, 0.8]) {
+    c = makeChargingBandit(speed === 1 ? null : { power: 1, speed, range: 1, efficiency: 1 });
+    assert.equal(banditScope.fireBanditChargedBreaker(c, c.def, target), true);
+    const action = c._banditAction;
+    assert.equal(c._banditSwingWindupCurve.action, action, 'the curve is bound to this one windup');
+    const windupS = action.windupS;
+    approx(windupS, holdSecondsForPoseCharge(chargeT) / speed, `speed ${speed}: bandit windup lasts as long as the player needs to reach this charge`, 1e-12);
+    for (const u of [0.1, 0.25, 0.5, 0.75, 0.95]) {
+      sampled.length = 0; gripCalls.length = 0;
+      action.t = u * windupS;
+      sandbox.BanditCombat.updateToolMesh(c);
+      const { progress, wf, power } = sampled[0];
+      const enemyVisibleFraction = (progress / wf) * c._banditSwingPoseScale; // Fraction of the FULL Windup pose on screen.
+      const playerVisibleFraction = windupCurve(action.t * speed / MAX_CHARGE_S, SLOWDOWN); // The player holding the same weapon for the same time.
+      approx(enemyVisibleFraction, playerVisibleFraction, `speed ${speed}: charged breaker windup at ${u}`, 1e-9);
+      approx(power, 1.7 * chargeT, 'charge still scales the pose amplitude');
+      assert.equal(gripCalls[0].timing.heldTransforms, false, 'enemy hands ignore the player-only held transforms');
+      approx(gripCalls[0].timing.poseScale, chargeT, 'enemy hands use the charge fraction, not the ability power');
+      approx(gripCalls[0].progress, progress, 'hands and weapon share one eased windup clock');
+      approx(c._banditToolTimeline.poseScale, chargeT, 'the blade-twist fade sees the charge fraction');
+    }
   }
   // A later swing never inherits the curve.
   banditScope.fireBanditComboStep(c, c.def, { tap1: 'swingCombo' }, target);
