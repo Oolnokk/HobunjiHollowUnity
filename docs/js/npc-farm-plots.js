@@ -243,6 +243,10 @@
   // ── Schedule override ─────────────────────────────────────────────────
   function targetFor(rec, { familyOnly = false } = {}) {
     if (!rec?.id || !workerIds.has(rec.id)) return null;
+    // This provider is registered before the festival and flood-shelter providers.
+    // Town chores must release their workers so those higher-priority social/safety
+    // schedules can take over. Family plots remain governed by the family routine.
+    if (!familyOnly && (window.WaterSystem?.isTownFloodEmergency?.() || window.FestivalSystem?.festivalHours?.())) return null;
     const walker = deps?.findWalker?.(rec.id) || null;
     if (walker?._doorstepVisitor) return null;
     const claim = claimFor(rec.id, walker, { familyOnly });
