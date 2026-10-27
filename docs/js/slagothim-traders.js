@@ -170,20 +170,39 @@
   function currentArea() { return deps?.getCurrentArea?.() || null; }
 
   // ── Routing grids ───────────────────────────────────────────────────
+  function townZoneData() {
+    // Reuse the active authored town layout, including building footprints and market stations.
+    try { return deps?.getTownZone?.() || window.TownZoneBuildings?.grassContext?.()?.getTownZone?.() || null; }
+    catch (_) { return null; }
+  }
+
+  function blockFootprint(cost, cols, rows, x, y, w = 1, h = 1) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    for (let r = Math.floor(y); r < Math.floor(y) + Math.max(1, Math.ceil(h)); r++) {
+      for (let c = Math.floor(x); c < Math.floor(x) + Math.max(1, Math.ceil(w)); c++) {
+        if (c >= 0 && c < cols && r >= 0 && r < rows) cost[r * cols + c] = -1;
+      }
+    }
+  }
+
   function gridForArea(area) {
     if (!deps) return null;
     if (area === 'town') {
       const townGrid = deps.getTownGrid?.();
       if (!Array.isArray(townGrid) || !townGrid.length) return null;
+      const townZone = townZoneData(); // Authored buildings/stations must invalidate cached town routes when replaced.
       const cached = gridCache.get('town');
-      if (cached?.source === townGrid) return cached;
+      if (cached?.source === townGrid && cached.buildings === townZone?.buildings && cached.stations === townZone?.npcStations) return cached;
       const rows = townGrid.length, cols = townGrid[0]?.length || 0;
       const cost = new Float32Array(cols * rows).fill(-1);
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
         if (!deps.isTownTileWalkable?.(c, r)) continue;
         cost[r * cols + c] = townGrid[r][c]?.type === 'path' ? 1 : 3;
       }
-      const grid = { area, source: townGrid, cols, rows, cost, tier: null, incline: null, routes: new Map() };
+      for (const building of (townZone?.buildings || [])) {
+        blockFootprint(cost, cols, rows, building.gridX, building.gridZ, building.footprintW ?? building.w ?? 1, building.footprintD ?? building.h ?? 1);
+      }
+      const grid = { area, source: townGrid, buildings: townZone?.buildings, stations: townZone?.npcStations, cols, rows, cost, tier: null, incline: null, routes: new Map() };
       gridCache.set('town', grid);
       return grid;
     }
@@ -208,14 +227,7 @@
       if (base == null) continue;
       cost[index] = base + (tile.incline ? INCLINE_EXTRA_COST : 0);
     }
-    const block = (x, y, w = 1, h = 1) => {
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      for (let r = Math.floor(y); r < Math.floor(y) + Math.max(1, Math.ceil(h)); r++) {
-        for (let c = Math.floor(x); c < Math.floor(x) + Math.max(1, Math.ceil(w)); c++) {
-          if (c >= 0 && c < cols && r >= 0 && r < rows) cost[r * cols + c] = -1;
-        }
-      }
-    };
+    const block = (x, y, w = 1, h = 1) => blockFootprint(cost, cols, rows, x, y, w, h);
     for (const building of (layout.buildings || [])) block(building.gridX, building.gridZ, building.footprintW ?? building.w ?? 1, building.footprintD ?? building.h ?? 1);
     for (const den of (layout.dens || [])) block(den.x, den.y, den.w, den.h);
     for (const instance of (layout.localeInstances || [])) for (const object of (instance.objects || [])) block(object.x, object.y, object.w, object.h);
@@ -374,13 +386,34 @@
   }
 
   // ── Itinerary ───────────────────────────────────────────────────────
+  function townMarketPoint(grid) {
+    // The two authored Ginju market stations identify the actual market, unlike
+    // the geographic midpoint of zone gates (which can land in a building).
+    const stations = (grid.stations || []).filter(station => /market/i.test(String(station.id || station.name || '')));
+    let best = null;
+    for (const station of stations) {
+      if (!Number.isFinite(station.col) || !Number.isFinite(station.row)) continue;
+      const point = snapToPassable(grid, station.col, station.row, 3);
+      if (!point) continue;
+      // Favor space for the entire stationary caravan, not just its leader.
+      let clearance = 0;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+        if (dc * dc + dr * dr <= 5 && passable(grid, point.c + dc, point.r + dr)) clearance++;
+      }
+      if (!best || clearance > best.clearance) best = { point, clearance };
+    }
+    return best?.point || null;
+  }
+
   function resolvePoint(grid, area, spec) {
     const zones = deps?.EXTERIOR_ZONES || {};
     let c = null, r = null;
     if (area === 'town') {
       if (spec.k === 'townGate') { c = zones[spec.zone]?.townReturnCol; r = zones[spec.zone]?.townReturnRow; }
       else if (spec.k === 'market') {
-        const gates = [CLOUD_FOREST, ...DESTINATION_ZONES].map(id => zones[id]).filter(z => Number.isFinite(z?.townReturnCol));
+        const authored = townMarketPoint(grid);
+        if (authored) return authored;
+        const gates = [CLOUD_FOREST, ...DESTINATION_ZONES].map(id => zones[id]).filter(z => Number.isFinite(z?.townReturnCol) && Number.isFinite(z?.townReturnRow));
         c = gates.reduce((sum, z) => sum + z.townReturnCol, 0) / Math.max(1, gates.length);
         r = gates.reduce((sum, z) => sum + z.townReturnRow, 0) / Math.max(1, gates.length);
       }
@@ -451,15 +484,20 @@
     const a = resolvePoint(grid, leg.area, leg.from), b = resolvePoint(grid, leg.area, leg.to);
     if (!a || !b) return null;
     const base = cachedRoute(grid, a, b);
+    if (leg.area === 'town' && !base.ok) return null; // Never use a straight-line fallback through town buildings.
     let points = base.points;
     const pauses = [];
     if (leg.camp) {
       const campStop = chooseCampStop(grid, leg.area, base.points, !!leg.campAny);
       if (campStop) {
         const first = cachedRoute(grid, a, campStop), second = cachedRoute(grid, campStop, b);
-        const firstLen = withLengths(first.points).length;
-        points = [...first.points, ...second.points.slice(1)];
-        pauses.push({ at: firstLen, hours: TUNING.CAMP_STOP_HOURS, kind: 'camp' });
+        if (first.ok && second.ok) {
+          const firstLen = withLengths(first.points).length;
+          points = [...first.points, ...second.points.slice(1)];
+          pauses.push({ at: firstLen, hours: TUNING.CAMP_STOP_HOURS, kind: 'camp' });
+        } else if (leg.campAny) {
+          pauses.push({ at: 0, hours: TUNING.CAMP_STOP_HOURS, kind: 'rest' });
+        }
       } else if (leg.campAny) {
         pauses.push({ at: 0, hours: TUNING.CAMP_STOP_HOURS, kind: 'rest' }); // No camp in that zone this generation: rest at the gate and turn back.
       }
@@ -570,7 +608,7 @@
     const memberCount = intRoll(rng, TUNING.MEMBERS_MIN, TUNING.MEMBERS_MAX);
     const members = [];
     for (let i = 0; i < memberCount; i++) {
-      const gender = rng() < 0.5 ? 'male' : 'female';
+      const gender = 'male'; // Slagothim caravan merchants are exclusively male; other Slagothim remain unrestricted.
       members.push({ index: i, gender, name: memberName(`${worldSeedLabel()}:${id}:${i}`, gender), roster: null });
     }
     return {
@@ -744,12 +782,12 @@
     try {
       const base = await window.BanditCombat?.loadGangConfig?.();
       const roster = base && window.BanditCombat?.rollRoster
-        ? await window.BanditCombat.rollRoster({ ...base, speciesWeights: { tletingan: 1 } }, 'grunt', member.name)
+        ? await window.BanditCombat.rollRoster({ ...base, speciesWeights: { tletingan: 1 } }, 'grunt', member.name, 'male')
         : null;
       if (roster?.appearance) {
-        if (roster.appearance.gender && roster.appearance.gender !== member.gender) {
-          member.gender = roster.appearance.gender; // Clothing was rolled for this body; keep the name matching it.
-          member.name = memberName(`${member.name}:${member.gender}`, member.gender);
+        if (roster.appearance.gender !== 'male') {
+          window.__farmLog?.('[slagothim] discarded non-male trader roster', 'warn');
+          return null; // Do not display a female roster if an older avatar factory ignores the override.
         }
         member.roster = { appearance: roster.appearance, equippedCosmetics: roster.equippedCosmetics || [], appliedDyes: roster.appliedDyes || {} };
       }
@@ -800,18 +838,28 @@
     caravan._walkerArea = null;
   }
 
+  // Keep follower offsets and the market ring out of occupied structures.
+  function safeMemberPoint(route, x, z) {
+    const grid = route?.grid;
+    if (!grid || passable(grid, Math.floor(x), Math.floor(z))) return { x, z };
+    const safe = snapToPassable(grid, x - 0.5, z - 0.5, 5);
+    if (safe) return { x: safe.c + 0.5, z: safe.r + 0.5 };
+    const fallback = route.points[0];
+    return { x: fallback?.x ?? x, z: fallback?.z ?? z };
+  }
+
   // Desired tile-space position for one member: single file behind the
   // leader while walking, a loose ring around the leader while stopped.
   function memberTarget(caravan, index, route, nowHours = worldHours()) {
     const lead = pointAt(route, caravan.dist);
     if (isStopped(caravan, nowHours ?? 0)) {
-      if (index === 0) return { x: lead.x, z: lead.z, moving: false };
+      if (index === 0) return { ...safeMemberPoint(route, lead.x, lead.z), moving: false };
       const angle = (index / Math.max(1, caravan.members.length - 1)) * Math.PI * 2;
-      return { x: lead.x + Math.cos(angle) * 1.2, z: lead.z + Math.sin(angle) * 1.2, moving: false };
+      return { ...safeMemberPoint(route, lead.x + Math.cos(angle) * 1.2, lead.z + Math.sin(angle) * 1.2), moving: false };
     }
     const along = pointAt(route, caravan.dist - index * TUNING.MEMBER_SPACING_TILES);
     const side = index === 0 ? 0 : (index % 2 ? 0.35 : -0.35);
-    return { x: along.x - along.dz * side, z: along.z + along.dx * side, dx: along.dx, dz: along.dz, moving: true };
+    return { ...safeMemberPoint(route, along.x - along.dz * side, along.z + along.dx * side), dx: along.dx, dz: along.dz, moving: true };
   }
 
   function steerWalkers(caravan, dt, nowHours, playerTile) {
@@ -1069,7 +1117,13 @@
       if (!Array.isArray(raw?.legs) || !raw.legs.length || !Array.isArray(raw.members)) continue;
       state.caravans.push({
         id: String(raw.id), day: num(raw.day, 0), legs: raw.legs, destination: raw.destination || null,
-        members: raw.members.map((member, index) => ({ index, gender: member.gender === 'female' ? 'female' : 'male', name: String(member.name || FALLBACK_NAMES[index % FALLBACK_NAMES.length]), roster: member.roster || null })),
+        members: raw.members.map((member, index) => ({
+          index, gender: 'male',
+          name: member.gender === 'female'
+            ? memberName(`${worldSeedLabel()}:${raw.id}:${index}`, 'male')
+            : String(member.name || FALLBACK_NAMES[index % FALLBACK_NAMES.length]),
+          roster: member.roster?.appearance?.gender === 'male' ? member.roster : null,
+        })),
         legIndex: clamp(Math.floor(num(raw.legIndex, 0)), 0, raw.legs.length - 1),
         dist: Math.max(0, num(raw.dist, 0)), pauseIdx: Math.max(0, Math.floor(num(raw.pauseIdx, 0))), pauseLeft: Math.max(0, num(raw.pauseLeft, 0)),
         stock: Array.isArray(raw.stock) ? raw.stock.filter(entry => entry && entry.id && num(entry.qty, 0) >= 0) : [],
@@ -1250,6 +1304,6 @@
     buy,
     spawnCaravan, // Dev/testing: force a caravan in at the southern road now.
     debugSnapshot,
-    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget }),
+    __test: Object.freeze({ setTownValueForDev, skipToNextStop, registerDevCompanionPanel, dailySpawnChance, maxActiveCaravans, findRoute, buildZoneGrid, gridForArea, legRoute, advance, pointAt, rollStock, buildItinerary, createCaravan, rollMemberRoster, hoursUntilMarket, isTravelHour, hoursUntilTravel, tilesPerHour, maybeRollSpawn, state, gridCache, outOfSeasonFish, outOfSeasonProduce, checkClosestPass, memberTarget }),
   });
 })();
