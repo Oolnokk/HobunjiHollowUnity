@@ -1,9 +1,10 @@
 'use strict';
 const assert=require('node:assert'),fs=require('node:fs'),vm=require('node:vm');
 const temple=JSON.parse(fs.readFileSync('docs/config/maps/map_i_temple.json','utf8')),exterior=JSON.parse(fs.readFileSync('docs/config/pieces/temple.json','utf8')); // Verify the supplied authored recipe rather than a separate renderer preset.
-const rootRecipe={kind:'roots',seed:'surface-1',count:68,length:6,radius:.15,offset:.008,curl:.4,color:'#4a3b33',texture:'assets/textures/wibbly_surface.png',target:'walls',targetIds:[]}; // The former wall vines are now 50%-thicker roots indoors and outdoors.
+const rootRecipe={kind:'roots',seed:'surface-1',count:68,length:6,radius:.15,offset:.008,curl:.4,color:'#4a3b33',texture:'assets/textures/wibbly_surface.png',target:'walls',targetIds:[]}; // The interior retains its earlier thick wall roots.
 const shingleVines={kind:'vines',seed:'temple-highland-shingle-weave',count:56,length:3.4,radius:.04,offset:.006,curl:1.1,color:'#406040',texture:'assets/textures/carved_smooth.png',target:'shingles',targetIds:[]}; // Fine vines follow the exterior's real HighlandLongshingle surfaces, not the masonry.
-assert.deepStrictEqual(temple.surfaceGrowth,[rootRecipe]);assert.deepStrictEqual(exterior.surfaceGrowth,[rootRecipe,shingleVines]);
+const exteriorVines={kind:'vines',seed:'surface-1',count:16,length:12,radius:.1,offset:.008,curl:.4,color:'#406040',texture:'assets/textures/carved_smooth.png',target:'all',targetIds:[],wallOnly:false,hangChance:0,hangLength:0}; // Latest house-editor export replaces the exterior wall roots with long green vines.
+assert.deepStrictEqual(temple.surfaceGrowth,[rootRecipe]);assert.deepStrictEqual(exterior.surfaceGrowth,[exteriorVines,shingleVines]);
 const north=temple.furniture.find(record=>record.id==='fwall_mv74tcm0luv6'); // This window is intentionally outside the walkable floor, where gameplay previously sampled wall elevation.
 assert(!temple.floor.some(([col,row])=>col===north.col&&row===north.row));
 const sceneWindow={THREE:{},DaylightWindowRuntime:{windowSilhouette:()=>({minX:-.55,maxX:.55,minY:.5,maxY:1.74,width:1.1,height:1.24})}};
