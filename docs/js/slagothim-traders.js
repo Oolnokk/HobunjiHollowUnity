@@ -90,7 +90,8 @@
   let schedulerRegistered = false;
   let lastWorldHours = null;
   let passCheckAccum = 0;
-  const gridCache = new Map(); // area -> routing grid (rebuilt when the zone layout/town grid object changes).
+  const gridCache = new Map(); // area -> routing grid (rebuilt when the zone layout/town grid or building placement changes).
+  const townPieceShapeLoads = new WeakSet(); // Town maps already queued for authoritative piece-footprint loading.
   const state = {
     lastRollDay: null,
     seq: 0,
@@ -185,24 +186,72 @@
     }
   }
 
+  function townLayoutStamp(zone) {
+    let hash = 2166136261; // Tracks in-place building/station edits so a cached town route cannot use stale footprints.
+    const mix = value => { hash = Math.imul(hash ^ (Math.round(num(value, 0) * 256) | 0), 16777619); };
+    for (const building of (zone?.buildings || [])) {
+      mix(building.gridX); mix(building.gridZ);
+      mix(building.footprintW ?? building.w); mix(building.footprintD ?? building.h);
+      mix(building.rotationDeg ?? building.rotation);
+    }
+    for (const station of (zone?.npcStations || [])) {
+      mix(station.col); mix(station.row);
+      const id = String(station.id || station.name || '');
+      for (let i = 0; i < id.length; i++) mix(id.charCodeAt(i));
+    }
+    return hash >>> 0;
+  }
+
+  function loadTownPieceFootprints(zone) {
+    const load = window.BuildingGrassSuppression?.ensureAuthoredPieceShapes;
+    if (!zone || typeof load !== 'function' || townPieceShapeLoads.has(zone)) return;
+    townPieceShapeLoads.add(zone);
+    Promise.resolve(load(zone)).then(changed => {
+      if (changed && gridCache.get('town')?.townZone === zone) gridCache.delete('town');
+    }).catch(error => window.__farmLog?.(`[slagothim] town footprint loading failed: ${error?.message || error}`, 'warn'));
+  }
+
+  function blockTownFootprints(cost, cols, rows, zone) {
+    if (!zone) return;
+    // This is the same rotated, piece-shaped building/furniture occupancy used by
+    // town grass suppression; the old rectangle-only test missed 90°/270° wings.
+    const keys = window.BuildingGrassSuppression?.authoredBuildingFootprintKeys?.(zone, 'town');
+    if (keys) {
+      for (const key of keys) {
+        const comma = key.indexOf(',');
+        const c = Number(key.slice(0, comma)), r = Number(key.slice(comma + 1));
+        if (comma > 0 && Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < cols && r < rows) cost[r * cols + c] = -1;
+      }
+      return;
+    }
+    const occupiedCells = window.BuildingSubtleElevation?.worldFootprintCells;
+    for (const building of (zone.buildings || [])) {
+      if (typeof occupiedCells === 'function') {
+        for (const { c, r } of occupiedCells(building)) {
+          if (c >= 0 && r >= 0 && c < cols && r < rows) cost[r * cols + c] = -1;
+        }
+      } else blockFootprint(cost, cols, rows, building.gridX, building.gridZ, building.footprintW ?? building.w ?? 1, building.footprintD ?? building.h ?? 1);
+    }
+  }
+
   function gridForArea(area) {
     if (!deps) return null;
     if (area === 'town') {
       const townGrid = deps.getTownGrid?.();
       if (!Array.isArray(townGrid) || !townGrid.length) return null;
-      const townZone = townZoneData(); // Authored buildings/stations must invalidate cached town routes when replaced.
+      const townZone = townZoneData(); // Authored buildings/stations determine safe caravan routes.
+      loadTownPieceFootprints(townZone);
+      const stamp = townLayoutStamp(townZone);
       const cached = gridCache.get('town');
-      if (cached?.source === townGrid && cached.buildings === townZone?.buildings && cached.stations === townZone?.npcStations) return cached;
+      if (cached?.source === townGrid && cached.townZone === townZone && cached.stamp === stamp) return cached;
       const rows = townGrid.length, cols = townGrid[0]?.length || 0;
       const cost = new Float32Array(cols * rows).fill(-1);
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
         if (!deps.isTownTileWalkable?.(c, r)) continue;
         cost[r * cols + c] = townGrid[r][c]?.type === 'path' ? 1 : 3;
       }
-      for (const building of (townZone?.buildings || [])) {
-        blockFootprint(cost, cols, rows, building.gridX, building.gridZ, building.footprintW ?? building.w ?? 1, building.footprintD ?? building.h ?? 1);
-      }
-      const grid = { area, source: townGrid, buildings: townZone?.buildings, stations: townZone?.npcStations, cols, rows, cost, tier: null, incline: null, routes: new Map() };
+      blockTownFootprints(cost, cols, rows, townZone);
+      const grid = { area, source: townGrid, townZone, stamp, stations: townZone?.npcStations, cols, rows, cost, tier: null, incline: null, routes: new Map() };
       gridCache.set('town', grid);
       return grid;
     }
