@@ -54,7 +54,11 @@ assert.equal(Spawn.arrivalAngle({ transitions: [{ direction: 'invalid' }] }, 0, 
     for (const exit of map.exits || []) {
       if (!floor.size) continue;
       assert.ok(vectors[exit.direction], `${file}: ${exit.id} has an inward direction`);
-      if (exit.generateDoor) for (const tile of exit.tiles) assert.ok(floor.has(tile.join(',')), `${file}: door is on floor`);
+      if (exit.generateDoor) for (const [c, r] of exit.tiles) {
+        const inside = Doors.insideFloorForExit(floor, c, r, exit.direction);
+        assert.ok(floor.has(`${c},${r}`) || inside, `${file}: ${exit.id} is either on floor or has exactly one adjoining interior tile`);
+        assert.ok(Doors.doorGroupsOf({exits:[exit]},floor).length, `${file}: ${exit.id} still produces a physical door`);
+      }
       const targetPath = `docs/config/maps/${exit.targetMap}.json`; // Procedural mine destinations do not have a static file.
       if (!exit.targetMap || !fs.existsSync(targetPath)) continue;
       const target = JSON.parse(fs.readFileSync(targetPath, 'utf8')); // Destination layout validates the authored spawn coordinates.
@@ -113,7 +117,7 @@ const overrideRuntime = { // Execute the actual workspace merge, including wall-
   _wsOverride: { transitions: [{ exitId: 'roomExit', col: 2, row: 2, targetMapId: 'map_i_hall', spawnCol: 4, spawnRow: 4 }] },
 };
 const overrideStart = game.indexOf('          if (_wsOverride) {', game.indexOf('const _wsOverride =')); // Source is the same override path used when loading real workspace-backed rooms.
-const overrideEnd = game.indexOf('          const entranceLightTileSet', overrideStart); // Stop before scene rendering begins.
+const overrideEnd = game.indexOf('          // The painted floor is visual', overrideStart); // The workspace test stops before the separate virtual-exit grid setup. // Stop before scene rendering begins.
 vm.runInNewContext(game.slice(overrideStart, overrideEnd), overrideRuntime);
 assert.equal(overrideRuntime.transitions[0].direction, 'east');
 assert.equal(overrideRuntime.transitions[0].generateDoor, true);

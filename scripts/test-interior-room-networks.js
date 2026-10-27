@@ -85,13 +85,19 @@ const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 function analyse(id) {
   const m = map(id);
   const floor = new Set(m.floor.map(t => t.join(',')));
+  const walkable = new Set(floor); // Gameplay grants a logical, floorless transition cell to an exit directly outside the room.
+  const vectors = { north:[0,-1],south:[0,1],east:[1,0],west:[-1,0] };
+  for (const exit of m.exits || []) for(const [c,r] of exit.tiles || []) {
+    const k = `${c},${r}`, delta = vectors[exit.direction];
+    if (!floor.has(k) && delta && floor.has(`${c+delta[0]},${r+delta[1]}`)) walkable.add(k);
+  }
   const solid = new Set((m.colliders || []).map(t => t.join(',')));
   const furnitureTiles = new Map(); // tile -> piece
   for (const piece of m.furniture) {
     if (piece.nonColliding || piece.itemKey === 'woodenDoorFurniture') continue;
     for (const key of occupied(piece)) { solid.add(key); furnitureTiles.set(key, piece); }
   }
-  const free = key => floor.has(key) && !solid.has(key);
+  const free = key => walkable.has(key) && !solid.has(key);
   const flood = start => {
     const seen = new Set();
     const queue = [start];

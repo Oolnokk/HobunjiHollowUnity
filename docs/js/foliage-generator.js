@@ -1874,7 +1874,7 @@ window.FoliageGenerator = (() => {
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
       curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
       texture: normalizeGrowthTexture(value.texture, defaults.texture),
-      target: ['all', 'walls', 'floors', 'ceilings', 'selected'].includes(value.target) ? value.target : 'all',
+      target: ['all', 'walls', 'floors', 'ceilings', 'shingles', 'selected'].includes(value.target) ? value.target : 'all',
       targetIds: Array.isArray(value.targetIds) ? value.targetIds.filter(id => typeof id === 'string').slice(0, 200) : [],
       wallOnly: value.wallOnly === true, // A cavern shell has its floor, ceiling and walls in one mesh.
       hangChance: finite('hangChance', 0, 0, 1), hangLength: finite('hangLength', 0, 0, 6) }; // Hanging tips are optional; existing authoring recipes are unchanged.
@@ -1884,10 +1884,11 @@ window.FoliageGenerator = (() => {
     const targets = []; // Only authored surface meshes enter the sampler; generated growth and editor helpers are excluded.
     parent.traverse(object => {
       if (!object.isMesh || !object.geometry?.attributes?.position) return;
+      if (settings.target === 'shingles' && /shinglebone/i.test(object.name || '')) return; // Hidden length-control bones are not roof surfaces and must never collect vines.
       let node = object, role = '', selected = false, excluded = false; // Ancestor tags keep grouped brick/log gables and multi-mesh furniture selectable.
       while (node) {
         const data = node.userData || {}; // Shared metadata is read without mutating the source definitions.
-        excluded ||= !!data.surfaceFoliage || !!data.surfaceFoliageExclude;
+        excluded ||= !!data.surfaceFoliage || !!data.surfaceFoliageExclude || (settings.target === 'shingles' && (node.visible === false || /shinglebone/i.test(node.name || ''))); // Never follow hidden bone geometry or descendants on shingle-only vine layers.
         role ||= data.surfaceFoliageRole || (data.isWallBricks || data.isWallLogs ? 'walls' : '') || (data.interiorGable || data.interiorGableBricks || data.interiorGableLogs ? 'walls' : data.interiorCeilingSurface ? 'ceilings' : '');
         const id = String(data.authoredPartId ?? data.partId ?? data.faceId ?? data.surfaceFoliageId ?? ''); // An untagged mesh has no id and must never match a stray empty entry.
         selected ||= id !== '' && settings.targetIds.includes(id);
@@ -1979,7 +1980,7 @@ window.FoliageGenerator = (() => {
         const candidate=anchor.clone().addScaledVector(direction,step), bx=Math.floor(candidate.x/cellSize), by=Math.floor(candidate.y/cellSize), bz=Math.floor(candidate.z/cellSize); // Query adjacent cells so seams and perpendicular corners remain connected.
         candidates.length=0;stamp++;gather(large);
         for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const bucket=cells.get(keyOf(bx+x,by+y,bz+z));if(bucket)gather(bucket);}
-        let best=null, distance=step*step*.85, closest=null; // Reject gaps larger than a growth step instead of bridging empty windows.
+        let best=null, distance=step*step*(settings.target === 'shingles' ? 4 : .85), closest=null; // Shingle strand paths may bridge the narrow air gaps between neighboring GLBs; walls still refuse missing surfaces/windows.
         for(const record of candidates){
           if(record.normal.dot(normal)<-.25)continue;
           const planeGap=record.normal.dot(candidate)-record.plane;

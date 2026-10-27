@@ -25,8 +25,8 @@
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
-  <script src="js/HousePieceGen.js?v=20261026ha263432&window=20260926rebase1"></script>
-  <script src="js/interior-scene-builder.js?v=20261026cavewalls2&window=20260926rebase1"></script>
+  <script src="js/HousePieceGen.js?v=20261027htemple-roof-a2&window=20260926rebase1"></script>
+  <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261017ikmcaudit1"></script>
   <script src="js/tile-pathfinding.js?v=20261018a"></script>
@@ -188,7 +188,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261022h372be04"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261026h594404e"></script>
+  <script src="js/held-action-animations.js?v=20261027h09ce4fe"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -237,12 +237,12 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20261026hcavegrowth2"></script>
+  <script src="js/foliage-generator.js?v=20261027htemple-foliage-a2"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261025hab1da68"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
-  <script src="js/interior-door-tiles.js?v=20261026h273015f"></script>
+  <script src="js/interior-door-tiles.js?v=20261027hfloorlessdoors1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
@@ -306,9 +306,9 @@
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
-  <script src="js/combat/shared-attack-pose.js?v=20261026blowgunAim1"></script>
+  <script src="js/combat/shared-attack-pose.js?v=20261027h6ae7521"></script>
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
-  <script src="js/combat/combat-core.js?v=20261025ravineAudio1"></script>
+  <script src="js/combat/combat-core.js?v=20261027h0d54145"></script>
   <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -317,10 +317,10 @@
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20261026conecharge1"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20261027haa2a6b1"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261026conecharge1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
   <script src="js/combat/combat-attach.js?v=20261026attachcenter1"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
-  <script src="js/combat/combat-loadout.js?v=20261027h80d5ca1"></script>
+  <script src="js/combat/combat-loadout.js?v=20261027h1264370"></script>
   <script src="js/combat/combat-progression.js?v=20261019h586a5e1"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -330,8 +330,8 @@
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
-  <script src="js/combat/combat-combo.js?v=20261017h9dc5e7c"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261017h991ebbd"></script>
+  <script src="js/combat/combat-combo.js?v=20261027h87cd68f"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261027h9ec9ca5"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261019hc4df62e"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261018h29937b2"></script>
@@ -361,13 +361,13 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261027h8d9027a"></script>
-  <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261026h10264bb"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
+  <script src="js/combat/combat-bandit.js?v=20261027hf77336d"></script>
+  <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles/puddles/Entranced commands, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20261015h3faef6c"></script>
+  <script src="js/combat/combat-lich.js?v=20261027h990b072"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -846,7 +846,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
-  <script src="js/zone-den-totem-features.js?v=20261022hf96da11"></script>
+  <script src="js/zone-den-totem-features.js?v=20261027htemple-zone-a2"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2626,7 +2626,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20261026hmaskalpha9"></script>
-  <script src="js/sprite-recolor.js?v=20261018resolve1099a"></script>
+  <script src="js/sprite-recolor.js?v=20261027h649a218"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
@@ -2832,7 +2832,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261027soursap1"></script>
+  <script src="game.js?v=20261027h35fcbb1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

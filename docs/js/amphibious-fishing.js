@@ -162,9 +162,17 @@
       0,
       c.def.lungeHeightUnits ?? 1,
     ) || { distancePx: baseLungeDistancePx, hopUnits: 0, pitch: state.aimPitch };
-    state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER);
-    state.traveledPx = 0;
-    state.collideRadiusPx = deps.TILE * 0.32;
+    // Pounce's shared sub-stepped leap (combat-animal-attacks.js), committed to the trigger-time bearing.
+    const attacks = window.Combat.animalAttacks;
+    attacks.beginConeLunge(c, state, ctx, deps, {
+      targets: state.targets.map(target => target.ref),
+      rangePx: state.rangePx,
+      halfConeRad: state.halfConeRad,
+      maxDistancePx: Math.max(0, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER),
+      speedPxS: FISH_LEAP_SPEED_PX_S,
+      collideRadiusPx: deps.TILE * 0.32,
+      detect: attacks.leapConeDetect(),
+    });
     c.facing = state.angle;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0;
@@ -197,43 +205,19 @@
       return true;
     }
 
-    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const remainingPx = Math.max(0, state.maxDistancePx - state.traveledPx);
-    if (remainingPx <= 0.001) { c._banditLungeHopCurrent = 0; return false; }
-    const stepPx = Math.min(FISH_LEAP_SPEED_PX_S * dt, remainingPx);
-    const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) { c._banditLungeHopCurrent = 0; return false; }
-    c.x = nx;
-    c.y = ny;
-    state.traveledPx += stepPx;
-    const leapProgress = state.maxDistancePx > 0.001 ? state.traveledPx / state.maxDistancePx : 1;
-    c._banditLungeHopCurrent = (state.lungeProfile.hopUnits || 0) * Math.sin(Math.min(1, leapProgress) * Math.PI);
-    deps.tickCreatureFootsteps?.(c, stepPx);
     const afflictionBonuses = {
       woundedHealth: FISH_LEAP_WOUNDED_MULTIPLIER,
       scentMarkedHealth: FISH_LEAP_SCENT_MULTIPLIER,
     };
-    deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
-
-    for (const target of state.targets) {
-      const ref = target.ref;
-      if (!ref || ref.health <= 0) continue;
-      const hit = window.Combat?.meleeHit
-        ? window.Combat.meleeHit(c, ref, {
-            rangePx: state.rangePx,
-            halfConeRad: state.halfConeRad,
-            yaw: state.angle,
-            pitch: state.aimPitch,
-          })
-        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
-      if (!hit) continue;
-      const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
-      if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
-      else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
-      deps.playCreatureClawHit?.(c);
-      return false;
-    }
-    return true;
+    const stopReason = window.Combat.animalAttacks.advanceLeap(c, state, dt, deps, afflictionBonuses);
+    if (!stopReason) return true;
+    const ref = stopReason === 'target' ? state.lungeContact : null; // First living target the moving cone caught.
+    if (!ref) return false; // Ran out of travel or hit terrain; animalAttacks.update lowers the hop.
+    const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
+    if (state.targets.some(target => target.isPlayer && target.ref === ref)) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
+    else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
+    deps.playCreatureClawHit?.(c);
+    return false;
   }
 
   function fishLeapCancel(c) {
