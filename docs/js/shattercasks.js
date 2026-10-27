@@ -568,9 +568,14 @@
     const targetScene = mesh.parent || scene();
     if (!targetScene) return null;
     const rec = recordFor(mapId, targetScene);
-    const id = 'soursap_' + branch.col + '_' + branch.row;
+    const stem = 'soursap_' + branch.col + '_' + branch.row; // Branch identity is stable; detached fruits need unique physical IDs.
+    let id = stem, serial = 2; // Enables the same tree to regrow while its previous fruit is still intact nearby.
+    while (rec.vases.has(id) && !rec.vases.get(id).hanging) id = stem + '_' + serial++;
     const existing = rec.vases.get(id);
-    if (existing && !existing.exploded) return existing.group;
+    if (existing && !existing.exploded) {
+      existing.fruitBranch = branch; // Chunk regeneration replaces branch objects while preserving coordinates.
+      return existing.group;
+    }
     const group = new THREE.Group();
     group.name = 'soursap_fruit_' + id;
     group.position.copy(mesh.position);
@@ -597,7 +602,9 @@
   }
   function fruitForBranch(branch, mapId=area()) {
     if (!branch) return null;
-    return records.get(mapId)?.vases.get('soursap_' + branch.col + '_' + branch.row) || null;
+    const rec = records.get(mapId);
+    return [...(rec?.vases.values() || [])].find(fruit => fruit.kind === 'soursap' && fruit.hanging
+      && fruit.fruitBranch?.col === branch.col && fruit.fruitBranch?.row === branch.row) || null;
   }
   function markFruitHarvested(burden) {
     if (!burden?.fruitBranch) return;
