@@ -164,7 +164,7 @@
         glowFlare: 0,
       };
       const deps = window.Combat.deps;
-      const shapeStats = window.WeaponShapeStats.current(); // Weapon speed controls the full authored charge-pose clock.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Weapon speed controls the full authored charge-pose clock.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
 
@@ -187,7 +187,7 @@
       startedAt = -1;
       const deps = window.Combat.deps;
       const poseCharge = poseChargeFromRuntime();
-      const shapeStats = window.WeaponShapeStats.current(); // Release keeps the same weapon profile as the live pose.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Release keeps the same weapon profile as the live pose.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null); // Capture the accelerated visible pose first, then release that exact authored partial pose.
       debugState.active = false;
       debugState.heldSeconds = heldSeconds;
@@ -212,7 +212,7 @@
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
       if (!forced) {
-        const targetPaid = window.WeaponShapeStats.stamina(chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)), shapeStats); // Interruptible total cost at the exact released pose.
+        const targetPaid = (chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Interruptible total cost at the exact released pose.
         const remainder = Math.max(0, targetPaid - paidChargeCost);
         if (remainder > 0) {
           const payment = window.ResourceSystem?.spendStamina(
@@ -373,7 +373,7 @@
     function onHoldUpdate(_slot, dt) {
       if (startedAt < 0) return;
       const deps = window.Combat.deps;
-      const shapeStats = window.WeaponShapeStats.current(); // This update funds the same charge percentage visible to the player.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // This update funds the same charge percentage visible to the player.
       const heldSeconds = now() - startedAt;
       const poseCharge = poseChargeFromRuntime();
       debugState.heldSeconds = heldSeconds;
@@ -382,7 +382,7 @@
 
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
-      const targetPaid = window.WeaponShapeStats.stamina(chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)), shapeStats); // One interruptible total cost: each newly reached slice is paid exactly once.
+      const targetPaid = (chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // One interruptible total cost: each newly reached slice is paid exactly once.
       const segmentCost = Math.max(0, targetPaid - paidChargeCost);
       if (segmentCost > 0) {
         const payment = window.ResourceSystem?.spendStamina(
