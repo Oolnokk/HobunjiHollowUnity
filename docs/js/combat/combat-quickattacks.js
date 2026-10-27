@@ -204,7 +204,7 @@
     function onTap() {
       if (busyAction) return; // previous strike's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
-      const shapeStats = window.WeaponShapeStats.current(); // Shared equipped-weapon modifiers for jab cadence and hit geometry.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Shared equipped-weapon modifiers for jab cadence and hit geometry.
       // Footing/impact stagger lockout — see combat-combo.js's matching guard.
       if (window.Combat.isStaggered(deps.player)) return;
 
@@ -213,7 +213,7 @@
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
-      const requestedCost = window.WeaponShapeStats.stamina(COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)), shapeStats); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
+      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
