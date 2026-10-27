@@ -540,9 +540,15 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
   let pendingIdleStanceScript = null; // Identity guard against late events from an abandoned attempt.
   let idleStanceLoadDeadline = null; // Handles script requests that never fire onload/onerror.
 
-  const logIdleStanceFailure = message => { // Reports failures in the editor's mobile-visible diagnostics when available.
-    if (typeof window.logDebug === 'function') window.logDebug(message);
-    else window.__farmLog?.(message, 'warn');
+  const logIdleStanceFailure = message => { // Reports failed module loads without requiring mobile browser devtools.
+    if (typeof window.logDebug === 'function') { window.logDebug(message); return; }
+    const log = document.getElementById('logBody'); // Attack Editor defines logDebug inside an ES module, so it is not necessarily a global.
+    if (log) {
+      const line = document.createElement('div'); // Append one visible diagnostic even if the editor's module has not initialized.
+      line.className = 'logLine';
+      line.textContent = message;
+      log.prepend(line);
+    } else window.__farmLog?.(message, 'warn');
   };
   function loadIdleStanceEditor() {
     if (window.AttackIdleStanceEditor || pendingIdleStanceScript) return;
