@@ -566,6 +566,18 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(bandit._chunkCombatTarget, pora, 'bandits target Porakaneki in the observed chunk');
   assert.equal(predator.targetCreature, bandit, 'predator targets the nearest bandit/Porakaneki actor');
   assert.equal(predator.state, 'patrol-chase');
+  const nearerHunter = { id: 'eco_nearer_hunter', x: 33.1 * combatDeps.TILE, y: 32 * combatDeps.TILE, health: 20, areaId: currentArea, isBandit: true, isPorakanekiHunter: true, def: {} }; // Tests the per-actor commitment when a closer same-faction opponent joins mid-fight.
+  hostileObjects.add(nearerHunter);
+  api.__test.updateChunkEcology();
+  assert.equal(bandit._chunkCombatTarget, pora, 'a newly nearer hunter cannot steal an ongoing bandit fight');
+  assert.equal(predator.targetCreature, bandit, 'the predator also keeps its existing living faction target');
+  pora.health = 0;
+  api.__test.updateChunkEcology();
+  assert.equal(bandit._chunkCombatTarget, nearerHunter, 'a killed opponent frees the bandit to pick another target');
+  pora.health = 20;
+  hostileObjects.delete(nearerHunter);
+  api.__test.updateChunkEcology();
+  assert.equal(bandit._chunkCombatTarget, pora, 'a despawned opponent frees its committed target, even if still alive in memory');
   assert.equal(pora._porakanekiPlannerControlled, true, 'ecology combat does not make Porakaneki hostile to the player');
   let ecologyDebug = api.debugSnapshot().ecology;
   assert.deepEqual(JSON.parse(JSON.stringify(ecologyDebug)), {

@@ -2,7 +2,7 @@
   'use strict';
 
   // BanditCombat owns the actual melee AI. This adapter only caps how quickly
-  // its humanoid melee targets may rotate toward the player. The old path can
+  // its humanoid melee targets may rotate toward their chosen opponent. The old path can
   // snap c.facing at attack start and otherwise eases by a fraction of the
   // remaining angle each frame, which makes a 180-degree turn catch up far too
   // quickly and leaves effectively no usable backstab window.
@@ -34,19 +34,32 @@
   const originalUpdateCombatAI = banditApi.updateCombatAI.bind(banditApi); // Underlying AI preserved so this module changes facing only.
   banditApi.updateCombatAI = function targetFacingDragCombatAI(entity, dt, targetPlayer, distToPlayer) {
     const before = Number(entity?.facing) || 0; // Facing at frame start, before BanditCombat gets a chance to snap/ease it.
+    const attackAlreadyCommitted = !!(entity?._banditAction || entity?._banditLunging); // An ongoing melee attack owns its fixed yaw and lunge vector.
     const result = originalUpdateCombatAI(entity, dt, targetPlayer, distToPlayer) || {};
 
     // Ranged weapons need exact projectile aim, and prone state is owned by the
     // later prone-exclusivity wrapper. The drag is specifically for melee
     // pursuit/attacks where circling behind the target must remain meaningful.
-    if (!entity || entity.prone || entity._rangedMode || !targetPlayer) return result;
-    const targetX = Number(targetPlayer.x);
-    const targetY = Number(targetPlayer.y);
+    if (!entity || entity.prone || entity._rangedMode) return result;
+    if (attackAlreadyCommitted && (entity._banditAction || entity._banditLunging)) {
+      entity._targetFacingDebug = { before, after: Number(entity.facing) || 0, attackLocked: true, targetId: entity._chunkCombatTarget?.id || targetPlayer?.id || null, turnRateRadS }; // Readable on mobile when a strike holds its original bearing.
+      result.aimAngle = entity.facing;
+      return result;
+    }
+    // BanditCombat resolves this same ecology override before choosing its actions.
+    // Steering at the fallback player instead makes NPC-vs-NPC fighters flip every frame.
+    const factionTarget = entity._chunkCombatTarget;
+    const validFactionTarget = factionTarget && Number(factionTarget.health) > 0
+      && (!factionTarget.areaId || !entity.areaId || factionTarget.areaId === entity.areaId);
+    const combatTarget = validFactionTarget ? factionTarget : targetPlayer;
+    if (!combatTarget) return result;
+    const targetX = Number(combatTarget.x);
+    const targetY = Number(combatTarget.y);
     const entityX = Number(entity.x);
     const entityY = Number(entity.y);
     if (![targetX, targetY, entityX, entityY].every(Number.isFinite)) return result;
 
-    const desired = Math.atan2(targetY - entityY, targetX - entityX); // True player bearing; only rotation toward it is rate-limited.
+    const desired = Math.atan2(targetY - entityY, targetX - entityX); // True committed opponent bearing; only rotation toward it is rate-limited.
     const after = turnToward(before, desired, dt);
     const deltaBefore = angleDiff(desired, before); // Used by mobile/headless diagnostics to show how much turn was requested.
     const rawAfter = Number(entity.facing); // BanditCombat's unbounded result retained only for diagnostics.
@@ -70,6 +83,9 @@
       turnRateRadS,
       dt: Number(dt) || 0,
       rangedBypass: false,
+      attackLocked: false,
+      targetId: combatTarget.id || null,
+      factionTarget: !!validFactionTarget,
     };
 
     // BanditCombat's aimAngle is the facing handed back to the hostile loop.

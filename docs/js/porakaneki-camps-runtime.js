@@ -180,6 +180,13 @@
       && entity.areaId === currentArea() && target.areaId === currentArea()
       && entityInPlayerEcologyRange(entity) && entityInPlayerEcologyRange(target);
   }
+  function committedEcologyTarget(entity, candidates, targetKey = '_chunkCombatTarget') {
+    // A fight owns its target until that opponent dies, leaves the active area,
+    // or stops being a valid enemy. Distance changes alone never restart the fight.
+    const committed = entity?.[targetKey];
+    if (candidates.includes(committed) && validChunkCombatTarget(entity, committed)) return committed;
+    return nearestEcologyTarget(entity, candidates);
+  }
   function setHumanoidEcologyTarget(entity, target) {
     if (!entity) return;
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
@@ -242,21 +249,21 @@
     }
 
     for (const bandit of groups.bandit) {
-      const target = nearestEcologyTarget(bandit, [...groups.tribe, ...groups.predator]);
+      const target = committedEcologyTarget(bandit, [...groups.tribe, ...groups.predator]);
       setHumanoidEcologyTarget(bandit, target);
       if (target) humanoidTargets++;
     }
     for (const hunter of groups.tribe) {
       if (hunter._avengerRetreating === true) { setHumanoidEcologyTarget(hunter, null); continue; } // Outnumbered Avengers disengage and ride off.
       const rivals = groups.tribe.filter(other => tribeOf(other) !== tribeOf(hunter)); // Rival tribes fight on sight inside the observed chunk.
-      const threat = nearestEcologyTarget(hunter, [...groups.bandit, ...groups.predator, ...rivals]);
-      const prey = threat ? null : nearestEcologyTarget(hunter, groups.prey);
+      const threat = committedEcologyTarget(hunter, [...groups.bandit, ...groups.predator, ...rivals]);
+      const prey = threat ? null : committedEcologyTarget(hunter, groups.prey); // Genuine threats can still interrupt a hunt, but not another fight of equal priority.
       const target = threat || prey;
       setHumanoidEcologyTarget(hunter, target);
       if (target) humanoidTargets++;
     }
     for (const predator of groups.predator) {
-      const target = nearestEcologyTarget(predator, [...groups.tribe, ...groups.bandit]);
+      const target = committedEcologyTarget(predator, [...groups.tribe, ...groups.bandit], '_chunkFactionEcologyTarget');
       setPredatorEcologyTarget(predator, target);
       if (target) predatorTargets++;
     }

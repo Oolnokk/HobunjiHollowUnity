@@ -376,7 +376,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261027heaa9256"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261027hcombat1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -457,7 +457,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261026orequad4&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261027hhouse1&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
