@@ -536,6 +536,8 @@
       ? weekdays.includes(window.CalendarSystem?.currentWeekdayName?.())
       : (rawDay() + hashInt(rec.id)) % mod === 0;
     if (visitDay && inHourWindow(hour, num(town.start, 12), num(town.end, 17))) return null; // Give the NPC's existing town agenda control for this visit.
+    const chore = window.NpcFarmPlots?.targetFor?.(rec); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
+    if (chore) return chore;
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
