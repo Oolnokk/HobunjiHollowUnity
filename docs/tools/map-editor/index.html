@@ -631,6 +631,7 @@ function makeMap(name, category, cols, rows) {
     decor: [],        // { key, col, row }
     routes: [],       // { id, label, nodes: [[c,r],...] }
     rivers: [],       // { id, label, kind:'river'|'stream', nodes: [[c,r],...], width, seed, paintTiles }
+    farmPlots: [],    // { id, label, kind:'till'|'dig', tiles:[[c,r],...], crop, tillers[], seeders[], harvesters[], diggers[] } — NPC-tended farmland, see js/npc-farm-plots.js
     npcPaths: [],     // legacy compatibility only: { id, label, npcId, nodes: [[c,r],...] }
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
@@ -767,7 +768,7 @@ function buildBuildingInteriorMapV1(m) {
 const _baselines = new Map();
 function _snapMap(m) {
   return JSON.parse(JSON.stringify({
-    tiles: m.tiles, visualHeights: m.visualHeights, routes: m.routes, rivers: m.rivers, buildings: m.buildings,
+    tiles: m.tiles, visualHeights: m.visualHeights, routes: m.routes, rivers: m.rivers, farmPlots: m.farmPlots, buildings: m.buildings,
     transitions: m.transitions, npcStations: m.npcStations,
     cols: m.cols, rows: m.rows
   }));
@@ -796,7 +797,7 @@ function computeMapDiff(m) {
   if (Object.keys(tileGroups).length) diff.tiles = tileGroups;
 
   // Entity arrays
-  for (const key of ['routes', 'rivers', 'buildings', 'transitions', 'npcStations']) {
+  for (const key of ['routes', 'rivers', 'farmPlots', 'buildings', 'transitions', 'npcStations']) {
     const curr = m[key] || [], prev = base[key] || [];
     const prevMap = new Map(prev.map(x => [x.id, x]));
     const currMap = new Map(curr.map(x => [x.id, x]));
@@ -1116,6 +1117,7 @@ function loadWorkspace() {
           m.visualHeights = normalizeVisualHeights(m.visualHeights, m.cols, m.rows);
           m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.rivers = Array.isArray(m.rivers) ? m.rivers : [];
+          m.farmPlots = Array.isArray(m.farmPlots) ? m.farmPlots : [];
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
@@ -2449,6 +2451,7 @@ function renderPalette() {
       ${isFarmLinked2 ? `<button class="sec" id="fillFarmBtn" style="flex:1" title="Fill only the game farm area (${GAME.farm.cols}×${GAME.farm.rows}) with the active tile">Fill farm</button>` : ''}
       <button class="bad" id="clearTilesBtn" style="flex:1" title="Remove all painted tiles from this map">Clear tiles</button>
     </div>`;
+    if (m.category === 'exterior') html += plotPanelHtml(m);
   } else if (mode === 'crop') {
     if (m.category !== 'exterior') html = '<p class="muted">Crops are exterior-only.</p>';
     else html = Object.keys(CROPS).map(c =>
@@ -2631,6 +2634,7 @@ function renderPalette() {
     $('vhStrength').addEventListener('change', e => { brush.visualHeightStrength = clamp(Number(e.target.value) || 0, -TerrainPreview.VISUAL_HEIGHT_MAX, TerrainPreview.VISUAL_HEIGHT_MAX); updateBrushPill(); });
     $('vhRadius').addEventListener('change', e => { brush.visualHeightRadius = clamp(Math.floor(Number(e.target.value) || 0), 0, 20); updateBrushPill(); });
   }
+  if (mode === 'tile' && m.category === 'exterior') bindPlotPanel(box, m);
   box.querySelectorAll('button[data-pal]').forEach(b => b.addEventListener('click', () => {
     brush[b.dataset.pal] = b.dataset.val;
     renderPalette(); updateBrushPill();
@@ -2648,6 +2652,7 @@ function renderPalette() {
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     pushUndo();
     for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) setTileType(fm, `${c},${r}`, t);
+    if (!PLOT_KIND_FOR_TILE[t]) fm.farmPlots = []; // Filling over everything drops the plots with their tiles.
     draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled ${fm.cols}×${fm.rows} with ${t}.`);
   });
   const fillFarmBtn2 = box.querySelector('#fillFarmBtn');
@@ -2665,6 +2670,7 @@ function renderPalette() {
     pushUndo();
     const fm = activeMap();
     Object.keys(fm.tiles).forEach(k => { if (!isPlateauLocked(fm, k)) delete fm.tiles[k]; });
+    fm.farmPlots = []; activePlotId = null;
     draw(); refreshPreview(); saveWorkspace(); setStatus('Tiles cleared.');
   });
   // Route palette wiring
@@ -3375,6 +3381,120 @@ function draw() {
 }
 
 // ── Edit application ──────────────────────────────────────────────────────────
+
+// ── Farm plot groups ─────────────────────────────────────────────────────────
+// Painting Tilled or Trench tiles builds a plot group: a stroke that starts on an existing plot of the same kind
+// extends it, otherwise it starts a new one. A plot with no workers behaves exactly like plain painted tiles; once
+// a lineup of NPCs is assigned, the game (js/npc-farm-plots.js) leaves those tiles as grass and the NPCs till, seed,
+// harvest or dig them on their schedule. Lineups are ordered: the first NPC does the job, the rest are backups
+// for when they are following the player, on a date, or married to the player.
+let activePlotId = null;
+let _plotStroke = null; // The plot the current drag is extending.
+const PLOT_KIND_FOR_TILE = { tilled: 'till', trench: 'dig' };
+function plotAt(m, c, r, kind) {
+  return (m.farmPlots || []).find(p => (!kind || p.kind === kind) && p.tiles.some(t => t[0] === c && t[1] === r)) || null;
+}
+function removeTileFromPlots(m, c, r) {
+  let changed = false;
+  for (const p of m.farmPlots || []) {
+    const n = p.tiles.length;
+    p.tiles = p.tiles.filter(t => !(t[0] === c && t[1] === r));
+    if (p.tiles.length !== n) changed = true;
+  }
+  if (changed) m.farmPlots = m.farmPlots.filter(p => p.tiles.length);
+  if (changed && !(m.farmPlots || []).some(p => p.id === activePlotId)) activePlotId = null;
+  return changed;
+}
+function paintFarmPlotTile(m, c, r, tileType) {
+  m.farmPlots = m.farmPlots || [];
+  const kind = PLOT_KIND_FOR_TILE[tileType];
+  if (!kind) { if (removeTileFromPlots(m, c, r)) renderPalette(); return; }
+  if (!_plotStroke) {
+    _plotStroke = plotAt(m, c, r, kind);
+    if (!_plotStroke) {
+      const n = m.farmPlots.filter(p => p.kind === kind).length + 1;
+      _plotStroke = { id: uid('plot'), label: `${kind === 'till' ? 'Field' : 'Trench'} ${n}`, kind, tiles: [], crop: '', tillers: [], seeders: [], harvesters: [], diggers: [] };
+      m.farmPlots.push(_plotStroke);
+    }
+    activePlotId = _plotStroke.id;
+    renderPalette();
+  }
+  const other = plotAt(m, c, r);
+  if (other && other !== _plotStroke) removeTileFromPlots(m, c, r); // A tile belongs to one plot.
+  if (!_plotStroke.tiles.some(t => t[0] === c && t[1] === r)) { _plotStroke.tiles.push([c, r]); renderPlotCounts(); }
+}
+function renderPlotCounts() {
+  document.querySelectorAll('[data-plotcount]').forEach(el => {
+    const p = (activeMap().farmPlots || []).find(x => x.id === el.dataset.plotcount);
+    if (p) el.textContent = `${p.tiles.length} tiles`;
+  });
+}
+let npcChoiceList = null; // [{id,name}] for lineup autocomplete, fetched once from the NPC database.
+async function loadNpcChoices() {
+  if (npcChoiceList) return npcChoiceList;
+  npcChoiceList = [];
+  try {
+    const db = await (await fetch('../../config/npcs/hobunji-starter-npc-database.json')).json();
+    npcChoiceList = (db.npcs || []).map(n => ({ id: n.id, name: n.name || n.id }));
+    if (mode === 'tile') renderPalette();
+  } catch (_) { /* free-text ids still work */ }
+  return npcChoiceList;
+}
+const PLOT_LINEUPS = {
+  till: [['tillers', 'Keeps it tilled'], ['seeders', 'Seeds it'], ['harvesters', 'Harvests it']],
+  dig: [['diggers', 'Keeps it dug']],
+};
+function plotPanelHtml(m) {
+  const plots = m.farmPlots || [];
+  if (!plots.length && !['tilled', 'trench'].includes(brush.tile)) return '';
+  loadNpcChoices();
+  let html = `<div style="margin-top:10px"><label>Farm plots (NPC-tended)</label>`;
+  html += plots.map(p => `<div class="item ${p.id === activePlotId ? 'sel' : ''}" data-plotsel="${p.id}">
+      <div class="item-name">${p.kind === 'till' ? '🌱' : '🕳️'} ${p.label.replace(/</g, '&lt;')}</div>
+      <div class="item-meta"><span data-plotcount="${p.id}">${p.tiles.length} tiles</span> · ${(p.tillers || p.diggers || []).length ? 'assigned' : 'unassigned (plain tiles)'}
+      <button class="bad" data-plotdel="${p.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div></div>`).join('') || '<p class="muted">Paint Tilled or Trench tiles to start a plot.</p>';
+  const ap = plots.find(p => p.id === activePlotId);
+  if (ap) {
+    html += `<datalist id="plotNpcList">${(npcChoiceList || []).map(n => `<option value="${n.id}">${String(n.name).replace(/</g, '&lt;')}</option>`).join('')}</datalist>
+      <div class="g2" style="margin-top:6px"><div><label>Label</label><input id="plotLabelIn" value="${ap.label.replace(/"/g, '&quot;')}"></div>
+      ${ap.kind === 'till' ? `<div><label>Crop to seed</label><select id="plotCropIn"><option value="">(none)</option>${Object.keys(CROPS).map(cr => `<option value="${cr}" ${ap.crop === cr ? 'selected' : ''}>${CROPS[cr]} ${cr}</option>`).join('')}</select></div>` : '<div></div>'}</div>`;
+    for (const [field, title] of PLOT_LINEUPS[ap.kind]) {
+      html += `<div style="margin-top:6px"><label>${title} — NPC ids, first does the work, rest are backups</label>
+        <input data-plotlineup="${field}" list="plotNpcList" placeholder="e.g. aliri_ginju, foroji_funji" value="${(ap[field] || []).join(', ').replace(/"/g, '&quot;')}"></div>`;
+    }
+    const hours = Array.isArray(ap.hours) && ap.hours.length === 2 ? ap.hours : [8, 16];
+    html += `<div class="g2" style="margin-top:6px"><div><label>Farming from (hour)</label><input id="plotHourFrom" type="number" min="0" max="24" step="0.5" value="${hours[0]}"></div>
+      <div><label>Until (hour)</label><input id="plotHourTo" type="number" min="0" max="24" step="0.5" value="${hours[1]}"></div></div>`;
+    html += '<p class="muted" style="margin-top:5px">Drag a Tilled/Trench stroke starting on this plot to extend it. With no one assigned the tiles are ordinary farmland; with a lineup they start as grass and the NPCs do the work during their scheduled farming hours.</p>';
+  }
+  return html + '</div>';
+}
+function bindPlotPanel(box, m) {
+  box.querySelectorAll('[data-plotsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-plotdel]')) return;
+    activePlotId = el.dataset.plotsel; renderPalette();
+  }));
+  box.querySelectorAll('[data-plotdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    m.farmPlots = (m.farmPlots || []).filter(p => p.id !== el.dataset.plotdel);
+    if (activePlotId === el.dataset.plotdel) activePlotId = null;
+    renderPalette(); saveWorkspace();
+  }));
+  const ap = (m.farmPlots || []).find(p => p.id === activePlotId);
+  if (!ap) return;
+  const label = box.querySelector('#plotLabelIn');
+  if (label) label.addEventListener('change', () => { ap.label = label.value.trim() || ap.label; renderPalette(); saveWorkspace(); });
+  const crop = box.querySelector('#plotCropIn');
+  if (crop) crop.addEventListener('change', () => { ap.crop = crop.value; saveWorkspace(); });
+  const hourFrom = box.querySelector('#plotHourFrom'), hourTo = box.querySelector('#plotHourTo');
+  const saveHours = () => { ap.hours = [Math.max(0, Math.min(24, Number(hourFrom.value) || 0)), Math.max(0, Math.min(24, Number(hourTo.value) || 0))]; saveWorkspace(); };
+  if (hourFrom && hourTo) { hourFrom.addEventListener('change', saveHours); hourTo.addEventListener('change', saveHours); }
+  box.querySelectorAll('[data-plotlineup]').forEach(input => input.addEventListener('change', () => {
+    ap[input.dataset.plotlineup] = input.value.split(',').map(x => x.trim()).filter(Boolean);
+    renderPalette(); saveWorkspace();
+  }));
+}
+
 function applyAt(tile) {
   const m = activeMap();
   const { x: c, y: r } = tile;
@@ -3394,6 +3514,7 @@ function applyAt(tile) {
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     const existing = m.tiles[key];
     if (!existing || existing.type !== t) setTileType(m, key, t);
+    if (m.category === 'exterior') paintFarmPlotTile(m, c, r, t); // Tilled / trench strokes build NPC-tended plot groups; any other tile leaves its plot.
   } else if (mode === 'crop' && m.category === 'exterior') {
     if (isPlateauLocked(m, key)) return;
     if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
@@ -3593,6 +3714,7 @@ function applyAt(tile) {
       did = true;
     }
     else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
+    if (removeTileFromPlots(m, c, r)) { did = true; renderPalette(); }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r);
     if (fi >= 0) { if (m.furniture[fi].id === selectedPlacement?.id) selectedPlacement = null; m.furniture.splice(fi,1); did = true; }
@@ -3740,6 +3862,7 @@ canvas.addEventListener('pointerdown', e => {
     }
   }
   pushUndo();
+  _plotStroke = null; // A new stroke starts a plot (or extends the one under the first tile).
   if (PAINT_MODES.includes(mode) || (mode === 'station' && _stationPaintMode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
   else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
@@ -3811,6 +3934,7 @@ function endPtr(e) {
   if (_spotDrag)      { saveWorkspace(); refreshPreview(); _spotDrag = null; }
   if (_stationDrag)   { saveWorkspace(); refreshPreview(); _stationDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
+  if (painting && _plotStroke) { saveWorkspace(); renderPalette(); } _plotStroke = null;
   drag = false; painting = false; pinchStart = null;
 }
 canvas.addEventListener('pointerup', endPtr);
@@ -4746,6 +4870,7 @@ function importAny(obj) {
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
     m.rivers = Array.isArray(obj.rivers) ? obj.rivers : [];
+    m.farmPlots = Array.isArray(obj.farmPlots) ? obj.farmPlots : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
@@ -4773,6 +4898,7 @@ function importAny(obj) {
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
       m.rivers = Array.isArray(src.rivers) ? src.rivers : [];
+      m.farmPlots = Array.isArray(src.farmPlots) ? src.farmPlots : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
