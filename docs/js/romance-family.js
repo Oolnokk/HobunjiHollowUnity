@@ -343,7 +343,9 @@
     }
     const vat = vatObject(child);
     if (!child.vatId) {
-      const townTarget = childTownTarget(child); // A vat assignment has priority over social visits.
+      const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }); // Farm assignments on a family day preempt optional town play.
+      if (chore) return chore;
+      const townTarget = childTownTarget(child);
       if (townTarget) return townTarget;
     }
     if (vat && hour >= 8 && hour < 18 && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
