@@ -5,13 +5,16 @@
   const SHAPES = Object.freeze({
     workhammer: { power: 1.25, speed: 0.90, range: 0.90, efficiency: 0.90 },
     hatchet: { power: 1.00, speed: 1.00, range: 1.00, efficiency: 1.00 },
+    hoe: { power: 0.80, speed: 1.05, range: 0.90, efficiency: 1.15 }, // Farm-tool donor; available as a Foundry head/shaft despite its non-weapon standalone slot.
     fishingmace: { power: 1.05, speed: 0.95, range: 1.00, efficiency: 0.95 },
     fishingspear: { power: 0.90, speed: 1.15, range: 1.30, efficiency: 1.05 },
     pickshovel: { power: 1.10, speed: 0.85, range: 0.85, efficiency: 0.85 },
     warhammer: { power: 1.50, speed: 0.75, range: 1.00, efficiency: 0.80 },
+    porakanekiGreatclub: { power: 1.60, speed: 0.65, range: 1.25, efficiency: 0.70 }, // Heavy head donor meaningfully alters the selected shaft's stats.
     harlyaoLongsword: { power: 1.10, speed: 1.05, range: 1.20, efficiency: 1.00 },
     harlyaoBroadsword: { power: 1.25, speed: 0.90, range: 1.15, efficiency: 0.90 },
     bshuakauitl: { power: 0.50, speed: 1.75, range: 1.25, efficiency: 1.20 },
+    bgungku: { power: 1.00, speed: 1.00, range: 1.00, efficiency: 1.00 }, // Editor-only unmapped donor remains explicitly neutral until assigned a gameplay shape.
     daggerSword: { power: 0.75, speed: 1.40, range: 0.80, efficiency: 1.20 },
     plainsSword: { power: 1.30, speed: 0.85, range: 1.20, efficiency: 0.85 },
     dagger: { power: 0.50, speed: 2.00, range: 0.25, efficiency: 1.40 },
