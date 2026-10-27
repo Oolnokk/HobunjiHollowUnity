@@ -150,7 +150,7 @@
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
     ['js/wildlife-territorial.js?v=20261024h45b14a3', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
-    ['js/wildlife-cloud-forest-behavior.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
+    ['js/wildlife-cloud-forest-behavior.js?v=20261027soursap2', () => !!window.HobunjiCloudForestWildlife],
     ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiGrehlrForaging],
   ];
 

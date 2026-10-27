@@ -147,6 +147,24 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     ensureAmmoState();
+    // Sticky and Disorient come from the existing ranged-ammo state; this
+    // provider displays both without introducing a second status-effect owner.
+    window.EffectBuffBar?.registerProvider?.('rangedImpact', () => {
+      const state = deps?.player?._rangedAmmoDebuffs;
+      if (!state) return [];
+      const now = performance.now(); // Shared monotonic clock for status countdowns and movement effects.
+      const entries = []; // Player-only HUD entries; hostile debuffs stay on the actor.
+      if (state.stickyUntil > now) entries.push({
+        key:'sticky',label:'Sticky · 20% movement speed',icon:'🍈',kind:'bane',
+        sourceLabel:'Soursap Fruit',durationS:2.2,remainingS:(state.stickyUntil-now)/1000,
+      });
+      if (state.disorientUntil > now) entries.push({
+        key:'disorient',label:'Disoriented · reversed movement',icon:'💫',kind:'bane',
+        sourceLabel:'Concussive impact',durationS:DISORIENT_DURATION_MS/1000,
+        remainingS:(state.disorientUntil-now)/1000,
+      });
+      return entries;
+    });
     deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
   }
 
@@ -1189,6 +1207,15 @@
     }
   }
 
+  function applySticky(entity, durationMs = 2200) {
+    if (!entity) return;
+    if (!entity._rangedAmmoDebuffs) entity._rangedAmmoDebuffs = {};
+    const duration = Math.max(0, Math.min(15000, Number(durationMs) || 0)); // Used to bound impact Sticky duration.
+    entity._rangedAmmoDebuffs.stickyUntil = Math.max(entity._rangedAmmoDebuffs.stickyUntil || 0, performance.now() + duration);
+  }
+  function movementSpeedMultiplier(entity) {
+    return entity?._rangedAmmoDebuffs?.stickyUntil > performance.now() ? .2 : 1;
+  }
   function movementDirectionMultiplier(entity) {
     return entity?._rangedAmmoDebuffs?.disorientUntil > performance.now() ? -1 : 1;
   }
@@ -1213,6 +1240,7 @@
       delete state.shrapnelY;
     }
     if (!(state.disorientUntil > now)) delete state.disorientUntil;
+    if (!(state.stickyUntil > now)) delete state.stickyUntil;
     if (!Object.keys(state).length) delete entity._rangedAmmoDebuffs;
   }
 
@@ -1767,7 +1795,7 @@
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
-    movementDirectionMultiplier,
+    applySpecialAmmoDebuff,applySticky,movementSpeedMultiplier,movementDirectionMultiplier,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
     devBumpMastery: itemKey => deps?.devBumpToolMasteryLevel?.(itemKey),
     getLoadoutView: itemKey => ({ itemKey, mastery: rangedMastery(itemKey), loadout: JSON.parse(JSON.stringify(ammoLoadout(itemKey))), unlockedSpecialAmmo: [...(ensureAmmoState()?.unlockedSpecialAmmo || [])], specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX }),
@@ -1822,6 +1850,7 @@
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
+      playerStickySpeedMultiplier: movementSpeedMultiplier(deps?.player),
       activeProjectiles: projectiles.length,
       embeddedProjectiles: projectiles.filter(p => p.embedded && !p.dead).length,
       fadingEmbeddedProjectiles: projectiles.filter(p => p.embedded && p.fading && !p.dead).length,

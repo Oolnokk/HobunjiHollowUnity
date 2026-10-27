@@ -21,8 +21,18 @@
   const persisted = new Set(); // Already shattered/looted IDs, saved per player world.
   const terrainHistory = new Map(); // Area -> Map(tile -> original resource kind), preserves blasted openings on reload.
   const pileHistory = new Map(); // Area -> Map(pile id -> unlooted debris), restores one-input collectible piles.
+  const looseFruitHistory = new Map(); // Area -> Map(burden id -> intact safely dropped fruit); restores unthrown fruit after reload.
   const lastEquipment = { weapon:null, tool:null, item:null }; // Pickup-time equipment snapshot used to drop carried vases on selection changes.
-  let held = null; // The one intact vase held in front of the local player.
+  // All physical carryables share this record and Shattercask's pickup/drop/throw state machine.
+  // 'kind' chooses the impact payload, not a different input or animation system.
+  class Burden {
+    constructor(props) { Object.assign(this, props); this.kind = props.kind || 'shattercask'; }
+    get displayName() { return this.kind === 'soursap' ? 'Soursap Fruit' : 'Shattercask'; }
+  }
+  const fallingFruits = new Map(); // Active airborne tree fruit; separate from the player's one thrown burden.
+  const FRUIT_RADIUS = 2.6; // Soursap impact AOE, smaller than a Shattercask's destructive blast.
+  const FRUIT_DAMAGE = 12; // Raw blunt icicle-style impact damage before defensive mitigation.
+  let held = null; // The one intact Burden held in front of the local player.
   let aimingThrow=null,flight=null,throwRing=null;
   const MAX_THROW_RADIUS=14;
   const SHATTER_RELEASE_FALLBACK=.28;
@@ -110,7 +120,7 @@
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
-    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();records.clear();placementCache.clear();
+    storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();looseFruitHistory.clear();records.clear();placementCache.clear();
     if(held||backXray.size)setHeldRearXray(null); // Never leak held portrait depth state into the next world.
     held=null; // A different world must never inherit another world's held charge.
     promptClaim='';
@@ -121,6 +131,8 @@
       for(const [area,tiles] of Object.entries(savedTerrain))terrainHistory.set(area,new Map(Object.entries(tiles)));
       const savedPiles=JSON.parse(localStorage.getItem('hobunji.shattercasks.piles.v1:'+identity)||'{}');
       for(const [area,piles] of Object.entries(savedPiles))pileHistory.set(area,new Map(Object.entries(piles)));
+      const savedFruit=JSON.parse(localStorage.getItem('hobunji.burdens.looseFruit.v1:'+identity)||'{}');
+      for(const [area,fruits] of Object.entries(savedFruit))looseFruitHistory.set(area,new Map(Object.entries(fruits)));
     }catch(error){window.__farmLog?.('[shattercask] partial persistence recovery: '+error.message,'warn');}
   }
   function persistWorld() {
@@ -131,6 +143,8 @@
         JSON.stringify(Object.fromEntries([...terrainHistory].map(([area,tiles])=>[area,Object.fromEntries(tiles)]))));
       localStorage.setItem('hobunji.shattercasks.piles.v1:'+storeIdentity,
         JSON.stringify(Object.fromEntries([...pileHistory].map(([area,piles])=>[area,Object.fromEntries(piles)]))));
+      localStorage.setItem('hobunji.burdens.looseFruit.v1:'+storeIdentity,
+        JSON.stringify(Object.fromEntries([...looseFruitHistory].map(([area,fruits])=>[area,Object.fromEntries(fruits)]))));
     }catch(error){window.__farmLog?.('[shattercask] failed to persist blast/loot history: '+error.message,'warn');}
   }
   function saveConsumed(id) {
@@ -233,6 +247,7 @@
     // item sprites, invisible anchor guides, or explosion effects.
     const authored = group.userData?.meshById;
     const meshes = authored?.values ? [...authored.values()] : [];
+    if (!meshes.length) group.traverse?.(part => { if (part.isMesh) meshes.push(part); }); // Soursap spheres use ordinary geometry, not Furniture Author mesh IDs.
     return meshes.filter(mesh => mesh?.isMesh && mesh.visible !== false
       && mesh.material?.visible !== false && mesh.geometry?.attributes?.position?.count > 0);
   }
@@ -544,12 +559,155 @@
     group.userData.shattercaskId=p.id;
     group.userData.shattercaskMap=p.mapId;
     rec.scene.add(group);
-    const vase={...p,group,data,meshColliders:collectMeshColliders(group),
+    const vase=new Burden({...p,group,data,meshColliders:collectMeshColliders(group),
       meshBounds:THREE.Box3?new THREE.Box3():null,
-      emitters:null,exploded:false,carried:false};
+      emitters:null,exploded:false,carried:false});
     if(vase.meshBounds)refreshMeshBounds(vase);
     rec.vases.set(p.id,vase);
     return vase;
+  }
+  // Branch fruit is the same physical Burden as pottery, with a different
+  // impact strategy. The gameplay module owns its mesh after registration.
+  function registerFruit(mapId, branch, mesh) {
+    if (!branch?.fruit?.available || !mesh || !mapId) return null;
+    const targetScene = mesh.parent || scene();
+    if (!targetScene) return null;
+    const rec = recordFor(mapId, targetScene);
+    const stem = 'soursap_' + branch.col + '_' + branch.row; // Branch identity is stable; detached fruits need unique physical IDs.
+    let id = stem, serial = 2; // Enables the same tree to regrow while its previous fruit is still intact nearby.
+    while (rec.vases.has(id) && !rec.vases.get(id).hanging) id = stem + '_' + serial++;
+    const existing = rec.vases.get(id);
+    if (existing && !existing.exploded) {
+      existing.fruitBranch = branch; // Chunk regeneration replaces branch objects while preserving coordinates.
+      return existing.group;
+    }
+    const group = new THREE.Group();
+    group.name = 'soursap_fruit_' + id;
+    group.position.copy(mesh.position);
+    mesh.position.set(0, 0, 0);
+    group.add(mesh);
+    targetScene.add(group);
+    const carryable = {
+      billboardAnchor: { position: { x: 0, y: 0, z: 0 }, posteriorOffset: { x: 0, y: 0, z: 0 }, size: 1 },
+      handTargets: {
+        left: { x: .11, y: .02, z: 0, rotation: { x: 0, y: 0, z: -80 } },
+        right: { x: -.11, y: .02, z: 0, rotation: { x: 0, y: 0, z: 80 } },
+      },
+      hitbox: { enabled: true, center: { x: 0, y: 0, z: 0 }, size: { x: .32, y: .32, z: .32 } },
+    }; // Shared authored-world hand alignment, with a fruit-sized grip and collider.
+    const burden = new Burden({
+      id, mapId, col: Math.floor(group.position.x), row: Math.floor(group.position.z),
+      group, data: { carryable }, kind: 'soursap', fruitBranch: branch, hanging: true,
+      meshColliders: collectMeshColliders(group), meshBounds: new THREE.Box3(),
+      emitters: null, exploded: false, carried: false, flying: false,
+    });
+    refreshMeshBounds(burden);
+    rec.vases.set(id, burden);
+    return group;
+  }
+  function fruitForBranch(branch, mapId=area()) {
+    if (!branch) return null;
+    const rec = records.get(mapId);
+    for (const fruit of rec?.vases.values() || []) {
+      if (fruit.kind === 'soursap' && fruit.hanging
+        && fruit.fruitBranch?.col === branch.col && fruit.fruitBranch?.row === branch.row) return fruit;
+    }
+    return null;
+  }
+  function rebindFruitBranch(branch, mapId=area(), position=null) {
+    const fruit=fruitForBranch(branch,mapId); // Chunk rebuilding can replace branch objects without replacing the fruit mesh.
+    if (!fruit || fruit.exploded) return false;
+    if (fruit.fruitBranch!==branch) {
+      fruit.fruitBranch=branch;
+      if (position && [position.x,position.y,position.z].every(Number.isFinite)) {
+        fruit.group.position.set(position.x,position.y,position.z); // Keep fruit visually attached after a shifted/regenerated tree.
+        fruit.col=Math.floor(position.x);fruit.row=Math.floor(position.z);
+        refreshMeshBounds(fruit);
+      }
+    }
+    return true;
+  }
+  function markFruitHarvested(burden) {
+    if (!burden?.fruitBranch) return;
+    const branch = burden.fruitBranch;
+    if (window.HobunjiCloudForestWildlife?.markFruitHarvested)
+      window.HobunjiCloudForestWildlife.markFruitHarvested(branch);
+    else if (branch.fruit) {
+      branch.fruit.available = false;
+      branch.fruit.reserved = false;
+      branch.fruit.eatenAtHours = Infinity; // Without the biome clock, never duplicate a detached fruit.
+    }
+    burden.fruitBranch = null;
+    burden.hanging = false;
+  }
+  function discardFruit(branch, mapId=area()) {
+    const fruit = fruitForBranch(branch, mapId);
+    if (!fruit || !fruit.hanging) return false;
+    records.get(mapId)?.vases.delete(fruit.id);
+    fruit.group.parent?.remove(fruit.group);
+    fruit.exploded = true;
+    return true;
+  }
+  function pickUpFruit(branch, mapId=area()) {
+    const fruit = fruitForBranch(branch, mapId);
+    if (!fruit || !fruit.hanging || !branch?.fruit?.available) return false;
+    if (!pickUp(fruit)) return false;
+    markFruitHarvested(fruit); // A detached branch cannot grow a duplicate while one is carried.
+    return true;
+  }
+  function startFruitFall(fruit, cause='shot') {
+    if (!fruit || fruit.exploded || fruit.flying) return false;
+    const rec = records.get(fruit.mapId);
+    if (!rec) return false;
+    fruit.group.updateWorldMatrix?.(true, true);
+    const world = fruit.group.getWorldPosition(new THREE.Vector3());
+    if (held === fruit) {
+      cancelShatterAim(); setHeldRearXray(null); held = null;
+      prompt(); deps()?.refreshActionBar?.();
+    }
+    rec.scene.add(fruit.group);
+    fruit.group.position.copy(world);
+    fruit.group.quaternion.identity();
+    fruit.group.scale.setScalar(1);
+    markFruitHarvested(fruit);
+    fruit.carried = false;
+    fruit.flying = true;
+    fruit.hanging = false;
+    fruit.col = Math.floor(world.x); fruit.row = Math.floor(world.z);
+    fallingFruits.set(fruit.id, { fruit, velocity: 0, cause }); // Gravity and collision resolved once per frame in tick().
+    lastEvent = 'falling Soursap Fruit ' + fruit.id + ' via ' + cause;
+    return true;
+  }
+  function releaseFruitFromTree(mapId, col, row) {
+    const rec = records.get(mapId);
+    const fruit = [...(rec?.vases.values() || [])].find(obj => obj.kind === 'soursap'
+      && obj.hanging && obj.fruitBranch?.col === col && obj.fruitBranch?.row === row);
+    if (!fruit) return false;
+    const spot = nearestOpen(grid(), col, row, 3) || { col, row };
+    markFruitHarvested(fruit);
+    fruit.col = spot.col; fruit.row = spot.row;
+    fruit.group.position.set(spot.col + .5, baseHeight(spot.col, spot.row) + .16, spot.row + .5);
+    fruit.hanging = false; fruit.flying = false;
+    refreshMeshBounds(fruit);
+    if(!looseFruitHistory.has(mapId))looseFruitHistory.set(mapId,new Map());
+    looseFruitHistory.get(mapId).set(fruit.id,{col:spot.col,row:spot.row,treeCol:col,treeRow:row});
+    persistWorld(); // Safe fruit survives departure/return without exploding or respawning in the tree.
+    lastEvent = 'tree-felled safe Soursap Fruit ' + fruit.id;
+    return true;
+  }
+  function updateFruitFalls(dt) {
+    for (const [id, state] of fallingFruits) {
+      const fruit = state.fruit;
+      if (!fruit || fruit.exploded || fruit.mapId !== area()) { fallingFruits.delete(id); continue; }
+      state.velocity -= 13 * dt;
+      const y = thrownGround(fruit.group.position.x, fruit.group.position.z) + .15;
+      fruit.group.position.y = Math.max(y, fruit.group.position.y + state.velocity * dt);
+      fruit.group.rotation.z += dt * 5;
+      if (fruit.group.position.y <= y + .002) {
+        fallingFruits.delete(id);
+        detonate(fruit, state.cause + '-ground-impact');
+      }
+    }
   }
   async function spawnRandomInDevArena() {
     const mapId='map_dev_arena';
@@ -635,11 +793,12 @@
     lastEvent='picked up '+cask.id;
     prompt(); // Claim Action 1/2 immediately after the Tool Select pickup.
     deps()?.refreshActionBar?.(); // Rebuild native tool/item slots on every input device.
-    deps()?.showToast?.('Carrying Shattercask — Action 1: hold and release to throw; Action 2: drop.',false);
+    deps()?.showToast?.('Carrying ' + cask.displayName + ' — Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
   function drop() {
     if(!held)return false;
+    if (held.kind === 'soursap') return startFruitFall(held, 'drop'); // Fruit bursts when physically dropped; chopping its tree is the safe release.
     cancelShatterAim();setHeldRearXray(null);
     const cask=held,p=playerPosition(),g=grid();
     const origin=p?nearestOpen(g,Math.round(p.x-.5),Math.round(p.z-.5),2):null;
@@ -660,12 +819,12 @@
     if(!p||!rec)return null;
     let choice=null,smallest=1.65;
     for(const vase of rec.vases.values()) {
-      if(vase.exploded||vase.carried||vase.flying)continue;
+      if(vase.exploded||vase.carried||vase.flying||vase.hanging)continue;
       const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
     }
     for(const pile of rec.piles.values()) {
-      const d=distance(p,{x:pile.col+.5,z:pile.row+.5});
+      const d=distance(p,{x:pile.x??pile.col+.5,z:pile.z??pile.row+.5});
       if(d<smallest){smallest=d;choice={type:'pile',obj:pile};}
     }
     return choice;
@@ -744,20 +903,22 @@
     if(throwRing.parent!==active)active.add(throwRing);
     const groundY=thrownGround(target.x,target.z); // Same landing surface used by the physical throw.
     const changed=throwRing.userData.targetX!==target.x||throwRing.userData.targetZ!==target.z
-      ||throwRing.userData.groundY!==groundY; // Resample only when the target or its terrain height changes.
+      ||throwRing.userData.groundY!==groundY
+      ||throwRing.userData.radius!==(held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS); // Resample only when the target or its terrain height changes.
     throwRing.position.set(target.x,groundY+.035,target.z);
-    throwRing.scale.setScalar(RADIUS);
+    const previewRadius = held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS; // Burden-specific AOE on the same projected reticle.
+    throwRing.scale.setScalar(previewRadius);
     if(changed){
       const positions=throwRing.geometry.attributes?.position; // Local Z becomes height after the ground-plane rotation.
       if(positions){
         for(let index=0;index<positions.count;index++){
-          positions.setZ(index,(thrownGround(target.x+positions.getX(index)*RADIUS,
-            target.z-positions.getY(index)*RADIUS)-groundY)/RADIUS);
+          positions.setZ(index,(thrownGround(target.x+positions.getX(index)*previewRadius,
+            target.z-positions.getY(index)*previewRadius)-groundY)/previewRadius);
         }
         positions.needsUpdate=true;
         throwRing.geometry.computeBoundingSphere?.();
       }
-      Object.assign(throwRing.userData,{targetX:target.x,targetZ:target.z,groundY});
+      Object.assign(throwRing.userData,{targetX:target.x,targetZ:target.z,groundY,radius:previewRadius});
     }
     throwRing.visible=true;
   }
@@ -786,7 +947,7 @@
     aimingThrow={vase:held,phase:'aim',elapsed:0,target:throwTarget(),rayElapsed:0,sharedPose,
       socketBase:sharedPose?socketBase:null};
     showThrowRing(aimingThrow.target);
-    lastEvent='started Shattercask throw aim';
+    lastEvent='started ' + held.displayName + ' throw aim';
     return true;
   }
   function releaseShatterAim(){
@@ -827,7 +988,7 @@
     flight={vase:c,origin,target,distanceTiles,
       duration:window.AlchemyFlasks?.flightDuration?.(distanceTiles)
         ??Math.min(.9,Math.max(.42,.42+distanceTiles*.034)),t:0};
-    lastEvent='launched Shattercask '+c.id;
+    lastEvent='launched ' + c.displayName + ' ' + c.id;
     return true;
   }
   function updateShatterThrow(dt){
@@ -865,7 +1026,11 @@
     Object.freeze({icon:'↗',label:'Throw Shattercask',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Shattercask',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shared by computeActionButtonsImpl while carrying; no per-frame allocations.
-  function actionButtons(){return held?CARRIED_ACTION_BUTTONS:null;}
+  const CARRIED_FRUIT_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
+    Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
+  ]); // Shares action IDs; only burden-specific labels and impact payload change.
+  function actionButtons(){return held?(held.kind==='soursap'?CARRIED_FRUIT_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS):null;}
   function grantLoot(items) {
     if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
     const inv=gameDeps?.inventory||deps()?.inventory;
@@ -880,6 +1045,7 @@
   }
   function rollRange([min,max]) { return min+Math.floor(Math.random()*(max-min+1)); }
   function rubbleLoot(pile) {
+    if(pile.kind==='fruit')return {soursapFruitFlesh:1};
     if(pile.kind==='tree')return {[pile.woodKey||'pineLog']:rollRange(RUBBLE_YIELD.treeLogs),mulch:RUBBLE_YIELD.mulch};
     const items={stone:rollRange(RUBBLE_YIELD.rockStone),pebble:RUBBLE_YIELD.pebble};
     const oreItemKey=pile.oreKey?gameDeps?.oreItemKey?.(pile.oreKey):null;
@@ -932,10 +1098,11 @@
     if(!pile)return null;
     if(!pile.contextButtons){
       const anchor=pile.promptAnchor||(pile.promptAnchor=new THREE.Object3D());
-      anchor.position.set(pile.col+.5,pile.y+.25,pile.row+.5);
+      anchor.position.set(pile.x??pile.col+.5,pile.y+.25,pile.z??pile.row+.5);
       if(!anchor.parent)records.get(pile.mapId)?.scene.add(anchor);
       pile.contextButtons=Object.freeze([Object.freeze({
-        icon:pile.kind==='tree'?'🪵':'🪨',label:pile.kind==='tree'?'Collect Sticks':'Collect Rubble',
+        icon:pile.kind==='fruit'?'🍈':pile.kind==='tree'?'🪵':'🪨',
+        label:pile.kind==='fruit'?'Collect Soursap Fruit Flesh':pile.kind==='tree'?'Collect Sticks':'Collect Rubble',
         action:'shattercask_collect',style:'primary',allowed:true,worldInteraction:true,
         inputAction:'interact',promptRoot:anchor,
       })]); // Cached per pile: computeActionButtons runs every frame.
@@ -966,7 +1133,7 @@
     const mag=Math.hypot(forward.x,forward.z)||1;
     let result=null,closest=1.65;
     for(const cask of rec.vases.values()){
-      if(cask.exploded||cask.carried||cask.flying)continue;
+      if(cask.exploded||cask.carried||cask.flying||cask.hanging)continue;
       const dx=cask.col+.5-p.x,dz=cask.row+.5-p.z,d=Math.hypot(dx,dz);
       if(d>=closest)continue;
       const vx=cask.col+.5-origin.x,vz=cask.row+.5-origin.z;
@@ -990,8 +1157,8 @@
     btn.classList?.toggle?.('shattercask-context',!!action);
     if(action){
       btn.dataset.shattercaskIcon='✋';
-      btn.setAttribute?.('aria-label','Pick up Shattercask');
-      btn.title='Pick up Shattercask';
+      btn.setAttribute?.('aria-label','Pick up ' + facedShattercask().displayName);
+      btn.title='Pick up ' + facedShattercask().displayName;
     }else{
       btn.removeAttribute?.('data-shattercask-icon');
       btn.setAttribute?.('aria-label','Select tool, or dequip if a tool is already out');
@@ -1011,16 +1178,16 @@
     const claim=held?'carried:'+held.id:vase?'vase:'+vase.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
-        {actionId:'action1',label:'Throw Shattercask',priority:810,
+        {actionId:'action1',label:'Throw ' + held.displayName,priority:810,
           onPress:startShatterAim,onRelease:detail=>detail?.canceled?cancelShatterAim():releaseShatterAim()},
-        {actionId:'action2',label:'Drop Shattercask',priority:810,onPress:drop},
+        {actionId:'action2',label:'Drop ' + held.displayName,priority:810,onPress:drop},
       ]);
       else if(vase)window.WorldActionInputClaims?.setClaims?.('shattercask',
-        [{actionId:'interact',label:'Pick up Shattercask',priority:410,onPress:interact}]);
+        [{actionId:'interact',label:'Pick up ' + vase.displayName,priority:410,onPress:interact}]);
       else window.WorldActionInputClaims?.clearClaims?.('shattercask');
       promptClaim=claim;
       if(vase&&!vase.promptButtons)vase.promptButtons=Object.freeze([Object.freeze({
-        icon:'✋',label:'Pick up Shattercask',action:'shattercask_pickup_prompt',allowed:true,
+        icon:'✋',label:'Pick up ' + vase.displayName,action:'shattercask_pickup_prompt',allowed:true,
         worldInteraction:true,inputAction:'interact',promptRoot:vase.group,
       })]);
     }
@@ -1079,14 +1246,16 @@
   }
   function syncPileVisuals(rec) {
     if(!rec)return;
-    if(!sharedPileArt)sharedPileArt={
+    if(!sharedPileArt?.rock)sharedPileArt={...sharedPileArt,
       rock:{geometry:new THREE.DodecahedronGeometry(.18,0),
         material:new THREE.MeshLambertMaterial({color:0x817b74})},
       tree:{geometry:new THREE.CylinderGeometry(.045,.065,.55,5),
         material:new THREE.MeshLambertMaterial({color:0x7b5936})},
+      fruit:{geometry:new THREE.DodecahedronGeometry(.10,0),
+        material:new THREE.MeshLambertMaterial({color:0xd98e3b})},
     }; // Shared geometries/materials are never disposed with an individual pile.
     const transform=new THREE.Object3D(); // Reused scratch for the complete rebuild, two GPU instance buffers maximum per area.
-    for(const kind of ['rock','tree']){
+    for(const kind of ['rock','tree','fruit']){
       const piles=[];
       for(const pile of rec.piles.values())if(pile.kind===kind)piles.push(pile);
       const needed=piles.length*4;
@@ -1105,8 +1274,8 @@
       for(let p=0;p<piles.length;p++){
         const pile=piles[p];
         for(let i=0;i<4;i++){
-          transform.position.set(pile.col+.5+Math.cos(i*1.8)*.15,
-            pile.y+.09,pile.row+.5+Math.sin(i*1.8)*.15);
+          transform.position.set((pile.x??pile.col+.5)+Math.cos(i*1.8)*.15,
+            pile.y+.09,(pile.z??pile.row+.5)+Math.sin(i*1.8)*.15);
           transform.rotation.set(0,0,kind==='tree'?1.2+i*.08:0);
           transform.scale.set(1,1,1);
           transform.updateMatrix();
@@ -1118,12 +1287,17 @@
       state.mesh.computeBoundingSphere?.(); // Keep normal camera frustum culling after matrix changes.
     }
   }
-  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null) {
-    const id=kind+'_'+col+'_'+row;
-    if(rec.piles.has(id))return;
-    rec.piles.set(id,{id,col,row,kind,woodKey,oreKey,y,mapId}); // Logical loot records are distinct from the pooled GPU instance geometry.
+  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null,sourceId=null,restoredId=null,impact=null) {
+    const baseId=kind+'_'+col+'_'+row+(sourceId?'_'+sourceId:''); // Unique source keeps nearby fruit piles distinct.
+    let id=restoredId||baseId;
+    if(!restoredId && kind==='fruit'){
+      let serial=2;
+      while(rec.piles.has(id))id=baseId+'_'+serial++;
+    } else if(rec.piles.has(id))return;
+    const x=Number.isFinite(impact?.x)?impact.x:col+.5,z=Number.isFinite(impact?.z)?impact.z:row+.5; // Preserve the actual fruit impact within its terrain tile.
+    rec.piles.set(id,{id,col,row,kind,woodKey,oreKey,y,mapId,x,z}); // Logical loot records are distinct from the pooled GPU instance geometry.
     if(!pileHistory.has(mapId))pileHistory.set(mapId,new Map());
-    pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey}); // Persist once after the full blast, not once per pile.
+    pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey,x,z}); // Persist once after the full blast, not once per pile.
   }
   function destroyTerrain(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
@@ -1168,9 +1342,29 @@
     if(count){syncPileVisuals(rec);persistWorld();} // Two debris draw calls, one batched persistence write per explosion.
     return count;
   }
+  function restoreLooseFruit(mapId, rec) {
+    const history=looseFruitHistory.get(mapId);
+    if(!history?.size)return;
+    for(const [id,info] of history) {
+      if(rec.vases.has(id)||!Number.isFinite(info?.col)||!Number.isFinite(info?.row))continue;
+      const mesh=new THREE.Mesh(new THREE.SphereGeometry(.15,8,6),
+        new THREE.MeshStandardMaterial({color:0xd9542b,roughness:.6,metalness:.05}));
+      mesh.position.set(info.col+.5,baseHeight(info.col,info.row)+.16,info.row+.5);
+      const branch={col:info.treeCol??info.col,row:info.treeRow??info.row,
+        fruit:{available:true,reserved:false}}; // Constructor-only stand-in; never registered as a climbable branch.
+      registerFruit(mapId,branch,mesh); // Reuse the same collider, Burden, world grip and throw setup.
+      const fruit=fruitForBranch(branch,mapId);
+      if(!fruit)continue;
+      rec.vases.delete(fruit.id);
+      fruit.id=id;fruit.group.name='soursap_fruit_'+id;
+      fruit.fruitBranch=null;fruit.hanging=false;
+      fruit.col=info.col;fruit.row=info.row;
+      rec.vases.set(id,fruit);
+    }
+  }
   function restoreSceneHistory(mapId,rec) {
-    const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId);
-    if(!savedTerrain?.size&&!savedPiles?.size)return;
+    const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId),savedFruit=looseFruitHistory.get(mapId);
+    if(!savedTerrain?.size&&!savedPiles?.size&&!savedFruit?.size)return;
     const g=grid(),types=deps()?.TileType||{},chunks=new Map();
     for(const [tileKey,info] of savedTerrain||[]) {
       const [col,row]=tileKey.split(',').map(Number),tile=g?.[row]?.[col];
@@ -1188,8 +1382,12 @@
       chunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
     }
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
-      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null);
+      spawnPile(mapId,rec,info.col,info.row,info.kind,
+        info.kind==='fruit'?thrownGround(info.x??info.col+.5,info.z??info.row+.5):baseHeight(info.col,info.row),
+        info.woodKey,info.oreKey||null,null,id,
+        Number.isFinite(info.x)&&Number.isFinite(info.z)?{x:info.x,z:info.z}:null);
     if(rec.piles.size)syncPileVisuals(rec);
+    restoreLooseFruit(mapId,rec);
     if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
       if(window.WildernessChunks)for(const cell of chunks.values())
         window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId,cell.col,cell.row);
@@ -1218,8 +1416,77 @@
       window.ResourceSystem?.spendFooting?.(actor,Math.max(8,24*(1-dist/RADIUS)),'Shattercask blast');
     }
   }
+  function applyFruitBlast(mapId,x,z) {
+    const d=deps(),tile=tileSize(),player=d?.player;
+    const targets=[player,...(d?.hostileObjects||[]),...(d?.npcWalkers||[])];
+    const seen=new Set();
+    for(const actor of targets) {
+      if(!actor||seen.has(actor)||actor.health<=0||(actor.areaId&&actor.areaId!==mapId)||(actor.area&&actor.area!==mapId))continue;
+      seen.add(actor);
+      const dist=Math.hypot(Number(actor.x)/tile-x,Number(actor.y)/tile-z);
+      if(!Number.isFinite(dist)||dist>FRUIT_RADIUS)continue;
+      const damage=Math.max(2,FRUIT_DAMAGE*(1-.65*dist/FRUIT_RADIUS));
+      const opts={tag:'blunt',environmental:true,reason:'Soursap Fruit impact'};
+      if(actor===player)d?.damagePlayer?.(damage,x*tile,z*tile,125,opts);
+      else if(d?.hostileObjects?.has?.(actor))d?.damageCreature?.(actor,damage,x*tile,z*tile,125,opts);
+      else window.ResourceSystem?.applyDamage?.(actor,damage,opts);
+      window.ResourceSystem?.spendFooting?.(actor,Math.max(5,15*(1-dist/FRUIT_RADIUS)),'Soursap impact');
+      window.RangedWeapons?.applySpecialAmmoDebuff?.(actor,'concussive'); // Reuse exact reversed-input Disorient effect.
+      window.RangedWeapons?.applySticky?.(actor,2200); // Sticky: 20% movement for 2.2 seconds.
+    }
+  }
+  function fruitBurstVisual(targetScene,x,z,y) {
+    if(!targetScene)return;
+    // Same cheap instanced spray update as Shattercask debris, but amber flesh rather than pottery.
+    if(!sharedPileArt)sharedPileArt={};
+    if(!sharedPileArt.fruitBurst)sharedPileArt.fruitBurst={
+      geometry:new THREE.DodecahedronGeometry(.10,0),
+      material:new THREE.MeshLambertMaterial({color:0xd98e3b}),
+      flashGeometry:new THREE.SphereGeometry(1,12,8),
+    };
+    const count=24,art=sharedPileArt.fruitBurst;
+    const spray=new THREE.InstancedMesh(art.geometry,art.material,count);
+    const group=new THREE.Group();group.position.set(x,y,z);group.add(spray);targetScene.add(group);
+    const flash=new THREE.Mesh(art.flashGeometry,new THREE.MeshBasicMaterial({
+      color:0xd4d96b,transparent:true,opacity:.7,depthWrite:false,blending:THREE.AdditiveBlending}));
+    flash.position.set(x,y,z);flash.scale.setScalar(.15);targetScene.add(flash);
+    const parts=[];
+    for(let i=0;i<count;i++){
+      const angle=i*2.399963;
+      parts.push({x:0,y:0,z:0,vx:Math.cos(angle)*(1.5+i%5*.28),
+        vz:Math.sin(angle)*(1.5+i%5*.28),vy:1.4+(i%7)*.18,batch:0,index:i});
+    }
+    burstEffects.push({group,shardMeshes:[spray],parts,flash,age:0,duration:.90,radius:FRUIT_RADIUS,
+      dummy:new THREE.Object3D()});
+    window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'medium');
+  }
+  function detonateFruit(fruit,cause) {
+    if(!fruit||fruit.exploded)return false;
+    fruit.group.updateWorldMatrix?.(true,true);
+    const world=fruit.group.getWorldPosition(new THREE.Vector3());
+    if(held===fruit){held=null;cancelShatterAim();setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
+    fallingFruits.delete(fruit.id);
+    looseFruitHistory.get(fruit.mapId)?.delete(fruit.id);
+    const rec=records.get(fruit.mapId);
+    fruit.exploded=true;fruit.flying=false;
+    markFruitHarvested(fruit);
+    fruit.group.parent?.remove(fruit.group);
+    rec?.vases.delete(fruit.id);
+    const x=world.x,z=world.z,y=thrownGround(x,z)+.16;
+    fruitBurstVisual(rec?.scene||scene(),x,z,y);
+    applyFruitBlast(fruit.mapId,x,z);
+    if(rec){
+      const col=Math.floor(x),row=Math.floor(z);
+      spawnPile(fruit.mapId,rec,col,row,'fruit',thrownGround(x,z),'pineLog',null,fruit.id,null,{x,z});
+      syncPileVisuals(rec);persistWorld();
+    }
+    lastEvent='Soursap burst ' + fruit.id + ' via ' + cause;
+    window.__farmLog?.('[burden] '+lastEvent,'world');
+    return true;
+  }
   function detonate(cask,cause='weapon') {
     if(!cask||cask.exploded)return false;
+    if(cask.kind==='soursap')return detonateFruit(cask,cause);
     cask.exploded=true;
     if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
     if(flight?.vase===cask)flight=null;
@@ -1248,7 +1515,9 @@
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
     for(const vase of allActive().values()) {
-      if(vase.exploded||vase.carried)continue;
+      // Hanging Soursap must be plucked from its branch or knocked down by a
+      // ranged projectile; a melee swing through the canopy cannot bypass the fall.
+      if(vase.exploded||vase.carried||vase.hanging)continue;
       const box=worldHitbox(vase);
       const cx=box?(box.min.x+box.max.x)/2:vase.col+.5;
       const cz=box?(box.min.z+box.max.z)/2:vase.row+.5;
@@ -1332,7 +1601,10 @@
     return result;
   }
   function hitProjectile(candidate) {
-    return candidate?.vase ? detonate(candidate.vase,'projectile') : false;
+    if(!candidate?.vase)return false;
+    if(candidate.vase.kind==='soursap' && candidate.vase.hanging)
+      return startFruitFall(candidate.vase,'projectile'); // Shot branch fruit falls before exploding at terrain contact.
+    return detonate(candidate.vase,'projectile');
   }
   function updateBursts(dt) {
     for(let i=burstEffects.length-1;i>=0;i--) {
@@ -1344,7 +1616,7 @@
         fx.flash.material.dispose();burstEffects.splice(i,1);continue;
       }
       const f=fx.age/fx.duration;
-      fx.flash.scale.setScalar(.15+RADIUS*Math.min(1,fx.age/.16));
+      fx.flash.scale.setScalar(.15+(fx.radius||RADIUS)*Math.min(1,fx.age/.16));
       fx.flash.material.opacity=.82*Math.max(0,1-fx.age/.22);
       fx.flash.visible=fx.age<.22;
       for(let j=0;j<fx.parts.length;j++) {
@@ -1364,6 +1636,7 @@
     if(held && held.mapId!==mapId)drop();
     if(flight&&flight.vase.mapId!==mapId){flight.vase.flying=false;flight=null;}
     updateShatterThrow(dt);
+    updateFruitFalls(Math.min(.1,Math.max(0,Number(dt)||0)));
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
     if(held&&!alignHeldVase(held)) {
@@ -1515,12 +1788,15 @@
   // selector gesture. A separate frame subscriber here would race that
   // dispatcher and accidentally recall equipment after pickup.
   window.Shattercasks=Object.freeze({
-    init,RADIUS,spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
+    init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
+    spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Desktop E picks up casks; aimed rubble is an arch button with boosted yield and mine descent rolls; prompts render in game.js (no flicker).',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
-      vases:[...allActive().values()].map(v=>({id:v.id,col:v.col,row:v.row,carried:v.carried})),
+    debugSnapshot:()=>({lastEvent,latestChange:'Soursap and Shattercasks share Burden interactions; tree fruit falls on shot, safe-drops on felling, and applies Disorient+Sticky on impact.',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+      vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying})),
+      fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
+      savedLooseFruit:[...(looseFruitHistory.get(area())?.keys()||[])],
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
       rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,

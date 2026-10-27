@@ -351,7 +351,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261026hnpcthrow1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261027soursap1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261010hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -381,7 +381,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261027hde1f89a"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261027soursap2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -555,7 +555,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20261013hb03db0f"></script>
+  <script src="js/climb-system.js?v=20261027soursap1"></script>
   <script src="js/creature-cliff-climb.js?v=1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
@@ -842,7 +842,7 @@
   <script src="js/cave-site-system.js?v=20261025oreveins2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
-  <script src="js/shattercasks.js?v=20261023hd22d799"></script>
+  <script src="js/shattercasks.js?v=20261027soursap2"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -2703,7 +2703,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261026ghouls1"></script>
+  <script src="js/fishing-minigame.js?v=20261027soursap1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2711,7 +2711,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20261022npcroot1149c"></script>
+  <script src="js/music-minigame.js?v=20261027soursap1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2832,7 +2832,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261027he22314a"></script>
+  <script src="game.js?v=20261027soursap1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

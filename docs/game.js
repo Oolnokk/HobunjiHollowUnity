@@ -5752,7 +5752,8 @@
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
         const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
         const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy composes with global/swim/climb movement instead of mutating authored creature speeds.
-        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul;
+        const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky scales native creature locomotion.
+        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -15986,6 +15987,7 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        soursapFruitFlesh: { icon: '🍈', label: 'Soursap Fruit Flesh', cat: 'crop', sellPrice: 10, tags: ['Fruit', 'Food', 'Foraged', 'Sellable'], desc: 'Sticky, sour pulp collected from a Soursap Fruit after its impact burst. The intact fruit is a physical burden, not an inventory stack.' },
         // Instrument metadata pairs with TOOL_ITEM_DEFS for permanent gear assignment.
         // Playback validates the equipped Instrument slot through MusicMinigame.
         kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Transfer it to gear, assign it as your Instrument, and play — solo, or fall in behind whoever's already playing nearby." },
@@ -17989,7 +17991,8 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
+        const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(player) ?? 1; // Soursap Sticky composes with ordinary player terrain/combat speed.
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * stickySpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
         // Tothal ice changes the *native* acceleration and ground friction,
         // exactly where keyboard/controller/mobile intent drives velocity.
         // This runs before ordinary player collision, footsteps and facing:

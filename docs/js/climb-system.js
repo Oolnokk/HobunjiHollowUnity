@@ -897,6 +897,9 @@
     const branch = branchList(area).find(item => Number(item.col) === Number(col) && Number(item.row) === Number(row));
     if (!branch) return { branch: null, nest: null, falls: [] };
     branch.felled = true;
+    // Chopping a Soursap tree releases its fruit safely onto adjacent ground.
+    // A projectile hit instead uses Burden's ballistic fall + sticky impact.
+    window.Shattercasks?.releaseFruitFromTree?.(area, col, row);
     const falls = [];
     const entities = [];
     if (deps?.player) entities.push(deps.player);
