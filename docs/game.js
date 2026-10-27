@@ -12756,10 +12756,12 @@
               _applyNpcAmbientLook(this, target);
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
-                if (this.stationToolKey !== target.toolKey) {
+                const toolFlip = target.toolFlip === true;
+                if (this.stationToolKey !== target.toolKey || this.stationToolFlip !== toolFlip) {
                   if (this.stationToolMesh) this.stationToolMesh.parent?.remove(this.stationToolMesh);
-                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: target.toolFlip === true });
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: toolFlip });
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  this.stationToolFlip = toolFlip; // Same pick-shovel sprite must rebuild when switching between shovel and pick orientation.
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) (avatarGroup.userData?.proceduralHandParent || root).add(this.stationToolMesh);
                 }
@@ -12815,12 +12817,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
+                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
+            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
