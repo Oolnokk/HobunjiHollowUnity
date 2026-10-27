@@ -5603,9 +5603,11 @@
 
       // A live _chunkCombatTarget means a tribe/bandit ecology fight
       // (js/porakaneki-camps-runtime.js) chasing another actor, not the player.
+      // Planner-controlled (neutral) tribe hunters are never hostile to the player,
+      // whatever transient state the planner leaves them in between its 5 Hz ticks.
       function isPlayerInCombat() {
         for (const c of hostileObjects) {
-          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && (c.state === 'chase' || c.state === 'searching') && !(c._chunkCombatTarget?.health > 0)) return true;
+          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && c._porakanekiPlannerControlled !== true && (c.state === 'chase' || c.state === 'searching') && !(c._chunkCombatTarget?.health > 0)) return true;
         }
         return false;
       }

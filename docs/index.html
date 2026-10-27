@@ -461,7 +461,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261027campwallcache8&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261027h8214d37&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2640,7 +2640,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261025hbf38cd1"></script>
+  <script src="js/music-system.js?v=20261027h0bd57c3"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
@@ -2830,7 +2830,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261027blueprintOrder1"></script>
+  <script src="game.js?v=20261027hcd61bc7"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

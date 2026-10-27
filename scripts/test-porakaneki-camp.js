@@ -647,6 +647,55 @@ function hunterDebug(api, zoneId, campId, index) {
   api.__test.updateChunkEcology();
   fakeNowMs += 1600;
 
+  // The player outranks the ecology: a bandit already fighting the player, just
+  // hit by the player/companion, or with the player in its aggro range keeps
+  // fighting them instead of being pulled into a faction fight; a bandit whose
+  // faction fight ends is released from 'chase' rather than left chasing nobody.
+  {
+    const T = combatDeps.TILE;
+    const fightingBandit = { id: 'eco_fighting_bandit', x: 34 * T, y: 32 * T, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, state: 'chase', def: { aggroRangePx: 0, leashRangePx: 8 * T } }; // Chasing the player (no actor target).
+    const hitBandit = { id: 'eco_hit_bandit', x: 33 * T, y: 33 * T, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, state: 'idle', homeX: 20 * T, homeY: 20 * T, def: { aggroRangePx: 0, leashRangePx: 8 * T } };
+    const wolf = { id: 'eco_chasing_predator', creatureKey: 'test-predator', wildlifeRole: 'predator', x: 38 * T, y: 32 * T, health: 20, maxHealth: 20, areaId: currentArea, state: 'chase', def: { aggroRangePx: 0 } };
+    for (const entity of [fightingBandit, hitBandit, wolf]) hostileObjects.add(entity);
+    api.__test.updateChunkEcology();
+    assert.equal(fightingBandit._chunkCombatTarget ?? null, null, 'a bandit chasing the player is not reassigned to a hunter');
+    assert.equal(fightingBandit.state, 'chase', 'its pursuit of the player is untouched');
+    assert.equal(wolf.targetCreature ?? null, null, 'a predator chasing the player is not pulled into a faction fight');
+    assert.equal(wolf.state, 'chase');
+    assert.equal(hitBandit._chunkCombatTarget, pora, 'an unengaged bandit still joins the faction fight');
+    assert.equal(hitBandit.state, 'chase');
+
+    hitBandit._teamHitAt = fakeNowMs; // The player (or companion) lands a hit mid-fight.
+    api.__test.updateChunkEcology();
+    assert.equal(hitBandit._chunkCombatTarget ?? null, null, 'a hit from the player ends the bandit\'s faction fight');
+    assert.equal(hitBandit.state, 'chase', 'and turns it on the player');
+    assert.deepEqual([hitBandit.homeX, hitBandit.homeY], [hitBandit.x, hitBandit.y], 'its leash anchor moves to the fight so it does not instantly return to camp');
+    api.__test.updateChunkEcology();
+    assert.equal(hitBandit._chunkCombatTarget ?? null, null, 'it stays on the player while the hit is recent');
+    hitBandit.state = 'idle'; // The fight with the player is over.
+    fakeNowMs += 6001;
+    api.__test.updateChunkEcology();
+    assert.deepEqual([hitBandit.homeX, hitBandit.homeY], [20 * T, 20 * T], 'the camp leash anchor is restored once the player fight is over');
+    assert.equal(hitBandit._chunkCombatTarget, pora, 'and the bandit can rejoin the faction fight');
+
+    const nearBandit = { id: 'eco_near_bandit', x: 36 * T, y: 32 * T, health: 20, maxHealth: 20, areaId: currentArea, isBandit: true, state: 'chase', _chunkCombatTarget: pora, def: { aggroRangePx: 6 * T, leashRangePx: 8 * T } }; // Player at (32,32) is inside its aggro range.
+    hostileObjects.add(nearBandit);
+    api.__test.updateChunkEcology();
+    assert.equal(nearBandit._chunkCombatTarget ?? null, null, 'a bandit with the player in aggro range drops the hunter for the player');
+
+    // A finished faction fight must not leave the bandit in 'chase' with no target.
+    hostileObjects.delete(fightingBandit); hostileObjects.delete(nearBandit); hostileObjects.delete(wolf);
+    pora.health = 0;
+    hostileObjects.delete(omg);
+    api.__test.updateChunkEcology();
+    assert.equal(hitBandit._chunkCombatTarget ?? null, null, 'no opponent remains');
+    assert.equal(hitBandit.state, 'return', 'a bandit whose opponent died is released from chase instead of lingering as a phantom player-combat chaser');
+    pora.health = 20;
+    hostileObjects.delete(hitBandit);
+    api.__test.updateChunkEcology();
+    fakeNowMs += 1600;
+  }
+
   hostileObjects.delete(prey);
   // Fights cover every live actor within the 24-tile release radius around the
   // player, not just the player's own 16x16 chunk: rivals in plain view fight.

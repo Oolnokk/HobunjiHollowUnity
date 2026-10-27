@@ -1292,7 +1292,11 @@
 
   function isCombatMusicRequested() {
     // Spearhead's session includes explanations, practice, and the reward choice.
-    return !!(deps.isPlayerInCombat() || window.CombatTutorial?.active?.());
+    if (window.CombatTutorial?.active?.()) return true;
+    const now = performance.now();
+    // Brief hold bridges the gap between one opponent dropping and the next engaging in multi-faction skirmishes, so the combat track is not faded out and back in.
+    if (deps.isPlayerInCombat()) { _ambientCueState.combatHeldUntil = now + 3000; return true; }
+    return now < (Number(_ambientCueState.combatHeldUntil) || 0);
   }
 
   function updateAmbientCues() {

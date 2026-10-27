@@ -42,7 +42,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
 // Run the scheduler and its ended callback: tutorials must keep one combat
 // transport through dialogue, idle practice, and rewards, then hand music back.
 {
-  const live = { combat: false, tutorial: false, exclusive: false, plays: 0, pauses: 0, resumes: 0 }; // Mutable inputs and transport observations for scheduler transitions.
+  const live = { combat: false, tutorial: false, exclusive: false, plays: 0, pauses: 0, resumes: 0, clock: 1000 }; // Mutable inputs and transport observations for scheduler transitions.
   const ambient = { ended: false }; // Existing exploration track retained beneath training music.
   const state = { area: 'arena', currentBgm: ambient, mode: 'bgm', nextAt: 0, blockUntil: 0, combatOverrideActive: false }; // Scheduler slots shared with the executed production function.
   const context = { // Narrow audio boundary: scheduler decisions and callbacks remain production code.
@@ -51,7 +51,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     quietLoading: false, _startupBgm: null, _ambientCueState: state,
     _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
     _audioCueIndexes: new Map(),
-    performance: { now: () => 1000 },
+    performance: { now: () => live.clock },
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     ambientMusicOwnsSoundtrack: () => live.exclusive,
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
@@ -88,6 +88,9 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   context.updateAmbientCues();
   assert.equal(state.currentCombatBgm, trainingTrack, 'ending a lesson during real combat keeps combat music');
   live.combat = false;
+  context.updateAmbientCues();
+  assert.equal(state.currentCombatBgm, trainingTrack, 'a momentary gap between opponents holds the combat track instead of fading out and back in');
+  live.clock += 3001; // Past the hold: a genuine end of combat releases the music.
   context.updateAmbientCues();
   assert.equal(state.currentCombatBgm, null, 'ending training outside combat releases its music');
   assert.equal(live.resumes, 1, 'normal ambient music resumes after training');
