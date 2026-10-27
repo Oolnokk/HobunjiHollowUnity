@@ -13,6 +13,18 @@ async function main() {
   const api = window.CombatProgression; // Canonical unlock, choice and effect authority.
   const items = { ITEM_DEFS: {}, inventoryItems: [], inventory: {} }; // Real registration supplies consumable tablets and scrolls.
   api.registerItems(items);
+  const scrollKey = api.itemKey('sharp', 1, 'stat_rangeMul_0p12', 'scroll'); // Real registered mastery scroll used to verify the Pack selection path.
+  let processorProbes = 0; // Verifies selecting or viewing a mastery item never enumerates workstation outputs.
+  const processorWindow = {};
+  vm.runInNewContext(fs.readFileSync('docs/js/item-processing.js', 'utf8'), { window: processorWindow });
+  processorWindow.ItemProcessing.init({
+    ITEM_DEFS: items.ITEM_DEFS,
+    getInventoryItems() { processorProbes++; throw new Error('mastery literature must never enter wheel seed catalog'); },
+    PROCESSING_METHODS: new Proxy([], { get() { processorProbes++; throw new Error('mastery literature must never enter workstation discovery'); } }),
+  });
+  assert.equal(processorWindow.ItemProcessing.isWheelEligible(scrollKey), false, 'mastery scrolls are read from their detail, not the wheel');
+  assert.equal(processorWindow.ItemProcessing.isWheelEligible(api.itemKey('sharp', 1, 'stat_rangeMul_0p12', 'tablet')), false, 'mastery tablets are not processor inputs');
+  assert.equal(processorProbes, 0, 'mastery selection bypasses every material/processor discovery path');
   const itemCount = items.inventoryItems.length; // Repeated initialization must not duplicate item rows.
   assert.equal(items.ITEM_DEFS[api.itemKey('sharp', 1, 'stat_rangeMul_0p12')].sellPrice, 140, 'entry-level mastery literature has meaningful resale value');
   api.registerItems(items);
