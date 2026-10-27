@@ -78,7 +78,7 @@ assert.equal(stage('wedding_pronounce').type, 'talk', 'the pronouncement is the 
 const hunundiCeremony = scene.stages.filter(s => s.speakerId === 'hunundi').map(s => s.text).join(' '); // Keeps every officiant line aligned with Nao'ung and the Canonry's botanical imagery.
 assert.match(hunundiCeremony, /Nao'ung/, 'Hunundi invokes the actual Guardian of Life');
 assert.match(hunundiCeremony, /blossom|roots|bloom/i, 'the ceremony uses the imagery of the Canonry of Blossoms');
-assert.doesNotMatch(hunundiCeremony, /\\bstars?\\b|\\bcosmic\\b|\\bheavens?\\b/i, 'the ceremony avoids generic astral invocations');
+assert.doesNotMatch(hunundiCeremony, /\bstars?\b|\bcosmic\b|\bheavens?\b/i, 'the ceremony avoids generic astral invocations');
 const hunundiRecord = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')).npcs.find(n => n.id === 'father_hunundi_hodu'); // Guards live general-chat alongside the ceremony.
 const hunundiGreetings = hunundiRecord.phrasePools.find(p => p.name === 'Hunundi Greetings').entries.map(e => e.text).join(' '); // Contains the NPC's authored greetings.
 assert.match(hunundiGreetings, /Nao'ung/, 'Hunundi names his patron in ordinary dialogue');
