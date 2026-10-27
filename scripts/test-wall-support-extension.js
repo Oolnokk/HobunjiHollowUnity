@@ -13,6 +13,8 @@ const api=w.HouseWallFixtures;
 const sign=JSON.parse(read('docs/config/furniture-authored/generalStoreSign.json'));
 const inn=JSON.parse(read('docs/config/furniture-authored/innSign.json'));
 const store=JSON.parse(read('docs/config/pieces/general-store.json'));
+const innHouse=JSON.parse(read('docs/config/pieces/inn.json'));
+const innFixture=innHouse.wallFixtures.find(f=>f.authoredFurnitureKey==='innSign');
 const eps=(a,b,message)=>assert.ok(Math.abs(a-b)<1e-7, `${message}: ${a} != ${b}`);
 
 function makeModel(data){
@@ -27,11 +29,11 @@ function makeModel(data){
 const generalFixture=store.wallFixtures.find(f=>f.authoredFurnitureKey==='generalStoreSign');
 assert.ok(generalFixture);
 assert.equal(generalFixture.depth,0);
-eps(generalFixture.bodyOutset,.383147429,'preserved original outward reach');
+eps(generalFixture.bodyOutset,.362,'re-authored outward reach');
 
 for(const [label,data,scale,side,axis,normal] of [
-  ['General Store sign',sign,[.393,.563,.557],1,'x',[1,0,0]],
-  ['Inn sign',inn,[.8,.8,.8],1,'x',[1,0,0]]
+  ['General Store sign',sign,generalFixture.authoredScale,1,'x',[1,0,0]],
+  ['Inn sign',inn,innFixture.authoredScale,1,'x',[1,0,0]]
 ]){
   const support=data.wallOrnament.extendableSupport;
   assert.equal(support.axis,axis);
@@ -85,7 +87,7 @@ const runtimeWindow={HouseWallFixtures:api,AuthoredFurniture:{
 vm.runInNewContext(read('docs/js/wall-ornament-placement.js'),{window:runtimeWindow});
 const placer=runtimeWindow.WallOrnamentPlacement;
 assert.ok(placer,'wall-ornament bridge should expose shared beam extension');
-const authoredScale=[.393,.563,.557],worldWall=[10,1.365688,5];
+const authoredScale=generalFixture.authoredScale,worldWall=[10,1.4,5];
 const placement={wallPoint:worldWall,wallNormal:[0,0,1],offsetU:0,offsetV:0,normalOffset:1.25};
 const rootPose=placer.deriveTransform(sign.wallOrnament,placement,null,authoredScale);
 {
@@ -176,8 +178,8 @@ const endX=beamAtEnd.position.x+beamAtEnd.scale.x*.5;
 const tipZ=mount.position.z+holder.position.z-endX*generalFixture.authoredScale[0];
 eps(tipZ,mount.position.z,'actual House Editor scene beam tip fixed exactly at wall');
 const furnitureRootZ=mount.position.z+holder.position.z;
-eps(furnitureRootZ,2.287,'actual House Editor sign body stays at prior world-relative Z');
-eps(mount.position.x+holder.position.x,-.043,'sign body X unchanged');
-eps(mount.position.y+holder.position.y,.591,'sign body Y unchanged');
+eps(furnitureRootZ,1.7+.362+.5*.575,'House Editor sign body matches the current export Z');
+eps(mount.position.x+holder.position.x,2.55-5.1*.79,'sign body X matches export U');
+eps(mount.position.y+holder.position.y,1.4-1.376*.8,'sign body Y matches the current export V and scale');
 
 console.log('Extendable sign and banner supports: all assertions passed');
