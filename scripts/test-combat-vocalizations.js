@@ -265,6 +265,7 @@ assert(W.CombatVocalizations.debugSnapshot().lastStrike.url.includes('sfx_releas
 
 
 // Release grunts may layer through the next attack's windup without cutting off their predecessors.
+W.CharacterVoiceOwner.stop(player, 0); // Earlier timed strike fixtures deliberately leave claims active; isolate this overlap probe.
 const releaseA = W.CombatVocalizations.playStrikeGrunt(player, 'quickAttack', 'overlap-a');
 const releaseEntryA = played.at(-1);
 const releaseB = W.CombatVocalizations.playStrikeGrunt(player, 'offensiveHold', 'overlap-b');
