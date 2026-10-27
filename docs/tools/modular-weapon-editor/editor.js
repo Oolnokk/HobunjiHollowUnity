@@ -183,12 +183,14 @@
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
-    byId('allow-head').checked = head.editorOnly !== true;
+    byId('allow-head').checked = head.editorOnly !== true && head.craftDisabled !== true;
+    byId('allow-head').disabled = head.craftDisabled === true; // Shipped retired heads cannot be re-enabled through this editor.
     byId('head-construction-note').textContent = head.mountNote || ''; // Authoring notes for shovel scoop, transverse hoe, and pick head.
     const accepted = compatible(), needed = head.mount.type === 'blade' ? 'tang' : 'eye';
     byId('part-readiness').textContent = !accepted
       ? 'Incompatible: add a ' + needed + ' line to this haft or choose another head.'
       : shaft.sourceShape === 'bgungku' ? "B'gungku has no gameplay donor; preview/editor use only."
+      : head.craftDisabled ? 'This head is retired from Foundry crafting; existing forged weapons remain usable.'
       : shaft.editorOnly || head.editorOnly ? 'One or both parts still need calibration and Foundry approval.'
       : 'Compatible directed mounts; both parts are enabled for Foundry.';
     editLineNumbers();
@@ -338,7 +340,7 @@
     if (chosenShaft().sourceShape === 'bgungku') return; // Unknown donor would copy incorrect player hand positions.
     chosenShaft().editorOnly = !byId('allow-shaft').checked; save();
   };
-  byId('allow-head').onchange = () => { chosenHead().editorOnly = !byId('allow-head').checked; save(); };
+  byId('allow-head').onchange = () => { if (chosenHead().craftDisabled) return; chosenHead().editorOnly = !byId('allow-head').checked; save(); };
   byId('layer-order').onchange = () => {
     const pair = chosenShaft().overrides[byId('head').value] ||= {}; // Only this exact combination gets an override.
     pair.layerOrder = byId('layer-order').value === 'head-over-haft' ? 'head-over-haft' : 'haft-over-head'; // Store both explicit options so imported authored presets never override intentional editor changes.
