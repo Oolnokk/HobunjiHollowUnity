@@ -793,7 +793,9 @@
     if (hintEl) return hintEl;
     hintEl = document.createElement('div');
     hintEl.className = 'ctrl-nav-hint-bar';
-    hintEl.setAttribute('aria-hidden', 'true');
+    hintEl.setAttribute('aria-label', 'Controller navigation');
+    hintEl.setAttribute('role', 'group');
+    hintEl.setAttribute('data-ctrl-skip', '');
     hintEl.innerHTML =
       '<span class="ctrl-nav-hint"><span class="ctrl-nav-glyph ctrl-nav-glyph-a">A</span>Select</span>' +
       '<span class="ctrl-nav-hint"><span class="ctrl-nav-glyph ctrl-nav-glyph-b">B</span>Back</span>' +
@@ -834,14 +836,17 @@
     }
     Array.from(host.children).forEach((button, index) => {
       const selected = String(state.sections[index] === state.selected); // Visible selection follows the same section state as LB/RB.
-      if (button.getAttribute('aria-pressed') !== selected) button.setAttribute('aria-pressed', selected);
-      if (selected === 'true') button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      const changed = button.getAttribute('aria-pressed') !== selected; // Unchanged focus updates must not undo a player's manual horizontal scrolling.
+      if (changed) button.setAttribute('aria-pressed', selected);
+      if (changed && selected === 'true') button.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     });
   }
 
   function updateHintBar(panel) {
     if (!panel || !padEverSeen) { hideHintBar(); return; }
     const el = ensureHintEl();
+    const host = panel.id === 'menuPanel' ? panel : document.body; // The main menu reserves footer space; other panels retain their existing floating hints.
+    if (el.parentElement !== host) host.appendChild(el);
     el.classList.toggle('ctrl-nav-hint-bar-visible', true);
     const local = localSubtabs(panel); // Also advertises local sections while the outer tab bar is borrowed.
     const hasTabs = !!local || !!findTabGroup(panel); // The hint advertises bumpers wherever the menu has a visible tab bar.
@@ -1236,7 +1241,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Entered pages show named section choices; bumpers and pointer selection share focus and scroll restoration, with explicit Enter and Back hints.',
+        latestChange: 'Controller section choices are accessible and dock inside the main menu without covering content; unchanged focus updates preserve manual section scrolling.',
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         scrollHostId: cachedScrollHost?.host?.id || null,

@@ -6,15 +6,24 @@ const source = fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8'); // Runs 
 const calls = []; // Records pointer navigation requests for comparison with the controller's shared route.
 class Choice {
   constructor() {
-    this.attrs = new Map(); this.children = []; this.hidden = true; this.handlers = {}; this.rebuilds = 0;
+    this.attrs = new Map(); this.children = []; this.hidden = true; this.handlers = {}; this.rebuilds = 0; this.scrolls = 0;
   }
-  getAttribute(name) { return this.attrs.get(name) || null; }
+  getAttribute(name) { return this.attrs.get(name) ?? null; }
   setAttribute(name, value) { this.attrs.set(name, value); }
   replaceChildren() { this.children = []; this.rebuilds++; }
   appendChild(child) { this.children.push(child); }
   addEventListener(name, callback) { this.handlers[name] = callback; }
-  scrollIntoView() {}
+  scrollIntoView() { this.scrolls++; }
 }
+const hintContext = vm.createContext({
+  document: { createElement: () => new Choice(), body: new Choice() },
+}); // Execute the actual hint-root builder to catch inaccessible interactive descendants.
+vm.runInContext(source.slice(source.indexOf('  let hintEl = null;'), source.indexOf('  let padEverSeen = false;')), hintContext);
+const hintRoot = hintContext.ensureHintEl(); // The same root later contains the pointer-selectable section buttons.
+assert.equal(hintRoot.getAttribute('aria-hidden'), null, 'Interactive hints remain exposed to assistive technology');
+assert.equal(hintRoot.getAttribute('role'), 'group');
+assert.equal(hintRoot.getAttribute('aria-label'), 'Controller navigation');
+assert.equal(hintRoot.getAttribute('data-ctrl-skip'), '', 'Docking does not add redundant controller navigation stops');
 const context = vm.createContext({
   document: { createElement: () => new Choice() },
   selectLocalSection: (...args) => calls.push(args),
@@ -35,6 +44,10 @@ assert.deepEqual(calls.pop(), [group, panel, 1], 'Pointer choice uses the same s
 state.selected = sections[1];
 context.updateSectionChoices(host, { node: group }, state, panel);
 assert.equal(host.rebuilds, 1, 'Moving within a section does not rebuild the choice controls');
+const selectedChoice = host.children[1]; // Tracks scrolling separately from updates to the visible selected state.
+assert.equal(selectedChoice.scrolls, 1, 'A newly selected choice is revealed');
+context.updateSectionChoices(host, { node: group }, state, panel);
+assert.equal(selectedChoice.scrolls, 1, 'Unchanged focus updates preserve manual horizontal scrolling');
 assert.deepEqual(host.children.map(child => child.getAttribute('aria-pressed')), ['false', 'true']);
 context.updateSectionChoices(host, null, null, panel);
 assert.equal(host.hidden, true, 'Leaving the section restores the ordinary hint bar');

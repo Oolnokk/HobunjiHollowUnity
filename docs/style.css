@@ -3802,3 +3802,12 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
 .ctrl-nav-section-choices button[aria-pressed="true"] {
   color: var(--accent, #f9e28a); border-color: currentColor; background: #f9e28a18;
 }
+
+/* Reserve content space rather than floating controller choices over menu actions. */
+#menuPanel > .ctrl-nav-hint-bar {
+  position: static; left: auto; bottom: auto; transform: none;
+  width: 100%; max-width: none; flex: 0 0 auto;
+  padding: 5px 10px; gap: 6px 14px; border-radius: 0;
+  border: 0; border-top: 1px solid var(--border);
+}
+#menuPanel > .ctrl-nav-hint-bar .ctrl-nav-section-choices { max-width: 100%; }
