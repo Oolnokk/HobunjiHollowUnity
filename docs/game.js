@@ -10852,6 +10852,7 @@
         // 1-tile margin (exactly how much smaller each plateau sub-map is than its
         // parent, so that margin is the cliff-face band).
         _zoneMesaMeshGroups.set(mapId, window.ZonePlateauMesa.buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
+        window.WildernessBedrock?.build(zScene, zGrid, ZCOLS, ZROWS, mapId); // Persistent cliff-material backing under every heightfield gap/water drop — see js/wilderness-bedrock.js.
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.RuinSites?.buildZoneMeshes?.(zScene, zGrid, mapId); // Ruin entrances + burrow holes (authored furniture pieces).
@@ -30652,6 +30653,13 @@
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
+      });
+
+      window.WildernessBedrock?.init({
+        NORMAL_TOP, PLATEAU_UNIT, TileType, DEPRESSION_TOP,
+        displaceZoneGeometry,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        edgeCategory: _terrainCategoryFor(TileType.ROCK),
       });
 
       window.ZoneRegrowth?.init({
