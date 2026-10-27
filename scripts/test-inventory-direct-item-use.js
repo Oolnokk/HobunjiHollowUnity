@@ -200,6 +200,32 @@ directButton = elementMap.get('inventoryDirectUseBtn');
 assert.equal(directButton, undefined, 'a target-dependent flask removes the direct-use button instead of pretending it can fire from Inventory');
 assert.equal(api.getDebug().lastDirectUseUi?.reason, 'not-direct-usable', 'mobile diagnostics explain the missing target-dependent action');
 
+// The actual selected Pack tile is authoritative for generated mastery items.
+// Switching away from an ordinary item must resolve the tablet without scanning
+// every owned item or reusing the stale previous action.
+let selectedPackKey = 'apple'; // Emulates the grid's selected class after game.js handles a click.
+documentStub.querySelector = selector => selector.includes('.inv-item-box.selected') && selectedPackKey
+  ? { dataset: { key: selectedPackKey } } : null;
+elementMap.get('iiName').textContent = 'Apple ×1';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'apple');
+selectedPackKey = 'masteryTablet';
+elementMap.get('iiName').textContent = 'Test Mastery Tablet ×1';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryTablet', 'switching from food to a mastery tablet resolves its exact item');
+assert.equal(api.getDebug().lastDirectUseUi.reason, 'selected-slot');
+assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/);
+selectedPackKey = 'apple';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn'), undefined, 'stale mastery name cannot Read the newly selected food item');
+assert.equal(api.getDebug().lastDirectUseUi.reason, 'stale-selection');
+selectedPackKey = 'masteryTablet';
+api.refreshInventoryUseButton();
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryTablet', 'tablet action returns when the matching slot is selected');
+selectedPackKey = null; // Remaining direct-use tests simulate a programmatic panel, not a grid click.
+documentStub.querySelector = undefined;
+
+
 assert.equal(api.useInventoryItem('alchemy_recipe_healingPotion'), true);
 assert.equal(recipeReads, 1, 'recipe direct-use calls readRecipeItem exactly once');
 assert.equal(drinks, 0, 'recipe direct-use never enters potion drinking');
