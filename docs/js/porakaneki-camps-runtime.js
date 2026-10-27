@@ -344,6 +344,8 @@
     const objects = [];
     for (const source of (layout.tiles || [])) {
       if (!(source.r >= 0 && source.r < rows && source.c >= 0 && source.c < cols)) continue;
+      const rockKind = source.rockKind || (source.type === combatDeps.TileType?.ROCK ? source.generatedObjectType : null); // Some generated layouts retain object type but derive rockKind only when the live grid is built.
+      const boulderId = source.boulderId || (rockKind === 'undiggableBoulder' ? source.generatedObjectId : null); // The source object ID groups every tile of a boulder even before live-grid rendering adds its map prefix.
       const tile = {
         height: source.elevTier || 0,
         water: !!combatDeps.WATERWAY_TYPES?.has?.(source.type),
@@ -351,15 +353,21 @@
         ramp: source.type === combatDeps.TileType?.RAMP || !!source.incline,
         waterfall: source.type === combatDeps.TileType?.WATERFALL,
         terrain: source.type,
-        rockKind: source.rockKind || null, // Preserved so displaced camp boulders can be cleared/restored along with their terrain type.
-        boulderId: source.boulderId || null, // Identifies all tiles belonging to the same procedural boulder shell.
-        generatedObjectId: source.generatedObjectId || null, // Preserves a source resource footprint for reversible camp clearing.
-        generatedObjectType: source.generatedObjectType || null, // Paired with generatedObjectId for exact live-grid restoration.
+        rockKind: rockKind || null, // Retains the true source rock classification through reversible camp placement.
+        boulderId: boulderId || null, // Identifies the whole generated boulder even when its original layout has not acquired a runtime boulderId.
+        generatedObjectId: source.generatedObjectId || null, // Source resource identity required for restoration when a chief camp migrates.
+        generatedObjectType: source.generatedObjectType || null, // Resource kind is carried separately from the live grid's rockKind.
+        borderEscarpment: !!(source.borderEscarpment || source.mapBoundary), // Map-boundary rock/cliff walls are never bulldozed by a fallback camp.
         occupiedBy: null,
       };
       tiles[source.r][source.c] = tile;
-      if (source.type === combatDeps.TileType?.SHRUB || source.type === combatDeps.TileType?.ROCK) {
+      const ordinaryRock = source.type === combatDeps.TileType?.ROCK && (!!boulderId || ['diggableRockOre', 'rockOutcrop', 'resourceNode'].includes(rockKind)); // Only identified replaceable rocks are ordinary camp clutter; untyped cliff rock stays protected.
+      if (source.type === combatDeps.TileType?.SHRUB || ordinaryRock) {
         const id = `${KEY}_clutter_${source.c}_${source.r}`;
+        tile.occupiedBy = id;
+        objects.push({ id, type: 'unique', x: source.c, y: source.r, w: 1, h: 1, localeMeta: true });
+      } else if (source.type === combatDeps.TileType?.ROCK) {
+        const id = `${KEY}_natural_cliff_${source.c}_${source.r}`; // Hard blocker, intentionally excluded from prepareClutter's mutable prefix.
         tile.occupiedBy = id;
         objects.push({ id, type: 'unique', x: source.c, y: source.r, w: 1, h: 1, localeMeta: true });
       }
@@ -835,7 +843,8 @@
       if (prior) {
         if (prior.light) prior.light.parent?.remove?.(prior.light);
         if (prior.record) window.FoliageFurnitureRuntime?.unregisterExternalInstance?.(camp.zoneId, prior.record.id); // Avoid stale seat hitboxes during asynchronous mesh retries.
-        disposeObject3D(prior.mesh);
+        if (prior.sharedFoliage) prior.mesh?.parent?.remove?.(prior.mesh); // Foliage's cloned prototype shares cached V27 geometry; never dispose that shared geometry on a scene rebuild.
+        else disposeObject3D(prior.mesh);
         camp.propMeshes.delete(prop.id);
       }
       const col = prop.x + (prop.w || 1) * 0.5; // Runtime center used by fire/crate meshes and terrain sampling.
@@ -2124,7 +2133,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView }),
   });
 
   tribeRuntimes.push(api);
