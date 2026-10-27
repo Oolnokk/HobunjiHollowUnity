@@ -665,7 +665,7 @@
     }
 
     function raiseBlockPose(deps) {
-      const shapeStats = window.WeaponShapeStats.current(); // Defensive raise uses the weapon's real animation speed.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Defensive raise uses the weapon's real animation speed.
       deps.triggerWeaponHoldVisual((BLOCK_WINDUP_S + BLOCK_STRIKE_S) / shapeStats.speed, {
         anim: 'sweep',
         pose: BLOCK_POSE,
@@ -680,8 +680,7 @@
       const deps = window.Combat.deps;
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')
         || { afflictions: {}, stats: {} };
-      const staminaCost = window.WeaponShapeStats.stamina(Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5)
-        * (1 + (effects.stats.absorbMul || 0)));
+      const staminaCost = (Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5) * (1 + (effects.stats.absorbMul || 0)) / (window.WeaponShapeStats?.current?.()?.efficiency || 1));
       window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.playCounterShieldBlockSfx?.(deps.player.x, deps.player.y, deps.getCurrentArea());
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
@@ -701,7 +700,7 @@
 
     function triggerCounter(effects) {
       const t = now();
-      const shapeStats = window.WeaponShapeStats.current(); // Separate counter lockout must follow the visual attack tempo.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Separate counter lockout must follow the visual attack tempo.
       const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0)) / shapeStats.speed;
       if (t - lastCounterAt < cooldownS) return;
       const deps = window.Combat.deps;
@@ -802,7 +801,7 @@
 
     function onHoldStart() {
       const deps = window.Combat.deps;
-      if (deps.player.stamina <= window.WeaponShapeStats.stamina(MIN_STAMINA_TO_RAISE)) {
+      if (deps.player.stamina <= (MIN_STAMINA_TO_RAISE / (window.WeaponShapeStats?.current?.()?.efficiency || 1))) {
         restorePlayerPresentationScene(deps);
         logPresentationSnapshot('raise-failed', true);
         deps.showToast('Counter Shield failed: no stamina.', false);
@@ -828,7 +827,7 @@
       );
       window.ResourceSystem?.spendStamina(
         deps.player,
-        Math.min(deps.player.stamina, window.WeaponShapeStats.stamina(DRAIN_PER_S * drainMul * dt)),
+        Math.min(deps.player.stamina, (DRAIN_PER_S * drainMul * dt / (window.WeaponShapeStats?.current?.()?.efficiency || 1))),
         'Counter Shield (holding)'
       );
       if (deps.player.stamina <= 0) {
