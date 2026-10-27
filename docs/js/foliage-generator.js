@@ -2087,11 +2087,15 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const guide=settings.style==='natural'?null:surfaceGuideEdges(triangles,cells,large,keyOf,cellSize,settings.radius,settings.style==='cornerFill'); // Edge topology is computed only for guided styles.
     const edgeStarts=guide?(guide.boundaries.length?guide.boundaries:guide.corners.length?guide.corners:Array.from(guide.all.values()).slice(0,1024)):[];
     const strandCount=settings.style==='wrap'
-      ? Math.min(settings.density>=.995?24:96,Math.max(1,Math.round(totalArea*settings.density/Math.max(.4,settings.length*Math.max(.16,settings.radius*8)))))
+      ? Math.min(settings.density>=.995?24:96,Math.max(1,Math.round(settings.count*(.25+settings.density*1.75))),Math.max(1,Math.round(totalArea*settings.density/Math.max(.4,settings.length*Math.max(.16,settings.radius*8)))))
       : settings.count; // Strict cap on mobile tube geometry, independent of target size.
     const steps = Math.min(400, Math.ceil(settings.length / Math.min(.15, Math.max(.025, settings.radius * 3)))), step = settings.length / steps; // Bounded density protects mobile previews.
     const occupancy=settings.style==='wrap'?new Map():null,coverageCellSize=Math.max(.18,settings.radius*8); // Shared coverage visits repel new strands from occupied areas.
-    const coverageKey=p=>Math.floor(p.x/coverageCellSize)+','+Math.floor(p.y/coverageCellSize)+','+Math.floor(p.z/coverageCellSize);
+    const coverageKey=(p,n)=>{ // Keep perpendicular faces independent so corner growth does not count as coverage of a neighboring wall.
+      const x=Math.abs(n.x),y=Math.abs(n.y),z=Math.abs(n.z);
+      const face=x>y&&x>z?'x'+Math.sign(n.x):y>z?'y'+Math.sign(n.y):'z'+Math.sign(n.z);
+      return face+':'+Math.floor(p.x/coverageCellSize)+','+Math.floor(p.y/coverageCellSize)+','+Math.floor(p.z/coverageCellSize);
+    };
     if(settings.style==='cornerFill')appendCornerGrowth(guide,settings,random,seed,geometries);
     for (let strand=0; strand<(settings.style==='cornerFill'?0:strandCount); strand++) {
       const area = random()*totalArea; // Binary search picks an area-weighted starting face.
@@ -2118,7 +2122,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           let turn=0,bestScore=Infinity;
           for(let choice=-2;choice<=2;choice++){
             const angle=choice*(.19+settings.curl*.16),trial=direction.clone().applyAxisAngle(normal,angle);
-            const ahead=anchor.clone().addScaledVector(trial,step*3),visits=occupancy.get(coverageKey(ahead))||0;
+            const ahead=anchor.clone().addScaledVector(trial,step*3),visits=occupancy.get(coverageKey(ahead,normal))||0;
             const score=visits+Math.abs(choice)*.12+random()*.08; // Repulsion, with mild smoothing so vines don't jitter in place.
             if(score<bestScore){bestScore=score;turn=angle;}
           }
@@ -2157,7 +2161,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
         direction.copy(closest).sub(anchor).normalize();anchor=closest;current=best;normal=current.normal.clone();
         points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset));
-        if(strandCells){const key=coverageKey(anchor);if(!strandCells.has(key)){strandCells.add(key);occupancy.set(key,(occupancy.get(key)||0)+1);}}
+        if(strandCells){const key=coverageKey(anchor,normal);if(!strandCells.has(key)){strandCells.add(key);occupancy.set(key,(occupancy.get(key)||0)+1);}}
       }
       if(points.length<2)continue;
       if (settings.kind === 'vines' && settings.hangLength > 0 && random() < settings.hangChance) {
