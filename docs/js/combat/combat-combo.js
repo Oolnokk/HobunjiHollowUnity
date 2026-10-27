@@ -128,7 +128,7 @@
     function onTap() {
       if (busyAction) return; // previous step's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
-      const shapeStats = window.WeaponShapeStats.current(); // Applies this equipped weapon's tempo, stamina, and hit geometry.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Applies this equipped weapon's tempo, stamina, and hit geometry.
       // Footing/impact stagger lockout (see combat-core.js's isStaggered/
       // beginStagger, set by game.js's damagePlayer) — a staggered player
       // can't start a new combo step until it clears.
@@ -168,7 +168,7 @@
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
-      window.ResourceSystem?.spendStamina(deps.player, window.WeaponShapeStats.stamina(step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)), shapeStats), step.name);
+      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency), step.name);
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
