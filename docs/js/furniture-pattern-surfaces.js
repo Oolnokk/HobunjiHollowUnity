@@ -353,8 +353,7 @@
       if (!source) continue;
       source.patternMeshes = patterns.filter(child => child.userData.furniturePattern.slot === source.surfaceId || !child.userData.furniturePattern.slot.includes(':surface:'));
       pane.material.visible = !source.patternMeshes.length;
-      source.projectionImage = source.patternMeshes[0]?.material?.map?.image || source.solidProjectionImage || null; // Project the exact composed colors/motif seen on this pane.
-      source.projectionPalette = source.patternMeshes[0]?.userData?.furniturePattern?.palette || null;
+      source.projectionPalette = source.patternMeshes[0]?.userData?.furniturePattern?.palette || null; // Shared fake daylight softly blends these authored dyes; no texture or floor projection is needed.
     }
   }
 

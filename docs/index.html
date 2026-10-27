@@ -245,7 +245,7 @@
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
   <script src="js/authored-furniture-runtime.js?v=20261025h9b3cc58"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261026hOverpassInk3"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261027hglassC1"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -688,7 +688,7 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20261018indoorweather"></script>
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
-  <script src="js/daylight-window-runtime.js?v=20261026hf5024af"></script>
+  <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
   <script src="js/house-window-linkage.js?v=20261013h3535ff0"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
@@ -711,7 +711,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261026h04430a8"></script>
+  <script src="js/cloud-forest-fog.js?v=20261027hglassA1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -2638,7 +2638,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261026h8475cb2"></script>
+  <script src="js/pixel-probe.js?v=20261027hglassProbe1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
