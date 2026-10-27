@@ -14,6 +14,8 @@ global.window = { __farmLog() {}, Combat: { deps: {
 } } };
 global.localStorage = { getItem() { return null; } };
 global.fetch = async () => { throw new Error('offline test'); };
+global.setTimeout = () => 0; // Retry scheduling is tested separately; this test owns only the combat clock.
+global.clearTimeout = () => {}; // Matches the isolated retry timer above.
 global.performance = { now: () => wallMs };
 vm.runInThisContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { filename: 'shared-attack-pose.js' }); // Shared pose math the stance runtime delegates to.
 vm.runInThisContext(fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'), { filename: 'weapon-tool-stances.js' });

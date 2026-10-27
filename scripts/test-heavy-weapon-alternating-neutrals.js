@@ -17,6 +17,8 @@ const lightPose = { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40,
 global.window = { __farmLog() {} }; // Browser namespace consumed by the runtime module.
 global.localStorage = { getItem() { return null; } }; // No editor override: exercise committed defaults.
 global.fetch = async () => { throw new Error('offline test'); }; // Prevents a real config request while preserving the fallback path.
+global.setTimeout = () => 0; // Keep fallback pose checks independent of retries exercised by the recovery test.
+global.clearTimeout = () => {}; // Matches the isolated retry timer above.
 global.performance = { now: () => 1000 }; // Deterministic clock for runtime setup.
 vm.runInThisContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { filename: 'shared-attack-pose.js' }); // Shared pose math the stance runtime delegates to.
 vm.runInThisContext(spacingSource, { filename: spacingPath });
