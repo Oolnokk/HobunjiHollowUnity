@@ -73,6 +73,19 @@ assert.equal(t.toolKey, 'bronzehoe');
 assert.match(t.activity, /tilling/);
 assert.ok(Math.abs(t.c - 5) <= 1 && Math.abs(t.r - 5) <= 1);
 assert.equal(target('aliri').id, t.id, 'the claim is sticky between planner ticks');
+// Plot overrides must yield before festivals and flood evacuation, including in-flight jobs.
+win.FestivalSystem = { festivalHours: () => true };
+assert.equal(target('aliri'), null, 'festival attendance takes precedence over Ginju farmwork');
+assert.ok(!api.snapshot().claims.some(c => c.npc === 'aliri'), 'festival releases claimed field tiles');
+win.FestivalSystem.festivalHours = () => false;
+t = target('aliri');
+win.WaterSystem = { isTownFloodEmergency: () => true };
+tick(); // A flood interrupts ongoing work even before the next target lookup.
+assert.ok(!api.snapshot().claims.some(c => c.npc === 'aliri'), 'flood interrupts in-flight crop work');
+assert.equal(target('aliri'), null, 'flood shelter takes precedence over Ginju farmwork');
+win.WaterSystem.isTownFloodEmergency = () => false;
+t = target('aliri');
+
 
 // Do the till job (NPC stands at the spot).
 walkers.aliri.root.position.x = t.c + 0.5; walkers.aliri.root.position.z = t.r + 0.5;
