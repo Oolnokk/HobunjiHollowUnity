@@ -251,8 +251,14 @@
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(pos.x, pos.y, pos.z);
         const burdenMesh = window.Shattercasks?.registerFruit?.(zoneId, branch, mesh);
-        if (burdenMesh) meshMap.set(key, burdenMesh);
-        else zi.scene.add(mesh); // Keep the visible fruit until the shared Burden runtime is initialized.
+        if (!burdenMesh) zi.scene.add(mesh); // Keep a single visible fruit while the Burden runtime initializes.
+        meshMap.set(key, burdenMesh || mesh);
+      } else if (branch.fruit.available && meshMap.has(key)) {
+        const existing = meshMap.get(key); // Used to promote a provisional mesh and reconnect a rebuilt tree branch.
+        if (existing?.isMesh) {
+          const promoted=window.Shattercasks?.registerFruit?.(zoneId,branch,existing);
+          if (promoted) meshMap.set(key,promoted);
+        } else window.Shattercasks?.rebindFruitBranch?.(branch,zoneId,fruitWorldPos(branch));
       } else if (!branch.fruit.available && meshMap.has(key)) {
         // Respawned bookkeeping cleared the mesh from under us (e.g. a
         // reload mid-session) — drop the stale map entry so the next
