@@ -17,6 +17,7 @@ function section(start, end) {
 }
 const loadSource = section('    function drawMotifImageIntoSketch(source) {', '    function syncInputsFromCfg()'); // Extracts the implementation unchanged for execution.
 const applySource = section('    function applyPatternData(data) {', '\n    if (cfg.motifDataUrl'); // Includes the actual unlocked-library selection handler.
+const previewSource = section('    function schedulePreview() {', '    behindToggleBtn.addEventListener'); // Tests actual asynchronous preview invalidation, not a reimplemented renderer.
 const images = []; // Simulated browser PNG requests, completed manually to exercise races.
 const draws = []; // Records which artwork the real draw function actually put on the sketch.
 let undoCount = 0; // Ensures each selection is undoable, even when the PNG fails.
@@ -122,4 +123,53 @@ for (const entry of catalog.patterns) {
     assert(fs.existsSync(path.join(docs, definition.motifPng)), entry.id + ' motif PNG is shipped alongside its definition');
   }
 }
-console.log('Pattern Authoring repository PNG import, stale-load protection and embedded motif regression passed');
+// Verify that a slow prior preview cannot repaint the old item during the redraw debounce.
+const previewHarness = vm.runInContext(`(() => {
+  let previewTimer = 0, previewToken = 0, previewView = 'front', closed = false;
+  let motifLoadPending = false, motifLoadError = '', motifInk = true;
+  let finish = null, previewClearCount = 0;
+  const rendered = [];
+  const previewCanvas = { width: 64, height: 64 };
+  const previewCtx = {
+    clearRect() { previewClearCount++; },
+    drawImage(value) { rendered.push(value.id); },
+  };
+  const previewStatus = { textContent: '' };
+  const previewController = null;
+  const options = { renderPreview: () => new Promise(resolve => { finish = resolve; }) };
+  const window = { clearTimeout() {}, setTimeout() { return 1; } };
+  const currentPatternData = () => ({ motifDataUrl: motifInk ? 'data:image/png;base64,AA==' : null });
+  ${previewSource}
+  return {
+    runPreview, schedulePreview,
+    complete: value => finish(value),
+    rendered,
+    setInk: value => { motifInk = value; },
+    setPending: value => { motifLoadPending = value; },
+    setError: value => { motifLoadError = value; },
+    status: () => previewStatus.textContent,
+    cleared: () => previewClearCount,
+  };
+})()`, vm.createContext({ console }));
+
+(async () => {
+  const oldPreview = previewHarness.runPreview();
+  previewHarness.schedulePreview(); // Mirrors selecting a new library motif while the previous preview is in flight.
+  previewHarness.complete({ id: 'old', width: 64, height: 64 });
+  await oldPreview;
+  assert.equal(previewHarness.rendered.length, 0, 'debounced new selections invalidate old asynchronous previews immediately');
+
+  previewHarness.setInk(false);
+  previewHarness.setPending(true);
+  await previewHarness.runPreview();
+  assert.equal(previewHarness.status(), 'Loading motif artwork…', 'slow imported PNGs show loading status');
+  previewHarness.setPending(false);
+  previewHarness.setError('Could not load motif artwork.');
+  await previewHarness.runPreview();
+  assert.equal(previewHarness.status(), 'Could not load motif artwork.', 'failed import status survives scheduled preview refresh');
+  assert(previewHarness.cleared() >= 2, 'empty previews clear their previous image instead of showing stale artwork');
+  console.log('Pattern Authoring repository PNG import, failed-load safety, async preview and embedded motif regression passed');
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
