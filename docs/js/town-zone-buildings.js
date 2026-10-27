@@ -210,6 +210,17 @@
       window.FestivalProps?.decorate(result.mesh, d);
       const y = deps.NORMAL_TOP + _tileVisualHeight(townMap, d.col, d.row);
       applyPlacementTransform(result.mesh, d, y);
+      // Map Editor keeps the source wall contact in wallAttachment; normalOffset
+      // moves the sign/banner BODY, while its authored support grows back to
+      // that contact when the zone rebuilds after loading a save.
+      if(d.wallAttachment && window.WallOrnamentPlacement?.loadAttachment){
+        Promise.resolve(window.WallOrnamentPlacement.loadAttachment(d.key,
+          deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {}))
+          .then(meta=>{if(meta&&result.mesh.parent)
+            window.WallOrnamentPlacement?.stretchWallSupport?.(
+              result.mesh,meta,d.wallAttachment,d.key);})
+          .catch(error=>deps.debugLog('Mounted wall support: '+String(error?.message||error),'warn'));
+      }
       if (result.light) {
         result.light.position.x += d.postX || 0;
         result.light.position.y += y + (d.postY || 0);
@@ -576,6 +587,17 @@
       if (!result) continue;
       const y = deps.NORMAL_TOP + (d.elevTier || 0) * deps.PLATEAU_UNIT;
       applyPlacementTransform(result.mesh, d, y);
+      // Map Editor keeps the source wall contact in wallAttachment; normalOffset
+      // moves the sign/banner BODY, while its authored support grows back to
+      // that contact when the zone rebuilds after loading a save.
+      if(d.wallAttachment && window.WallOrnamentPlacement?.loadAttachment){
+        Promise.resolve(window.WallOrnamentPlacement.loadAttachment(d.key,
+          deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {}))
+          .then(meta=>{if(meta&&result.mesh.parent)
+            window.WallOrnamentPlacement?.stretchWallSupport?.(
+              result.mesh,meta,d.wallAttachment,d.key);})
+          .catch(error=>deps.debugLog('Mounted wall support: '+String(error?.message||error),'warn'));
+      }
       if (result.light) {
         result.light.position.x += d.postX || 0;
         result.light.position.y += y + (d.postY || 0);
