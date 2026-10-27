@@ -230,6 +230,9 @@ elementMap.get('iiName').textContent = 'Test Mastery Scroll ×1';
 api.refreshInventoryUseButton();
 assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryScroll', 'switching directly from a tablet to a scroll resolves the new lesson');
 assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/);
+assert.equal(elementMap.get('inventoryDirectUseBtn')?.onclick(), true, 'newly selected mastery scroll Read button invokes its own item key');
+assert.equal(inventory.masteryScroll, 0, 'reading the scroll does not consume the previously selected tablet or food');
+assert.equal(inventory.masteryTablet, 1, 'reading the scroll leaves the tablet for its own independent Read action');
 selectedPackKey = null; // Remaining direct-use tests simulate a programmatic panel, not a grid click.
 documentStub.querySelector = undefined;
 
