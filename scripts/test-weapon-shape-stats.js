@@ -47,6 +47,9 @@ load('docs/js/combat/weapon-shape-stats.js');
 load('docs/js/combat/combat-attack-events.js');
 const stats = window.WeaponShapeStats; // Single production resolver for all assertions.
 assert.deepEqual([...Object.keys(stats.DEFAULT)].sort(), ['efficiency', 'power', 'range', 'speed']);
+const foundryConfig = window.ModularWeapons.getConfig(); // All authored donors must have an intentional profile instead of silent neutral fallback.
+const donorShapes = [...new Set([...Object.values(foundryConfig.shafts), ...Object.values(foundryConfig.heads)].map(part => part.sourceShape))]; // Covers forgeable, saved-legacy and editor-only pieces.
+for (const shape of donorShapes) assert(Object.hasOwn(stats.SHAPES, shape), `Foundry donor ${shape} is missing its shape stat profile`);
 for (const [shape, expected] of Object.entries({
   warhammer: [1.5, 0.75, 1],
   dagger: [0.5, 2.0, 0.25],
