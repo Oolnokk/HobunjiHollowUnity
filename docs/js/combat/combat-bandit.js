@@ -864,6 +864,7 @@
     c._banditSwingDirSign = 1;
     c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1;
+    c._banditSwingWindupCurve = null;
     c.telegraphState = 'windup';
     c.facing = towardAngle;
     c._banditAction = window.Combat.beginStagedAction({
@@ -1111,6 +1112,7 @@
     c._banditSwingDirSign = 1;
     c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1; // Used by updateBanditToolMesh to clear any sampled partial Charged Breaker amplitude after the action ends.
+    c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = 0;
     c._banditSwingReturnS = 0;
   }
@@ -1234,6 +1236,15 @@
     return true;
   }
 
+  // Stops a lunge wherever it is (stagger, death, leaving chase). updateBanditLunge
+  // only lowers the hop while it runs, so a lunge cut off mid-arc must lower it
+  // here or the bandit stays drawn (and collides) in mid-air until its next lunge.
+  function cancelBanditLunge(c) {
+    if (!c) return;
+    c._banditLunging = false;
+    c._banditLungeHopCurrent = 0;
+  }
+
   function fireBanditComboStep(c, def, loadout, targetPlayer) {
     const comboData = window.Combat?.comboData;
     const steps = comboData?.[loadout.tap1];
@@ -1266,9 +1277,11 @@
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail. // lunge direction locks off c.facing -- must be fresh, not last frame's
     c.telegraphState = 'windup';
-    c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
-    c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
-    c._banditSwingPoseScale = 1;
+    // The same authored pose the player's combo plays for this step (power already applied), or the step's own.
+    const stepPose = window.Combat?.comboStepPose?.(loadout.tap1, step) || null;
+    c._banditSwingAnim = step.anim; c._banditSwingPose = stepPose || step.pose || null;
+    c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = stepPose ? 1 : (step.power || 1);
+    c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (step.holdS || 0) / shapeStats.speed; c._banditSwingReturnS = (step.returnS || 0) / shapeStats.speed; // Same pause / finisher tail combat-combo.js hands the player's swing visual.
     beginBanditLunge(c, deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), (step.windupS + step.strikeS) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
     // Tracked so onComplete below can tell a whiff from a landed hit --
@@ -1343,9 +1356,9 @@
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
     c.telegraphState = 'windup';
-    c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
+    c._banditSwingAnim = 'thrust'; c._banditSwingPose = qa.quickAttackPose?.() || null; // The player's Quick Attack jab.
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
-    c._banditSwingPoseScale = 1;
+    c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (qa.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's quick attack swing visual gets.
     beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), (qa.WINDUP_S + qa.STRIKE_S) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
@@ -1401,6 +1414,13 @@
     c._banditSwingDirSign = 1;
     c._banditSwingPower = cb.POWER || 1.7;
     c._banditSwingPoseScale = chargeT; // Used by updateBanditToolMesh to show the sampled partial pose without changing the legacy heavy-attack identity field.
+    // The player's held windup decelerates (Combat.windupCurve with WINDUP_SLOWDOWN) over MAX_CHARGE_S / weapon speed;
+    // this swing covers the first windupS of that curve, so updateBanditToolMesh replays the same shape over this
+    // shorter windup. windupS is already divided by speed, so speed goes back in to find how much of the curve it covers.
+    const fullChargeS = Number(cb.MAX_CHARGE_S ?? cb.WINDUP_S) || 0;
+    c._banditSwingWindupCurve = fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
+      ? { slowdown: cb.WINDUP_SLOWDOWN, span: Math.min(1, windupS * shapeStats.speed / fullChargeS) }
+      : null;
     c._banditSwingHoldS = (cb.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's Charged Breaker release gets.
     // Bandit AI has no literal held input, so it samples a pose charge and
     // derives how long the shared nonlinear windup would need to reach it.
@@ -1441,6 +1461,7 @@
       },
       onCancel: () => finishBanditAction(c),
     });
+    if (c._banditSwingWindupCurve) c._banditSwingWindupCurve.action = c._banditAction; // The curve belongs to this one windup only.
     return true;
   }
 
@@ -2406,14 +2427,25 @@
     if (timelineLive) {
       progress = Math.min(1, elapsedS / banditTimeline.totalS);
       wf = banditTimeline.wf; sf = banditTimeline.sf; hf = banditTimeline.hf;
+      // A held windup (Charged Breaker) decelerates like the player's: replay the first `span` of the shared curve
+      // over this windup, renormalized so the windup still ends exactly on its (charge-scaled) Windup pose.
+      const curve = c._banditSwingWindupCurve;
+      const windupCurve = window.Combat?.windupCurve;
+      if (curve && action && curve.action === action && windupCurve && wf > 0 && progress < wf) {
+        const curveEnd = windupCurve(curve.span, curve.slowdown);
+        if (curveEnd > 1e-6) progress = wf * windupCurve((progress / wf) * curve.span, curve.slowdown) / curveEnd;
+      }
       if (handDriverRoot?.userData) {
         // Same timing AND weapon the player's hands get for the same swing: the tool key picks the hand mode, so a dual-wield
-        // weapon swings with both hands and a thrown flask with one.
-        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: sf, holdFrac: hf, poseScale: power }, pose || {}, 'attack', handDriverRoot.userData.proceduralHandToolKey || '') ?? null;
+        // weapon swings with both hands and a thrown flask with one. poseScale is the partial-charge fraction (the player's
+        // partial release), never the ability's power; progress is already eased above, and the player's own held-ability
+        // speed-up must not reach an enemy's hands (heldTransforms: false).
+        handDriverRoot.userData.proceduralHandAnimationGrip = window.HobunjiHandToolGrips?.animationGripAt?.(progress, { windupFrac: wf, strikeFrac: sf, holdFrac: hf, poseScale, heldTransforms: false }, pose || {}, 'attack', handDriverRoot.userData.proceduralHandToolKey || '') ?? null;
       }
     }
-    const timelineState = c._banditToolTimeline || (c._banditToolTimeline = { live: false, progress: 0, wf: 0.16, hf: 1 }); // Read by EnemyWeaponStances for the sweep-plane twist fade; one object per enemy, updated in place.
+    const timelineState = c._banditToolTimeline || (c._banditToolTimeline = { live: false, progress: 0, wf: 0.16, hf: 1, poseScale: 1 }); // Read by EnemyWeaponStances for the sweep-plane twist fade; one object per enemy, updated in place.
     timelineState.live = timelineLive; timelineState.progress = progress; timelineState.wf = wf; timelineState.hf = hf;
+    timelineState.poseScale = poseScale; // Partial Charged Breaker: the twist cancels by the same fraction as the player's partial release.
 
     // NEITHER c.facing NOR c.groupRot directly -- the weapon holder is a
     // standalone world object using the exact same rotation.y convention
@@ -2460,81 +2492,52 @@
 
     if (!banditPoseSample) banditPoseSample = SAP.createSample();
 
-    if ((anim === 'sweep' || anim === 'chop') && pose) {
-      const sampled = SAP.samplePose(banditPoseSample, pose, SAP.STYLE_NEUTRAL_POSE[anim] || SAP.STYLE_NEUTRAL_POSE.sweep, progress, wf, sf, hf, dirSign, power, 'attack');
-      const x = sampled.x, y = sampled.y, z = sampled.z;
-      const pitchRad = sampled.pitchRad;
-      const yawRad = sampled.yawRad;
-      const rollRad = sampled.rollRad;
-      const bodyYawRad = sampled.bodyYawRad;
-      const handBaseX = base.x * sampled.mirrorBlend; // 1 unless the pose authors a midline-flip sequence (Heavy weapons), exactly like the player's hand anchor.
-      // A true midline flip also reverses the sprite once the blend crosses the midpoint, as the player's does.
-      const planeMirrorSign = sampled.hasMirrorSequence ? (sampled.mirrorBlend < 0 ? -1 : 1) : null;
-      timelineState.planeMirrorSign = planeMirrorSign;
-      if (planeMirrorSign != null && spinMesh && anim === 'sweep') spinMesh.scale.x = Math.abs(spinMesh.scale.x) * planeMirrorSign;
-      const vθ = θ + bodyYawRad;
-      // Leans the avatar body itself into the swing too, not just the
-      // weapon -- matches the player's own updateToolMesh, which sets
-      // playerMesh.rotation.y = vθ in every branch (the whole character
-      // visibly winds up and follows through, not just their weapon).
-      // c.groupRot is θ's own space minus the constant aimAngleOffset
-      // (see θ's own comment above) -- the lean carries straight across
-      // by plain subtraction of that same constant, NOT by re-deriving
-      // from c.facing (which would flip bodyYawRad's own sign). Also
-      // updates c.groupRot itself (not just the live mesh rotation.y),
-      // so next frame's updateCreatureMesh lerp continues from this
-      // leaned angle instead of snapping back to the plain aim angle
-      // and re-leaning from scratch every single frame while the swing
-      // is active. Resolves to plain rest angle (no visible change) at
-      // rest, since bodyYawRad is 0 at progress=0 for every style here.
-      const vθGroup = vθ - aimOffset;
-      c.avatarRef.group.rotation.y = vθGroup;
-      c.groupRot = vθGroup;
-      const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
-      deps.qFac.setFromAxisAngle(deps.tUp, vθ);
-      deps.qToolYaw.setFromAxisAngle(deps.tUp, yawRad);
-      deps.qAnim.setFromAxisAngle(deps.xAxis, pitchRad);
-      deps.qRoll.setFromAxisAngle(deps.zAxis, rollRad);
-      holder.quaternion.copy(deps.qFac).multiply(deps.qToolYaw).multiply(deps.qAnim).multiply(deps.qRoll);
-      holder.position.set(
-        c.x / deps.TILE + vRX * (handBaseX + x) + vFX * z,
-        feetY + base.y + y,
-        c.y / deps.TILE + vRZ * (handBaseX + x) + vFZ * z,
-      );
-      scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Finished raw pose is orbited around this avatar's visual centroid (per-axis in the pose's own frame).
-    } else {
-      // THRUST -- the same SharedAttackPose.sampleLegacyThrust jab arc the
-      // player's thrust branch samples (windup-back / jab-forward / lateral /
-      // pitch / yaw / body yaw), used for pokeCombo, every Quick Attack, and the
-      // Counter Shield riposte. Its jab and lateral rest at 0 and its pitch at
-      // the 10.31 degree held-up tilt -- the authored attack-animation-editor
-      // rest values -- so a bandit's thrust weapon sits at true idle exactly
-      // where the player's does instead of staying pulled back mid-windup.
-      timelineState.planeMirrorSign = null;
-      const thrustSample = SAP.sampleLegacyThrust(banditPoseSample, progress, wf, sf, hf, power);
-      const jabOff = thrustSample.z;
-      const lateral = thrustSample.x;
-      const pitchRad = thrustSample.pitchRad;
-      const yawRad = thrustSample.yawRad;
-      const bodyYawRad = thrustSample.bodyYawRad;
-      const vθ = θ + bodyYawRad;
-      // Leans the avatar body itself into the thrust too -- see the
-      // matching comment in the sweep branch above.
-      const vθGroup = vθ - aimOffset;
-      c.avatarRef.group.rotation.y = vθGroup;
-      c.groupRot = vθGroup;
-      const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
-      deps.qFac.setFromAxisAngle(deps.tUp, vθ);
-      deps.qToolYaw.setFromAxisAngle(deps.tUp, yawRad);
-      deps.qAnim.setFromAxisAngle(deps.xAxis, pitchRad);
-      holder.quaternion.copy(deps.qFac).multiply(deps.qToolYaw).multiply(deps.qAnim);
-      holder.position.set(
-        c.x / deps.TILE + vRX * (base.x + lateral) + vFX * jabOff,
-        feetY + base.y,
-        c.y / deps.TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
-      );
-      scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Legacy thrust uses the same finished-point transform without changing rotation/timing.
-    }
+    // The player's style selection (game.js updateToolMesh): an authored pose for ANY style, else the legacy chop
+    // pose, sweep body turn or thrust jab -- all SharedAttackPose.sampleSwing. Every result is the same seven
+    // channels, placed below exactly like the player's pose-driven branch.
+    const sampled = SAP.sampleSwing(banditPoseSample, anim, pose, progress, wf, sf, hf, dirSign, power, 'attack');
+    const x = sampled.x, y = sampled.y, z = sampled.z;
+    const pitchRad = sampled.pitchRad;
+    const yawRad = sampled.yawRad;
+    const rollRad = sampled.rollRad;
+    const bodyYawRad = sampled.bodyYawRad;
+    // 1 unless the pose authors a midline-flip sequence (Heavy weapons) or is the legacy Backhand sweep, exactly like
+    // the player's hand anchor.
+    const handBaseX = base.x * sampled.mirrorBlend;
+    // A true midline flip also reverses the sprite once the blend crosses the midpoint, as the player's does.
+    const planeMirrorSign = sampled.hasMirrorSequence ? (sampled.mirrorBlend < 0 ? -1 : 1) : null;
+    timelineState.planeMirrorSign = planeMirrorSign;
+    if (planeMirrorSign != null && spinMesh && anim === 'sweep') spinMesh.scale.x = Math.abs(spinMesh.scale.x) * planeMirrorSign;
+    const vθ = θ + bodyYawRad;
+    // Leans the avatar body itself into the swing too, not just the
+    // weapon -- matches the player's own updateToolMesh, which sets
+    // playerMesh.rotation.y = vθ in every branch (the whole character
+    // visibly winds up and follows through, not just their weapon).
+    // c.groupRot is θ's own space minus the constant aimAngleOffset
+    // (see θ's own comment above) -- the lean carries straight across
+    // by plain subtraction of that same constant, NOT by re-deriving
+    // from c.facing (which would flip bodyYawRad's own sign). Also
+    // updates c.groupRot itself (not just the live mesh rotation.y),
+    // so next frame's updateCreatureMesh lerp continues from this
+    // leaned angle instead of snapping back to the plain aim angle
+    // and re-leaning from scratch every single frame while the swing
+    // is active. Resolves to plain rest angle (no visible change) at
+    // rest, since bodyYawRad is 0 at progress=0 for every style here.
+    const vθGroup = vθ - aimOffset;
+    c.avatarRef.group.rotation.y = vθGroup;
+    c.groupRot = vθGroup;
+    const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
+    deps.qFac.setFromAxisAngle(deps.tUp, vθ);
+    deps.qToolYaw.setFromAxisAngle(deps.tUp, yawRad);
+    deps.qAnim.setFromAxisAngle(deps.xAxis, pitchRad);
+    deps.qRoll.setFromAxisAngle(deps.zAxis, rollRad);
+    holder.quaternion.copy(deps.qFac).multiply(deps.qToolYaw).multiply(deps.qAnim).multiply(deps.qRoll);
+    holder.position.set(
+      c.x / deps.TILE + vRX * (handBaseX + x) + vFX * z,
+      feetY + base.y + y,
+      c.y / deps.TILE + vRZ * (handBaseX + x) + vFZ * z,
+    );
+    scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Finished raw pose is orbited around this avatar's visual centroid (per-axis in the pose's own frame).
     if (c.avatarRef?.riderMount) { holder.scale.setScalar(1); applyRiderMount(c, holder); }
     if (resetAfterDraw) {
       resetBanditSwingToNatural(c);
@@ -2784,6 +2787,7 @@
     updateTrailArc: () => {}, // Shared Combat.update owns ribbon lifetime; legacy API remains callable.
     fireCounterRiposte: fireBanditCounterRiposte,
     naturalSwing: banditNaturalSwing,
+    cancelLunge: cancelBanditLunge, // Stagger/death/leash cleanup: stops the lunge AND lowers its hop.
     finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.
     engagementReachPx: banditEngagementReachPx,
     RANK_LABEL: BANDIT_RANK_LABEL,

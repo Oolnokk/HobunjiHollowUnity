@@ -18,8 +18,10 @@ const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
 const cameraBridgeSource = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8'); // Shared perspective-point lunge wrapper must preserve the 3D flight profile.
 const config = JSON.parse(fs.readFileSync('docs/config/combat/attack-values.json', 'utf8')); // Authored production tuning.
 
-assert.match(coreSource, /function windupPoseProgress[\s\S]{0,500}Math\.log1p\(s \* t\) \/ Math\.log1p\(s\)/,
+assert.match(coreSource, /function windupCurve[\s\S]{0,500}Math\.log1p\(s \* t\) \/ Math\.log1p\(s\)/,
   'shared windup curve starts quickly and continuously slows toward the authored endpoint');
+assert.match(coreSource, /function windupPoseProgress[\s\S]{0,500}return windupCurve\(transformed, slowdown\)/,
+  'the player curve is the same shared curve after its held-action transforms');
 assert.match(gameSource, /function getWeaponSwingWindupPoseProgress\(\)[\s\S]{0,700}windupPoseProgress/,
   'game exposes the exact visible Neutral→Windup interpolation rather than a separate charge clock');
 assert.match(gameSource, /function partialCombatPoseAtCharge[\s\S]{0,1800}next\[phase\]\[key\] = neutral \+ \(endpoint - neutral\) \* t/,

@@ -13,11 +13,14 @@ the code that turns an attack pose into this frame's tool and body channels. It 
 - `fourPhaseLerp` / `sequencedPoseLerp` — the neutral → windup → strike → hold → neutral timeline (and the `load` / `fire` ranged sequences). Mirrors the attack-animation editor's `poseAt()`.
 - `STYLE_NEUTRAL_POSE` — each style's rest pose and the fallback for any channel a pose omits.
 - `samplePose` — merge over the style neutral, power scaling, Backhand mirroring (`x`, `yaw`, `roll`, `bodyYaw`), midline-flip blend.
-- `LEGACY_THRUST` / `LEGACY_SWEEP` / `LEGACY_CHOP_POSE` + `sampleLegacyThrust` — the old procedural arcs, written once; the stance baker (`legacyProceduralEndpoints`) reads the same numbers.
+- `LEGACY_THRUST` / `LEGACY_SWEEP` / `LEGACY_CHOP_POSE` + `sampleLegacyThrust` / `sampleLegacySweep` — the old procedural arcs, written once; the stance baker (`legacyProceduralEndpoints`) reads the same numbers.
+- `sampleSwing` — the player's style selection in one call: an authored pose for any style, else the legacy chop / sweep / thrust arc. The enemy renderer samples every swing through it and places the result exactly like the player's pose-driven branch.
 - `bakeAttackEndpoints`, `effectiveDirSign`, `neutralInputForSigns` — how an attack is baked against a replacement Light/Heavy Neutral (power, `MeleePoseSpacing`, handedness).
 - `swingTimeline` / `holdFrac` — the player's swing clock (post-strike hold, proportional return tail, wf/sf/hf).
 
 Authored pose *data* (`attack-pose-templates.js`, `combat-combo.js`, the weapon stance JSON) was already shared; this module shares the code that plays it.
+
+Which pose an attack plays has one source per ability, used by the player and every enemy alike: `Combat.comboStepPose(comboId, step)` for combo steps (bandits and lich casts too) and `Combat.quickAttackData.quickAttackPose()` for quick attacks. Both apply the editor's power rule, so callers pass power 1.
 
 ## The player's animations are authoritative
 
@@ -48,4 +51,8 @@ Everything on the per-frame path (`fourPhaseLerp`, `samplePose`, `sampleLegacyTh
 
 `animationGripAt` (`hand-tool-grips.js`) defaults an attack's windup/strike to two-handed and its Neutral to one-handed, which is exactly what the player's `prepareCombatOptions` spells out as explicit `secondaryGrip` / `dualWield` flags, so enemies get the same behavior from the same flags (authored flags on Windup/Strike ride through the baker). See above for the weapon-driven hand mode.
 
-Tests: `node scripts/run-tests.js shared-attack-pose player-pose-golden attack-editor-shared enemy-weapon-stances dual-wield`.
+## Held windups and hands
+
+An enemy's Charged Breaker covers the first part of the player's decelerating held-windup curve (`Combat.windupCurve`, the bare curve) over its own windup, so its pose, hands and blade twist reach the charge at the same rate the player's do. Weapon shape speed (`weapon-shape-stats.js`) shortens both sides' windup alike, so the enemy's curve span is its windup times speed over `MAX_CHARGE_S`. `Combat.windupPoseProgress` additionally applies the player's own held-ability transforms (Furious Charged Breaker); enemies never use it, and their hand-grip calls pass `heldTransforms: false` and the charge fraction as `poseScale`.
+
+Tests: `node scripts/run-tests.js shared-attack-pose player-pose-golden attack-editor-shared enemy-weapon-stances dual-wield enemy-player-attack-parity`. `test-enemy-player-attack-parity.js` runs the player's real combo/quick-attack code and the enemy's real fire functions and renderer, and checks they sample the same swing.
