@@ -138,7 +138,9 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   }
   const route = T.__test.legRoute(caravan, 1);
   assert.ok(route, 'a routed approach to the authored market is available');
-  assert.deepEqual([route.points.at(-1).x, route.points.at(-1).z], [22.5, 20.5], 'market is the authored station, not the gate centroid');
+  const market = route.points.at(-1);
+  assert.ok(Math.hypot(market.x - 22.5, market.z - 20.5) > 0, 'merchant avoids overlapping the NPC vendor station');
+  assert.ok(Math.hypot(market.x - 22.5, market.z - 20.5) <= 2.5, 'caravan stays within the authored market area');
   for (let i = 1; i < route.points.length; i++) {
     const a = route.points[i - 1], b = route.points[i];
     for (let t = 0; t <= 1; t += 0.1) {
@@ -152,6 +154,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   caravan.members.forEach((_, i) => {
     const point = T.__test.memberTarget(caravan, i, route, (calendar.day + calendar.time01) * 24);
     assert.ok(grid.cost[Math.floor(point.z) * grid.cols + Math.floor(point.x)] >= 0, 'stationary trader is outside all buildings');
+    assert.notDeepEqual([Math.floor(point.x), Math.floor(point.z)], [22, 20], 'stationary trader does not overlap the market vendor');
   });
   assert.ok(caravan.members.every(member => member.gender === 'male'), 'new caravans contain only male traders');
 }
