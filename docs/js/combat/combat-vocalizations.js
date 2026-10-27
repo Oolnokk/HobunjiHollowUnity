@@ -400,7 +400,7 @@
     }, 2);
   }
 
-  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active', durationScale = 1) {
+  function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active', durationScale = 1, overlapGroup = null) {
     if (!url || !isHumanoidVocalEntity(entity)) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
@@ -425,6 +425,8 @@
     const claim = window.CharacterVoiceOwner?.request?.(entity, {
       kind: voiceKind,
       priority: voicePriority(voiceKind),
+      overlapGroup, // Release grunts retain other release tails while remaining higher priority than pain/breath.
+      preserveGroup: overlapGroup,
       fadeOutS: VOICE_FADE_OUT_S,
     }) || null;
     if (window.CharacterVoiceOwner && !claim) return { suppressed: true, reason: 'voice-priority', voiceKind, ...detail };
@@ -957,6 +959,8 @@ function beginCharge(options = {}) {
   token.voiceClaim = window.CharacterVoiceOwner?.request?.(entity, {
     kind: 'active',
     priority: voicePriority('active'),
+    overlapGroup: options.overlapGroup || null,
+    preserveGroup: options.preserveGroup || options.overlapGroup || null, // A new windup must not truncate a previous release tail.
     fadeOutS: VOICE_FADE_OUT_S,
   }) || null;
   if (window.CharacterVoiceOwner && !token.voiceClaim) { token.done = true; token.suppressed = true; return token; }
@@ -1127,6 +1131,7 @@ function beginCharge(options = {}) {
     if (!url) return;
     const played = durationS > 0 ? beginCharge({
       entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
+      overlapGroup: isCombo ? null : 'release-grunt',
       createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
       pitchOffsetSemitones: preset?.pitchOffsetSemitones,
     }) : playOneShot(
@@ -1137,6 +1142,8 @@ function beginCharge(options = {}) {
       isCombo ? 'combo-grunt' : 'release-grunt',
       { abilityId, category },
       'active',
+      1,
+      isCombo ? null : 'release-grunt',
     );
     debug.lastStrike = {
       atMs: Math.round(nowMs()),
@@ -1197,7 +1204,7 @@ function beginCharge(options = {}) {
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
       if (charge) liveChargesByAbility.delete(context.id);
-      if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category });
+      if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category, preserveGroup: 'release-grunt' });
       const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS) : null; // Rendered during the windup.
       const startRelease = elapsedS => {
         if (releaseStarted) return;
@@ -1276,6 +1283,7 @@ function beginCharge(options = {}) {
               category,
               targetDurationS: liveChargeTargetDurationS(id),
               catchUpOnRelease: true,
+              preserveGroup: 'release-grunt',
             }));
           }
           return result;
@@ -1384,7 +1392,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1412,6 +1420,7 @@ function beginCharge(options = {}) {
       lastBreathIntervalS: (() => { const p = player(); return p ? breathStateByEntity.get(p)?.lastIntervalS || 0 : 0; })(),
       trackedNpcBreathers: [...trackedBreathers].filter(entity => entity !== player()).length,
       activeVoiceOwner: window.CharacterVoiceOwner?.current?.(player()) || null,
+      activeReleaseGrunts: window.CharacterVoiceOwner?.debugSnapshot?.().filter(claim => claim.overlapGroup === 'release-grunt').length ?? 0, // Mobile diagnostics verify that simultaneous releases survive new attacks.
       activeCharges: [...activeChargeTokens].map(token => ({
         id: token.id,
         abilityId: token.abilityId,
