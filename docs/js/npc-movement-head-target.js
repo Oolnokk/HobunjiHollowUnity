@@ -20,8 +20,15 @@
 
   function updateWalker(walker, oldX, oldZ, options = {}) {
     if (!walker?.neckJoint || walker.animalDef || !walker.root?.position) return false;
-    // Higher-priority actors own neck pose completely; never reset or overwrite their transforms.
-    if (options.hasScriptedGaze || walker.area !== options.currentArea || walker._npcLodFar) {
+    // Higher-priority actors own neck pose completely; never reset their transforms.
+    if (options.hasScriptedGaze) { walker._npcMotionLookActive = false; return false; }
+    if (walker.area !== options.currentArea || walker._npcLodFar) {
+      // LOD/area changes must not strand the last movement gaze on a now-idle NPC.
+      if (walker._npcMotionLookActive) {
+        walker.neckJoint.rotation.set(0, 0, 0);
+        walker._lookAtDebug = null;
+        window.PerpRotation?.clearHeadtrackHint?.(walker.perpState);
+      }
       walker._npcMotionLookActive = false;
       return false;
     }
