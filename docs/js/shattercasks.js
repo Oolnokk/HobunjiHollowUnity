@@ -614,10 +614,17 @@
     }
     return null;
   }
-  function rebindFruitBranch(branch, mapId=area()) {
+  function rebindFruitBranch(branch, mapId=area(), position=null) {
     const fruit=fruitForBranch(branch,mapId); // Chunk rebuilding can replace branch objects without replacing the fruit mesh.
     if (!fruit || fruit.exploded) return false;
-    fruit.fruitBranch=branch;
+    if (fruit.fruitBranch!==branch) {
+      fruit.fruitBranch=branch;
+      if (position && [position.x,position.y,position.z].every(Number.isFinite)) {
+        fruit.group.position.set(position.x,position.y,position.z); // Keep fruit visually attached after a shifted/regenerated tree.
+        fruit.col=Math.floor(position.x);fruit.row=Math.floor(position.z);
+        refreshMeshBounds(fruit);
+      }
+    }
     return true;
   }
   function markFruitHarvested(burden) {
