@@ -1329,20 +1329,60 @@ const TOOL_PRESETS = [
 // Keep the two weapon-slot stance cards sourced from the same committed JSON
 // the live WeaponToolStances runtime reads. The literals above are only the
 // local-file/fetch-failure fallback, matching that runtime module's pattern.
-fetch('../../config/combat/weapon-idle-stances.json')
-  .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
-  .then(config => {
-    for (const [presetId, stanceId] of [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]) {
+const WEAPON_IDLE_POSE_FIELDS = ['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']; // Channels that distinguish a saved stance from a placeholder or user edit.
+let weaponIdlePresetRetryCount = 0; // Diagnostic retry count for transient stance fetch failures.
+let weaponIdlePresetRetryTimer = null; // One editor-owned recovery timer, separate from the idle-stance sidebar.
+function sameWeaponIdlePose(actual, expected) {
+  return WEAPON_IDLE_POSE_FIELDS.every(key => Number(actual?.[key]) === Number(expected?.[key]));
+}
+async function loadWeaponIdlePresets() {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null; // Prevent a stalled request from occupying the entire editing session.
+  const deadline = controller ? setTimeout(() => controller.abort(), 10000) : null; // Retry after a ten-second hung request.
+  try {
+    const response = await fetch('../../config/combat/weapon-idle-stances.json', {
+      cache: 'no-store', ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const config = await response.json();
+    const pairs = [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]; // The still-action templates sourced from the authored JSON.
+    if (config?.kind !== 'hobunji_weapon_idle_stances' || !pairs.every(([, key]) =>
+      WEAPON_IDLE_POSE_FIELDS.every(field => typeof config.stances?.[key]?.[field] === 'number' &&
+        Number.isFinite(config.stances[key][field])))) throw new Error('incomplete stance config');
+    for (const [presetId, stanceId] of pairs) {
       const preset = TOOL_PRESETS.find(entry => entry.id === presetId);
-      const pose = config?.stances?.[stanceId];
-      if (!preset || !pose) continue;
+      const pose = config.stances[stanceId];
+      if (!preset) continue;
+      // Refresh the preview already on screen only if every phase still matches the old placeholder.
+      // An authored slider/gizmo edit takes priority over an asynchronous configuration response.
+      const previewUnedited = currentAction()?.templateId === presetId
+        && ['neutral', 'windup', 'strike'].every(phase => sameWeaponIdlePose(anim.poses[phase], preset[phase]));
       preset.neutral = { ...pose };
       preset.windup = { ...pose };
       preset.strike = { ...pose };
+      if (previewUnedited) {
+        for (const phase of ['neutral', 'windup', 'strike']) {
+          anim.poses[phase] = { ...anim.poses[phase], ...pose };
+          syncPosePanelFromState(phase);
+        }
+        refreshJsonView();
+        refreshPreviewDebug();
+      }
     }
+    weaponIdlePresetRetryCount = 0;
     logDebug('Loaded Heavy/Light weapon stances from weapon-idle-stances.json');
-  })
-  .catch(error => logDebug(`Weapon stance config fetch failed (${error.message}) — using bundled fallbacks.`));
+  } catch (error) {
+    weaponIdlePresetRetryCount += 1;
+    const retryMs = Math.min(30000, 1000 * (2 ** Math.min(weaponIdlePresetRetryCount - 1, 5))); // Recover without reloading the editor.
+    logDebug(`Weapon idle preset fetch failed (${error?.message || error}); retrying in ${Math.round(retryMs / 1000)}s.`);
+    weaponIdlePresetRetryTimer = setTimeout(() => {
+      weaponIdlePresetRetryTimer = null;
+      void loadWeaponIdlePresets();
+    }, retryMs);
+  } finally {
+    if (deadline !== null) clearTimeout(deadline);
+  }
+}
+void loadWeaponIdlePresets();
 function applyPreset(preset) {
   if (preset.name) {
     anim.name = preset.name;
