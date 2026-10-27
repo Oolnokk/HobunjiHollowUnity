@@ -3451,7 +3451,7 @@ function plotPanelHtml(m) {
   let html = `<div style="margin-top:10px"><label>Farm plots (NPC-tended)</label>`;
   html += plots.map(p => `<div class="item ${p.id === activePlotId ? 'sel' : ''}" data-plotsel="${p.id}">
       <div class="item-name">${p.kind === 'till' ? '🌱' : '🕳️'} ${p.label.replace(/</g, '&lt;')}</div>
-      <div class="item-meta"><span data-plotcount="${p.id}">${p.tiles.length} tiles</span> · ${(p.tillers || p.diggers || []).length ? 'assigned' : 'unassigned (plain tiles)'}
+      <div class="item-meta"><span data-plotcount="${p.id}">${p.tiles.length} tiles</span> · ${(p.kind === 'till' ? ['tillers', 'seeders', 'harvesters'].some(role => (p[role] || []).length > 0) : (p.diggers || []).length > 0) ? 'assigned' : 'unassigned (plain tiles)'}
       <button class="bad" data-plotdel="${p.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div></div>`).join('') || '<p class="muted">Paint Tilled or Trench tiles to start a plot.</p>';
   const ap = plots.find(p => p.id === activePlotId);
   if (ap) {
