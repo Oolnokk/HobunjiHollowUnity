@@ -90,6 +90,7 @@ run('docs/js/romance-system.js');
 run('docs/js/npc-command-wheel.js');
 
 const W = windowStub;
+W.SCRATCHBONES_CONFIG.game.socialRelationships.relationships = []; // Live relation graph for newly born village children.
 const socialReplies=[]; // Acceptance and refusal must use ordinary ambient chatheads without changing date eligibility.
 W.AmbientDialogue={showSocialResponse:(walker,response)=>socialReplies.push({id:walker.rec.id,...response})};
 assert.ok(W.HobunjiActivityEvents && W.RomanceSystem && W.RomanceFamily && W.NpcCommandWheel && W.NpcRapport?.adjustRomance, 'all modules install');
@@ -284,6 +285,25 @@ W.NpcScheduling.registerNpcStations([{ id: 'chair_1', area: 'interior', c: 2, r:
 const daytime = new Set();
 for (let h = 7; h < 22; h += 0.5) { clock.hour = h; const t = W.RomanceSystem._test.scheduleOverride(tooth.rec); daytime.add(t ? t.activity : 'town'); }
 assert.ok(daytime.has('relaxing at home'), 'the spouse sits in the farmhouse chairs during the day');
+const townCfg = W.SCRATCHBONES_CONFIG.game.romance.spouse.townAfternoon;
+const oldTownMod = townCfg.daysOfWeekMod;
+townCfg.daysOfWeekMod = 1; // Force a scheduled town day and check farming cannot override it.
+clock.hour = 14;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), true, 'shared town visit eligibility is available to the Ginju work planner');
+const plotTarget = { area: 'farm', c: 12, r: 14, activity: 'tilling family plot' };
+let plotLookups = 0;
+W.NpcFarmPlots = { targetFor(_rec, options) { plotLookups++; assert.equal(options?.familyOnly, true); return plotTarget; } };
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec), null, 'authored town visits beat assigned family plot jobs');
+assert.equal(plotLookups, 0, 'farmwork not consulted on town-visit afternoons');
+clock.hour = 11;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, plotTarget.activity, 'morning assigned chores beat idle farm routines');
+clock.hour = 23;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, 'sleeping', 'bedtime beats assigned family plot jobs');
+delete W.NpcFarmPlots;
+townCfg.daysOfWeekMod = oldTownMod;
+
 
 // ── Family ──────────────────────────────────────────────────────────────
 const fam = W.RomanceFamily._test;
@@ -300,6 +320,8 @@ for (const channel of ['A', 'B', 'C']) assert.ok(Math.abs(mixed[channel].h) <= 6
 
 const child = W.RomanceFamily.createChild({ name: 'Pip', speciesId: 'engh-sho', gender: 'female', bodyColors: mixed, origin: 'birth', otherParentId: 'tooth_hatayap' });
 assert.equal(child.basketId, 'basket1', 'newborns get a baby basket in the house');
+assert.ok(W.SCRATCHBONES_CONFIG.game.socialRelationships.relationships.some(link =>
+  link.type === 'friend' && link.members.includes(child.id) && link.members.includes('gantami_ginju')), 'family child joins Gantami friendship network');
 assert.equal(fam.phaseOf(child), 'basket');
 assert.equal(fam.childTarget(child).activity, 'napping in the basket');
 let childRec = fam.childRecord(child);
@@ -319,6 +341,40 @@ assert.equal(childRec.childBodyScale, undefined, 'grown children use the shared 
 assert.equal(fam.toddlingFooting(child), 0);
 clock.hour = 12;
 assert.equal(fam.childTarget(child).area, 'farm', 'grown children leave the house during the day');
+assert.ok(childRec.tags.includes('villager'), 'grown children participate in villager social schedules');
+const townRules = W.SCRATCHBONES_CONFIG.game.romance.family.childTown; // Force deterministic town social tests without relying on day hashes.
+townRules.visitPercent = 100;
+townRules.peerMeetPercent = 100;
+const gantami = makeWalker({ id: 'gantami_ginju', name: 'Gantami Ginju', isChild: true }, 'town', 14.5, 18.5);
+npcWalkers.push(gantami);
+const townTarget = fam.childTarget(child);
+assert.equal(townTarget.area, 'town', 'grown children spend some afternoons in town');
+assert.match(townTarget.activity, /Gantami/, 'a present Gantami is the preferred town playmate');
+child.vatId = 'pending-vat-job';
+assert.equal(fam.childTarget(child).area, 'farm', 'vat assignments prevent unsupervised town trips');
+child.vatId = null;
+townRules.visitPercent = 0; // Restore farm behavior for the rest of the test.
+
+const priorPlan = fam.getFamily().pregnancy; // Save the old biological plan while exercising adoption deferrals.
+const dream = { spouseId: 'tooth_hatayap', kind: 'adoption', dueRawDay: clock.rawDay, announced: true, born: false };
+fam.getFamily().pregnancy = dream;
+const oldArea = player.area;
+player.area = 'interior';
+assert.equal(fam.postponeDream(1), true);
+assert.equal(dream.nextDreamRawDay, clock.rawDay + 1, 'one-day postponement persists as an absolute game day');
+let beforeDreamTimers = timeouts.length;
+W.dispatchEvent(new context.CustomEvent('hobunji-time-passage', { detail: { kind: 'sleep' } }));
+assert.equal(timeouts.length, beforeDreamTimers, 'postponed dream does not immediately reappear on sleep');
+clock.rawDay += 1;
+W.dispatchEvent(new context.CustomEvent('hobunji-time-passage', { detail: { kind: 'sleep' } }));
+assert.equal(timeouts.length, beforeDreamTimers + 1, 'dream is offered after the postponed day and a farmhouse sleep');
+assert.equal(dream.born, false, 'the dream cannot mark an adoption complete before character creation');
+assert.equal(fam.postponeDream(14), true);
+assert.equal(dream.nextDreamRawDay, clock.rawDay + 14, 'two-week postponement uses fourteen game days');
+assert.equal(fam.postponeDream(28), true);
+assert.equal(dream.nextDreamRawDay, clock.rawDay + 28, 'one-month postponement uses the 28-day calendar');
+fam.getFamily().pregnancy = priorPlan;
+player.area = oldArea;
 
 // ── Hold-Action-1 wheel claim ───────────────────────────────────────────
 W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isCombatActive: () => combatOn, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });

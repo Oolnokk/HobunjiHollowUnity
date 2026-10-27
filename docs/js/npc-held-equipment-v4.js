@@ -16,6 +16,7 @@
     spearhead_unumanuk: Object.freeze({ name: 'Spearhead', toolKey: 'fishingspear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', stance: 'light', mastery: 5, xp: 300, verdigris: 1 }),
   });
 
+  const activityPose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, sweep: false, dirSign: 1 }; // Scratch for ToolActivityStages.poseAt.
   const states = new Set(); // Managed live walkers, iterable for cleanup/debug.
   const stateByWalker = new WeakMap(); // Prevents duplicate update wrappers.
   const claimedRigs = new WeakMap(); // Per-hand ownership so walk/idle fallback cannot overwrite a held right hand.
@@ -530,6 +531,26 @@
       return;
     }
     stationVisual(walker.stationToolMesh, key, walker);
+    const activity = target?.toolActivity && window.ToolActivityStages?.ACTIVITIES?.[target.toolActivity] ? target.toolActivity : null;
+    if (activity) {
+      // Chop / mine / dig / fish: the player's own stage timeline and pose math (js/tool-activity-stages.js).
+      const now = performance.now();
+      if (state.activity !== activity) { state.activity = activity; state.activityClockS = 0; state.activityAt = now; }
+      state.activityClockS += Math.min(0.1, Math.max(0, (now - state.activityAt) / 1000));
+      state.activityAt = now;
+      const pose = window.ToolActivityStages.poseAt(activity, state.activityClockS, activityPose, Number(target.toolSpeed) || 1);
+      if (pose) {
+        setHolderPose(state, walker.stationToolMesh, pose);
+        const plane = walker.stationToolMesh.userData?.toolPlane;
+        if (plane) plane.rotation.z = pose.sweep ? -Math.PI / 2 : 0; // Same sweep-blade twist the player's updateToolMesh applies.
+        const visual = walker.stationToolMesh.userData?.npcGripVisualV4;
+        if (visual) visual.scale.x = Math.abs(visual.scale.x) * (pose.dirSign < 0 ? -1 : 1); // Backhand mirrors the whole tool.
+        state.mode = `station-${activity}`;
+        state.handsAttached = attachPrimaryHand(walker, walker.stationToolMesh, key, `station:${activity}`);
+        state.key = key;
+        return;
+      }
+    } else state.activity = null;
     if (key === 'hoe') {
       const interval = Math.max(.2, Number(target?.toolIntervalSec) || 2);
       const actionTime = Math.max(0, Number(walker.stationToolT) || 0);

@@ -60,7 +60,10 @@
     const btn   = document.getElementById('farmEditBtn');
     if (panel) panel.style.display = next ? 'flex' : 'none';
     if (btn)   btn.classList.toggle('fed-open', next);
-    if (next) deps.showToast('Farm editor active — click tiles to paint.', true);
+    if (next) {
+      window.FarmPlotEditor?.render?.(); // Refresh the spouse/child worker list after marriage, child growth, or save restoration.
+      deps.showToast('Farm editor active — click tiles to paint.', true);
+    }
   }
 
   function farmEditorSetBrush(type, value) {
@@ -83,6 +86,9 @@
     const farmEditBrush = deps.getFarmEditBrush();
 
     if (farmEditBrushType === 'terrain') {
+      // Tilled / trench strokes build family plot groups (js/farm-plot-editor.js). Painting into a plot that already has
+      // someone assigned only designates the tile — they till or dig it themselves instead of it becoming tilled at once.
+      if (window.FarmPlotEditor?.onTerrainPaint?.(col, row, farmEditBrush) === 'designate') { saveFarmLayout(); return; }
       const typeMap = {
         grass: deps.TileType.GRASS, weeds: deps.TileType.WEEDS, rock: deps.TileType.ROCK,
         shrub: deps.TileType.SHRUB, tilled: deps.TileType.TILLED, raised: deps.TileType.RAISED, trench: deps.TileType.TRENCH
@@ -127,6 +133,7 @@
       }
       tile.type = deps.TileType.GRASS; tile.crop = deps.CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
       if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
+      window.FarmPlotEditor?.onTerrainPaint?.(col, row, 'grass');
       deps.markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
     }
   }
@@ -247,6 +254,8 @@
     const shippingBoxObject = deps.getShippingBoxObject();
     const supplyBoxObject = deps.getSupplyBoxObject();
     const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
+    const farmPlots = window.FarmPlotEditor?.serialize?.() ?? previousLayout?.farmPlots;
+    if (farmPlots?.length) layout.farmPlots = farmPlots; // Persist assigned family plot groups alongside normal layout.
     if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
     if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
     for (let r = 0; r < deps.ROWS; r++) {
@@ -332,6 +341,7 @@
 
   function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
     if (!layout || layout.version !== 3) return;
+    window.FarmPlotEditor?.restore?.(layout.farmPlots);
     const grid = deps.getGrid();
     (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady, fertilized }) => {
       if (grid[r]?.[c]) {
@@ -556,6 +566,7 @@
       if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || !deps.getFarmEditMode() || deps.getCurrentArea() !== 'farm') return;
       e.stopPropagation();
       _editorPainting = true;
+      window.FarmPlotEditor?.beginStroke?.();
       const t = deps._screenToFarmTile(e.clientX, e.clientY);
       if (t) applyFarmEditBrush(t.col, t.row);
     });
@@ -565,7 +576,7 @@
       const t = deps._screenToFarmTile(e.clientX, e.clientY);
       if (t) applyFarmEditBrush(t.col, t.row);
     });
-    window.addEventListener('pointerup', () => { _editorPainting = false; });
+    window.addEventListener('pointerup', () => { _editorPainting = false; window.FarmPlotEditor?.endStroke?.(); });
 
     // Expose farm editor to the HTML panel buttons
     window._farmEditor = {
