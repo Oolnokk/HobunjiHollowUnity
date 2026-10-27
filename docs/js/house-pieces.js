@@ -11,9 +11,9 @@
   const naturalSurfaceScript = (file) => `${file}?v=${encodeURIComponent(naturalSurfaceUvVersion)}`; // Used only by the tightly-coupled natural-surface UV modules so stale child scripts cannot mix generations.
   const scripts = [
     ['SurfaceTint', 'surface-tint.js?v=20261007hec88e1c'],
-    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20261026h551bd56'],
+    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20261027h6c85b7e'],
     ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260915perf1'],
-    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261026h551bd56'],
+    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261027h6c85b7e'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
@@ -44,7 +44,7 @@
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261027campregrowth6'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261027campwallcache8'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261027h767bb32'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261026h8b17282'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.

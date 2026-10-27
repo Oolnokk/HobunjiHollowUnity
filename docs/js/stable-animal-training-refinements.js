@@ -214,7 +214,7 @@
       ids.add(id);
     }
     if (species === 'grehlr' && (!window.CreatureGenetics?.creatureSizeClass || window.CreatureGenetics.creatureSizeClass(entry.kind, entry.genotype) === 'medium')) ids.add('grehlrStink');
-    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (def.realAttackEvery === 1 ? 0 : 3) : id === 'rearKick' ? 4 : 1 }));
+    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (def.realAttackEvery === 1 ? 1 : 3) : id === 'rearKick' ? 4 : 1 }));
   }
 
   function effectIds(attackId) {
@@ -244,7 +244,7 @@
       const saved = raw.abilities?.[def.id]; // Reads only this animal's supported moves.
       const frequency = Number(saved?.frequency); // Nonfinite settings fall back to the species default.
       abilities[def.id] = {
-        frequency: Number.isFinite(frequency) ? capInt(frequency, 0, 4) : def.defaultFrequency,
+        frequency: Math.max(def.id === 'guardCharge' ? 1 : 0, Number.isFinite(frequency) ? capInt(frequency, 0, 4) : def.defaultFrequency), // Guard Charge is the always-available fallback (e.g. while Rear Kick cools down), so it can be rare but never Off.
         effect: effectIds(def.id).includes(saved?.effect) ? saved.effect : 'balanced',
       };
     }
@@ -304,7 +304,7 @@
     section.className = 'stable-tactical-loadout';
     section.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;';
     section.appendChild(makeText('div', 'Tactical Loadout', 'font-weight:800;'));
-    section.appendChild(makeText('div', 'Frequency is a relative share of combat actions. Effects reshape existing damage, knockback, Footing or afflictions. At least one move stays enabled. Changes save immediately.', 'font-size:11px;opacity:.85;'));
+    section.appendChild(makeText('div', 'Frequency is a relative share of combat actions. Effects reshape existing damage, knockback, Footing or afflictions. Guard Charge always stays on. Changes save immediately.', 'font-size:11px;opacity:.85;'));
     let settings = tacticsForEntry(entry); // Button cycles keep mobile taps and controller Confirm on the same path.
     const summary = makeText('div', '', 'font-size:11px;'); // Refreshes exact percentages after any frequency change.
     const frequencyButtons = []; // Keeps labels current without rerendering and losing controller focus.
@@ -332,7 +332,7 @@
     };
     const tempoUpdate = addCycle('Combat tempo', Object.keys(TEMPOS), () => settings.tempo, value => { settings.tempo = value; }, value => `${TEMPOS[value].label}${value === 'relentless' ? ' (25% shorter cooldown, 35% shorter retreat, +30% base Stamina)' : value === 'measured' ? ' (30% longer cooldown, 25% longer retreat, -20% base Stamina)' : ' (normal recovery and Stamina)'}`);
     for (const def of abilityDefs(entry)) {
-      frequencyButtons.push(addCycle(`${def.label} frequency`, [0, 1, 2, 3, 4], () => settings.abilities[def.id].frequency, value => { settings.abilities[def.id].frequency = value; }, value => FREQUENCIES[value]));
+      frequencyButtons.push(addCycle(`${def.label} frequency`, def.id === 'guardCharge' ? [1, 2, 3, 4] : [0, 1, 2, 3, 4], () => settings.abilities[def.id].frequency, value => { settings.abilities[def.id].frequency = value; }, value => FREQUENCIES[value]));
       addCycle(`${def.label} effect`, effectIds(def.id), () => settings.abilities[def.id].effect, value => { settings.abilities[def.id].effect = value; }, value => effectLabel(def.id, value));
     }
     function refresh() {

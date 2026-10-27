@@ -1898,6 +1898,26 @@
     c._lookAtDebug = null;
   }
 
+  // Fallback only while a humanoid hostile is actually moving without a
+  // committed combat gaze. All bandits, barbarians, ghouls, skeletons and
+  // minions reuse this portrait/neck rig; wildlife keeps its authored gaze.
+  function updateMovementHeadLook(c, dt, moving, movementHeading) {
+    if (!c?.avatarRef?.neckJoint || c.prone || !moving || !Number.isFinite(movementHeading)) return false;
+    if (c.state === 'chase' || c.state === 'patrol-chase' || c._banditAction || c._banditLunging) return false;
+    const carrot = window.NpcMovementHeadTarget; // Shared forward target used by town NPC walkers too.
+    if (!carrot) return false;
+    const head = window.CreatureHeadCache?.getHeadWorld?.(c, 'animal');
+    const eyeY = Number(head?.worldY); // Hostile group is model-center anchored, unlike an NPC walker's floor-root.
+    if (!Number.isFinite(eyeY)) return false;
+    const origin = { x: c.x / deps.TILE, y: 0, z: c.y / deps.TILE }; // World tile-space root used to place the invisible carrot.
+    const target = carrot.targetAhead(origin, Math.cos(movementHeading), Math.sin(movementHeading), eyeY);
+    if (!target) return false;
+    const residual = deps.angleDiff(movementHeading, Number(c.facing) || 0); // Camera-relative portrait/body yaw remains authoritative.
+    _updateBanditNeckYaw(c, residual * 180 / Math.PI, dt);
+    c._lookAtDebug = { head: { x: origin.x, y: eyeY, z: origin.z }, target }; // Existing mobile interaction-ray overlay visualizes the carrot when requested.
+    return true;
+  }
+
   function _updateBanditLookAtTarget(c, dt, targetPlayer) {
     if (!targetPlayer || targetPlayer.health <= 0) { restNeckLook(c, dt); return; }
     const rawAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
@@ -2754,6 +2774,7 @@
     rollRoster: rollBanditRoster,
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
+    updateMovementHeadLook,
     updateToolMesh: updateBanditToolMesh,
     updateTrailArc: () => {}, // Shared Combat.update owns ribbon lifetime; legacy API remains callable.
     fireCounterRiposte: fireBanditCounterRiposte,

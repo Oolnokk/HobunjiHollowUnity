@@ -736,7 +736,7 @@
       configureWoolMaterialData();
       const creatureDb = injectedDeps?.CREATURE_DB; // Live creature registry used by wilderness, farm, stable, and dev spawn paths.
       const registration = window.VoorgAssRegistration; // Creature defs + Northern Cliffs herd config live in js/voorg-ass-registration.js.
-      registration?.ensureCreatureDefs(creatureDb);
+      registration?.ensureCreatureDefs(creatureDb, injectedDeps?.TILE);
       const herds = registration?.ensureNorthernCliffsHerds(injectedDeps) || { zone: null, roaming: [], removedLegacyDenHerbivores: 0 };
       const replacements = herds.removedLegacyDenHerbivores;
       const roamingHerdSpecies = herds.zone ? herds.roaming : null;
