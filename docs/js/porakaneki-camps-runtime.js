@@ -1929,6 +1929,7 @@
 
     initializeReputation();
     authorChiefBehavior();
+    window.PorakanekiCampPlacementPolicy?.syncCurrentZoneClutter?.(); // Clear rock/boulder footprints before any tent or sitting log samples its ground elevation.
     ensureCurrentCampMeshes();
     // Start/promote nearby residents before attempting territory speech. Async
     // portrait construction may still finish on a later tick, in which case the
