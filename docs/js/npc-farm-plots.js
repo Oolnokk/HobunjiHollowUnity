@@ -246,7 +246,10 @@
     // This provider is registered before the festival and flood-shelter providers.
     // Town chores must release their workers so those higher-priority social/safety
     // schedules can take over. Family plots remain governed by the family routine.
-    if (!familyOnly && (window.WaterSystem?.isTownFloodEmergency?.() || window.FestivalSystem?.festivalHours?.())) return null;
+    if (!familyOnly && (window.WaterSystem?.isTownFloodEmergency?.() || window.FestivalSystem?.festivalHours?.())) {
+      releaseClaim(rec.id);
+      return null;
+    }
     const walker = deps?.findWalker?.(rec.id) || null;
     if (walker?._doorstepVisitor) return null;
     const claim = claimFor(rec.id, walker, { familyOnly });
@@ -283,9 +286,10 @@
     const dt = TICK_MS / 1000;
     const raining = !!deps.isRaining?.();
     if (raining) rainShower();
+    const townInterrupted = !!(window.WaterSystem?.isTownFloodEmergency?.() || window.FestivalSystem?.festivalHours?.());
     for (const [npcId, claim] of [...claims]) {
       const plot = plotsById.get(claim.plotId);
-      if (!plot) { releaseClaim(npcId); continue; }
+      if (!plot || (!plot.family && townInterrupted)) { releaseClaim(npcId); continue; }
       claim.ageS += dt;
       const walker = deps.findWalker?.(npcId);
       const at = walker?.area === claim.area && walker.root
