@@ -251,6 +251,8 @@
     const shippingBoxObject = deps.getShippingBoxObject();
     const supplyBoxObject = deps.getSupplyBoxObject();
     const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
+    const farmPlots = window.FarmPlotEditor?.serialize?.() ?? previousLayout?.farmPlots;
+    if (farmPlots?.length) layout.farmPlots = farmPlots; // Persist assigned family plot groups alongside normal layout.
     if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
     if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
     for (let r = 0; r < deps.ROWS; r++) {
