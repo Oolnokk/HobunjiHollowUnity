@@ -435,23 +435,42 @@
   }
 
   // ── Itinerary ───────────────────────────────────────────────────────
+  function isMarketStation(station) {
+    return /market/i.test(String(station?.id || station?.name || station?.label || ''));
+  }
+
+  function isReservedMarketTile(grid, c, r) {
+    return grid.area === 'town' && (grid.stations || []).some(station =>
+      isMarketStation(station) && station.col === c && station.row === r);
+  }
+
   function townMarketPoint(grid) {
-    // The two authored Ginju market stations identify the actual market, unlike
-    // the geographic midpoint of zone gates (which can land in a building).
-    const stations = (grid.stations || []).filter(station => /market/i.test(String(station.id || station.name || '')));
+    // Authored Ginju market stations anchor the market, but their exact tiles
+    // are occupied by those vendors. Park alongside them on clear ground.
+    const stations = (grid.stations || []).filter(isMarketStation);
     let best = null;
     for (const station of stations) {
       if (!Number.isFinite(station.col) || !Number.isFinite(station.row)) continue;
-      const point = snapToPassable(grid, station.col, station.row, 3);
-      if (!point) continue;
-      // Favor space for the entire stationary caravan, not just its leader.
-      let clearance = 0;
       for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
-        if (dc * dc + dr * dr <= 5 && passable(grid, point.c + dc, point.r + dr)) clearance++;
+        const distanceSq = dc * dc + dr * dr;
+        if (!distanceSq || distanceSq > 5) continue;
+        const c = station.col + dc, r = station.row + dr;
+        if (!passable(grid, c, r) || isReservedMarketTile(grid, c, r)) continue;
+        let clearance = 0;
+        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+          if (dx * dx + dz * dz <= 5 && passable(grid, c + dx, r + dz) && !isReservedMarketTile(grid, c + dx, r + dz)) clearance++;
+        }
+        const score = clearance * 2 - distanceSq * 3 + (grid.cost[r * grid.cols + c] === 1 ? 5 : 0);
+        if (!best || score > best.score) best = { point: { c, r }, score };
       }
-      if (!best || clearance > best.clearance) best = { point, clearance };
     }
-    return best?.point || null;
+    if (best) return best.point;
+    // Extremely crowded custom markets still keep the caravan on walkable ground.
+    for (const station of stations) {
+      const point = snapToPassable(grid, station.col, station.row, 3);
+      if (point) return point;
+    }
+    return null;
   }
 
   function resolvePoint(grid, area, spec) {
@@ -890,9 +909,21 @@
   // Keep follower offsets and the market ring out of occupied structures.
   function safeMemberPoint(route, x, z) {
     const grid = route?.grid;
-    if (!grid || passable(grid, Math.floor(x), Math.floor(z))) return { x, z };
-    const safe = snapToPassable(grid, x - 0.5, z - 0.5, 5);
-    if (safe) return { x: safe.c + 0.5, z: safe.r + 0.5 };
+    if (!grid || (passable(grid, Math.floor(x), Math.floor(z)) && !isReservedMarketTile(grid, Math.floor(x), Math.floor(z)))) return { x, z };
+    const c0 = Math.round(x - 0.5), r0 = Math.round(z - 0.5);
+    // Prefer the closest road-adjacent tile that does not belong to a town vendor.
+    let best = null, bestScore = Infinity;
+    for (let radius = 0; radius <= 5; radius++) {
+      for (let dr = -radius; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+        if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+        const c = c0 + dc, r = r0 + dr;
+        if (!passable(grid, c, r) || isReservedMarketTile(grid, c, r)) continue;
+        const score = Math.hypot(dc, dr) + (grid.cost[r * grid.cols + c] > 1 ? 0.5 : 0);
+        if (score < bestScore) { bestScore = score; best = { c, r }; }
+      }
+      if (best) break;
+    }
+    if (best) return { x: best.c + 0.5, z: best.r + 0.5 };
     const fallback = route.points[0];
     return { x: fallback?.x ?? x, z: fallback?.z ?? z };
   }
