@@ -29011,6 +29011,7 @@
         // offers (see combat-progression.js).
         currentWeaponDamageType,
         weaponDamageTypeForTool,
+        getWeaponDefinition: itemKey => TOOL_ITEM_DEFS[itemKey] || null, // Shape resolver reads equipment metadata without duplicating the item catalog.
         // Keys the loadout's per-weapon slot assignments (see
         // combat-loadout.js).
         currentWeaponKey,
