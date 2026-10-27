@@ -222,6 +222,14 @@
     return changed;
   }
 
+  function clearingStillApplied(grid, snapshots) {
+    for (const snapshot of snapshots) {
+      const tile = grid?.[snapshot.y]?.[snapshot.x]; // Checks the live terrain because daily rock regrowth can otherwise rebuild a boulder under an occupied camp.
+      if (tile && (tile.type !== 'grass' || tile.rockKind || tile.boulderId || tile.generatedObjectId || tile.generatedObjectType)) return false;
+    }
+    return true;
+  }
+
   function syncCurrentZoneClutter() {
     const accessors = window.GridTileAccessors;
     const zoneId = accessors?.getCurrentArea?.();
@@ -253,9 +261,9 @@
     }
 
     for (const instanceId of desired) {
-      if (applied.has(instanceId) && !restored) continue;
       const placement = placements.get(instanceId);
       if (!placement || placement.zoneId !== zoneId) continue;
+      if (applied.has(instanceId) && !restored && clearingStillApplied(grid, placement.snapshots)) continue; // Re-clear rock regrowth without rebuilding unchanged camps.
       for (const snapshot of placement.snapshots) changed = setSnapshotType(grid, snapshot, false) || changed;
       applied.add(instanceId);
     }
