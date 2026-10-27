@@ -250,12 +250,11 @@ elementMap.get('iiName').textContent = 'Chair Blueprint ×2'; // Real UI caption
 api.refreshInventoryUseButton();
 assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'chairBlueprint', 'a purchased furniture blueprint gets a Read button despite its displayed quantity');
 assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/, 'the furniture lesson is visibly readable from its Pack detail');
-assert.equal(api.useInventoryItem('chairBlueprint'), true, 'furniture lessons can be read directly from the bag');
+assert.equal(elementMap.get('inventoryDirectUseBtn').onclick(), true, 'the actual Pack Read button consumes a furniture lesson');
 assert.equal(inventory.chairBlueprint, 1, 'learning consumes exactly one copy');
+assert.equal(elementMap.get('iiName').textContent, 'Chair Blueprint ×1', 'reading updates the displayed remaining blueprint count without reopening Pack detail');
 assert.equal(windowStub.CraftingPanel.ownsBlueprint(furnitureBlueprint), true);
 assert.equal(api.getInventoryUseAction('chairBlueprint').allowed, false);
-elementMap.get('iiName').textContent = 'Chair Blueprint ×1'; // Remaining duplicate must display a disabled action, not spend another lesson.
-api.refreshInventoryUseButton();
 assert.equal(elementMap.get('inventoryDirectUseBtn')?.disabled, true, 'duplicate physical blueprints cannot consume again after learning');
 assert.equal(api.useInventoryItem('chairBlueprint'), false, 'duplicates are not consumed');
 assert.equal(inventory.chairBlueprint, 1);
