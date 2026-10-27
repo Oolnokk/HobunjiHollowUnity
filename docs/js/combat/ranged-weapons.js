@@ -1465,7 +1465,12 @@
     const def = defFor(itemKey);
     if (!def) return;
     c._rangedMode = true;
-    c._rangedAction = { kind, t: 0, durationS: kind === 'fire' ? def.fireDurationS : def.reloadDurationS, fired: false };
+    const isThrownFire = kind === 'fire' && def.rangedType === 'thrown'; // NPC throws combine the authored held windup and release in one attack, without a crossbow-style load action.
+    const chargeDurationS = isThrownFire ? Math.max(0, Number(def.chargeWindupS) || 0) : 0; // Used by release timing and the held spear/hatchet/dagger/kylie pose.
+    const fireDurationS = Math.max(0.01, Number(def.fireDurationS) || 0.01); // Remaining release/recovery time after a thrown charge.
+    const durationS = kind === 'fire' ? chargeDurationS + fireDurationS : def.reloadDurationS; // Crossbow, scatterbow and blowgun loading remains independent.
+    const releaseAtS = kind === 'fire' ? chargeDurationS + fireDurationS * def.fireAtFrac : null; // Absolute release timestamp shared by loaded and thrown NPC shots.
+    c._rangedAction = { kind, t: 0, durationS, chargeDurationS, releaseAtS, fired: false };
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c._rangedAimPitch = banditAimPitch(c, targetPlayer);
     if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
@@ -1556,9 +1561,9 @@
       action.t += dt;
       c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
       c._rangedAimPitch = banditAimPitch(c, targetPlayer);
-      if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * def.fireAtFrac) {
+      if (action.kind === 'fire' && !action.fired && action.t >= (action.releaseAtS ?? action.durationS * def.fireAtFrac)) {
         action.fired = true;
-        setLoaded(itemKey, false, c);
+        if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c); // A thrown weapon never enters the reload state; a fresh throwable is available after recovery.
         playRangedActionSfx(itemKey, 'fire', c);
         spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c, null, c._rangedAimPitch || 0);
       }
@@ -1583,7 +1588,7 @@
       return { aimAngle, moving, handled: true };
     }
 
-    if (!isLoaded(itemKey, c)) {
+    if (def.rangedType !== 'thrown' && !isLoaded(itemKey, c)) {
       if (c._rangedCooldownT <= 0) beginBanditAction(c, 'load', targetPlayer);
       return { aimAngle, moving: false, handled: true };
     }
@@ -1607,13 +1612,20 @@
     const action = c._rangedAction;
     const def = defFor(c.def.rangedWeaponKey);
     if (!def) return;
+    const thrown = def.rangedType === 'thrown'; // Used here to distinguish a visible held windup from a released projectile.
+    if (thrown && action?.kind === 'fire' && action.fired) { holder.visible = false; return; } // Do not render a duplicate weapon in the NPC's hand after the projectile leaves it.
     const actionPose = action ? poseForAction(def, action.kind) : null;
-    const neutral = actionPose?.neutral || idlePose(c.def.rangedWeaponKey, c);
+    const neutral = thrown ? (def.chargePose?.neutral || actionPose?.neutral) : (actionPose?.neutral || idlePose(c.def.rangedWeaponKey, c));
     holder.scale.setScalar(Number.isFinite(Number(neutral?.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
     let pose = neutral;
     if (action) {
-      const t = Math.min(1, action.t / action.durationS);
-      pose = poseAtAction(def, action.kind, t);
+      if (thrown && action.kind === 'fire' && action.chargeDurationS > 0 && action.t < action.chargeDurationS) {
+        pose = lerpPose(def.chargePose?.neutral || def.firePose.neutral, def.chargePose?.windup || def.firePose.neutral, action.t / action.chargeDurationS);
+      } else {
+        const releaseT = thrown && action.kind === 'fire' ? Math.max(0, action.t - action.chargeDurationS) : action.t; // Starts at the authored held windup, then continues through strike/recovery.
+        const releaseDurationS = thrown && action.kind === 'fire' ? Math.max(0.01, action.durationS - action.chargeDurationS) : action.durationS;
+        pose = poseAtAction(def, action.kind, Math.min(1, releaseT / releaseDurationS));
+      }
     }
     const attach = window.SharedAttackPose;
     if (pose.headRelative && attach && c.avatarRef?.group) {
@@ -1792,13 +1804,20 @@
     get banditLos() {
       return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c._rangedLosDebug).map(c => ({ id: c.id || c.name, ...c._rangedLosDebug }));
     },
+    get npcRangedActions() {
+      return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.def?.rangedWeaponKey).slice(0, 24).map(c => ({
+        id: c.id || c.name, weapon: c.def.rangedWeaponKey, type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
+        action: c._rangedAction?.kind || 'idle', phase: c._rangedAction?.fired ? 'released' : (c._rangedAction?.kind === 'fire' ? 'windup' : c._rangedAction?.kind || 'idle'),
+        chargedForS: c._rangedAction?.chargeDurationS || 0, loaded: c._rangedLoaded !== false,
+      })); // Mobile debug: inspect up to 24 active humanoids without holding references to unloaded actors.
+    },
     get lastMeleeHeightBlock() { return deps?.getLastMeleeHeightBlock?.() || null; },
     get wouldHitHostile() { return wouldHitHostile(); },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Decorative grass billboards no longer provide cover. Projectile tile checks now use shot height and generated rock heights, allowing shots over rocks while retaining low impacts, tree trunks, and cave walls.',
+      latestChange: 'NPC thrown weapons now perform one continuous held windup and release without a separate reload. Crossbows, scatterbows and blowguns retain load/fire; npcRangedActions lists live phases.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
