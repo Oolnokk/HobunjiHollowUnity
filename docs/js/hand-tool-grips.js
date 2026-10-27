@@ -735,7 +735,9 @@
     let result;
     if (t <= wf) {
       const rawWindupT = t / Math.max(1e-6, wf);
-      const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
+      // heldTransforms:false (enemies) takes the bare curve: the player's own held-ability speed-up is player-only.
+      const curve = timing.heldTransforms === false ? global.Combat?.windupCurve : global.Combat?.windupPoseProgress;
+      const poseT = curve?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
       result = lerpAnimationGrip(neutral, scaledWindup, poseT);
     } else if (t <= sf) {
       result = lerpAnimationGrip(scaledWindup, scaledStrike, (t - wf) / Math.max(1e-6, sf - wf));

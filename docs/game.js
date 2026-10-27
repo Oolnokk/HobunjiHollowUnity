@@ -5007,7 +5007,7 @@
         window.Combat?.animalAttacks?.cancel?.(c);
         window.Combat?.cancelStagedForAttacker?.(c);
         window.EnemyDodge?.cancel?.(c);
-        if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c._banditLunging = false; }
+        if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); window.BanditCombat?.cancelLunge?.(c); }
         hostileObjects.delete(c);
         companionObjects.delete(c);
         const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
@@ -5111,7 +5111,7 @@
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; window.BanditCombat?.cancelLunge?.(c); } // cancelLunge also lowers a mid-arc hop.
         // Referenced by wildlife-territorial.js's own attackedDuringWarning
         // check (an already-attacked creature escalates straight to
         // fighting even from outside its proximity trigger) — that check
@@ -6605,7 +6605,7 @@
           if (c.state !== 'chase') {
             clearCreatureStage(c);
             if (c.isBandit) {
-              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
+              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; window.BanditCombat?.cancelLunge?.(c);
               window.EnemyDodge?.cancel?.(c); // Dodge only advances inside chase AI; leaving chase mid-roll otherwise froze the avatar tilted.
               // Defer the noncombat neck reset until movement has been resolved.
               // Resetting here and then reaiming later cancels the carrot every frame.

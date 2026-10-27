@@ -162,12 +162,10 @@ for (const power of [1, 1.4]) {
     createSample: () => ({}),
     STYLE_NEUTRAL_POSE: SAP.STYLE_NEUTRAL_POSE,
     swingTimeline: SAP.swingTimeline, // The shared clock itself: enemies must derive it from here.
-    samplePose(sampleOut, poseArg, styleNeutral, progress, wf, sf, hf, sign, power, sequence) {
-      calls.push({ kind: 'pose', poseArg, styleNeutral, progress, wf, sf, hf, sign, power, sequence });
-      return Object.assign(sampleOut, sentinel);
-    },
-    sampleLegacyThrust(sampleOut, progress, wf, sf, hf, power) {
-      calls.push({ kind: 'thrust', progress, wf, sf, hf, power });
+    // The renderer asks the shared sampler for whatever style is playing; which arc that picks is
+    // sampleSwing's own job (covered with the real module above).
+    sampleSwing(sampleOut, anim, poseArg, progress, wf, sf, hf, sign, power, sequence) {
+      calls.push({ kind: 'swing', anim, poseArg, progress, wf, sf, hf, sign, power, sequence });
       return Object.assign(sampleOut, sentinel);
     },
   };
@@ -221,8 +219,8 @@ for (const power of [1, 1.4]) {
   const { c, holder } = makeBandit({ _banditSwingHoldS: 0.43 });
   const expected = SAP.swingTimeline({}, 0.4, 0.3 / 0.4, 1, 0.43);
   sandbox.window.BanditCombat.updateToolMesh(c);
-  assert.equal(calls.length, 1); assert.equal(calls[0].kind, 'pose');
-  assert.equal(calls[0].poseArg, pose); assert.equal(calls[0].styleNeutral, SAP.STYLE_NEUTRAL_POSE.sweep);
+  assert.equal(calls.length, 1); assert.equal(calls[0].kind, 'swing');
+  assert.equal(calls[0].poseArg, pose); assert.equal(calls[0].anim, 'sweep');
   approx(calls[0].progress, 0.2 / expected.totalS, 'progress'); approx(calls[0].wf, expected.wf, 'wf'); approx(calls[0].sf, expected.sf, 'sf'); approx(calls[0].hf, expected.hf, 'hf');
   assert.ok(calls[0].sf > calls[0].wf && calls[0].hf > calls[0].sf && calls[0].hf < 1, 'strike travels, holds, then leaves room for the eased return');
   assert.equal(calls[0].sign, -1); assert.equal(calls[0].power, 1.25); assert.equal(calls[0].sequence, 'attack');
@@ -255,18 +253,15 @@ for (const power of [1, 1.4]) {
   assert.equal(c._banditToolTail, null, 'the tail ends once the eased return has played');
   assert.equal(c._banditSwingAnim, 'sweep', 'rest stance is the weapon natural swing again');
 
-  // Legacy thrust: the shared jab arc on the same clock.
+  // Legacy thrust: the same sampler and the same placement, on the same clock.
   sandbox.performance.now = () => 1000; calls.length = 0;
   const thrusting = makeBandit({ _banditSwingAnim: 'thrust', _banditSwingPose: null, _banditSwingDirSign: 1, _banditSwingHoldS: 0.48 });
   sandbox.window.BanditCombat.updateToolMesh(thrusting.c);
   const thrustClock = SAP.swingTimeline({}, 0.4, 0.3 / 0.4, 1, 0.48);
-  assert.equal(calls.length, 1); assert.equal(calls[0].kind, 'thrust');
+  assert.equal(calls.length, 1); assert.equal(calls[0].kind, 'swing'); assert.equal(calls[0].anim, 'thrust'); assert.equal(calls[0].poseArg, null);
   approx(calls[0].wf, thrustClock.wf, 'thrust wf'); approx(calls[0].sf, thrustClock.sf, 'thrust sf'); approx(calls[0].hf, thrustClock.hf, 'thrust hf'); assert.equal(calls[0].power, 1.25);
-  const tv = -thrusting.c.facing + Math.PI / 2 + sentinel.bodyYawRad; // Thrust leans by the jab's own body yaw.
-  const handX = thrusting.c.avatarRef.handAttachX + sentinel.x; // Thrust adds its lateral offset to the hand anchor; no midline-flip blend.
-  approx(thrusting.holder.position.x, thrusting.c.x / 32 + Math.cos(tv) * handX + Math.sin(tv) * sentinel.z, 'thrust holder x');
-  approx(thrusting.holder.position.y, thrusting.c.avatarRef.group.position.y - thrusting.c.halfHeight + thrusting.c.avatarRef.handAttachY, 'thrust holder y (the jab has no vertical channel)');
-  approx(thrusting.holder.position.z, thrusting.c.y / 32 - Math.sin(tv) * handX + Math.cos(tv) * sentinel.z, 'thrust holder z');
+  const thrustWant = expectedHolder(thrusting.c, sentinel);
+  approx(thrusting.holder.position.x, thrustWant.x, 'thrust holder x'); approx(thrusting.holder.position.y, thrustWant.y, 'thrust holder y'); approx(thrusting.holder.position.z, thrustWant.z, 'thrust holder z');
 
   // A completed action hands its hold/return to a tail on the same clock; a cancelled one (or a Flasker throw) resets at once.
   const finishing = makeBandit({ _banditSwingHoldS: 0.43, _banditSwingReturnS: 0, _banditSwingAnim: 'sweep', _banditSwingPower: 1.25 });

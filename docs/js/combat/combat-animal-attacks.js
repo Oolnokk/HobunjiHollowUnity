@@ -39,11 +39,17 @@
     const aa = c._animalAttack;
     if (!aa) return false;
     const busy = aa.def.update(c, aa.state, dt, window.Combat.deps);
-    if (!busy) {
-      c._animalAttack = null;
-      c.scaleY = 1;
-    }
+    if (!busy) endAttackPresentation(c);
     return busy;
+  }
+
+  // Every way an attack ends (finished, hit landed, cancelled) puts the body back
+  // on the ground at full height. A leap that lands its hit mid-arc otherwise
+  // left the creature drawn (and colliding) in mid-air until its next leap.
+  function endAttackPresentation(c) {
+    c._animalAttack = null;
+    c.scaleY = 1;
+    c._banditLungeHopCurrent = 0;
   }
 
   function isBusy(c) { return !!c._animalAttack; }
@@ -65,8 +71,7 @@
     const aa = c._animalAttack;
     if (!aa) return;
     if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
-    c._animalAttack = null;
-    c.scaleY = 1;
+    endAttackPresentation(c);
   }
 
   // A selected named attack owns this forward charge until its own cone sees a
@@ -130,7 +135,7 @@
 
   window.Combat.animalAttacks = {
     register, start, update, isBusy, isStriking, isWindingUp, cancel,
-    beginConeLunge, advanceConeLunge,
+    beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
   };
 
   // ── Pounce ──────────────────────────────────────────────────────────
@@ -218,12 +223,46 @@
       0,
       c.def.lungeHeightUnits ?? 1,
     ) || { distancePx: baseLungeDistancePx, hopUnits: 0, pitch: state.aimPitch };
-    state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx);
-    state.traveledPx = 0;
-    state.collideRadiusPx = deps.TILE * 0.32;
+    // The leap itself is the shared sub-stepped cone lunge (also Rear Kick's), committed now so its bearing is the
+    // trigger-time bearing; it only starts moving once the crouch ends.
+    beginConeLunge(c, state, ctx, deps, {
+      targets: state.targets.map(target => target.ref),
+      rangePx: state.rangePx,
+      halfConeRad: state.halfConeRad,
+      maxDistancePx: Math.max(0, state.lungeProfile.distancePx),
+      speedPxS: POUNCE_LEAP_SPEED_PX_S,
+      collideRadiusPx: deps.TILE * 0.32,
+      detect: leapConeDetect(),
+    });
     c.facing = state.angle;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0; // Shared creature renderer slot for the pounce's vertical arc.
+  }
+
+  // The pounce's pitched pie-prism collider (Combat.meleeHit) as a cone-lunge
+  // contact test; null falls back to advanceConeLunge's flat cone check.
+  function leapConeDetect() {
+    if (!window.Combat?.meleeHit) return null;
+    return (c, target, state) => window.Combat.meleeHit(c, target, {
+      rangePx: state.lungeRangePx,
+      halfConeRad: state.lungeHalfConeRad,
+      yaw: state.lungeAngle,
+      pitch: state.aimPitch || 0,
+    });
+  }
+
+  // One frame of a committed leap: sub-stepped travel (dt capped, so a frame
+  // hitch can't carry it through a thin wall or past its target), the hop arc
+  // from the distance actually covered, and the lunge trail. Returns
+  // advanceConeLunge's stop reason ('target' | 'blocked' | 'range' | null).
+  function advanceLeap(c, state, dt, deps, afflictionBonuses) {
+    const traveledBefore = state.lungeTraveledPx;
+    const stopReason = advanceConeLunge(c, state, dt, deps);
+    const leapProgress = state.lungeMaxDistancePx > 0.001 ? Math.min(1, state.lungeTraveledPx / state.lungeMaxDistancePx) : 1;
+    c._banditLungeHopCurrent = (state.lungeProfile?.hopUnits || 0) * Math.sin(leapProgress * Math.PI);
+    const movedPx = state.lungeTraveledPx - traveledBefore;
+    if (movedPx > 0) deps.tickCreatureLungeTrail?.(c, movedPx, afflictionBonuses);
+    return stopReason;
   }
 
   function pounceUpdate(c, state, dt, deps) {
@@ -256,43 +295,18 @@
     }
 
     // stage === 'leap'
-    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const remainingPx = Math.max(0, state.maxDistancePx - state.traveledPx);
-    if (remainingPx <= 0.001) { c._banditLungeHopCurrent = 0; return false; }
-    const stepPx = Math.min(POUNCE_LEAP_SPEED_PX_S * dt, remainingPx);
-    const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) { c._banditLungeHopCurrent = 0; return false; } // collided; stop in place
-
-    c.x = nx;
-    c.y = ny;
-    state.traveledPx += stepPx;
-    const leapProgress = state.maxDistancePx > 0.001 ? state.traveledPx / state.maxDistancePx : 1;
-    c._banditLungeHopCurrent = (state.lungeProfile.hopUnits || 0) * Math.sin(Math.min(1, leapProgress) * Math.PI);
-    deps.tickCreatureFootsteps?.(c, stepPx);
-
     const dmgTag = c.def.attackTag || 'sharp';
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
-    deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
-
-    for (const target of state.targets) {
-      const ref = target.ref;
-      if (ref.health <= 0) continue;
-      const hit = window.Combat?.meleeHit
-        ? window.Combat.meleeHit(c, ref, {
-            rangePx: state.rangePx,
-            halfConeRad: state.halfConeRad,
-            yaw: state.angle,
-            pitch: state.aimPitch,
-          })
-        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
-      if (!hit) continue;
-      if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
-      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
-      else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      deps.playCreatureClawHit?.(c);
-      return false; // hit landed; stop in place
-    }
-    return true;
+    const stopReason = advanceLeap(c, state, dt, deps, afflictionBonuses);
+    if (!stopReason) return true;
+    const ref = stopReason === 'target' ? state.lungeContact : null; // The first living target the moving cone caught.
+    if (!ref) return false; // Ran out of travel or hit terrain: stop in place.
+    const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
+    if (isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
+    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
+    else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    deps.playCreatureClawHit?.(c);
+    return false; // hit landed; stop in place (update() lowers the hop)
   }
 
   function pounceCancel(c) {
@@ -329,48 +343,37 @@
     const halfSize = (c.visualModelWidth || c.def.modelWidth || 2) * deps.TILE / 2;
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
-    state.traveledPx = 0;
-    state.speedPxS = state.distancePx / GUARD_CHARGE_DURATION_S;
     state.rangePx = c.def.attackRangePx;
     state.halfConeRad = c.def.attackHalfConeRad;
-    state.collideRadiusPx = deps.TILE * 0.32;
     state.targets = gatherTargets(c, deps);
+    // The same sub-stepped cone lunge as Pounce, on the blended guard bearing rather than straight at the target.
+    beginConeLunge(c, state, ctx, deps, {
+      targets: state.targets.map(target => target.ref),
+      rangePx: state.rangePx,
+      halfConeRad: state.halfConeRad,
+      maxDistancePx: state.distancePx,
+      speedPxS: state.distancePx / GUARD_CHARGE_DURATION_S,
+      collideRadiusPx: deps.TILE * 0.32,
+      detect: leapConeDetect(),
+    });
+    state.lungeAngle = state.angle;
     c.facing = state.angle;
   }
 
   function guardChargeUpdate(c, state, dt, deps) {
     state.t += dt;
-    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const stepPx = Math.min(state.speedPxS * dt, state.distancePx - state.traveledPx);
-    if (stepPx > 0) {
-      const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-      if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false;
-      c.x = nx;
-      c.y = ny;
-      state.traveledPx += stepPx;
-    }
-
-    for (const target of state.targets) {
-      const ref = target.ref;
-      if (ref.health <= 0) continue;
-      const hit = window.Combat?.meleeHit
-        ? window.Combat.meleeHit(c, ref, {
-            rangePx: state.rangePx,
-            halfConeRad: state.halfConeRad,
-            yaw: state.angle,
-            pitch: state.aimPitch,
-          })
-        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
-      if (!hit) continue;
-      const dmgTag = c.def.attackTag || 'blunt';
-      const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
-      if (target.isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
-      else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      deps.playCreatureClawHit?.(c);
-      return false;
-    }
-    return state.traveledPx < state.distancePx;
+    const stopReason = advanceConeLunge(c, state, dt, deps);
+    if (!stopReason) return true;
+    const ref = stopReason === 'target' ? state.lungeContact : null;
+    if (!ref) return false; // Covered its distance or hit terrain.
+    const dmgTag = c.def.attackTag || 'blunt';
+    const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
+    const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
+    if (isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
+    else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    deps.playCreatureClawHit?.(c);
+    return false;
   }
 
   register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });

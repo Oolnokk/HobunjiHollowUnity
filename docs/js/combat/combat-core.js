@@ -549,7 +549,14 @@
       const next = Number(transform(transformed));
       if (Number.isFinite(next)) transformed = next;
     }
-    const t = THREE.MathUtils.clamp(transformed, 0, 1);
+    return windupCurve(transformed, slowdown);
+  }
+
+  // The bare curve, without the player's held-action transforms above. Enemies
+  // and other actors that play the same held windup use this, so a transform the
+  // player's own held ability installs never speeds up anyone else's pose.
+  function windupCurve(rawProgress, slowdown = 0) {
+    const t = THREE.MathUtils.clamp(Number(rawProgress) || 0, 0, 1);
     const s = Math.max(0, Number(slowdown) || 0);
     if (s <= 1e-6) return t;
     return Math.log1p(s * t) / Math.log1p(s);
@@ -819,6 +826,7 @@
     meleeLungeProfile,
     setWindupProgressTransform,
     windupPoseProgress,
+    windupCurve,
     writeMeleeTrailRibbon,
     spawnMeleeTrail,
     isStaggered,
