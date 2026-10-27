@@ -131,7 +131,7 @@
       return { entry, scene: window.BanubuCutsceneAuthoring.build(tree, npc, await response.json()) };
     }
     if (entry.weddingScene) {
-      if (!window.RomanceWedding) await loadScriptOnce(new URL('../../js/romance-wedding.js?v=20261007wedding1', location.href).href);
+      if (!window.RomanceWedding) await loadScriptOnce(new URL('../../js/romance-wedding.js?v=20261027hbreath8', location.href).href);
       const records = await loadNpcRecords();
       return { entry, scene: window.RomanceWedding.buildWeddingScene(records, authoringProfile(), { spouseId: entry.authoringSpouseId }) }; // Same builder the live ceremony plays; in game it runs on the temple's Wedding layout.
     }

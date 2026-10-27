@@ -4,7 +4,7 @@ const assert = require('node:assert/strict'); // Used by each parity invariant b
 const fs = require('node:fs'); // Reads checked-in editor/runtime/map files.
 const read = path => fs.readFileSync(path, 'utf8'); // Resolves repository-relative files for the assertions.
 const templeInterior = JSON.parse(read('docs/config/maps/map_i_temple.json')); // Interior floor and root recipe authority.
-const templeExterior = JSON.parse(read('docs/config/pieces/temple.json')); // Exterior roots and shingle-vine recipe authority.
+const templeExterior = JSON.parse(read('docs/config/pieces/temple.json')); // Exterior authored growth and shingle-vine recipe authority.
 const editor = read('docs/tools/building-interior-author/index.html'); // Verifies the editor shares the game furniture runtime.
 const floorControls = read('docs/js/interior-fire-floor-integration.js'); // Ensures floor selection and authoring are active.
 const foliage = read('docs/js/foliage-generator.js'); // Checks shingle-target normalization and surface following.
@@ -17,12 +17,10 @@ assert.deepEqual(templeInterior.floorStyle, {
 const iRugs = templeInterior.furniture.filter(piece => piece.itemKey === 'rugFurniture'); // Finds the original aisle rug without altering its motifs.
 assert(iRugs.length > 0 && iRugs.some(piece => Object.keys(piece.patternOverrides || {}).length > 0),
   'the original authored rug/overpass color settings must survive');
-for (const file of [templeInterior, templeExterior]) {
-  const roots = file.surfaceGrowth.find(recipe => recipe.target === 'walls'); // Wall vines become roots, retaining their strand count.
-  assert.equal(roots?.kind, 'roots');
-  assert.equal(roots?.radius, 0.15);
-  assert.equal(roots?.count, 68);
-}
+const roots = templeInterior.surfaceGrowth.find(recipe => recipe.target === 'walls'); // Interior roots retain their earlier settings independently of the revised exterior.
+assert.equal(roots?.kind, 'roots');
+assert.equal(roots?.radius, 0.15);
+assert.equal(roots?.count, 68);
 const shingleVines = templeExterior.surfaceGrowth.find(recipe => recipe.target === 'shingles'); // Keeps fine vines distinct from thick roots.
 assert.equal(shingleVines?.kind, 'vines');
 assert(shingleVines.count > 0 && shingleVines.radius < 0.15);
