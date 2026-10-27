@@ -12,6 +12,7 @@ const sleepBridge = fs.readFileSync(path.join(root, 'docs/js/sleep-passage-actio
 const combatBootstrap = fs.readFileSync(path.join(root, 'docs/js/combat/combat-config-loader.js'), 'utf8'); // Parser-time module loader that must request the current Sleep bridge URL/version.
 const social = fs.readFileSync(path.join(root, 'docs/config/npcs/social-relations.js'), 'utf8'); // Authored Anan morning-service schedule kept separate from all-day prayer eligibility.
 const temple = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/maps/map_i_temple.json'), 'utf8')); // Alternate Spirit Communion layout used to verify its moved benches remain prayer-capable.
+const bench = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/furniture-authored/bench.json'), 'utf8')); // Runtime seating uses the authored furniture key, not the inventory itemKey stored in maps.
 
 assert.doesNotThrow(() => new vm.Script(core), 'temple prayer/rest core parses');
 assert.doesNotThrow(() => new vm.Script(integration), 'prayer/rest integration parses');
@@ -29,13 +30,12 @@ assert.match(prayerDayBody, /currentWeekdayName\?\.\(\)/, 'prayer eligibility re
 assert.match(prayerDayBody, /weekday\s*===\s*'Anan'/, 'Pray is available throughout Anan');
 assert.doesNotMatch(prayerDayBody, /shared_temple_service|parseMinutes|withinWindow|getHour/, 'all-day Anan prayer no longer depends on the morning service window');
 const seatedBody = core.match(/function seatedInTemplePew\(\) \{([\s\S]*?)\n  \}\n\n  function promptEligible/)?.[1] || ''; // Isolates seat qualification for both ordinary and alternate temple layouts.
-assert.match(seatedBody, /sit\.furnitureKey\s*===\s*'benchFurniture'/, 'any temple bench can serve as a prayer pew');
 assert.match(seatedBody, /getCurrentArea\?\.\(\)\s*===\s*'map_i_temple'/, 'bench prayer remains temple-only');
 const communion = (temple.layouts || []).find(layout => layout.id === 'spirit_communion');
 assert(communion, 'temple retains the Spirit Communion alternate layout');
 assert((communion.conditions || []).some(condition => condition.from === '00:00' && condition.to === '03:00' && (condition.days || []).includes('Anan')), 'Spirit Communion is authored on Anan from midnight to 03:00');
 const communionPrayerBench = (communion.furniture || []).find(piece => piece.id === 'sc_bench_w1');
-assert.equal(communionPrayerBench?.itemKey, 'benchFurniture', 'a known moved Spirit Communion pew uses the generic bench key consumed by prayer eligibility');
+assert.equal(communionPrayerBench?.itemKey, 'benchFurniture', 'a known moved Spirit Communion pew retains its inventory item key');
 
 for (const prayer of ["Nao'ine Prayer", 'Krurenic Prayer', 'Narshangetic Prayer']) {
   assert(core.includes(prayer), `${prayer} is authored in the prayer chooser`);
@@ -119,16 +119,34 @@ assert.equal(calendarReads, 0, 'parser-time boot defers calendar reads');
 assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine');
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
 calendarReady = true;
+let prayerArea = 'map_i_temple'; // Exercises the same physical bench in the temple and outside it.
 clockWindow.__hobunjiFurnitureDebug = {
-  getCurrentArea: () => 'map_i_temple',
-  sitState: { phase: 'in', furnitureKey: 'benchFurniture', furnitureId: 'sc_bench_w1' },
+  getCurrentArea: () => prayerArea,
+  sitState: { phase: 'in', furnitureKey: bench.key, furnitureId: 'sc_bench_w1' },
 };
-assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), true, 'generic Spirit Communion bench is prayer-eligible on Anan');
+assert.equal(bench.key, 'bench');
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), true, 'actual runtime bench key is prayer-eligible on Anan');
 assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction()?.action, 'temple_pray', 'seated action list receives the eligible prayer');
 assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction()?.inputAction, 'action3', 'Pray occupies its advertised physical slot');
+assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().unavailableReason, null);
+clockWindow.__hobunjiFurnitureDebug.sitState.furnitureKey = 'benchFurniture';
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), true, 'legacy inventory-key seats remain compatible');
+clockWindow.__hobunjiFurnitureDebug.sitState.furnitureKey = 'chairSimple';
+assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction(), null, 'an ordinary chair is not a temple pew');
+clockWindow.__hobunjiFurnitureDebug.sitState.furnitureKey = bench.key;
+clockWindow.__hobunjiFurnitureDebug.sitState.phase = 'out';
+assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction(), null, 'standing up removes Pray');
+clockWindow.__hobunjiFurnitureDebug.sitState.phase = 'active';
+prayerArea = 'town';
+assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction(), null, 'benches outside the temple do not grant prayer');
+assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().area, 'town');
+prayerArea = 'map_i_temple';
 prayerWeekday = 'Uung';
 assert.equal(clockWindow.TemplePrayerRestBlessings._test.promptEligible(), false, 'same temple bench is not prayer-eligible off Anan');
 assert.equal(clockWindow.TemplePrayerRestBlessings.getPrayerAction(), null, 'the seated list drops Pray outside Anan');
+assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().prayerWeekday, 'Uung', 'diagnostics retain the actual off-prayer weekday');
+assert.match(clockWindow.TemplePrayerRestBlessings.debugSnapshot().unavailableReason, /today is Uung/);
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.choosePrayer('krurenic'), false, 'off-day selection cannot grant a blessing');
 prayerWeekday = 'Anan';
 assert.equal(clockWindow.TemplePrayerRestBlessings.debugSnapshot().gameHour, 246);
 assert.equal(clockWindow.TemplePrayerRestBlessings.isWellRested(), true);
@@ -149,5 +167,66 @@ assert.equal(clockWindow.EffectBuffBar.getEntries().length, 0, 'expired blessing
 clockWindow.TemplePrayerRestBlessings._test.grantWellRested();
 assert.equal(clockWindow.EffectBuffBar.getEntries().find(entry => entry.id === 'well-rested')?.remainingS, 16 * 3600, 'new bed-rest buff appears with a full countdown');
 assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer, null);
+
+assert.equal(clockWindow.TemplePrayerRestBlessings._test.choosePrayer('unknown'), false);
+for (const id of ['naoine', 'krurenic', 'narshangetic']) {
+  assert.equal(clockWindow.TemplePrayerRestBlessings._test.choosePrayer(id), true, 'a real seated bench can grant and replace each prayer');
+  assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer().id, id);
+  assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer.id, id);
+  assert.equal(clockWindow.EffectBuffBar.getEntries().find(entry => entry.id === `temple-prayer-${id}`)?.remainingS, 7 * 24 * 3600);
+}
+assert.equal(clockWindow.TemplePrayerRestBlessings.skillStackBonus('fishing'), 3);
+calendarDay += 7;
+assert.equal(clockWindow.TemplePrayerRestBlessings.activePrayer(), null, 'the granted prayer expires after one week');
+
+// The ordinary save-select flow assigns the profile after parser-time modules boot.
+calendarDay = 10;
+calendarTime = .25;
+calendarReady = false;
+const lateStorage = new Map([['hobunjiSaveMeta', JSON.stringify({ characters: [
+  ...savedMeta.characters,
+  { id: 'other-farmer', templePrayerRestBlessings: { prayer: { id: 'krurenic', startedAtGameHour: 240, expiresAtGameHour: 300 }, wellRested: null } },
+] })]]); // Independent persisted characters expose missing hydration and accidental cross-character writes.
+const lateListeners = new Map(); // Executes the actual unload and Escape listeners registered by the module.
+const lateNodes = new Map(); // Supplies just the visible modal for keyboard-close coverage without emulating the chooser renderer.
+const lateWindow = {
+  CalendarSystem: clockWindow.CalendarSystem,
+  __hobunjiFurnitureDebug: clockWindow.__hobunjiFurnitureDebug,
+  addEventListener: (type, listener) => lateListeners.set(type, listener),
+  setInterval() {},
+}; // Starts without a profile, matching the real onboarding order.
+const lateContext = {
+  window: lateWindow,
+  document: { addEventListener() {}, getElementById: id => lateNodes.get(id) || null },
+  localStorage: { getItem: key => lateStorage.get(key) ?? null, setItem: (key, value) => lateStorage.set(key, value) },
+}; // Reuses the shipped core in a fresh runtime instead of mutating internal module state.
+vm.runInNewContext(core, lateContext);
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer(), null);
+assert.equal(lateWindow.TemplePrayerRestBlessings._test.grantWellRested(), false, 'an uninitialized calendar cannot create a NaN expiry');
+lateWindow.__hobunjiPlayerProfile = { characterId: 'clock-test' };
+calendarReady = true;
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine', 'late save selection restores its saved prayer');
+assert.equal(lateWindow.TemplePrayerRestBlessings.isWellRested(), true, 'late save selection restores Well Rested too');
+lateWindow.__hobunjiPlayerProfile = { characterId: 'other-farmer' };
+lateListeners.get('beforeunload')();
+assert.equal(JSON.parse(lateStorage.get('hobunjiSaveMeta')).characters[1].templePrayerRestBlessings.prayer.id, 'krurenic', 'unload before the next sync cannot overwrite another farmer');
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'krurenic', 'character changes replace the active prayer');
+assert.equal(lateWindow.TemplePrayerRestBlessings.isWellRested(), false, 'another farmer cannot inherit Well Rested');
+assert.equal(lateWindow.TemplePrayerRestBlessings._test.choosePrayer('narshangetic'), true);
+assert.equal(JSON.parse(lateStorage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.prayer.id, 'naoine', 'selection changes only the active farmer');
+lateWindow.__hobunjiPlayerProfile = { characterId: 'clock-test' };
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer()?.id, 'naoine');
+lateWindow.__hobunjiPlayerProfile = null;
+assert.equal(lateWindow.TemplePrayerRestBlessings.activePrayer(), null, 'returning to save select clears the previous character effects');
+
+let modalOpen = true; // Observable visibility state changed by the actual Escape handler.
+let escaped = false; // Confirms Escape is consumed before it can reach world controls.
+lateNodes.set('templePrayerBackdrop', {
+  classList: { contains: () => modalOpen, remove: () => { modalOpen = false; } },
+  setAttribute() {},
+});
+lateListeners.get('keydown')({ key: 'Escape', preventDefault: () => { escaped = true; }, stopImmediatePropagation() {} });
+assert.equal(modalOpen, false, 'Escape closes the prayer chooser even after prayer eligibility is lost');
+assert.equal(escaped, true);
 
 console.log('temple prayer and Well Rested regression passed');

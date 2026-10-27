@@ -11,7 +11,7 @@
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
   const DOT_AFFLICTIONS = new Set(['bleedingHealth', 'poisonedHealth', 'burningHealth', 'kindlingHealth', 'corrodedHealth']); // Narshangetic resistance applies only to Health DoT buildup, not every Damage-family affliction.
-  const CHANGE_SUMMARY = 'Pray is part of the seated action list beside Stand and Wait, with shared touch, keyboard and controller activation throughout Anan.'; // Shown in mobile-readable diagnostics.
+  const CHANGE_SUMMARY = 'Temple prayer recognizes live benches, restores blessings after character selection, and supports controller Back and Escape; copied diagnostics show eligibility and saved character.'; // Shown in mobile-readable diagnostics.
 
   const PRAYERS = Object.freeze({
     naoine: Object.freeze({ id: 'naoine', name: "Nao'ine Prayer", icon: '🌿', healingMultiplier: 1.20, skillStacks: Object.freeze({ foraging: 3, farming: 3 }), description: '+20% healing; +3 Foraging and Farming.' }),
@@ -20,6 +20,7 @@
   });
 
   let state = { prayer: null, wellRested: null }; // Current character-scoped blessing state read by every runtime modifier below.
+  let stateCharacterId = null; // Hydrates late-selected characters once and prevents saving a previous character's blessings into another record.
   let actionSnapshot = null; // Original Action 3 presentation restored when the Pray prompt is no longer valid.
   let actionInjected = false; // Prevents repeated snapshots while the prompt sync loop is active.
   let lastPromptEligible = false; // Exposed in diagnostics to make mobile day/seat failures visible.
@@ -66,12 +67,13 @@
   }
 
   function loadState() {
+    stateCharacterId = window.__hobunjiPlayerProfile?.characterId || null;
     state = normalizedSavedState(activeCharacterRecord()?.[SAVE_FIELD]);
-    expireState(false);
     return state;
   }
 
   function persistState() {
+    if (!stateCharacterId || stateCharacterId !== window.__hobunjiPlayerProfile?.characterId) return false;
     const snapshot = JSON.parse(JSON.stringify(state)); // Keeps the save helper isolated from later in-memory mutation.
     const wrote = window.CharacterMetaSave?.update?.(character => { character[SAVE_FIELD] = snapshot; });
     if (wrote) return true;
@@ -90,6 +92,7 @@
   }
 
   function expireState(persist = true) {
+    if (stateCharacterId !== (window.__hobunjiPlayerProfile?.characterId || null)) loadState();
     const now = currentGameHour(); // One read keeps prayer/rest expiry comparisons internally consistent for this sync.
     if (!Number.isFinite(now)) return false;
     let changed = false;
@@ -118,12 +121,12 @@
 
   function seatedInTemplePew() {
     const sit = window.__hobunjiFurnitureDebug?.sitState; // Shared player seat state includes the exact furniture key and sit phase.
-    return !!sit && sit.phase !== 'out' && sit.furnitureKey === 'benchFurniture' && window.__hobunjiFurnitureDebug?.getCurrentArea?.() === 'map_i_temple';
+    return !!sit && sit.phase !== 'out' && (sit.furnitureKey === 'bench' || sit.furnitureKey === 'benchFurniture') && window.__hobunjiFurnitureDebug?.getCurrentArea?.() === 'map_i_temple';
   }
 
   function promptEligible() {
     const prayerDay = activeTemplePrayerDay(); // Prayer is intentionally day-gated rather than service-window-gated so every temple bench works throughout Anan.
-    lastPrayerWeekday = prayerDay?.label || null;
+    lastPrayerWeekday = window.CalendarSystem?.currentWeekdayName?.() || null;
     lastPromptEligible = !!prayerDay && seatedInTemplePew();
     return lastPromptEligible;
   }
@@ -196,7 +199,7 @@
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-labelledby', 'templePrayerTitle');
-    panel.innerHTML = `<h2 id="templePrayerTitle">Choose a Prayer</h2><p>The blessing lasts one in-game week. Choosing another prayer replaces the current prayer blessing.</p><div class="temple-prayer-options"></div><button class="temple-prayer-cancel" type="button">Cancel</button>`;
+    panel.innerHTML = `<h2 id="templePrayerTitle">Choose a Prayer</h2><p>The blessing lasts one in-game week. Choosing another prayer replaces the current prayer blessing.</p><div class="temple-prayer-options"></div><button class="temple-prayer-cancel" type="button" data-ctrl-cancel>Cancel</button>`;
     const options = panel.querySelector('.temple-prayer-options');
     for (const prayer of Object.values(PRAYERS)) {
       const button = document.createElement('button');
@@ -234,7 +237,9 @@
   function choosePrayer(id) {
     const prayer = PRAYERS[id];
     if (!prayer || !promptEligible()) return false;
+    expireState();
     const now = currentGameHour(); // Prayer replacement/refresh always starts a fresh seven-day timer.
+    if (!Number.isFinite(now)) return false;
     state.prayer = { id: prayer.id, startedAtGameHour: now, expiresAtGameHour: now + PRAYER_DURATION_HOURS };
     persistState();
     window.EffectBuffBar?.refresh?.(true);
@@ -245,7 +250,9 @@
   }
 
   function grantWellRested() {
+    expireState();
     const now = currentGameHour(); // Every qualifying player-bed Sleep refreshes the full 16-hour timer rather than stacking copies.
+    if (!Number.isFinite(now)) return false;
     state.wellRested = { startedAtGameHour: now, expiresAtGameHour: now + WELL_RESTED_DURATION_HOURS };
     persistState();
     window.EffectBuffBar?.refresh?.(true);
@@ -409,6 +416,14 @@
   }
 
   function onActionKey(event) {
+    if (document.getElementById('templePrayerBackdrop')?.classList.contains('open')) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeMenu();
+      }
+      return;
+    }
     if (event.repeat || !promptEligible()) return;
     const button = document.getElementById(ACTION_BUTTON_ID);
     if (!button || button.dataset.action !== ACTION_ID) return;
@@ -442,10 +457,22 @@
 
   function debugSnapshot() {
     expireState();
+    promptEligible();
+    const area = window.__hobunjiFurnitureDebug?.getCurrentArea?.() || null; // Reports the actual map instead of hiding an area mismatch behind a false eligibility flag.
+    const seat = window.__hobunjiFurnitureDebug?.sitState; // Captures the live furniture identity and seating phase for mobile diagnosis.
+    const button = document.getElementById(ACTION_BUTTON_ID); // Distinguishes an eligible prayer from a missing or hidden action-bar slot.
+    const unavailableReason = !window.CalendarSystem || window.CalendarSystem.isInitialized?.() === false ? 'Calendar is not ready.'
+      : area !== 'map_i_temple' ? 'Enter the Life Temple.'
+      : lastPrayerWeekday !== 'Anan' ? `Weekly prayer is available on Anan; today is ${lastPrayerWeekday || 'unknown'}.`
+      : !seatedInTemplePew() ? 'Sit on a temple bench.' : null; // Reports the first blocking condition without changing prayer eligibility.
     return {
       installed: true, version: VERSION, latestChange: CHANGE_SUMMARY,
+      characterId: stateCharacterId,
       gameHour: currentGameHour(), prayerWeekday: lastPrayerWeekday, promptEligible: lastPromptEligible,
       seated: seatedInTemplePew(), actionInjected,
+      area, seat: seat ? { furnitureKey: seat.furnitureKey, phase: seat.phase, col: seat.col, row: seat.row, seatIndex: seat.seatIndex } : null,
+      unavailableReason,
+      actionButton: button ? { action: button.dataset.action || null, hidden: button.classList.contains('abt-hidden') } : null,
       prayer: state.prayer ? { ...state.prayer, name: PRAYERS[state.prayer.id]?.name || state.prayer.id, remainingHours: Math.max(0, state.prayer.expiresAtGameHour - currentGameHour()) } : null,
       wellRested: state.wellRested ? { ...state.wellRested, remainingHours: Math.max(0, state.wellRested.expiresAtGameHour - currentGameHour()) } : null,
       ownedBedSleepPending: !!window[OWNED_BED_SLEEP_PENDING_KEY], lastRestSource,
