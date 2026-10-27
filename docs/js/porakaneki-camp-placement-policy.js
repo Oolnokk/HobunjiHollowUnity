@@ -118,22 +118,31 @@
     const zoneId = zoneIdFromInstanceId(instance.id);
     if (!zoneId) return;
     const snapshots = (instance.removedObjectSnapshots || []).filter(snapshot => snapshot?.type === 'shrub').map(snapshot => ({ ...snapshot })); // Source clutter cells already removed by TemporaryLocales.
-    const boulderIds = new Set(snapshots.map(snapshot => snapshot.srcBoulderId).filter(Boolean)); // Whole-rock removal prevents a partial boulder shell from bulging into the camp.
-    if (boulderIds.size) {
-      const covered = new Set(snapshots.map(snapshot => `${snapshot.x},${snapshot.y}`)); // Avoids restoring any displaced tile twice.
-      for (let row = 0; row < (zone?.rows || 0); row++) {
-        for (let col = 0; col < (zone?.cols || 0); col++) {
-          const tile = zone.tiles?.[row]?.[col]; // Immutable terrain metadata from the generated placement view.
-          if (!tile?.boulderId || !boulderIds.has(tile.boulderId) || covered.has(`${col},${row}`)) continue;
+    const covered = new Set(snapshots.map(snapshot => `${snapshot.x},${snapshot.y}`)); // Initial locale clearing occupies this set; expanded boulder cells must not be snapshotted twice.
+    const visited = new Set(); // Prevents rescanning the same connected boulder through multiple displaced tiles.
+    for (const origin of snapshots) {
+      if (origin.srcRockKind !== 'undiggableBoulder') continue;
+      const groupId = origin.srcBoulderId || null; // A boulder may have no ID in legacy layouts; the renderer groups those by connected component.
+      const queue = [[origin.x, origin.y]]; // Floods only physically connected boulder cells, avoiding other submaps that reuse the same generated object ID.
+      for (let i = 0; i < queue.length; i++) {
+        const [col, row] = queue[i];
+        if (col < 0 || row < 0 || col >= (zone?.cols || 0) || row >= (zone?.rows || 0)) continue;
+        const key = `${col},${row}`;
+        if (visited.has(key)) continue;
+        const tile = zone?.tiles?.[row]?.[col]; // The immutable source terrain survives a TemporaryLocales stamp.
+        if (tile?.rockKind !== 'undiggableBoulder' || (tile.boulderId || null) !== groupId) continue;
+        visited.add(key);
+        if (!covered.has(key)) {
           snapshots.push({
             x: col, y: row, srcType: tile.terrain || 'rock',
             srcRockKind: tile.rockKind || null,
-            srcBoulderId: tile.boulderId,
+            srcBoulderId: tile.boulderId || null,
             srcGeneratedObjectId: tile.generatedObjectId || null,
             srcGeneratedObjectType: tile.generatedObjectType || null,
-          }); // Clears the entire procedural rock even if its perimeter extends outside the stamped clearing.
-          covered.add(`${col},${row}`);
+          }); // Preserve complete connected shell metadata for migration restoration.
+          covered.add(key);
         }
+        queue.push([col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]);
       }
     }
     placements.set(instance.id, { zoneId, snapshots });
