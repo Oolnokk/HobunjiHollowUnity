@@ -1187,21 +1187,17 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist" data-ctrl-tabs>
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
-        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
-        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
-        <!-- Shipping and Supplies are meant to open as their own windows when
-             interacting with their associated objects in the world, not as
-             menu tabs — buttons removed here, but #mpShipping/#mpSupplies and
-             buildShippingTransferUI()/renderSupplyPage() are left intact
-             below for that future hookup. -->
+        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
         <button class="mp-tab"        data-mpanel="stable"        role="tab">🐾 Stable</button>
-        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
-        <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
-        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="loadout"       role="tab">⚔ Loadout</button>
+        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
+        <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
+        <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
+        <button class="mp-tab"        data-mpanel="relationships" role="tab">💬 Relations</button>
         <button class="mp-tab"        data-mpanel="settings"      role="tab">⚙ Settings</button>
+        <!-- Shipping and Supplies open from their objects in the world; they are not ordinary pause-menu tabs. -->
         <button class="mp-tab"        data-mpanel="debug"         data-dev-only role="tab">🐛 Debug</button>
         <button class="mp-tab"        data-mpanel="wildlife"      data-dev-only role="tab">🧬 Wildlife</button>
       </div>
@@ -1232,11 +1228,21 @@
         <!-- Category tab bar (Pack only): x:1/54 y:3/28 w:35 h:3 -->
         <div class="inv-cats" data-ctrl-tabs>
           <button class="inv-cat active" data-cat="all">All</button>
-          <button class="inv-cat" data-cat="seed">Seeds</button>
-          <button class="inv-cat" data-cat="crop">Crops</button>
+          <button class="inv-cat" data-cat="food">Food</button>
           <button class="inv-cat" data-cat="material">Materials</button>
-          <button class="inv-cat" data-cat="furniture">Furniture</button>
+          <button class="inv-cat" data-cat="crop">Crops</button>
+          <button class="inv-cat" data-cat="seed">Seeds</button>
           <button class="inv-cat" data-cat="processed">Processed</button>
+          <button class="inv-cat" data-cat="fish">Fish</button>
+          <button class="inv-cat" data-cat="ore">Ores &amp; Bars</button>
+          <button class="inv-cat" data-cat="reagent">Reagents</button>
+          <button class="inv-cat" data-cat="livestock">Animals</button>
+          <button class="inv-cat" data-cat="tool">Tools</button>
+          <button class="inv-cat" data-cat="clothing">Clothing</button>
+          <button class="inv-cat" data-cat="furniture">Furniture</button>
+          <button class="inv-cat" data-cat="plans">Plans &amp; Scrolls</button>
+          <button class="inv-cat" data-cat="dye">Dyes</button>
+          <button class="inv-cat" data-cat="other">Other</button>
         </div>
         <!-- Pack search (js/inventory-search.js): sits to the right of the category tabs. -->
         <input type="search" class="inv-search" id="invSearch" placeholder="🔍 Search pack" aria-label="Search pack" autocomplete="off" spellcheck="false">
@@ -1255,7 +1261,7 @@
         </div>
 
         <!-- Item grid (Pack only): x:1/54 y:13/28 w:33 h:14 -->
-        <div class="inv-grid-area inv-grid-area--short" aria-label="Pack">
+        <div class="inv-grid-area inv-grid-area--short" id="invGridArea" aria-label="Pack">
           <div class="inv-grid" id="invGrid"></div>
         </div>
 
@@ -1667,18 +1673,18 @@
            happens by talking to the quest giver. See renderTasksPanel()/
            ProceduralTasks.acceptRequest()/turnInTask() in game.js. ─────── -->
       <div class="mp-pane" id="mpTasks">
-        <div class="menu-section">
+        <div class="menu-section" id="tasksSectionRumors">
           <div class="menu-section-title">Word Around Town</div>
           <div id="tasksBoardPosting" class="supply-list"></div>
         </div>
         <!-- Wanted poster for a bandit captain -- separate slot from the
              board notice above, own refresh rule (maybeRefreshBountyPosting
              in game.js): stays up until claimed, not replaced daily. -->
-        <div class="menu-section">
+        <div class="menu-section" id="tasksSectionWanted">
           <div class="menu-section-title">Wanted</div>
           <div id="tasksBountyPosting" class="supply-list"></div>
         </div>
-        <div class="menu-section">
+        <div class="menu-section" id="tasksSectionQuestLog">
           <div class="menu-section-title">Quest Log</div>
           <div id="tasksList" class="supply-list"></div>
         </div>

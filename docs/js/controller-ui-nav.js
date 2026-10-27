@@ -78,6 +78,12 @@
     '#stableList', '#desktopInputBindings', '#controllerInputBindings',
   ].join(', '); // Reuses authored section boundaries instead of guessing nests from geometric proximity.
   const SUBTAB_SELECTOR = '.menu-section, .farm-section, .farm-storage-col, .progress-skills, .perk-trees, .inv-grid-area, .inv-equip-section, .inv-key-section, .inv-pack-clothing, .inv-gear-extra-section, [data-ctrl-subtab]'; // Large authored sections qualify; individual cards, perk rows and tab bars do not.
+  const MENU_SUBTAB_PRIORITY_BY_PANE = Object.freeze({ // Used by controller sub-tab cycling to put frequently checked pages before one-time configuration.
+    mpInventory: ['invGridArea', 'invEquipSection', 'invKeySection', 'invPackClothing'],
+    mpFarm: ['farmSectionLayout', 'farmSectionLivestock', 'farmSectionStorage', 'farmSectionBuildings', 'farmSectionFoodProcessing', 'farmSectionDew', 'farmSectionFurniture', 'farmSectionCustomize', 'farmhandsSection'],
+    mpTasks: ['tasksSectionQuestLog', 'tasksSectionRumors', 'tasksSectionWanted'],
+    mpSettings: ['settingsSectionAudio', 'settingsSection7', 'settingsSection6', 'settingsSection0', 'settingsSection8', 'settingsSection1', 'settingsSection9', 'settingsSection10', 'settingsSection11', 'settingsSection2', 'settingsSection3', 'settingsSection4', 'settingsSection5'],
+  });
   const subtabsByGroup = new Map(); // Active section ownership also keeps hidden siblings restorable after rebuilds and modal handoffs.
   const NAV_SELECTOR = [
     'button', 'a[href]', 'input', 'select', 'textarea', 'summary',
@@ -350,9 +356,17 @@
     subtabsByGroup.delete(group);
   }
 
+  function prioritizeMenuSubtabs(group, sections) {
+    const paneId = group.closest?.('.mp-pane')?.id; // Parent menu identifies which sections have an authored frequency order.
+    const preferred = MENU_SUBTAB_PRIORITY_BY_PANE[paneId]; // Unknown panes and dynamically generated child groups keep their original DOM order.
+    if (!preferred) return sections;
+    const ranks = new Map(preferred.map((id, index) => [id, index])); // Used to sort only recognized menu section ids while preserving unlisted siblings.
+    return sections.slice().sort((a, b) => (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity));
+  }
+
   function prepareSubtabs(group, panel, selectedId = null, offset = 0) {
     restoreSubtabs(group);
-    const sections = directTargets(group, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)); // Existing layout wrappers do not require new tab-button markup.
+    const sections = prioritizeMenuSubtabs(group, directTargets(group, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR))); // UI keeps its authored layout, while controller LB/RB use the frequency-first sequence.
     if (sections.length < 2) return false;
     let index = sections.findIndex(section => section.id && section.id === selectedId); // Stable ids preserve the active section through a rebuild.
     if (index < 0) index = 0;

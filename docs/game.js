@@ -16386,13 +16386,39 @@
       const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
       window.InventorySearch.init({ rebuild: () => buildInventoryGrid(), getItemDefs: () => ITEM_DEFS });
+      function matchesPackCategory(cat, key) {
+        const def = ITEM_DEFS[key]; // The same item metadata feeds regular Pack, filtered Pack and the item wheel.
+        if (!def) return false;
+        if (cat === 'all') return true;
+        const tags = new Set((def.tags || []).map(tag => String(tag).toLowerCase())); // Classifies item families without changing their existing crafting/shipping categories.
+        if (cat !== 'other' && def.cat === cat) return true; // "Other" must never swallow items already covered by a more useful filter.
+        switch (cat) {
+          case 'food': return def.isCookedFood === true || def.cat === 'crop' || def.cat === 'ingredient'
+            || (Array.isArray(def.cookingCategories) && def.cookingCategories.length > 0)
+            || ['food', 'meal', 'drink', 'beverage', 'alcohol', 'ingredient', 'meat', 'egg', 'milk', 'fish', 'fruit', 'berry', 'vegetable', 'grain', 'honey', 'wine', 'sake', 'vodka', 'airag', 'nectar', 'cheese', 'butter', 'cream', 'jam', 'juice', 'bread', 'lard'].some(tag => tags.has(tag));
+          case 'fish': return tags.has('fish') || key.startsWith('fish_');
+          case 'ore': return tags.has('ore') || tags.has('metal bar');
+          case 'reagent': return tags.has('reagent'); // "Alchemy" alone also labels finished potions and recipes.
+          case 'livestock': return tags.has('livestock') || (def.cat === 'material' && /Baby$/.test(key));
+          case 'tool': return ['instrument', 'weapon'].includes(def.cat) || tags.has('tool') || tags.has('weapon') || tags.has('instrument');
+          case 'plans': return ['blueprint', 'buildingPlan', 'scroll', 'tablet'].includes(def.cat)
+            || ['blueprint', 'plan', 'building plan', 'deed', 'recipe', 'scroll', 'tablet'].some(tag => tags.has(tag))
+            || /^(?:alchemy_recipe_|recipe_)/.test(key);
+          case 'dye': return tags.has('dye');
+          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'ingredient', 'tool', 'weapon', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'scroll', 'tablet', 'dye'].includes(def.cat)
+            && !def.isCookedFood && !(Array.isArray(def.cookingCategories) && def.cookingCategories.length > 0)
+            && !['food', 'fish', 'ore', 'metal bar', 'reagent', 'livestock', 'tool', 'weapon', 'instrument', 'plan', 'deed', 'blueprint', 'building plan', 'recipe', 'scroll', 'tablet', 'dye'].some(tag => tags.has(tag));
+          default: return false;
+        }
+      }
+
       function getInventoryStackKeys(cat = 'all') {
         // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
         const ranks = new Map(); // Resolves catalog order once instead of scanning it in every sort comparison.
         inventoryItems.forEach((item, index) => { if (!ranks.has(item.key)) ranks.set(item.key, index); });
         return Object.keys(inventory)
           .filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0)
-          .filter(key => cat === 'all' || ITEM_DEFS[key].cat === cat)
+          .filter(key => matchesPackCategory(cat, key))
           .sort((a, b) => (ranks.get(a) ?? 9999) - (ranks.get(b) ?? 9999) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
       }
 
@@ -16572,7 +16598,16 @@
           if (selected) selectInventoryItem(invSelectedKey, false, selected);
           else clearInventoryDetail();
         }
-        else clearInventoryDetail(keys.length ? '← Select an item' : window.InventorySearch?.query ? 'No items match your search' : 'Bag is empty');
+        else {
+          window.EquipmentPanel.buildPackClothingSection();
+          const packClothingVisible = (invActiveCat === 'all' || invActiveCat === 'clothing')
+            && [...document.querySelectorAll('#invPackClothing .inv-pcloth-item')].some(button =>
+              window.InventorySearch?.matches?.(button.getAttribute('data-key'), { label:button.textContent }) ?? true); // Clothing may be the only thing matching a search/category.
+          clearInventoryDetail(keys.length || packClothingVisible ? '← Select an item'
+            : window.InventorySearch?.query ? 'No items match your search'
+            : invActiveCat === 'clothing' ? 'No clothing in pack' : 'No items in this category');
+          return; // Clothing source has already been rebuilt for this empty/detail state.
+        }
         window.EquipmentPanel.buildPackClothingSection();
       }
 
