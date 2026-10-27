@@ -193,7 +193,7 @@
     pane.addEventListener('click', scheduleDecorate, true);
     pane.addEventListener('click', event => {
       const categoryButton = event.target.closest?.('.inv-cat'); // Keeps the chosen filter in view when gamepad bumpers or touch move along the wider category row.
-      categoryButton?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'instant' });
+      categoryButton?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'auto' });
     }, true);
   }
 
