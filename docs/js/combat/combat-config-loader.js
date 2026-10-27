@@ -94,7 +94,7 @@
     ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
     ['js/mastery-policy.js?v=20261016hdf14702', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20261008hc872401', () => !!window.HobunjiInventoryActionMetadataBridge],
-    ['js/inventory-held-override.js?v=20261025h047b48b', () => !!window.InventoryHeldOverride],
+    ['js/inventory-held-override.js?v=20261027blueprintRead1', () => !!window.InventoryHeldOverride],
     ['js/clothing-weaving-system.js?v=20261026hOverpassInk3', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
