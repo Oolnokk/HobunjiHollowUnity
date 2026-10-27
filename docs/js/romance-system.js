@@ -529,9 +529,13 @@
       const bed = bedSpot();
       if (bed) return { area: bed.area, c: bed.c, r: bed.r, rotY: bed.rotY, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    const town = scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
+    const town = scfg.townVisitsByNpc?.[rec.id] || scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 }; // Editable visit windows preserve each NPC's authored town schedule.
+    const weekdays = Array.isArray(town.weekdays) ? town.weekdays : null; // Explicit weekdays take precedence over the per-NPC stagger.
     const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
-    if (inHourWindow(hour, num(town.start, 12), num(town.end, 17)) && (rawDay() + hashInt(rec.id)) % mod === 0) return null; // Back in town on their old schedule.
+    const visitDay = weekdays?.length
+      ? weekdays.includes(window.CalendarSystem?.currentWeekdayName?.())
+      : (rawDay() + hashInt(rec.id)) % mod === 0;
+    if (visitDay && inHourWindow(hour, num(town.start, 12), num(town.end, 17))) return null; // Give the NPC's existing town agenda control for this visit.
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
