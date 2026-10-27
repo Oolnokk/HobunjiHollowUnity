@@ -271,7 +271,7 @@
     }
     if (document.querySelector('script[data-weapon-tool-stances]')) return; // A current load is already in flight.
     const script = document.createElement('script'); // Loads after shared melee-spacing math; a transient failed script must not strand the session.
-    script.src = 'js/weapon-tool-stances.js?v=20261019ha33698b';
+    script.src = 'js/weapon-tool-stances.js?v=20261026h95fc1e5';
     script.async = false;
     script.dataset.weaponToolStances = 'true';
     script.onload = () => {
