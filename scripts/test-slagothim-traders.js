@@ -45,6 +45,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   };
   window.window = window;
   const context = vm.createContext(window);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/building-subtle-elevation.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/town-mine.js'), 'utf8'), context);
   window.TownMine.restore({ townValue });
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/slagothim-traders.js'), 'utf8'), context);
@@ -154,6 +155,28 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   });
   assert.ok(caravan.members.every(member => member.gender === 'male'), 'new caravans contain only male traders');
 }
+
+// ── Rotated footprints and in-place map edits ────────────────────────
+{
+  // In the real town, the rotated Temple and potion shop extend beyond their
+  // original unrotated bounding boxes. Share the building footprint authority.
+  const rotated = { gridX: 13, gridZ: 13, footprintW: 5, footprintD: 3, rotationDeg: 270 };
+  const { T } = makeHarness({ townBuildings: [rotated], marketStations: [{ id: 'market_test', col: 22, row: 20 }] });
+  const before = T.__test.gridForArea('town');
+  assert.equal(before.cost[17 * before.cols + 14], -1, 'rotated building extension cell is blocked');
+  assert.ok(before.cost[14 * before.cols + 17] >= 0, 'unoccupied side of the original bbox stays passable');
+  rotated.gridZ = 15; // Existing Map Editor objects may be updated without replacing the buildings array.
+  const after = T.__test.gridForArea('town');
+  assert.notEqual(after, before, 'in-place building relocation invalidates the cached grid');
+  assert.ok(after.cost[17 * after.cols + 14] >= 0, 'old footprint is unblocked after moving');
+  assert.equal(after.cost[19 * after.cols + 14], -1, 'new rotated footprint is blocked');
+  const { T: shared, window } = makeHarness({ townBuildings: [rotated] });
+  window.BuildingGrassSuppression = { authoredBuildingFootprintKeys: () => new Set(['12,12', '13,12']) };
+  const sharedGrid = shared.__test.gridForArea('town');
+  assert.equal(sharedGrid.cost[12 * sharedGrid.cols + 12], -1, 'shared footprint includes placement extensions');
+  assert.ok(sharedGrid.cost[19 * sharedGrid.cols + 14] >= 0, 'shared footprint authority wins over the generic rectangular fallback');
+}
+
 
 // ── A full trip: arrival notice, road camp, market, home ────────────
 {
