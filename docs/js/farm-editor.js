@@ -60,7 +60,10 @@
     const btn   = document.getElementById('farmEditBtn');
     if (panel) panel.style.display = next ? 'flex' : 'none';
     if (btn)   btn.classList.toggle('fed-open', next);
-    if (next) deps.showToast('Farm editor active — click tiles to paint.', true);
+    if (next) {
+      window.FarmPlotEditor?.render?.(); // Refresh the spouse/child worker list after marriage, child growth, or save restoration.
+      deps.showToast('Farm editor active — click tiles to paint.', true);
+    }
   }
 
   function farmEditorSetBrush(type, value) {
