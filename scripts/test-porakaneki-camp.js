@@ -263,6 +263,7 @@ const npcScheduling = {
   registerNpcStations(list) { stations.push(...list); },
 };
 const banditCamps = { updateCampBanners() { return 'camp-tick'; } };
+const tentCollisionProviders = new Map(); // Captures registered tribe tent collision providers for movement/projectile and migration checks.
 
 const contextWindow = {
   fetch: async url => {
@@ -273,6 +274,9 @@ const contextWindow = {
   BanditCombat: banditCombat,
   NpcScheduling: npcScheduling,
   BanditCamps: banditCamps,
+  AreaFootprintBlockers: {
+    register(id, provider) { tentCollisionProviders.set(id, provider); return () => tentCollisionProviders.delete(id); },
+  },
   TemporaryLocales: { stamp: fakeStamp },
   CalendarSystem: {
     getHour: () => hour,
@@ -394,6 +398,16 @@ function hunterDebug(api, zoneId, campId, index) {
   }
   assert.equal(api.__test.MIN_HUNTING_CAMPS_PER_ZONE, 1, 'runtime exposes the hard hunting-camp floor used by generation and bandit conflict resolution');
   assert.equal(debug.chiefZoneId, 'map_southern_cloud_forest');
+  const tentCollision = tentCollisionProviders.get('porakaneki-camp-tents:map_southern_cloud_forest'); // Provider tracks current active tents rather than stale off-season reservations.
+  assert(tentCollision, 'Porakaneki and Omgurku runtime registers physical tent blockers for wilderness');
+  assert.equal(tentCollision.area, 'map_southern_cloud_forest');
+  const authoredChiefTent = chiefLocale.objects.find(prop => prop.kind === 'tent'); // Fake chief camp stamp uses its exact authored 2x2 shelter.
+  const tentWorldCol = 4 + authoredChiefTent.col + 1;
+  const tentWorldRow = 4 + authoredChiefTent.row + 1;
+  assert(tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1), 'walking actors cannot move through a chief tent');
+  assert(tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1, 0.8), 'low projectiles hit the tent instead of passing through');
+  assert(!tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1, 50), 'high projectiles can travel above the tent roof');
+  assert(!tentCollision.blocksBox(0.25, 0.25, 0.1), 'tent collision is limited to real stamped tent footprints');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1, 'exactly one large chief camp is active');
   const firstChiefDebug = debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief'); // Used below to verify redesigned chief-camp structural diagnostics.
   assert.equal(firstChiefDebug.residents, 6);
@@ -420,6 +434,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1);
   assert.equal(debug.zones.map_western_slope.chiefActive, true);
   assert.equal(debug.zones.map_southern_cloud_forest.chiefActive, false);
+  assert(!tentCollision.blocksBox(tentWorldCol, tentWorldRow, 0.1), 'the migrated chief tent no longer blocks movement in its old map');
   assert.equal(JSON.stringify(smallCenters(debug)), originalSmallCenters, 'small camps remain stable when the chief camp changes maps');
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_western_slope');
   assert(chief.rec.agenda.every(beat => !beat.destinationArea || beat.destinationArea === 'map_western_slope'));
