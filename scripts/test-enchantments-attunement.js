@@ -392,7 +392,7 @@ const unmarked = CO.getModifiers(companion, makeEntity());
 assert.equal(unmarked.damage, 1.3, '25. Whistle alone off the Sicced target');
 const scaled = CO.scaleHit(companion, a, 10, { afflictionBonuses: { bleedingHealth: 1 } });
 assert.ok(Math.abs(scaled.amount - 10 * both.damage) < 1e-9);
-assert.ok(Math.abs(scaled.opts.afflictionBonuses.bleedingHealth - both.affliction) < 1e-9, '25. affliction buildup scaled through the shared hit path');
+assert.ok(Math.abs(scaled.amount * scaled.opts.afflictionBonuses.bleedingHealth - 10 * both.affliction) < 1e-9, '25. affliction buildup scaled through the shared hit path');
 assert.equal(CO.getModifiers(makeEntity({ isCompanion: false }), a).damage, 1, 'wild attackers are never empowered');
 
 // ── 22-24: Attunement ─────────────────────────────────────────────

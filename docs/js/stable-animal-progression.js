@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const MAX_LEVEL = 20;
+  const MAX_LEVEL = 30; // Companion progression cap; other Stable roles retain level 10.
+  const OTHER_ROLE_MAX_LEVEL = 10; // Used by maxLevelForEntry for mounts and shoulder pets.
   const SERVICE_TICK_MS = 10000;
   const SERVICE_XP = 2;
   const ALERT_RANGE_TILES = 5.5;
@@ -82,10 +83,14 @@
       || 'companion';
   }
 
+  function maxLevelForEntry(entry) {
+    return roleForEntry(entry) === 'companion' ? MAX_LEVEL : OTHER_ROLE_MAX_LEVEL;
+  }
+
   function normalizeEntry(entry) {
     if (!entry) return entry;
-    entry.level = clampInt(entry.level, 0, MAX_LEVEL);
-    entry.stableXp = Math.max(0, Math.floor(Number(entry.stableXp) || 0));
+    entry.level = clampInt(entry.level, 0, maxLevelForEntry(entry));
+    entry.stableXp = entry.level >= maxLevelForEntry(entry) ? 0 : clampInt(entry.stableXp, 0, Number.MAX_SAFE_INTEGER);
     if (!entry.animalPerks || typeof entry.animalPerks !== 'object' || Array.isArray(entry.animalPerks)) entry.animalPerks = {};
     const role = roleForEntry(entry);
     const allowed = new Map((TREES[role] || []).map(def => [def.id, def]));
@@ -124,9 +129,10 @@
     return Math.max(0, entry.level - spentPoints(entry));
   }
 
-  function xpToNext(level) {
-    const safe = clampInt(level, 0, MAX_LEVEL);
-    return safe >= MAX_LEVEL ? 0 : 40 + safe * 20;
+  function xpToNext(level, entry) {
+    const cap = entry ? maxLevelForEntry(entry) : MAX_LEVEL; // Optional entry preserves the one-argument companion API.
+    const safe = clampInt(level, 0, cap);
+    return safe >= cap ? 0 : 40 + safe * 20;
   }
 
   function xpGainMultiplier(entry) {
@@ -193,19 +199,19 @@
     const entry = typeof entryOrId === 'string' ? findStableEntry(entryOrId) : entryOrId;
     if (!entry) return { ok: false, levels: 0, amount: 0 };
     normalizeEntry(entry);
-    if (entry.level >= MAX_LEVEL) return { ok: true, levels: 0, amount: 0 };
-    const amount = Math.max(0, Math.round((Number(rawAmount) || 0) * xpGainMultiplier(entry)));
+    if (entry.level >= maxLevelForEntry(entry)) return { ok: true, levels: 0, amount: 0 };
+    const amount = Math.max(0, Math.round((Number.isFinite(Number(rawAmount)) ? Number(rawAmount) : 0) * xpGainMultiplier(entry)));
     if (!amount) return { ok: false, levels: 0, amount: 0 };
     entry.stableXp += amount;
     let levels = 0;
-    while (entry.level < MAX_LEVEL) {
-      const needed = xpToNext(entry.level);
+    while (entry.level < maxLevelForEntry(entry)) {
+      const needed = xpToNext(entry.level, entry);
       if (entry.stableXp < needed) break;
       entry.stableXp -= needed;
       entry.level++;
       levels++;
     }
-    if (entry.level >= MAX_LEVEL) entry.stableXp = 0;
+    if (entry.level >= maxLevelForEntry(entry)) entry.stableXp = 0;
     saveStable();
     if (levels) {
       currentDeps()?.showToast?.(`🐾 ${entry.name || entry.kind || 'Animal'} reached level ${entry.level}! +${levels} training point${levels === 1 ? '' : 's'}.`, true);
@@ -809,8 +815,8 @@
       const card = document.createElement('div');
       card.className = 'farm-row';
       card.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:9px;';
-      const next = xpToNext(entry.level);
-      card.appendChild(makeText('div', `${entry.name || entry.kind || 'Animal'} · ${ROLE_LABELS[role] || role} · Lv ${entry.level}${entry.level >= MAX_LEVEL ? ' MAX' : ` · ${entry.stableXp}/${next} XP`} · ${points} point${points === 1 ? '' : 's'}`, 'font-weight:700;'));
+      const next = xpToNext(entry.level, entry);
+      card.appendChild(makeText('div', `${entry.name || entry.kind || 'Animal'} · ${ROLE_LABELS[role] || role} · Lv ${entry.level}${entry.level >= maxLevelForEntry(entry) ? ' MAX' : ` · ${entry.stableXp}/${next} XP`} · ${points} point${points === 1 ? '' : 's'}`, 'font-weight:700;'));
       const tree = document.createElement('div');
       tree.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;';
       for (const def of TREES[role] || []) {
@@ -864,7 +870,7 @@
         role: roleForEntry(entry),
         level: normalizeEntry(entry).level,
         xp: entry.stableXp,
-        nextXp: xpToNext(entry.level),
+        nextXp: xpToNext(entry.level, entry),
         spent: spentPoints(entry),
         available: availablePoints(entry),
         perks: { ...entry.animalPerks },
@@ -899,7 +905,8 @@
 
   const api = {
     install,
-    maxLevel: MAX_LEVEL, // StableAnimalTrainingRefinements replaces this live value with the corrected cap (currently 10).
+    maxLevel: MAX_LEVEL,
+    maxLevelForEntry,
     trees: TREES,
     stableEntries, // Shared live Stable collection; Color Pools edits the existing genotype objects rather than introducing a parallel save.
     findStableEntry,

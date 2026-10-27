@@ -34,8 +34,8 @@
     return window.StableAnimalTownFamiliarity || null;
   }
 
-  function stableMaxLevel() {
-    const value = Number(progression()?.maxLevel ?? refinements()?.maxLevel);
+  function stableMaxLevel(entry) {
+    const value = Number((entry && progression()?.maxLevelForEntry?.(entry)) || progression()?.maxLevel || refinements()?.maxLevel);
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 10;
   }
 
@@ -114,7 +114,7 @@
     progression()?.normalizeEntry?.(entry);
     petRapport()?.normalizeEntry?.(entry); // Pet Rapport lives on the same stable entry and is normalized before either UI/debug reads it.
     refinements()?.ensureStableCaps?.();
-    const max = stableMaxLevel();
+    const max = stableMaxLevel(entry);
     entry.level = Math.max(0, Math.min(max, Math.floor(Number(entry.level) || 0)));
     if (entry.level >= max) entry.stableXp = 0;
     return entry;
@@ -234,7 +234,7 @@
       lifeStage: entry.lifeStage,
       role,
       level: entry.level,
-      maxLevel: stableMaxLevel(),
+      maxLevel: stableMaxLevel(entry),
       xp: entry.stableXp || 0,
       petRapport: rapportApi?.getPetRapport?.(entry) ?? null,
       petRapportHearts: rapportApi?.getPetHearts?.(entry) ?? null,
@@ -242,6 +242,8 @@
       availablePoints: availablePoints(entry),
       perks: { ...(entry.animalPerks || {}) },
       perkIds: perkDefsForEntry(entry).map(def => def.id),
+      tactics: role === 'companion' ? refinements()?.tacticsForEntry?.(entry) || null : null,
+      liveTactics: role === 'companion' ? refinements()?.debugEntry?.(entry)?.liveTactics || null : null,
       combatModifiers: role === 'companion' ? refinements()?.companionCombatModifiers?.(entry) || null : null,
     };
   }
@@ -369,7 +371,7 @@
 
   function buildStablePerkTree(entry) {
     const api = progression();
-    const max = stableMaxLevel();
+    const max = stableMaxLevel(entry);
     const role = stableRole(entry);
     const panel = document.createElement('div');
     panel.className = 'stable-entry-perk-tree';
@@ -393,6 +395,7 @@
       const defs = perkDefsForEntry(entry);
       const genericDefs = defs.filter(def => !String(def.id).startsWith('species_'));
       const speciesDefs = defs.filter(def => String(def.id).startsWith('species_'));
+      if (role === 'companion') refinements()?.appendTacticalLoadout?.(panel, entry);
       appendPerkSection(panel, role === 'mount' ? 'Mount Training' : role === 'shoulderPet' ? 'Shoulder Pet Training' : 'General Companion Training', entry, genericDefs);
       if (role === 'companion') appendPerkSection(panel, `${speciesLabel(entry)} Combat`, entry, speciesDefs);
       if (!defs.length) panel.appendChild(makeText('div', 'No training perks are registered for this animal.', 'font-size:11px;opacity:.75;'));
@@ -452,7 +455,7 @@
       const isActive = !baby && !entry.stowed && entry.id === activeStableIdForRole(role);
       const isExpanded = expandedStableId === entry.id;
       const points = availablePoints(entry);
-      const max = stableMaxLevel();
+      const max = stableMaxLevel(entry);
       const row = document.createElement('div');
       row.className = 'farm-row livestock-trait-row stable-training-row';
       row.dataset.stableTrainingId = entry.id;
@@ -580,7 +583,7 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'Stable navigation skips structural wrappers; Training / Perks opens each animal tree with controller Confirm and Back support.',
+        mostRecentChange: 'Companions train to level 30. Training / Perks includes saved per-ability frequency, effect focus, and combat tempo.',
         expandedStableId,
         maxLevel: stableMaxLevel(),
         babyCount: stable.filter(stableIsBaby).length,

@@ -4,7 +4,7 @@
   const progression = window.StableAnimalProgression; // Existing Stable progression remains the persistence/XP/perk authority underneath these refinements.
   if (!progression || window.StableAnimalTrainingRefinements?.installed) return;
 
-  const MAX_STABLE_LEVEL = 10; // User-facing and enforced cap for every stabled animal role.
+  const MAX_STABLE_LEVEL = progression.maxLevel || 30; // Progression owns the companion cap and role-specific limits.
   const COMBAT_SYNC_MS = 250; // Low-cost cadence for applying perk-derived stats to the currently active companion actor.
   const SPECIES_ALIASES = Object.freeze({ // Normalizes wild/variant keys onto the companion's base species perk tree.
     'gar-wolf-alpha': 'gar-wolf',
@@ -87,27 +87,15 @@
     return Math.max(min, Math.min(max, Math.floor(Number(value) || 0)));
   }
 
+  function maxLevelForEntry(entry) {
+    return progression.maxLevelForEntry?.(entry) ?? (progression.roleForEntry?.(entry) === 'companion' ? 30 : 10);
+  }
+
   function installLevelCap(entry) {
-    if (!entry || entry.__stableLevelCap10Installed) return entry;
-    let levelValue = capInt(entry.level, 0, MAX_STABLE_LEVEL); // Backing value used by the capped enumerable level accessor.
-    let xpValue = Math.max(0, Math.floor(Number(entry.stableXp) || 0)); // Backing XP is discarded whenever the animal reaches the cap.
-    if (levelValue >= MAX_STABLE_LEVEL) xpValue = 0;
-    Object.defineProperty(entry, 'level', {
-      configurable: true,
-      enumerable: true,
-      get() { return levelValue; },
-      set(value) {
-        levelValue = capInt(value, 0, MAX_STABLE_LEVEL);
-        if (levelValue >= MAX_STABLE_LEVEL) xpValue = 0;
-      },
-    });
-    Object.defineProperty(entry, 'stableXp', {
-      configurable: true,
-      enumerable: true,
-      get() { return levelValue >= MAX_STABLE_LEVEL ? 0 : xpValue; },
-      set(value) { xpValue = levelValue >= MAX_STABLE_LEVEL ? 0 : Math.max(0, Math.floor(Number(value) || 0)); },
-    });
-    Object.defineProperty(entry, '__stableLevelCap10Installed', { configurable: true, enumerable: false, value: true });
+    if (!entry) return entry;
+    const cap = maxLevelForEntry(entry); // Mirrors progression for legacy UI callers without another level accessor.
+    entry.level = capInt(entry.level, 0, cap);
+    entry.stableXp = entry.level >= cap ? 0 : capInt(entry.stableXp, 0, Number.MAX_SAFE_INTEGER);
     return entry;
   }
 
@@ -198,6 +186,166 @@
     return modifiers;
   }
 
+  const TEMPOS = Object.freeze({ // Scales recovery and the existing attack payment, without speeding up authored attack animations.
+    steady: { label: 'Steady', cooldown: 1, recovery: 1, stamina: 1 },
+    relentless: { label: 'Relentless', cooldown: 0.75, recovery: 0.65, stamina: 1.3 },
+    measured: { label: 'Measured', cooldown: 1.3, recovery: 1.25, stamina: 0.8 },
+  });
+  const EFFECTS = Object.freeze({ // Focus redistributes existing hit channels; it never invents a new affliction.
+    balanced: { label: 'Balanced', damage: 1, footing: 1, affliction: 1, knockback: 1 },
+    power: { label: 'Power (+35% damage, -25% Footing / afflictions)', damage: 1.35, footing: 0.75, affliction: 0.75, knockback: 1 },
+    stagger: { label: 'Stagger (+60% Footing, -20% damage / afflictions)', damage: 0.8, footing: 1.6, affliction: 0.8, knockback: 1 },
+    drive: { label: 'Drive (+60% knockback, -20% damage / afflictions)', damage: 0.8, footing: 1, affliction: 0.8, knockback: 1.6 },
+    affliction: { label: 'Afflict (+50% buildup, -20% damage / Footing / knockback)', damage: 0.8, footing: 0.8, affliction: 1.5, knockback: 0.8 },
+  });
+  const ATTACK_LABELS = Object.freeze({ // Names shared with the Stable loadout and mobile diagnostics.
+    guardCharge: 'Guard Charge', pounce: 'Pounce', swarm: 'Swarm', rearKick: 'Rear Kick',
+    grehlrBurrow: 'Burrow Ambush', grehlrStink: 'Stink Spray', causticPellet: 'Caustic Pellet',
+  });
+  const FREQUENCIES = ['Off', 'Rare', 'Regular', 'Often', 'Priority']; // Relative weights 0–4, shown as an exact share beside each move.
+
+  function abilityDefs(entry, actor) {
+    const species = canonicalSpecies(entry?.kind); // Resolves species-specific aliases before exposing existing moves.
+    const def = actor?._stableTrainingBaseDef || actor?.def || currentDeps()?.CREATURE_DB?.[entry?.kind] || window.CREATURE_DB?.[entry?.kind] || {};
+    const ids = new Set(['guardCharge']); // Every fighting companion already has the guard-charge fallback.
+    for (let id of def.attacks || []) {
+      if (id === 'pounce' && species === 'grehlr') id = 'grehlrBurrow';
+      if (id === 'pounce' && species === 'drenkirra') id = 'causticPellet';
+      ids.add(id);
+    }
+    if (species === 'grehlr' && (!window.CreatureGenetics?.creatureSizeClass || window.CreatureGenetics.creatureSizeClass(entry.kind, entry.genotype) === 'medium')) ids.add('grehlrStink');
+    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (def.realAttackEvery === 1 ? 0 : 3) : id === 'rearKick' ? 4 : 1 }));
+  }
+
+  function effectIds(attackId) {
+    if (attackId === 'grehlrStink') return ['balanced', 'affliction'];
+    if (attackId === 'guardCharge') return ['balanced', 'drive']; // Zero-damage charges apply knockback, but ResourceSystem does not apply damage-derived afflictions.
+    if (attackId === 'swarm') return ['balanced', 'power', 'affliction']; // Attached ticks explicitly suppress Footing damage and knockback.
+    if (attackId === 'causticPellet') return ['balanced', 'power', 'drive', 'affliction']; // Ranged pellets explicitly have zero Footing damage.
+    if (attackId === 'rearKick') return ['balanced', 'stagger', 'drive', 'power'];
+    return Object.keys(EFFECTS);
+  }
+
+  function effectLabel(attackId, effect) {
+    if (attackId === 'grehlrStink' && effect === 'affliction') return 'Concentrated (+50% Winded Stamina)';
+    if (attackId === 'guardCharge' && effect === 'drive') return 'Drive (+60% knockback)';
+    if ((attackId === 'swarm' || attackId === 'causticPellet') && effect === 'power') return 'Power (+35% damage, -25% afflictions)';
+    if (attackId === 'swarm' && effect === 'affliction') return 'Afflict (+50% buildup, -20% damage)';
+    if (attackId === 'causticPellet' && effect === 'drive') return 'Drive (+60% knockback, -20% damage / afflictions)';
+    if (attackId === 'causticPellet' && effect === 'affliction') return 'Afflict (+50% buildup, -20% damage / knockback)';
+    return EFFECTS[effect].label;
+  }
+
+  function tacticsForEntry(entry, actor) {
+    if (!entry || progression.roleForEntry?.(entry) !== 'companion') return null;
+    const raw = entry.companionTactics || {}; // Saved settings are read defensively and normalized without per-frame save writes.
+    const abilities = {}; // Species allow-list prevents stale/edited saves from granting another creature's move.
+    for (const def of abilityDefs(entry, actor)) {
+      const saved = raw.abilities?.[def.id]; // Reads only this animal's supported moves.
+      const frequency = Number(saved?.frequency); // Nonfinite settings fall back to the species default.
+      abilities[def.id] = {
+        frequency: Number.isFinite(frequency) ? capInt(frequency, 0, 4) : def.defaultFrequency,
+        effect: effectIds(def.id).includes(saved?.effect) ? saved.effect : 'balanced',
+      };
+    }
+    if (!Object.values(abilities).some(value => value.frequency > 0)) abilities.guardCharge.frequency = 1;
+    return { tempo: Object.hasOwn(TEMPOS, raw.tempo) ? raw.tempo : 'steady', abilities };
+  }
+
+  function entryForActor(actor) {
+    const player = window.Combat?.deps?.player; // Restricts the tactical loadout to the local player's saved fighting companion.
+    if (!actor?.isCompanion || actor.banditCompanion || actor.stableRole !== 'companion' || (player && actor.master && actor.master !== player)) return null;
+    return (actor.stableId && progression.findStableEntry?.(actor.stableId)) || progression.activeEntryForRole?.('companion') || null;
+  }
+
+  function setTactics(entryId, settings) {
+    const entry = stableEntries().find(candidate => candidate?.id === entryId); // Mutates the same Stable object used by ordinary character saves.
+    if (!entry || progression.roleForEntry?.(entry) !== 'companion') return { ok: false, message: 'Animal companion not found.' };
+    if (entry.lifeStage === 'baby') return { ok: false, message: 'Baby animals cannot fight yet.' };
+    entry.companionTactics = tacticsForEntry({ ...entry, companionTactics: settings });
+    progression.saveStable?.();
+    const actor = liveCompanionActor(); // Reset the weighted schedule when the active animal's loadout changes.
+    if (actor && entryForActor(actor)?.id === entry.id) delete actor._companionTacticSchedule;
+    return { ok: true, message: `${entry.name || entry.kind}: tactical loadout saved.` };
+  }
+
+  function combatTempo(actor) {
+    const entry = entryForActor(actor); // Wild animals, enemy pets, mounts and shoulder pets retain normal timing.
+    return Object.hasOwn(TEMPOS, entry?.companionTactics?.tempo) ? TEMPOS[entry.companionTactics.tempo] : TEMPOS.steady;
+  }
+
+  function chooseAttack(actor) {
+    const entry = entryForActor(actor); // Called once per committed action, never during movement frames.
+    if (!entry) return null;
+    const tactics = tacticsForEntry(entry, actor); // One normalized snapshot for selection and its eventual hit payload.
+    const schedule = actor._companionTacticSchedule || (actor._companionTacticSchedule = Object.create(null)); // Smooth weighted rotation avoids random streaks.
+    let selected = null; // Highest accrued move priority wins this action.
+    let total = 0; // Only ready moves contribute weight; rear kicks keep their existing hard cooldown.
+    for (const [id, settings] of Object.entries(tactics.abilities)) {
+      if (!settings.frequency || (id === 'rearKick' && window.VoorgAssRearKick?.canUse?.(actor) === false)) { schedule[id] = 0; continue; }
+      total += settings.frequency;
+      schedule[id] = (schedule[id] || 0) + settings.frequency;
+      if (!selected || schedule[id] > schedule[selected]) selected = id;
+    }
+    if (!selected) return { id: null, waiting: true }; // A loadout containing only a cooling-down kick waits instead of using a disabled move.
+    schedule[selected] -= total;
+    actor._companionTacticEffect = EFFECTS[tactics.abilities[selected].effect]; // Remains stable through the whole committed attack and fallback bite.
+    actor._companionTacticLastMove = selected; // Included in the existing mobile debug view.
+    return { id: selected, waiting: false };
+  }
+
+  function hitModifiers(actor) {
+    return entryForActor(actor) ? actor._companionTacticEffect || EFFECTS.balanced : EFFECTS.balanced;
+  }
+
+  function appendTacticalLoadout(panel, entry) {
+    if (progression.roleForEntry?.(entry) !== 'companion') return;
+    const section = document.createElement('div'); // Native Stable tree owns the loadout alongside its existing perk controls.
+    section.className = 'stable-tactical-loadout';
+    section.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;';
+    section.appendChild(makeText('div', 'Tactical Loadout', 'font-weight:800;'));
+    section.appendChild(makeText('div', 'Frequency is a relative share of combat actions. Effects reshape existing damage, knockback, Footing or afflictions. At least one move stays enabled. Changes save immediately.', 'font-size:11px;opacity:.85;'));
+    let settings = tacticsForEntry(entry); // Button cycles keep mobile taps and controller Confirm on the same path.
+    const summary = makeText('div', '', 'font-size:11px;'); // Refreshes exact percentages after any frequency change.
+    const frequencyButtons = []; // Keeps labels current without rerendering and losing controller focus.
+    const commit = () => {
+      const result = setTactics(entry.id, settings); // Re-normalization prevents disabling the last available move.
+      if (result.ok) settings = tacticsForEntry(entry);
+      else currentDeps()?.showToast?.(result.message, false);
+      refresh();
+    };
+    const addCycle = (label, values, read, write, describe) => {
+      const button = document.createElement('button'); // Ordinary buttons are discoverable by the existing controller navigation.
+      button.className = 'settings-small-btn';
+      button.style.cssText = 'white-space:normal;text-align:left;min-height:44px;';
+      button.disabled = entry.lifeStage === 'baby';
+      const update = () => { button.textContent = `${label}: ${describe(read())}`; }; // Called only by explicit user changes.
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        write(values[(values.indexOf(read()) + 1) % values.length]);
+        commit();
+        update();
+      });
+      update();
+      section.appendChild(button);
+      return update;
+    };
+    const tempoUpdate = addCycle('Combat tempo', Object.keys(TEMPOS), () => settings.tempo, value => { settings.tempo = value; }, value => `${TEMPOS[value].label}${value === 'relentless' ? ' (25% shorter cooldown, 35% shorter retreat, +30% base Stamina)' : value === 'measured' ? ' (30% longer cooldown, 25% longer retreat, -20% base Stamina)' : ' (normal recovery and Stamina)'}`);
+    for (const def of abilityDefs(entry)) {
+      frequencyButtons.push(addCycle(`${def.label} frequency`, [0, 1, 2, 3, 4], () => settings.abilities[def.id].frequency, value => { settings.abilities[def.id].frequency = value; }, value => FREQUENCIES[value]));
+      addCycle(`${def.label} effect`, effectIds(def.id), () => settings.abilities[def.id].effect, value => { settings.abilities[def.id].effect = value; }, value => effectLabel(def.id, value));
+    }
+    function refresh() {
+      const total = Object.values(settings.abilities).reduce((sum, value) => sum + value.frequency, 0); // Exact steady-state share, before move cooldowns and Stamina requirements.
+      summary.textContent = abilityDefs(entry).map(def => `${def.label}: ${Math.round(settings.abilities[def.id].frequency / total * 100)}%`).join(' · ') + '. Cooldowns and Stamina still apply.';
+      frequencyButtons.forEach(update => update());
+      tempoUpdate();
+    }
+    refresh();
+    section.appendChild(summary);
+    panel.appendChild(section);
+  }
+
   function makeText(tag, text, css = '') {
     const element = document.createElement(tag);
     element.textContent = text;
@@ -239,12 +387,13 @@
     panel.addEventListener('click', event => event.stopPropagation());
 
     const points = progression.availablePoints?.(entry) || 0;
-    const nextXp = entry.level >= MAX_STABLE_LEVEL ? 0 : progression.xpToNext?.(entry.level) || 0;
-    const xpText = entry.level >= MAX_STABLE_LEVEL ? 'MAX LEVEL' : `${entry.stableXp || 0}/${nextXp} XP`;
-    panel.appendChild(makeText('div', `Level ${entry.level}/${MAX_STABLE_LEVEL} · ${xpText} · ${points} training point${points === 1 ? '' : 's'} available`, 'font-size:11px;font-weight:700;'));
+    const nextXp = entry.level >= maxLevelForEntry(entry) ? 0 : progression.xpToNext?.(entry.level) || 0;
+    const xpText = entry.level >= maxLevelForEntry(entry) ? 'MAX LEVEL' : `${entry.stableXp || 0}/${nextXp} XP`;
+    panel.appendChild(makeText('div', `Level ${entry.level}/${maxLevelForEntry(entry)} · ${xpText} · ${points} training point${points === 1 ? '' : 's'} available`, 'font-size:11px;font-weight:700;'));
 
     const role = progression.roleForEntry?.(entry) || 'companion';
     const genericDefs = (progression.trees?.[role] || []).filter(def => !String(def.id).startsWith('species_'));
+    if (role === 'companion') appendTacticalLoadout(panel, entry);
     appendPerkSection(panel, role === 'mount' ? 'Mount Training' : role === 'shoulderPet' ? 'Shoulder Pet Training' : 'General Companion Training', entry, genericDefs);
     if (role === 'companion') appendPerkSection(panel, `${speciesLabel(entry)} Combat`, entry, speciesCombatPerksForEntry(entry));
 
@@ -284,7 +433,7 @@
 
       const value = row.querySelector('.farm-row-value');
       const points = progression.availablePoints?.(entry) || 0;
-      if (value) value.textContent = `${roleLabel(entry)} · Lv. ${entry.level}/${MAX_STABLE_LEVEL}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}`;
+      if (value) value.textContent = `${roleLabel(entry)} · Lv. ${entry.level}/${maxLevelForEntry(entry)}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}`;
 
       const chevron = makeText('span', expandedStableId === entry.id ? '▾' : '▸', 'font-size:15px;opacity:.7;margin-left:auto;');
       chevron.className = 'stable-training-chevron';
@@ -303,13 +452,16 @@
 
   function debugEntry(entry) {
     const role = progression.roleForEntry?.(entry) || 'companion';
+    const actor = liveCompanionActor(); // Single lookup for the mobile debug snapshot.
     return {
       id: entry?.id,
       name: entry?.name,
       kind: entry?.kind,
       role,
       level: entry?.level,
-      maxLevel: MAX_STABLE_LEVEL,
+      maxLevel: maxLevelForEntry(entry),
+      tactics: tacticsForEntry(entry),
+      liveTactics: actor?.stableId === entry?.id ? { lastMove: actor?._companionTacticLastMove || null, focus: actor?._companionTacticEffect?.label || 'Balanced' } : null,
       xp: entry?.stableXp || 0,
       availablePoints: progression.availablePoints?.(entry) || 0,
       perks: { ...(entry?.animalPerks || {}) },
@@ -320,24 +472,9 @@
 
   function patchProgressionApi() {
     installSpeciesPerkDefinitions();
-    progression.maxLevel = MAX_STABLE_LEVEL;
     progression.perkDefsForEntry = perkDefsForEntry;
     progression.speciesCombatPerksForEntry = speciesCombatPerksForEntry;
     progression.companionCombatModifiers = companionCombatModifiers;
-
-    if (!progression.__stableLevel10AwardWrapped && typeof progression.awardXp === 'function') {
-      const originalAward = progression.awardXp.bind(progression);
-      progression.awardXp = function cappedStableAwardXp(entryOrId, amount, source) {
-        ensureStableCaps();
-        const entry = typeof entryOrId === 'string' ? stableEntries().find(candidate => candidate?.id === entryOrId) : entryOrId;
-        if (entry) installLevelCap(entry);
-        if (entry?.level >= MAX_STABLE_LEVEL) return { ok: true, levels: 0, amount: 0 };
-        const result = originalAward(entryOrId, amount, source);
-        if (entry) installLevelCap(entry);
-        return result;
-      };
-      progression.__stableLevel10AwardWrapped = true;
-    }
 
     if (!progression.__speciesSpendGateWrapped && typeof progression.spendPoint === 'function') {
       const originalSpend = progression.spendPoint.bind(progression);
@@ -353,14 +490,14 @@
       progression.__speciesSpendGateWrapped = true;
     }
 
-    if (!progression.__level10DebugWrapped && typeof progression.debugSnapshot === 'function') {
+    if (!progression.__stableTrainingDebugWrapped && typeof progression.debugSnapshot === 'function') {
       const originalDebug = progression.debugSnapshot.bind(progression);
-      progression.debugSnapshot = function level10StableDebug() {
+      progression.debugSnapshot = function stableTrainingDebug() {
         ensureStableCaps();
         return { ...originalDebug(), maxLevel: MAX_STABLE_LEVEL, expandedStableId, activeCompanionCombat: companionCombatModifiers(progression.activeEntryForRole?.('companion')) };
       };
       window.__stableAnimalProgressionDebug = progression.debugSnapshot;
-      progression.__level10DebugWrapped = true;
+      progression.__stableTrainingDebugWrapped = true;
     }
   }
 
@@ -423,6 +560,12 @@
     installed: true,
     install,
     maxLevel: MAX_STABLE_LEVEL,
+    tacticsForEntry,
+    setTactics,
+    chooseAttack,
+    combatTempo,
+    hitModifiers,
+    appendTacticalLoadout,
     speciesCombatPerks: SPECIES_COMBAT_PERKS,
     speciesCombatPerksForEntry,
     companionCombatModifiers,
