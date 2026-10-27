@@ -273,8 +273,10 @@
       if (loss > 0) visualRoot.quaternion.copy(state.driverRoot.quaternion);
       if (runLean) {
         const headingYaw = Math.PI / 2 - (Number(entity.facing) || 0) - (Number(entity.def?.aimAngleOffset) || 0); // Same world heading convention as game.js's creature facing resolver.
-        setForwardLeanQuaternion(state.runLeanQuaternion, runLean, headingYaw - (Number(state.avatarRoot.rotation.y) || 0));
+        const localHeading = headingYaw - (Number(state.avatarRoot.rotation.y) || 0); // Facing-relative forward axis shared by torso lean and head counter-rotation.
+        setForwardLeanQuaternion(state.runLeanQuaternion, runLean, localHeading);
         visualRoot.quaternion.multiply(state.runLeanQuaternion);
+        window.NpcMovementHeadTarget?.applyHostileRunPitch?.(entity.avatarRef, runLean, localHeading, undo); // Counter-pitch only the head skins for this draw; existing combat head yaw remains untouched.
       }
       undo.push(() => {
         if (previousRotation && visualRoot.rotation?.copy) visualRoot.rotation.copy(previousRotation);
@@ -349,7 +351,7 @@
     getDebug() {
       const player = window.Combat?.deps?.player;
       return {
-        lastChange: 'Procedural movement lean follows velocity independently of portrait and weapon stance yaw',
+        lastChange: 'Movement-only NPC forward gaze and render-time enemy neck counter-pitch preserve level sightlines',
         runLeanSpace: 'world-movement',
         playerProne: !!player?.prone,
         footing: Number(player?.footing) || 0,
