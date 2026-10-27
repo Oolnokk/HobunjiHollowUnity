@@ -808,7 +808,7 @@
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
     }
     for(const pile of rec.piles.values()) {
-      const d=distance(p,{x:pile.col+.5,z:pile.row+.5});
+      const d=distance(p,{x:pile.x??pile.col+.5,z:pile.z??pile.row+.5});
       if(d<smallest){smallest=d;choice={type:'pile',obj:pile};}
     }
     return choice;
@@ -1082,7 +1082,7 @@
     if(!pile)return null;
     if(!pile.contextButtons){
       const anchor=pile.promptAnchor||(pile.promptAnchor=new THREE.Object3D());
-      anchor.position.set(pile.col+.5,pile.y+.25,pile.row+.5);
+      anchor.position.set(pile.x??pile.col+.5,pile.y+.25,pile.z??pile.row+.5);
       if(!anchor.parent)records.get(pile.mapId)?.scene.add(anchor);
       pile.contextButtons=Object.freeze([Object.freeze({
         icon:pile.kind==='fruit'?'🍈':pile.kind==='tree'?'🪵':'🪨',
@@ -1258,8 +1258,8 @@
       for(let p=0;p<piles.length;p++){
         const pile=piles[p];
         for(let i=0;i<4;i++){
-          transform.position.set(pile.col+.5+Math.cos(i*1.8)*.15,
-            pile.y+.09,pile.row+.5+Math.sin(i*1.8)*.15);
+          transform.position.set((pile.x??pile.col+.5)+Math.cos(i*1.8)*.15,
+            pile.y+.09,(pile.z??pile.row+.5)+Math.sin(i*1.8)*.15);
           transform.rotation.set(0,0,kind==='tree'?1.2+i*.08:0);
           transform.scale.set(1,1,1);
           transform.updateMatrix();
@@ -1271,16 +1271,17 @@
       state.mesh.computeBoundingSphere?.(); // Keep normal camera frustum culling after matrix changes.
     }
   }
-  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null,sourceId=null,restoredId=null) {
+  function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null,sourceId=null,restoredId=null,impact=null) {
     const baseId=kind+'_'+col+'_'+row+(sourceId?'_'+sourceId:''); // Unique source keeps nearby fruit piles distinct.
     let id=restoredId||baseId;
     if(!restoredId && kind==='fruit'){
       let serial=2;
       while(rec.piles.has(id))id=baseId+'_'+serial++;
     } else if(rec.piles.has(id))return;
-    rec.piles.set(id,{id,col,row,kind,woodKey,oreKey,y,mapId}); // Logical loot records are distinct from the pooled GPU instance geometry.
+    const x=Number.isFinite(impact?.x)?impact.x:col+.5,z=Number.isFinite(impact?.z)?impact.z:row+.5; // Preserve the actual fruit impact within its terrain tile.
+    rec.piles.set(id,{id,col,row,kind,woodKey,oreKey,y,mapId,x,z}); // Logical loot records are distinct from the pooled GPU instance geometry.
     if(!pileHistory.has(mapId))pileHistory.set(mapId,new Map());
-    pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey}); // Persist once after the full blast, not once per pile.
+    pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey,x,z}); // Persist once after the full blast, not once per pile.
   }
   function destroyTerrain(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
@@ -1365,7 +1366,8 @@
       chunks.set(Math.floor(col/16)+','+Math.floor(row/16),{col,row});
     }
     for(const [id,info] of savedPiles||[])if(!rec.piles.has(id))
-      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null,null,id);
+      spawnPile(mapId,rec,info.col,info.row,info.kind,baseHeight(info.col,info.row),info.woodKey,info.oreKey||null,null,id,
+        Number.isFinite(info.x)&&Number.isFinite(info.z)?{x:info.x,z:info.z}:null);
     if(rec.piles.size)syncPileVisuals(rec);
     restoreLooseFruit(mapId,rec);
     if(chunks.size&&!(mapId.startsWith('map_i_den_')||mapId.startsWith('map_i_town_mine_'))) {
@@ -1457,7 +1459,7 @@
     applyFruitBlast(fruit.mapId,x,z);
     if(rec){
       const col=Math.floor(x),row=Math.floor(z);
-      spawnPile(fruit.mapId,rec,col,row,'fruit',baseHeight(col,row),'pineLog',null,fruit.id);
+      spawnPile(fruit.mapId,rec,col,row,'fruit',baseHeight(col,row),'pineLog',null,fruit.id,null,{x,z});
       syncPileVisuals(rec);persistWorld();
     }
     lastEvent='Soursap burst ' + fruit.id + ' via ' + cause;
