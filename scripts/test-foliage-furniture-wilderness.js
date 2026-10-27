@@ -123,6 +123,17 @@ runtime.init({
   assert.equal(logObject.getButtons().length, 2);
   assert.deepEqual(logObject.onAction('obj_foliage_sit_1'), { ok: true });
   assert.equal(sitCalls.length, 1);
+  const campLog = { id: 'porakaneki_camp_log_1', sourceObjectType: 'fallenLog', furnitureKey: 'benchlog', col: 12, row: 13, footprintW: 2, footprintD: 1, centerX: 13, centerZ: 13.5, yawDeg: 0, elevTier: 0 }; // Camp-owned log should behave exactly like naturally spawned benchlog furniture.
+  const campObject = runtime.registerExternalInstance('map_test', campLog, builtByKey.benchlog, { id: 'camp_mesh' });
+  assert.equal(runtime.objectAt('map_test', 12, 13), campObject, 'camp seating is reachable through the normal world interaction registry');
+  assert.equal(campObject.getButtons().length, 2, 'camp logs retain both authored Sit actions');
+  assert.deepEqual(campObject.onAction('obj_foliage_sit_1'), { ok: true }, 'camp seats use the same sit callback and authored seat anchors');
+  assert.equal(sitCalls.length, 2, 'camp sitting reaches the shared furniture sit function');
+  assert.equal(sitCalls[1][0], 'benchlog');
+  assert(runtime.blocksPoint('map_test', 12.5, 13.5), 'camp-owned logs block movement like ordinary wilderness logs');
+  assert(runtime.unregisterExternalInstance('map_test', campLog.id), 'camp teardown unregisters its externally-owned log');
+  assert.equal(runtime.objectAt('map_test', 12, 13), null, 'no invisible camp seat interactions remain after teardown');
+  assert(!runtime.blocksPoint('map_test', 12.5, 13.5), 'no invisible camp log collider remains after teardown');
   assert.deepEqual(runtime.debugState('map_test')[0], {
     mapId: 'map_test', recordCount: 2, interactionTileCount: 3, instanceCount: 2, status: 'ready', error: null,
   });
