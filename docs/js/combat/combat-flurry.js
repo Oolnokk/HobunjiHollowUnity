@@ -70,7 +70,7 @@
       // glow continues to reflect how long the stance itself has been held.
       if (window.Combat.isStaggered(deps.player)) return;
 
-      const shapeStats = window.WeaponShapeStats.current(); // Held flurry strikes share the current weapon's physical stat profile.
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Held flurry strikes share the current weapon's physical stat profile.
       const effects = window.CombatProgression?.getEffects(
         deps.currentWeaponKey(), 'acceleratingFlurry',
       ) || { afflictions: {}, stats: {} };
@@ -198,7 +198,7 @@
       active = true;
       count = 0;
       startedAt = now();
-      nextStrikeAt = startedAt + FIRST_STRIKE_DELAY_S / window.WeaponShapeStats.current().speed;
+      nextStrikeAt = startedAt + FIRST_STRIKE_DELAY_S / (window.WeaponShapeStats?.current?.()?.speed || 1);
       debugState = { active: true, heldSeconds: 0, glowIntensity: 0, strikes: 0 };
       setGlow(0);
       window.Combat.setMovementSpeedMul(speedMul);
