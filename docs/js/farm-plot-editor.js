@@ -53,7 +53,7 @@
   function onTerrainPaint(c, r, brush) {
     loaded = true;
     const kind = KIND_FOR_BRUSH[brush];
-    if (!kind) { if (removeTile(c, r)) render(); return null; }
+    if (!kind) { if (removeTile(c, r)) { window.NpcFarmPlots?.registerFarmPlots?.(plots); render(); } return null; } // Non-plot brush still releases the live workers before the enclosing FarmEditor save.
     if (!stroke) {
       stroke = plotAt(c, r, kind);
       if (!stroke) {
