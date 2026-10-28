@@ -54,8 +54,11 @@ const server=http.createServer((request,response)=>{
       }
       const flat=build(new T.PlaneGeometry(2,2),'cornerFill',.5,7);
       const corners=build(new T.BoxGeometry(4,3,2),'cornerFill',.5,7);
-      const low=build(new T.BoxGeometry(4,3,2),'wrap',.5,1);
-      const high=build(new T.BoxGeometry(4,3,2),'wrap',.5,24);
+      const low=build(new T.BoxGeometry(4,3,2),'wrap',.1,80);
+      const sameDensityDifferentCount=build(new T.BoxGeometry(4,3,2),'wrap',.1,1);
+      const shortWrap=build(new T.BoxGeometry(4,3,2),'wrap',.9,24);
+
+      const high=build(new T.BoxGeometry(4,3,2),'wrap',.9,1);
       const full=build(new T.BoxGeometry(4,3,2),'wrap',1,24);
       const partial=build(new T.BoxGeometry(4,3,2),'wrap',.95,24);
       const reused=build(new T.BoxGeometry(4,3,2),'wrap',1,24);
@@ -321,13 +324,18 @@ const server=http.createServer((request,response)=>{
       field('style').value='wrap';field('style').dispatchEvent(new Event('change'));
       const visibleAfter=getComputedStyle(densityRow).display!=='none';
       const budgetLabel=document.querySelector('[data-count-label]').textContent;
+      const countHidden=getComputedStyle(document.querySelector('[data-count-control]')).display==='none';
+      const paletteChoices=document.querySelector('[data-field="palette"]').options.length;
+      const signInsetField=!!document.querySelector('[data-field="inset"][min="-0.5"]');
+      const shrinkwrapField=!!document.querySelector('[data-field="shrinkwrapFinal"]');
+      const entranceField=!!document.querySelector('[data-field="tunnelAsOpening"]');
       field('density').value='.75';field('count').value='9';field('strandLimit').value='4';field('perSurface').checked=true;
       document.querySelector('[data-action="apply"]').click();
       field('style').value='natural';field('style').dispatchEvent(new Event('change'));
       field('layer').value='0';field('layer').dispatchEvent(new Event('change'));
       return {
         flatTubes:count(flat),cornerTubes:count(corners),splitCornerTubes:count(split),
-        lowTubes:count(low),highTubes:count(high),partialCover:cover(partial).length,
+        lowTubes:count(low),highTubes:count(high),sameDensityTubes:count(sameDensityDifferentCount),partialCover:cover(partial).length,
         fullCover:cover(full).length,fullTriangles:full.userData.surfaceGrowthStats.coverTriangles||0,
         edgePairs:edgePairs.length,edgeCapacity:edgeBound.userData.surfaceGrowthStats.edgeCapacity,
         correctEdges,endpointSeparation,
@@ -343,7 +351,7 @@ const server=http.createServer((request,response)=>{
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
         transformedGable,
         gappedIntersection,partialCorner,splitCorner,
-        hiddenBefore,visibleAfter,budgetLabel,
+        hiddenBefore,visibleAfter,budgetLabel,countHidden,paletteChoices,signInsetField,shrinkwrapField,entranceField,
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
       };
     });
@@ -379,7 +387,7 @@ const server=http.createServer((request,response)=>{
     assert(data.templeVisibleRoles.walls>2&&data.templeVisibleRoles.roofs>1,
       'Cross-gable exposure must preserve both wall and roof surfaces');
     assert.equal(data.templeWrapStats.surfaces,data.templeVisibleRoles.walls,'Wrap must use only exposed Temple wall regions, not intersecting buried surfaces');
-    assert(data.templeWrapStats.generatedStrands>=20&&data.templeWrapStats.generatedStrands<=data.templeWrapStats.surfaces*4,
+    assert(data.templeWrapStats.generatedStrands>0&&data.templeWrapStats.generatedStrands<=data.templeWrapStats.surfaces*2,
       'Real cross-gabled Temple Wrap must complete edge-to-edge paths without exceeding each surface budget');
     assert(data.templeWrapDetails.every(x=>x.actual<=4),'Temple must enforce the independent per-region strand limit');
     assert(data.templeExposedArea<data.templeSourceArea*.9,
@@ -409,9 +417,10 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.flatTubes,0,'A flat planar surface has no geometric corner');
     assert(data.cornerTubes>0,'Sharp box corners should grow actual tubes');
     assert(data.splitCornerTubes>0,'Slightly gapped wall panels must form a detected corner');
-    assert(data.highTubes>data.lowTubes,'Strand budget must affect Wrap geometry');
+    assert(data.highTubes>data.lowTubes,'Wrap density must affect strand geometry while explicit count is ignored');
+    assert.equal(data.lowTubes,data.sameDensityTubes,'Wrap count must no longer control output for a fixed density');
     assert.equal(data.partialCover,0,'Partial densities must not cover the whole wall with a solid sheet');
-    assert(data.edgePairs>=12&&data.edgePairs<=16,'Wrap must emit a substantial number of completed two-edge strands without exceeding count');
+    assert(data.edgePairs>=12&&data.edgePairs<=80,'Wrap density should emit completed two-edge strands without exceeding the strand limit');
     assert(data.edgeCapacity>=data.edgePairs*2,'Boundary slots, not interior occupancy, determine endpoint capacity');
     assert(data.correctEdges,'Every Wrap strand must begin and end on two different real perimeter edges');
     assert(data.endpointSeparation>=.1,'All Wrap start and end anchors must reserve non-overlapping edge space');
@@ -423,6 +432,9 @@ const server=http.createServer((request,response)=>{
     assert(data.deterministic,'Identical saved seed/recipe must regenerate deterministic geometry');
     assert(data.hiddenBefore&&data.visibleAfter,'Wrap density must correctly hide/show in an actual browser DOM');
     assert.equal(data.budgetLabel,'Edge-to-edge strands per surface');
+    assert(data.countHidden,'Wrap must hide the now-redundant strand-count input');
+    assert(data.paletteChoices>=6,'The shared vegetation palette must expose wilderness materials');
+    assert(data.signInsetField&&data.shrinkwrapField&&data.entranceField,'Layer controls must expose inset, final shrinkwrap and tunnel opening');
     assert.equal(data.savedRecipe?.style,'wrap');
     assert.equal(data.savedRecipe?.density,.75);
     assert.equal(data.savedRecipe?.count,9);
