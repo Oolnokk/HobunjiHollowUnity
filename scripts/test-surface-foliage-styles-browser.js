@@ -353,6 +353,23 @@ const server=http.createServer((request,response)=>{
         return {max:Math.max(...z),avg:z.reduce((a,b)=>a+b,0)/z.length};
       };
       const shrinkRawZ=ringZ(unshrunk),shrinkFinalZ=ringZ(shrunk),insetZ=ringZ(insetSample);
+      // Shingles are *not* navigation surfaces for guided Wrap. A clean roof
+      // plane supplies the edge-to-edge spline; overlapping GLBs are used
+      // only by the final conforming raycast if that box is checked.
+      const shingleHost=new T.Group(),actualShingles=new T.Group();
+      actualShingles.userData.surfaceFoliageRole='shingles';shingleHost.add(actualShingles);
+      for(let k=0;k<5;k++){
+        const tile=new T.Mesh(new T.BoxGeometry(1.2,.17,4),new T.MeshBasicMaterial({side:T.DoubleSide}));
+        tile.position.set(k-2,.1,0);actualShingles.add(tile);
+      }
+      const roofRegions=growth.recognizeArchitecturalSurfaceRegions(shingleHost,[{
+        role:'roofs',vertices:archQuad([[-2.5,0,-2],[2.5,0,-2],[2.5,0,2],[-2.5,0,2]])}]);
+      growth.replaceSemanticSurfaceGuides(shingleHost,roofRegions);
+      const shingleRecipe={style:'wrap',target:'shingles',kind:'vines',density:.55,strandLimit:12,
+        count:1,length:5,radius:.025,seed:'shinglecheck',texture:''};
+      const shinglePlanned=growth.buildSurfaceGrowth(shingleHost,shingleRecipe);
+      const shingleConformed=growth.buildSurfaceGrowth(shingleHost,{...shingleRecipe,shrinkwrapFinal:true});
+
 
       let recipes=[]; // Mimics every editor's read/write adapter to verify actual UI serialization.
       window.SurfaceFoliageAuthoring.mount(document.getElementById('controls'),{
@@ -394,6 +411,7 @@ const server=http.createServer((request,response)=>{
         gappedIntersection,partialCorner,splitCorner,
         regularTunnelSources:regularPanels.length,openingTriangleCount,openingCentroidsInside,
         shrinkRawZ,shrinkFinalZ,insetZ,shrinkStats:shrunk.userData.surfaceGrowthStats,
+        shinglePlannedStats:shinglePlanned.userData.surfaceGrowthStats,shingleConformedStats:shingleConformed.userData.surfaceGrowthStats,
         hiddenBefore,visibleAfter,budgetLabel,countHidden,paletteChoices,signInsetField,shrinkwrapField,entranceField,
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
       };
@@ -444,6 +462,10 @@ const server=http.createServer((request,response)=>{
       'Clipping must remove the buried wing-wall portions, not merely hide a fully internal mesh');
     assert(data.openingTriangleCount>2&&data.openingCentroidsInside===0,
       'Tunnel-opening mode must cut through broad wall guide triangles without planting inside the entrance');
+    assert(data.shinglePlannedStats.guidedBySemanticSurfaces&&data.shinglePlannedStats.triangles===2,
+      'Shingle Wrap must plan on the single authored roof plane, not on repeated shingle box triangles');
+    assert(data.shingleConformedStats.shrinkwrapHits>0&&data.shingleConformedStats.shrinkwrapHits<=data.shingleConformedStats.shrinkwrapRays,
+      'Final roof shrinkwrap must project planned shingles onto the actual tiled meshes');
     assert(data.shrinkStats.shrinkwrapHits>0&&data.shrinkStats.shrinkwrapRays>0,
       'Shrinkwrap must actually raycast against populated bricks');
     assert(data.shrinkFinalZ.max>.25&&data.shrinkFinalZ.max<.36,
