@@ -45,7 +45,7 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
     RomanceFamily: { snapshot: () => ({ children: [{ id: 'child_tester', name: 'Hushka' }] }) },
   }; // Browser globals are limited to the public integration seams used in production.
   const fetchStub = async url => {
-    const file = path.resolve(__dirname, '..', url); // All registry/map calls use shipping relative URLs.
+    const file = path.resolve(__dirname, '..', 'docs', url); // All registry/map calls use shipping relative URLs.
     if (!file.startsWith(path.resolve(__dirname, '..', 'docs') + path.sep)) throw new Error('Unexpected wardrobe URL ' + url);
     return { ok: true, json: async () => JSON.parse(fs.readFileSync(file, 'utf8')) };
   };
