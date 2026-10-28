@@ -25150,7 +25150,7 @@
         isShoulderSurfEnabled: () => s_shoulderSurf,
         getActiveCameraMode: () => activeCameraMode,
         shoulderSurfMode: SHOULDER_SURF_MODE,
-        isUiBlockingPointerLock: () => !!(menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
+        isUiBlockingPointerLock: () => !!(menuOpen || window.FarmworkUI?.isPanelOpen?.() || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
       });
       function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
       function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
@@ -28324,7 +28324,7 @@
       let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
       let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+        return !menuOpen && !window.FarmworkUI?.isPanelOpen?.() && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
           && !window.__mapEditorGizmoActive;
       }
@@ -28587,7 +28587,7 @@
           // from this handler) as well as ones opened by a held key like
           // 'c' below (which doesn't drag a mouse button, so nothing else
           // stops this handler from firing while it's up).
-          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen) return;
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window.FarmworkUI?.isPanelOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           // While the Pixel Probe is armed, mouse movement should only ever

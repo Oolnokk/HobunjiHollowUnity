@@ -36,6 +36,10 @@
     if (hud) hud.style.display = planning ? 'flex' : 'none';
     window.WorldActionInputClaims?.clearClaims?.('farmwork-planning');
     if (planning) {
+      // A menu can consume the release after Done opens it. Retire only our stale presses before re-equipping.
+      for (const press of window.WorldActionInputClaims?.snapshot?.().pressed || []) {
+        if (press.ownerId === 'farmwork-planning') window.WorldActionInputClaims.dispatch(press.actionId, 'cancel');
+      }
       window.WorldActionInputClaims?.setClaims?.('farmwork-planning', [
         { actionId: 'action1', label: 'Add tile', priority: 200, onPress: () => applyAimedTile(true) },
         { actionId: 'action2', label: 'Remove tile', priority: 200, onPress: () => applyAimedTile(false) },
@@ -46,7 +50,7 @@
     } else if (open) {
       context()?.suspendMouseCameraForUi?.();
       render();
-      pane()?.querySelector('[data-fwplan][aria-pressed="false"]')?.focus?.({ preventScroll: true });
+      Array.from(pane()?.querySelectorAll('[data-fwplan]') || []).find(button => button.dataset.fwplan === plot()?.id)?.focus?.({ preventScroll: true });
     }
     context()?.refreshActions?.();
     lastVisualAt = -Infinity;
@@ -320,7 +324,7 @@
       return `<option value="${hour}" ${Number(selected) === hour ? 'selected' : ''}>${String(Math.floor(hour)).padStart(2, '0')}:${i % 2 ? '30' : '00'}</option>`;
     }).join('');
   }
-  window.FarmworkUI = { canOpen, open: enter, close, toggle, isOpen: () => open, isPlanning: () => planning,
+  window.FarmworkUI = { canOpen, open: enter, close, toggle, isOpen: () => open, isPanelOpen: () => open && !planning, isPlanning: () => planning,
     render, create, changePlot, toggleTile, setPlanning, applyAimedTile, canAddTile, actionButtons, updateVisuals, glowTargets,
     startWorldPointer, dragTile, endWorldPointer, _test: { bounds, fits, footprintHTML } };
 })();

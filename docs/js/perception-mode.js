@@ -478,7 +478,7 @@
   function update(now = performance.now()) {
     const farmwork = window.FarmworkUI?.isOpen?.();
     if (farmwork) window.FarmworkUI.updateVisuals(now);
-    if ((!active && !farmwork) || !deps) { targets = []; return; }
+    if ((!active && !farmwork) || !deps) { if (targets.length) targets = []; return; }
     if (now - lastRefreshAt >= REFRESH_MS) {
       lastRefreshAt = now;
       targets = collectTargets(now);

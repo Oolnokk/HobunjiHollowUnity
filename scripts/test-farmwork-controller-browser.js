@@ -113,6 +113,18 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
       };
     });
     assert.deepEqual(silhouette, { tiles: 3, excluded: false, last: '2', pages: 0 }, 'single-plot preview preserves an L silhouette without extra containers or pages');
+    const returnFocus = await page.evaluate(() => {
+      const firstId = window.FarmPlotEditor.activeFamilyPlot().id;
+      const secondId = window.FarmPlotEditor.createFamilyPlot('dig');
+      window.FarmworkUI.changePlot(secondId);
+      window.FarmworkUI.setPlanning(true);
+      window.FarmworkUI.setPlanning(false);
+      const focused = document.activeElement?.dataset?.fwplan === secondId;
+      window.FarmPlotEditor.deleteFamilyPlot(secondId);
+      window.FarmworkUI.changePlot(firstId);
+      return focused;
+    });
+    assert.equal(returnFocus, true, 'Done returns focus to the selected plot rather than the first plot');
     const removed = await page.evaluate(() => {
       document.querySelector('[data-fwdelete]').focus();
       window.ControllerUI.press('confirm');

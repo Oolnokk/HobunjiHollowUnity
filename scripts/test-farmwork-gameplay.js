@@ -150,6 +150,19 @@ press('action3');
 assert.equal(ui.isPlanning(), false);
 assert.equal(panel.style.display, 'flex');
 assert.equal(claims.hasClaim('action1'), false, 'finishing releases planning claims');
+// A release can be swallowed by the newly opened settings panel; the next tool session must still work.
+ui.setPlanning(true);
+pointerTile = { col: 2, row: 2 };
+claims.dispatch('action1', 'press');
+claims.dispatch('action3', 'press'); // Opens settings while the original physical buttons are still held.
+assert.equal(ui.isPanelOpen(), true);
+ui.setPlanning(true); // Simulate selecting Add/remove tiles again after menu-owned releases.
+assert.equal(ui.isPanelOpen(), false);
+pointerTile = { col: 3, row: 3 };
+press('action1');
+assert(plots.activeFamilyPlot().tiles.some(([c,r]) => c === 3 && r === 3), 'first Action 1 after re-equipping is not swallowed by a stale press');
+press('action3');
+assert.equal(ui.isPlanning(), false, 'Done also works after a menu swallowed its previous release');
 const preview = ui._test.footprintHTML({ label: 'L', tiles: [[1,1],[1,2],[2,2]] });
 assert.equal((preview.match(/data-fwtile=/g) || []).length, 3, 'L shape has no excluded tile container');
 assert.match(preview, /grid-column:2;grid-row:2/, 'included tiles retain spatial positions');

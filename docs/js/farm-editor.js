@@ -595,6 +595,8 @@
     // Capture before ordinary world-action handlers so Farmwork paint never plants, attacks, or selects a tile for free.
     deps.threeContainer.addEventListener('pointerdown', e => {
       if (!window.FarmworkUI?.isOpen?.()) return;
+      // Touch keeps the native look joystick; locked mouse actions use the same gameplay reticle as the arch/controller.
+      if (window.FarmworkUI.isPlanning?.() && (e.pointerType === 'touch' || document.pointerLockElement === deps.threeContainer)) return;
       if (e.pointerType === 'mouse' && !['action1', 'action2'].includes(deps.getMouseAction?.(e.button))) return;
       if (window.FarmworkUI.startWorldPointer(e.pointerId, e.clientX, e.clientY, e.pointerType === 'mouse' ? deps.getMouseAction?.(e.button) : 'action1')) {
         e.preventDefault(); e.stopImmediatePropagation();
@@ -614,7 +616,7 @@
     window.addEventListener('pointerup', finishFarmworkGesture, true);
     window.addEventListener('pointercancel', finishFarmworkGesture, true);
     deps.threeContainer.addEventListener('click', e => {
-      if (!window.FarmworkUI?.isOpen?.()) return;
+      if (!window.FarmworkUI?.isPanelOpen?.()) return;
       e.preventDefault(); e.stopImmediatePropagation(); // Block click fallthrough on a plot tile gesture, including invalid destinations.
     }, true);
     deps.threeContainer.addEventListener('pointerdown', (e) => {
