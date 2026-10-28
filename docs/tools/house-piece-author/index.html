@@ -2289,7 +2289,7 @@ function rebuildHouseSurfaceFoliage(){
   // The editing canvas uses r160; Game Preview and window.THREE use r128.
   const foliage=window.FoliageGenerator.forThree(THREE); // Matches the actual editor renderer rather than the game's separately loaded Three.js.
   const recipes=state.piece.surfaceGrowth||[];
-  if(recipes.some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap')){
+  if(recipes.some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap'||recipe.perSurface===true)){
     const faces=window.HouseWallFixtures?.cutFaces(state.piece.base.faces,state.piece.wallFixtures).faces||state.piece.base.faces; // Carved architectural wall panels, never the generated brick preview.
     const sourcePanels=foliage.architecturalSurfaceSources(faces,{wallLift:0,roofLift:.16});
     foliage.replaceSemanticSurfaceGuides(root,foliage.recognizeArchitecturalSurfaceRegions(root,sourcePanels,{
