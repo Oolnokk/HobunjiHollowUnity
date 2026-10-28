@@ -234,4 +234,23 @@ for (const interrupted of [false, true]) {
   }
   assert.equal(particleScene.children.length, 0, 'no orphan particles after ' + (interrupted ? 'interruption' : 'completion'));
 }
+// All Grehlr special movement stays inside its named attack. Companions never
+// prepend the generic 2.6-tile ground lunge to burrowing or the spray charge.
+const approachGrehlr = { ...creature(), isCompanion: true, x: 0, y: 0 };
+approachGrehlr.def = { ...approachGrehlr.def, attackRangePx: 100 }; // Same reach used by the outer engagement decision.
+const distantSprayTarget = { ...player, x: 340 }; // Beyond the ordinary spray reach but inside the expanded companion engagement band.
+attacks.start(approachGrehlr, 'grehlrStink', { target: distantSprayTarget });
+assert.equal(approachGrehlr._animalAttack.approach, null, 'Stink Spray owns its only charge');
+assert.equal(approachGrehlr._animalAttack.state.stage, 'lunge');
+assert(approachGrehlr._animalAttack.state.lungeSpeedPxS + 0.000001 >=
+  tuning.grehlrStink.LUNGE_MAX_TILES * context.Combat.deps.TILE / attacks.companionLungeTuning.durationS,
+  'companion Stink Spray uses the near-instant attack-burst speed');
+attacks.cancel(approachGrehlr);
+context.THREE = null; // Burrow's 3D dirt particles are irrelevant to this movement-ownership assertion; the spray-only particle mock has no real dirt geometry/material classes.
+const undergroundGrehlr = { ...creature(), isCompanion: true, x: 0, y: 0 };
+undergroundGrehlr.def = { ...undergroundGrehlr.def, attackRangePx: 100 }; // Its own hidden-travel phase replaces the common visible ground charge.
+attacks.start(undergroundGrehlr, 'grehlrBurrow', { target: distantSprayTarget });
+assert.equal(undergroundGrehlr._animalAttack.approach, null, 'Burrow uses underground pursuit without an unrelated visible pre-lunge');
+assert.equal(undergroundGrehlr._animalAttack.state.stage, 'dive');
+attacks.cancel(undergroundGrehlr);
 console.log('Grehlr dive, hidden travel, emergence, cancellation, spray and live AI selection passed.');

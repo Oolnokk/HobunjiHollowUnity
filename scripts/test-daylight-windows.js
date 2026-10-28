@@ -593,7 +593,7 @@ const undergroundBranchStart = enclosedBranchEnd;
 const undergroundBranchEnd = cloudFog.indexOf('if (lightningAlpha > 0) {', undergroundBranchStart);
 const undergroundBranch = cloudFog.slice(undergroundBranchStart, undergroundBranchEnd);
 assert.match(undergroundBranch, /drawLanternMasksCompat\(undergroundFog \? 1 : currentOutdoorLanternActivation\(\), !undergroundFog\)/, 'underground spaces must retain the stable positional carried-lantern reveal');
-assert.match(undergroundBranch, /drawFurnitureLightMasksCompat\(!undergroundFog\)/, 'underground spaces must retain stable positional furniture-light reveals');
+assert.match(undergroundBranch, /if \(!\(undergroundFog && activeRuinTradition\(\) === 'kanthic'\)\) drawFurnitureLightMasksCompat\(!undergroundFog\)/, 'underground spaces must retain positional furniture-light reveals except in pure-black Kanthic ruins');
 assert.doesNotMatch(cloudFog, /function sampleEnclosedAtmosphere|function drawBlendedInteriorAtmosphere/, 'the retired whole-room atmosphere blend must not linger as dead code');
 assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the unified lighting compositor');
 assert.match(gameIndex, /daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the canonical daylight-window visual hierarchy');

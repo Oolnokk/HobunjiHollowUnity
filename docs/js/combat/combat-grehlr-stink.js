@@ -262,7 +262,7 @@
       rangePx: tuning.RANGE_TILES * deps.TILE, // The real spray cone decides where the Grehlr stops.
       halfConeRad: tuning.HALF_CONE_DEG * Math.PI / 180,
       maxDistancePx: tuning.LUNGE_MAX_TILES * deps.TILE,
-      speedPxS: tuning.LUNGE_SPEED_TILES_S * deps.TILE,
+      speedPxS: creature.isCompanion ? Math.max(tuning.LUNGE_SPEED_TILES_S, tuning.LUNGE_MAX_TILES / (window.Combat?.animalAttacks?.companionLungeTuning?.durationS || 0.12)) * deps.TILE : tuning.LUNGE_SPEED_TILES_S * deps.TILE, // Companion special uses a weapon-speed approach; wild spray retains its authored charge.
       targets: gatherTargets(creature, deps),
     });
     state.startFacing = state.lungeAngle;
@@ -432,6 +432,7 @@
 
   attacks.register('grehlrStink', {
     label: 'Stink Spray',
+    ownsApproach: true, // The stink move begins with its own collision-aware charge before the backward spray.
     start: stinkStart,
     update: stinkUpdate,
     cancel: stinkCancel,

@@ -14,6 +14,14 @@
   if (!window.Combat) { console.error('combat-animal-attacks.js requires combat-core.js to load first'); return; }
 
   const ATTACKS = {};
+  const COMPANION_LUNGE_MAX_TILES = 2.6; // Shared attack engagement budget used by game.js and the named-attack dispatcher.
+  const COMPANION_LUNGE_DURATION_S = 0.12; // Combat-burst duration, matching Guard Charge and Voorg-Ass Rear Kick.
+
+  function companionEngagementRangePx(creature, tilePx) {
+    const attackReach = Number(creature?.def?.attackRangePx); // Baseline reach before adding one committed burst.
+    return Number.isFinite(attackReach) && attackReach > 0 && Number.isFinite(tilePx) && tilePx > 0
+      ? attackReach + tilePx * COMPANION_LUNGE_MAX_TILES : attackReach;
+  }
 
   function register(id, def) { ATTACKS[id] = def; }
 
@@ -29,8 +37,23 @@
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
     if (additionalStaminaCost > 0) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id);
     const state = {};
-    def.start(c, state, ctx, deps);
-    c._animalAttack = { id, def, state };
+    const target = ctx?.target; // Original companion decision remains locked during the opening charge.
+    const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
+    const distance = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.hypot(target.x - c.x, target.y - c.y) : 0; // Only eligible targets outside melee reach need the burst.
+    let approach = null;
+    if (c.isCompanion && !def.ownsApproach && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) { // A named move with its own charge, leap, burrow or attachment approach must not lunge twice.
+      approach = {}; // Separate shared-lunge state never leaks into a signature attack's own state machine.
+      beginConeLunge(c, approach, ctx, deps, {
+        targets: [target], rangePx: reach, halfConeRad: Math.PI / 3, // Only the committed forward attack cone stops the charge; targets behind it must not trigger phantom contact.
+        maxDistancePx: deps.TILE * COMPANION_LUNGE_MAX_TILES,
+        speedPxS: deps.TILE * COMPANION_LUNGE_MAX_TILES / COMPANION_LUNGE_DURATION_S,
+      });
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' charging for ' + id, 'wildlife');
+    } else {
+      def.start(c, state, ctx, deps);
+    }
+    c._animalAttack = { id, def, state, approach, ctx };
     deps?.requestThreatGrowl?.(c, `attack:${id}`);
     return true;
   }
@@ -38,6 +61,14 @@
   function update(c, dt) {
     const aa = c._animalAttack;
     if (!aa) return false;
+    if (aa.approach) {
+      const reason = advanceConeLunge(c, aa.approach, dt, window.Combat.deps); // Uses the same collision substeps as every other animal attack lunge.
+      if (!reason) return true;
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' stopped: ' + reason + ' after ' + (aa.approach.lungeTraveledPx / Math.max(1, window.Combat.deps.TILE)).toFixed(2) + ' tiles', 'wildlife');
+      aa.approach = null;
+      aa.def.start(c, aa.state, aa.ctx, window.Combat.deps); // One committed original attack, without paying its Stamina/cooldown twice.
+      return true;
+    }
     const busy = aa.def.update(c, aa.state, dt, window.Combat.deps);
     if (!busy) endAttackPresentation(c);
     return busy;
@@ -59,18 +90,19 @@
   // is its committed/strike window; Pounce's is the whole leap.
   function isStriking(c) {
     const aa = c?._animalAttack;
-    return !!(aa?.def?.isStriking?.(aa.state, c));
+    return !aa?.approach && !!(aa?.def?.isStriking?.(aa.state, c));
   }
 
   function isWindingUp(c) {
     const aa = c?._animalAttack; // Named attacks declare preparation windows without leaking private stage names to Quick Attacks.
-    return !!(aa?.def?.isWindingUp?.(aa.state, c));
+    return !aa?.approach && !!(aa?.def?.isWindingUp?.(aa.state, c));
   }
 
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
-    if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
+    if (aa.approach) { c.vx = 0; c.vy = 0; } // Cancel an unstarted signature attack without calling its stage-specific cleanup.
+    else if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
     endAttackPresentation(c);
   }
 
@@ -136,6 +168,8 @@
   window.Combat.animalAttacks = {
     register, start, update, isBusy, isStriking, isWindingUp, cancel,
     beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
+    companionEngagementRangePx,
+    companionLungeTuning: Object.freeze({ maxTiles: COMPANION_LUNGE_MAX_TILES, durationS: COMPANION_LUNGE_DURATION_S }), // Mobile-accessible inspection of shared engagement timing.
   };
 
   // ── Pounce ──────────────────────────────────────────────────────────
@@ -230,7 +264,7 @@
       rangePx: state.rangePx,
       halfConeRad: state.halfConeRad,
       maxDistancePx: Math.max(0, state.lungeProfile.distancePx),
-      speedPxS: POUNCE_LEAP_SPEED_PX_S,
+      speedPxS: c.isCompanion ? Math.max(POUNCE_LEAP_SPEED_PX_S, state.lungeProfile.distancePx / COMPANION_LUNGE_DURATION_S) : POUNCE_LEAP_SPEED_PX_S, // Keep wild pounce pacing; companion pounces leap at weapon-attack speed.
       collideRadiusPx: deps.TILE * 0.32,
       detect: leapConeDetect(),
     });
@@ -316,6 +350,7 @@
 
   register('pounce', {
     label: 'Pounce',
+    ownsApproach: true, // Its existing crouch-to-leap sequence already commits to a single attack lunge.
     start: pounceStart,
     update: pounceUpdate,
     cancel: pounceCancel,
@@ -335,7 +370,9 @@
     const directAngle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
     const master = c.master || deps.player;
     const awayFromMasterAngle = Math.atan2(c.y - master.y, c.x - master.x);
-    state.angle = Math.atan2(
+    const targetDistancePx = Math.hypot(ctx.target.x - c.x, ctx.target.y - c.y); // Checks whether an extended-range companion charge should commit directly toward its enemy.
+    const extendingCharge = c.isCompanion && targetDistancePx > (Number(c.def.attackRangePx) || 0); // Preserves the old master-defensive blend for attacks already within melee reach.
+    state.angle = extendingCharge ? directAngle : Math.atan2(
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
     );
@@ -344,6 +381,9 @@
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
     state.rangePx = c.def.attackRangePx;
+    if (extendingCharge) {
+      state.distancePx = Math.min(COMPANION_LUNGE_MAX_TILES * deps.TILE, Math.max(state.distancePx, targetDistancePx - state.rangePx + deps.TILE * 0.08)); // Extend the ONE native charge, not a second generic approach.
+    }
     state.halfConeRad = c.def.attackHalfConeRad;
     state.targets = gatherTargets(c, deps);
     // The same sub-stepped cone lunge as Pounce, on the blended guard bearing rather than straight at the target.
@@ -376,7 +416,7 @@
     return false;
   }
 
-  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });
+  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate, ownsApproach: true }); // This move already performs its own 0.12-second collision-aware charge.
 
   window.Combat.animalAttacks.applyConfig = function (cfg) {
     if (!cfg) return;
