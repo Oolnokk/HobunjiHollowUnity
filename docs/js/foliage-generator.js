@@ -2320,8 +2320,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const useSharedSampling = input?.reuseSurfaceSampling === true && !!parent.geometry; // Only generated, immutable cave shells opt in; editor meshes still resample after authoring edits.
     const existingSampling = useSharedSampling ? caveSurfaceSamplingCache.get(parent) : null; // Geometry replacement invalidates the prior index.
     const shared = existingSampling?.geometry === parent.geometry && existingSampling?.wallOnly === settings.wallOnly ? existingSampling : null;
-    const targets = shared?.targets || surfaceTargets(parent, settings).filter(mesh=>
-      !input?._surfaceRegionOnly || (mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideId===input._surfaceRegionOnly));
+    const targets = shared?.targets || surfaceTargets(parent,
+      input?._surfaceRegionOnly ? {...settings,style:'cornerFill'} : settings).filter(mesh=>
+      !input?._surfaceRegionOnly || (mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideId===input._surfaceRegionOnly)); // Natural explicitly opted into per-surface counts samples the same exposed guide; legacy Natural remains on raw visible meshes.
     const triangles = shared?.triangles || [], large = shared?.large || [], cells = shared?.cells || new Map(), candidates = []; // Cached wall triangles and spatial buckets serve both growth kinds.
     let stamp = 0; // Per-step visit mark: dedupes records that overlap several buckets without a Set insertion per record.
     const gather = list => { for (const record of list) if (record.stamp !== stamp) { record.stamp = stamp; candidates.push(record); } }; // Spatial buckets avoid scanning all brick triangles for every growth step.
