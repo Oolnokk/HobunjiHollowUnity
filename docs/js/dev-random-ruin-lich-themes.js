@@ -782,10 +782,56 @@
     world.sink=0;
     lastEvent='kanthic:immersion-reset';
   }
+  function createSpellPlasm(x,z) {
+    if(world?.theme!=='kanthic'||!Number.isFinite(x)||!Number.isFinite(z))return null;
+    const kit=world.kit,patch={index:'spell',plasm:new Set(),plasmFloorY:new Map()};
+    const baseX=Math.floor(x-.5),baseZ=Math.floor(z-.5);
+    // A finite tile patch uses the very same curved, textured surface as room plasm.
+    for(let dz=0;dz<2;dz++)for(let dx=0;dx<2;dx++){
+      const tx=baseX+dx,tz=baseZ+dz,y=floorY(kit,tx+.5,tz+.5);
+      if(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y))continue;
+      const key=tileKey(tx,tz),existing=plasmPatchAt(tx+.5,tz+.5,y);
+      if(existing&&Math.abs(existing.plasmFloorY.get(key)-y)<.01)continue; // Never stack translucent copies of the same floor tile.
+      patch.plasm.add(key);patch.plasmFloorY.set(key,y);
+    }
+    if(!patch.plasm.size)return null;
+    patch.mesh=makePlasmSurface(kit,patch);
+    world.group.add(patch.mesh);
+    const owner=world;
+    owner.spellPlasm.add(patch);
+    return {mesh:patch.mesh,contains(x,z,y){
+      const key=tileKey(x,z);
+      return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&
+        (!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
+    },dispose(){
+      if(!owner.spellPlasm.delete(patch))return;
+      patch.mesh.parent?.remove(patch.mesh);patch.mesh.geometry.dispose?.();
+    }};
+  }
+
+  function plasmPatchAt(x,z,supportY) {
+    if(!world)return null;
+    const key=tileKey(x,z);
+    let best=null,bestDistance=Infinity;
+    for(const room of world.rooms){
+      if(!room.plasm?.has(key))continue;
+      if(!Number.isFinite(supportY))return room;
+      const distance=Math.abs(room.plasmFloorY.get(key)-supportY);
+      if(distance<bestDistance){best=room;bestDistance=distance;}
+    }
+    for(const patch of world.spellPlasm){
+      if(!patch.plasm.has(key))continue;
+      if(!Number.isFinite(supportY))return patch;
+      const distance=Math.abs(patch.plasmFloorY.get(key)-supportY);
+      if(distance<bestDistance){best=patch;bestDistance=distance;}
+    }
+    return best;
+  }
+
   function updatePlasm(kit,dt) {
     const player=kit.deps.player,tile=kit.deps.TILE;
     if(!player||!tile)return;
-    const point=pointOf(player,tile),room=roomAt(point);
+    const point=pointOf(player,tile);
     if(!alive(player)){
       if(world.playerWasAlive!==false)resetPlasmOnDeath(kit);
       world.playerWasAlive=false;
@@ -793,13 +839,14 @@
     }
     world.playerWasAlive=true;
     const key=tileKey(point.x,point.z);
+    const playerY=Number(window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y); // Physical support chooses the matching tier when two floors share a tile.
+    const room=plasmPatchAt(point.x,point.z,playerY);
     // Newly activated checkpoints are always safe, without altering or re-uploading the authored surface.
     if(!room?.plasm?.has(key)||protectedPlasmTile(kit,Math.floor(point.x),Math.floor(point.z))){
       world.sink=0;
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    const playerY=Number(window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y??baseY); // Read physical support, not sinking presentation.
     if(kit.ownsPlayerMotion?.()||player.climbing||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){
       world.sink=0;
       return; // Ropes, flying and elevated supports take precedence.
@@ -843,7 +890,7 @@
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
       lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
-      plasmMesh:null,plasmRoomMeshes:new Map(),plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
+      spellPlasm:new Set(),plasmMesh:null,plasmRoomMeshes:new Map(),plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
     kit.group().add(world.group);
@@ -894,6 +941,7 @@
     world.group.parent?.remove(world.group);
     const icicleMeshes=new Set(world.icicles.map(spike=>spike.mesh));
     const burstMeshes=new Set(world.bursts.map(b=>b.mesh));
+    world.spellPlasm.clear(); // The traversal below owns all remaining spell geometry.
     world.group.traverse(obj=>{
       if(!obj.isMesh||icicleMeshes.has(obj)||burstMeshes.has(obj))return;
       if(obj.isInstancedMesh)obj.dispose?.(); // Release each surviving ice/plasm instance buffer.
@@ -927,7 +975,8 @@
     snapshot,
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
-    isPlasmAt:(x,z)=>!!world?.rooms?.some(room=>room.plasm?.has(tileKey(x,z))), // Exact stationary render/physics occupancy.
+    createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
+    isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.
     isProtectedPlasmAt:(x,z)=>!!(world?.theme==='kanthic'&&protectedPlasmTile(world.kit,Math.floor(x),Math.floor(z))), // Shared landing/doorway safety for both room and lich-spell plasm.
   });
 })();

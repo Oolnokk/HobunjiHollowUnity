@@ -965,6 +965,7 @@
   function disposePetroleumPuddle(puddle) {
     if (!puddle) return;
     puddles.delete(puddle);
+    puddle.ruinPlasm?.dispose();
     puddle.group?.parent?.remove?.(puddle.group); // Shared geometry/material stay cached for the next impact instead of being disposed per puddle.
   }
 
@@ -976,20 +977,30 @@
       if(!window.DevRandomRuin?.getRuntimeContext?.()?.floorSet?.has(Math.floor(worldX)+','+Math.floor(worldZ)))return null; // No floating oil in void tiles.
       if(window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(worldX,worldZ))return null; // Never deposit on an entrance or checkpoint.
     }
+    const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
+    const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
     for(const existing of puddles){
-      if(existing.areaId!==areaId)continue;
-      if(Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
+      if(existing.areaId!==areaId||Math.abs(existing.groundY-groundY)>.01)continue;
+      if(!existing.ruinPlasm?.contains?.(worldX,worldZ,groundY)&&Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
       existing.ageS=0; // Nearby follow-up impacts refresh a patch instead of stacking draw calls on the same space.
       lastEvent='plasm:refresh';
       return existing;
     }
-    const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
-    const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
     if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinTileOccupancy?.solidAt?.(worldX,worldZ,.27,groundY+.35))return null; // A wall impact cannot deposit hidden plasm inside a solid.
-    if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value); // Oldest insertion expires first; bounded even with many liches.
+    const ruinPlasm=areaId==='map_i_dev_random_ruin'
+      ? window.DevRandomRuinLichThemes?.createSpellPlasm?.(worldX,worldZ) : null;
+    if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinLichThemes?.createSpellPlasm){
+      if(!ruinPlasm)return null;
+      if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value);
+      const puddle={owner,areaId,x:xPx,y:yPx,groundY,ageS:0,
+        radiusPx:PUDDLE_RADIUS_TILES*tile,ruinPlasm};
+      puddles.add(puddle);totalPuddles++;lastEvent='plasm:deposited';
+      return puddle;
+    }
     const geometry = buildPetroleumSurfaceGeometry();
     const material = petroleumMaterial();
     if (!geometry || !material) return null;
+    if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value); // Evict only after a valid new deposit.
     const group = new THREE.Group(); // Keep the legacy public API name for the Testing Arena's existing controls.
     group.name = 'kanthic_plasm_surface';
     const mesh = new THREE.Mesh(geometry, material);
@@ -1548,6 +1559,7 @@
       let nearest=null,nearestDist=Infinity;
       for(const puddle of puddles){
         if(puddle.owner===actor||puddle.areaId!==(actor.areaId||area))continue;
+        if(puddle.ruinPlasm)continue; // Tile composer owns these patches; never run a second immersion clock.
         const dist=Math.hypot(actor.x-puddle.x,actor.y-puddle.y);
         if(dist>puddle.radiusPx||dist>=nearestDist||actor.climbing||actor.onRope||actor._onRope)continue;
         const support=inRuin

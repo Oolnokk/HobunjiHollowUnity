@@ -65,7 +65,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const presentationHeights=[]; // Detect hazards stealing rope/bridge presentation height.
   const player = {x:playerX * 64, y:playerZ * 64, health:100, facing:3};
   const window = {
-    THREE, DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; }},
+    THREE, DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; },respawnAtCheckpoint:options.respawnAtCheckpoint},
     DevRandomRuinTileOccupancy:{
       solidAt:() => false, refresh() {}, clearSolids() {},
       addSolidBox(_id, box, enabled) { footprint = {box,enabled}; },
@@ -378,4 +378,49 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   t.tick(60,.25);
   assert.equal(t.api.snapshot().plasmTiles,first,'Looking at plasm cannot clear it');
   t.composer.clear();
+}
+
+{
+  let recoveries=0;
+  const t=setup('kanthic',3,3,{respawnAtCheckpoint(reason){
+    assert.equal(reason,'kanthic-plasm');recoveries++;return true;
+  }});
+  let dry=null,seed=null;
+  for(let z=3;z<10;z++)for(let x=3;x<10;x++){
+    if(t.api.isPlasmAt(x+.5,z+.5))seed={x:x+.5,z:z+.5};
+    else if(!dry)dry={x:x+.5,z:z+.5};
+  }
+  assert.ok(dry&&seed);
+  const spell=t.api.createSpellPlasm(dry.x,dry.z);
+  assert.ok(spell,'Lich deposit builds a real tile surface');
+  assert.equal(t.api.isPlasmAt(dry.x,dry.z),true,'Spell footprint joins the canonical tile query');
+  let staticMesh;
+  t.kit.root.traverse(node=>{if(node.name?.endsWith('room_0'))staticMesh=node;});
+  assert.equal(spell.mesh.material,staticMesh.material,'Spell and room plasm share the exact material');
+  assert.equal(spell.mesh.userData.plasmUvMapping,staticMesh.userData.plasmUvMapping,'Same nine-slice mapping');
+  t.player.x=seed.x*64;t.player.y=seed.z*64;t.tick(4);
+  const before=t.api.snapshot().sinking;
+  t.player.x=dry.x*64;t.player.y=dry.z*64;t.tick(1);
+  assert.ok(t.api.snapshot().sinking>before,'Moving from seeded to dropped plasm preserves immersion');
+  t.tick(8);
+  assert.equal(recoveries,1,'Dropped plasm uses the tile hazard checkpoint recovery path');
+  spell.dispose();spell.dispose();
+  assert.equal(t.api.isPlasmAt(dry.x,dry.z),false,'Expiration removes spell collision');
+  assert.equal(spell.mesh.geometry.disposed,true,'Expiration releases its owned geometry');
+  assert.equal(staticMesh.geometry.disposed,false,'Expiration leaves room geometry intact');
+  t.composer.clear();
+}
+
+{
+  const t=setup('kanthic');
+  let seed;
+  for(let z=2;z<12&&!seed;z++)for(let x=2;x<12&&!seed;x++)if(t.api.isPlasmAt(x+.5,z+.5))seed={x:x+.5,z:z+.5};
+  assert.equal(t.api.createSpellPlasm(seed.x,seed.z),null,'Casting on an existing room patch must not duplicate transparent surfaces');
+  t.kit.sampleSupport=()=>({y:2});
+  const upper=t.api.createSpellPlasm(seed.x,seed.z);
+  assert.ok(upper,'A different support elevation accepts a distinct spell patch');
+  t.kit.deps.playerMesh.position.y=2;
+  t.player.x=seed.x*64;t.player.y=seed.z*64;t.tick(1);
+  assert.ok(t.api.snapshot().sinking>0,'Elevated spell contact must not be masked by room plasm below');
+  upper.dispose();t.composer.clear();
 }
