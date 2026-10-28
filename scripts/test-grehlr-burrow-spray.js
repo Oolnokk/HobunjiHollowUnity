@@ -246,6 +246,7 @@ assert(approachGrehlr._animalAttack.state.lungeSpeedPxS + 0.000001 >=
   tuning.grehlrStink.LUNGE_MAX_TILES * context.Combat.deps.TILE / attacks.companionLungeTuning.durationS,
   'companion Stink Spray uses the near-instant attack-burst speed');
 attacks.cancel(approachGrehlr);
+context.THREE = null; // Burrow's 3D dirt particles are irrelevant to this movement-ownership assertion; the spray-only particle mock has no real dirt geometry/material classes.
 const undergroundGrehlr = { ...creature(), isCompanion: true, x: 0, y: 0 };
 undergroundGrehlr.def = { ...undergroundGrehlr.def, attackRangePx: 100 }; // Its own hidden-travel phase replaces the common visible ground charge.
 attacks.start(undergroundGrehlr, 'grehlrBurrow', { target: distantSprayTarget });
