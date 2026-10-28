@@ -262,7 +262,7 @@
       rangePx: tuning.RANGE_TILES * deps.TILE, // The real spray cone decides where the Grehlr stops.
       halfConeRad: tuning.HALF_CONE_DEG * Math.PI / 180,
       maxDistancePx: tuning.LUNGE_MAX_TILES * deps.TILE,
-      speedPxS: creature.isCompanion ? Math.max(tuning.LUNGE_SPEED_TILES_S, tuning.LUNGE_MAX_TILES / 0.12) * deps.TILE : tuning.LUNGE_SPEED_TILES_S * deps.TILE, // Companion special uses a weapon-speed approach; wild spray retains its authored charge.
+      speedPxS: creature.isCompanion ? Math.max(tuning.LUNGE_SPEED_TILES_S, tuning.LUNGE_MAX_TILES / (window.Combat?.animalAttacks?.companionLungeTuning?.durationS || 0.12)) * deps.TILE : tuning.LUNGE_SPEED_TILES_S * deps.TILE, // Companion special uses a weapon-speed approach; wild spray retains its authored charge.
       targets: gatherTargets(creature, deps),
     });
     state.startFacing = state.lungeAngle;
