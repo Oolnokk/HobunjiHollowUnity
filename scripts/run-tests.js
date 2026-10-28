@@ -31,7 +31,8 @@ const BROWSER = new Set([
   'test-dev-random-ruin-browser.js',
   'test-dev-random-ruin-collision-browser.js',
   'test-controller-ui-modal-pin.js',
-  'test-farmwork-controller-browser.js', // Runs with Chromium in the dedicated regression workflow step.
+  'test-farmwork-controller-browser.js', // Real-browser Farmwork controller and stepper test.
+  'test-controller-mastery-inventory-browser.js', // Runs in the existing Chromium workflow step.
   'test-interior-editor-exit-browser.js', // Runs after Chromium installation in regression-suite.yml.
   'test-surface-foliage-styles-browser.js', // Real THREE and shared editor growth-style browser smoke.
   'test-omgurku-gameplay-browser.js', // Full game NPC spawn/transfer/despawn coverage.

@@ -371,7 +371,13 @@
     if (changedKey) button.dataset.itemKey = key;
     if (button.disabled !== (action.allowed === false)) button.disabled = action.allowed === false;
     const buttonLabel = `${action.icon || '✦'} ${action.verb}`; // Used to skip redundant child mutations that would schedule another render.
-    if (button.textContent !== buttonLabel) button.textContent = buttonLabel;
+    // GenericHudIcons may replace the authored emoji with a fallback/image.
+    // Compare the requested label, not that decorated text: controller section
+    // reconciliation otherwise restores the emoji and starts a microtask loop.
+    if (button.dataset.directUseLabel !== buttonLabel) {
+      button.textContent = buttonLabel;
+      button.dataset.directUseLabel = buttonLabel;
+    }
     const tooltip = `${action.verb} ${action.itemLabel} directly from Inventory`; // Used only when the readable action text changes.
     if (button.title !== tooltip) button.title = tooltip;
     if (!existing || changedKey) button.onclick = () => useInventoryItem(key);

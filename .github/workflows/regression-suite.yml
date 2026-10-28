@@ -54,6 +54,8 @@ jobs:
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Farmwork controller tile grid and stepper browser regression
         run: node scripts/test-farmwork-controller-browser.js
+      - name: Controller mastery inventory browser regression
+        run: node scripts/test-controller-mastery-inventory-browser.js
       - name: Omgurku hybrid calibration browser smoke
         run: node scripts/test-omgurku-calibration-browser.js
 
