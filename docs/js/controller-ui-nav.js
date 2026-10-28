@@ -515,6 +515,7 @@
     if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
     if (!currentTarget.hasAttribute('tabindex') && currentTarget.tabIndex < 0) currentTarget.tabIndex = -1;
     try { currentTarget.focus({ preventScroll: true }); } catch { /* not every candidate supports real focus */ }
+    currentTarget.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true })); // Lets owning UI panels preview the highlighted control without activating it or entering its action group.
     if (opts.scroll !== false) {
       try { currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch {}
     }
