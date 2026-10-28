@@ -57,6 +57,14 @@ async function run() {
     assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(den.x, den.y + 3, area), true, 'collapsed cave remains sealed');
   }
 
+  const generic = { x:10, y:10, w:6, h:6, mouthAnchor:{ x:13, y:16 } }; // A legacy free-standing den borrows the shared cave model without choosing an authored entrance template.
+  const fallbackState = context.ZoneDenTotemFeatures.denEntranceCollisionState(generic); // A visual template must not silently replace unassigned den collision.
+  assert.equal(fallbackState.useLegacyCave, true, 'free-standing den must keep its old doorway collider');
+  assert.equal(fallbackState.rects.length, 0, 'the authored rear-half cave collider must not attach to free-standing dens');
+  context.GridTileAccessors.init({ _zoneLayouts: new Map([[area, { dens:[generic] }]]) }); // Actual movement check for an untemplated cave.
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(10, 13, area), true, 'legacy cave side rock remains solid');
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(12, 15, area), false, 'legacy cave front doorway remains open');
+
   const legacy = structuredClone(templates[0]); // Regression: unmodified auto collider templates keep the historic gap.
   legacy.objects.find(object => object.key === 'cave_small').collision = { mode: 'auto' };
   assert.equal(Placement.authoredWalkableTiles({ x: 0, y: 0, w: 6, h: 6 }, legacy), null);
@@ -78,7 +86,9 @@ async function run() {
   const generator = fs.readFileSync('docs/js/wilderness-map-generator.js', 'utf8'); // Guards initial wilderness tile painting against reverting to hardcoded entrance swathes.
   const wildlife = fs.readFileSync('docs/js/wildlife-spawn.js', 'utf8'); // Guards relocated dens against repainting the open columns as rock.
   assert.match(generator, /authoredWalkableTiles\?\.\(object, template\)/);
+  assert.match(generator, /object\.entranceTemplateId\s*\?/, 'generator must not apply authored cave colliders to untemplated dens');
   assert.match(wildlife, /authoredWalkableTiles\?\.\(den, locale\)/);
+  assert.match(wildlife, /den\?\.entranceTemplateId\s*\?/, 'relocation must retain the legacy cave opening for untemplated dens');
   console.log('Locale-authored cave side clearance: both den sizes, runtime collision, rock overlays, collapse and legacy fallback validated');
 }
 
