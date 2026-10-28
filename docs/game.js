@@ -8213,6 +8213,9 @@
             if (downedFocus && downedFocus.areaId === currentArea) target = downedFocus;
           }
 
+          if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
+            target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
+          }
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target) c._stage = null;
