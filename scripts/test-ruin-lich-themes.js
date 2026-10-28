@@ -410,3 +410,17 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   assert.equal(staticMesh.geometry.disposed,false,'Expiration leaves room geometry intact');
   t.composer.clear();
 }
+
+{
+  const t=setup('kanthic');
+  let seed;
+  for(let z=2;z<12&&!seed;z++)for(let x=2;x<12&&!seed;x++)if(t.api.isPlasmAt(x+.5,z+.5))seed={x:x+.5,z:z+.5};
+  assert.equal(t.api.createSpellPlasm(seed.x,seed.z),null,'Casting on an existing room patch must not duplicate transparent surfaces');
+  t.kit.sampleSupport=()=>({y:2});
+  const upper=t.api.createSpellPlasm(seed.x,seed.z);
+  assert.ok(upper,'A different support elevation accepts a distinct spell patch');
+  t.kit.deps.playerMesh.position.y=2;
+  t.player.x=seed.x*64;t.player.y=seed.z*64;t.tick(1);
+  assert.ok(t.api.snapshot().sinking>0,'Elevated spell contact must not be masked by room plasm below');
+  upper.dispose();t.composer.clear();
+}

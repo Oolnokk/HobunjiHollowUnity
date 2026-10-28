@@ -419,13 +419,14 @@ assert.equal(api.debugSnapshot().puddles,0,'Every temporary patch expires withou
 // implementation read its own sinking offset back as floor altitude, interrupting the
 // hazard. This test uses a sunken floor and a collision wall to exercise both paths.
 const ruinArea='map_i_dev_random_ruin'; // Simulated active ruin for the additional boss-plasm integration checks.
-const ruinTiles=new Set(['7,7','8,7']); // Used by the real puddle floor-occupancy gate and pull movement.
+const ruinTiles=new Set(['7,7','8,7','9,7']); // Used by the real puddle floor-occupancy gate and pull movement.
+let ruinGroundHeight=-2;
 let ruinPresentationY=-2; // The displayed player height must not be mistaken for stable floor support.
 let ruinSolid=true; // Blocks pull through an authored door or solid footprint.
 windowObject.DevRandomRuin={
   getRuntimeContext:()=>({floorSet:ruinTiles}),
-  getGroundSupportYAt:()=>-2,
-  getPlayerGroundSupportY:()=>-2,
+  getGroundSupportYAt:()=>ruinGroundHeight,
+  getPlayerGroundSupportY:()=>ruinGroundHeight,
   getPlayerSupportY:()=>ruinPresentationY,
   syncPlayerPresentationHeight:y=>{ruinPresentationY=y;},
 };
@@ -455,17 +456,30 @@ assert.equal(ruinPresentationY,-2,'Leaving a plasm puddle restores the real supp
 let sharedDisposed=0,sharedCreated=0;
 windowObject.DevRandomRuinLichThemes.createSpellPlasm=(x,z)=>{
   assert.equal(x,8.5);assert.equal(z,7.5);sharedCreated++;
-  return {dispose(){sharedDisposed++;}};
+  return {contains:x=>x>=8&&x<10,dispose(){sharedDisposed++;}};
 };
 ruinSolid=false;
 const sharedPatch=api.makeGasolinePuddle(ruinCaster,8.5*64,7.5*64);
 assert.ok(sharedPatch?.ruinPlasm,'Ruin combat deposits through the canonical tile composer');
 assert.equal(sharedCreated,1);
+assert.equal(api.makeGasolinePuddle(ruinCaster,9.2*64,7.5*64),sharedPatch,'Impact inside the canonical tile footprint refreshes the existing patch');
+assert.equal(sharedCreated,1,'Tile-edge refresh does not allocate another mesh');
+for(let i=1;i<=11;i++){
+  ruinGroundHeight=i*2;
+  assert.ok(api.makeGasolinePuddle(ruinCaster,8.5*64,7.5*64)?.ruinPlasm,'A spell on another elevation must not refresh a lower patch');
+}
+assert.equal(api.debugSnapshot().puddles,12);
+const disposedBeforeRejectedCast=sharedDisposed;
+windowObject.DevRandomRuinLichThemes.createSpellPlasm=()=>null;
+ruinGroundHeight=99;
+assert.equal(api.makeGasolinePuddle(ruinCaster,8.5*64,7.5*64),null);
+assert.equal(api.debugSnapshot().puddles,12,'A rejected deposit at the cap must not evict an existing patch');
+assert.equal(sharedDisposed,disposedBeforeRejectedCast);
 player.areaId='farm';
 currentArea='farm';
 windowObject.RangedWeapons.update(.1);
 assert.equal(api.debugSnapshot().puddles,0,'Ruin departure disposes remaining boss puddles');
-assert.equal(sharedDisposed,1,'Area cleanup releases the composer-owned spell patch');
+assert.equal(sharedDisposed,sharedCreated,'Area cleanup releases every composer-owned spell patch exactly once');
 
 console.log('Harlyao Lich regression checks passed.');
 

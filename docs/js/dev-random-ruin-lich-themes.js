@@ -790,25 +790,42 @@
     for(let dz=0;dz<2;dz++)for(let dx=0;dx<2;dx++){
       const tx=baseX+dx,tz=baseZ+dz,y=floorY(kit,tx+.5,tz+.5);
       if(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y))continue;
-      const key=tileKey(tx,tz);patch.plasm.add(key);patch.plasmFloorY.set(key,y);
+      const key=tileKey(tx,tz),existing=plasmPatchAt(tx+.5,tz+.5,y);
+      if(existing&&Math.abs(existing.plasmFloorY.get(key)-y)<.01)continue; // Never stack translucent copies of the same floor tile.
+      patch.plasm.add(key);patch.plasmFloorY.set(key,y);
     }
     if(!patch.plasm.size)return null;
     patch.mesh=makePlasmSurface(kit,patch);
     world.group.add(patch.mesh);
     const owner=world;
     owner.spellPlasm.add(patch);
-    return {mesh:patch.mesh,dispose(){
+    return {mesh:patch.mesh,contains(x,z,y){
+      const key=tileKey(x,z);
+      return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&
+        (!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
+    },dispose(){
       if(!owner.spellPlasm.delete(patch))return;
       patch.mesh.parent?.remove(patch.mesh);patch.mesh.geometry.dispose?.();
     }};
   }
 
-  function plasmPatchAt(x,z) {
+  function plasmPatchAt(x,z,supportY) {
     if(!world)return null;
     const key=tileKey(x,z);
-    for(const room of world.rooms)if(room.plasm?.has(key))return room;
-    for(const patch of world.spellPlasm)if(patch.plasm.has(key))return patch;
-    return null;
+    let best=null,bestDistance=Infinity;
+    for(const room of world.rooms){
+      if(!room.plasm?.has(key))continue;
+      if(!Number.isFinite(supportY))return room;
+      const distance=Math.abs(room.plasmFloorY.get(key)-supportY);
+      if(distance<bestDistance){best=room;bestDistance=distance;}
+    }
+    for(const patch of world.spellPlasm){
+      if(!patch.plasm.has(key))continue;
+      if(!Number.isFinite(supportY))return patch;
+      const distance=Math.abs(patch.plasmFloorY.get(key)-supportY);
+      if(distance<bestDistance){best=patch;bestDistance=distance;}
+    }
+    return best;
   }
 
   function updatePlasm(kit,dt) {
@@ -822,14 +839,14 @@
     }
     world.playerWasAlive=true;
     const key=tileKey(point.x,point.z);
-    const room=plasmPatchAt(point.x,point.z);
+    const playerY=Number(window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y); // Physical support chooses the matching tier when two floors share a tile.
+    const room=plasmPatchAt(point.x,point.z,playerY);
     // Newly activated checkpoints are always safe, without altering or re-uploading the authored surface.
     if(!room?.plasm?.has(key)||protectedPlasmTile(kit,Math.floor(point.x),Math.floor(point.z))){
       world.sink=0;
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    const playerY=Number(window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y??baseY); // Read physical support, not sinking presentation.
     if(kit.ownsPlayerMotion?.()||player.climbing||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){
       world.sink=0;
       return; // Ropes, flying and elevated supports take precedence.
