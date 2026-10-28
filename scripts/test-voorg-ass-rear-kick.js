@@ -18,6 +18,7 @@ assert.match(game, /_voorgRearKickThreat = retaliator/, 'a struck wild Voorg-Ass
 assert.match(game, /animalAttacks\?\.start\(c, 'rearKick', \{ target: prey \}\)/, 'wildlife-vs-wildlife retaliations invoke the named kick');
 assert.match(game, /window\.VoorgAssRearKick\.canUse\(c\) \? 'rearKick' : 'guardCharge'/, 'companion kicks respect their own cooldown');
 assert.match(game, /_voorgRearKickSpent = false/, 'wild kick re-arms after returning home');
+assert.match(game, /VoorgAssRearKick\?\.isHoldingKickPose\?\.\(c\)/, 'companion keeps a fired kick pose even after the target is defeated or disappears');
 assert.match(game, /c\.state = c\._voorgRearKickThreat \? 'fleeing-low-health' : 'idle'/, 'wildlife switches to flight if the retaliation target disappears');
 assert.match(game, /c\.state = c\._voorgRearKickThreat \? 'fleeing-low-health' : 'return'/, 'wildlife escapes if the skirmish exceeds its leash');
 assert.match(game, /c\._voorgRearKickSpent = true; \/\/ No Stamina/, 'wildlife escapes if it cannot afford the kick');
@@ -124,9 +125,26 @@ async function main() {
   assert.ok(options.footingDamageMultiplier >= 80, 'huge Footing loss uses existing stagger pipeline');
   assert.equal(options.tag, 'blunt');
   assert.ok(log.some(x => x[0] === 'frame' && x[1] === wild.avatarRef && String(x[2]).startsWith('data:image/png')), 'combined frame applied through existing sprite renderer');
-  kick.update(wild, state, 0.15, deps);
-  kick.update(wild, state, 0.3, deps);
-  assert.equal(wild.state, 'fleeing-low-health', 'wild Voorg-Ass escapes after kicking');
+  assert.equal(windowStub.VoorgAssRearKick.tuning.KICK_POSE_HOLD_S, 1.0, 'kick pose hold is exactly one second after impact');
+  assert.equal(state.stage, 'kickHold', 'hoof contact enters the dedicated held-kick state');
+  const heldX = wild.x, heldY = wild.y, heldFrame = wild.currentFrameUrl; // The impact silhouette and world position must not drift.
+  const spriteChanges = log.filter(x => x[0] === 'frame').length; // Checks default animation cannot overwrite the pose during the hold.
+  wild.vx = 123; wild.vy = -50; // Simulates residual movement entering the stationary impact hold.
+  kick.update(wild, state, 0.5, deps);
+  kick.update(wild, state, 0.49, deps);
+  assert.equal(state.stage, 'kickHold', 'the rear kick remains fully extended through 0.99 seconds');
+  assert.equal(wild.state, 'chase', 'wild animal does not flee during the held-kick second');
+  assert.equal(wild.x, heldX);
+  assert.equal(wild.y, heldY);
+  assert.equal(wild.vx, 0);
+  assert.equal(wild.vy, 0);
+  assert.equal(wild.currentFrameUrl, heldFrame);
+  assert.equal(log.filter(x => x[0] === 'frame').length, spriteChanges, 'kick composite is unchanged throughout the stationary hold');
+  assert.equal(damageCalls.length, 1, 'holding the pose never deals a second hit');
+  kick.update(wild, state, 0.02, deps);
+  assert.equal(state.stage, 'recovery', 'one full second of impact pose precedes recovery');
+  kick.update(wild, state, 0.24, deps);
+  assert.equal(wild.state, 'fleeing-low-health', 'wild Voorg-Ass escapes only after the full kick hold and recovery');
   assert.equal(wild._voorgRearKickThreat, null, 'wild target cleared for retreat');
   assert.equal(wild._voorgRearKickSpent, true, 'wild kick cannot loop while escaping');
 
@@ -156,9 +174,17 @@ async function main() {
   kick.update(companion, companionState, 0.35, companionDeps);
   kick.update(companion, companionState, 0.15, companionDeps);
   assert.equal(creatureHits.length, 1, 'companion kick flows through companion offense');
-  kick.update(companion, companionState, 0.35, companionDeps);
+  assert.equal(companionState.stage, 'kickHold');
+  companion._animalAttack = { id: 'rearKick', state: companionState }; // Mirror dispatcher ownership to test the target-loss guard.
+  assert.ok(windowStub.VoorgAssRearKick.isHoldingKickPose(companion), 'companion keeps holding after a successful strike');
+  kick.update(companion, companionState, 0.7, companionDeps);
+  assert.equal(companionState.stage, 'kickHold', 'companion holds the same kick position for a full second');
+  assert.equal(creatureHits.length, 1, 'companion does not repeat damage while paused');
   kick.update(companion, companionState, 0.3, companionDeps);
+  assert.equal(companionState.stage, 'recovery');
+  kick.update(companion, companionState, 0.24, companionDeps);
   assert.equal(companion.state, 'chase', 'companion does not flee after the kick');
+  assert.ok(!windowStub.VoorgAssRearKick.isHoldingKickPose({ ...companion, _animalAttack: null }), 'the target-loss hold gate ends when the named attack finishes');
   clock += 9001;
   assert.ok(windowStub.VoorgAssRearKick.canUse(companion), 'signature attack recharges independently');
 
