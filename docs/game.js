@@ -16624,7 +16624,7 @@
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
         if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = message; }
-        if (detailEl) detailEl.style.display = 'none';
+        if (detailEl) { detailEl.style.display = 'none'; delete detailEl.dataset.itemKey; } // Clear preview/action identity when no Pack item is shown.
       }
 
       function buildInventoryGrid() {
@@ -16661,6 +16661,7 @@
             box.appendChild(badge);
           }
           box.addEventListener('click', () => selectInventoryItem(key, false, stack));
+          box.addEventListener('hobunji-controller-focus', () => selectInventoryItem(key, true, stack)); // Passive controller preview preserves the actual selection and exact item variant.
           applyItemSpriteIcon(box.querySelector('.iib-icon'), def, key);
           window.InventoryStacks.applyHeadIcon(box.querySelector('.iib-icon'), LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
           grid.appendChild(box);
@@ -16790,7 +16791,7 @@
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
         if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) detailEl.style.display  = '';
+        if (detailEl) { detailEl.style.display = ''; detailEl.dataset.itemKey = key; } // Exact displayed item identity for preview-safe direct-use buttons.
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  itemIconForKey(key));
