@@ -42,10 +42,10 @@
     const distance = target && Number.isFinite(target.x) && Number.isFinite(target.y)
       ? Math.hypot(target.x - c.x, target.y - c.y) : 0; // Only eligible targets outside melee reach need the burst.
     let approach = null;
-    if (c.isCompanion && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) {
+    if (c.isCompanion && !def.ownsApproach && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) { // A named move with its own charge, leap, burrow or attachment approach must not lunge twice.
       approach = {}; // Separate shared-lunge state never leaks into a signature attack's own state machine.
       beginConeLunge(c, approach, ctx, deps, {
-        targets: [target], rangePx: reach, halfConeRad: Math.PI, // The committed approach stops as soon as its target is in the animal's normal strike reach.
+        targets: [target], rangePx: reach, halfConeRad: Math.PI / 3, // Only the committed forward attack cone stops the charge; targets behind it must not trigger phantom contact.
         maxDistancePx: deps.TILE * COMPANION_LUNGE_MAX_TILES,
         speedPxS: deps.TILE * COMPANION_LUNGE_MAX_TILES / COMPANION_LUNGE_DURATION_S,
       });
@@ -264,7 +264,7 @@
       rangePx: state.rangePx,
       halfConeRad: state.halfConeRad,
       maxDistancePx: Math.max(0, state.lungeProfile.distancePx),
-      speedPxS: POUNCE_LEAP_SPEED_PX_S,
+      speedPxS: c.isCompanion ? Math.max(POUNCE_LEAP_SPEED_PX_S, state.lungeProfile.distancePx / COMPANION_LUNGE_DURATION_S) : POUNCE_LEAP_SPEED_PX_S, // Keep wild pounce pacing; companion pounces leap at weapon-attack speed.
       collideRadiusPx: deps.TILE * 0.32,
       detect: leapConeDetect(),
     });
@@ -350,6 +350,7 @@
 
   register('pounce', {
     label: 'Pounce',
+    ownsApproach: true, // Its existing crouch-to-leap sequence already commits to a single attack lunge.
     start: pounceStart,
     update: pounceUpdate,
     cancel: pounceCancel,
@@ -378,6 +379,10 @@
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
     state.rangePx = c.def.attackRangePx;
+    if (c.isCompanion && ctx.target) {
+      const targetDistancePx = Math.hypot(ctx.target.x - c.x, ctx.target.y - c.y); // Extends this existing one-shot Guard Charge rather than prepending another separate charge.
+      state.distancePx = Math.min(COMPANION_LUNGE_MAX_TILES * deps.TILE, Math.max(state.distancePx, targetDistancePx - state.rangePx + deps.TILE * 0.08));
+    }
     state.halfConeRad = c.def.attackHalfConeRad;
     state.targets = gatherTargets(c, deps);
     // The same sub-stepped cone lunge as Pounce, on the blended guard bearing rather than straight at the target.
@@ -410,7 +415,7 @@
     return false;
   }
 
-  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });
+  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate, ownsApproach: true }); // This move already performs its own 0.12-second collision-aware charge.
 
   window.Combat.animalAttacks.applyConfig = function (cfg) {
     if (!cfg) return;
