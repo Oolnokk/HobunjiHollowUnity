@@ -213,6 +213,14 @@ const server=http.createServer((request,response)=>{
       const templeSources=growth.architecturalSurfaceSources(temple.base.faces,{wallLift:.26,roofLift:.16});
       const templeRegions=growth.recognizeArchitecturalSurfaceRegions(new T.Group(),templeSources,
         {occlusionFaces:temple.base.faces});
+      const templeWrapHost=new T.Group();
+      growth.replaceSemanticSurfaceGuides(templeWrapHost,templeRegions);
+      const templeWrap=growth.buildSurfaceGrowth(templeWrapHost,{kind:'vines',style:'wrap',
+        target:'walls',count:4,strandLimit:4,perSurface:true,length:12,
+        radius:.1,offset:.008,curl:.4,density:.45,texture:'',seed:'temple-real-wrap-check'});
+      const templeWrapStats=templeWrap.userData.surfaceGrowthStats;
+      const templeWrapDetails=templeWrap.userData.surfaceGrowthSurfaces;
+
       const surfaceArea=vertices=>{
         let area=0;
         for(let i=0;i+2<vertices.length;i+=3){
@@ -329,6 +337,7 @@ const server=http.createServer((request,response)=>{
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
         budgetCorners,budgetNatural,perSurfaceDetails,visibleWallCount:visibleWall.length,visibleCentroids,
         templeSourceArea,templeExposedArea,templeSourceCount,templeRegionCount,templeVisibleRoles,
+        templeWrapStats,templeWrapDetails,
         interiorAreaBefore,interiorAreaAfter,
         rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
@@ -369,6 +378,10 @@ const server=http.createServer((request,response)=>{
     assert(data.templeRegionCount>=8&&data.templeRegionCount<25,'The Temple must have separate exposed wall and roof surfaces, not a role-wide guide or dozens of internal framing regions');
     assert(data.templeVisibleRoles.walls>2&&data.templeVisibleRoles.roofs>1,
       'Cross-gable exposure must preserve both wall and roof surfaces');
+    assert.equal(data.templeWrapStats.surfaces,data.templeVisibleRoles.walls,'Wrap must use only exposed Temple wall regions, not intersecting buried surfaces');
+    assert(data.templeWrapStats.generatedStrands>=20&&data.templeWrapStats.generatedStrands<=data.templeWrapStats.surfaces*4,
+      'Real cross-gabled Temple Wrap must complete edge-to-edge paths without exceeding each surface budget');
+    assert(data.templeWrapDetails.every(x=>x.actual<=4),'Temple must enforce the independent per-region strand limit');
     assert(data.templeExposedArea<data.templeSourceArea*.9,
       'The real Temple must trim a meaningful amount of buried intersecting cross-gable geometry');
     assert.equal(data.budgetCorners.surfaces,2,'Both named architectural regions must receive their own budget');
