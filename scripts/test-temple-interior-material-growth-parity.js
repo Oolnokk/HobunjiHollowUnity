@@ -17,21 +17,15 @@ assert.deepEqual(templeInterior.floorStyle, {
 const iRugs = templeInterior.furniture.filter(piece => piece.itemKey === 'rugFurniture'); // Finds the original aisle rug without altering its motifs.
 assert(iRugs.length > 0 && iRugs.some(piece => Object.keys(piece.patternOverrides || {}).length > 0),
   'the original authored rug/overpass color settings must survive');
-const exteriorRoots=templeExterior.surfaceGrowth.find(recipe=>recipe.kind==='roots'&&recipe.target==='walls');
-const exteriorVines=templeExterior.surfaceGrowth.find(recipe=>recipe.kind==='vines'&&recipe.target==='walls');
-const roots=templeInterior.surfaceGrowth.find(recipe=>recipe.kind==='roots'&&recipe.target==='walls');
-const vines=templeInterior.surfaceGrowth.find(recipe=>recipe.kind==='vines'&&recipe.target==='walls');
-assert.deepEqual(roots,exteriorRoots,'Temple interior must use the exact exterior wall-root recipe');
-assert.deepEqual(vines,exteriorVines,'Temple interior must use the exact exterior wall-vine recipe');
-assert.equal(roots.style,'cornerFill');
-assert.equal(vines.style,'natural');
-for(const recipe of [roots,vines]){
-  assert.equal(recipe.count,80);
-  assert.equal(recipe.strandLimit,80);
-  assert.equal(recipe.perSurface,true);
-  assert.equal(recipe.length,12);
-  assert.equal(recipe.radius,.1);
-}
+const exteriorWalls=templeExterior.surfaceGrowth.filter(recipe=>recipe.target==='walls');
+const interiorWalls=templeInterior.surfaceGrowth.filter(recipe=>recipe.target==='walls');
+assert.equal(templeExterior.surfaceGrowth.length,4,'Latest Temple exterior has three wall layers plus the shingle layer');
+assert.deepEqual(interiorWalls,exteriorWalls,'Temple interior must mirror every exterior wall root/vine layer in order');
+assert.deepEqual(interiorWalls.map(recipe=>[recipe.kind,recipe.style,recipe.density,recipe.strandLimit]),[
+  ['roots','cornerFill',.45,80],['vines','wrap',.1,40],['roots','wrap',.2,12]
+], 'Temple foliage matches the newest authored wall roots and edge-to-edge vines');
+assert(interiorWalls.every(recipe=>recipe.perSurface&&recipe.length>=12&&recipe.radius>=.075),
+  'Temple interior layers must preserve independent surface budgets and current tube sizes');
 assert.equal(templeExterior.base.faces.length,67,'Supplied temple layout must retain its authored cross-gable, entry and wall sections');
 assert.equal(templeExterior.wallFixtures.length,4,'All four stained-glass windows must survive the growth updates');
 const shingleVines = templeExterior.surfaceGrowth.find(recipe => recipe.target === 'shingles'); // Keeps fine vines distinct from thick roots.
