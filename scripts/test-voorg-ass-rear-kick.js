@@ -217,6 +217,31 @@ async function main() {
     assert.equal(damageCalls.length, beforeHits, evasion + ': avoids committed rear kick');
   }
 
+  // Rear Kick's entire 2.6-tile approach is a weapon-style burst (Guard Charge's 0.12s), not a half-second chase.
+  assert.equal(windowStub.VoorgAssRearKick.tuning.LUNGE_DURATION_S, 0.12, 'Rear Kick uses the shared combat-burst cadence');
+  const distantVictim = { ...player, x: 800, y: 0 }; // Far enough to exercise the full travel budget without cone contact.
+  const bursting = { ...wild, x: 0, y: 0, facing: 0 }; // Isolates movement from previous attack instances.
+  const burstState = {}; // Captures per-attack travel diagnostics and stop reason.
+  kick.start(bursting, burstState, { target: distantVictim }, deps);
+  let burstFrames = 0; // Counts simulation ticks to guard against accidentally restoring slow approach movement.
+  do {
+    kick.update(bursting, burstState, 1 / 60, deps);
+    burstFrames++;
+    if (burstFrames === 1) assert.ok(bursting.x >= deps.TILE * 0.3, 'first burst frame moves a substantial distance');
+  } while (burstState.stage === 'lunge' && burstFrames < 20);
+  assert.equal(burstState.lungeStopReason, 'range', 'the committed attack keeps its finite travel budget');
+  assert.ok(burstFrames <= 9, 'full travel resolves within approximately 0.12s at 60fps');
+  assert.ok(burstState.lungeElapsedS < 0.15, 'the on-screen debug time measures a short attack burst');
+  assert.ok(Math.abs(bursting.x - 2.6 * deps.TILE) < 0.01, 'faster burst keeps the same maximum travel distance');
+
+  const obstacle = { ...wild, x: 0, y: 0, facing: 0 }; // Separate charge verifies speed did not skip solid obstacles.
+  const obstacleState = {}; // Holds the collision stop reason for the fast movement test.
+  const obstacleDeps = { ...deps, canOccupyAt: x => x <= deps.TILE * 0.85 }; // Solid boundary lies inside the first few high-speed frames.
+  kick.start(obstacle, obstacleState, { target: distantVictim }, obstacleDeps);
+  advancePastKickLunge(obstacle, obstacleState, obstacleDeps);
+  assert.equal(obstacleState.lungeStopReason, 'blocked', 'fast burst still detects collisions');
+  assert.ok(obstacle.x <= deps.TILE * 0.85, 'the lunge cannot tunnel through a wall at the faster speed');
+
   // Charge can run its full distance or collide with terrain and still turn/kick.
   for (const stop of ['range', 'blocked']) {
     const far = { ...player, x: 800, y: 0 };
