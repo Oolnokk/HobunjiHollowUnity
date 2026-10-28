@@ -733,14 +733,14 @@
     // Architectural navigation follows pre-cladding wall/gable/roof faces, including actual door/window cuts.
     // Invisible, non-raycastable guides are independent of randomized brick and stacked-log geometry.
     if ((opts.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap')) {
-      // Merge same-role guides into a single static mesh per house for mobile scene-graph efficiency.
+      // Detect connected face regions, so coplanar wall and gable patches join while real folds remain separate.
       const foliage=global.FoliageGenerator;
       if(foliage){
         const panels=['wall','roof'].map(tag=>({
           vertices:faces.filter(face=>tag==='wall'?['wall','entryTunnel'].includes(face.tag):face.tag==='roof')
             .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
           role:tag==='wall'?'walls':'roofs',
-          renderLift:tag==='wall'?(opts.wallBuilder||generatedLogStyle?.26:0):.16
+          renderLift:tag==='wall'?((opts.wallBuilder||generatedLogStyle)? .26:0):.16
         }));
         foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels));
       }
@@ -1563,7 +1563,7 @@
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
     // The transformed source faces, not WallBuilder bricks or generated log courses, are the navigation authority.
     if ((piece.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap')) {
-      // Combine sheer authored panels, not individual WallBuilder bricks, into at most two guide meshes.
+      // Group sheer authored faces by shared edges and normal angle, not material or wall/gable labels.
       const foliage=global.FoliageGenerator;
       if(foliage){
         const panels=['walls','roofs'].map(role=>({
