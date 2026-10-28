@@ -1,6 +1,9 @@
 name: Semantic surface foliage browser smoke
 
 on:
+  push:
+    branches:
+      - 'fix/house-plane-guides-for-corner-fill-wrap-20261027' # Tests the feature branch even while its PR cannot form a merge ref.
   pull_request:
     paths:
       - 'docs/js/foliage-generator.js'
@@ -35,5 +38,7 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
           npx playwright install --with-deps chromium
+      - name: Source-level foliage regression
+        run: node scripts/test-surface-foliage.js
       - name: House architectural planes, furniture named surfaces, and nested guide ownership
         run: node scripts/test-surface-foliage-styles-browser.js
