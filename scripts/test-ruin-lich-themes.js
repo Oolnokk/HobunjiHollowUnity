@@ -23,6 +23,11 @@ assert.doesNotMatch(fogSource, /ctx\.clip\(/, 'No hard camera-centered lantern c
 assert.match(fogSource, /KANTHIC_STANDARD_DARKNESS_ALPHA = 0\.95/, 'Kanthic darkness uses the shared underground ambient rendering pass');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');
+const interiorSource=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // Ground height remains separate from the renderer's sinking height.
+assert.match(interiorSource,/function getPlayerGroundSupportY\(\)/,'Ruin runtime exposes physics support independent of presentation');
+assert.match(interiorSource,/function getGroundSupportYAt\(x, z\)/,'Boss projectile puddles sample sunken floor elevation');
+assert.match(themeSource,/getPlayerGroundSupportY\?\.\(\)/,'Static plasm must not read its own sinking presentation as ground height');
+
 
 class Vector {
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }

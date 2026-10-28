@@ -415,6 +415,48 @@ assert.equal(api.debugSnapshot().puddles,12,'Twelve patches cap concurrent meshe
 for(let i=0;i<50;i++)windowObject.RangedWeapons.update(.25);
 assert.equal(api.debugSnapshot().puddles,0,'Every temporary patch expires without lingering collision or visuals');
 
+// The ruin's visual sinking elevation is NOT the player's real support. The previous
+// implementation read its own sinking offset back as floor altitude, interrupting the
+// hazard. This test uses a sunken floor and a collision wall to exercise both paths.
+const ruinArea='map_i_dev_random_ruin'; // Simulated active ruin for the additional boss-plasm integration checks.
+const ruinTiles=new Set(['7,7','8,7']); // Used by the real puddle floor-occupancy gate and pull movement.
+let ruinPresentationY=-2; // The displayed player height must not be mistaken for stable floor support.
+let ruinSolid=true; // Blocks pull through an authored door or solid footprint.
+windowObject.DevRandomRuin={
+  getRuntimeContext:()=>({floorSet:ruinTiles}),
+  getGroundSupportYAt:()=>-2,
+  getPlayerGroundSupportY:()=>-2,
+  getPlayerSupportY:()=>ruinPresentationY,
+  syncPlayerPresentationHeight:y=>{ruinPresentationY=y;},
+};
+windowObject.DevRandomRuinTileOccupancy={solidAt:()=>ruinSolid};
+windowObject.DevRandomRuinLichThemes={isProtectedPlasmAt:()=>false,isPlasmAt:()=>false};
+windowObject.DevRandomRuinSimplePuzzles={ownsPlayerMotion:()=>false};
+api.allowArea(ruinArea);
+currentArea=ruinArea;
+player.areaId=ruinArea;
+player.x=7.8*64;player.y=7.5*64;player.health=100;
+const ruinCaster={id:'ruin-lich',areaId:ruinArea,scene:liveScene,health:100};
+assert.equal(api.makeGasolinePuddle(ruinCaster,7.5*64,7.5*64),null,'Projectile hitting a wall cannot deposit plasm inside a solid footprint');
+ruinSolid=false;
+const ruinPatch=api.makeGasolinePuddle(ruinCaster,7.5*64,7.5*64);
+assert(ruinPatch,'Clear, walkable sunken-floor tile accepts boss plasm');
+assert.equal(ruinPatch.groundY,-2,'Spell puddles use actual ruin surface elevation, not the generic zero-height area grid');
+ruinSolid=true;
+for(let i=0;i<3;i++)windowObject.RangedWeapons.update(.7);
+assert.equal(player.x,7.8*64,'Plasm pull cannot move the player through a solid door or wall');
+assert.equal(player.y,7.5*64,'Plasm pull preserves blocked Z movement as well');
+assert(api.debugSnapshot().playerPlasmSinkPct>70,'Immersion continues for 2.1 seconds even as the displayed body sinks below its true floor');
+assert(ruinPresentationY< -2.5,'Sinking animation tracks the real sunken-floor height');
+player.x=11*64;player.y=11*64;
+windowObject.RangedWeapons.update(.1);
+assert.equal(api.debugSnapshot().playerPlasmSinkPct,0,'Stepping off a ruin puddle resets its contact meter');
+assert.equal(ruinPresentationY,-2,'Leaving a plasm puddle restores the real support height immediately');
+player.areaId='farm';
+currentArea='farm';
+windowObject.RangedWeapons.update(.1);
+assert.equal(api.debugSnapshot().puddles,0,'Ruin departure disposes remaining boss puddles');
+
 console.log('Harlyao Lich regression checks passed.');
 
 })().catch(error => { console.error(error); process.exitCode = 1; });

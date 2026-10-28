@@ -89,6 +89,7 @@
   let deps = null; // BanditCombat's injected gameplay dependencies captured by the init wrapper and used by all lich simulation.
   const projectiles = new Set(); // Live Tothal/Kanthic spell projectiles updated from the normal RangedWeapons gameplay tick.
   const puddles = new Set(); // Live Kanthic petroleum hazards updated/disposed alongside custom projectiles.
+  const puddleTouchedActors = new Set(); // Keeps only actors with active immersion; allows cheap idle cleanup.
   const eruptions = new Set();
   let petroleumSurfaceGeometry = null; // Shared low micro-plateau mesh reused by every Kanthic petroleum impact.
   let petroleumSurfaceMaterial = null; // Shared black 70%-opacity canvas-textured material reused by every petroleum impact.
@@ -970,7 +971,11 @@
   function makeGasolinePuddle(owner, xPx, yPx) {
     if (!isArena() || !owner?.scene || typeof THREE === 'undefined' || !Number.isFinite(xPx) || !Number.isFinite(yPx)) return null;
     const areaId=owner.areaId||currentLichArea()||ARENA_ID; // Area ownership prevents damage/visuals leaking across arena and ruins.
-    if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(xPx/(deps.TILE||64),yPx/(deps.TILE||64)))return null; // Never deposit on a protected dungeon entrance or checkpoint.
+    const tile=deps.TILE||64,worldX=xPx/tile,worldZ=yPx/tile; // Used by the ruin floor/footprint test before allocating a mesh.
+    if(areaId==='map_i_dev_random_ruin'){
+      if(!window.DevRandomRuin?.getRuntimeContext?.()?.floorSet?.has(Math.floor(worldX)+','+Math.floor(worldZ)))return null; // No floating oil in void tiles.
+      if(window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(worldX,worldZ))return null; // Never deposit on an entrance or checkpoint.
+    }
     for(const existing of puddles){
       if(existing.areaId!==areaId)continue;
       if(Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
@@ -978,6 +983,9 @@
       lastEvent='plasm:refresh';
       return existing;
     }
+    const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
+    const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
+    if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinTileOccupancy?.solidAt?.(worldX,worldZ,.27,groundY+.35))return null; // A wall impact cannot deposit hidden plasm inside a solid.
     if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value); // Oldest insertion expires first; bounded even with many liches.
     const geometry = buildPetroleumSurfaceGeometry();
     const material = petroleumMaterial();
@@ -990,8 +998,7 @@
     mesh.scale.set(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES);
     mesh.renderOrder = 3;
     group.add(mesh);
-    const groundY = groundYAt(owner, xPx, yPx); // A floor patch must not float at the projectile's original impact height.
-    group.position.set(xPx / deps.TILE, groundY, yPx / deps.TILE);
+    group.position.set(worldX,groundY,worldZ);
     owner.scene.add(group);
     const puddle = {
       owner, areaId, x:xPx, y:yPx, group, mesh, groundY,
@@ -1504,54 +1511,73 @@
     }
   }
 
+  function clearPuddleSink(actor) {
+    if(!actor?._kanthicPuddleSink)return;
+    delete actor._kanthicPuddleSink;
+    puddleTouchedActors.delete(actor);
+    if(actor===deps?.player&&currentLichArea()==='map_i_dev_random_ruin'){
+      const floorY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Original physical support restores the player's render after leaving plasm.
+      if(Number.isFinite(floorY))window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY);
+    }
+  }
+
   function updatePuddles(dt) {
-    // Expiry is O(puddle count); footprints never grow and all active patches reuse one material and geometry.
     for(const puddle of [...puddles]){
       puddle.ageS+=dt;
-      if(!isArena() || !isLiveActor(puddle.owner) || puddle.areaId!==currentLichArea() || puddle.ageS>=PUDDLE_LIFETIME_S){
-        disposePetroleumPuddle(puddle);
-      }
+      if(!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
     }
-    const tile=deps?.TILE||64;
+    if(!puddles.size){
+      for(const actor of puddleTouchedActors)clearPuddleSink(actor);
+      return; // No per-frame whole-hostile scan when no plasm exists.
+    }
+    const tile=deps?.TILE||64,area=currentLichArea();
+    const inRuin=area==='map_i_dev_random_ruin'; // Authored ruin uses its actual floor and collision footprint for pull checks.
+    const floorSet=inRuin?window.DevRandomRuin?.getRuntimeContext?.()?.floorSet:null;
     for(const actor of [deps?.player,...(deps?.hostileObjects||[])]){
       if(!isLiveActor(actor)||actor.isHarlyaoLich||actor.enemyClass===CLASS_ID){
-        if(actor)delete actor._kanthicPuddleSink;
-        continue; // Flying liches are immune to ground petroleum; the player's state resets on death.
-      }
-      if(actor===deps.player&&currentLichArea()==='map_i_dev_random_ruin'&&(
-        window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.() ||
-        window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(actor.x/tile,actor.y/tile))){
-        delete actor._kanthicPuddleSink;
-        continue; // A late-activated respawn point or owned rope/flight can never trigger a lethal puddle loop.
-      }
-      let nearest=null,nearestDist=Infinity; // One contact decision per actor, so overlapping puddles cannot multiply sink speed.
-      for(const puddle of puddles){
-        if(puddle.owner===actor || puddle.areaId!==(actor.areaId||currentLichArea()))continue;
-        const distancePx=Math.hypot(actor.x-puddle.x,actor.y-puddle.y);
-        if(distancePx>puddle.radiusPx||distancePx>=nearestDist)continue;
-        if(actor.climbing||actor.onRope||actor._onRope)continue; // Traversal above the hazard remains safe.
-        const supportY=actor===deps.player ? window.DevRandomRuin?.getPlayerSupportY?.() : groundYAt(actor,actor.x,actor.y);
-        if(Number.isFinite(supportY)&&Math.abs(supportY-puddle.groundY)>PETROLEUM_SURFACE_DEPTH+.15)continue; // Bridges/flying supports never sink into the floor below.
-        nearest=puddle;nearestDist=distancePx;
-      }
-      if(!nearest){
-        if(actor._kanthicPuddleSink)delete actor._kanthicPuddleSink; // Escaping any puddle immediately stops immersion.
+        clearPuddleSink(actor);
         continue;
       }
-      const state=actor._kanthicPuddleSink||(actor._kanthicPuddleSink={elapsed:0}); // Tracks continuous contact across overlapping puddles.
-      state.elapsed=Math.min(PUDDLE_SINK_SECONDS,state.elapsed+dt);
+      if(inRuin&&actor===deps.player&&(
+        window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()||
+        window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(actor.x/tile,actor.y/tile)||
+        window.DevRandomRuinLichThemes?.isPlasmAt?.(actor.x/tile,actor.y/tile))){
+        clearPuddleSink(actor);
+        continue; // Ropes/checkpoints are safe; static plasm owns immersion on overlapping patches.
+      }
+      let nearest=null,nearestDist=Infinity;
+      for(const puddle of puddles){
+        if(puddle.owner===actor||puddle.areaId!==(actor.areaId||area))continue;
+        const dist=Math.hypot(actor.x-puddle.x,actor.y-puddle.y);
+        if(dist>puddle.radiusPx||dist>=nearestDist||actor.climbing||actor.onRope||actor._onRope)continue;
+        const support=inRuin
+          ? (actor===deps.player
+            ? (window.DevRandomRuin?.getPlayerGroundSupportY?.()??deps.playerMesh?.position?.y)
+            : window.DevRandomRuin?.getGroundSupportYAt?.(actor.x/tile,actor.y/tile))
+          : groundYAt(actor,actor.x,actor.y); // Never use the sinking presentation as the floor's true height.
+        if(Number.isFinite(support)&&Math.abs(support-puddle.groundY)>PETROLEUM_SURFACE_DEPTH+.15)continue;
+        nearest=puddle;nearestDist=dist;
+      }
+      if(!nearest){clearPuddleSink(actor);continue;}
+      const state=actor._kanthicPuddleSink||(actor._kanthicPuddleSink={elapsed:0});
+      puddleTouchedActors.add(actor);
+      state.elapsed=Math.min(PUDDLE_SINK_SECONDS,state.elapsed+dt); // Overlaps never speed up immersion.
       const dx=nearest.x-actor.x,dy=nearest.y-actor.y,dist=Math.hypot(dx,dy);
       const pullPx=Math.min(dist,PUDDLE_PULL_TILES_S*tile*dt*(1+state.elapsed/PUDDLE_SINK_SECONDS));
       if(dist>.001&&pullPx>0){
-        actor.x+=dx/dist*pullPx;actor.y+=dy/dist*pullPx; // Same inward drift as room patches; ordinary locomotion still provides escape.
+        const nx=actor.x+dx/dist*pullPx,ny=actor.y+dy/dist*pullPx;
+        const x=nx/tile,z=ny/tile;
+        const onFloor=!inRuin||!!floorSet?.has(Math.floor(x)+','+Math.floor(z));
+        const solid=inRuin&&!!window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,.27,nearest.groundY+.35);
+        if(onFloor&&!solid){actor.x=nx;actor.y=ny;} // Do not pull actors through walls, doors or missing tiles.
       }
-      if(actor===deps.player&&currentLichArea()==='map_i_dev_random_ruin'){
+      if(actor===deps.player&&inRuin){
         const height=Math.max(.9,Number(deps.playerMesh?.userData?.portraitModelHeight)||1.8);
         window.DevRandomRuin?.syncPlayerPresentationHeight?.(nearest.groundY-state.elapsed/PUDDLE_SINK_SECONDS*height);
       }
       if(state.elapsed>=PUDDLE_SINK_SECONDS){
-        delete actor._kanthicPuddleSink;
-        const lethal=Math.max(10000,Number(actor.health)||0); // Canonical damage/death/respawn handlers retain authority.
+        clearPuddleSink(actor);
+        const lethal=Math.max(10000,Number(actor.health)||0);
         const opts={tag:'kanthic-plasm',ranged:false,attacker:nearest.owner,afflictionBonuses:{}};
         if(actor===deps.player)deps.damagePlayer?.(lethal,nearest.x,nearest.y,0,opts);
         else deps.damageCreature?.(actor,lethal,nearest.x,nearest.y,0,{...opts,friendlyFire:true});
@@ -1823,14 +1849,15 @@
       if (deps?.player) {
         clearGooSlowNow(deps.player);
         clearEntrancedNow(deps.player);
-        delete deps.player._kanthicPuddleSink; // No immersion state survives a zone transition.
+        clearPuddleSink(deps.player); // No immersion state survives a zone transition.
       }
       for (const actor of deps?.hostileObjects || []) {
         if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Leaving the arena restores the grounded baseline and disables dangling hover.
         clearGooSlowNow(actor);
         clearEntrancedNow(actor);
-        delete actor._kanthicPuddleSink;
+        clearPuddleSink(actor);
       }
+      for(const actor of puddleTouchedActors)clearPuddleSink(actor); // Includes actors removed from the live hostile set.
       updateCommandBanner();
       updateEntrancerMarker(dt);
       return;

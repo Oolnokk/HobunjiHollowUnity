@@ -799,7 +799,7 @@
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    const playerY=Number(window.DevRandomRuin?.getPlayerSupportY?.()??kit.deps.playerMesh?.position?.y??baseY);
+    const playerY=Number(window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y??baseY); // Read physical support, not sinking presentation.
     if(kit.ownsPlayerMotion?.()||player.climbing||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){
       world.sink=0;
       return; // Ropes, flying and elevated supports take precedence.
