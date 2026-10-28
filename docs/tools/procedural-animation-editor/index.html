@@ -55027,6 +55027,7 @@ const REQUIRED_SCRIPTS = [
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
   'js/character-rig-scale.js', // Whole-character body x/y scale + neck-rig head compensation applied to the floor root in bindProceduralModel().
+  'js/npc-movement-head-target.js', // The actual NPC carrot/look-ahead helper, including yaw/pitch limits, shared with game.js NPCs and enemy rendering.
   'js/leg-bones.js',
   CREATURE_RENDER_SCRIPT,
 ];
@@ -58349,6 +58350,8 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
 }
 
 function disposeCurrentThreeModel() {
+  clearPreviewNpcMovementGaze(); // Release the old head bone before swapping its skinned model; no state leaks across NPCs or creature previews.
+  previewNpcMovementGaze.neck = null;
   const t = state.three;
   disposeExperimentalFeet();
   disposeExperimentalHands();
@@ -59561,6 +59564,90 @@ function setProceduralPlayback(playing) { // Starts or pauses simulation while p
   renderAnimationEditor();
 }
 
+// This preview uses the same skinned neck bone and invisible look-ahead target
+// as game NPC walkers. The preview's authored four-way poses/Maskbound lurch
+// rotate the whole portrait; only the head inversely rotates against that
+// torso transform so the eyes stay fixed on the WORLD movement direction.
+const previewNpcMovementGaze = {
+  neck: null, rest: null, eyeHeight: 0, active: false, status: 'no-npc',
+  yawDeg: 0, pitchDeg: 0, lookTarget: null, scratch: null,
+};
+
+function clearPreviewNpcMovementGaze() { // Idle, rig changes, authored poses and ragdolls own the head when no movement gaze is active.
+  const gaze = previewNpcMovementGaze;
+  if (gaze.active && gaze.neck?.quaternion && gaze.rest) gaze.neck.quaternion.copy(gaze.rest);
+  gaze.active = false;
+  gaze.yawDeg = 0;
+  gaze.pitchDeg = 0;
+  gaze.lookTarget = null;
+}
+
+function bindPreviewNpcMovementHead(model) {
+  clearPreviewNpcMovementGaze();
+  const gaze = previewNpcMovementGaze;
+  gaze.neck = state.previewMode === 'npc' ? model?.userData?.neckRig?.neckJoint || null : null;
+  gaze.rest = gaze.neck?.quaternion?.clone?.() || null; // Never overwrite an authored neutral neck transform.
+  gaze.eyeHeight = 0;
+  gaze.status = gaze.neck ? 'idle' : 'no-neck-rig';
+  gaze.scratch = null;
+  if (gaze.neck && state.three.THREE) {
+    const eye = new state.three.THREE.Vector3();
+    gaze.neck.getWorldPosition(eye); // Neutral real skinned neck Y after species/age/body scale and floor placement.
+    gaze.eyeHeight = eye.y - (procedural.locomotionRoot?.position?.y || 0);
+  }
+}
+
+function updatePreviewNpcMovementGaze(movingSpeed) {
+  const gaze = previewNpcMovementGaze;
+  const model = state.three.model;
+  const THREE = state.three.THREE;
+  const helper = window.NpcMovementHeadTarget;
+  const neck = gaze.neck;
+  if (state.previewMode !== 'npc' || procedural.pose.editing || !model || !neck || !THREE || !helper?.targetAhead) {
+    clearPreviewNpcMovementGaze();
+    gaze.status = !neck ? 'no-neck-rig' : !helper?.targetAhead ? 'look-helper-unavailable' : 'authored-pose';
+    return false;
+  }
+  const vx = procedural.velocity.x, vz = procedural.velocity.z;
+  const speed = Number(movingSpeed) || Math.hypot(vx, vz);
+  if (!(speed > 0.035) || !Number.isFinite(vx) || !Number.isFinite(vz)) {
+    clearPreviewNpcMovementGaze();
+    gaze.status = 'idle';
+    return false;
+  }
+  const target = helper.targetAhead({ x: procedural.position.x, y: procedural.baseModelY, z: procedural.position.z }, vx, vz, gaze.eyeHeight);
+  if (!target) { clearPreviewNpcMovementGaze(); gaze.status = 'idle'; return false; }
+  if (!gaze.scratch) {
+    gaze.scratch = {
+      eye: new THREE.Vector3(), parentWorld: new THREE.Quaternion(), world: new THREE.Quaternion(),
+      relative: new THREE.Quaternion(), worldEuler: new THREE.Euler(0, 0, 0, 'YXZ'),
+      localEuler: new THREE.Euler(0, 0, 0, 'YXZ'),
+    }; // Reusable math objects avoid allocations on every mobile animation frame.
+  }
+  const work = gaze.scratch;
+  neck.getWorldPosition(work.eye); // Actual post-lurch neck position, rather than the upright root's nominal eye.
+  const dx = target.x - work.eye.x, dz = target.z - work.eye.z;
+  const flatDistance = Math.hypot(dx, dz);
+  if (!(flatDistance > 0.0001)) { clearPreviewNpcMovementGaze(); gaze.status = 'idle'; return false; }
+  const yaw = Math.atan2(dx, dz); // NPC travels toward the carrot, not toward the free-orbit preview camera.
+  const pitch = Math.atan2(target.y - work.eye.y, flatDistance); // Preserve near-level eye line even when the body pitches forward.
+  work.world.setFromEuler(work.worldEuler.set(-pitch, yaw, 0, 'YXZ')); // Forward is +Z, matching the preview locomotion heading.
+  neck.parent.getWorldQuaternion(work.parentWorld); // Includes authored pose, forward lurch, sway and root yaw in the live rig.
+  work.relative.copy(work.parentWorld).invert().multiply(work.world); // Invert ONLY the head's parent frame, not the root/feet.
+  work.localEuler.setFromQuaternion(work.relative, 'YXZ');
+  const limitYaw = (Number(helper.MAX_YAW_DEG) || 70) * Math.PI / 180;
+  const limitPitch = (Number(helper.MAX_PITCH_DEG) || 55) * Math.PI / 180;
+  work.localEuler.x = clampNumber(work.localEuler.x, -limitPitch, limitPitch);
+  work.localEuler.y = clampNumber(work.localEuler.y, -limitYaw, limitYaw);
+  neck.quaternion.setFromEuler(work.localEuler); // Skinned neck/head only; never tilt feet, hands, held items or torso.
+  gaze.active = true;
+  gaze.status = 'tracking-travel';
+  gaze.yawDeg = work.localEuler.y * 180 / Math.PI;
+  gaze.pitchDeg = work.localEuler.x * 180 / Math.PI;
+  gaze.lookTarget = target;
+  return true;
+}
+
 function bindProceduralModel(model, options = {}) { // Wraps the repository avatar in game-ground, avatar-lift, and directional-pose roots.
   if (!model || !state.three.THREE) return;
   procedural.pose.transformControls?.detach();
@@ -59606,11 +59693,13 @@ function bindProceduralModel(model, options = {}) { // Wraps the repository avat
     formula: 'locomotion floor root Y + avatarHeight / 2 lift root, matching makeNpcWalker / refreshPlayerAvatar',
   };
   resetProceduralMovement({ resetCamera: true, preservePlayback: true });
+  bindPreviewNpcMovementHead(model); // Capture neutral eye height once, before any walk/lean changes its world-space pose.
   if (procedural.pose.editing) previewSelectedDirectionalPose();
   updateDirectionalPoseUi();
 }
 
 function resetProceduralMovement({ resetCamera = false, preservePlayback = true } = {}) { // Returns the avatar and deterministic stumble clock to the preview origin.
+  clearPreviewNpcMovementGaze(); // Preserve a neutral head when switching gait presets, resetting the arena or authoring poses.
   procedural.position.x = 0; procedural.position.z = 0;
   procedural.velocity.x = 0; procedural.velocity.z = 0;
   procedural.stumbleVelocity.x = 0; procedural.stumbleVelocity.z = 0;
@@ -59840,11 +59929,13 @@ function updateProceduralMovement(dt) { // Advances input, movement physics, pos
   if (procedural.fpsAccumulator >= 0.5) { procedural.fps = Math.round(procedural.fpsFrames / procedural.fpsAccumulator); procedural.fpsAccumulator = 0; procedural.fpsFrames = 0; }
   procedural.uiAccumulator += dt;
   if (updateRagdollAuthoring(dt)) { // Ragdoll physics, baked-blend preview, or imported-clip preview owns the rig this frame; ordinary pose/locomotion is skipped entirely.
+    clearPreviewNpcMovementGaze(); // Gameplay ragdoll/death playback outranks the walking carrot's neck pose.
     sampleRagdollRecording(dt);
     if (procedural.uiAccumulator >= 0.1) { procedural.uiAccumulator = 0; updateAnimationReadout(); }
     return;
   }
   if (procedural.pose.editing) {
+    clearPreviewNpcMovementGaze(); // Authored transform gizmos are never counter-rotated by the walking behavior.
     previewSelectedDirectionalPose();
     if (procedural.uiAccumulator >= 0.1) { procedural.uiAccumulator = 0; updateAnimationReadout(); updateDirectionalPoseUi(); }
     return;
@@ -59931,6 +60022,7 @@ function updateProceduralMovement(dt) { // Advances input, movement physics, pos
   applyFootingDrunkenLegPlacement(dt, movingSpeed);
   updateLegBonesVisual();
   applyAutoWalkBakedBlendOverlay();
+  updatePreviewNpcMovementGaze(movingSpeed); // Last body-layer owner has finished: solve the NPC head against the ACTUAL final world-space torso tilt.
   updateCameraFollow();
 
   if (procedural.recording) {
@@ -59964,7 +60056,8 @@ ${customSummary || proceduralTexture}${customSummary && analysis.texture ? ` · 
   $('animationReadout').textContent = `${procedural.playing ? 'PLAY' : 'PAUSE'} · ${poseMode} · ${procedural.input.source} · ${procedural.fps || '—'} fps${recording}
 input ${procedural.input.x.toFixed(2)}, ${procedural.input.forward.toFixed(2)} · local ${localX.toFixed(2)}, ${localForward.toFixed(2)} · speed ${speed.toFixed(2)}
 pos ${procedural.position.x.toFixed(2)}, ${procedural.position.z.toFixed(2)} · sprint ${procedural.pose.sprintBlend.toFixed(2)} @ ${radToDeg(procedural.pose.sprintAngle).toFixed(0)}° · recoil ${procedural.recoil.amount.toFixed(2)} · idle ${procedural.idleRock.amount.toFixed(2)} · seed ${procedural.settings.seed}
-${feetReadout}`;
+${feetReadout}
+ head gaze ${previewNpcMovementGaze.status} · yaw ${previewNpcMovementGaze.yawDeg.toFixed(1)}° · pitch ${previewNpcMovementGaze.pitchDeg.toFixed(1)}° · target ${previewNpcMovementGaze.lookTarget ? `${previewNpcMovementGaze.lookTarget.x.toFixed(2)},${previewNpcMovementGaze.lookTarget.z.toFixed(2)}` : 'none'}`;
 }
 
 function startAnimationRecording() { // Clears the previous clip and begins fixed-rate transform sampling.
