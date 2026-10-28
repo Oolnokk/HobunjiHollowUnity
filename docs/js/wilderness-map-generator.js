@@ -6028,8 +6028,9 @@
   function denEntryWalkableKeys(object) {
     const keys = new Set(); // Legacy entrance swathe when no authored collider replaces the den's automatic shell.
     if (object?.type !== 'animalDen') return keys;
-    const localeId = object.entranceTemplateId || 'locale_animal_den_entrance'; // The placed den identifies which Locale Editor template supplies collision.
-    const template = (settings.locales || []).find(locale => locale.id === localeId); // Source locale metadata is available before generated rock overlays are exported.
+    const template = object.entranceTemplateId
+      ? (settings.locales || []).find(locale => locale.id === object.entranceTemplateId)
+      : null; // Only cliff-fitted dens carry an authored entrance template; generic free-standing dens retain their legacy rock doorway.
     const authored = denCliffPlacementApi()?.authoredWalkableTiles?.(object, template); // Use the exact authored custom collider instead of repainting its cleared flanks as rock.
     if (authored) return authored;
     const mouth = object?.mouthAnchor;
