@@ -213,6 +213,18 @@ const server=http.createServer((request,response)=>{
         }
         return area;
       };
+
+      // Interior gable backings sometimes overlap a coplanar authored wall.
+      // Their common area is NOT two separate exposed surfaces.
+      const interiorOverlapRoot=new T.Group();
+      const coverSources=[
+        {role:'walls',id:'long-wall',vertices:[[0,0,0],[2,0,0],[2,2,0],[0,0,0],[2,2,0],[0,2,0]]},
+        {role:'walls',id:'gable-backing',vertices:[[1,0,0],[3,0,0],[3,2,0],[1,0,0],[3,2,0],[1,2,0]]}
+      ];
+      const noClipping=growth.recognizeArchitecturalSurfaceRegions(interiorOverlapRoot,coverSources);
+      const clippedBacking=growth.recognizeArchitecturalSurfaceRegions(interiorOverlapRoot,coverSources,{clipCoplanarOverlaps:true});
+      const interiorAreaBefore=noClipping.reduce((sum,r)=>sum+surfaceArea(r.vertices),0);
+      const interiorAreaAfter=clippedBacking.reduce((sum,r)=>sum+surfaceArea(r.vertices),0);
       const templeSourceArea=templeSources.reduce((sum,src)=>sum+surfaceArea(src.vertices),0);
       const templeExposedArea=templeRegions.reduce((sum,region)=>sum+surfaceArea(region.vertices),0);
       const templeSourceCount=templeSources.length,templeRegionCount=templeRegions.length;
@@ -307,6 +319,7 @@ const server=http.createServer((request,response)=>{
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
         budgetCorners,budgetNatural,perSurfaceDetails,visibleWallCount:visibleWall.length,visibleCentroids,
         templeSourceArea,templeExposedArea,templeSourceCount,templeRegionCount,templeVisibleRoles,
+        interiorAreaBefore,interiorAreaAfter,
         rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
         transformedGable,
@@ -339,6 +352,9 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.disconnectedGable.regions,2,'A detached but coplanar gable remains separate');
     assert.equal(data.furnitureStyleAngle.narrow,2,'Architectural split-angle threshold must prevent tight-angle merges');
     assert.equal(data.furnitureStyleAngle.wide,1,'Architecture must support the same configurable split-angle logic as Furniture Author');
+    assert(data.interiorAreaBefore>7.9&&data.interiorAreaBefore<8.1,'Interior overlap test must preserve both original quads without clipping');
+    assert(data.interiorAreaAfter>5.4&&data.interiorAreaAfter<6.3,
+      'Interior backing must not double-count a coplanar wall/gable overlap when detecting exposed surfaces');
     assert(data.templeSourceCount<30,'Real Temple wall and roof navigation must exclude construction-only caps and door-frame thicknesses');
     assert(data.templeRegionCount>=8&&data.templeRegionCount<25,'The Temple must have separate exposed wall and roof surfaces, not a role-wide guide or dozens of internal framing regions');
     assert(data.templeVisibleRoles.walls>2&&data.templeVisibleRoles.roofs>1,
