@@ -35,7 +35,7 @@ vm.runInContext(read('docs/js/ambient-dialogue.js').replace(
 const romance = windowStub.RomanceSystem; // Owns persisted wedding state and post-wedding dialogue lookup.
 const dialogue = windowStub.DialogueContent; // Resolves {{playerLocalNickname}} in regular conversations.
 const ambient = windowStub.AmbientDialogue; // Selects actual proximity greeting pools and player forms of address.
-dialogue.init({ getPlayerData: () => player });
+dialogue.init({ getPlayerData: () => player, calendar: { day: 10 } }); // Wedding memory writes need the ordinary dialogue calendar dependency.
 ambient.init({ getPlayerName: () => player.nickname, getWeekDay: () => 'Anan', getDayPart: () => 'morning' });
 
 const sloomi = { rec: { id: 'sloomi', name: 'Sloomi', phrasePools: [] } }; // Romantic NPC used to verify before/after and restoration.
