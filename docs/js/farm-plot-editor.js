@@ -128,11 +128,13 @@
       p.crop = patch.crop;
     }
     if (patch.hours !== undefined) {
+      if (!Array.isArray(patch.hours) || patch.hours.length !== 2) return false;
       const hours = patch.hours.map(Number);
       if (hours.length !== 2 || !hours.every(Number.isFinite) || hours.some(v => v < 0 || v > 24) || hours[0] >= hours[1]) return false;
       p.hours = hours;
     }
     if (patch.workers !== undefined) {
+      if (!Array.isArray(patch.workers)) return false;
       const eligible = new Set(family().map(person => person.id)); // Prevent old save ids or arbitrary NPCs from being assigned.
       p.workers = [...new Set(patch.workers)].filter(id => eligible.has(id)).slice(0, SLOTS);
     }
@@ -207,5 +209,5 @@
     }));
   }
 
-  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, commitFamilyEdits, activeFamilyPlot };
+  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, cropOptions: () => CROPS.map(c => ({ value: c, label: deps?.cropLabel?.(c) || c })), createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, commitFamilyEdits, activeFamilyPlot };
 })();
