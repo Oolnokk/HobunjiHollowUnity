@@ -61,6 +61,20 @@ async function run() {
   legacy.objects.find(object => object.key === 'cave_small').collision = { mode: 'auto' };
   assert.equal(Placement.authoredWalkableTiles({ x: 0, y: 0, w: 6, h: 6 }, legacy), null);
 
+  const preview = fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js', 'utf8'); // Checks that a manually authored custom rectangle is drawn where runtime collision actually lies.
+  const rectStart = preview.indexOf('  function colliderMarkerRect(');
+  const rectEnd = preview.indexOf('  function addColliderMarker(', rectStart);
+  assert(rectStart >= 0 && rectEnd > rectStart, '3D Locale Editor must expose the shared collider marker rectangle calculation');
+  const previewRect = new Function(preview.slice(rectStart, rectEnd) + '; return colliderMarkerRect;')(); // Isolated pure rectangle math: no DOM, WebGL, or browser devtools required.
+  const source = templates[0].objects.find(object => object.key === 'cave_small'); // Original (unscaled) edited cave document.
+  const previewObject = { x: 20, y: 30, w: source.w * 2, h: source.h * 2, collision: { ...source.collision } }; // Ghost-den preview uses source-size custom collision fields.
+  assert.deepEqual(previewRect(previewObject, source), { x:20, z:30, w:6, h:3 }, '3D preview must scale rear-half collider exactly as runtime does');
+  const inset = { ...previewObject, collision: { mode:'custom', colOffset:1, rowOffset:.5, w:1, h:1.5 } }; // Offset custom collider verifies editor-relative positioning.
+  assert.deepEqual(previewRect(inset, source), { x:22, z:31, w:2, h:3 }, '3D preview must scale manually edited offsets');
+  const alreadyScaled = { ...previewObject, collision: { mode:'custom', x:20, y:30, w:6, h:3 } }; // Stamped/terrain-aware locale instances carry final-grid collider coordinates.
+  assert.deepEqual(previewRect(alreadyScaled, source), { x:20, z:30, w:6, h:3 }, '3D preview must not double-scale an already placed locale');
+  assert.match(preview, /addColliderMarker\(group, object, merged, source\)/, '3D preview must retain source tile dimensions at rendering time');
+
   const generator = fs.readFileSync('docs/js/wilderness-map-generator.js', 'utf8'); // Guards initial wilderness tile painting against reverting to hardcoded entrance swathes.
   const wildlife = fs.readFileSync('docs/js/wildlife-spawn.js', 'utf8'); // Guards relocated dens against repainting the open columns as rock.
   assert.match(generator, /authoredWalkableTiles\?\.\(object, template\)/);
