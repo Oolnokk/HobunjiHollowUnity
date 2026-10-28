@@ -155,6 +155,16 @@ const server=http.createServer((request,response)=>{
       const tessellatedGable=recognitionReport([...baseWall,...splitGable]);
       const steepGable=recognitionReport([...baseWall,...angledGable]);
       const disconnectedGable=recognitionReport([...baseWall,...floatingGable]);
+      const transformedGable=(function(){
+        const root=new T.Group();root.position.set(8,2,-4);
+        const geometry=new T.BufferGeometry();
+        geometry.setAttribute('position',new T.Float32BufferAttribute(oneGable.flat(),3));
+        geometry.setIndex([0,1,2]); // InteriorCeilings' gable backing may be indexed.
+        const mesh=new T.Mesh(geometry,new T.MeshBasicMaterial());root.add(mesh);
+        const regions=growth.recognizeArchitecturalSurfaceRegions(root,[
+          {vertices:baseWall,role:'walls'},{sourceMesh:mesh,faceIndices:[0],role:'walls'}]);
+        return {regions:regions.length,triangles:regions.reduce((sum,reg)=>sum+reg.vertices.length/3,0)};
+      })();
       const furnitureStyleAngle=(function(){
         const root=new T.Group(),source=[{role:'walls',vertices:[...baseWall,...angledGable]}];
         return {narrow:growth.recognizeArchitecturalSurfaceRegions(root,source,{splitAngleDeg:10}).length,
@@ -241,6 +251,7 @@ const server=http.createServer((request,response)=>{
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
         rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
+        transformedGable,
         gappedIntersection,partialCorner,splitCorner,
         hiddenBefore,visibleAfter,budgetLabel,
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
@@ -259,6 +270,8 @@ const server=http.createServer((request,response)=>{
     assert(data.splitCorner.some(x=>x.maxY-x.minY>3.4),
       'Multiple short panels on a long wall must support a single continuous Corner Fill strand');
 
+    assert.equal(data.transformedGable.regions,1,'A real indexed gable mesh inside a transformed interior must join its coplanar wall panel');
+    assert.equal(data.transformedGable.triangles,3,'Interior mesh-source extraction preserves its genuine face count');
     assert.equal(data.coplanarGable.regions,1,'Coplanar wall and triangular gable must be recognized as one surface');
     assert.equal(data.coplanarGable.outerEdges,5,'A combined wall/gable should expose only its five true outline edges');
     assert(data.coplanarGable.outlines>0,'Corner Fill must outline a flat recognized architectural surface');
