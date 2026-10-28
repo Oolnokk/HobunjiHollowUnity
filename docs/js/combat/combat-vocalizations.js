@@ -978,7 +978,7 @@ function beginCharge(options = {}) {
   activeChargeTokens.add(token);
 
   const chosenUrl = special?.url || options.assetUrl || config.assets?.chargeGrunt; // Puppets never fetch human charge/release grunt files.
-  (chosenUrl ? preloadStrikeBuffer(chosenUrl) : preloadChargeBuffer()).then(async buffer => {
+  (special || options.assetUrl ? preloadStrikeBuffer(chosenUrl) : preloadChargeBuffer()).then(async buffer => { // Normal voices retain the existing shared charge buffer; guardians decode their one scream instead.
     if (!buffer || token.cancelled || token.released || token.done) {
       finishChargeToken(token);
       return;
