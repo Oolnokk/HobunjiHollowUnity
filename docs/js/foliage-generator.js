@@ -2380,6 +2380,121 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     }
   }
 
+  // Wrap is Natural-like surface wandering with TWO hard boundary constraints.
+  // Each accepted strand reserves one start slot and one END slot on the same
+  // recognized surface's true outside edges. Density changes boundary spacing,
+  // never scans for uncovered interior tiles or paints a covering sheet.
+  function appendEdgeToEdgeWrap(guide,settings,random,seed,geometries,triangles,cells,large,keyOf,cellSize) {
+    const edges=guide.outlineRecognized
+      ? guide.boundaries // Region seams and triangulation edges are NOT endpoints.
+      : guide.boundaries.length?guide.boundaries:guide.corners;
+    const perimeter=edges.reduce((n,e)=>n+e.length,0),wanted=Math.min(settings.count,settings.strandLimit);
+    const spacing=Math.max(settings.radius*2.1,perimeter/Math.max(2,wanted*2)*(1.6-settings.density*1.2));
+    const slots=[];
+    if(!edges.length||wanted<1)return {requested:wanted,generated:0,capacity:0,spacing,endpoints:[]};
+    for(const edge of edges){
+      const usable=Math.max(0,Math.floor(edge.length/spacing));
+      const samples=Math.min(256,usable);
+      for(let i=0;i<samples;i++){
+        const t=(i+.5)/samples;
+        slots.push({edge,point:edge.a.clone().lerp(edge.b,t)});
+      }
+    }
+    // Deterministic spatial reservation, not a surface-area occupancy grid.
+    // Prevents two strands starting/ending on nearly the same bit of perimeter.
+    const reserved=[],ends=[],maxStep=Math.min(.15,Math.max(.025,settings.radius*3));
+    const farEnough=p=>reserved.every(x=>x.distanceToSquared(p)>=spacing*spacing);
+    const shuffled=slots.slice();
+    for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
+    let attempts=0;
+    const scratch=new T.Vector3();
+    const nearest=(candidate,normal,step)=>{
+      const cx=Math.floor(candidate.x/cellSize),cy=Math.floor(candidate.y/cellSize),cz=Math.floor(candidate.z/cellSize);
+      const checked=new Set(),potentials=[];
+      const add=list=>{for(const rec of list||[])if(!checked.has(rec)){checked.add(rec);potentials.push(rec);}};
+      add(large);
+      for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++)add(cells.get(keyOf(cx+x,cy+y,cz+z)));
+      let found=null,point=null,distSq=Math.pow(step*1.35,2);
+      for(const rec of potentials){
+        if(rec.normal.dot(normal)<-.3)continue;
+        const planeGap=rec.normal.dot(candidate)-rec.plane;
+        if(planeGap*planeGap>=distSq)continue;
+        rec.triangle.closestPointToPoint(candidate,scratch);
+        const d=scratch.distanceToSquared(candidate);
+        if(d<distSq){distSq=d;point=scratch.clone();found=rec;}
+      }
+      return found?{point,record:found}:null;
+    };
+    for(const start of shuffled){
+      if(ends.length>=wanted||attempts>=Math.min(640,Math.max(50,wanted*10)))break;
+      if(!farEnough(start.point))continue;
+      attempts++;
+      const minSpan=Math.max(settings.radius*3.5,maxStep*3);
+      const possible=slots.filter(end=>end.edge!==start.edge&&farEnough(end.point)&&
+        end.point.distanceTo(start.point)>=minSpan&&end.point.distanceTo(start.point)<=settings.length*.97);
+      if(!possible.length)continue;
+      // Pick from several candidates to obtain wandering strands with varied
+      // length and orientation, instead of a fixed shortest-path fan.
+      const end=possible[Math.floor(random()*possible.length)];
+      let anchor=start.point.clone(),normal=start.edge.normal.clone(),direction=null;
+      let current=start.edge.record;
+      const pointAt=(p,n,record)=>p.clone().addScaledVector(n,settings.radius+settings.offset+(record.renderLift||0));
+      const points=[pointAt(anchor,normal,current)],limit=Math.min(400,Math.ceil(settings.length/maxStep)),step=settings.length/limit;
+      let travelled=0,reached=false;
+      const inward=start.edge.record.triangle.a.clone().add(start.edge.record.triangle.b)
+        .add(start.edge.record.triangle.c).multiplyScalar(1/3).sub(anchor);
+      inward.addScaledVector(normal,-inward.dot(normal));
+      for(let i=0;i<limit;i++){
+        const remaining=end.point.clone().sub(anchor),distance=remaining.length();
+        // An endpoint is only accepted when the actual surface walk reached it.
+        if(distance<=step*1.5&&travelled>minSpan*.6){
+          points.push(pointAt(end.point,end.edge.normal,end.edge.record));reached=true;break;
+        }
+        const toward=remaining.clone().addScaledVector(normal,-remaining.dot(normal));
+        if(toward.lengthSq()<1e-9){
+          if(direction)toward.copy(direction);
+          else toward.copy(inward);
+        }
+        if(toward.lengthSq()<1e-9)break;
+        toward.normalize();
+        if(!direction){
+          direction=toward.clone().multiplyScalar(.7).addScaledVector(inward.normalize(),.3).normalize();
+          if(direction.lengthSq()<1e-9)direction.copy(toward);
+        }
+        // Natural-like gentle, seeded curl; an increasing target pull ensures
+        // that free wandering resolves at a second edge instead of dying inside.
+        const bend=(random()-.5)*settings.curl*.55*Math.min(1,distance/(step*5));
+        const aimed=toward.clone().applyAxisAngle(normal,bend);
+        const preferred=direction.clone().multiplyScalar(.3).addScaledVector(aimed,.7).normalize();
+        const turns=[0,.35,-.35,.75,-.75];
+        let choice=null,score=Infinity;
+        for(const turn of turns){
+          const tangent=preferred.clone().applyAxisAngle(normal,turn);
+          const candidate=anchor.clone().addScaledVector(tangent,Math.min(step,distance));
+          const hit=nearest(candidate,normal,step);
+          if(!hit||hit.point.distanceToSquared(anchor)<step*step*.07)continue;
+          const newDist=hit.point.distanceToSquared(end.point);
+          const value=newDist+turn*turn*step*step*.05+candidate.distanceToSquared(hit.point);
+          if(value<score){score=value;choice=hit;}
+        }
+        if(!choice)break;
+        const movement=choice.point.clone().sub(anchor),advanced=movement.length();
+        if(advanced<step*.25)break;
+        direction.copy(movement).normalize();anchor=choice.point;
+        normal.copy(choice.record.normal);current=choice.record;travelled+=advanced;
+        points.push(pointAt(anchor,normal,current));
+      }
+      if(!reached||points.length<3)continue; // Never leave an orphan strand ending mid-wall.
+      geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+attempts,
+        spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),
+        radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
+      reserved.push(start.point,end.point);
+      ends.push({start:start.point.toArray(),end:end.point.toArray(),
+        startEdge:start.edge.ak+'|'+start.edge.bk,endEdge:end.edge.ak+'|'+end.edge.bk});
+    }
+    return {requested:wanted,generated:ends.length,capacity:slots.length,spacing,endpoints:ends,attempts};
+  }
+
   // Maximum Wrap density uses a flat conformal underlayer between the raised
   // strands. One merged mesh avoids overlapping hundreds of lumpy tubes.
   function appendDenseCover(group,triangles,settings){
@@ -2528,49 +2643,30 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     group.userData.surfaceGrowthStats.guideCorners=guide?.corners.length||0; // Mobile-visible evidence of architectural edges instead of brick micro-creases.
     group.userData.surfaceGrowthStats.guideBoundaries=guide?.boundaries.length||0; // Counts the edges Wrap may start on, including named furniture region borders.
     group.userData.surfaceGrowthStats.guidedBySemanticSurfaces=targets.some(mesh=>!!mesh.userData?.surfaceFoliageGuide);
-    const edgeStarts=guide?(guide.boundaries.length?guide.boundaries:guide.corners.length?guide.corners:Array.from(guide.all.values()).slice(0,1024)):[];
-    const strandCount=settings.style==='wrap'
-      ? Math.min(settings.density>=.995?24:96,Math.max(1,Math.round(Math.min(settings.count,settings.strandLimit)*(.25+settings.density*1.75))),Math.max(1,Math.round(totalArea*settings.density/Math.max(.4,settings.length*Math.max(.16,settings.radius*8)))))
-      : Math.min(settings.count,settings.strandLimit); // Strict cap on mobile tube geometry, independent of target size.
-    const steps = Math.min(400, Math.ceil(settings.length / Math.min(.15, Math.max(.025, settings.radius * 3)))), step = settings.length / steps; // Bounded density protects mobile previews.
-    const occupancy=settings.style==='wrap'?new Map():null,coverageCellSize=Math.max(.18,settings.radius*8); // Shared coverage visits repel new strands from occupied areas.
-    const coverageKey=(p,n)=>{ // Keep perpendicular faces independent so corner growth does not count as coverage of a neighboring wall.
-      const x=Math.abs(n.x),y=Math.abs(n.y),z=Math.abs(n.z);
-      const face=x>y&&x>z?'x'+Math.sign(n.x):y>z?'y'+Math.sign(n.y):'z'+Math.sign(n.z);
-      return face+':'+Math.floor(p.x/coverageCellSize)+','+Math.floor(p.y/coverageCellSize)+','+Math.floor(p.z/coverageCellSize);
-    };
+    const strandCount=Math.min(settings.count,settings.strandLimit); // Per-surface budget; Wrap now uses edge capacity rather than surface-area occupancy.
+    const steps=Math.min(400,Math.ceil(settings.length/Math.min(.15,Math.max(.025,settings.radius*3)))),step=settings.length/steps;
+    const wrapReport=settings.style==='wrap'
+      ?appendEdgeToEdgeWrap(guide,settings,random,seed,geometries,triangles,cells,large,keyOf,cellSize):null;
+    if(wrapReport){
+      group.userData.surfaceGrowthStats.edgeCapacity=wrapReport.capacity;
+      group.userData.surfaceGrowthStats.edgeSpacing=wrapReport.spacing;
+      group.userData.surfaceGrowthStats.endpointPairs=wrapReport.generated;
+      group.userData.surfaceGrowthEndpoints=wrapReport.endpoints;
+    }
     if(settings.style==='cornerFill')appendCornerGrowth(guide,{...settings,count:strandCount},random,seed,geometries);
-    for (let strand=0; strand<(settings.style==='cornerFill'?0:strandCount); strand++) {
+    for (let strand=0; strand<(settings.style==='natural'?strandCount:0); strand++) {
       const area = random()*totalArea; // Binary search picks an area-weighted starting face.
       let lo=0, hi=triangles.length-1;
       while (lo<hi) { const mid=(lo+hi)>>1; if (triangles[mid].area<area) lo=mid+1; else hi=mid; }
       let current=triangles[lo], normal=current.normal.clone(); // Each step keeps the surface normal for corner following.
       const u=Math.sqrt(random()), v=random(), start=current.triangle.a.clone().multiplyScalar(1-u).addScaledVector(current.triangle.b,u*(1-v)).addScaledVector(current.triangle.c,u*v); // Uniform barycentric seed.
       let anchor=start, direction=new T.Vector3(random()-.5, settings.kind==='roots' ? -.7 : .7, random()-.5).normalize(); // Gravity bias is projected onto each encountered surface.
-      if(occupancy&&edgeStarts.length){
-        const edge=edgeStarts[Math.min(edgeStarts.length-1,Math.floor((strand+random())*edgeStarts.length/strandCount))]; // Evenly scattered starts on real surface boundaries.
-        anchor=edge.a.clone().lerp(edge.b,random());normal=edge.normal.clone();current=edge.record;
-        const centre=edge.record.triangle.a.clone().add(edge.record.triangle.b).add(edge.record.triangle.c).multiplyScalar(1/3);
-        direction.copy(centre).sub(anchor);direction.addScaledVector(normal,-direction.dot(normal)); // Initial growth aims inward from the chosen edge.
-        if(direction.lengthSq()<1e-8)direction.copy(edge.b).sub(edge.a).cross(normal);
-        direction.normalize();
-      }
       const points=[anchor.clone().addScaledVector(normal,settings.radius+settings.offset+(current.renderLift||0))]; // Radius-aware clearance keeps tubes outside the source.
-      const strandCells=occupancy?new Set():null; // Per-strand cells avoid overcounting densely sampled tube segments.
       for (let segment=0; segment<steps; segment++) {
         direction.addScaledVector(normal,-direction.dot(normal));
         if (direction.lengthSq()<1e-8) direction.crossVectors(normal,new T.Vector3(1,.3,.2));
         direction.normalize();
-        if(occupancy){
-          let turn=0,bestScore=Infinity;
-          for(let choice=-2;choice<=2;choice++){
-            const angle=choice*(.19+settings.curl*.16),trial=direction.clone().applyAxisAngle(normal,angle);
-            const ahead=anchor.clone().addScaledVector(trial,step*3),visits=occupancy.get(coverageKey(ahead,normal))||0;
-            const score=visits+Math.abs(choice)*.12+random()*.08; // Repulsion, with mild smoothing so vines don't jitter in place.
-            if(score<bestScore){bestScore=score;turn=angle;}
-          }
-          direction.applyAxisAngle(normal,turn);
-        }else direction.applyAxisAngle(normal,(random()-.5)*settings.curl*.65);
+        direction.applyAxisAngle(normal,(random()-.5)*settings.curl*.65);
         const candidate=anchor.clone().addScaledVector(direction,step), bx=Math.floor(candidate.x/cellSize), by=Math.floor(candidate.y/cellSize), bz=Math.floor(candidate.z/cellSize); // Query adjacent cells so seams and perpendicular corners remain connected.
         candidates.length=0;stamp++;gather(large);
         for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){const bucket=cells.get(keyOf(bx+x,by+y,bz+z));if(bucket)gather(bucket);}
@@ -2604,7 +2700,6 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
         direction.copy(closest).sub(anchor).normalize();anchor=closest;current=best;normal=current.normal.clone();
         points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset+(current.renderLift||0)));
-        if(strandCells){const key=coverageKey(anchor,normal);if(!strandCells.has(key)){strandCells.add(key);occupancy.set(key,(occupancy.get(key)||0)+1);}}
       }
       if(points.length<2)continue;
       if (settings.kind === 'vines' && settings.hangLength > 0 && random() < settings.hangChance) {
@@ -2618,7 +2713,6 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
     }
-    appendDenseCover(group,triangles,settings); // Full coverage is one conformal surface instead of thousands of overlapping tubes.
     if(geometries.length){
       const mesh=new T.Mesh(mergeGeomsWithUV(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Keep each strand's own 0..1 PNG wrap through the merge.
       const originalMaterial = mesh.material; // Release the temporary color source after the shared renderer has read it.
@@ -2637,7 +2731,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
     }
     group.userData.generatedStrands=geometries.length;
-    group.userData.diagnostics = settings.kind + ' (' + settings.style + '): ' + geometries.length + '/' + (settings.style==='wrap'?strandCount:settings.count) + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles, covered ' + (group.userData.surfaceGrowthStats.coverTriangles||0) + ').';
+    group.userData.diagnostics = settings.kind + ' (' + settings.style + '): ' + geometries.length + '/' + (strandCount) + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles, covered ' + (group.userData.surfaceGrowthStats.coverTriangles||0) + ').';
     return group;
   }
 
