@@ -452,10 +452,20 @@ player.x=11*64;player.y=11*64;
 windowObject.RangedWeapons.update(.1);
 assert.equal(api.debugSnapshot().playerPlasmSinkPct,0,'Stepping off a ruin puddle resets its contact meter');
 assert.equal(ruinPresentationY,-2,'Leaving a plasm puddle restores the real support height immediately');
+let sharedDisposed=0,sharedCreated=0;
+windowObject.DevRandomRuinLichThemes.createSpellPlasm=(x,z)=>{
+  assert.equal(x,8.5);assert.equal(z,7.5);sharedCreated++;
+  return {dispose(){sharedDisposed++;}};
+};
+ruinSolid=false;
+const sharedPatch=api.makeGasolinePuddle(ruinCaster,8.5*64,7.5*64);
+assert.ok(sharedPatch?.ruinPlasm,'Ruin combat deposits through the canonical tile composer');
+assert.equal(sharedCreated,1);
 player.areaId='farm';
 currentArea='farm';
 windowObject.RangedWeapons.update(.1);
 assert.equal(api.debugSnapshot().puddles,0,'Ruin departure disposes remaining boss puddles');
+assert.equal(sharedDisposed,1,'Area cleanup releases the composer-owned spell patch');
 
 console.log('Harlyao Lich regression checks passed.');
 

@@ -897,7 +897,28 @@
   }
 
   function teleport(point) {
-    window.DevRandomRuin?.setPlayerWorldPoint?.({ x:point.x, z:point.z }, { snapCamera:true, grounded:true });
+    if (!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:point.x, z:point.z }, { snapCamera:true, grounded:true })) return;
+    // The Great Door connects disconnected floor islands in the same area.
+    // Ordinary following cannot cross it, so carry only the player's living animal.
+    for (const animal of deps?.companionObjects || []) {
+      if ((animal.master || deps.player) !== deps.player || animal.banditCompanion ||
+          animal.stableRole !== 'companion' || animal.areaId !== MAP_ID ||
+          animal.health <= 0 || animal._downed) continue;
+      window.Combat?.animalAttacks?.cancel?.(animal);
+      window.Combat?.telegraph?.cancel?.(animal);
+      window.Combat?.cancelStagedForAttacker?.(animal);
+      animal.x = deps.player.x;
+      animal.y = deps.player.y;
+      animal.vx = 0; animal.vy = 0;
+      animal.surfaceYOverride = () => animal.areaId === MAP_ID
+        ? window.DevRandomRuin?.getGroundSupportYAt?.(animal.x / deps.TILE, animal.y / deps.TILE) ?? undefined : undefined;
+      // Snap presentation under the fade; normal companion AI resumes next tick.
+      const group = animal.avatarRef?.group;
+      if (group) {
+        group.position.x = point.x; group.position.z = point.z;
+        group.position.y = (animal.surfaceYOverride() || 0) + (animal.groundLift ?? animal.halfHeight ?? 0);
+      }
+    }
     deps?._snapCameraTarget?.();
   }
 
