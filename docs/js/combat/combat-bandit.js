@@ -538,6 +538,7 @@
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+      gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
     }) || null;
 
     const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
