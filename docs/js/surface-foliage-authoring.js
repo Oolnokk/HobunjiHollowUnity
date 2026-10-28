@@ -11,11 +11,16 @@ window.SurfaceFoliageAuthoring = (() => {
       <div class="row"><label>Growth style <select data-field="style"><option value="natural">Natural (original)</option><option value="cornerFill">Corner Fill · follow intersections</option><option value="wrap">Wrap · grow between outer edges</option></select></label></div>
       <div class="row" data-wrap-controls><label>Wrap edge-anchor density <input data-field="density" type="range" min="0.05" max="1" step="0.05" value="0.45"></label><output data-density-label>45%</output></div>
       <p class="hint muted">Natural follows freely across surface faces. Corner Fill pins its base spline directly to real surface intersections, then adds gentle Curl; Clearance offsets the visible strands from those edges. Wrap follows Natural-style winding paths, but only accepts strands that start on one exposed boundary edge and finish on another. Edge-anchor density determines how closely strand endpoints may be reserved along the perimeter, not how much wall area looks covered. Nothing automatically paints a flat covering sheet.</p>
-      <div class="row"><label>Seed <input data-field="seed" value="surface-1" style="width:130px"></label><label><span data-count-label>Strands per surface</span> <input data-field="count" type="number" min="1" max="80" value="12" style="width:70px"></label></div>
+      <div class="row"><label>Seed <input data-field="seed" value="surface-1" style="width:130px"></label><label data-count-control><span data-count-label>Strands per surface</span> <input data-field="count" type="number" min="1" max="80" value="12" style="width:70px"></label></div>
       <div class="row"><label>Maximum strands per surface <input data-field="strandLimit" type="number" min="1" max="80" value="80" style="width:70px"></label><label><input data-field="perSurface" type="checkbox" checked> Distribute by detected surface</label></div>
+      <p class="hint muted" data-wrap-budget>In Wrap, density × maximum strands determines the requested edge-to-edge strands. Strand count is not used. Length limits how far each strand may actually travel; a shorter Length rejects distant edge pairs.</p>
       <p class="hint muted">Each recognized wall/gable region receives its own Strands budget, capped by its maximum. Legacy Natural layers preserve their previous behavior unless you enable detected surfaces. Shingle layers stay unchanged.</p>
       <div class="row"><label>Length <input data-field="length" type="number" min="0.05" max="30" step="0.1" value="3" style="width:80px"></label><label>Radius <input data-field="radius" type="number" min="0.002" max="0.3" step="0.005" value="0.025" style="width:80px"></label></div>
-      <div class="row"><label>Curl <input data-field="curl" type="number" min="0" max="2" step="0.1" value="0.4" style="width:80px"></label><label>Clearance <input data-field="offset" type="number" min="0" max="0.2" step="0.005" value="0.008" style="width:80px"></label><label>Color <input data-field="color" type="color" value="#3a5f3a"></label></div>
+      <div class="row"><label>Curl <input data-field="curl" type="number" min="0" max="2" step="0.1" value="0.4" style="width:80px"></label><label>Clearance <input data-field="offset" type="number" min="0" max="0.2" step="0.005" value="0.008" style="width:80px"></label><label>Inset (signed) <input data-field="inset" type="number" min="-0.5" max="0.5" step="0.005" value="0" style="width:80px"></label><label>Color <input data-field="color" type="color" value="#3a5f3a"></label></div>
+      <div class="row"><label><input data-field="shrinkwrapFinal" type="checkbox"> Shrinkwrap to final brick / shingle geometry</label></div>
+      <div class="row"><label><input data-field="tunnelAsOpening" type="checkbox"> Treat entrance tunnels as openings (edges only, no planting)</label></div>
+      <p class="hint muted">Signed Inset moves whole strands into or away from the authored surface (negative = deeper). Shrinkwrap preserves the planned path but conforms its tube rings to the outermost final cladding. Entrance openings are available to the house/architecture guides only.</p>
+      <div class="row"><label>Reusable material palette <select data-field="palette"><option value="">Custom / current material</option></select></label></div>
       <label>PNG texture <input data-field="texture" type="text" placeholder="assets/textures/example.png" style="width:100%"></label>
       <p class="hint muted">Use an assets/ PNG path or HTTPS URL, upload a PNG to embed it in JSON, or leave blank for solid color.</p><input data-field="textureFile" type="file" accept="image/png" style="max-width:100%"><button data-action="defaults" type="button">Shadewood texture + color</button>
       <div class="row"><button data-action="apply" type="button">Apply / regenerate</button><button data-action="remove" type="button">Remove layer</button><button data-action="refresh" type="button">Refresh layers</button></div><pre data-report role="status" style="white-space:pre-wrap">Ready. Latest change: per-layer PNG textures and colors, defaulting to Shadewood.</pre>`;
@@ -23,7 +28,9 @@ window.SurfaceFoliageAuthoring = (() => {
     const field = name => panel.querySelector('[data-field="'+name+'"]'), report = panel.querySelector('[data-report]'); // Scoped selectors allow more than one panel without ID collisions.
     const updateStyleControls=()=>{ // Wrap alone exposes the coverage-density slider.
       const wrap=field('style').value==='wrap';
-      panel.querySelector('[data-wrap-controls]').style.display=wrap?'':'none'; // Explicit display prevents editor-specific .row CSS from overriding the hidden attribute.
+      panel.querySelector('[data-wrap-controls]').style.display=wrap?'':'none';
+      panel.querySelector('[data-count-control]').style.display=wrap?'none':'';
+      panel.querySelector('[data-wrap-budget]').style.display=wrap?'':'none'; // Explicit display prevents editor-specific .row CSS from overriding the hidden attribute.
       panel.querySelector('[data-density-label]').textContent=Math.round(Number(field('density').value)*100)+'%';
       const perSurface=field('target').value!=='shingles'&&
         (field('perSurface').checked||field('style').value!=='natural');
@@ -37,6 +44,11 @@ window.SurfaceFoliageAuthoring = (() => {
     field('target').onchange=updateStyleControls;
     field('perSurface').onchange=updateStyleControls;
     field('density').oninput=updateStyleControls;
+    const palette=field('palette'),paletteEntries=window.FoliageGenerator.surfaceMaterialPalette?.(adapter.materialPalette?.()||[])||[];
+    for(const entry of paletteEntries){const option=document.createElement('option');option.value=entry.id;option.textContent=entry.name;palette.appendChild(option);}
+    palette.onchange=()=>{const choice=paletteEntries.find(item=>item.id===palette.value);if(!choice)return;field('texture').value=choice.texture;field('color').value=choice.color;};
+    const syncPalette=()=>{const match=paletteEntries.find(item=>item.texture===field('texture').value&&item.color.toLowerCase()===field('color').value.toLowerCase());palette.value=match?.id||'';};
+    field('color').onchange=syncPalette;field('texture').onchange=syncPalette;
     for (const [value, label] of adapter.targets) { const option = document.createElement('option'); option.value=value;option.textContent=label;field('target').appendChild(option); }
     function refresh() {
       const previous = field('layer').value, layers = adapter.read() || []; // Preserve the active recipe while unrelated editor geometry changes.
@@ -46,13 +58,14 @@ window.SurfaceFoliageAuthoring = (() => {
     }
     field('layer').onchange = () => {
       const recipe = (adapter.read()||[])[Number(field('layer').value)]; // Editing keeps the recipe's captured selected-object IDs.
-      if(recipe)field('perSurface').checked=window.FoliageGenerator.normalizeSurfaceGrowth(recipe).perSurface;
-      if(recipe)for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','color','texture'])field(key).value=window.FoliageGenerator.normalizeSurfaceGrowth(recipe)[key]??'';
-      updateStyleControls();
+      if(recipe){const normalized=window.FoliageGenerator.normalizeSurfaceGrowth(recipe);
+        for(const key of ['perSurface','shrinkwrapFinal','tunnelAsOpening'])field(key).checked=normalized[key];}
+      if(recipe)for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','inset','color','texture'])field(key).value=window.FoliageGenerator.normalizeSurfaceGrowth(recipe)[key]??'';
+      syncPalette();updateStyleControls();
     };
     function applyDefaults() {
       const defaults=window.FoliageGenerator.surfaceGrowthDefaults(field('kind').value); // One shared default source keeps the UI and saved/runtime recipes aligned.
-      field('color').value=defaults.color;field('texture').value=defaults.texture;
+      field('color').value=defaults.color;field('texture').value=defaults.texture;syncPalette();
     }
     field('kind').onchange=applyDefaults;
     panel.querySelector('[data-action="defaults"]').onclick=applyDefaults;
@@ -70,8 +83,10 @@ window.SurfaceFoliageAuthoring = (() => {
     panel.querySelector('[data-action="apply"]').onclick = () => {
       try {
         const recipes = [...(adapter.read()||[])], index = Number(field('layer').value), input = {}; // Copy the list so undo snapshots retain the prior state.
-        for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','color','texture'])input[key]=field(key).value;
+        for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','inset','color','texture'])input[key]=field(key).value;
         input.perSurface=input.target!=='shingles'&&field('perSurface').checked;
+        input.shrinkwrapFinal=field('shrinkwrapFinal').checked;
+        input.tunnelAsOpening=field('tunnelAsOpening').checked;
         input.targetIds=input.target==='selected' ? adapter.selectedIds() : [];
         if(input.target==='selected'&&!input.targetIds.length){
           if(index>=0&&recipes[index]?.target==='selected')input.targetIds=recipes[index].targetIds||[];
