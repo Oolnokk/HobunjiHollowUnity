@@ -31,7 +31,7 @@
   function center(c, r) { setOrigin(c - Math.floor(SIZE / 2), r - Math.floor(SIZE / 2)); }
   function enter() {
     if (!canOpen()) return false;
-    if (window.FurniturePlacer?.isOpen?.()) window.FurniturePlacer.close(); // Only one normal-play editing panel owns input at a time.
+    window.FurniturePlacer?.close?.(); // Disarm any pending furniture placement, even if its picker was already dismissed.
     const first = manager()?.plots?.()[0];
     if (!plot() && first) manager()?.selectFamilyPlot?.(first.id);
     const current = plot();
@@ -108,8 +108,9 @@
   }
   function toggleTile(c, r) {
     const p = plot(), ctx = context();
-    if (!canOpen() || !p || !ctx?.canDesignate?.(c, r, p.kind)) return false;
-    const present = !p.tiles.some(t => t[0] === c && t[1] === r);
+    if (!canOpen() || !p) return false;
+    const present = !p.tiles.some(t => t[0] === c && t[1] === r); // Removal stays legal even if an old assignment later became blocked.
+    if (present && !ctx?.canDesignate?.(c, r, p.kind)) return false;
     if (!manager()?.setFamilyTile?.(p.id, c, r, present)) return false;
     render(); focusTile(c, r);
     return true;
@@ -119,7 +120,7 @@
     endDrag();
     const p = plot(), ctx = context();
     const t = ctx?.screenTile?.(x, y);
-    if (!p || !t || !ctx.canDesignate(t.col, t.row, p.kind)) {
+    if (!p || !t || (!ctx.canDesignate(t.col, t.row, p.kind) && !p.tiles.some(v => v[0] === t?.col && v[1] === t?.row))) {
       drag = { pointerId, plotId: null, adding: false, changed: false }; // Own the matching release too; an invalid touch must not become a world Action 1.
       ctx?.showToast?.('Choose a plot and an unobstructed farm tile.', false);
       return true; // Farmwork mode owns world clicks even when invalid; never perform an unrelated game action.
@@ -132,7 +133,9 @@
   function dragTile(pointerId, x, y) {
     if (!drag || drag.pointerId !== pointerId) return false;
     const ctx = context(), t = ctx?.screenTile?.(x, y);
-    if (t && ctx.canDesignate(t.col, t.row, plot()?.kind) && plot()?.id === drag.plotId) {
+    const current = plot(); // Ownership for the entire stroke is locked at pointerdown.
+    const removable = !drag.adding && current?.tiles.some(v => v[0] === t?.col && v[1] === t?.row); // Blocked old tiles may still be cleared.
+    if (t && current?.id === drag.plotId && (removable || ctx?.canDesignate?.(t.col, t.row, current.kind))) {
       if (manager()?.setFamilyTile?.(drag.plotId, t.col, t.row, drag.adding, { deferSave: true })) drag.changed = true;
     }
     return true;
@@ -152,7 +155,7 @@
     if (!view) return;
     let html = `<p class="fw-note">Designate tiles for your family to work; this does not create crops or soil for free. A = select tile, B = close.</p>
       <div class="fw-actions"><button data-fwnew="till" ${!farmPlots.length ? 'data-ctrl-default' : ''}>🌱 New Field</button><button data-fwnew="dig">🕳️ New Trench</button></div>
-      <div class="fw-plots" data-ctrl-transparent>${farmPlots.map(p => `<button data-fwplot="${esc(p.id)}" aria-pressed="${p.id === chosen?.id}">${esc(p.label)} (${p.tiles.length})</button>`).join('')}</div>`;
+      <div class="fw-plots" data-ctrl-transparent>${farmPlots.map(p => `<button data-fwplot="${esc(p.id)}" ${p.id === chosen?.id ? 'data-ctrl-default' : ''} aria-pressed="${p.id === chosen?.id}">${esc(p.label)} (${p.tiles.length})</button>`).join('')}</div>`;
     if (chosen) {
       html += `<div class="fw-settings" data-ctrl-transparent>
         <label>Plot name<input name="fw-label" data-fwfield="label" value="${esc(chosen.label)}" maxlength="48"></label>
@@ -164,8 +167,8 @@
       <div class="fw-grid" data-fwgrid data-ctrl-transparent>${Array.from({ length: SIZE * SIZE }, (_, i) => {
         const c = originC + (i % SIZE), r = originR + Math.floor(i / SIZE);
         if (c >= ctx.cols || r >= ctx.rows) return '<span></span>';
-        const usable = ctx.canDesignate(c, r, chosen.kind);
         const selected = chosen.tiles.some(t => t[0] === c && t[1] === r);
+        const usable = selected || ctx.canDesignate(c, r, chosen.kind); // Always permit clearing stale blocked assignments.
         const other = farmPlots.some(p => p.id !== chosen.id && p.tiles.some(t => t[0] === c && t[1] === r));
         return `<button data-fwtile="${c},${r}" aria-label="Tile ${c + 1}, ${r + 1}${selected ? ', assigned' : other ? ', other plot' : ''}" aria-pressed="${selected}" ${usable ? '' : 'disabled'} title="Column ${c + 1}, row ${r + 1}">${selected ? '✓' : other ? '•' : '·'}</button>`;
       }).join('')}</div>
@@ -192,7 +195,10 @@
     }
   }
   function hourOptions(selected) {
-    return Array.from({ length: 25 }, (_, i) => `<option value="${i}" ${Number(selected) === i ? 'selected' : ''}>${String(i).padStart(2, '0')}:00</option>`).join('');
+    return Array.from({ length: 49 }, (_, i) => {
+      const hour = i / 2; // Keep the existing half-hour schedule precision when editing old family plots.
+      return `<option value="${hour}" ${Number(selected) === hour ? 'selected' : ''}>${String(Math.floor(hour)).padStart(2, '0')}:${i % 2 ? '30' : '00'}</option>`;
+    }).join('');
   }
   window.FarmworkUI = { canOpen, open: enter, close, toggle, isOpen: () => open, render, create, changePlot, toggleTile, startWorldPointer, dragTile, endWorldPointer, _test: { setOrigin, getOrigin: () => [originC, originR] } };
 })();
