@@ -381,7 +381,8 @@
       // Position comes exclusively from the existing NPC walker path/schedule/AI.
       // Do not independently translate the animal, and do not run another AI tick.
       const position = root.getWorldPosition(c.positionScratch);
-      const moved = c.lastPosition
+      const previewSpeed = root.userData.omgurkuPreviewSpeed; // Explicit standalone-authoring input; ordinary NPCs retain movement-driven gait.
+      const moved = Number.isFinite(previewSpeed) ? previewSpeed > 0.01 : c.lastPosition
         && Math.hypot(position.x - c.lastPosition.x, position.z - c.lastPosition.z) > 0.005;
       if (!c.lastPosition) c.lastPosition = position.clone();
       else c.lastPosition.copy(position);
@@ -655,7 +656,8 @@
   window.HobunjiOmgurkuSpecies = Object.freeze({
     ready,
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES, mounts: MOUNTS, mountPlacement,
-    install, setPlacement, setConnector, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setConnector, setPreviewFacing,
+    setPreviewMotion(root,speed) { if(root?.userData?.omgurkuComposite)root.userData.omgurkuPreviewSpeed=Number.isFinite(speed)?Math.max(0,speed):undefined; }, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();

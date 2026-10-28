@@ -288,7 +288,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/condition-registry.js?v=20261028h032d631"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -366,6 +366,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
+  <script src="js/combat/enemy-loadout-rules.js?v=20261028a"></script>
   <script src="js/combat/combat-bandit.js?v=20261028masklurch1"></script>
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
@@ -2225,6 +2226,9 @@
             </div>
             <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
           </div>
+          <a class="settings-row" href="tools/enemy-loadout-editor/index.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
+            <div><div class="settings-name">Enemy Loadout Workshop ↗</div><div class="settings-desc">Roll fully equipped enemy previews and author species, wardrobe, dye, weapon and attack pools.</div></div>
+          </a>
           <label data-dev-only class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
             <div class="settings-label">
               <div class="settings-name">Flip PNG Character Portraits Sideways</div>

@@ -241,6 +241,7 @@
     ? new URL(configuredDocsBase, location.href)
     : (selfUrl && selfUrl.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
+  const isEnemyLoadoutEditor = /\/tools\/enemy-loadout-editor\/(?:index\.html)?$/.test(location.pathname);
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
 
   // The Attack Animation Editor consumes this shared object directly through
@@ -250,7 +251,7 @@
     // The Attack Animation Editor now reads HeldActionAnimations directly through
     // its unified Action registry. Do not inject options, synthesize DOM events,
     // or maintain a second editor state bridge here.
-  } else if (!isAnimationAuthor) {
+  } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     // Counter Shield's combat module predates the shared held-action library and
     // still owns a private fallback BLOCK_POSE. Once all synchronous combat scripts
     // have registered their abilities, wrap only Counter Shield's hold callbacks and
@@ -342,7 +343,7 @@
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20261019h611c43d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
-  } else if (!isAnimationAuthor) {
+  } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
@@ -354,7 +355,10 @@
     return urls.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = src;
-      script.onload = resolve;
+      script.onload = () => {
+        const nested = /\/attachment-rig-latest-authored-snapshot\.js(?:[?#]|$)/.test(src) ? window.HobunjiLatestAuthoredRigReady : null;
+        Promise.resolve(nested).then(resolve, reject); // Dynamic tools must wait for species/mount wrappers before the hand driver wraps PNGPlaneAvatar.
+      };
       script.onerror = () => reject(new Error(`Failed to load ${src}`));
       document.head.appendChild(script);
     })), Promise.resolve());

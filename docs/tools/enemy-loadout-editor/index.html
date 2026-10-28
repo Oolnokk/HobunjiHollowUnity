@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <base href="../../" />
+    <title>Enemy Loadout Workshop · Hobunji Hollow</title>
+    <script src="js/tap-reliability.js?v=20261010a"></script>
+    <link
+      rel="stylesheet"
+      href="tools/enemy-loadout-editor/style.css?v=20261028a"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.128.0",
+          "three/addons/": "https://esm.sh/three@0.128.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="tools/enemy-loadout-editor/index.html"
+        ><span class="brandmark">◈</span
+        ><span>HOBUNJI HOLLOW<small>Enemy Loadout Workshop</small></span></a
+      >
+      <div class="file-actions">
+        <span id="draftState" class="muted">Loading runtime…</span
+        ><button id="importBtn">Import rules</button
+        ><button id="exportBtn" class="primary">Export spawn rules ↗</button
+        ><input
+          id="importFile"
+          type="file"
+          accept=".json,application/json"
+          hidden
+        />
+      </div>
+    </header>
+    <main class="workspace">
+      <aside class="library">
+        <div class="section-title">
+          ENEMY LIBRARY <span id="typeCount"></span>
+        </div>
+        <input
+          id="enemySearch"
+          type="search"
+          placeholder="Find an enemy…"
+          aria-label="Find an enemy"
+        />
+        <nav id="enemyList" aria-label="Enemy types"></nav>
+        <div class="library-note">
+          Live generators<small
+            >Roster, outfit, weapons and attacks come from the game's own enemy
+            factories.</small
+          >
+        </div>
+      </aside>
+      <section class="main-panel">
+        <div class="title-row">
+          <div>
+            <div id="family" class="eyebrow">LOADOUT PREVIEW</div>
+            <h1 id="enemyTitle">Preparing the workshop</h1>
+          </div>
+          <span class="pill" id="ruleBadge">Game defaults</span>
+        </div>
+        <div class="rollbar">
+          <label
+            >Seed<input
+              id="seed"
+              value="hollow-001"
+              spellcheck="false" /></label
+          ><label
+            >Difficulty<select id="tier">
+              <option value="0">Tier 0</option>
+              <option value="1">Tier 1</option>
+              <option value="2">Tier 2</option>
+              <option value="3">Tier 3</option>
+            </select></label
+          ><label
+            >Town value<input
+              id="townValue"
+              type="number"
+              min="0"
+              max="10"
+              step="1"
+              value="0"
+              style="width: 78px"
+              title="Town progression selects Harlyao Skeleton armor alloy" /></label
+          ><button id="replayBtn" title="Reproduce the exact seed">
+            Replay seed</button
+          ><button id="rollBtn" class="primary">↻ Roll enemy</button
+          ><button id="batchBtn">Roll 8</button>
+        </div>
+        <div class="viewport" id="viewport">
+          <div class="stage-top">
+            <span class="live-dot"></span
+            ><span id="actorTag">LIVE GENERATOR</span
+            ><span class="spacer"></span><button id="fitBtn">Fit</button
+            ><button data-view="front">Front</button
+            ><button data-view="back">Back</button
+            ><button id="orbitBtn" aria-pressed="false">Orbit</button>
+          </div>
+          <div id="stage"></div>
+          <div id="stageMessage" role="status">
+            Loading shared character and combat systems…
+          </div>
+          <div class="stage-bottom">
+            <span>Drag to orbit · pinch / scroll to zoom</span
+            ><label
+              ><input type="checkbox" id="gridToggle" checked /> Grid</label
+            ><label><input type="checkbox" id="bonesToggle" /> Bones</label
+            ><button id="captureBtn" title="Download the viewport">
+              Snapshot ↓
+            </button>
+          </div>
+        </div>
+        <div class="playback">
+          <label
+            >Movement<select id="motion">
+              <option value="idle">Idle / combat stance</option>
+              <option value="walk">Walk</option>
+              <option value="sprint">Sprint</option>
+              <option value="hover">Hover</option>
+            </select></label
+          ><label class="attack-choice"
+            >Attack<select id="attackChoice"></select></label
+          ><button id="attackBtn">▶ Play attack</button
+          ><label><input id="loopAttack" type="checkbox" /> Loop</label
+          ><label
+            >Speed<select id="playbackSpeed">
+              <option value="0.25">¼×</option>
+              <option value="0.5">½×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.5">1½×</option>
+            </select></label
+          >
+        </div>
+        <div class="timeline">
+          <span id="phaseLabel">REST</span
+          ><input
+            id="scrub"
+            type="range"
+            min="0"
+            max="1"
+            step="0.001"
+            value="0"
+            aria-label="Scrub attack animation"
+          /><button id="pauseBtn" aria-pressed="false">Pause</button>
+        </div>
+        <div id="rollFacts" class="facts"></div>
+        <div class="section-title history-title">
+          ROLLED ENEMIES <span id="historyCount">0</span
+          ><button id="clearHistory">Clear</button
+          ><button id="exportRollBtn">Export this enemy ↓</button>
+        </div>
+        <div id="history" class="history">
+          <p class="muted">
+            Roll a few enemies to compare their outfits and equipment.
+          </p>
+        </div>
+        <details class="diagnostics">
+          <summary>Loadout record & diagnostics</summary>
+          <div class="diagnostic-actions">
+            <button id="copyRollBtn">Copy enemy JSON</button
+            ><button id="copyLogBtn">Copy diagnostics</button>
+          </div>
+          <pre id="rollJson"></pre>
+          <pre id="log" aria-live="polite"></pre>
+        </details>
+      </section>
+      <aside class="inspector">
+        <div class="inspector-heading">
+          <div>
+            <div class="eyebrow">SPAWN POSSIBILITIES</div>
+            <h2>Tune the pool</h2>
+          </div>
+          <button id="resetRuleBtn" title="Restore this enemy's game rules">
+            Reset enemy
+          </button>
+        </div>
+        <p class="help">
+          Unchecked pools use the original generator. Enable a pool to replace
+          it; weight 0 excludes a choice. Changes affect the next roll.
+        </p>
+        <div class="tabs" role="tablist">
+          <button data-tab="weapons" class="active">Weapons</button
+          ><button data-tab="clothing">Clothing</button
+          ><button data-tab="appearance">Appearance</button
+          ><button data-tab="identity">Species & dyes</button
+          ><button data-tab="attacks">Attacks</button>
+        </div>
+        <div id="poolPanel"></div>
+        <details class="rule-source">
+          <summary>Enemy rule JSON</summary>
+          <textarea
+            id="ruleEditor"
+            spellcheck="false"
+            aria-label="Selected enemy rule JSON"
+          ></textarea
+          ><button id="applyRuleBtn">Apply JSON</button>
+          <div id="ruleError" role="alert"></div>
+        </details>
+        <div class="export-note">
+          <b>Bring the rules into the game</b>
+          <p>
+            Export <code>enemy-loadouts.json</code> and replace
+            <code>docs/config/combat/enemy-loadouts.json</code> in the
+            repository. The game reads that file when it creates enemies. Draft
+            edits stay in this workshop until exported and installed.
+          </p>
+          <p id="specialNote"></p>
+        </div>
+      </aside>
+    </main>
+    <div id="toast" role="status" hidden></div>
+    <script
+      type="module"
+      src="tools/enemy-loadout-editor/app.js?v=20261028a"
+    ></script>
+  </body>
+</html>

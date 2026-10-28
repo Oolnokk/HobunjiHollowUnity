@@ -1740,6 +1740,7 @@
   }
 
   function beginLichCast(lich, target, ability) {
+    if (window.EnemyLoadoutRules?.ruleFor('lich:'+lich.lichType)?.specialAttacks?.[ability] === false) return false;
     if (!lich || lich._banditAction || !isLiveActor(lich)) return false;
     const step = lichCastStep(lich, ability); // Existing Light Weapon attack timing/pose metadata used verbatim for the casting motion.
     const windupS = Number(step.windupS) || 0.16; // Captured once so Hronal's ground warning can be exactly 4× this cast's combined active timing.

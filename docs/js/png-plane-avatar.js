@@ -1078,6 +1078,7 @@
   // no animation loop or real WebGL lighting is introduced.
   const portraitThreeByRoot = new WeakMap();
   const portraitGlowModels = new Set();
+  const portraitGlowAttachments = new WeakMap();
   function syncPortraitGlow(THREE, root, sourceCanvas) {
     const glow = sourceCanvas?.hobunjiPortraitGlow;
     let light = root.userData.portraitGlowLight;
@@ -1106,7 +1107,11 @@
     const rig = root.userData.neckRig;
     const x = ((portraitsFlipped ? 1 - glow.x : glow.x) - 0.5) * width;
     portraitGlowModels.add(root);
-    if (rig?.available) {
+    const attachment=portraitGlowAttachments.get(root);
+    if(attachment){
+      attachment.parent.add(light);
+      light.position.set(x-attachment.offset.x,assemblyY+(0.5-glow.y)*height-attachment.offset.y,anchorZ-attachment.offset.z);
+    } else if (rig?.available) {
       rig.headScaleJoint.add(light);
       light.position.set(x - rig.neckLocal.x,
         (0.5 - glow.y) * height - rig.neckLocal.y, anchorZ - rig.neckLocal.z);
@@ -1115,6 +1120,13 @@
       light.position.set(x, assemblyY + (0.5 - glow.y) * height, anchorZ);
     }
     window.FurnitureLightRegistry?.register(light);
+  }
+
+  function setPortraitGlowAttachment(root, parent, offset = {x:0,y:0,z:0}) {
+    if(!root)return;
+    if(parent)portraitGlowAttachments.set(root,{parent,offset:{...offset}});
+    else portraitGlowAttachments.delete(root);
+    syncPortraitGlow(portraitThreeByRoot.get(root),root,root.userData.sourceCanvas);
   }
 
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
@@ -1301,6 +1313,7 @@
   }
 
   window.PNGPlaneAvatar = {
+    setPortraitGlowAttachment,
     PORTRAIT_FLIP_STORAGE_KEY,
     backMapFor,
     enableSharedFaceMirror,

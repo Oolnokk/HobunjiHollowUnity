@@ -231,9 +231,11 @@
   // packClothing entry without re-deriving its slot.
   async function rollBanditRoster(cfg, rank, nameOverride, genderOverride = null) {
     const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
-    const gender = genderOverride === 'male' || genderOverride === 'female'
+    let gender = genderOverride === 'male' || genderOverride === 'female'
       ? genderOverride : (deps.rnd() < 0.5 ? 'male' : 'female'); // Only callers such as male Slagothim traders supply an override.
     const speciesDef = await loadBanditSpeciesDef(speciesId);
+    const supportedGenders = speciesDef?.genders;
+    if (supportedGenders?.length && !supportedGenders.includes(gender)) gender = supportedGenders[0];
     const slots = cfg?.clothingPool?.slots || [];
     const fillP = Number(cfg?.clothingPool?.fillProbabilityByRank?.[rank] ?? 0.5);
     const equippedCosmetics = [];
@@ -352,7 +354,7 @@
 
   function ensureEnemyPants(roster) {
     const speciesId = String(roster?.appearance?.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Both excluded lower-body anatomies bypass the hostile garment fallback.
-    if (!roster || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
+    if (!roster || roster.enemyLoadoutAuthoredPants || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
     const renderer = window.PantsGarmentRenderer; // Existing garment registry and NPC dye fallback.
     if (!renderer) return null;
     if (!renderer.garmentForCosmetics(roster.equippedCosmetics)) {
@@ -484,6 +486,15 @@
     frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
     group.add(frontPivot);
     group.add(backPivot);
+    // The normal PNG root becomes a hidden hand-driver identity below. Move
+    // its authored mask light onto the visible hostile neck before discarding
+    // that original hierarchy, so the real fake-light registry sees it.
+    if (portrait.userData?.portraitGlowLight) {
+      const neck = frontNeckSkin?.neckBone;
+      window.PNGPlaneAvatar.setPortraitGlowAttachment?.(portrait, neck || frontPivot, {
+        x: neck?.position.x || 0, y: frontPivot.position.y + (neck?.position.y || 0), z: 0,
+      });
+    }
 
     // Procedural feet, mirroring the NPC walker's own ProceduralLegAnimation.attach
     // call (see makeNpcWalker) -- needs its own floor-anchored pivot rather than
@@ -807,10 +818,17 @@
   function rollBanditFlaskLoadout(cfg) {
     const available = availableBanditFlaskRecipeIds(); // Used to keep Flaskers automatically in sync with every authored throwable Afflict recipe.
     const requested = Math.max(1, Math.floor(Number(cfg?.flasker?.loadoutSize) || 2)); // Used to author loadout size in the existing bandit config.
-    const pool = [...available]; // Per-bandit copy used for sampling without replacement.
+    const recipeWeights = cfg?.flasker?.recipeWeights;
+    const pool = available.filter(id=>!recipeWeights || Number(recipeWeights[id])>0); // Per-bandit copy used for sampling without replacement.
     const picked = []; // Used by AI and corpse loot; exactly two entries with the current authored tuning when possible.
     while (picked.length < requested && pool.length) {
-      const index = Math.min(pool.length - 1, Math.floor((deps?.rnd?.() ?? Math.random()) * pool.length));
+      const random = deps?.rnd?.() ?? Math.random();
+      let index = Math.min(pool.length - 1, Math.floor(random * pool.length));
+      if (recipeWeights) {
+        let cursor = random * pool.reduce((sum, id) => sum + Number(recipeWeights[id]), 0);
+        index = pool.findIndex(id => (cursor -= Number(recipeWeights[id])) < 0);
+        if (index < 0) index = pool.length - 1;
+      }
       picked.push(pool.splice(index, 1)[0]);
     }
     return picked;
@@ -2665,12 +2683,17 @@
   }
 
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-    const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
+    await window.EnemyLoadoutRules?.ready;
+    const loadoutRules = window.EnemyLoadoutRules;
+    const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
+    cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
     if (roster?.appearance?.speciesId === 'ghoul') styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
+    roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
     if (avatarRef && opts.avatarRigScale) applyAuthoredHostileRigScale(avatarRef, opts.avatarRigScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
@@ -2687,8 +2710,24 @@
       avatarRef.dispose();
       return null;
     }
+    const authoredRule = loadoutRules?.ruleFor(loadoutKind);
+    if (authoredRule?.metals && !authoredRule.weapons && opts.defOverride?.weaponKey) {
+      const shape = deps.TOOL_ITEM_DEFS?.[opts.defOverride.weaponKey]?.shapeKey;
+      if (shape) cfg = { ...cfg, weaponShapePool: [shape] };
+    }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const def = Object.assign(makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth), opts.defOverride || {});
+    const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    let def = Object.assign({ ...rolledDefinition }, opts.defOverride || {});
+    // Special enemies supply fixed weapons through defOverride. Explicit authored
+    // weapon pools replace those fields too, using the same stats/ability factory.
+    if (authoredRule?.weapons || authoredRule?.metals) {
+      const authored = rolledDefinition;
+      def.weaponShapeKey=deps.TOOL_ITEM_DEFS?.[authored.weaponKey]?.shapeKey;
+      def.weaponMetalKey=deps.TOOL_ITEM_DEFS?.[authored.weaponKey]?.metalKey;
+      for (const key of ['weaponKey','weaponShapeStats','attackTag','attackDamage','attackRangePx','attackStaminaCost','attackCooldownS','banditAbilityLoadout']) def[key] = authored[key];
+    }
+    if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
+    def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
@@ -2769,6 +2808,7 @@
       // a gang doesn't all sway in unison.
       _banditStrafePhase: deps.rnd() * Math.PI * 2,
       rosterRecord: roster,
+      enemyLoadoutKind: loadoutKind,
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
@@ -2813,6 +2853,7 @@
     // a gang-shaped config without building an entity — used by
     // js/slagothim-traders.js to dress caravan walkers like other Tletingans.
     rollRoster: rollBanditRoster,
+    clothingCandidates: _banditClothingCandidates, // Shared effective-pool inspection for the enemy loadout workshop.
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
     updateMovementHeadLook,
