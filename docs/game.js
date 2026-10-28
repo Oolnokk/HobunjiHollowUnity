@@ -2647,7 +2647,7 @@
       }
       const FURNITURE_BLUEPRINT_CATALOG = [
         ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
-        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: 'decorative' })),
+        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: item.key === 'alchemyTableFurniture' ? 'processing' : 'decorative' })), // Cauldrons craft under Processing, while the placed piece uses decorative furniture placement.
       ].map(({ item, category }) => ({
         key: blueprintItemKey(item.key),
         furnitureKey: item.key,
