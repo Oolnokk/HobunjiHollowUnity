@@ -1839,7 +1839,8 @@ function rebuild3D(){
         role:'walls',id:node.name,label:'Interior gable '+node.name,
         renderLift:['logs','log','stackedlogs','stacked-logs','','brick'].includes(interior.wallStyle||'')?.26:0});
     });
-    window.FoliageGenerator.forThree(THREE).replaceSemanticSurfaceGuides(previewGroup,guideSources);
+    const foliage=window.FoliageGenerator.forThree(THREE);
+    foliage.replaceSemanticSurfaceGuides(previewGroup,foliage.recognizeArchitecturalSurfaceRegions(previewGroup,guideSources));
   }
   var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same architectural planes used by the editor.
   if(growthReport)log(growthReport);
