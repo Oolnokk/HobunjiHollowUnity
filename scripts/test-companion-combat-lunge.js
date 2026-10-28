@@ -134,13 +134,14 @@ assert.equal(pounce._animalAttack.state.stage, 'windup', 'Pounce retains its exi
 assert(pounce._animalAttack.state.lungeSpeedPxS >=
   pounce._animalAttack.state.lungeMaxDistancePx / 0.12,
   'companion leap movement completes at weapon-burst speed once the crouch ends');
+const companionPounceSpeed = pounce._animalAttack.state.lungeSpeedPxS; // Preserve the observed speed before cancellation clears the active attack object.
 attacks.cancel(pounce);
 const wildPounce = { ...actor, isCompanion: false, x: 0, y: 0, _animalAttack: null }; // Wild animal pace remains authored.
 sandbox.window.Combat.deps.players = [target];
 attacks.start(wildPounce, 'pounce', { target });
 assert.equal(wildPounce._animalAttack.approach, null, 'wild Pounce never gets a companion-only pre-lunge');
 assert(wildPounce._animalAttack.state.lungeSpeedPxS <=
-  pounce._animalAttack.state.lungeSpeedPxS,
+  companionPounceSpeed,
   'wild Pounce does not inherit the companion-specific speed boost');
 attacks.cancel(wildPounce);
 
