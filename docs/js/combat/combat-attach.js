@@ -225,7 +225,8 @@
         cfg.onAttach?.(c, host);
         return true;
       }
-      const step = Math.min(dist, (cfg.approachSpeedPxS ?? 520) * dt);
+      const attackSpeed = c.isCompanion ? Math.max(cfg.approachSpeedPxS ?? 520, d.TILE * 2.6 / 0.12) : (cfg.approachSpeedPxS ?? 520); // Companions close quickly while keeping attach-specific hovering and host alignment.
+      const step = Math.min(dist, attackSpeed * dt);
       c.x += dx / dist * step; c.y += dy / dist * step; // Attackers that attach fly/hop over small obstacles.
       c.facing = Math.atan2(dy, dx);
       return true;
@@ -262,6 +263,7 @@
     configs.set(id, cfg);
     window.Combat.animalAttacks.register(id, {
       label: cfg.label || id,
+      ownsApproach: true, // Attaching animals have their own in-flight approach and must not stack a ground lunge first.
       start: (c, state, ctx) => { state.id = id; state.cfg = cfg; startAttach(c, state, ctx); },
       update: (c, state, dt) => updateAttach(c, state, dt),
       cancel: (c, state) => cancelAttach(c, state),
