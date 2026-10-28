@@ -2625,8 +2625,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       for(let stop=1;stop<stops.length;stop++){
         const a=stops[stop-1],b=stops[stop],moveA=movements[a],moveB=movements[b];
-        for(let i=a;i<=b;i++){
-          const t=b===a?0:(i-a)/(b-a),move=moveA.clone().lerp(moveB,t);
+        for(let i=a+(stop===1?0:1);i<=b;i++){
+          const t=b===a?0:(i-a)/(b-a),move=moveA.clone().lerp(moveB,t); // Each shared stop ring must be displaced exactly once.
           for(let j=0;j<6;j++){const index=i*6+j;pos.setXYZ(index,pos.getX(index)+move.x,pos.getY(index)+move.y,pos.getZ(index)+move.z);}
         }
       }
