@@ -59,6 +59,14 @@ const server=http.createServer((request,response)=>{
       const full=build(new T.BoxGeometry(4,3,2),'wrap',1,24);
       const partial=build(new T.BoxGeometry(4,3,2),'wrap',.95,24);
       const reused=build(new T.BoxGeometry(4,3,2),'wrap',1,24);
+      const edgeBound=build(new T.PlaneGeometry(4,4),'wrap',1,16);
+      const edgePairs=edgeBound.userData.surfaceGrowthEndpoints||[];
+      const allEndpoints=edgePairs.flatMap(pair=>[pair.start,pair.end]);
+      const endpointSeparation=Math.min(...allEndpoints.flatMap((point,i)=>
+        allEndpoints.slice(i+1).map(other=>Math.hypot(point[0]-other[0],point[1]-other[1],point[2]-other[2]))));
+      const correctEdges=edgePairs.every(pair=>pair.startEdge!==pair.endEdge&&
+        [pair.start,pair.end].every(p=>(Math.abs(Math.abs(p[0])-2)<.0001||Math.abs(Math.abs(p[1])-2)<.0001)&&Math.abs(p[2])<.0001));
+
       const count=group=>group.children.filter(x=>x.isMesh&&!x.userData.surfaceGrowthCover)
         .reduce((sum,x)=>sum+x.geometry.attributes.position.count,0);
       const cover=group=>group.children.filter(x=>x.userData.surfaceGrowthCover);
@@ -313,7 +321,9 @@ const server=http.createServer((request,response)=>{
         flatTubes:count(flat),cornerTubes:count(corners),splitCornerTubes:count(split),
         lowTubes:count(low),highTubes:count(high),partialCover:cover(partial).length,
         fullCover:cover(full).length,fullTriangles:full.userData.surfaceGrowthStats.coverTriangles,
-        coverHasUvs:!!cover(full)[0]?.geometry.attributes.uv,
+        edgePairs:edgePairs.length,edgeCapacity:edgeBound.userData.surfaceGrowthStats.edgeCapacity,
+        correctEdges,endpointSeparation,
+        wrapHasUvs:!!full.children[0]?.geometry.attributes.uv,
         outline:full.children.find(x=>!x.userData.surfaceGrowthCover)?.layers.mask,
         deterministic:digest(full)===digest(reused),
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
@@ -388,13 +398,18 @@ const server=http.createServer((request,response)=>{
     assert(data.splitCornerTubes>0,'Slightly gapped wall panels must form a detected corner');
     assert(data.highTubes>data.lowTubes,'Strand budget must affect Wrap geometry');
     assert.equal(data.partialCover,0,'Partial densities must not cover the whole wall with a solid sheet');
-    assert.equal(data.fullCover,1,'100% density must add exactly one conformal covering mesh');
-    assert.equal(data.fullTriangles,12,'Covering mesh must follow the real 12-triangle box surface');
-    assert(data.coverHasUvs,'Dense covering must keep texture coordinates');
+    assert(data.edgePairs>=12&&data.edgePairs<=16,'Wrap must emit a substantial number of completed two-edge strands without exceeding count');
+    assert(data.edgeCapacity>=data.edgePairs*2,'Boundary slots, not interior occupancy, determine endpoint capacity');
+    assert(data.correctEdges,'Every Wrap strand must begin and end on two different real perimeter edges');
+    assert(data.endpointSeparation>=.1,'All Wrap start and end anchors must reserve non-overlapping edge space');
+
+    assert.equal(data.fullCover,0,'Wrap must never generate a flat surface-covering sheet, even at 100% edge density');
+    assert.equal(data.fullTriangles,0,'Wrap must not paint the wall interior or cover its triangles');
+    assert(data.wrapHasUvs,'Boundary-to-boundary Wrap strands must keep their UV coordinates');
     assert((data.outline&2)!==0,'Raised roots and vines must participate in shell outlines');
     assert(data.deterministic,'Identical saved seed/recipe must regenerate deterministic geometry');
     assert(data.hiddenBefore&&data.visibleAfter,'Wrap density must correctly hide/show in an actual browser DOM');
-    assert.equal(data.budgetLabel,'Strand budget per surface');
+    assert.equal(data.budgetLabel,'Edge-to-edge strands per surface');
     assert.equal(data.savedRecipe?.style,'wrap');
     assert.equal(data.savedRecipe?.density,.75);
     assert.equal(data.savedRecipe?.count,9);
@@ -403,7 +418,7 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.restoredStyle,'wrap','Selecting a saved layer must restore its style');
     assert.equal(Number(data.restoredDensity),.75,'Selecting a saved layer must restore density');
     assert.deepEqual(pageErrors,[], 'Shared authoring or growth must not emit browser errors');
-    console.log('Surface foliage browser regression passed: flat/corner/gapped meshes, Wrap budget/coverage/UVs/outline, seed determinism and shared editor controls.');
+    console.log('Surface foliage browser regression passed: flat/corner/gapped meshes, Wrap boundary endpoints/spacing/UVs/outline, seed determinism and shared editor controls.');
   } finally {
     if(browser)await browser.close();
     await new Promise(resolve=>server.close(resolve));
