@@ -316,6 +316,7 @@
     const actionsEl = document.getElementById('iiActions');
     const detailEl = document.getElementById('iiDetail');
     if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
+    if (detailEl.dataset?.itemKind === 'clothing' || document.getElementById('mpInventory')?.classList?.contains?.('inv-mode-gear')) return null; // Direct bag-use never appears on clothing or permanent gear.
     const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\s+×\s*\d+$/, ''); // Pack displays "Tablet ×2" while metadata stores "Tablet".
     if (!detailName) return null;
 
