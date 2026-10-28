@@ -734,11 +734,16 @@
     // Invisible, non-raycastable guides are independent of randomized brick and stacked-log geometry.
     if ((opts.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap')) {
       // Merge same-role guides into a single static mesh per house for mobile scene-graph efficiency.
-      global.FoliageGenerator?.replaceSemanticSurfaceGuides(group,['wall','roof'].map(tag=>({
-        vertices:faces.filter(face=>face.tag===tag).flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
-        role:tag==='wall'?'walls':'roofs',id:'house-'+tag,label:'architectural '+tag,
-        renderLift:tag==='wall'?(opts.wallBuilder||generatedLogStyle ? .26 : 0):.16
-      })));
+      const foliage=global.FoliageGenerator;
+      if(foliage){
+        const panels=['wall','roof'].map(tag=>({
+          vertices:faces.filter(face=>tag==='wall'?['wall','entryTunnel'].includes(face.tag):face.tag==='roof')
+            .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
+          role:tag==='wall'?'walls':'roofs',
+          renderLift:tag==='wall'?(opts.wallBuilder||generatedLogStyle?.26:0):.16
+        }));
+        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels));
+      }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, opts.surfaceGrowth);
     return group;
@@ -1559,12 +1564,15 @@
     // The transformed source faces, not WallBuilder bricks or generated log courses, are the navigation authority.
     if ((piece.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap')) {
       // Combine sheer authored panels, not individual WallBuilder bricks, into at most two guide meshes.
-      global.FoliageGenerator?.replaceSemanticSurfaceGuides(group,['walls','roofs'].map(role=>({
-        vertices:allOff.filter(face=>role==='roofs'?face.tag==='roof':['wall','entryTunnel'].includes(face.tag))
-          .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
-        role,id:'house-'+role,label:'architectural '+role,
-        renderLift:role==='roofs'?.16:(hideWalls?.26:0)
-      })));
+      const foliage=global.FoliageGenerator;
+      if(foliage){
+        const panels=['walls','roofs'].map(role=>({
+          vertices:allOff.filter(face=>role==='roofs'?face.tag==='roof':['wall','entryTunnel'].includes(face.tag))
+            .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
+          role,renderLift:role==='roofs'?.16:(hideWalls?.26:0)
+        }));
+        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels));
+      }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
     return group;
