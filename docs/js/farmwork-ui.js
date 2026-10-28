@@ -120,6 +120,7 @@
     const p = plot(), ctx = context();
     const t = ctx?.screenTile?.(x, y);
     if (!p || !t || !ctx.canDesignate(t.col, t.row, p.kind)) {
+      drag = { pointerId, plotId: null, adding: false, changed: false }; // Own the matching release too; an invalid touch must not become a world Action 1.
       ctx?.showToast?.('Choose a plot and an unobstructed farm tile.', false);
       return true; // Farmwork mode owns world clicks even when invalid; never perform an unrelated game action.
     }
