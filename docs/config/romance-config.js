@@ -103,6 +103,52 @@
       // Per-NPC overrides use weekday names; otherwise resume original town agenda every third afternoon.
       townVisitsByNpc: {},
       seatBlockMinutes: 90, // How long the spouse sticks with one chair before picking another.
+      dialogue: { // Marriage-specific greetings and forms of address; only the player's spouse uses these.
+        nickname: 'love', // Fallback form of address used by dialogue and proximity greetings for an unlisted spouse.
+        greetings: [
+          'There you are, {targetName}. I was hoping to see you.',
+          'Welcome back, {targetName}. How has your day been?',
+          'Good {dayPart}, {targetName}. It is nice having you close.',
+        ],
+        byNpc: { // Individual voices override the fallback without changing the NPC's authored pre-marriage lines.
+          tooth_hatayap: { nickname: 'my heart', greetings: [
+            'There you are, {targetName}. I was just thinking of you.',
+            'Come sit with me when you can, {targetName}. The day can wait.',
+          ] },
+          aliri_ginju: { nickname: 'dear', greetings: [
+            'Oh, {targetName}! Come see how things are growing.',
+            'Welcome home, {targetName}. There is always room for you beside me.',
+          ] },
+          nashka_khibu: { nickname: 'trouble', greetings: [
+            'You again, {targetName}? Good. I was hoping.',
+            'Hey, {targetName}. Come find me when you have a moment.',
+          ] },
+          sloomi: { nickname: 'sweetheart', greetings: [
+            'Oh! {targetName}. I am glad you are here.',
+            'Hi, {targetName}. I still smile every time I see you.',
+          ] },
+          namui_u_hakaru: { nickname: 'my heart', greetings: [
+            'There is my {targetName}! I was beginning to miss you.',
+            'Come close, {targetName}. I have stories to tell you.',
+          ] },
+          oddclaw_unumanuk: { nickname: 'treasure', greetings: [
+            'Ah, {targetName}! I have been saving a story for you.',
+            'There you are, {targetName}. Always good to see my favorite face.',
+          ] },
+          foroji_funji: { nickname: 'honey', greetings: [
+            'Welcome home, {targetName}. Shall we make something good to eat?',
+            'Hello, {targetName}. I kept a place for you at the table.',
+          ] },
+          jubmir: { nickname: 'dear heart', greetings: [
+            'Hey, {targetName}. The day feels better with you here.',
+            'Come on over, {targetName}. I am always glad to see you.',
+          ] },
+          takua_ao_hakaru: { nickname: 'love', greetings: [
+            'Hey, {targetName}. I can spare a moment for you.',
+            'Back again, {targetName}? Good. Stay a while.',
+          ] },
+        },
+      },
     },
 
     // ── Family ───────────────────────────────────────────────────────────
