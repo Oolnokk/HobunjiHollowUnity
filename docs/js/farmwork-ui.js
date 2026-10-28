@@ -155,10 +155,10 @@
       <div class="fw-plots" data-ctrl-transparent>${farmPlots.map(p => `<button data-fwplot="${esc(p.id)}" aria-pressed="${p.id === chosen?.id}">${esc(p.label)} (${p.tiles.length})</button>`).join('')}</div>`;
     if (chosen) {
       html += `<div class="fw-settings" data-ctrl-transparent>
-        <label>Plot name<input data-fwfield="label" value="${esc(chosen.label)}" maxlength="48"></label>
-        ${chosen.kind === 'till' ? `<label>Seed crop<select data-fwfield="crop"><option value="">No seeding</option>${cropOptions.map(c => `<option value="${esc(c.value)}" ${chosen.crop === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>` : ''}
-        ${[0, 1, 2].map(i => `<label>${i ? 'Backup ' + i : 'Primary worker'}<select data-fwfield="worker${i}"><option value="">None</option>${people.map(person => `<option value="${esc(person.id)}" ${chosen.workers[i] === person.id ? 'selected' : ''}>${esc(person.name)}</option>`).join('')}</select></label>`).join('')}
-        <div class="fw-hours"><label>From<select data-fwfield="from">${hourOptions(chosen.hours[0])}</select></label><label>Until<select data-fwfield="to">${hourOptions(chosen.hours[1])}</select></label></div>
+        <label>Plot name<input name="fw-label" data-fwfield="label" value="${esc(chosen.label)}" maxlength="48"></label>
+        ${chosen.kind === 'till' ? `<label>Seed crop<select name="fw-crop" data-fwfield="crop"><option value="">No seeding</option>${cropOptions.map(c => `<option value="${esc(c.value)}" ${chosen.crop === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>` : ''}
+        ${[0, 1, 2].map(i => `<label>${i ? 'Backup ' + i : 'Primary worker'}<select name="fw-worker${i}" data-fwfield="worker${i}"><option value="">None</option>${people.map(person => `<option value="${esc(person.id)}" ${chosen.workers[i] === person.id ? 'selected' : ''}>${esc(person.name)}</option>`).join('')}</select></label>`).join('')}
+        <div class="fw-hours"><label>From<select name="fw-from" data-fwfield="from">${hourOptions(chosen.hours[0])}</select></label><label>Until<select name="fw-to" data-fwfield="to">${hourOptions(chosen.hours[1])}</select></label></div>
       </div>
       <div class="fw-nav"><button data-fwpage="left" aria-label="Map left 7 tiles">◀</button><button data-fwpage="up" aria-label="Map up 7 tiles">▲</button><span>Tiles C${originC + 1}–${Math.min(ctx.cols, originC + SIZE)} / R${originR + 1}–${Math.min(ctx.rows, originR + SIZE)}</span><button data-fwpage="down" aria-label="Map down 7 tiles">▼</button><button data-fwpage="right" aria-label="Map right 7 tiles">▶</button></div>
       <div class="fw-grid" data-fwgrid data-ctrl-transparent>${Array.from({ length: SIZE * SIZE }, (_, i) => {
