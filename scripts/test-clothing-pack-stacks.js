@@ -77,6 +77,7 @@ let saves = 0; // Must only increase on actual ID repair or a real inventory tra
 let gearSaves = 0; // Used to verify that transferring one article persists it exactly once.
 const gear = { tools: {}, clothing: {}, clothingItems: [] }; // Persistent collection used by the transfer action.
 let selectedClears = 0; // Verifies sale actions use the existing detail-cleanup path.
+let heldItem = { kind: 'clothing', uid: base.uid }; // Simulates a held copy being sold from the stack.
 const inventory = { gold: 0 };
 panel.init({
   getPackClothing: () => pack,
@@ -85,6 +86,8 @@ panel.init({
   getGearInventory: () => gear,
   saveGearInventory: () => { gearSaves++; },
   refreshPlayerAvatar: () => {},
+  getManualHeldItem: () => heldItem,
+  setManualHeldItem: item => { heldItem = item; },
   inventory,
   clearInvSelection: () => {},
   clearInventoryDetail: () => { selectedClears++; },
@@ -109,6 +112,7 @@ sell.click();
 assert.equal(pack.length, 2, 'selling from a stack removes exactly one saved article');
 assert.equal(pack.filter(item => item.label === base.label).length, 1, 'the remaining matching copy stays in the pack');
 assert.equal(inventory.gold, 10, 'one sale pays for only one garment');
+assert.equal(heldItem, null, 'selling a held garment also clears the now-invalid held-item reference');
 assert.equal(packNode.children.length, 2, 'a single remaining copy renders without another badge');
 assert(!packNode.children[0].children.some(child => child.className.includes('ipc-stack-count')),
   'quantity badge disappears when the stack shrinks to one');
@@ -122,5 +126,14 @@ assert.equal(pack.length, 1, 'transferring the remaining garment removes only th
 assert.equal(gear.clothingItems.length, 1, 'the exact transferred item becomes permanent gear');
 assert.equal(gear.clothing.overwear?.cosmeticId, base.cosmeticId, 'that garment is equipped in its authored slot');
 assert.equal(gearSaves, 1, 'the transfer persists the gear collection');
+
+const duplicateSale = { ...copy(base), uid: 'duplicate-transaction' }; // Simulates a legacy collision introduced after UI selection.
+pack = [duplicateSale, { ...copy(base), uid: 'duplicate-transaction' }];
+panel.buildPackClothingSection(); // Migration gives the current rows distinct IDs.
+const saleUid = pack[0].uid;
+pack[1].uid = saleUid; // Collision after display: the sale handler must still remove only one physical object.
+nodes.get('invPackClothing').children[0].click();
+nodes.get('iiActions').children.find(child => child.textContent.startsWith('Sell')).click();
+assert.equal(pack.length, 1, 'a late duplicate UID cannot cause a sale to destroy the whole stack');
 
 console.log('Clothing stack rendering, migration, sale, and transfer transactions passed');
