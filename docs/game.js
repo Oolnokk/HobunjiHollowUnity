@@ -17353,6 +17353,10 @@
       // backing variables are initialized, so the forward closure reference
       // is safe).
       window.FarmEditor.init({
+        getReticleTile, refreshActionBar,
+        suspendMouseCameraForUi: releaseShoulderSurfPointerLock,
+        resumeMouseCameraAfterUi: requestShoulderSurfPointerLock,
+        getMouseAction: button => getActionForButton('desktop', 'Mouse' + button),
         getGrid: () => grid,
         getCurrentArea: () => currentArea,
         getFarmEditMode: () => farmEditMode,
@@ -19330,6 +19334,11 @@
         if (window.Fishing?.state?.active) {
           if (activeAction === 'fish_primary') window.Fishing?.primaryAction();
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
+          return;
+        }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          if (activeAction === 'farmwork_done') window.FarmworkUI.setPlanning(false);
+          else window.FarmworkUI.applyAimedTile(activeAction === 'farmwork_add');
           return;
         }
         if (window.DevMapFurniture?.isActive?.() && window.DevMapFurniture.handleArchAction(activeAction)) {
@@ -24523,6 +24532,15 @@
           clearTargetHighlights();
           return;
         }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false;
+          clearTargetHighlights();
+          reticleMesh.visible = true;
+          reticleMesh.position.set(reticle.col + 0.5, window.FarmSurfaceSample.farmSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.05, reticle.row + 0.5);
+          reticleMesh.material = window.FarmworkUI.canAddTile(reticle.col, reticle.row) ? reticleIntenseMat : reticleBlockedMat;
+          reticleMesh.scale.set(1, 1, 1);
+          return;
+        }
         const surfY   = tileSurfaceYInArea(tile, currentArea) + 0.01
                       + (tile.water > 0.02 ? tile.water * WATER_UNIT + 0.04 : 0);
         const allowed = canUseAction(activeTool, activeAction, reticle.col, reticle.row);
@@ -25154,7 +25172,7 @@
         isShoulderSurfEnabled: () => s_shoulderSurf,
         getActiveCameraMode: () => activeCameraMode,
         shoulderSurfMode: SHOULDER_SURF_MODE,
-        isUiBlockingPointerLock: () => !!(menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
+        isUiBlockingPointerLock: () => !!(menuOpen || window.FarmworkUI?.isPanelOpen?.() || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
       });
       function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
       function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
@@ -26044,6 +26062,8 @@
         }
       }
       function computeActionButtonsImpl() {
+        const farmworkActions = window.FarmworkUI?.actionButtons?.();
+        if (farmworkActions) return farmworkActions;
         if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
         if (window.SocialActionWheel?.isDancing?.()) return [
           { icon: '♫', label: 'Dancing', action: 'dance_active', style: 'primary', allowed: false },
@@ -27514,6 +27534,13 @@
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
         }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork-tool'); return; }
+          if (actionId === 'dodge' || actionId === 'toolSelect') {
+            if (phase === 'press') window.FarmworkUI.setPlanning(false);
+            return;
+          }
+        }
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
           return;
@@ -28319,7 +28346,7 @@
       let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
       let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+        return !menuOpen && !window.FarmworkUI?.isPanelOpen?.() && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
           && !window.__mapEditorGizmoActive;
       }
@@ -28582,7 +28609,7 @@
           // from this handler) as well as ones opened by a held key like
           // 'c' below (which doesn't drag a mouse button, so nothing else
           // stops this handler from firing while it's up).
-          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen) return;
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window.FarmworkUI?.isPanelOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           // While the Pixel Probe is armed, mouse movement should only ever

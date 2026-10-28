@@ -567,7 +567,9 @@
     const valid = (c, r) => Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < deps.COLS && r < deps.ROWS;
     const blockedTiles = new Set([deps.TileType.ROCK, deps.TileType.SHRUB, deps.TileType.WATER]); // Shared for all map buttons within this Farmwork render, avoiding per-tile allocations.
     return {
-      editable, cols: deps.COLS, rows: deps.ROWS,
+      editable, cols: deps.COLS, rows: deps.ROWS, scene: deps.getScene(),
+      aimTile: () => deps.getReticleTile?.(),
+      refreshActions: () => deps.refreshActionBar?.(),
       canDesignate: (c, r, kind) => {
         if (!editable || (kind !== 'till' && kind !== 'dig') || !valid(c, r) || deps.isHouseFootprint(c, r)) return false;
         const tile = deps.getGrid()?.[r]?.[c]; // Reject permanent obstructions instead of promising an NPC impossible work.
@@ -593,7 +595,10 @@
     // Capture before ordinary world-action handlers so Farmwork paint never plants, attacks, or selects a tile for free.
     deps.threeContainer.addEventListener('pointerdown', e => {
       if (!window.FarmworkUI?.isOpen?.()) return;
-      if (window.FarmworkUI.startWorldPointer(e.pointerId, e.clientX, e.clientY)) {
+      // Touch keeps the native look joystick; locked mouse actions use the same gameplay reticle as the arch/controller.
+      if (window.FarmworkUI.isPlanning?.() && (e.pointerType === 'touch' || document.pointerLockElement === deps.threeContainer)) return;
+      if (e.pointerType === 'mouse' && !['action1', 'action2'].includes(deps.getMouseAction?.(e.button))) return;
+      if (window.FarmworkUI.startWorldPointer(e.pointerId, e.clientX, e.clientY, e.pointerType === 'mouse' ? deps.getMouseAction?.(e.button) : 'action1')) {
         e.preventDefault(); e.stopImmediatePropagation();
       }
     }, true);
@@ -611,7 +616,7 @@
     window.addEventListener('pointerup', finishFarmworkGesture, true);
     window.addEventListener('pointercancel', finishFarmworkGesture, true);
     deps.threeContainer.addEventListener('click', e => {
-      if (!window.FarmworkUI?.isOpen?.()) return;
+      if (!window.FarmworkUI?.isPanelOpen?.()) return;
       e.preventDefault(); e.stopImmediatePropagation(); // Block click fallthrough on a plot tile gesture, including invalid destinations.
     }, true);
     deps.threeContainer.addEventListener('pointerdown', (e) => {
