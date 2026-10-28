@@ -12,6 +12,32 @@ const rangedCode = fs.readFileSync(path.join(root, 'docs/js/combat/ranged-weapon
 const gameCode = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 const burdenCode = fs.readFileSync(path.join(root, 'docs/js/shattercasks.js'), 'utf8');
 const climbCode = fs.readFileSync(path.join(root, 'docs/js/climb-system.js'), 'utf8');
+const vesselAsset = JSON.parse(fs.readFileSync(path.join(root,'docs/config/furniture-authored/shattercaskBlasting.json'),'utf8')); // The authoritative carry anchor, grips and barrel center.
+const skinPng = fs.readFileSync(path.join(root,'docs/assets/objectsprites/soursap_fruit_skin.png')); // Verifies the actual shipped texture, not a placeholder URL.
+assert.equal(skinPng.subarray(0,8).toString('hex'),'89504e470d0a1a0a','Soursap rind is a real PNG asset');
+assert.equal(skinPng.readUInt32BE(16),64,'Soursap UV map has the authored 64px width');
+assert.equal(skinPng.readUInt32BE(20),32,'Soursap UV map has the authored 32px height');
+const carryStart=burdenCode.indexOf('  function fruitCarryableFromShattercask(');
+const carryEnd=burdenCode.indexOf('  function adoptFruitCarryTemplate(',carryStart);
+assert(carryStart>=0 && carryEnd>carryStart,'fruit shares the actual Shattercask authored carry rig');
+const deriveCarry=vm.runInNewContext(burdenCode.slice(carryStart,carryEnd)+'\nfruitCarryableFromShattercask',
+  {FRUIT_CARRY_FALLBACK:vesselAsset,finite:value=>Number(value)||0,Math,Object});
+const fruitGrip=deriveCarry(vesselAsset);
+const barrel=vesselAsset.parts.find(part=>part.kind==='barrel').transform;
+for(const axis of ['x','y','z']) {
+  const size=vesselAsset.carryable.billboardAnchor.size;
+  assert(Math.abs((barrel[axis]-vesselAsset.carryable.billboardAnchor.position[axis])/size
+    -(0-fruitGrip.billboardAnchor.position[axis])/size)<1e-8,
+    'Soursap center matches Shattercask barrel carry position on '+axis);
+  for(const hand of ['left','right'])
+    assert(Math.abs((vesselAsset.carryable.handTargets[hand][axis]-barrel[axis])
+      -fruitGrip.handTargets[hand][axis])<1e-8,
+      'Soursap uses the same authored '+hand+' hand position on '+axis);
+}
+assert.equal(fruitGrip.billboardAnchor.coordinateSpace,'posterior-relative');
+assert.equal(fruitGrip.billboardAnchor.size,vesselAsset.carryable.billboardAnchor.size);
+assert(burdenCode.includes('ensureFruitCarryTemplate()') && burdenCode.includes('beginSharedThrowVisual()') &&
+  burdenCode.includes('if(held===burden)alignHeldVase(burden)'), 'live fruit pose follows Shattercask throw animation and authored edits');
 
 const zone = 'map_southern_cloud_forest';
 const branch = { col: 3, row: 4, baseX: 3.5 * 64, baseY: 4.5 * 64,
@@ -25,7 +51,11 @@ const scene = {
 };
 const pos = () => ({ x:0, y:0, z:0, set(x,y,z) { this.x=x; this.y=y; this.z=z; } });
 class FruitMesh { constructor() { this.position = pos(); } }
-const THREE = { SphereGeometry: class {}, MeshStandardMaterial: class {}, Mesh: FruitMesh };
+let skinLoads=0; // Confirms all fruit in a zone reuse the same real PNG texture.
+const THREE = { SphereGeometry: class {}, MeshStandardMaterial: class {}, Mesh: FruitMesh,
+  sRGBEncoding:3001, NearestFilter:1003,
+  TextureLoader: class {load(url) { skinLoads++; assert(url.includes('/soursap_fruit_skin.png')); return {needsUpdate:false}; }},
+};
 let registeredFruit = 0, liftedFruit = 0, reboundFruit = 0; // Counts physical fruit registrations, pickups, and streaming reattachments.
 const game = {
   THREE, console, performance, Math,
@@ -66,6 +96,7 @@ game.WildlifeSpawn.init({
 });
 game.WildlifeSpawn.updateHostileSpawning(.6);
 assert.equal(registeredFruit, 1, 'one physical burden is registered per hanging fruit');
+assert.equal(skinLoads,1,'only one PNG texture upload is requested across cloud-forest fruit meshes');
 assert.equal(worldMeshes.size, 1, 'fruit is rendered in the cloud forest');
 
 const fruitCol = Math.floor((branch.baseX + (branch.tipX - branch.baseX) * .82)/64);

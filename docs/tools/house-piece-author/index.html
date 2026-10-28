@@ -50,7 +50,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
-<script src="../../js/panel-ui.js?v=20261027scheduler-a1"></script>
+<script src="../../js/panel-ui.js?v=20261027h9f76d06"></script>
 <script src="../../js/repo-picker.js"></script>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <!-- Classic global-THREE (r128) build, loaded alongside the ES-module three
@@ -63,10 +63,10 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
 <script src="../../js/WallBuilder.js"></script>
-<script src="../../js/foliage-generator.js"></script>
-<script src="../../config/natural-surface-materials.js?v=20261027h6c85b7e"></script>
-<script src="../../js/natural-surface-materials.js?v=20261027h6c85b7e"></script>
-<script src="../../js/surface-foliage-authoring.js?v=20261026hc435c14"></script>
+<script src="../../js/foliage-generator.js?v=20261027h9ef2138"></script>
+<script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="../../js/surface-foliage-authoring.js?v=20261027h93a9e9e"></script>
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/surface-stretch-uv-furniture.js?v=20261026orequad2"></script>
@@ -2285,7 +2285,10 @@ function deepCleanPiece(piece){ return JSON.parse(JSON.stringify(piece)); }
 function syncPieceFromInputs(){ state.piece.name=$('pieceName').value.trim()||'unnamed_piece'; state.piece.type=$('pieceType').value; state.piece.preset=$('basePreset')?.value || state.piece.preset || 'custom'; state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=finite($('groundY').value,0); state.piece.wallStyle=$('wallStyle').value||undefined; state.piece.logWall={seed:$('logWallSeed').value.trim()||'cabin-log-1',logDiameter:Math.max(.08,finite($('logWallDiameter').value,.34)),trunkWonk:Math.max(0,finite($('logWallWonk').value,.18)),courseGap:finite($('logWallGap').value,-.03)}; syncRoofFromInputs(); syncPieceFromSets(); }
 function exportPiecePayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v38', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece) }; }
 function exportPayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v38', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece), library:state.library.map(deepCleanPiece) }; }
-function rebuildHouseSurfaceFoliage(){return window.FoliageGenerator.applySurfaceGrowth(root,state.piece.surfaceGrowth);}
+function rebuildHouseSurfaceFoliage(){
+  // The editing canvas uses r160; Game Preview and window.THREE use r128.
+  return window.FoliageGenerator.forThree(THREE).applySurfaceGrowth(root,state.piece.surfaceGrowth);
+}
 function refreshExport(){ rebuildHouseSurfaceFoliage(); $('exportText').value=JSON.stringify(exportPiecePayload(),null,2); if (typeof scheduleGamePreviewRebuild === 'function') scheduleGamePreviewRebuild(); }
 function importPayload(payload){ if(!payload) throw new Error('Empty JSON.'); pushUndo('Import JSON'); if(payload.currentPiece) state.piece=payload.currentPiece; else if(payload.schema && payload.library?.[0]) state.piece=payload.library[0]; else if(payload.base && payload.footprint) state.piece=payload; else throw new Error('Unrecognized piece JSON.'); ensureFootprintExtensions(state.piece); state.library=Array.isArray(payload.library)?payload.library:[]; for(const p of state.library) ensureFootprintExtensions(p); loadPiece(state.piece); renderPieceList(); refreshExport(); log('Imported modular piece JSON. GLB binaries are represented as placeholders until re-imported.'); }
 function downloadJson(){ const blob=new Blob([JSON.stringify(exportPayload(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${(state.piece.name||'modular_house_piece').replace(/[^a-z0-9_-]+/gi,'_')}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }

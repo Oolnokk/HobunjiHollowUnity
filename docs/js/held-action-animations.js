@@ -24,6 +24,25 @@
   };
 
 
+  // Ordinary small bag items are carried in this own tool-base pose (NOT a
+  // head/mouth-relative Drink pose). Starts as a copy of the functioning
+  // Pick-Shovel long-hafted Tool Neutral and can be tuned independently.
+  const smallHeldNeutral = Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, roll: -96, bodyYaw: -8, shoulderAim: { grip: true, palmNormal: true } }); // Source for all three editor still frames, independent of the long-hafted tool config.
+  const heldItemSmall = {
+    version: 1,
+    kind: 'hobunji_held_action_animation',
+    name: 'Small Held Item — Idle',
+    style: 'thrust',
+    still: true,
+    durationS: 0.95, windupFrac: 0.16, strikeFrac: 0.28,
+    poses: {
+      neutral: { ...smallHeldNeutral },
+      windup: { ...smallHeldNeutral },
+      strike: { ...smallHeldNeutral },
+    },
+  };
+
+
   // Shared temporary throw animation for every thrown weapon until dedicated
   // per-shape throws are authored. Runtime charge holds at its Windup endpoint,
   // then release scales this pose path to the visible charge percentage.
@@ -210,7 +229,7 @@
     },
     "gripMode": "palm-parallel"
   }; // Authored loaded/fire animation; independent from Drink.
-  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
+  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in

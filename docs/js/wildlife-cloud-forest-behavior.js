@@ -219,11 +219,31 @@
     return live;
   }
 
-  let _fruitGeo = null, _fruitMat = null;
+  let _fruitGeo = null, _fruitMat = null; // Shared geometry/material for every hanging, carried and flying Soursap.
+  const FRUIT_SKIN_PNG = 'assets/objectsprites/soursap_fruit_skin.png?v=20261027rind1'; // Browser-loaded authored PNG map, including cached copies on existing fruit meshes.
   function fruitGeoMat() {
     if (!_fruitGeo) {
-      _fruitGeo = new THREE.SphereGeometry(0.15, 8, 6);
-      _fruitMat = new THREE.MeshStandardMaterial({ color: 0xd9542b, roughness: 0.6, metalness: 0.05 });
+      _fruitGeo = new THREE.SphereGeometry(0.15, 12, 9);
+      let skin = null; // One texture object reused by the entire fruit population, not an upload per fruit.
+      if (THREE.TextureLoader) {
+        skin = new THREE.TextureLoader().load(FRUIT_SKIN_PNG, texture => {
+          if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+          else if (THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
+          texture.needsUpdate = true;
+        }, undefined, error => {
+          _fruitMat?.color?.setHex?.(0x60963a); // Distinct green fallback if the PNG cannot be fetched.
+          window.__farmLog?.('[soursap] rind texture unavailable: ' + (error?.message || error), 'warn');
+        });
+        if (skin) {
+          if ('colorSpace' in skin && THREE.SRGBColorSpace) skin.colorSpace = THREE.SRGBColorSpace;
+          else if (THREE.sRGBEncoding != null) skin.encoding = THREE.sRGBEncoding;
+          if (THREE.NearestFilter) skin.magFilter = THREE.NearestFilter;
+        }
+      }
+      _fruitMat = new THREE.MeshStandardMaterial({
+        color: skin ? 0xffffff : 0x60963a, map: skin,
+        roughness: 0.85, metalness: 0,
+      });
     }
     return { geo: _fruitGeo, mat: _fruitMat };
   }

@@ -23234,6 +23234,23 @@
         _heldItemHandMode = 'bottle';
       }
 
+      // Static small bag items use the same player/tool-base coordinate frame as the
+      // working Pick-Shovel tool rest. Drink remains separately mouth-relative.
+      function applyHeldSmallIdlePose() {
+        const pose = window.HeldActionAnimations?.heldItemSmall?.poses?.neutral; // Independently authored carry stance for jerky, bottles and other small items.
+        if (!pose) return false;
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0);
+        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+        heldItemHolder.scale.setScalar(0.5);
+        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        _heldItemHandMode = 'bottle'; // The procedural right hand follows the item, never a stale weapon socket.
+        return true;
+      }
+
       // Begins the shared drink-style windup animation on press. Plays forward
       // from neutral and pauses itself exactly at the authored windup pose —
       // see updateHeldItemHolder's _heldDrinkPhase handling below. Call
@@ -23420,8 +23437,8 @@
           updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
         } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
           applyHeldDrinkPose(window.HeldActionAnimations.throwFlask, 0); // Idle flask rests in the authored thrown-weapon stance, the same Neutral its throw starts from.
-        } else if (usesThrustHeldPose(item) && window.HeldActionAnimations?.drink?.headRelative) {
-          applyHeldDrinkPose(window.HeldActionAnimations.drink, 0);
+        } else if (usesThrustHeldPose(item) && window.HeldActionAnimations?.heldItemSmall?.poses?.neutral) {
+          applyHeldSmallIdlePose();
         } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
