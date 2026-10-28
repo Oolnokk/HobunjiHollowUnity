@@ -379,7 +379,9 @@ const directImpact=lichSource.slice(lichSource.indexOf('  function damageActor('
 const puddleUpdate=lichSource.slice(lichSource.indexOf('  function updatePuddles('),lichSource.indexOf('  function updateProjectiles('));
 assert.doesNotMatch(directImpact,/applyEntranced\(/,'Direct Kanthic hits must never issue Entranced commands');
 assert.doesNotMatch(puddleUpdate,/applyEntranced\(/,'Standing in plasm must never issue Entranced commands');
-assert.match(directImpact,/makeGasolinePuddle\(projectile.owner, hitX, hitY\)/,'Direct hits deposit a puddle as well as misses');
+assert.match(directImpact,/makeGasolinePuddle\(projectile.owner,hitX,hitY\)/,'Direct hits deposit a puddle as well as misses');
+assert.doesNotMatch(directImpact,/addGooSlow\(/,'Kanthic direct hits do not slow or control actors');
+assert.match(directImpact,/if\(projectile.type==='kanthic'\)[\s\S]*?makeGasolinePuddle\([\s\S]*?return;/,'Kanthic impacts deposit plasm and exit before the direct-damage path');
 assert.match(puddleUpdate,/PUDDLE_SINK_SECONDS/,'Puddle contact must use sustained lethal immersion, not Entranced control');
 assert.match(lichSource,/PUDDLE_MAX_ACTIVE = 12/,'Visual collision budget must remain bounded');
 assert.match(lichSource,/isProtectedPlasmAt\?\.\(xPx/,'Boss spell impacts must spare protected ruin checkpoints');

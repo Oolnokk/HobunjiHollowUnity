@@ -81,7 +81,7 @@
       castCooldownS: 2.15, preferredMinTiles: 3.1, preferredMaxTiles: 5.8,
       projectile: Object.freeze({
         speedPxS: 980, gravityWorldS2: 28, maxAgeS: 2.2, radiusWorld: 0.18,
-        damage: 3, knockbackPxS: 70, footingDamageMultiplier: 0.15,
+        damage: 0, knockbackPxS: 0, footingDamageMultiplier: 0, // A Kanthic strike only changes the terrain; its puddle handles all danger.
       }),
     }),
   });
@@ -539,7 +539,12 @@
     const power = projectilePower(projectile); // Tothal damage/knockback/Footing pressure/frost all decay with its shrinking lifetime; Kanthic remains full-strength.
     const hitX = projectile.prevX + (projectile.x - projectile.prevX) * t; // Pixel X impact origin passed to canonical knockback/damage.
     const hitY = projectile.prevY + (projectile.y - projectile.prevY) * t; // Pixel Z-plane impact origin passed to canonical knockback/damage.
-    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns knockback/stagger/prone transitions.
+    if(projectile.type==='kanthic'){
+      makeGasolinePuddle(projectile.owner,hitX,hitY); // All direct hits only leave plasm: no forced movement, slowing, knockback or immediate damage.
+      lastEvent='plasm:direct-impact';
+      return;
+    }
+    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns Tothal knockback/stagger/prone transitions.
     const damage = (p.damage || 0) * power;
     const knockback = (p.knockbackPxS || 0) * power;
     if (actor === deps.player) deps.damagePlayer?.(damage, hitX, hitY, knockback, options);
@@ -547,9 +552,6 @@
     const RS = window.ResourceSystem; // Central affliction authority for fixed lich payload buildup.
     if (projectile.type === 'tothal') {
       RS?.addAffliction?.(actor, 'frostbittenStamina', (p.frostbittenStamina || 0) * power);
-    } else {
-      addGooSlow(actor); // Direct impact retains a brief, escapable slow but never issues an Entranced movement command.
-      makeGasolinePuddle(projectile.owner, hitX, hitY); // Hits and misses both deposit the same area-denial plasm.
     }
     lastEvent = `hit:${projectile.type}:${actor.id || actor.name || 'player'}:power=${power.toFixed(2)}`;
   }
