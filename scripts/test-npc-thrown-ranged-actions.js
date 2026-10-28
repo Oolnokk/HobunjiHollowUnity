@@ -12,6 +12,7 @@ function functionSource(name, followingName) {
   return source.slice(start, end);
 }
 
+const MAX_FIRE_TRIGGER_TO_PROJECTILE_S = 0.012; // Tests the shared delay cap for all NPC fire actions.
 const definitions = {
   fishingspear: { rangedType: 'thrown', chargeWindupS: 0.49, fireDurationS: 0.55, fireAtFrac: 0.16, rangeTiles: 7 },
   hatchet: { rangedType: 'thrown', chargeWindupS: 0.35, fireDurationS: 0.5, fireAtFrac: 0.22, rangeTiles: 7 },
@@ -26,7 +27,7 @@ const deps = {
   moveCreatureToward: () => false,
 }; // Only NPC scheduler dependencies; projectile physics and 3D rig remain covered by their own tests.
 const sandbox = {
-  Math, performance: { now: () => 1000 }, deps, shots, loadedTransitions, actionSounds,
+  Math, performance: { now: () => 1000 }, deps, shots, loadedTransitions, actionSounds, MAX_FIRE_TRIGGER_TO_PROJECTILE_S,
   defFor: key => definitions[key],
   isLoaded: (_key, actor) => actor._rangedLoaded !== false,
   setLoaded: (key, value, actor) => { actor._rangedLoaded = value; loadedTransitions.push([key, value]); },
@@ -39,6 +40,7 @@ const sandbox = {
 };
 vm.createContext(sandbox);
 vm.runInContext('let lastEvent = "idle";\n' +
+  functionSource('fireReleaseFrac', 'isLoaded') + '\n' +
   functionSource('beginBanditAction', 'banditLosSegment') + '\n' +
   functionSource('updateBanditAI', 'updateBanditVisual') + '\n' +
   'globalThis.npcAI = { updateBanditAI, beginBanditAction };', sandbox);
@@ -56,6 +58,7 @@ for (const key of ['fishingspear', 'hatchet']) {
   assert.equal(npc._rangedAction.chargeDurationS, definitions[key].chargeWindupS, 'author windup timing is preserved');
   assert(Math.abs(npc._rangedAction.durationS - (definitions[key].chargeWindupS + definitions[key].fireDurationS)) < 1e-9, 'held charge and release are one continuous action');
   const releaseAt = npc._rangedAction.releaseAtS;
+  assert(releaseAt - npc._rangedAction.chargeDurationS <= MAX_FIRE_TRIGGER_TO_PROJECTILE_S + 1e-9, 'NPC throws release within 12ms of completing charge');
   update(npc, releaseAt - 0.001, target, 256);
   assert.equal(npc._rangedAction.fired, false, 'throw cannot release before the authored strike point');
   update(npc, 0.002, target, 256);
@@ -77,6 +80,10 @@ for (const key of ['crossbow', 'blowgun']) {
   assert.equal(npc._rangedLoaded, true, 'reload must actually arm the weapon');
   update(npc, 0.19, target, 256);
   assert.equal(npc._rangedAction.kind, 'fire', 'armed weapon can fire normally');
+  assert(npc._rangedAction.releaseAtS <= MAX_FIRE_TRIGGER_TO_PROJECTILE_S + 1e-9, 'NPC loaded shot releases within 12ms of firing');
+  const priorShots = shots.length;
+  update(npc, 0.016, target, 256);
+  assert.equal(shots.length, priorShots + 1, 'one loaded projectile releases on the first 60fps firing tick');
   update(npc, definitions[key].fireDurationS + 0.01, target, 256);
   assert.equal(npc._rangedLoaded, false, 'reloadable weapon is unloaded after firing');
 }
