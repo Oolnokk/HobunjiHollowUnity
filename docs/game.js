@@ -2513,7 +2513,7 @@
         // DECORATIVE_FURNITURE_CATALOG just below. They're still ordinary
         // mapData.furniture entries otherwise: placeable, moveable and
         // duplicateable in the Interior Editor like anything else.
-        alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
+        alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Cauldron',     price: 55, fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A home cauldron for brewing potions using the same recipes as the potion shop.' },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
         mineLadder:    { itemKey: 'mineLadderFurniture',    icon: '🪜', name: 'Mine Ladder',          price: 0,  fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'The mine ladder and its construction plans.', fixture: true },
         // Authored interior fire furniture (see interior-fire-void-runtime.js's
@@ -2609,6 +2609,7 @@
         smokerFurniture: { wood: 4, stone: 4, bar_nativeCopper: 1 },
         agingBarrelFurniture: { wood: 6, bar_nativeCopper: 2 },
         agingVaseFurniture: { stone: 6 },
+        alchemyTableFurniture: { wood: 4, stone: 3, bar_nativeCopper: 2 }, // Used by Dzibim's learnable home-cauldron blueprint.
         basicBedFurniture: { wood: 6, puktukWool: 4 },
         doubleBedFurniture: { wood: 9, puktukWool: 8 },
         bedrollFurniture: { puktukWool: 3 },
@@ -2646,7 +2647,7 @@
       }
       const FURNITURE_BLUEPRINT_CATALOG = [
         ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
-        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: 'decorative' })),
+        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: item.key === 'alchemyTableFurniture' ? 'processing' : 'decorative' })), // Cauldrons craft under Processing, while the placed piece uses decorative furniture placement.
       ].map(({ item, category }) => ({
         key: blueprintItemKey(item.key),
         furnitureKey: item.key,
@@ -3612,6 +3613,21 @@
       // baked onto each placed instance, so it applies uniformly to every
       // creation path (placing one fresh, loading a saved layout, restoring
       // on reset) with no extra bookkeeping at any of those call sites.
+      function makeAlchemyTableInteractable() {
+        return {
+          interactIcon: '⚗️',
+          interactLabel: 'Brew Potion',
+          getButtons() {
+            return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_alchemy' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            openMenu('alchemy');
+            return { ok: true, message: 'Opened the alchemy cauldron.' };
+          },
+        };
+      }
+
       function getInteriorInteractableAt(col, row) {
         const derivedHearth = _derivedHearthMeshes.find(hearth => {
           const dx = col + 0.5 - hearth.cx, dz = row + 0.5 - hearth.cz;
@@ -3627,6 +3643,7 @@
         });
         if (!o) return null;
         if (o.key === 'groomingKit') return makeGroomingInteractable();
+        if (o.key === 'alchemyTable') return makeAlchemyTableInteractable(); // The player's farmhouse cauldron uses the potion shop's menu.
         if (o.key === 'hearth') return makeCookingInteractable();
         if (o.key === 'loom') return makeLoomInteractable(false); // Simple Loom keeps the ordinary one-pattern weaving rules.
         if (o.key === 'advancedLoom') return makeLoomInteractable(true); // Advanced Loom opts the shared panel into overpass authoring and doubled overpass costs.
@@ -3694,6 +3711,20 @@
         }));
       }
 
+      // Farm-yard cauldrons need a world object, like outdoor seats. Every furniture lifecycle path calls this.
+      function registerFarmDecorativeInteractable(furnitureKey, col, row, fw, fd, rotYDeg) {
+        if (furnitureKey === 'alchemyTable') {
+          worldObjects.set(col + ',' + row, Object.assign(makeAlchemyTableInteractable(), {
+            type: 'decorative_furniture', col, row,
+          }));
+        } else if (DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) {
+          registerSitWorldObject(furnitureKey, col, row, fw, fd, rotYDeg);
+        }
+      }
+      function isFarmDecorativeInteractable(furnitureKey) {
+        return furnitureKey === 'alchemyTable' || !!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit;
+      }
+
       function placeDecorativeFurniture(col, row, furnitureKey, source = 'bag') {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture type.' };
@@ -3716,7 +3747,7 @@
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner }; // Stable save record also owns editable table membership.
         interiorFurnitureObjects.push(placedFurniture);
         window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
-        if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
+        if (isOnFarm) registerFarmDecorativeInteractable(furnitureKey, col, row, def.fw, def.fd, 0);
         registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
         window.HudUpdate.refreshItemScroll();
         window.FarmEditor.saveFarmLayout();
@@ -3772,7 +3803,7 @@
         });
         if (obj.light) targetScene.remove(obj.light);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-        if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         const idx = interiorFurnitureObjects.indexOf(obj);
         if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
@@ -3788,7 +3819,7 @@
         if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
-        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         obj.col = col; obj.row = row;
         const centerX = col + fw * 0.5; // Moved furniture center used for both visual placement and exact farm grounding.
@@ -3799,7 +3830,7 @@
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
-        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
+        if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
         registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
@@ -3826,7 +3857,7 @@
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
-        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
         obj.mesh.rotation.y = nextRot * Math.PI / 180;
         const centerX = obj.col + fw * 0.5; // Rotated footprint center can move for non-square furniture, so its farm sample must move too.
@@ -3837,7 +3868,7 @@
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
-        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, obj.col, obj.row, fw, fd, nextRot);
+        if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, obj.col, obj.row, fw, fd, nextRot);
         registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
@@ -3894,7 +3925,7 @@
           });
           if (obj.light) s.remove(obj.light);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+          if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
           unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         });
         interiorFurnitureObjects.length = 0;
@@ -10134,16 +10165,7 @@
         hearthFurniture: () => makeCookingInteractable(),
         loomFurniture: () => makeLoomInteractable(false), // Map-authored Simple Looms share the same ordinary interaction object as player-placed ones.
         advancedLoomFurniture: () => makeLoomInteractable(true), // Map-authored Advanced Looms opt into overpass weaving through the same interaction path.
-        alchemyTableFurniture: () => ({
-          getButtons() {
-            return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_alchemy') return { ok: false, message: 'Unknown action.' };
-            openMenu('alchemy');
-            return { ok: true, message: 'Opened the alchemy table.' };
-          },
-        }),
+        alchemyTableFurniture: () => makeAlchemyTableInteractable(), // Town and player cauldrons share the same interactive action.
         // Barn-interior fixtures — synthesizeBarnInteriorMapData bakes
         // barnId/troughIndex right onto the furniture record so these
         // factories (called with that record as their one argument) don't
@@ -27122,9 +27144,9 @@
                 mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
                 ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
                 localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
-              if (r && decorArea === 'farm' && def.sit) {
+              if (r && decorArea === 'farm') {
                 const size = decorativeFurnitureSize(key, rotYDeg || 0);
-                registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+                registerFarmDecorativeInteractable(key, col, row, size.fw, size.fd, rotYDeg || 0);
               }
               if (r) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
             });
