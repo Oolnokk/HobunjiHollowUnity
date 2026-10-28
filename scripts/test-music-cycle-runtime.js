@@ -180,7 +180,8 @@ async function run() {
   ruin.window.Music.updateAmbientCues();
   assert.equal(ruin.window.Music.ambientDiagnostics().bgm, null, 'unlocking retires the selected ruin BGM slot');
   assert.equal(ruinSong._musicTarget, 0, 'unlocked Great Door fades the old BGM to silence');
-  assert.equal(ruin.window.Music.ambientDiagnostics().ruinVaultSilenced, true, 'mobile diagnostics expose the source of soundtrack silence');
+  assert.equal(ruin.window.Music.ambientDiagnostics().ruinVaultSilenced, true, 'ambient snapshot exposes the source of soundtrack silence');
+  assert.equal(ruin.window.Music.getMusicDebugState().ruinVaultSilenced, true, 'mobile-copyable music report identifies Great Door suppression');
   ruin.window.Music.updateFurnitureSfxSources();
   assert.equal(doorSource.audio.paused, false, 'unlocked door positional audio remains able to play');
   assert.ok(doorSource.audio.volume > 0, 'nearby player hears the positional door source');
