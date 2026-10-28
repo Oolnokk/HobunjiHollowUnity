@@ -26977,6 +26977,7 @@
           `Voice render timing: ${JSON.stringify(window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering || null)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
+          `Wardrobe furniture: ${JSON.stringify(window.NpcFurnitureWardrobes?.debugSnapshot?.() || { ready: false })}`, // Copied from the in-game Debug Log on mobile; no console required.
           `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
@@ -28671,6 +28672,7 @@
         worldObjectAt: getWorldObjectAt,
         farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
+        wardrobeSnapshot: () => window.NpcFurnitureWardrobes?.debugSnapshot?.() || null, // Existing in-game furniture debugging can inspect which real wardrobe bound the last interaction.
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
         npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
