@@ -776,7 +776,10 @@
         ]
       ],
       "doorwayTiles": [
-        [10, 16]
+        [
+          10,
+          16
+        ]
       ],
       "targetMap": "",
       "spawnCol": 9,
@@ -3377,15 +3380,38 @@
     {
       "kind": "roots",
       "seed": "surface-1",
-      "count": 68,
-      "length": 6,
-      "radius": 0.15,
+      "style": "cornerFill",
+      "density": 0.45,
+      "count": 80,
+      "length": 12,
+      "radius": 0.1,
       "offset": 0.008,
       "curl": 0.4,
-      "color": "#4a3b33",
+      "color": "#504030",
       "texture": "assets/textures/wibbly_surface.png",
       "target": "walls",
-      "targetIds": []
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0
+    },
+    {
+      "kind": "vines",
+      "seed": "surface-1",
+      "style": "natural",
+      "density": 0.45,
+      "count": 80,
+      "length": 12,
+      "radius": 0.1,
+      "offset": 0.008,
+      "curl": 0.4,
+      "color": "#406040",
+      "texture": "assets/textures/carved_smooth.png",
+      "target": "walls",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0
     }
   ],
   "doorTiles": []
