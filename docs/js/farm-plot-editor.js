@@ -147,6 +147,11 @@
     if (!plot || !Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0) return false;
     const exists = plot.tiles.some(t => t[0] === c && t[1] === r); // Painting a tile twice never toggles it unexpectedly.
     if (exists === !!present) return false;
+    // Validate before transferring overlaps, so a rejected edit cannot change either plot.
+    if (present && plot.tiles.length) {
+      const cols = plot.tiles.map(t => t[0]), rows = plot.tiles.map(t => t[1]);
+      if (Math.max(c, ...cols) - Math.min(c, ...cols) >= 7 || Math.max(r, ...rows) - Math.min(r, ...rows) >= 7) return false;
+    }
     loaded = true;
     if (present) {
       // Remove overlapping designations without filtering out the NEW empty plot being painted.
