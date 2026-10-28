@@ -797,6 +797,15 @@
     if (speciesId === 'omgurku') return null; // The Omgurku's Voorg-ass-derived quadruped lower rig owns all locomotion; never spawn humanoid feet.
     if (!speciesId) return null;
     const gender = normalizeGender(options.gender);
+    const authoredGait = options.gaitProfile?.style === 'maskbound-lurch' ? options.gaitProfile : null; // NPC-only movement style; ordinary species/gender defaults stay untouched.
+    const gaitNumber = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback; // Validate serialized troop gait tuning against wild/invalid values.
+    const lurch = authoredGait ? {
+      dragSide: authoredGait.dragSide === 'right' ? 'right' : 'left',
+      cadence: gaitNumber(authoredGait.cadence, 0.8, 0.4, 1.5),
+      stance: gaitNumber(authoredGait.stance, 0.67, 0.52, 0.82),
+      dragLift: gaitNumber(authoredGait.dragLift, 0.14, 0.01, 0.45),
+      lurchDegrees: gaitNumber(authoredGait.lurchDegrees, 14, 0, 25),
+    } : null; // Frozen per-avatar values drive only the walking branch of update; lunge/airborne/seated continue normally.
     const modelWidth = Number(options.modelWidth) || 0.9;
     const modelHeight = Number(options.modelHeight) || modelWidth;
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
@@ -870,6 +879,7 @@
       lungeActive: false, // Retains planted foot anchors until the lunge finishes.
       lungeFeet: null, // Allocated once below, reused by grounded lunge footwork.
       phase: 0,
+      gaitStyle: lurch ? 'maskbound-lurch' : 'normal', // Visible in the existing mobile standing-pose debug snapshot.
       gaitStrength: 0,
       left: null,
       right: null,
@@ -1433,17 +1443,21 @@
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
       const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
-      const requestedRun = motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Preserves full-speed player running outside combat.
+      const requestedRun = lurch ? 0.15 : motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Wooden puppets never turn into ordinary humanoid sprints.
       state.runBlend = damp(state.runBlend, isGaiting ? requestedRun : 0, 9, dt);
-      state.motionMode = isGaiting ? (requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
-      state.runLean = isGaiting ? 30 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Up to thirty degrees toward local +Z, blended with running effort.
-      const stanceFraction = STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Running includes a flight interval between alternating contacts.
+      state.motionMode = isGaiting ? (lurch ? 'maskbound-lurch' : requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
+      const lurchBeat = Math.sin(state.phase * Math.PI * 2); // Forward body pitch pulses on alternate planted steps rather than during flight.
+      state.runLean = isGaiting && lurch
+        ? (lurch.lurchDegrees + 5 * lurchBeat) * Math.PI / 180 * Math.min(1, Math.sqrt(speedRatio))
+        : isGaiting ? 30 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Existing torso lean composer consumes this for both players and NPCs.
+      const stanceFraction = lurch ? lurch.stance : STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Lurching feet keep one planted longer than an ordinary runner.
       const strideCurve = 0.85 + 0.45 * Math.sqrt(speedRatio); // Walking reach stays proportional to leg anatomy instead of stretching the bones to sprite-height strides.
-      const fullStride = gaitLegLength * strideCurve * (1 + state.runBlend * 0.5);
+      const fullStride = gaitLegLength * strideCurve * (lurch ? 0.82 : 1 + state.runBlend * 0.5); // Shuffling puppets take smaller steps for the same movement speed.
       const strideLength = fullStride * state.gaitStrength;
-      const cadenceHz = isGaiting && fullStride > 0.001
+      const baseCadenceHz = isGaiting && fullStride > 0.001
         ? Math.max(0.55, Math.min(3.2, (speed * stanceFraction) / Math.max(0.001, strideLength)))
         : 0;
+      const cadenceHz = lurch ? baseCadenceHz * lurch.cadence : baseCadenceHz; // Uneven gait cadence, tuned per troop without changing physical movement speed.
       state.gaitLegLength = gaitLegLength;
       state.gaitFullStride = fullStride;
       state.gaitStrideLength = strideLength;
@@ -1452,8 +1466,15 @@
       if (cadenceHz > 0.001) state.phase = (state.phase + dt * cadenceHz) % 1;
 
       const leftPose = stridePoseAtPhase(state.phase, strideLength, liftHeight, stanceFraction);
-      const rightPose = stridePoseAtPhase(state.phase + 0.5, strideLength, liftHeight, stanceFraction);
-      const response = isGaiting ? 18 + cadenceHz * 3 : 11;
+      const rightPose = stridePoseAtPhase(state.phase + (lurch ? 0.53 : 0.5), strideLength, liftHeight, stanceFraction);
+      if (lurch) {
+        const dragging = lurch.dragSide === 'left' ? leftPose : rightPose; // One leg scrapes the ground while its partner awkwardly lifts.
+        const supporting = lurch.dragSide === 'left' ? rightPose : leftPose; // The opposing leg overcompensates with an uneven recovery.
+        dragging.lift *= lurch.dragLift;
+        dragging.travel *= 0.83;
+        supporting.lift *= 0.82;
+      }
+      const response = isGaiting ? (lurch ? 9 + cadenceHz * 2 : 18 + cadenceHz * 3) : 11; // Extra inertia gives each step a late, jolting recovery.
       applyPose('left', state.leftContactY, state.idleLeftX, leftPose, response, dt);
       applyPose('right', state.rightContactY, state.idleRightX, rightPose, response, dt);
     }
@@ -1510,6 +1531,8 @@
           fullStride: state.gaitFullStride,
           strideLength: state.gaitStrideLength,
           cadenceHz: state.gaitCadenceHz,
+          style: state.gaitStyle, // Exposed through getStandingPoseDebug for mobile verification of puppet-only locomotion.
+          dragSide: lurch?.dragSide || null,
           referenceLegFraction: STRIDE_REFERENCE_LEG_FRACTION,
         },
         left: { targetX: state.leftTarget.x, targetZ: state.leftTarget.z, targetY: state.leftTarget.y, contactY: state.leftContactY, bottomY: leftBounds?.min.y ?? null },
