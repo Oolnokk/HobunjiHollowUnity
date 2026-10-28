@@ -157,6 +157,46 @@ const root = path.resolve(__dirname, '..');
       }
       if (previews.focusedKey) assert.equal(previews.focusedName, previews.snapshots.find(row => row.key === previews.focusedKey).name);
 
+      const clothingPreview = await page.evaluate(() => {
+        const source = document.createElement('div'); // Mirrors the hidden Pack clothing source that InventoryUI clones into the grid.
+        source.id = 'invPackClothing';
+        const coat = document.createElement('button');
+        coat.className = 'inv-pcloth-item';
+        coat.dataset.key = 'coat-preview';
+        coat.textContent = 'Traveler Coat';
+        coat.addEventListener('click', () => { document.getElementById('iiName').textContent = 'Traveler Coat'; });
+        source.appendChild(coat);
+        document.getElementById('mpInventory').appendChild(source);
+        window.InventoryUI.decorate();
+        const tile = document.querySelector('#invGrid .pack-clothing-tile');
+        tile.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true }));
+        return {
+          name: document.getElementById('iiName').textContent,
+          selected: tile.classList.contains('selected'),
+          preview: window.InventoryUI.debugSnapshot().lastControllerPackPreview,
+          group: window.ControllerUI.debugState().groupId,
+        };
+      });
+      assert.equal(clothingPreview.name, 'Traveler Coat', 'clothing clones must preview through the same source as clicking');
+      assert.equal(clothingPreview.selected, true);
+      assert.equal(clothingPreview.preview.key, 'coat-preview');
+      assert.equal(clothingPreview.preview.clothing, true);
+      assert.equal(clothingPreview.group, 'invGridArea');
+      const directionalPreview = await page.evaluate(() => {
+        window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        window.ControllerUI.press('right'); // Real directional navigation must emit the focus preview without Confirm.
+        return {
+          key: window.ControllerUI.focusedElement()?.dataset?.key,
+          name: document.getElementById('iiName').textContent,
+          group: window.ControllerUI.debugState().groupId,
+        };
+      });
+      if (directionalPreview.key) {
+        assert.equal(directionalPreview.group, 'invGridArea');
+        assert.equal(directionalPreview.name, directionalPreview.key === 'coat-preview' ? 'Traveler Coat' :
+          previews.snapshots.find(row => row.key === directionalPreview.key)?.name, 'directional focus previews the item without Confirm');
+      }
+
       const keys = await page.evaluate(() => window.__lessonKeys);
       for (const key of [keys[1], 'apple', ...keys, 'apple', ...keys]) {
         await page.evaluate(key => {
