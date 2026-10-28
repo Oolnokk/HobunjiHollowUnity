@@ -468,6 +468,16 @@
     persist();
   }
 
+  function spouseDialogueFor(npcId) {
+    if (!npcId || state.spouse?.npcId !== npcId) return null;
+    const dialogue = cfg().spouse?.dialogue || {}; // Configured dialogue layer, consulted only for the actual player spouse.
+    const authored = dialogue.byNpc?.[npcId] || {}; // Individual NPC's affectionate language wins over the shared default.
+    const nickname = String(authored.nickname || dialogue.nickname || 'love').trim(); // Form of address shared by ambient greetings and {{playerLocalNickname}}.
+    const greetings = Array.isArray(authored.greetings) && authored.greetings.length
+      ? authored.greetings : (Array.isArray(dialogue.greetings) ? dialogue.greetings : []); // Spouse-only greeting pool for event-time selection.
+    return { nickname, greetings };
+  }
+
   // ── Spouse routine ────────────────────────────────────────────────────
   function hashInt(text) {
     let h = 2166136261;
@@ -704,6 +714,7 @@
     engage,
     completeWedding,
     getSpouse: () => state.spouse ? { ...state.spouse } : null,
+    spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
     getEngagement: () => state.engagement ? { ...state.engagement } : null,
     // Shared helpers for js/romance-family.js

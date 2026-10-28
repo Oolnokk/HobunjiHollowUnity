@@ -151,6 +151,10 @@
         disabled: !furniturePlacementAvailable,
         onSelect: () => window.FurniturePlacer?.open?.(),
       },
+      ...(window.FarmworkUI?.canOpen?.() ? [{
+        id: 'farmwork', icon: '🌱', label: 'Farmwork',
+        onSelect: () => window.FarmworkUI?.open?.(), // Marriage and current-area gating live with the normal-play panel.
+      }] : []),
       {
         id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
         disabled: !campfire,

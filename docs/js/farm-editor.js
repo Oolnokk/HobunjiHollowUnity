@@ -559,9 +559,61 @@
     window.DewVats.rebuildMeshesFromGrid();
   }
 
+  // Normal-play Farmwork works on plot designations, never on the dev Farm Editor's terrain brush.
+  // Keep the geometry/permission adapters here where the grid and screen-ray mapping already exist.
+  function farmworkTileAccess() {
+    if (!deps) return null;
+    const editable = deps.getCurrentArea() === 'farm' && deps.isFarmOwner() && !deps.getFarmEditMode(); // Gameplay workers may modify only their owned farm.
+    const valid = (c, r) => Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < deps.COLS && r < deps.ROWS;
+    const blockedTiles = new Set([deps.TileType.ROCK, deps.TileType.SHRUB, deps.TileType.WATER]); // Shared for all map buttons within this Farmwork render, avoiding per-tile allocations.
+    return {
+      editable, cols: deps.COLS, rows: deps.ROWS,
+      canDesignate: (c, r, kind) => {
+        if (!editable || (kind !== 'till' && kind !== 'dig') || !valid(c, r) || deps.isHouseFootprint(c, r)) return false;
+        const tile = deps.getGrid()?.[r]?.[c]; // Reject permanent obstructions instead of promising an NPC impossible work.
+        return !!tile && !blockedTiles.has(tile.type);
+      },
+      screenTile: (x, y) => {
+        const tile = deps._screenToFarmTile(x, y); // Same world-pointer projection as the developer editor, not a second raycaster.
+        return tile && valid(tile.col, tile.row) ? tile : null;
+      },
+      centerTile: () => {
+        const rect = deps.threeContainer.getBoundingClientRect(); // Screen-visible center supplies an intuitive initial controller grid view.
+        return deps._screenToFarmTile(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      },
+      showToast: (message, good) => deps.showToast(message, good),
+      suspendMouseCameraForUi: () => deps.suspendMouseCameraForUi?.(),
+      resumeMouseCameraAfterUi: () => deps.resumeMouseCameraAfterUi?.(),
+    };
+  }
+
   // ── Farm editor pointer handlers ──────────────────────────────
   let _editorPainting = false;
   function _bindListeners() {
+    // Capture before ordinary world-action handlers so Farmwork paint never plants, attacks, or selects a tile for free.
+    deps.threeContainer.addEventListener('pointerdown', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      if (window.FarmworkUI.startWorldPointer(e.pointerId, e.clientX, e.clientY)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+      }
+    }, true);
+    deps.threeContainer.addEventListener('pointermove', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      if (window.FarmworkUI.dragTile(e.pointerId, e.clientX, e.clientY)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+      }
+    }, true);
+    const finishFarmworkGesture = e => {
+      if (window.FarmworkUI?.endWorldPointer?.(e.pointerId)) {
+        e.preventDefault(); e.stopImmediatePropagation(); // Avoid normal Action 1 on release after a designation stroke.
+      }
+    }; // Shared pointerup/cancel owner for touch, stylus and mouse.
+    window.addEventListener('pointerup', finishFarmworkGesture, true);
+    window.addEventListener('pointercancel', finishFarmworkGesture, true);
+    deps.threeContainer.addEventListener('click', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      e.preventDefault(); e.stopImmediatePropagation(); // Block click fallthrough on a plot tile gesture, including invalid destinations.
+    }, true);
     deps.threeContainer.addEventListener('pointerdown', (e) => {
       if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || !deps.getFarmEditMode() || deps.getCurrentArea() !== 'farm') return;
       e.stopPropagation();
@@ -592,7 +644,7 @@
 
   window.FarmEditor = {
     init,
-    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush,
+    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess,
     farmLayoutKey, captureFarmLayout, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
   };

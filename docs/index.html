@@ -89,14 +89,15 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261024h56886c0"></script>
+  <script src="js/action-arc-ui.js?v=20261028farmwork1"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261027h8829190f&window=20260926rebase1"></script>
-  <script src="js/farm-plot-editor.js?v=20261027h8829190"></script> <!-- Family farm-plot authoring. -->
+  <script src="js/farm-editor.js?v=20261028farmwork1&window=20260926rebase1"></script>
+  <script src="js/farm-plot-editor.js?v=20261028farmworkreview2"></script> <!-- Shared family plot records and workers. -->
+  <script src="js/farmwork-ui.js?v=20261028farmworkreview2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -163,7 +164,7 @@
   <script src="js/metal-armor-system.js?v=20261024haceb249"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261027menucompartments2">
+  <link rel="stylesheet" href="style.css?v=20261028farmwork1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -674,7 +675,7 @@
        inventory consumption stays in the existing game placement functions.
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
-  <script src="js/furniture-placer.js?v=20261025hd85d1d2&window=20260926rebase1"></script>
+  <script src="js/furniture-placer.js?v=20261028farmworkreview2&window=20260926rebase1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -969,6 +970,14 @@
       <div id="furniturePlacerHint" style="font-size:11px;color:var(--muted);padding:6px 10px;line-height:1.4;"></div>
       <div id="furniturePlacerList" class="farm-list" style="padding:0 10px 10px;"></div>
     </div>
+  </div>
+
+  <!-- Normal-play family plot assignments, shown from the utility wheel after marriage. -->
+  <div id="farmworkPanel" style="display:none;" aria-label="Farmwork assignments" data-ctrl-panel>
+    <div class="fed-header"><span>🌱 Farmwork</span>
+      <button class="fed-close" data-ctrl-cancel onclick="window.FarmworkUI?.close?.()" title="Close Farmwork">✕</button>
+    </div>
+    <div id="farmworkContents" class="fed-scroll" data-ctrl-transparent></div>
   </div>
 
   <!-- Farm Editor Panel -->
@@ -2671,7 +2680,7 @@
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
   <script src="js/character-voice-owner.js?v=20261027releaseOverlap1"></script>
-  <script src="js/dialogue-content.js?v=20261022h402a7ee2"></script>
+  <script src="js/dialogue-content.js?v=20261028spouse1"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
@@ -2701,7 +2710,7 @@
   <script src="js/loading-screen-runtime.js?v=20261018resourcecolors2"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
-  <script src="js/ambient-dialogue.js?v=20261021hbaee662"></script>
+  <script src="js/ambient-dialogue.js?v=20261028spouse1"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -2821,11 +2830,11 @@
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
-  <script src="config/romance-config.js?v=20261027h428e32a"></script>
+  <script src="config/romance-config.js?v=20261028spouse1"></script>
   <script src="js/romance-family.js?v=20261027h3aa022c"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
-  <script src="js/romance-system.js?v=20261027ha168736"></script>
+  <script src="js/romance-system.js?v=20261028spouse1"></script>
   <script src="js/npc-command-wheel.js?v=20261022hd6fb14a"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
