@@ -94,6 +94,68 @@
     render();
   }
 
+
+  // Normal-play Farmwork UI edits the SAME plot records as the dev Farm Editor, without changing terrain.
+  // A designation is just an assignment for a real NPC worker, never a free till/dig action.
+  function createFamilyPlot(kind) {
+    if (kind !== 'till' && kind !== 'dig') return null;
+    loaded = true;
+    const n = plots.filter(p => p.kind === kind).length + 1; // Display sequence, not a persistent identity.
+    const spouseId = window.RomanceSystem?.getSpouse?.()?.npcId; // New groups are actionable as soon as the marriage exists.
+    const plot = { id: uid(), label: `Family ${kind === 'till' ? 'field' : 'trench'} ${n}`, kind, tiles: [], crop: '', workers: spouseId ? [spouseId] : [], hours: [8, 17] };
+    plots.push(plot);
+    activeId = plot.id;
+    sync(); render();
+    return plot.id;
+  }
+  function selectFamilyPlot(id) {
+    if (!plots.some(p => p.id === id)) return false;
+    activeId = id; render(); return true;
+  }
+  function deleteFamilyPlot(id) {
+    if (!plots.some(p => p.id === id)) return false;
+    loaded = true;
+    plots = plots.filter(p => p.id !== id);
+    if (activeId === id) activeId = plots[0]?.id || null;
+    sync(); render(); return true;
+  }
+  function updateFamilyPlot(id, patch) {
+    const p = plots.find(entry => entry.id === id); // Only a valid existing group may be edited from normal gameplay.
+    if (!p || !patch || typeof patch !== 'object') return false;
+    if (patch.label !== undefined) p.label = String(patch.label).trim().slice(0, 48) || p.label;
+    if (patch.crop !== undefined && p.kind === 'till') {
+      if (patch.crop && !CROPS.includes(patch.crop)) return false;
+      p.crop = patch.crop;
+    }
+    if (patch.hours !== undefined) {
+      const hours = patch.hours.map(Number);
+      if (hours.length !== 2 || !hours.every(Number.isFinite) || hours.some(v => v < 0 || v > 24) || hours[0] >= hours[1]) return false;
+      p.hours = hours;
+    }
+    if (patch.workers !== undefined) {
+      const eligible = new Set(family().map(person => person.id)); // Prevent old save ids or arbitrary NPCs from being assigned.
+      p.workers = [...new Set(patch.workers)].filter(id => eligible.has(id)).slice(0, SLOTS);
+    }
+    loaded = true; sync(); render(); return true;
+  }
+  function setFamilyTile(id, c, r, present, { deferSave = false } = {}) {
+    const plot = plots.find(entry => entry.id === id);
+    if (!plot || !Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0) return false;
+    const exists = plot.tiles.some(t => t[0] === c && t[1] === r); // Painting a tile twice never toggles it unexpectedly.
+    if (exists === !!present) return false;
+    loaded = true;
+    if (present) {
+      removeTile(c, r); // A tile belongs to exactly one family plot; transferring it releases old jobs on commit.
+      plot.tiles.push([c, r]);
+    } else {
+      plot.tiles = plot.tiles.filter(t => t[0] !== c || t[1] !== r);
+    }
+    if (!deferSave) { sync(); render(); }
+    return true;
+  }
+  function commitFamilyEdits() { loaded = true; sync(); render(); }
+  function activeFamilyPlot() { return plots.find(p => p.id === activeId) || null; }
+
   const esc = text => String(text).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
   function render() {
@@ -145,5 +207,5 @@
     }));
   }
 
-  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots };
+  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, commitFamilyEdits, activeFamilyPlot };
 })();
