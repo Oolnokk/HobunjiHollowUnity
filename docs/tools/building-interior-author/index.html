@@ -1820,7 +1820,7 @@ function rebuild3D(){
 
   // Use the same unrendered rectangular wall planes used to author and clip openings.
   // Brick outlines, stacked log courses and individual masonry pieces are never navigation edges.
-  if ((interior.surfaceGrowth||[]).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap')) {
+  if ((interior.surfaceGrowth||[]).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap'||recipe.perSurface===true)) {
     const guidePanels=InteriorSceneBuilder.applyWallOpenings(panels,windowOpenings);
     const guideSources=[{ // Wall-panel triangles are grouped into detected surfaces together with the gable backings below.
       vertices:guidePanels.flatMap(panel=>{
