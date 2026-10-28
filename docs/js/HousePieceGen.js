@@ -6,6 +6,47 @@
 
   const THREE = global.THREE;
 
+
+  // Per-house finish: never mutate farm/town's shared shingle template material.
+  // One tinted material per original material, one cached PNG per asset path.
+  const _roofFinishTextures=new Map();
+  const _housePieceAssetRoot=typeof document!=='undefined'&&document.currentScript?.src
+    ?new URL('../',document.currentScript.src).href:'';
+  function applyAuthoredShingleFinish(THREE,roofLayer,finish){
+    if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
+    const color=finish.color,texture=typeof finish.texture==='string'&&
+      (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||/^https:\/\/[^\\s]+$/i.test(finish.texture))
+      ?finish.texture:'';
+    const path=texture.startsWith('assets/')&&_housePieceAssetRoot?new URL(texture,_housePieceAssetRoot).href:texture;
+    let tex=_roofFinishTextures.get(path);
+    if(path&&!tex){
+      tex=new THREE.TextureLoader().load(path);
+      tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+      if('colorSpace' in tex&&THREE.SRGBColorSpace)tex.colorSpace=THREE.SRGBColorSpace;
+      else if('encoding' in tex&&THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
+      _roofFinishTextures.set(path,tex);
+    }
+    const materialCache=new Map();
+    roofLayer.traverse(mesh=>{
+      if(!mesh.isMesh)return;
+      const apply=old=>{
+        if(!old)return old;
+        if(!materialCache.has(old)){
+          const next=old.clone();
+          next.map=tex||null;
+          if(next.color)next.color.set(color);
+          next.vertexColors=false;
+          if('metalness' in next)next.metalness=0;
+          if('roughness' in next)next.roughness=1;
+          next.needsUpdate=true;
+          materialCache.set(old,next);
+        }
+        return materialCache.get(old);
+      };
+      mesh.material=Array.isArray(mesh.material)?mesh.material.map(apply):apply(mesh.material);
+    });
+  }
+
   // ── Highland constants ──────────────────────────────────────────────────────
   const HIGHLAND_BODY_TOP_SCALE = 0.85;
 
@@ -691,6 +732,8 @@
       var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+      applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
+      applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
     }
 
     // Brick or generated-log cladding on frustum body walls + gable ends.
@@ -739,7 +782,13 @@
         const panels=foliage.architecturalSurfaceSources(faces,{
           wallLift:(opts.wallBuilder||generatedLogStyle)?.26:0,roofLift:.16
         });
-        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels,{occlusionFaces:faces}));
+        const modes=[...new Set((opts.surfaceGrowth||[]).map(recipe=>!!recipe.tunnelAsOpening))];
+        const guides=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(group,
+          foliage.architecturalSurfaceSources(faces,{
+            wallLift:(opts.wallBuilder||generatedLogStyle)?.26:0,roofLift:.16,tunnelAsOpening:mode}),
+          {occlusionFaces:faces,tunnelAsOpening:mode}).map(region=>({...region,
+            openingMode:mode,id:region.id+':'+(mode?'entrance-open':'tunnel-plant')})));
+        foliage.replaceSemanticSurfaceGuides(group,guides);
       }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, opts.surfaceGrowth);
@@ -1513,6 +1562,8 @@
       group.add(mesh);
     }
 
+    // Per-piece shingle finish does not change shared farm/town template defaults.
+    if(piece.roof?.shingleMaterial)opts=Object.assign({},opts,{shingleMaterial:piece.roof.shingleMaterial});
     // Shingles on roof faces (same as buildGroup)
     var roofChildStart = group.children.length; // Marks only the newly emitted roof shingles for optional farm finishes.
     _addShingles(group, roofFaces, allOff, Object.assign({ matTube: matTube }, opts));
@@ -1564,7 +1615,13 @@
       const foliage=global.FoliageGenerator;
       if(foliage){
         const panels=foliage.architecturalSurfaceSources(allOff,{wallLift:hideWalls?.26:0,roofLift:.16});
-        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels,{occlusionFaces:allOff}));
+        const modes=[...new Set((piece.surfaceGrowth||[]).map(recipe=>!!recipe.tunnelAsOpening))];
+        const guides=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(group,
+          foliage.architecturalSurfaceSources(allOff,{
+            wallLift:hideWalls?.26:0,roofLift:.16,tunnelAsOpening:mode}),
+          {occlusionFaces:allOff,tunnelAsOpening:mode}).map(region=>({...region,
+            openingMode:mode,id:region.id+':'+(mode?'entrance-open':'tunnel-plant')})));
+        foliage.replaceSemanticSurfaceGuides(group,guides);
       }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
