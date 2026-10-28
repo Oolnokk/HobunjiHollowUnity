@@ -1822,7 +1822,7 @@ function rebuild3D(){
   // Brick outlines, stacked log courses and individual masonry pieces are never navigation edges.
   if ((interior.surfaceGrowth||[]).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap')) {
     const guidePanels=InteriorSceneBuilder.applyWallOpenings(panels,windowOpenings);
-    const guideSources=[{ // One merged wall guide instead of a mesh for every brick-clad wall run.
+    const guideSources=[{ // Wall-panel triangles are grouped into detected surfaces together with the gable backings below.
       vertices:guidePanels.flatMap(panel=>{
         const v=InteriorSceneBuilder.panelCornersFor(THREE,panel).map(vertex=>vertex.toArray());
         return [v[0],v[1],v[2],v[0],v[2],v[3]];
