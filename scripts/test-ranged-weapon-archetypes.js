@@ -384,7 +384,9 @@ for (const phase of ['neutral', 'windup', 'strike']) {
   assert.equal(pose.yaw, 0, `Blowgun ${phase} must not aim sideways independently of head rotation`);
   assert.equal(pose.bodyYaw, 0, `Blowgun ${phase} must not turn the body to compensate for misaligned barrel yaw`);
 }
-assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.95);
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.475, 'B\'shuakauitl has twice the firing animation speed while keeping its 0.95s authored source untouched.');
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireAtFrac, 0.62, 'Blowgun release stays at its authored strike, not ahead of the held pose.');
+assert.ok(Math.abs(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS * windowObject.RangedWeapons.config.bshuakauitl_copper.fireAtFrac - 0.2945) < 1e-9, 'Trigger-to-shot latency must be halved from 0.589s.');
 assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);
 const blowgunChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('bshuakauitl_copper').map(effect => effect.id);
 assert.deepStrictEqual(blowgunChoices, afflictionIds, 'Blowgun ranged mastery should expose the full affliction set.');
