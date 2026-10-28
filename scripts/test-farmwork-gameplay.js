@@ -111,6 +111,7 @@ assert.equal(plots.setFamilyTile(sourceId, 11, 4, true), true, 'old saves may co
 assert.equal(ui.toggleTile(11, 4), false, 'an unselected invalid tile is still blocked');
 plots.selectFamilyPlot(sourceId);
 assert.equal(ui.toggleTile(11, 4), true, 'old blocked designations remain removable from the player UI');
+assert.equal(ui.open(), true, 'reopen the player panel to inspect preserved half-hour values');
 ui.render();
 assert.match(view.innerHTML, /08:30/, 'legacy half-hour shift is preserved in the player editor');
 assert.match(view.innerHTML, /16:30/);
