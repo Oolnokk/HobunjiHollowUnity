@@ -137,6 +137,7 @@ const root = path.resolve(__dirname, '..');
       // Pad navigation changes the detail before Confirm and never enters the action group.
       const previews = await page.evaluate(() => {
         window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        const startingGroup = window.ControllerUI.debugState().groupId; // This controller nests Pack beneath the Inventory group.
         const snapshots = [];
         for (const tile of document.querySelectorAll('#invGrid .inv-item-box[data-key]')) {
           tile.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true })); // Exercises every stack without an activation click.
@@ -153,7 +154,7 @@ const root = path.resolve(__dirname, '..');
         }
         window.ControllerUI.showSection('mpInventory', 'invGridArea');
         const focused = window.ControllerUI.focusedElement();
-        return { snapshots, focusedKey: focused?.dataset.key, focusedName: document.getElementById('iiName').textContent };
+        return { snapshots, startingGroup, focusedKey: focused?.dataset.key, focusedName: document.getElementById('iiName').textContent };
       });
       assert.equal(previews.snapshots.length, 3);
       for (const preview of previews.snapshots) {
@@ -162,7 +163,7 @@ const root = path.resolve(__dirname, '..');
         else assert.notEqual(preview.name, 'Apple ×1');
         assert.equal(preview.selected, false, 'controller highlight must not select an item');
         assert.equal(preview.selectedIdentity, null, 'no implicit selection is created by controller navigation');
-        assert.equal(preview.group, 'invGridArea', 'highlight alone must never enter the detail action group');
+        assert.equal(preview.group, previews.startingGroup, 'preview must not change the active controller navigation group');
         assert.equal(preview.count, 1, 'highlight must not consume or use an item');
         assert.equal(preview.debugKey, preview.key);
         assert.equal(preview.kind, 'pack', 'ordinary items are marked separately from clothing');
@@ -211,7 +212,7 @@ const root = path.resolve(__dirname, '..');
       assert.equal(clothingPreview.preview.key, 'coat-preview');
       assert.equal(clothingPreview.preview.clothing, true);
       assert.equal(await page.evaluate(() => document.getElementById('iiDetail').dataset.itemKind), 'clothing');
-      assert.equal(clothingPreview.group, 'invGridArea');
+      assert.equal(clothingPreview.group, previews.startingGroup, 'clothing preview also remains in the same navigation group');
       // Even a garment named like a usable scroll must not inherit its Read button.
       await page.evaluate(() => {
         document.getElementById('iiName').textContent = window.__items.ITEM_DEFS[window.__lessonKeys[0]].label + ' ×1';
@@ -230,7 +231,7 @@ const root = path.resolve(__dirname, '..');
         };
       });
       if (directionalPreview.key) {
-        assert.equal(directionalPreview.group, 'invGridArea');
+        assert.equal(directionalPreview.group, previews.startingGroup, 'directional focus never enters the item action group');
         assert.equal(directionalPreview.name, directionalPreview.key === 'coat-preview' ? 'Traveler Coat' :
           previews.snapshots.find(row => row.key === directionalPreview.key)?.name, 'directional focus previews the item without Confirm');
       }
