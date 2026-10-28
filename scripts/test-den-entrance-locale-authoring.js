@@ -42,7 +42,7 @@ assert.equal(mouthConnector.row, 4, 'den entry connector sits inside the cave op
 assert.deepEqual(locale.tiles?.['3,4'], { type:'path' }, 'den entry tile is a walkable path tile inside the footprint');
 assert(mouthConnector.row >= cave.row && mouthConnector.row < cave.row + cave.h, 'den entry connector is inside the cave footprint');
 // Both cave entrance variants use the Locale Editor's own custom-rectangle collider,
- // retaining a solid rear half while removing collision from the full-width front half.
+// retaining a solid rear half while removing collision from the full-width front half.
 for (const templatePath of [
   'docs/config/locales/locale_animal_den_entrance.json',
   'docs/config/locales/locale_animal_den_entrance_small.json',
@@ -64,7 +64,7 @@ for (const templatePath of [
     }
   }
 }
-assert.match(editor, /mode: \$('insCollisionMode'\)\.value/, 'Locale Editor must save the custom collider without a runtime-only special case');
+assert(editor.includes("mode: $('insCollisionMode').value"), 'Locale Editor must save the custom collider without a runtime-only special case');
 assert(localeIndex.locales.some(entry => entry.id === locale.id && entry.category === 'den_entrance'),
   'animal den entrance template must be discoverable in the normal Locale Editor library');
 
