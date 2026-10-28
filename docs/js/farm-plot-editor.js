@@ -121,23 +121,25 @@
   }
   function updateFamilyPlot(id, patch) {
     const p = plots.find(entry => entry.id === id); // Only a valid existing group may be edited from normal gameplay.
-    if (!p || !patch || typeof patch !== 'object') return false;
-    if (patch.label !== undefined) p.label = String(patch.label).trim().slice(0, 48) || p.label;
+    if (!p || !patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
+    const next = { ...p }; // Stage and validate all fields before updating the persisted plot; rejected edits are atomic.
+    if (patch.label !== undefined) next.label = String(patch.label).trim().slice(0, 48) || p.label;
     if (patch.crop !== undefined && p.kind === 'till') {
       if (patch.crop && !CROPS.includes(patch.crop)) return false;
-      p.crop = patch.crop;
+      next.crop = patch.crop;
     }
     if (patch.hours !== undefined) {
       if (!Array.isArray(patch.hours) || patch.hours.length !== 2) return false;
-      const hours = patch.hours.map(Number);
-      if (hours.length !== 2 || !hours.every(Number.isFinite) || hours.some(v => v < 0 || v > 24) || hours[0] >= hours[1]) return false;
-      p.hours = hours;
+      const hours = patch.hours.map(Number); // Validate schedule intervals together so no half-updated shift can be saved.
+      if (!hours.every(Number.isFinite) || hours.some(v => v < 0 || v > 24) || hours[0] >= hours[1]) return false;
+      next.hours = hours;
     }
     if (patch.workers !== undefined) {
       if (!Array.isArray(patch.workers)) return false;
-      const eligible = new Set(family().map(person => person.id)); // Prevent old save ids or arbitrary NPCs from being assigned.
-      p.workers = [...new Set(patch.workers)].filter(id => eligible.has(id)).slice(0, SLOTS);
+      const eligible = new Set(family().map(person => person.id)); // Reject arbitrary IDs without dropping the existing lineup.
+      next.workers = [...new Set(patch.workers)].filter(id => eligible.has(id)).slice(0, SLOTS);
     }
+    Object.assign(p, next);
     loaded = true; sync(); render(); return true;
   }
   function setFamilyTile(id, c, r, present, { deferSave = false } = {}) {
@@ -150,7 +152,7 @@
       // Remove overlapping designations without filtering out the NEW empty plot being painted.
       // removeTile() is for dev brush erasing and would discard this empty target before its first tile.
       for (const other of plots) if (other !== plot) other.tiles = other.tiles.filter(t => t[0] !== c || t[1] !== r);
-      plots = plots.filter(other => other === plot || other.tiles.length); // Other plots emptied by a transfer may be retired.
+      // Retain emptied source plots and their crop, hours and worker lineup. The player can reuse or explicitly delete them.
       plot.tiles.push([c, r]);
     } else {
       plot.tiles = plot.tiles.filter(t => t[0] !== c || t[1] !== r);
