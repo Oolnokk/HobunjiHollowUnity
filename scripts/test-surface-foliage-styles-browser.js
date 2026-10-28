@@ -313,6 +313,47 @@ const server=http.createServer((request,response)=>{
       const outerTriangles=outerGrowth.userData.surfaceGrowthStats.triangles;
       growth.replaceSemanticSurfaceGuides(outer,[]);
       const nestedAfterCleanup=nested.children.filter(node=>node.userData.surfaceFoliageGuide).length;
+
+      // Window-like entrance mode must cut the foliage guide even if the
+      // broad wall triangles have NO vertices inside the opening rectangle.
+      const entranceWall={id:1,tag:'wall',highlandSectionRole:'main',
+        v:[[0,0,.5],[3,0,.5],[3,3,.5],[0,3,.5]]};
+      const entranceFloor={tag:'entryTunnel',extensionFace:'floor',sourceTile:{x:1,y:1},
+        v:[[1,0,0],[2,0,0],[2,0,1],[1,0,1]]};
+      const entranceCeiling={tag:'entryTunnel',extensionFace:'ceiling',sourceTile:{x:1,y:1},
+        v:[[1,1.5,0],[2,1.5,0],[2,1.5,1],[1,1.5,1]]};
+      const entranceFaces=[entranceWall,entranceFloor,entranceCeiling];
+      const regularPanels=growth.architecturalSurfaceSources(entranceFaces);
+      const openingPanels=growth.architecturalSurfaceSources(entranceFaces,{tunnelAsOpening:true});
+      const openingRegions=growth.recognizeArchitecturalSurfaceRegions(new T.Group(),openingPanels,{
+        occlusionFaces:entranceFaces,tunnelAsOpening:true});
+      let openingCentroidsInside=0,openingTriangleCount=0;
+      for(const region of openingRegions)for(let i=0;i<region.vertices.length;i+=3){
+        const center=region.vertices.slice(i,i+3).reduce((a,v)=>[a[0]+v[0]/3,a[1]+v[1]/3,a[2]+v[2]/3],[0,0,0]);
+        openingTriangleCount++;
+        if(center[0]>1.001&&center[0]<1.999&&center[1]>0&&center[1]<1.5)openingCentroidsInside++;
+      }
+      const shrinkRoot=new T.Group(),brickLayer=new T.Group();
+      const brick=new T.Mesh(new T.BoxGeometry(5,3,.22),new T.MeshBasicMaterial({side:T.DoubleSide}));
+      brick.position.z=.15;brickLayer.userData.isWallBricks=true;brickLayer.add(brick);shrinkRoot.add(brickLayer);
+      const shrinkGuide=growth.recognizeArchitecturalSurfaceRegions(shrinkRoot,[{
+        role:'walls',vertices:archQuad([[-2,0,0],[2,0,0],[2,3,0],[-2,3,0]])}]);
+      growth.replaceSemanticSurfaceGuides(shrinkRoot,shrinkGuide);
+      const shrinkRecipe={style:'natural',perSurface:true,kind:'vines',seed:'shrinkcheck',target:'walls',
+        count:4,radius:.025,length:2,offset:.008,inset:0,curl:0,texture:''};
+      const unshrunk=growth.buildSurfaceGrowth(shrinkRoot,shrinkRecipe);
+      const shrunk=growth.buildSurfaceGrowth(shrinkRoot,{...shrinkRecipe,shrinkwrapFinal:true});
+      const insetSample=growth.buildSurfaceGrowth(shrinkRoot,{...shrinkRecipe,inset:.025});
+      const ringZ=group=>{
+        const pos=group.children[0].geometry.getAttribute('position'),z=[];
+        for(let i=0;i<pos.count;i+=6){
+          let center=0;for(let j=0;j<5;j++)center+=pos.getZ(i+j)/5;
+          z.push(center);
+        }
+        return {max:Math.max(...z),avg:z.reduce((a,b)=>a+b,0)/z.length};
+      };
+      const shrinkRawZ=ringZ(unshrunk),shrinkFinalZ=ringZ(shrunk),insetZ=ringZ(insetSample);
+
       let recipes=[]; // Mimics every editor's read/write adapter to verify actual UI serialization.
       window.SurfaceFoliageAuthoring.mount(document.getElementById('controls'),{
         targets:[['all','All walls']],read:()=>recipes,selectedIds:()=>[],
@@ -351,6 +392,8 @@ const server=http.createServer((request,response)=>{
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
         transformedGable,
         gappedIntersection,partialCorner,splitCorner,
+        regularTunnelSources:regularPanels.length,openingTriangleCount,openingCentroidsInside,
+        shrinkRawZ,shrinkFinalZ,insetZ,shrinkStats:shrunk.userData.surfaceGrowthStats,
         hiddenBefore,visibleAfter,budgetLabel,countHidden,paletteChoices,signInsetField,shrinkwrapField,entranceField,
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
       };
@@ -399,6 +442,14 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.visibleWallCount,1,'Buried seam caps must not become exposed wall regions');
     assert(data.visibleCentroids.length>0&&data.visibleCentroids.every(x=>x>1.88),
       'Clipping must remove the buried wing-wall portions, not merely hide a fully internal mesh');
+    assert(data.openingTriangleCount>2&&data.openingCentroidsInside===0,
+      'Tunnel-opening mode must cut through broad wall guide triangles without planting inside the entrance');
+    assert(data.shrinkStats.shrinkwrapHits>0&&data.shrinkStats.shrinkwrapRays>0,
+      'Shrinkwrap must actually raycast against populated bricks');
+    assert(data.shrinkFinalZ.max>.25&&data.shrinkFinalZ.max<.36,
+      'Shrinkwrap must conform strands to the final brick face without double-moving shared rings');
+    assert(Math.abs((data.insetZ.avg-data.shrinkRawZ.avg)-.025)<.001,
+      'Signed inset must translate growth uniformly before final-geometry shrinkwrap');
     assert.equal(data.houseNatural.sourceTriangles,96,'Legacy Natural house style must still inspect brick meshes');
     assert.equal(data.houseCorners.sourceTriangles,4,'Corner Fill must follow the two original wall quads, not brick polygons');
     assert.equal(data.houseWrap.sourceTriangles,4,'Wrap navigation must follow the two original wall quads, not brick polygons');
