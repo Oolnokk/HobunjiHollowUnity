@@ -5912,12 +5912,13 @@
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
-        const vocalHeadNodDeg = window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0; // Added to the live neck pose below; body scale and collision remain untouched.
+        const kickPoseHeld = window.VoorgAssRearKick?.isHoldingKickPose?.(c) === true; // A hoof impact hold freezes rendered motion, not just the underlying collision position.
+        const vocalHeadNodDeg = kickPoseHeld ? 0 : (window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0); // Suppress additive head motion while the authored kick silhouette is held.
         c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + (c.groundLift ?? c.halfHeight) * scaleY + meleeLeapY;
-        if (c._wildlifeVisualLodJustWoke) {
-          grp.position.set(tx, ty, tz);
+        if (c._wildlifeVisualLodJustWoke || kickPoseHeld) {
+          grp.position.set(tx, ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
           c._wildlifeVisualLodJustWoke = false;
         } else {
           grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
@@ -5939,7 +5940,7 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now());
+        const breathScaleY = kickPoseHeld ? 1 : window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now()); // Keep the whole held kick silhouette truly still, without idle breathing.
         window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
@@ -6973,7 +6974,9 @@
           // livestock glance-at-the-player branch, which only ever nods
           // (pitch) and has no yaw tracking at all.
           const territorialActive = c._territorialBehavior?.phase === 'warning' || c._territorialBehavior?.phase === 'fight';
-          if (def.hostile === false && !territorialActive) {
+          if (c._animalAttack?.id === 'rearKick') {
+            if (!window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, entityDt); // Return to the authored idle head before hoof contact; freeze pitch/yaw during the impact hold.
+          } else if (def.hostile === false && !territorialActive) {
             const canLook = livestockLookCandidate
               && !c.prone
               && !c._animalSleeping
@@ -8374,6 +8377,7 @@
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
+          if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
           if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
         }
