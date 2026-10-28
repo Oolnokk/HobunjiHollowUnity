@@ -514,7 +514,7 @@
   // footprint, under the arch: that column, entry tile to front row, stays
   // walkable ground instead of den rock.
   function denEntryColumnKeys(den) {
-    const locale = window.ZoneDenTotemFeatures?.denEntranceLocaleFor?.(den); // Reload/relocation uses the same authored template as the initial zone generation.
+    const locale = den?.entranceTemplateId ? window.ZoneDenTotemFeatures?.denEntranceLocaleFor?.(den) : null; // A free-standing legacy den uses its original doorway even though it borrows the shared cave visual.
     const authored = window.DenCliffPlacement?.authoredWalkableTiles?.(den, locale); // Reopening a cave must not restore rock over its Locale Editor-cleared side columns.
     if (authored) return authored;
     const keys = new Set();
