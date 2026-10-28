@@ -25,11 +25,17 @@ window.SurfaceFoliageAuthoring = (() => {
       const wrap=field('style').value==='wrap';
       panel.querySelector('[data-wrap-controls]').style.display=wrap?'':'none'; // Explicit display prevents editor-specific .row CSS from overriding the hidden attribute.
       panel.querySelector('[data-density-label]').textContent=Math.round(Number(field('density').value)*100)+'%';
-      panel.querySelector('[data-count-label]').textContent=wrap?'Strand budget per surface':'Strands per surface';
+      const perSurface=field('target').value!=='shingles'&&
+        (field('perSurface').checked||field('style').value!=='natural');
+      panel.querySelector('[data-count-label]').textContent=field('target').value==='shingles'
+        ? (wrap?'Shingle strand budget':'Shingle strands')
+        : perSurface?(wrap?'Strand budget per surface':'Strands per surface')
+        : 'Strands (legacy whole layer)';
       field('perSurface').disabled=field('target').value==='shingles'; // Wrap's count sets a geometric complexity budget rather than a fixed number of strands.
     };
     field('style').onchange=updateStyleControls;
     field('target').onchange=updateStyleControls;
+    field('perSurface').onchange=updateStyleControls;
     field('density').oninput=updateStyleControls;
     for (const [value, label] of adapter.targets) { const option = document.createElement('option'); option.value=value;option.textContent=label;field('target').appendChild(option); }
     function refresh() {
@@ -65,7 +71,7 @@ window.SurfaceFoliageAuthoring = (() => {
       try {
         const recipes = [...(adapter.read()||[])], index = Number(field('layer').value), input = {}; // Copy the list so undo snapshots retain the prior state.
         for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','color','texture'])input[key]=field(key).value;
-        input.perSurface=field('perSurface').checked;
+        input.perSurface=input.target!=='shingles'&&field('perSurface').checked;
         input.targetIds=input.target==='selected' ? adapter.selectedIds() : [];
         if(input.target==='selected'&&!input.targetIds.length){
           if(index>=0&&recipes[index]?.target==='selected')input.targetIds=recipes[index].targetIds||[];
