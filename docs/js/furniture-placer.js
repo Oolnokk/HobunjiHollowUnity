@@ -215,6 +215,34 @@
       row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
       const locationLabel = wallMounted ? 'Wall mounted' : `${obj.col}, ${obj.row}`; // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
       row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${locationLabel}</span>`;
+      if (obj.area === 'interior' && (obj.key === 'wardrobe' || obj.key === 'chest')) {
+        const owners = window.NpcFurnitureWardrobes?.familyOwners?.() || []; // Live spouse/child roster drives this instance's owner selector.
+        const selectorLabel = document.createElement('label'); // Controller-friendly name ties the select to the specific furniture row.
+        selectorLabel.className = 'farm-note';
+        selectorLabel.textContent = 'Wardrobe for ';
+        const select = document.createElement('select'); // One placed access point; it never creates a second clothing inventory.
+        select.className = 'settings-small-btn';
+        select.setAttribute('aria-label', def.name + ' at ' + locationLabel + ': wardrobe owner');
+        const options = [{ id: '', label: 'Unassigned' }, ...owners.map(owner => ({ id: owner.id, label: owner.role + ': ' + owner.name }))];
+        if (obj.npcWardrobeFor && !owners.some(owner => owner.id === obj.npcWardrobeFor)) {
+          options.push({ id: obj.npcWardrobeFor, label: 'Unavailable: ' + obj.npcWardrobeFor }); // Keep an old assignment visible instead of silently discarding it after a family change.
+        }
+        for (const option of options) {
+          const element = document.createElement('option'); // A native select remains usable with touch, keyboard and controller navigation.
+          element.value = option.id;
+          element.textContent = option.label;
+          select.appendChild(element);
+        }
+        select.value = obj.npcWardrobeFor || '';
+        select.addEventListener('change', () => {
+          const result = deps.assignWardrobeOwner?.(obj.id, select.value) || { ok: false, message: 'Wardrobe assignment is unavailable.' };
+          deps.showToast(result.message, result.ok);
+          if (!result.ok) select.value = obj.npcWardrobeFor || '';
+          else render(); // Refresh changed owner names while retaining every other furniture control.
+        });
+        selectorLabel.appendChild(select);
+        row.appendChild(selectorLabel);
+      }
       if (obj.key === 'rug' || obj.key === 'hangingBanner' || window.HouseWindowLinkage?.isWindowKey?.(obj.key)) {
         const patternBtn = document.createElement('button'); // Ordinary ownership/permission checks from this panel govern pattern edits too.
         patternBtn.textContent = 'Pattern'; patternBtn.onclick = () => deps.editFurniturePattern?.(obj.id);
