@@ -103,7 +103,7 @@
   }
 
   function primeArea(area) {
-    if (!isInteriorMap(area)) return Promise.resolve(null);
+    if (!isInteriorMap(area)) return null; // House lookups run each frame; never allocate a Promise for an unsupported area.
     if (!pendingAreas.has(area)) {
       const request = Promise.all([loadMap(area), loadNpcDatabase(), loadPlaceholderRegistry()]).then(([map, database, registry]) => {
         const bindings = map ? wardrobeBindings(map, area, database, registry) : [];
@@ -181,7 +181,7 @@
   }
 
   window.NpcFurnitureWardrobes = Object.freeze({
-    installed: true, version: 5, config, loadMap, loadNpcDatabase, loadPlaceholderRegistry,
+    installed: true, version: 5, eventDriven: true, config, loadMap, loadNpcDatabase, loadPlaceholderRegistry,
     authoredWardrobeBindings, placeholderWardrobeBindings, wardrobeBindings,
     primeArea, ownerForPlacement, familyOwners, isFamilyOwner, isFamilyStorage,
     nameForOwner, openWardrobe, debugSnapshot,
