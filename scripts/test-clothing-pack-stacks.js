@@ -26,7 +26,7 @@ class Node {
   click() { this.listeners.click?.(); this.onclick?.(); }
 }
 const nodes = new Map(); // One set of menu detail/source nodes is enough for all pack transactions.
-for (const id of ['invPackClothing', 'iiEmpty', 'iiDetail', 'iiIcon', 'iiName', 'iiPrice', 'iiTags', 'iiDesc', 'iiActions']) {
+for (const id of ['invPackClothing', 'iiEmpty', 'iiDetail', 'iiIcon', 'iiName', 'iiPrice', 'iiQuality', 'iiTags', 'iiDesc', 'iiActions']) {
   nodes.set(id, new Node());
 }
 const document = {
@@ -77,6 +77,7 @@ let saves = 0; // Must only increase on actual ID repair or a real inventory tra
 let gearSaves = 0; // Used to verify that transferring one article persists it exactly once.
 const gear = { tools: {}, clothing: {}, clothingItems: [] }; // Persistent collection used by the transfer action.
 let selectedClears = 0; // Verifies sale actions use the existing detail-cleanup path.
+let explicitSelectionClears = 0; // Controller preview must not clear the current selected Pack stack.
 let heldItem = { kind: 'clothing', uid: base.uid }; // Simulates a held copy being sold from the stack.
 const inventory = { gold: 0 };
 panel.init({
@@ -89,7 +90,7 @@ panel.init({
   getManualHeldItem: () => heldItem,
   setManualHeldItem: item => { heldItem = item; },
   inventory,
-  clearInvSelection: () => {},
+  clearInvSelection: () => { explicitSelectionClears++; },
   clearInventoryDetail: () => { selectedClears++; },
   showToast: () => {},
   buildInventoryGrid: () => {},
@@ -103,7 +104,12 @@ assert.notEqual(pack[0].uid, pack[1].uid, 'duplicate legacy IDs are repaired sep
 assert.equal(saves, 1, 'legacy UID migration persists exactly once');
 panel.buildPackClothingSection();
 assert.equal(saves, 1, 're-rendering does not repeat the migration save');
+panel.previewPackClothingItem(pack[0].uid);
+assert.match(nodes.get('iiName').textContent, /×2$/, 'controller preview displays the identical-clothing stack quantity');
+assert.equal(explicitSelectionClears, 0, 'preview does not clear another selected Pack item');
+assert.equal(nodes.get('iiQuality').textContent !== undefined, true, 'clothing preview updates its own quality metadata');
 packNode.children[0].click();
+assert.equal(explicitSelectionClears, 1, 'explicit clothing click still selects by clearing previous Pack selection');
 assert.match(nodes.get('iiName').textContent, /×2$/, 'selected detail identifies the whole stack');
 assert.match(nodes.get('iiDesc').textContent, /affect one piece/, 'detail explains single-article actions');
 const sell = nodes.get('iiActions').children.find(child => child.textContent.startsWith('Sell ('));
