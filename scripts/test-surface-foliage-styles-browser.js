@@ -137,7 +137,7 @@ const server=http.createServer((request,response)=>{
       const baseWall=archQuad([[0,0,0],[4,0,0],[4,2,0],[0,2,0]]);
       const oneGable=[[0,2,0],[4,2,0],[2,3,0]];
       const splitGable=[[0,2,0],[2,2,0],[2,3,0],[2,2,0],[4,2,0],[2,3,0]];
-      const angledGable=[[0,2,0],[4,2,0],[2,3,1]];
+      const angledGable=[[0,2,0],[4,2,0],[2,3,.5]]; // ~26.6°: above default 24°, below adjustable 35°.
       const floatingGable=[[0,3,0],[4,3,0],[2,4,0]];
       function recognitionReport(vertices){
         const root=new T.Group();
