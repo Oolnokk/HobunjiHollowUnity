@@ -815,7 +815,7 @@
     }
   }
 
-  function selectPackClothingItem(uid) {
+  function selectPackClothingItem(uid, previewOnly = false) {
     const packClothing = deps.getPackClothing();
     const item = packClothing.find(c => c.uid === uid);
     if (!item) return;
@@ -823,13 +823,15 @@
     const stackCount = displayGroup?.count || 1; // Used for quantity labeling without changing single-item action targets.
     const starText = packClothingStarText(item); // Used to keep quality visible while this garment is still a Pack/inventory item.
     const salePrice = packClothingSalePrice(item); // Used by both the displayed value and the actual sale transaction.
-    deps.clearInvSelection();
+    if (!previewOnly) deps.clearInvSelection(); // Controller highlight inspects clothing without clearing the active selected stack.
     const emptyEl  = document.getElementById('iiEmpty');
     const detailEl = document.getElementById('iiDetail');
     if (emptyEl)  emptyEl.style.display  = 'none';
     if (detailEl) detailEl.style.display  = '';
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+    if (detailEl) delete detailEl.dataset.itemKey; // Remove any stale direct-use identity from a previous ordinary item.
     setInventoryDetailClothingIcon(item);
+    set('iiQuality', starText || '');
     set('iiName',  (starText ? starText + ' ' : '') + item.label + (stackCount > 1 ? ' ×' + stackCount : ''));
     set('iiPrice', salePrice ? salePrice + 'g' : '');
     set('iiTags',  starText ? ('Quality ' + starText) : '');
@@ -1304,6 +1306,7 @@
     clothingSpriteForCosmetic,
     ensureGearClothingCollection,
     buildPackClothingSection,
+    previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,
     getClothingStackDebug: () => { // Compact diagnostic usable on mobile without developer tools.
       const items = deps?.getPackClothing?.() || []; // Current saved pack entries are the authority.
