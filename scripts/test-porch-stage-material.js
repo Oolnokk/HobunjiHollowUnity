@@ -47,7 +47,11 @@ const THREE = {
 };
 const windowMock = {
   THREE,
-  HousePieceGen: { buildGroupFromPiece() { return null; } },
+  HousePieceGen: {
+    buildGroupFromPiece() { return null; },
+    buildEntryTunnelPiece() { return framePiece; }, // Reuses the authored face fixture to represent generated farmhouse tunnel geometry.
+    buildEntryTunnelGroup() { return frameGroup; }, // Simulates HousePieceGen's lexical build path, bypassing the authored wrapper.
+  },
 };
 const context = {
   window: windowMock,
@@ -119,6 +123,12 @@ assert.equal(convertedFrames.frameFaces, 1, 'doorway-frame faces are included, n
 assert.strictEqual(frameMesh.material, sharedMaterial, 'doorway frame and door share exactly the same material object');
 assert.equal(frameMesh.userData.hobunjiPorchSurfaceMaterial.texture, 'assets/textures/carved_smooth.png');
 assert.equal(attributes.uv.array.length, 12, 'doorway-frame geometry received connected-surface UV mapping');
+
+frameMesh.material = null; // Clears the authored fixture's finish so the generated route must apply it itself.
+const generatedTunnel = windowMock.HousePieceGen.buildEntryTunnelGroup({}, 0, 0, 'south', {});
+assert.strictEqual(generatedTunnel, frameGroup, 'the generated tunnel retains the original HousePieceGen output');
+assert.strictEqual(frameMesh.material, sharedMaterial, 'generated farm entry-tunnel doorframes receive the same finish');
+assert.equal(api.debugSnapshot().generatedTunnelPatchInstalled, true, 'generated farm entrance material hook is installed');
 
 const elevationIndex = loaderSource.indexOf('town-player-body-elevation-bridge.js');
 const porchMaterialIndex = loaderSource.indexOf('porch-surface-material.js');
