@@ -89,6 +89,32 @@ assert.equal(ui.close(), true);
 assert.equal(panel.style.display, 'none');
 assert.equal(plots.deleteFamilyPlot(trenchId), true);
 
+// Regression: transferring a plot's final tile must not destroy its configured workers, crop or hours.
+const sourceId = plots.createFamilyPlot('till'); // Source plot whose last tile will be transferred.
+assert.equal(plots.updateFamilyPlot(sourceId, { crop: 'redberries', hours: [8.5, 16.5] }), true);
+assert.equal(plots.setFamilyTile(sourceId, 4, 4, true), true);
+const targetId = plots.createFamilyPlot('dig'); // Previously empty target should survive its first incoming tile.
+assert.equal(plots.setFamilyTile(targetId, 4, 4, true), true);
+const surviving = plots.plots().find(item => item.id === sourceId);
+assert.ok(surviving, 'transfer leaves the now-empty source plot available for reuse');
+assert.equal(surviving.tiles.length, 0);
+assert.equal(surviving.crop, 'redberries');
+assert.deepEqual(Array.from(surviving.hours), [8.5, 16.5]);
+assert.equal(surviving.workers[0], spouseId);
+const savesBeforeInvalid = saved;
+assert.equal(plots.updateFamilyPlot(sourceId, { label: 'Should not stick', crop: 'inventedCrop' }), false);
+assert.equal(surviving.label.startsWith('Family field'), true, 'rejected composite patch leaves earlier fields untouched');
+assert.equal(plots.updateFamilyPlot(sourceId, { label: 'Should not stick', hours: [23, 5] }), false);
+assert.equal(surviving.label.startsWith('Family field'), true, 'invalid hours do not partially rename a plot');
+assert.equal(saved, savesBeforeInvalid, 'invalid composite patch never persists');
+assert.equal(plots.setFamilyTile(sourceId, 11, 4, true), true, 'old saves may contain now-obstructed plot tiles');
+assert.equal(ui.toggleTile(11, 4), false, 'an unselected invalid tile is still blocked');
+plots.selectFamilyPlot(sourceId);
+assert.equal(ui.toggleTile(11, 4), true, 'old blocked designations remain removable from the player UI');
+ui.render();
+assert.match(view.innerHTML, /08:30/, 'legacy half-hour shift is preserved in the player editor');
+assert.match(view.innerHTML, /16:30/);
+
 const arc = read('docs/js/action-arc-ui.js'); // Verify normal gameplay entry is routed through the shared controller utility selector.
 const editor = read('docs/js/farm-editor.js'); // Verify world pointer uses real existing screen-to-farm projection.
 const index = read('docs/index.html'); // Verify controller panel markup and script load order.
