@@ -3861,6 +3861,7 @@ window.SCRATCHBONES_CONFIG = {
           "weaponSwing3": { "url": "assets/audio/sfx/combat/sfx_swing_3.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "harpoonHit": { "url": "assets/audio/sfx/sfx_harpoon_hit_1.mp3", "volume": 1.0 },
           "rangedLoad": { "url": "assets/audio/sfx/combat/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
+          "blowgunLoad": { "url": "assets/audio/sfx/sfx_load_dart.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 }, // Dedicated blowgun loading recording (currently committed as sfx_load_dart.m4a).
           "rangedFire": { "url": "assets/audio/sfx/combat/sfx_shootarrow.m4a", "volume": 1.0, "pitchVarianceMul": 0.02 },
           "rangedImpact": { "url": "assets/audio/sfx/combat/sfx_arrow_hit.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "creatureClawHit": { "url": "assets/audio/sfx/combat/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
