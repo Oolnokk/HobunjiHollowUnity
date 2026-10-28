@@ -640,7 +640,7 @@
       else if (selected === DEV_SPAWN_OMGURKU_KEY) await spawnDevArenaPorakaneki(tier, 'omgurku');
       else if (selected === DEV_SPAWN_AVENGER_KEY) await spawnDevArenaPorakaneki(tier, 'porakaneki', 'nazgraku');
       else if (selected === DEV_SPAWN_HARLYAO_SKELETON_KEY) await spawnDevArenaHarlyaoSkeleton(tier);
-       else if (selected?.startsWith(DEV_SPAWN_MASKBOUND_PREFIX)) await spawnDevArenaMaskboundGuardian(selected.slice(DEV_SPAWN_MASKBOUND_PREFIX.length), tier);
+       else if (selected?.startsWith('maskbound:')) await spawnDevArenaMaskboundGuardian(selected.slice('maskbound:'.length), tier);
       else if (selected?.startsWith('harlyao-lich:')) await spawnDevArenaHarlyaoLich(selected.slice('harlyao-lich:'.length), tier);
       else await spawnDevArenaCreature(selected);
       if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) throw new Error('Spawn canceled because you left the Testing Arena.');
