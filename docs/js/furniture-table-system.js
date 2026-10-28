@@ -25,7 +25,7 @@
     focusStamp = null; // Placement changes invalidate any cached interaction target.
     window.NpcFurnitureWardrobes?.primeArea?.(area); // Authored map storage receives its real furniture-to-NPC binding asynchronously.
     surfaceProbe.valid=false; // New/replaced furniture must be visible to camera proximity immediately.
-    entry.height = def.sit ? 1 : .8;
+    entry.height = record.key === 'wardrobe' || record.itemKey === 'wardrobeFurniture' ? 2.2 : def.sit ? 1 : .8; // Tall wardrobes remain focusable before their authored geometry finishes loading.
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
       surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
@@ -363,9 +363,14 @@
     addNpc(deps.extraWalker?.());
     // Aim uses the actual (possibly raised) camera ray. Nearby NPCs keep their
     // priority; a broad table blocker must not hide a pot that its ray hits.
-    const socialFocus = deps.focusCandidates(socialCandidates, 40)?.candidate || null; // Keeps the existing unobstructed NPC targeting precedence.
+    const socialHit = deps.focusCandidates(socialCandidates, 40) || null; // NPC priority remains unless the physical wardrobe is visibly nearer to the camera.
+    const furnitureHit = deps.focusCandidates(focusCandidates, 40) || null; // Same actual camera-ray intersections as every other world object.
+    if (furnitureHit?.candidate?.kind === 'wardrobe' && (!socialHit || furnitureHit.distanceWorld < socialHit.distanceWorld)) {
+      focused = furnitureHit.candidate; return focused; // Standing in front of a wardrobe cannot be overridden by an NPC farther behind it.
+    }
+    const socialFocus = socialHit?.candidate || null;
     if (socialFocus) { focused = socialFocus; return focused; }
-    const furnitureFocus = deps.focusCandidates(focusCandidates, 40)?.candidate || null; // Still respects unrelated furniture blockers.
+    const furnitureFocus = furnitureHit?.candidate || null; // Still respects unrelated furniture blockers.
     if (furnitureFocus?.kind === 'blocker' && furnitureFocus.entry.record.serviceId) {
       unobstructedCandidates.length = 0;
       for (const candidate of focusCandidates) {
