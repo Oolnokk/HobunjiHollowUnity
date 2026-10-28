@@ -829,7 +829,7 @@
     if (emptyEl)  emptyEl.style.display  = 'none';
     if (detailEl) detailEl.style.display  = '';
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-    if (detailEl) delete detailEl.dataset.itemKey; // Remove any stale direct-use identity from a previous ordinary item.
+    if (detailEl) { delete detailEl.dataset.itemKey; detailEl.dataset.itemKind = 'clothing'; } // Clothing previews never inherit bag-item actions.
     setInventoryDetailClothingIcon(item);
     set('iiQuality', starText || '');
     set('iiName',  (starText ? starText + ' ' : '') + item.label + (stackCount > 1 ? ' ×' + stackCount : ''));
