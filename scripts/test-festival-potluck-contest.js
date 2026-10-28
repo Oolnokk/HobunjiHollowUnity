@@ -96,8 +96,21 @@ window.MetalArmorSystem.init({
 });
 window.DoorstepVisits={registerProvider:p=>{provider=p;},markDone(){}};
 const contests={'1156:gorkunash':{entry:{key:'meal',label:'Grand Feast',score:100},days,rewarded:false}};
+// Use the shipped game adapter: an always-successful stub hid the helm allowlist bug.
+const gameSource=fs.readFileSync('docs/game.js','utf8');
+const grantStart=gameSource.indexOf('grantMask: id => {');
+const grantEnd=gameSource.indexOf('\n        tellStory:',grantStart);
+assert(grantStart>=0 && grantEnd>grantStart,'game supplies the festival clothing adapter');
+window.FestivalSystem={MASKS:['gar-wolf','grehlr',"uumkao'ii",'voorg-ass']};
+window.EquipmentPanel={clothingSpriteForCosmetic:id=>'sprite:'+id};
+const grantMask=vm.runInNewContext('({'+gameSource.slice(grantStart,grantEnd)+'}).grantMask',{
+ window,ITEM_DEFS:{},packClothing:awardedPack
+});
+assert.equal(grantMask('unrelated_hat'),false,'festival grant cannot mint arbitrary clothing');
+assert.equal(grantMask(undefined),false,'missing IDs are never valid rewards');
+assert.equal(awardedPack.length,0);
 rules.registerRewardVisit({
- grantMask:id=>{granted.push(id);awardedPack.push({uid:'potluck-prize',cosmeticId:id,slot:'hat'});return true;},
+ grantMask:id=>{granted.push(id);return grantMask(id);},
  save:()=>saveCount++
 },()=>contests,key=>{contests[key].rewarded=true;complete=true;},()=>currentDay);
 assert.equal(provider.next(),null,'no Hreesh visit on the seventh day');
@@ -109,6 +122,8 @@ assert.equal(granted.length,0,'dialogue beginning does not award item');
 assert(provider.onComplete(visit),'natural completion awards helm');
 assert(complete && saveCount>0 && granted[0]==='replica_bzabag_helm','Hreesh awards the expected cosmetic');
 const awardedHelm=awardedPack[0]; // Actual awarded item is now tested against the real MetalArmorSystem, not a stub.
+assert.equal(awardedHelm.slot,'hat','the potluck helm uses the real hat slot rather than the mask hood slot');
+assert.equal(awardedHelm.label,'Replica Helm of Bzabag','the prize keeps its name when cosmetic item definitions are not registered');
 assert.equal(awardedHelm.materialKind,'metal','prize upgrades to smith metal armor');
 assert(['nativeCopper','lowTinBronze'].includes(awardedHelm.metalKey),'starting faceguard alloy obeys current chest Town Value eligibility');
 assert.equal(awardedHelm.weaveMaterial,'light','the unique festival prize uses the light-wool cap by default');
@@ -119,6 +134,8 @@ const prizeMetal=awardedHelm.metalKey;
 assert(window.MetalArmorSystem.prepareFestivalHelmPrize(),'rechecking an already-upgraded prize is harmless');
 assert.equal(awardedHelm.metalKey,prizeMetal,'rechecking the reward never rerolls its already-owned alloy');
 assert.equal(provider.next(),null,'reward cannot recur');
+assert(grantMask('festivalmask_gar-wolf'),'ordinary Hachutukara masks still grant');
+assert.equal(awardedPack.at(-1).slot,'hood','festival animal masks retain their hood slot');
 const cosmetic = JSON.parse(fs.readFileSync('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json','utf8'));
 const catalog = JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json','utf8'));
 assert(catalog.entries.some(entry=>entry.id===rules.HELM_ID));

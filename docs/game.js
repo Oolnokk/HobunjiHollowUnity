@@ -30194,8 +30194,10 @@
         toast: showToast,
         refresh: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); window.EquipmentPanel?.buildPackClothingSection?.(); refreshActionBar(); },
         grantMask: id => {
-          if (!window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
-          const piece = { category: 'hood', label: ITEM_DEFS[`cosmetic:${id}`]?.label || id.replace('festivalmask_', '') + ' Festival Mask', price: 20 }; // Canonical cosmetic ID and ordinary pack-clothing shape; no shop rotation required.
+          const helmId = window.FestivalPotluckContest?.HELM_ID;
+          const isHelm = !!helmId && id === helmId;
+          if (!isHelm && !window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
+          const piece = { category: isHelm ? 'hat' : 'hood', label: ITEM_DEFS[`cosmetic:${id}`]?.label || (isHelm ? 'Replica Helm of Bzabag' : id.replace('festivalmask_', '') + ' Festival Mask'), price: 20 }; // Only authored festival masks and the potluck prize enter the normal clothing pack.
           packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'hood', label: piece.label, baseLabel: piece.label,
             colorA: { hex: '#ddaf64', h: 37, s: 55, v: 87 }, colorB: { hex: '#8072bd', h: 251, s: 40, v: 74 }, colorC: { hex: '#e7d8aa', h: 45, s: 26, v: 91 }, sprite: window.EquipmentPanel.clothingSpriteForCosmetic(id), sellPrice: Math.floor((piece.price || 0) * .4) });
           return true;

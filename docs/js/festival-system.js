@@ -108,19 +108,35 @@
     deps?.save?.(); // The original opponent rolls are persisted before a contribution can be accepted.
     return created;
   }
-  function feastMenu() {
-    if (festival()?.id !== 'gorkunash') return [];
-    const contest = contestData();
-    const donated = claims().potluck; // Old-world donations migrate through their original cooked-food definition.
-    if (contest && donated && !contest.entry) {
-      const definition = deps?.getItemDefs?.()?.[donated.key] || {};
+  function recoverPotluckEntries() {
+    if (!deps || !window.FestivalPotluckContest) return;
+    const defs = deps.getItemDefs?.() || {};
+    let changed = false;
+    for (const [event, annualClaims] of Object.entries(state.claims)) {
+      const match = /^(\d+):gorkunash$/.exec(event);
+      const donated = annualClaims?.potluck;
+      if (!match || !donated || state.potluckContests[event]?.entry) continue;
+      const definition = defs[donated.key];
+      if (!definition?.isCookedFood) continue; // Cooking definitions hydrate after festivals; retry on a later menu/doorstep check rather than saving a guessed score.
+      let contest = state.potluckContests[event];
+      if (!contest) {
+        const guests = residents();
+        if (!guests.length) continue; // Preserve the claim until real residents are ready to generate its original-year roster.
+        contest = state.potluckContests[event] = { days:window.FestivalPotluckContest.buildDays(guests,Number(match[1]),defs),entry:null,rewarded:false };
+      }
       const snapshot = contestIngredients(definition,donated.stars); // Recover legacy donations without rewriting their recorded contest result.
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
-        score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,deps.getItemDefs()),
+        score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,defs),
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
         estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition.foodEffects||{})} };
-      deps?.save?.();
+      changed = true;
     }
+    if (changed) deps.save?.(); // One save after recovery, including overdue claims from previous civil years.
+  }
+  function feastMenu() {
+    if (festival()?.id !== 'gorkunash') return [];
+    recoverPotluckEntries();
+    const contest = contestData();
     if (contest?.entry && (!Array.isArray(contest.entry.ingredients) ||
         contest.entry.ingredients.some(item=>typeof item.contributesEffects !== 'boolean') ||
         contest.entry.foodEffects === undefined)) {
@@ -754,7 +770,10 @@
     deps = injected;
     residentCacheAt = -Infinity;
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
-    window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>state.potluckContests,event=>{
+    window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>{
+      recoverPotluckEntries(); // Farmhouse exits recover overdue donations even after the feast has closed.
+      return state.potluckContests;
+    },event=>{
       if (state.potluckContests[event]) state.potluckContests[event].rewarded = true;
     },day); // Shared doorstep queue awards the prize only on natural dialogue completion.
     const socialConfig = () => window.SCRATCHBONES_CONFIG?.game?.socialRelationships;
