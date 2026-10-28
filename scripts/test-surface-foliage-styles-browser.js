@@ -391,6 +391,11 @@ const server=http.createServer((request,response)=>{
       document.querySelector('[data-action="apply"]').click();
       field('style').value='natural';field('style').dispatchEvent(new Event('change'));
       field('layer').value='0';field('layer').dispatchEvent(new Event('change'));
+      // Simulate a previously authored recipe with advanced settings not exposed in the shared panel.
+      recipes[0]={...recipes[0],wallOnly:true,hangChance:.62,hangLength:1.25,reuseSurfaceSampling:true};
+      field('layer').dispatchEvent(new Event('change'));
+      field('length').value='4.3'; // Only Length changes; the hidden advanced options must remain intact.
+      document.querySelector('[data-action="apply"]').click();
       return {
         flatTubes:count(flat),cornerTubes:count(corners),splitCornerTubes:count(split),
         lowTubes:count(low),highTubes:count(high),sameDensityTubes:count(sameDensityDifferentCount),partialCover:cover(partial).length,
@@ -513,6 +518,11 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.savedRecipe?.count,9);
     assert.equal(data.savedRecipe?.strandLimit,4);
     assert.equal(data.savedRecipe?.perSurface,true);
+    assert.equal(data.savedRecipe?.length,4.3,'Editing Length must update the visible field');
+    assert.equal(data.savedRecipe?.wallOnly,true,'Editing a layer must preserve the hidden wall-only flag');
+    assert.equal(data.savedRecipe?.hangChance,.62,'Editing a layer must preserve hanging-vine frequency');
+    assert.equal(data.savedRecipe?.hangLength,1.25,'Editing a layer must preserve hanging-vine length');
+    assert.equal(data.savedRecipe?.reuseSurfaceSampling,true,'Editing a layer must preserve cave geometry caching');
     assert.equal(data.restoredStyle,'wrap','Selecting a saved layer must restore its style');
     assert.equal(Number(data.restoredDensity),.75,'Selecting a saved layer must restore density');
     assert.deepEqual(pageErrors,[], 'Shared authoring or growth must not emit browser errors');
