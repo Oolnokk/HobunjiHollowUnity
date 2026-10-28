@@ -603,8 +603,17 @@
         e.preventDefault(); e.stopImmediatePropagation();
       }
     }, true);
-    window.addEventListener('pointerup', e => window.FarmworkUI?.endWorldPointer?.(e.pointerId), true);
-    window.addEventListener('pointercancel', e => window.FarmworkUI?.endWorldPointer?.(e.pointerId), true);
+    const finishFarmworkGesture = e => {
+      if (window.FarmworkUI?.endWorldPointer?.(e.pointerId)) {
+        e.preventDefault(); e.stopImmediatePropagation(); // Avoid normal Action 1 on release after a designation stroke.
+      }
+    }; // Shared pointerup/cancel owner for touch, stylus and mouse.
+    window.addEventListener('pointerup', finishFarmworkGesture, true);
+    window.addEventListener('pointercancel', finishFarmworkGesture, true);
+    deps.threeContainer.addEventListener('click', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      e.preventDefault(); e.stopImmediatePropagation(); // Block click fallthrough on a plot tile gesture, including invalid destinations.
+    }, true);
     deps.threeContainer.addEventListener('pointerdown', (e) => {
       if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || !deps.getFarmEditMode() || deps.getCurrentArea() !== 'farm') return;
       e.stopPropagation();
