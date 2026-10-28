@@ -33,7 +33,9 @@
   }
 
   function findRecord(npcId) {
-    return deps?.getNpcRecordById?.(npcId) || findWalker(npcId)?.rec || null; // Canonical record access keeps outfit persistence working even while an NPC has no live walker.
+    const rec = deps?.getNpcRecordById?.(npcId) || findWalker(npcId)?.rec || null; // Canonical NPC, including an offscreen generated family child.
+    if (rec?.isChild) applyOutfitOverrideToRecord(rec); // Child records reconstructed while offscreen must display the last saved outfit, not their original newborn clothing.
+    return rec;
   }
 
   function clothingPatternPolicy(rec) {

@@ -19450,10 +19450,6 @@
           refreshActionBar();
           return;
         }
-        if (activeAction === 'npc_open_wardrobe') {
-          window.NpcWardrobe?.openWardrobePanel?.(nearbyNpcWalker?.rec?.id);
-          return;
-        }
         if (activeAction === 'npc_slagothim_trade') {
           window.SlagothimTraders?.openTrade?.(nearbyNpcWalker);
           return;
@@ -19599,7 +19595,7 @@
           const _o = resolveObjActionTarget(activeAction);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
-          showToast(_res.message, _res.ok !== false);
+          if (_res.message) showToast(_res.message, _res.ok !== false); // Opening an overlay is not a blank toast notification.
           if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData(); // Cave Duskcaps queue their large world save for idle time instead of freezing pickup.
           return;
         }
@@ -26164,21 +26160,6 @@
           const giftOffer = window.NpcGifting?.getNpcGiftOfferAction?.(nearbyNpcWalker);
           if (giftOffer) btns.push(giftOffer);
           if (festivalButton) btns.push(festivalButton);
-          // Wardrobe: only reachable while actually standing in that NPC's
-          // own home interior (currentArea === 'map_i_' + homeId — the same
-          // area-id convention loadBuildingScene/_isBuildingArea use), so
-          // it reads as "go through their things at home" rather than a
-          // button that follows them everywhere.
-          if (nearbyNpcWalker.rec?.homeId && currentArea === 'map_i_' + nearbyNpcWalker.rec.homeId && window.NpcWardrobe) {
-            btns.push({
-              icon: '👗',
-              label: `${nearbyNpcWalker.rec.name || 'Their'}'s Wardrobe`,
-              action: 'npc_open_wardrobe',
-              style: 'secondary',
-              allowed: true,
-              worldInteraction: true,
-            });
-          }
           return btns;
         }
 
@@ -27039,6 +27020,7 @@
           `Voice render timing: ${JSON.stringify(window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering || null)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
+          `Wardrobe furniture: ${JSON.stringify(window.NpcFurnitureWardrobes?.debugSnapshot?.() || { ready: false })}`, // Copied from the in-game Debug Log on mobile; no console required.
           `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
@@ -28740,6 +28722,7 @@
         worldObjectAt: getWorldObjectAt,
         farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
+        wardrobeSnapshot: () => window.NpcFurnitureWardrobes?.debugSnapshot?.() || null, // Existing in-game furniture debugging can inspect which real wardrobe bound the last interaction.
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
         npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
@@ -30266,7 +30249,7 @@
       });
 
       window.NpcWardrobe?.init({
-        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical record access lets wardrobe restore reach offscreen/deferred NPCs before a walker exists.
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || window.RomanceFamily?.wardrobeRecordFor?.(npcId) || null, // Child wardrobe remains accessible while their live walker is away.
         getGearInventory: () => gearInventory,
         saveGearInventory,
         showToast,
@@ -30576,6 +30559,21 @@
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
         ],
+        assignWardrobeOwner: (id, npcId) => {
+          const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === 'interior' && currentArea === 'interior'); // Modify the live instance, not the UI's display copy.
+          if (!obj || (obj.key !== 'wardrobe' && obj.key !== 'chest')) return { ok: false, message: 'Select a wardrobe or storage chest inside your house.' };
+          if (npcId && !window.NpcFurnitureWardrobes?.isFamilyOwner?.(npcId)) return { ok: false, message: 'That person is not currently in your family.' };
+          const priorOwner = obj.npcWardrobeFor; // Restores the original binding if persistent layout writing fails.
+          if (npcId) obj.npcWardrobeFor = String(npcId); else delete obj.npcWardrobeFor; // Every linked piece opens the same NPC-keyed wardrobe.
+          const saved = window.FarmEditor.saveFarmLayout(); // The existing farm layout serializes the metadata beside the furniture ID.
+          if (saved === false) {
+            if (priorOwner) obj.npcWardrobeFor = priorOwner; else delete obj.npcWardrobeFor;
+            return { ok: false, message: 'Wardrobe assignment could not be saved.' };
+          }
+          window.FurnitureTableSystem?.invalidateFocus?.();
+          refreshActionBar();
+          return { ok: true, message: npcId ? 'Assigned this furniture to ' + (window.NpcFurnitureWardrobes?.nameForOwner?.(npcId) || npcId) + '.' : 'Wardrobe assignment cleared.' };
+        },
         editFurniturePattern: id => {
           const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea); // Edits the authoritative placed record, including persistent per-instance scale.
           if (obj) window.FurniturePatternSurfaces?.editInstance?.(obj, overrides => {
