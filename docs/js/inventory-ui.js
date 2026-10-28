@@ -204,8 +204,8 @@
     if (!pane?.classList.contains('active') || pane.classList.contains('inv-mode-gear')) return;
     const tile = event.target?.closest?.('#invGrid .inv-item-box:not(.empty)'); // Includes normal item stacks and integrated Pack clothing.
     if (!tile || !pane.contains(tile) || tile.disabled || tile.style.display === 'none') return;
-    lastControllerPackPreview = { key: tile.dataset.key || null, stackId: tile.dataset.stackId || null, clothing: tile.classList.contains('pack-clothing-tile') }; // Live diagnostic identity, never used to select or mutate inventory.
-    tile.click(); // Reuse the existing detail-only selection path; Confirm still enters the action panel separately.
+    lastControllerPackPreview = { key: tile.dataset.key || null, stackId: tile.dataset.stackId || null, clothing: tile.classList.contains('pack-clothing-tile') }; // Read-only preview identity for in-game diagnostics.
+    if (tile.classList.contains('pack-clothing-tile')) window.EquipmentPanel?.previewPackClothingItem?.(tile.dataset.key); // Ordinary stacks preview in game.js using their exact variant; clothing uses its own detail renderer without a click.
   }
 
   function installMenuReadability() {
