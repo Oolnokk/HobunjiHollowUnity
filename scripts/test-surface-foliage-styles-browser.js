@@ -44,7 +44,7 @@ const server=http.createServer((request,response)=>{
     page.on('pageerror',error=>pageErrors.push(error.stack||error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/test-page',{waitUntil:'domcontentloaded',timeout:30000});
     await page.waitForFunction(()=>!!(window.THREE?.BoxGeometry&&window.FoliageGenerator?.buildSurfaceGrowth&&window.SurfaceFoliageAuthoring?.mount&&window.HousePieceGen?.buildGroupFromPiece),null,{timeout:30000});
-    const data=await page.evaluate(()=>{
+    const data=await page.evaluate(async()=>{
       const T=window.THREE,growth=window.FoliageGenerator; // Actual production THREE and generator.
       function build(geometry,style,density,count=12){ // Consistent authored wall test with no helper meshes.
         const root=new T.Group(),mesh=new T.Mesh(geometry,new T.MeshBasicMaterial({color:0xffffff}));
@@ -198,6 +198,25 @@ const server=http.createServer((request,response)=>{
       };
       const houseNatural=runHouse('natural'),houseCorners=runHouse('cornerFill'),houseWrap=runHouse('wrap');
 
+      // Use the real cross-gabled temple instead of only synthetic boxes.
+      // The authored entry has dozens of internal thickness faces and its
+      // primary/cross-gable volumes deliberately intersect.
+      const temple=await (await fetch('/docs/config/pieces/temple.json')).json();
+      const templeSources=growth.architecturalSurfaceSources(temple.base.faces,{wallLift:.26,roofLift:.16});
+      const templeRegions=growth.recognizeArchitecturalSurfaceRegions(new T.Group(),templeSources,
+        {occlusionFaces:temple.base.faces});
+      const surfaceArea=vertices=>{
+        let area=0;
+        for(let i=0;i+2<vertices.length;i+=3){
+          const a=new T.Vector3(...vertices[i]),b=new T.Vector3(...vertices[i+1]),c=new T.Vector3(...vertices[i+2]);
+          area+=b.sub(a).cross(c.sub(a)).length()/2;
+        }
+        return area;
+      };
+      const templeSourceArea=templeSources.reduce((sum,src)=>sum+surfaceArea(src.vertices),0);
+      const templeExposedArea=templeRegions.reduce((sum,region)=>sum+surfaceArea(region.vertices),0);
+      const templeSourceCount=templeSources.length,templeRegionCount=templeRegions.length;
+      const templeVisibleRoles=templeRegions.reduce((counts,region)=>(counts[region.role]=(counts[region.role]||0)+1,counts),{});
       // Two disconnected recognized wall surfaces must EACH receive the count,
       // independently capped by strandLimit. Natural opts in explicitly.
       const regionParent=new T.Group(),separated=[
@@ -287,6 +306,7 @@ const server=http.createServer((request,response)=>{
         deterministic:digest(full)===digest(reused),
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
         budgetCorners,budgetNatural,perSurfaceDetails,visibleWallCount:visibleWall.length,visibleCentroids,
+        templeSourceArea,templeExposedArea,templeSourceCount,templeRegionCount,templeVisibleRoles,
         rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
         transformedGable,
@@ -319,6 +339,12 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.disconnectedGable.regions,2,'A detached but coplanar gable remains separate');
     assert.equal(data.furnitureStyleAngle.narrow,2,'Architectural split-angle threshold must prevent tight-angle merges');
     assert.equal(data.furnitureStyleAngle.wide,1,'Architecture must support the same configurable split-angle logic as Furniture Author');
+    assert(data.templeSourceCount<30,'Real Temple wall and roof navigation must exclude construction-only caps and door-frame thicknesses');
+    assert(data.templeRegionCount>=8&&data.templeRegionCount<25,'The Temple must have separate exposed wall and roof surfaces, not a role-wide guide or dozens of internal framing regions');
+    assert(data.templeVisibleRoles.walls>2&&data.templeVisibleRoles.roofs>1,
+      'Cross-gable exposure must preserve both wall and roof surfaces');
+    assert(data.templeExposedArea<data.templeSourceArea*.9,
+      'The real Temple must trim a meaningful amount of buried intersecting cross-gable geometry');
     assert.equal(data.budgetCorners.surfaces,2,'Both named architectural regions must receive their own budget');
     assert.equal(data.budgetCorners.generatedStrands,6,'3 strands per region × 2 recognized regions, not 3 for the whole house');
     assert.deepEqual(data.perSurfaceDetails.map(x=>x.actual),[3,3],'Strand limit caps each recognized region independently');
