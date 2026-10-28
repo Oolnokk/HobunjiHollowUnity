@@ -265,6 +265,73 @@
     return changed;
   }
 
+  // Only provenance differs between copies of the same physical garment. Keep all dyes,
+  // quality, patterns, material, pricing, Temper and unknown future attributes in the comparison.
+  const CLOTHING_STACK_IGNORED_FIELDS = new Set(['uid', 'craftedAt']); // Used solely by visual stack grouping, never by item storage.
+
+  function clothingStackSignature(item) {
+    if (!item || typeof item !== 'object') return null;
+    const sortedValue = (value) => { // Stable nested ordering allows old/new saves with different property insertion order to stack.
+      if (Array.isArray(value)) return value.map(sortedValue);
+      if (value && typeof value === 'object') {
+        const ordered = {}; // Used only to produce a deterministic display fingerprint.
+        for (const key of Object.keys(value).sort()) ordered[key] = sortedValue(value[key]);
+        return ordered;
+      }
+      return value;
+    };
+    const properties = {}; // A display-only view of this article: no item IDs or timestamps are modified.
+    for (const key of Object.keys(item).sort()) {
+      if (CLOTHING_STACK_IGNORED_FIELDS.has(key)) continue;
+      let value = item[key]; // Used to normalize generated cosmetic IDs for otherwise identical loom/smith copies.
+      if (key === 'cosmeticId' && typeof value === 'string' && typeof item.baseCosmeticId === 'string'
+          && (value.startsWith(item.baseCosmeticId + '#loom:') || value.startsWith(item.baseCosmeticId + '#smith:'))) {
+        value = item.baseCosmeticId;
+      }
+      properties[key] = sortedValue(value);
+    }
+    return JSON.stringify(properties);
+  }
+
+  function groupClothingForDisplay(items) {
+    const groups = []; // Ordered by first appearance, so stacks don't jump around as quantities change.
+    const bySignature = new Map(); // Used only for the current render; every saved item remains individual.
+    for (const item of (items || [])) {
+      if (!item || typeof item !== 'object') continue;
+      const signature = clothingStackSignature(item); // The complete gameplay/appearance data (apart from provenance) determines identity.
+      let group = bySignature.get(signature);
+      if (!group) {
+        group = { item, count: 0, uids: [] }; // Representative receives actions; all underlying records remain available.
+        bySignature.set(signature, group);
+        groups.push(group);
+      }
+      group.count++;
+      group.uids.push(item.uid);
+    }
+    return groups;
+  }
+
+  function ensureUniquePackClothingUids(items) {
+    const seen = new Set(); // Protects single-item actions and manually held references in legacy saves with repeated shop UIDs.
+    let changed = false; // Caller persists the repaired list only once when needed.
+    let nextId = 0; // Additional monotonic component ensures uniqueness even when two random/time values collide.
+    for (const item of (items || [])) {
+      if (!item || typeof item !== 'object') continue;
+      if (typeof item.uid === 'string' && item.uid && !seen.has(item.uid)) {
+        seen.add(item.uid);
+        continue;
+      }
+      let replacement; // Only duplicate or missing IDs are reassigned; the first copy keeps any held reference.
+      do {
+        replacement = 'citem_fixed_' + Date.now().toString(36) + '_' + (++nextId).toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+      } while (seen.has(replacement));
+      item.uid = replacement;
+      seen.add(replacement);
+      changed = true;
+    }
+    return changed;
+  }
+
   function packClothingQualityStars(item) {
     return normalizedClothingQualityStars(item?.qualityStars); // Only Pack clothing exposes star quality as an inventory-item property.
   }
@@ -751,6 +818,8 @@
     const packClothing = deps.getPackClothing();
     const item = packClothing.find(c => c.uid === uid);
     if (!item) return;
+    const displayGroup = groupClothingForDisplay(packClothing).find(group => group.uids.includes(uid)); // Detail quantity reflects the same stack selected in the grid.
+    const stackCount = displayGroup?.count || 1; // Used for quantity labeling without changing single-item action targets.
     const starText = packClothingStarText(item); // Used to keep quality visible while this garment is still a Pack/inventory item.
     const salePrice = packClothingSalePrice(item); // Used by both the displayed value and the actual sale transaction.
     deps.clearInvSelection();
@@ -760,10 +829,10 @@
     if (detailEl) detailEl.style.display  = '';
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
     setInventoryDetailClothingIcon(item);
-    set('iiName',  starText ? (starText + ' ' + item.label) : item.label);
+    set('iiName',  (starText ? starText + ' ' : '') + item.label + (stackCount > 1 ? ' ×' + stackCount : ''));
     set('iiPrice', salePrice ? salePrice + 'g' : '');
     set('iiTags',  starText ? ('Quality ' + starText) : '');
-    set('iiDesc',  [item.description, 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
+    set('iiDesc',  [item.description, stackCount > 1 ? 'Stack of ' + stackCount + ' identical articles. Actions affect one piece at a time.' : '', 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
@@ -1003,12 +1072,14 @@
     const sec = document.getElementById('invPackClothing');
     if (!sec) return;
     const packClothing = deps.getPackClothing();
+    if (ensureUniquePackClothingUids(packClothing)) deps.saveMemberWorldData?.(); // One-time save migration prevents one sale from deleting same-UID copies.
     if (!packClothing.length) {
       sec.innerHTML = '<div class="inv-pcloth-empty">No clothing in pack.</div>';
       return;
     }
     sec.innerHTML = '';
-    packClothing.forEach(item => {
+    for (const group of groupClothingForDisplay(packClothing)) {
+      const item = group.item; // One tile per identical group; the backing inventory still contains every article.
       const btn = document.createElement('button');
       btn.className = 'inv-pcloth-item';
       btn.setAttribute('data-ctrl-detail', 'invInfo');
@@ -1019,9 +1090,17 @@
       const starText = packClothingStarText(item); // Used to expose woven quality directly in the Pack clothing list.
       name.textContent = starText ? (starText + ' ' + item.label) : item.label;
       btn.appendChild(name);
+      if (group.count > 1) {
+        const badge = document.createElement('span'); // Cloned by InventoryUI into the visible Pack grid tile.
+        badge.className = 'iib-count ipc-stack-count';
+        badge.textContent = '×' + group.count;
+        badge.style.top = '3px'; // Avoid overlapping the grid's bottom-aligned CLOTHING category caption.
+        badge.style.bottom = 'auto';
+        btn.appendChild(badge);
+      }
       btn.addEventListener('click', () => selectPackClothingItem(item.uid));
       sec.appendChild(btn);
-    });
+    }
   }
 
   // Build the equipment slots panel inside #invEquipSection
@@ -1217,5 +1296,11 @@
     ensureGearClothingCollection,
     buildPackClothingSection,
     buildEquipmentSlots,
+    getClothingStackDebug: () => { // Compact diagnostic usable on mobile without developer tools.
+      const items = deps?.getPackClothing?.() || []; // Current saved pack entries are the authority.
+      const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
+      return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
+    },
+    __test: { clothingStackSignature, groupClothingForDisplay, ensureUniquePackClothingUids },
   };
 })();
