@@ -69,6 +69,7 @@ const root = path.resolve(__dirname, '..');
         window.EquipmentPanel = { init() {}, previewPackClothingItem(uid) { // Browser adapter verifies that focus calls preview, not clothing's click handler.
           window.__clothingPreviewUid = uid;
           delete document.getElementById('iiDetail').dataset.itemKey;
+          document.getElementById('iiDetail').dataset.itemKind = 'clothing';
           document.getElementById('iiName').textContent = 'Traveler Coat';
         } };
         window.Combat = { deps: {} };
@@ -147,6 +148,7 @@ const root = path.resolve(__dirname, '..');
             group: window.ControllerUI.debugState().groupId,
             count: window.__items.inventory[tile.dataset.key],
             debugKey: window.InventoryUI.debugSnapshot().lastControllerPackPreview?.key,
+            kind: document.getElementById('iiDetail').dataset.itemKind,
           });
         }
         window.ControllerUI.showSection('mpInventory', 'invGridArea');
@@ -163,6 +165,7 @@ const root = path.resolve(__dirname, '..');
         assert.equal(preview.group, 'invGridArea', 'highlight alone must never enter the detail action group');
         assert.equal(preview.count, 1, 'highlight must not consume or use an item');
         assert.equal(preview.debugKey, preview.key);
+        assert.equal(preview.kind, 'pack', 'ordinary items are marked separately from clothing');
       }
       if (previews.focusedKey) assert.equal(previews.focusedName, previews.snapshots.find(row => row.key === previews.focusedKey).name);
 
@@ -207,7 +210,16 @@ const root = path.resolve(__dirname, '..');
       assert.equal(clothingPreview.uid, 'coat-preview');
       assert.equal(clothingPreview.preview.key, 'coat-preview');
       assert.equal(clothingPreview.preview.clothing, true);
+      assert.equal(await page.evaluate(() => document.getElementById('iiDetail').dataset.itemKind), 'clothing');
       assert.equal(clothingPreview.group, 'invGridArea');
+      // Even a garment named like a usable scroll must not inherit its Read button.
+      await page.evaluate(() => {
+        document.getElementById('iiName').textContent = window.__items.ITEM_DEFS[window.__lessonKeys[0]].label + ' ×1';
+        document.getElementById('iiDetail').dataset.itemKind = 'clothing';
+      });
+      await page.waitForTimeout(75);
+      assert.equal(await page.evaluate(() => !!document.getElementById('inventoryDirectUseBtn')), false,
+        'clothing with the same label as a tablet must not gain its direct-use action');
       const directionalPreview = await page.evaluate(() => {
         window.ControllerUI.showSection('mpInventory', 'invGridArea');
         window.ControllerUI.press('right'); // Real directional navigation must emit the focus preview without Confirm.
