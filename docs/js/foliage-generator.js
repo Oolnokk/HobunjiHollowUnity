@@ -2241,9 +2241,21 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       if (!excluded && (settings.target === 'all' || (settings.target === 'selected' ? selected : role === settings.target))) targets.push(object);
     });
-    if (settings.style !== 'natural' && settings.target !== 'shingles') {
-      const guides=targets.filter(mesh=>mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideOwner===parent.uuid && !!mesh.userData.surfaceFoliageOpeningMode===settings.tunnelAsOpening); // Only authoritative planes may steer guided architectural/named growth.
-      if (guides.length) return guides;
+    if(settings.target==='shingles' && (settings.style!=='natural'||settings.shrinkwrapFinal)){
+      // Precisely authored roof planes are the navigation surface. Shingle GLBs
+      // are FINISHING geometry: use them only in the optional shrinkwrap pass.
+      const roofGuides=[];
+      parent.traverse(mesh=>{if(mesh.isMesh&&mesh.userData?.surfaceFoliageGuide&&
+        mesh.userData.surfaceFoliageGuideOwner===parent.uuid&&
+        mesh.userData.surfaceFoliageRole==='roofs'&&
+        !!mesh.userData.surfaceFoliageOpeningMode===settings.tunnelAsOpening)roofGuides.push(mesh);});
+      if(roofGuides.length)return roofGuides;
+    }
+    if(settings.style!=='natural'||settings.shrinkwrapFinal){
+      const guides=targets.filter(mesh=>mesh.userData?.surfaceFoliageGuide &&
+        mesh.userData.surfaceFoliageGuideOwner===parent.uuid &&
+        !!mesh.userData.surfaceFoliageOpeningMode===settings.tunnelAsOpening);
+      if(guides.length)return guides;
     }
     return targets.filter(mesh=>!mesh.userData?.surfaceFoliageGuide); // Free growth never reads invisible guide duplicates.
   }
