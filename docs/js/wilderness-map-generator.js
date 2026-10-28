@@ -6026,9 +6026,14 @@
   // column (entry tile down to the front row) as ordinary ground, so the
   // entry is reachable on foot instead of buried in the den's rock overlay.
   function denEntryWalkableKeys(object) {
-    const keys = new Set();
+    const keys = new Set(); // Legacy entrance swathe when no authored collider replaces the den's automatic shell.
+    if (object?.type !== 'animalDen') return keys;
+    const localeId = object.entranceTemplateId || 'locale_animal_den_entrance'; // The placed den identifies which Locale Editor template supplies collision.
+    const template = (settings.locales || []).find(locale => locale.id === localeId); // Source locale metadata is available before generated rock overlays are exported.
+    const authored = denCliffPlacementApi()?.authoredWalkableTiles?.(object, template); // Use the exact authored custom collider instead of repainting its cleared flanks as rock.
+    if (authored) return authored;
     const mouth = object?.mouthAnchor;
-    if (object?.type !== 'animalDen' || !object.entryInside || !mouth) return keys;
+    if (!object.entryInside || !mouth) return keys;
     for (let y = mouth.y; y < object.y + (object.h || 1); y++) for (let x = Math.max(object.x, mouth.x - 1); x <= Math.min(object.x + (object.w || 1) - 1, mouth.x + 1); x++) keys.add(`${x},${y}`); // Center path plus both flanking columns match den template placement.
     return keys;
   }
