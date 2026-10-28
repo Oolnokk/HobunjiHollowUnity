@@ -93,7 +93,9 @@ window.SurfaceFoliageAuthoring = (() => {
     };
     panel.querySelector('[data-action="apply"]').onclick = () => {
       try {
-        const recipes = [...(adapter.read()||[])], index = Number(field('layer').value), input = {}; // Copy the list so undo snapshots retain the prior state.
+        const recipes = [...(adapter.read()||[])], index = Number(field('layer').value); // Copy the list so undo snapshots retain the prior state.
+        const previous = index>=0 && recipes[index] && typeof recipes[index]==='object' ? recipes[index] : null; // Existing recipes may hold advanced, non-UI growth options.
+        const input = previous ? {...previous} : {}; // Retain wall-only and hanging-vine settings when editing unrelated visible fields.
         for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','inset','color','texture'])input[key]=field(key).value;
         input.perSurface=input.target!=='shingles'&&field('perSurface').checked;
         input.shrinkwrapFinal=field('shrinkwrapFinal').checked;
@@ -105,6 +107,7 @@ window.SurfaceFoliageAuthoring = (() => {
         }
         if(index<0&&recipes.length>=32)throw new Error('Maximum 32 growth layers. Edit or remove an existing layer.');
         const recipe=window.FoliageGenerator.normalizeSurfaceGrowth(input); // Bounds inputs consistently with gameplay regeneration.
+        if(previous?.reuseSurfaceSampling===true)recipe.reuseSurfaceSampling=true; // Preserve the optional cave sampling cache flag on edit.
         if(index>=0)recipes[index]=recipe;else recipes.push(recipe);
         report.textContent=adapter.write(recipes)||'Growth regenerated.';refresh();field('layer').value=String(index>=0?index:recipes.length-1);
       } catch(error) { report.textContent='Growth failed: '+error.message;adapter.log?.(report.textContent,'warn'); }
