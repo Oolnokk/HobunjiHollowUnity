@@ -1884,6 +1884,40 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       hangChance: finite('hangChance', 0, 0, 1), hangLength: finite('hangLength', 0, 0, 6) }; // Hanging tips are optional; existing authoring recipes are unchanged.
   }
 
+  // Keep one authoritative architectural face policy across the House Editor,
+  // both runtime house-generation paths, and building import. Do not interpret
+  // tessellation for buried seam caps, doorway framing thickness or roof caps
+  // as independently growable, exposed surfaces.
+  function architecturalSurfaceSources(faces, options={}) {
+    const wallLift=Math.max(0,Number(options.wallLift)||0),roofLift=Math.max(0,Number(options.roofLift)||0);
+    const result=[];
+    for(const face of Array.isArray(faces)?faces:[]){
+      if(!Array.isArray(face?.v)||face.v.length!==4||face.seamCap||face.watertightSeam||face.highlandFrustumBottom||face.highlandFrustumTop)continue;
+      let role;
+      if(face.tag==='wall')role='walls';
+      else if(face.tag==='roof')role='roofs';
+      else if(face.tag==='entryTunnel' && face.solidifiedWall &&
+        !face.doorwayFrame&&!face.explicitSkywardCap &&
+        ['north','south','east','west'].includes(face.extensionFace)){
+        // Only the exterior planar sheet of a solidified tunnel side, never
+        // its wall-thickness returns or internal connecting/end caps.
+        const coord=(face.extensionFace==='north'||face.extensionFace==='south')?2:0;
+        const values=face.v.map(p=>p[coord]);
+        if(Math.max(...values)-Math.min(...values)>.001)continue;
+        const outer=face.extensionFace==='north'||face.extensionFace==='west'
+          ? Math.min(...values):Math.max(...values);
+        if(Math.abs(values[0]-outer)>.001)continue;
+        role='walls';
+      }else continue;
+      result.push({
+        vertices:[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]],
+        id:'architectural-face-'+face.id,role,sectionId:String(face.highlandSectionRole||face.roofSectionRole||face.extensionType||''),
+        renderLift:role==='roofs'?roofLift:wallLift
+      });
+    }
+    return result;
+  }
+
   // Furniture Author's surface recognition is a connected-face flood fill, with
   // a split-angle threshold. Buildings need the same definition across separate
   // authored quads, wall sections and gable meshes, rather than role/tag groups.
@@ -2592,7 +2626,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       return runtimeInstances.get(runtime);
     },
-    surfaceGrowthDefaults, normalizeSurfaceGrowth, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
+    surfaceGrowthDefaults, normalizeSurfaceGrowth, architecturalSurfaceSources, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);
