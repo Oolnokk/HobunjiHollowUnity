@@ -8,9 +8,9 @@ window.SurfaceFoliageAuthoring = (() => {
       <label>Saved layer <select data-field="layer"><option value="-1">New layer</option></select></label>
       <div class="row"><label>Type <select data-field="kind"><option value="vines">Vines</option><option value="roots">Roots</option></select></label>
       <label>Target <select data-field="target"></select></label></div>
-      <div class="row"><label>Growth style <select data-field="style"><option value="natural">Natural (original)</option><option value="cornerFill">Corner Fill · follow intersections</option><option value="wrap">Wrap · spread inward from edges</option></select></label></div>
-      <div class="row" data-wrap-controls><label>Wrap density <input data-field="density" type="range" min="0.05" max="1" step="0.05" value="0.45"></label><output data-density-label>45%</output></div>
-      <p class="hint muted">Natural follows freely across surface faces. Corner Fill pins its base spline directly to real surface intersections, then adds gentle Curl; Clearance offsets the visible strands from those edges. Wrap spreads from edges toward uncovered areas, with Strands acting as a performance budget. Density is an approximate coverage goal; 100% adds a thin, continuous textured cover without piling up tubes.</p>
+      <div class="row"><label>Growth style <select data-field="style"><option value="natural">Natural (original)</option><option value="cornerFill">Corner Fill · follow intersections</option><option value="wrap">Wrap · grow between outer edges</option></select></label></div>
+      <div class="row" data-wrap-controls><label>Wrap edge-anchor density <input data-field="density" type="range" min="0.05" max="1" step="0.05" value="0.45"></label><output data-density-label>45%</output></div>
+      <p class="hint muted">Natural follows freely across surface faces. Corner Fill pins its base spline directly to real surface intersections, then adds gentle Curl; Clearance offsets the visible strands from those edges. Wrap follows Natural-style winding paths, but only accepts strands that start on one exposed boundary edge and finish on another. Edge-anchor density determines how closely strand endpoints may be reserved along the perimeter, not how much wall area looks covered. Nothing automatically paints a flat covering sheet.</p>
       <div class="row"><label>Seed <input data-field="seed" value="surface-1" style="width:130px"></label><label><span data-count-label>Strands per surface</span> <input data-field="count" type="number" min="1" max="80" value="12" style="width:70px"></label></div>
       <div class="row"><label>Maximum strands per surface <input data-field="strandLimit" type="number" min="1" max="80" value="80" style="width:70px"></label><label><input data-field="perSurface" type="checkbox" checked> Distribute by detected surface</label></div>
       <p class="hint muted">Each recognized wall/gable region receives its own Strands budget, capped by its maximum. Legacy Natural layers preserve their previous behavior unless you enable detected surfaces. Shingle layers stay unchanged.</p>
@@ -28,10 +28,10 @@ window.SurfaceFoliageAuthoring = (() => {
       const perSurface=field('target').value!=='shingles'&&
         (field('perSurface').checked||field('style').value!=='natural');
       panel.querySelector('[data-count-label]').textContent=field('target').value==='shingles'
-        ? (wrap?'Shingle strand budget':'Shingle strands')
-        : perSurface?(wrap?'Strand budget per surface':'Strands per surface')
+        ? (wrap?'Shingle strands':'Shingle strands')
+        : perSurface?(wrap?'Edge-to-edge strands per surface':'Strands per surface')
         : 'Strands (legacy whole layer)';
-      field('perSurface').disabled=field('target').value==='shingles'; // Wrap's count sets a geometric complexity budget rather than a fixed number of strands.
+      field('perSurface').disabled=field('target').value==='shingles'; // Wrap count is the maximum number of completed boundary-to-boundary strands per surface; a crowded perimeter may produce fewer.
     };
     field('style').onchange=updateStyleControls;
     field('target').onchange=updateStyleControls;
