@@ -83,5 +83,40 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
   assert.ok(started.length >= 1 && started.at(-1).offset === 0, 'release voice starts from its beginning');
   assert.ok(Math.abs(started.at(-1).buffer.duration - releaseS) < 1e-9, 'release voice is stretched over the full release span');
 
-  console.log('Combat release grunt is pre-rendered during the windup: ok');
+  const screamUrl = 'assets/audio/sfx/utterances/sfx_maskbound_scream.mp3'; // Single MP3 must supply every guardian combat utterance.
+  const guardian = { id: 'maskbound-1', rosterRecord: { maskboundTroop: 'sentinel', appearance: { speciesId: 'maskbound-guardian', gender: 'male' } }, health: 50, maxHealth: 100, stamina: 15, maxStamina: 100 };
+  const voiceRequests = []; // Records the public guardian voice-variant selection path by combat event.
+  window.MaskboundGuardianCombat = {
+    voiceSource: screamUrl,
+    voiceVariantFor(entity, event) {
+      if (entity !== guardian) return null;
+      voiceRequests.push(event);
+      return { url: screamUrl, pitchOffsetSemitones: 4.5, tempoMultiplier: 1.3, event };
+    },
+  };
+  const screamRendersBefore = renders.length;
+  const screamPreset = api.prewarmStrikeGrunt(guardian, 'combo', releaseS);
+  assert.equal(screamPreset.url, screamUrl);
+  assert.equal(screamPreset.voiceVariant.tempoMultiplier, 1.3);
+  await flush();
+  assert.equal(renders.length, screamRendersBefore + 1, 'guardian scream is rendered ahead of the strike');
+  const screamPrewarm = renders.at(-1).opts;
+  assert.equal(screamPrewarm.pitchSemitones, 4.5, 'guardian-specific vocal pitch is applied before strike');
+  assert(Math.abs(screamPrewarm.tempo - (decoded.duration / releaseS) * 1.3) < 1e-9, 'guardian-specific tempo changes independently of pitch');
+  api.playStrikeGrunt(guardian, 'combo', 'woodenSwing', releaseS, 0, screamPreset);
+  await flush();
+  assert.deepEqual(renders.at(-1).opts, screamPrewarm, 'attack windup and strike share the same transposed and time-stretched recording');
+
+  const oneShots = []; // Captures dodge and pain playback through the generic voice owner and independent-pitch route.
+  window.AnimalVoiceIndependentPlayback.playIndependent = (url, opts) => {
+    oneShots.push({ url, ...opts }); return { independentPitch: true, stop() {} };
+  };
+  api.playDodge(guardian);
+  assert.equal(oneShots.at(-1).url, screamUrl, 'guardian dodge uses the same maskbound sound file');
+  assert.equal(oneShots.at(-1).pitchSemitones, 4.5, 'dodge pitch is applied without changing the source recording');
+  assert(oneShots.at(-1).tempo > 1, 'dodge tempo is independently changed from the original source');
+  assert(voiceRequests.includes('dodge') && voiceRequests.includes('strike'), 'combat events request distinct variants from one sound source');
+  assert.equal(api.debugSnapshot().maskboundVoiceSource, screamUrl, 'on-device diagnostics expose the active guardian voice recording');
+
+  console.log('Combat release grunt is pre-rendered during the windup, guardian variant included: ok');
 })().catch(error => { console.error(error); process.exit(1); });
