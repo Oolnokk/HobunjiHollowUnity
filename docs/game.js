@@ -29690,6 +29690,7 @@
         TILE,
         getPlayerGroundY: _playerGroundY,
         getActiveScene: window.GridTileAccessors.getActiveScene,
+        getCurrentArea: () => currentArea,
         isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
       });
 
