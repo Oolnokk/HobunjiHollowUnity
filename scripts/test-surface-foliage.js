@@ -25,6 +25,33 @@ for(const bad of [null,undefined,[],42,'broken'])assert.equal(api.normalizeSurfa
 assert.equal(api.normalizeSurfaceGrowth({target:'invented',count:NaN,length:Infinity,seed:'x'.repeat(999)}).target,'all');
 assert.equal(api.normalizeSurfaceGrowth({seed:'x'.repeat(999)}).seed.length,128);
 assert.equal(api.normalizeSurfaceGrowth({}).texture,'assets/textures/carved_smooth.png');
+
+assert.equal(api.normalizeSurfaceGrowth({}).style,'natural','Old JSON without style must continue to use original wandering growth');
+assert.equal(api.normalizeSurfaceGrowth({style:'cornerFill'}).style,'cornerFill');
+assert.equal(api.normalizeSurfaceGrowth({style:'wrap',density:999}).density,1);
+assert.equal(api.normalizeSurfaceGrowth({style:'wrap',density:-99}).density,.05);
+assert.equal(api.normalizeSurfaceGrowth({style:'wrap',density:NaN}).density,.45);
+assert.equal(api.normalizeSurfaceGrowth({style:'unknown'}).style,'natural');
+const roundTrip=JSON.parse(JSON.stringify(api.normalizeSurfaceGrowth({kind:'roots',style:'wrap',density:.75,seed:'saved-wall'})));
+assert.equal(api.normalizeSurfaceGrowth(roundTrip).density,.75);
+assert.equal(api.normalizeSurfaceGrowth(roundTrip).style,'wrap');
+const sourceOfStyles=generatorSource.slice(generatorSource.indexOf('function surfaceGuideEdges('),generatorSource.indexOf('function applySurfaceGrowth('));
+assert.match(sourceOfStyles,/if\s*\(settings\.style==='cornerFill'\)appendCornerGrowth\(/,'Corner Fill must use true edge topology instead of normal face walks');
+assert.match(sourceOfStyles,/settings\.style==='wrap'\?new Map\(\)/,'Wrap must share a per-layer coverage grid to avoid duplicating occupied paths');
+assert.match(sourceOfStyles,/appendDenseCover\(group,triangles,settings\)/,'Maximum density must use a conformal cover, not unbounded extra tube geometry');
+assert.match(sourceOfStyles,/Math\.min\(settings\.density>=\.995\?24:96/,'Strand geometry must stay capped for mobile');
+assert.match(sourceOfStyles,/Math\.round\(settings\.count\*\(\.25\+settings\.density\*1\.75\)\)/,'Wrap count must remain an effective strand-complexity budget');
+assert.match(sourceOfStyles,/const coverageKey=\(p,n\)=>/,'Occupancy must distinguish perpendicular surface faces');
+const authorSource=fs.readFileSync('docs/js/surface-foliage-authoring.js','utf8');
+assert.match(authorSource,/data-count-label/,'Every editor must explain Wrap strand-budget behavior');
+assert.match(authorSource,/\[data-wrap-controls\]'\)\.style\.display/,'Wrap-only controls must be hidden reliably even with flex-row editor CSS');
+assert.match(authorSource,/value="cornerFill"/);
+assert.match(authorSource,/value="wrap"/);
+assert.match(authorSource,/data-field="density"/);
+assert.match(authorSource,/updateStyleControls\(\)/);
+new Function(generatorSource);
+new Function(authorSource);
+
 assert.equal(api.normalizeSurfaceGrowth({texture:'assets/textures/custom.png',color:'#123456'}).texture,'assets/textures/custom.png');
 assert.equal(api.normalizeSurfaceGrowth({texture:''}).texture,'');
 for(const texture of ['javascript:alert(1)','blob:temporary','file:///x.png','../private.png'])assert.equal(api.normalizeSurfaceGrowth({texture}).texture,'assets/textures/carved_smooth.png');
