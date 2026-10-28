@@ -3393,7 +3393,9 @@
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "perSurface": true,
+      "strandLimit": 80
     },
     {
       "kind": "vines",
@@ -3411,7 +3413,9 @@
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "perSurface": true,
+      "strandLimit": 80
     }
   ],
   "doorTiles": []
