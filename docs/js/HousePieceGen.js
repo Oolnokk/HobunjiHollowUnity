@@ -732,7 +732,7 @@
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
     // Architectural navigation follows pre-cladding wall/gable/roof faces, including actual door/window cuts.
     // Invisible, non-raycastable guides are independent of randomized brick and stacked-log geometry.
-    if ((opts.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap')) {
+    if ((opts.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap' || recipe.perSurface === true)) {
       // Detect connected face regions, so coplanar wall and gable patches join while real folds remain separate.
       const foliage=global.FoliageGenerator;
       if(foliage){
@@ -1559,7 +1559,7 @@
     }
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
     // The transformed source faces, not WallBuilder bricks or generated log courses, are the navigation authority.
-    if ((piece.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap')) {
+    if ((piece.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap' || recipe.perSurface === true)) {
       // Group sheer authored faces by shared edges and normal angle, not material or wall/gable labels.
       const foliage=global.FoliageGenerator;
       if(foliage){
