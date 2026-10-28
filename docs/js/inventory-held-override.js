@@ -322,7 +322,7 @@
     // The selected Pack slot is the item identity. Looking it up by name through
     // every owned stack on each observed DOM change can stall large inventories.
     const selected = document.querySelector?.('#invGrid .inv-item-box.selected[data-key]:not(.pack-clothing-tile)');
-    const selectedKey = selected?.dataset?.key || clickedDetailKey;
+    const selectedKey = detailEl.dataset?.itemKey || selected?.dataset?.key || clickedDetailKey; // Bind direct use to displayed preview, never a stale selected stack.
     if (selectedKey) {
       const action = inventoryUseAction(selectedKey); // Exactly one canonical metadata lookup for the selected item.
       const def = canonicalDef(selectedKey);
