@@ -736,13 +736,10 @@
       // Detect connected face regions, so coplanar wall and gable patches join while real folds remain separate.
       const foliage=global.FoliageGenerator;
       if(foliage){
-        const panels=['wall','roof'].map(tag=>({
-          vertices:faces.filter(face=>tag==='wall'?['wall','entryTunnel'].includes(face.tag):face.tag==='roof')
-            .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
-          role:tag==='wall'?'walls':'roofs',
-          renderLift:tag==='wall'?((opts.wallBuilder||generatedLogStyle)? .26:0):.16
-        }));
-        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels));
+        const panels=foliage.architecturalSurfaceSources(faces,{
+          wallLift:(opts.wallBuilder||generatedLogStyle)?.26:0,roofLift:.16
+        });
+        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels,{occlusionFaces:faces}));
       }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, opts.surfaceGrowth);
@@ -1566,12 +1563,8 @@
       // Group sheer authored faces by shared edges and normal angle, not material or wall/gable labels.
       const foliage=global.FoliageGenerator;
       if(foliage){
-        const panels=['walls','roofs'].map(role=>({
-          vertices:allOff.filter(face=>role==='roofs'?face.tag==='roof':['wall','entryTunnel'].includes(face.tag))
-            .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
-          role,renderLift:role==='roofs'?.16:(hideWalls?.26:0)
-        }));
-        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels));
+        const panels=foliage.architecturalSurfaceSources(allOff,{wallLift:hideWalls?.26:0,roofLift:.16});
+        foliage.replaceSemanticSurfaceGuides(group,foliage.recognizeArchitecturalSurfaceRegions(group,panels,{occlusionFaces:allOff}));
       }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
