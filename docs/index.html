@@ -89,14 +89,15 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261024h56886c0"></script>
+  <script src="js/action-arc-ui.js?v=20261028farmwork1"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261027h8829190f&window=20260926rebase1"></script>
-  <script src="js/farm-plot-editor.js?v=20261027h8829190"></script> <!-- Family farm-plot authoring. -->
+  <script src="js/farm-editor.js?v=20261028farmwork1&window=20260926rebase1"></script>
+  <script src="js/farm-plot-editor.js?v=20261028farmwork1"></script> <!-- Shared family plot records and workers. -->
+  <script src="js/farmwork-ui.js?v=20261028farmwork1"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
        partway through its own setup (after camTargetX/pathWallBuilder/
@@ -969,6 +970,14 @@
       <div id="furniturePlacerHint" style="font-size:11px;color:var(--muted);padding:6px 10px;line-height:1.4;"></div>
       <div id="furniturePlacerList" class="farm-list" style="padding:0 10px 10px;"></div>
     </div>
+  </div>
+
+  <!-- Normal-play family plot assignments, shown from the utility wheel after marriage. -->
+  <div id="farmworkPanel" style="display:none;" aria-label="Farmwork assignments" data-ctrl-panel>
+    <div class="fed-header"><span>🌱 Farmwork</span>
+      <button class="fed-close" data-ctrl-cancel onclick="window.FarmworkUI?.close?.()" title="Close Farmwork">✕</button>
+    </div>
+    <div id="farmworkContents" class="fed-scroll" data-ctrl-transparent></div>
   </div>
 
   <!-- Farm Editor Panel -->
