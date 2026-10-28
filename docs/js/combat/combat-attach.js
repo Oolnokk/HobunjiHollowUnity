@@ -225,7 +225,7 @@
         cfg.onAttach?.(c, host);
         return true;
       }
-      const attackSpeed = c.isCompanion ? Math.max(cfg.approachSpeedPxS ?? 520, d.TILE * 2.6 / 0.12) : (cfg.approachSpeedPxS ?? 520); // Companions close quickly while keeping attach-specific hovering and host alignment.
+      const attackSpeed = c.isCompanion ? Math.max(cfg.approachSpeedPxS ?? 520, d.TILE * (window.Combat?.animalAttacks?.companionLungeTuning?.maxTiles || 2.6) / (window.Combat?.animalAttacks?.companionLungeTuning?.durationS || 0.12)) : (cfg.approachSpeedPxS ?? 520); // Companions close quickly while keeping attach-specific hovering and host alignment.
       const step = Math.min(dist, attackSpeed * dt);
       c.x += dx / dist * step; c.y += dy / dist * step; // Attackers that attach fly/hop over small obstacles.
       c.facing = Math.atan2(dy, dx);
