@@ -1459,15 +1459,15 @@
     playOneShotSfx(cfgEntry, falloff, undefined, spatial);
   }
 
-  function playRangedImpactSfx(x, y, areaId) {
+  function playRangedImpactSfx(x, y, areaId, pitch = 1) {
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().rangedImpact;
     if (!cfgEntry) return;
     const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
     if (spatial.gain <= 0.002) return;
     const falloff = spatial.gain;
-    recordCombatSfx('rangedImpact', cfgEntry, { rangedImpact: true });
-    playOneShotSfx(cfgEntry, falloff, undefined, spatial);
+    recordCombatSfx('rangedImpact', cfgEntry, { rangedImpact: true, pitch });
+    playOneShotSfx(cfgEntry, falloff, pitch, spatial);
   }
 
   function combatSfxDebugSnapshot() {

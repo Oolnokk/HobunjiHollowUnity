@@ -396,7 +396,10 @@
       else audio?.playWeaponSlashSfx?.(2, swingIndex);
       return;
     }
-    const cfgEntry = audio?.combatSfxConfig?.()[kind === 'load' ? 'rangedLoad' : 'rangedFire'];
+    const cues = audio?.combatSfxConfig?.(); // Shared cue table, with a dedicated dart-load asset for blowguns.
+    const cfgEntry = kind === 'load' && def?.rangedType === 'blowgun'
+      ? (cues?.blowgunLoad || cues?.rangedLoad)
+      : cues?.[kind === 'load' ? 'rangedLoad' : 'rangedFire'];
     if (!cfgEntry) return;
     const delays = itemKey === 'scatterbow'
       ? (kind === 'load' ? SCATTERBOW_LOAD_CHORUS_MS : SCATTERBOW_FIRE_CHORUS_MS)
@@ -405,7 +408,7 @@
     lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:${kind}:${delays.length}-layer`;
     delays.forEach((delayMs, index) => {
       const playLayer = () => {
-        const pitch = itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1;
+        const pitch = kind === 'fire' && def?.rangedType === 'blowgun' ? 2 : (itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1); // Doubles only blowgun shot pitch for both player and NPC.
         if (owner) {
           const spatialCfg = { ...cfgEntry, volume: (Number(cfgEntry.volume) || 0.8) * layerVolumeScale };
           audio.playCreatureSfxAt?.(owner, spatialCfg, pitch);
@@ -1281,7 +1284,7 @@
       window.AudioSystem?.playWeaponHitSfx?.(p.def.dmgType, x, y, p.areaId, undefined, 'medium');
       return;
     }
-    window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId);
+    window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId, p.def?.rangedType === 'blowgun' ? 2 : 1); // Same arrow hit, twice the pitch for darts only.
   }
 
   function projectileHit(p, maxSegmentT = 1) {
@@ -1845,7 +1848,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'NPC thrown weapons now perform one continuous held windup and release without a separate reload. Crossbows, scatterbows and blowguns retain load/fire; npcRangedActions lists live phases.',
+      latestChange: 'B\'shuakauitl fires in half its previous animation time and uses its own dart load cue; blowgun arrow shot/impact SFX run at 2x pitch for players and NPCs.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
