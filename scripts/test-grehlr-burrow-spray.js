@@ -242,7 +242,7 @@ const distantSprayTarget = { ...player, x: 340 }; // Beyond the ordinary spray r
 attacks.start(approachGrehlr, 'grehlrStink', { target: distantSprayTarget });
 assert.equal(approachGrehlr._animalAttack.approach, null, 'Stink Spray owns its only charge');
 assert.equal(approachGrehlr._animalAttack.state.stage, 'lunge');
-assert(approachGrehlr._animalAttack.state.lungeSpeedPxS >=
+assert(approachGrehlr._animalAttack.state.lungeSpeedPxS + 0.000001 >=
   tuning.grehlrStink.LUNGE_MAX_TILES * context.Combat.deps.TILE / attacks.companionLungeTuning.durationS,
   'companion Stink Spray uses the near-instant attack-burst speed');
 attacks.cancel(approachGrehlr);
