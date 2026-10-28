@@ -48,6 +48,7 @@ async function createRuntime(area = 'map_northern_cliffs') {
   window.AudioSystem = { gameAudioConfig: () => ({ ...config, startupBgm: null }) };
   window.Music.init({
     getCurrentArea: () => live.area, getHour: () => live.hour, getPaused: () => false, getGameStarted: () => true,
+    player: { x: 64, y: 64 }, TILE: 64, // Positional door-audio regression uses a listener one tile from its source.
     isPlayerInCombat: () => live.combat, _isZoneArea: () => true,
     EXTERIOR_ZONES: { map_northern_cliffs: {}, map_western_slope: {} }, getWorkspaceMaps: () => [],
     calendar: { day: 1, weather: 'clear', isRaining: false }, MORNING_HOUR: 6,
@@ -166,6 +167,38 @@ async function run() {
   slopeNight.window.Music.updateAmbientCues();
   assert.match(slopeNight.live.media.at(-1).src, /bgm_snow_and_darkness\.m4a$/);
 
+  const ruin = await createRuntime('map_i_dev_random_ruin'); // Exercises the real music scheduler with the Great Door's unlock signal.
+  let greatDoorUnlocked = false; // Simulates the sanctum composer switching from sealed to awake; used by the scheduler bridge.
+  ruin.window.DevRandomRuinSanctum = { isGreatDoorUnlocked: () => greatDoorUnlocked };
+  ruin.window.Music.updateAmbientCues();
+  const ruinSong = ruin.live.media.at(-1); // Current ruin BGM must relinquish ownership once the Great Door awakens.
+  assert.match(ruinSong.src, /bgm_of_bygone_Kings\.ogg$/);
+  const doorSource = ruin.window.Music.registerFurnitureSfxSource('map_i_dev_random_ruin', 1, 1, {
+    url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg', rangeTiles: 16, volume: .8,
+  }); // Matches the actual positional BGS registered by awakenDoor().
+  greatDoorUnlocked = true;
+  ruin.window.Music.updateAmbientCues();
+  assert.equal(ruin.window.Music.ambientDiagnostics().bgm, null, 'unlocking retires the selected ruin BGM slot');
+  assert.equal(ruinSong._musicTarget, 0, 'unlocked Great Door fades the old BGM to silence');
+  assert.equal(ruin.window.Music.ambientDiagnostics().ruinVaultSilenced, true, 'mobile diagnostics expose the source of soundtrack silence');
+  ruin.window.Music.updateFurnitureSfxSources();
+  assert.equal(doorSource.audio.paused, false, 'unlocked door positional audio remains able to play');
+  assert.ok(doorSource.audio.volume > 0, 'nearby player hears the positional door source');
+  ruin.live.now += 10000;
+  ruin.window.Music.updateAmbientCues();
+  assert.equal(ruin.live.media.filter(sound => /bgm_of_bygone_Kings/.test(sound.src)).length, 1, 'later scheduler ticks cannot restart the ruin score');
+  ruin.live.area = 'map_northern_cliffs';
+  ruin.window.Music.updateAmbientCues();
+  assert.equal(ruin.window.Music.ambientDiagnostics().ruinVaultSilenced, false, 'other maps are not silenced by an unlocked Great Door');
+  assert.match(ruin.window.Music.ambientDiagnostics().bgm || '', /bgm_what_the_winds_carry/, 'leaving the ruin resumes normal area music');
+  ruin.live.area = 'map_i_dev_random_ruin';
+  ruin.window.Music.updateAmbientCues();
+  assert.equal(ruin.window.Music.ambientDiagnostics().bgm, null, 'returning to the unlocked ruin remains silent');
+  greatDoorUnlocked = false;
+  ruin.live.now += 10000;
+  ruin.window.Music.updateAmbientCues();
+  assert.match(ruin.window.Music.ambientDiagnostics().bgm || '', /bgm_of_bygone_Kings/, 'a fresh sealed ruin is allowed to play its score');
+
   const unsupported = await createRuntime(); // A whole library of unplayable media must leave an explicit explanation in the copied report.
   await unsupported.window.Music.loadAudioCueIndexes();
   unsupported.window.Music.updateAmbientCues();
@@ -181,7 +214,7 @@ async function run() {
   unsupported.window.Music.updateAmbientCues();
   assert.equal(unsupported.window.Music.getMusicDebugState().pool.failed, 14);
   assert.match(unsupported.window.Music.getMusicDebugState().cuePlayback.lastPhaseExit, /no playable cues:.*pool=14 failed=14/);
-  console.log('music-cycle-runtime: event ordering, real config/manifests, HTTP recovery, playback reporting, and Western Slope day/night passed');
+  console.log('music-cycle-runtime: event ordering, real config/manifests, HTTP recovery, playback reporting, ruin vault BGM handoff, and Western Slope day/night passed');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });
