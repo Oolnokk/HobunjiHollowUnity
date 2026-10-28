@@ -35,6 +35,12 @@ assert.equal(api.normalizeSurfaceGrowth({style:'unknown'}).style,'natural');
 const roundTrip=JSON.parse(JSON.stringify(api.normalizeSurfaceGrowth({kind:'roots',style:'wrap',density:.75,seed:'saved-wall'})));
 assert.equal(api.normalizeSurfaceGrowth(roundTrip).density,.75);
 assert.equal(api.normalizeSurfaceGrowth(roundTrip).style,'wrap');
+assert.match(generatorSource,/function recognizeArchitecturalSurfaceRegions\(/,
+  'Houses and interiors must recognize surface regions using face connectivity, not merely wall/gable tags');
+assert.match(generatorSource,/splitAngleDeg\)\):24/,
+  'Architectural recognition must use the Furniture Author default 24 degree split angle');
+assert.match(generatorSource,/edge\.hiddenInternal=true/,
+  'Interior gable/wall T-junction seams must not become artificial perimeter outlines');
 const sourceOfStyles=generatorSource.slice(generatorSource.indexOf('function surfaceGuideEdges('),generatorSource.indexOf('function applySurfaceGrowth('));
 assert.match(sourceOfStyles,/if\s*\(settings\.style==='cornerFill'\)appendCornerGrowth\(/,'Corner Fill must use true edge topology instead of normal face walks');
 assert.match(sourceOfStyles,/settings\.style==='wrap'\?new Map\(\)/,'Wrap must share a per-layer coverage grid to avoid duplicating occupied paths');
