@@ -1886,6 +1886,31 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       hangChance: finite('hangChance', 0, 0, 1), hangLength: finite('hangLength', 0, 0, 6) }; // Hanging tips are optional; existing authoring recipes are unchanged.
   }
 
+
+  // Shared, reusable wilderness finish palette for roof shingles and foliage.
+  function surfaceMaterialPalette(custom=[]) {
+    const roots=surfaceGrowthDefaults('roots'),vines=surfaceGrowthDefaults('vines');
+    const out=[
+      {id:'shadewood-roots',name:'Shadewood bark / roots',kind:'roots',texture:roots.texture,color:roots.color},
+      {id:'shadewood-vines',name:'Shadewood vines',kind:'vines',texture:vines.texture,color:vines.color}
+    ];
+    for(const [id,preset] of Object.entries(TREE_PRESETS)){
+      const pretty=id.replace(/([a-z])([A-Z])/g,'$1 $2');
+      if(Number.isInteger(preset.barkColorHex))out.push({
+        id:'wilderness-'+id+'-bark',name:pretty+' bark',kind:'roots',texture:roots.texture,
+        color:'#'+preset.barkColorHex.toString(16).padStart(6,'0')});
+      if(Number.isInteger(preset.vineColorHex))out.push({
+        id:'wilderness-'+id+'-vines',name:pretty+' vines',kind:'vines',texture:vines.texture,
+        color:'#'+preset.vineColorHex.toString(16).padStart(6,'0')});
+    }
+    for(const entry of Array.isArray(custom)?custom:[]){
+      if(!entry||typeof entry.name!=='string'||!/^#[0-9a-f]{6}$/i.test(entry.color))continue;
+      out.push({id:String(entry.id||entry.name).slice(0,90),name:entry.name.slice(0,100),
+        texture:normalizeGrowthTexture(entry.texture,''),color:entry.color,kind:entry.kind==='roots'?'roots':'vines'});
+    }
+    return out;
+  }
+
   // Keep one authoritative architectural face policy across the House Editor,
   // both runtime house-generation paths, and building import. Do not interpret
   // tessellation for buried seam caps, doorway framing thickness or roof caps
@@ -2456,6 +2481,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       inward.addScaledVector(normal,-inward.dot(normal));
       for(let i=0;i<limit;i++){
         const remaining=end.point.clone().sub(anchor),distance=remaining.length();
+        if(distance>settings.length-travelled+step*.5)break; // Length caps cumulative walking, not just endpoint distance.
         // An endpoint is only accepted when the actual surface walk reached it.
         if(distance<=step*1.5&&travelled>minSpan*.6){
           points.push(pointAt(end.point,end.edge.normal,end.edge.record));reached=true;break;
@@ -2824,7 +2850,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       return runtimeInstances.get(runtime);
     },
-    surfaceGrowthDefaults, normalizeSurfaceGrowth, architecturalSurfaceSources, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
+    surfaceGrowthDefaults, surfaceMaterialPalette, normalizeSurfaceGrowth, architecturalSurfaceSources, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);
