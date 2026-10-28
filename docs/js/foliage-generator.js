@@ -2389,16 +2389,23 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       ? guide.boundaries // Region seams and triangulation edges are NOT endpoints.
       : guide.boundaries.length?guide.boundaries:guide.corners;
     const perimeter=edges.reduce((n,e)=>n+e.length,0),wanted=Math.min(settings.count,settings.strandLimit);
-    const longest=Math.max(...edges.map(edge=>edge.length),0);
+    const longest=edges.reduce((max,edge)=>Math.max(max,edge.length),0);
     const spacing=Math.max(settings.radius*2.1,Math.min(longest/2,perimeter/Math.max(2,wanted*2)*(1.0-settings.density*.75)));
-    const slots=[];
+    const slots=[];let seenSlots=0;
+    const maxSlots=Math.max(64,Math.min(960,wanted*12)); // Bounded even on heavily tessellated imported meshes.
     if(!edges.length||wanted<1)return {requested:wanted,generated:0,capacity:0,spacing,endpoints:[]};
     for(const edge of edges){
       const usable=edge.length<settings.radius*1.2?0:Math.max(1,Math.floor(edge.length/spacing));
       const samples=Math.min(256,usable);
       for(let i=0;i<samples;i++){
         const t=(i+.5)/samples;
-        slots.push({edge,point:edge.a.clone().lerp(edge.b,t)});
+        const slot={edge,point:edge.a.clone().lerp(edge.b,t)};
+        seenSlots++;
+        if(slots.length<maxSlots)slots.push(slot);
+        else { // Reservoir sampling spreads the bounded endpoint budget across ALL edges.
+          const index=Math.floor(random()*seenSlots);
+          if(index<maxSlots)slots[index]=slot;
+        }
       }
     }
     // Deterministic spatial reservation, not a surface-area occupancy grid.
