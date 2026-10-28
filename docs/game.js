@@ -19563,7 +19563,7 @@
           const _o = resolveObjActionTarget(activeAction);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
-          showToast(_res.message, _res.ok !== false);
+          if (_res.message) showToast(_res.message, _res.ok !== false); // Opening an overlay is not a blank toast notification.
           if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData(); // Cave Duskcaps queue their large world save for idle time instead of freezing pickup.
           return;
         }
