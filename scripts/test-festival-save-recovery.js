@@ -14,7 +14,7 @@ function functionSource(source, name, indent) {
 }
 
 let civilDay = 127, civilYear = 1156, clockMs = 3000, provider, writes = 0;
-let definitionsReady = true, residentsReady = true;
+let definitionsReady = true, residentsReady = true, definitionReads = 0;
 const residents = [{id:'hreesh',homeId:'inn',speciesId:'engh-sho'}, {id:'teacup_unumanuk',homeId:'unumanuk_household',speciesId:'engh-sho'}];
 const W = {
   CalendarSystem:{isInitialized:()=>true,aotYearNumber:()=>civilYear,
@@ -32,7 +32,7 @@ defs.processed = {cookingProcessingTier:'medium'};
 defs.meal = {label:'Test Pie',isCookedFood:true,festivalContestScore:50,
   festivalIngredientQuality:Array.from({length:5},()=>({key:'processed',stars:5,contributesEffects:true})),foodEffects:{vigor:2}};
 const api = W.FestivalSystem, rules = W.FestivalPotluckContest;
-api.init({getItemDefs:()=>definitionsReady?defs:{},getNpcs:()=>residentsReady?residents:[],
+api.init({getItemDefs:()=>{definitionReads++;return definitionsReady?defs:{};},getNpcs:()=>residentsReady?residents:[],
   getWalkers:()=>[],getTownMap:()=>({decor:[]}),getArea:()=> 'farm',inventory:{},save:()=>writes++,grantMask:()=>true});
 const days = rules.buildDays(residents,1156,defs);
 const entry = {key:'meal',stars:5,label:'Test Pie',score:50,ingredients:defs.meal.festivalIngredientQuality,foodEffects:{vigor:2}};
@@ -89,8 +89,10 @@ const recovered = api.serialize().potluckContests['1156:gorkunash'];
 assert.equal(recovered.entry.score,50);
 assert.deepEqual(clone(recovered.days),clone(days),'recovery uses the original festival year for seeded opponents');
 const previousWrites = writes;
-provider.next();
+const previousDefinitionReads = definitionReads;
+for (let i=0;i<100;i++) provider.next();
 assert.equal(writes,previousWrites,'repeated doorstep checks do not resave or reroll a recovered entry');
+assert.equal(definitionReads,previousDefinitionReads,'completed recovery does not keep scanning definitions on repeated reads');
 
 // Existing rolls, result flags, and an already-recorded score are authoritative.
 const legacyRoster = clone(days); legacyRoster[0][0].score = 12;
@@ -122,6 +124,12 @@ api.restore({claims:{'1156:gorkunash':claim},potluckContests:{}});
 assert.equal(provider.next(),null,'recovery cannot award a prize on the last festival day');
 civilDay++;
 assert.equal(provider.next()?.npcId,'hreesh','the next civil day unlocks the recovered prize');
+
+// A surviving shared completion flag still proves the prize was already given.
+W.DoorstepVisits.isDone = key => key === 'gorkunash-potluck:1156:gorkunash';
+api.restore({claims:{'1156:gorkunash':claim},potluckContests:{}});
+assert.equal(provider.next(),null,'legacy recovery must honor the independently saved completed doorstep visit');
+delete W.DoorstepVisits.isDone;
 
 // Entirely lost claims cannot be inferred from merely owning/cooking a strong pie.
 api.restore({claims:{},potluckContests:{}});

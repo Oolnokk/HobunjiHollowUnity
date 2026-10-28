@@ -12,6 +12,7 @@
   let socialParticipationS = 0; // Counts played wheel dance/music seconds, independent of marked festival activity regions.
   let seatedMeal = null; // Runs one existing drink animation every few seconds while seated at the feast.
   let feastCache = null; // Avoid regenerating and scanning the cooking recipe list in the 60-fps action-bar path.
+  let potluckRecoveryPending = false; // Completed migrations must not scan annual claims on every serving-pot/action-bar read.
   let lastTick = 0; // Low-frequency game-loop work and dance elapsed time.
   let effectiveCache = null; // Reused by activity and NPC queries until the raw map or resolved layout changes.
   let residentCache = []; // Refreshed at most once every two seconds as NPC records finish loading.
@@ -109,19 +110,20 @@
     return created;
   }
   function recoverPotluckEntries() {
-    if (!deps || !window.FestivalPotluckContest) return;
+    if (!potluckRecoveryPending || !deps || !window.FestivalPotluckContest) return;
     const defs = deps.getItemDefs?.() || {};
     let changed = false;
+    let retry = false;
     for (const [event, annualClaims] of Object.entries(state.claims)) {
       const match = /^(\d+):gorkunash$/.exec(event);
       const donated = annualClaims?.potluck;
       if (!match || !donated || state.potluckContests[event]?.entry) continue;
       const definition = defs[donated.key];
-      if (!definition?.isCookedFood) continue; // Cooking definitions hydrate after festivals; retry on a later menu/doorstep check rather than saving a guessed score.
+      if (!definition?.isCookedFood) { retry = true; continue; } // Cooking definitions hydrate after festivals; retry rather than saving a guessed score.
       let contest = state.potluckContests[event];
       if (!contest) {
         const guests = residents();
-        if (!guests.length) continue; // Preserve the claim until real residents are ready to generate its original-year roster.
+        if (!guests.length) { retry = true; continue; } // Preserve the claim until real residents are ready to generate its original-year roster.
         contest = state.potluckContests[event] = { days:window.FestivalPotluckContest.buildDays(guests,Number(match[1]),defs),entry:null,rewarded:false };
       }
       const snapshot = contestIngredients(definition,donated.stars); // Recover legacy donations without rewriting their recorded contest result.
@@ -131,6 +133,7 @@
         estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition.foodEffects||{})} };
       changed = true;
     }
+    potluckRecoveryPending = retry;
     if (changed) deps.save?.(); // One save after recovery, including overdue claims from previous civil years.
   }
   function feastMenu() {
@@ -505,6 +508,7 @@
       }
     }
     if (window.FestivalCalendar.blessings[saved?.blessing?.stat] && Number.isFinite(saved.blessing.expiresDay) && Number.isFinite(saved.blessing.level)) state.blessing = { stat: saved.blessing.stat, level: Math.max(1, Math.min(5, Math.trunc(saved.blessing.level))), expiresDay: saved.blessing.expiresDay };
+    potluckRecoveryPending = true; // Recheck only the newly restored member's annual claims; resolved entries remain untouched.
     cancelDance();
     window.FestivalProps?.refreshFeast?.();
     window.FestivalUI?.close?.();
@@ -904,6 +908,7 @@
         estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition?.foodEffects || {})}};
     }
     mark('potluck',{key:payload.key,stars:payload.stars,day:day()});
+    if (!contest) potluckRecoveryPending = true; // NPC loading may defer creation of an otherwise accepted donation's roster.
     feastCache = null; // The seventh physical serving pot becomes available immediately.
     return commit(`Contributed ${definition?.label||payload.key}; 10× normal gift Favor for ${recipients} villagers who do not dislike it.`);
   });
