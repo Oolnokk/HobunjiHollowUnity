@@ -20,7 +20,7 @@ window.SurfaceFoliageAuthoring = (() => {
       <div class="row"><label><input data-field="shrinkwrapFinal" type="checkbox"> Shrinkwrap to final brick / shingle geometry</label></div>
       <div class="row"><label><input data-field="tunnelAsOpening" type="checkbox"> Treat entrance tunnels as openings (edges only, no planting)</label></div>
       <p class="hint muted">Signed Inset moves whole strands into or away from the authored surface (negative = deeper). Shrinkwrap preserves the planned path but conforms its tube rings to the outermost final cladding. Entrance openings are available to the house/architecture guides only.</p>
-      <div class="row"><label>Reusable material palette <select data-field="palette"><option value="">Custom / current material</option></select></label></div>
+      <div class="row"><label>Reusable material palette <select data-field="palette"><option value="">Custom / current material</option></select></label><button type="button" data-action="savePalette">Save this finish to palette</button></div>
       <label>PNG texture <input data-field="texture" type="text" placeholder="assets/textures/example.png" style="width:100%"></label>
       <p class="hint muted">Use an assets/ PNG path or HTTPS URL, upload a PNG to embed it in JSON, or leave blank for solid color.</p><input data-field="textureFile" type="file" accept="image/png" style="max-width:100%"><button data-action="defaults" type="button">Shadewood texture + color</button>
       <div class="row"><button data-action="apply" type="button">Apply / regenerate</button><button data-action="remove" type="button">Remove layer</button><button data-action="refresh" type="button">Refresh layers</button></div><pre data-report role="status" style="white-space:pre-wrap">Ready. Latest change: per-layer PNG textures and colors, defaulting to Shadewood.</pre>`;
@@ -49,6 +49,17 @@ window.SurfaceFoliageAuthoring = (() => {
     palette.onchange=()=>{const choice=paletteEntries.find(item=>item.id===palette.value);if(!choice)return;field('texture').value=choice.texture;field('color').value=choice.color;};
     const syncPalette=()=>{const match=paletteEntries.find(item=>item.texture===field('texture').value&&item.color.toLowerCase()===field('color').value.toLowerCase());palette.value=match?.id||'';};
     field('color').onchange=syncPalette;field('texture').onchange=syncPalette;
+    const savePaletteButton=panel.querySelector('[data-action="savePalette"]');
+    if(!adapter.saveMaterial)savePaletteButton.hidden=true;
+    savePaletteButton.onclick=()=>{if(!adapter.saveMaterial)return;
+      adapter.saveMaterial(field('texture').value,field('color').value,field('kind').value);
+      const custom=adapter.materialPalette?.()||[];
+      const entries=window.FoliageGenerator.surfaceMaterialPalette(custom);
+      palette.replaceChildren(new Option('Custom / current material',''));
+      paletteEntries.splice(0,paletteEntries.length,...entries);
+      for(const entry of entries)palette.add(new Option(entry.name,entry.id));
+      syncPalette();
+    };
     for (const [value, label] of adapter.targets) { const option = document.createElement('option'); option.value=value;option.textContent=label;field('target').appendChild(option); }
     function refresh() {
       const previous = field('layer').value, layers = adapter.read() || []; // Preserve the active recipe while unrelated editor geometry changes.
