@@ -21,10 +21,11 @@
   const ENTRANCED_COMMAND_COUNTDOWN_MS = 3000; // Three one-second 3→2→1 beats during which Entranced neither damages nor naturally recovers.
   const ENTRANCED_COMMAND_GRACE_MS = ENTRANCED_COMMAND_ANNOUNCE_MS + ENTRANCED_COMMAND_COUNTDOWN_MS; // Full immunity/freeze interval around every initial or changed command.
   const ENTRANCED_COMMAND_MIN_HOLD_MS = 10000; // Minimum time a command stays in force after its grace window ends.
-  const PUDDLE_RADIUS_TILES = 0.82; // Kanthic misses make a gameplay hazard this far from the visual puddle center.
-  const PUDDLE_LIFETIME_S = 9; // Short arena-readable lifetime before gasoline fades/disposes.
-  const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
-  const PUDDLE_ENTRANCED_PER_TICK = 3.4; // Repeated buildup per puddle tick; latest puddle owner becomes the referential lich.
+  const PUDDLE_RADIUS_TILES = 1.05; // Visible spell-plasm radius; a growing number of temporary patches takes away safe fighting space.
+  const PUDDLE_LIFETIME_S = 12; // Boss-plasm remains long enough to shape movement, then disappears automatically.
+  const PUDDLE_MAX_ACTIVE = 12; // Hard visual and collision budget, shared across all Kanthic liches in an area.
+  const PUDDLE_SINK_SECONDS = 2.8; // Matches static dungeon plasm's sustained-contact fatal immersion window.
+  const PUDDLE_PULL_TILES_S = 0.72; // Matches static dungeon plasm's inward drift; still escapable with ordinary movement.
   const SUMMON_CAP = 3; // Per-lich live Minion cap prevents an unattended arena test from growing forever.
   const LUNGE_RING_REFERENCE_OUTER_RADIUS = 0.46; // Reference size of the familiar lunge-trail ground circle; used only so the Entranced owner marker can be authored explicitly at 2× diameter.
   const LUNGE_RING_REFERENCE_THICKNESS = 0.14; // Reference lunge-trail line width; Entranced doubles this independently from diameter.
@@ -47,8 +48,8 @@
   const HRONAL_LAVA_VISUAL_S = 0.62; // Short lava flare remains after damage resolution so the eruption reads clearly.
   const HRONAL_LAVA_FOUNTAIN_HEIGHT_MULT = 3.4; // Central eruption jet rises several AOE radii before collapsing with the lava flash.
   const WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0.22; // Mirrors EnvironmentSurfaceMicroPlateau.SURFACE_DEPTH so Kanthic petroleum can deliberately read as the same raised-surface family.
-  const PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE / 4; // Requested one-quarter snow height: a very shallow black petroleum skin instead of a tall puddle blob.
-  const PETROLEUM_OPACITY = 0.70; // Requested fixed petroleum surface opacity.
+  const PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE; // Spell plasm uses the same raised thickness as static ruin plasm.
+  const PETROLEUM_OPACITY = 0.88; // Same translucent purple-black oil finish as static ruin plasm.
   const PETROLEUM_TEXTURE_PATH = 'assets/textures/canvas.png'; // Exact canvas texture used by the Western Slope snow surface.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
@@ -80,8 +81,7 @@
       castCooldownS: 2.15, preferredMinTiles: 3.1, preferredMaxTiles: 5.8,
       projectile: Object.freeze({
         speedPxS: 980, gravityWorldS2: 28, maxAgeS: 2.2, radiusWorld: 0.18,
-        damage: 3, knockbackPxS: 70, footingDamageMultiplier: 0.15,
-        entrancedHealth: 18,
+        damage: 0, knockbackPxS: 0, footingDamageMultiplier: 0, // A Kanthic strike only changes the terrain; its puddle handles all danger.
       }),
     }),
   });
@@ -89,6 +89,7 @@
   let deps = null; // BanditCombat's injected gameplay dependencies captured by the init wrapper and used by all lich simulation.
   const projectiles = new Set(); // Live Tothal/Kanthic spell projectiles updated from the normal RangedWeapons gameplay tick.
   const puddles = new Set(); // Live Kanthic petroleum hazards updated/disposed alongside custom projectiles.
+  const puddleTouchedActors = new Set(); // Keeps only actors with active immersion; allows cheap idle cleanup.
   const eruptions = new Set();
   let petroleumSurfaceGeometry = null; // Shared low micro-plateau mesh reused by every Kanthic petroleum impact.
   let petroleumSurfaceMaterial = null; // Shared black 70%-opacity canvas-textured material reused by every petroleum impact.
@@ -539,7 +540,12 @@
     const power = projectilePower(projectile); // Tothal damage/knockback/Footing pressure/frost all decay with its shrinking lifetime; Kanthic remains full-strength.
     const hitX = projectile.prevX + (projectile.x - projectile.prevX) * t; // Pixel X impact origin passed to canonical knockback/damage.
     const hitY = projectile.prevY + (projectile.y - projectile.prevY) * t; // Pixel Z-plane impact origin passed to canonical knockback/damage.
-    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns knockback/stagger/prone transitions.
+    if(projectile.type==='kanthic'){
+      makeGasolinePuddle(projectile.owner,hitX,hitY); // All direct hits only leave plasm: no forced movement, slowing, knockback or immediate damage.
+      lastEvent='plasm:direct-impact';
+      return;
+    }
+    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns Tothal knockback/stagger/prone transitions.
     const damage = (p.damage || 0) * power;
     const knockback = (p.knockbackPxS || 0) * power;
     if (actor === deps.player) deps.damagePlayer?.(damage, hitX, hitY, knockback, options);
@@ -547,9 +553,6 @@
     const RS = window.ResourceSystem; // Central affliction authority for fixed lich payload buildup.
     if (projectile.type === 'tothal') {
       RS?.addAffliction?.(actor, 'frostbittenStamina', (p.frostbittenStamina || 0) * power);
-    } else {
-      addGooSlow(actor);
-      applyEntranced(actor, projectile.owner, p.entrancedHealth);
     }
     lastEvent = `hit:${projectile.type}:${actor.id || actor.name || 'player'}:power=${power.toFixed(2)}`;
   }
@@ -921,7 +924,7 @@
         if (typeof window.getShadeFillCanvas === 'function' && loaded.image && THREE.CanvasTexture) {
           const canvas = window.getShadeFillCanvas(loaded.image, 'kanthic-petroleum|canvas.png|black', {
             mode: 'shadeFill',
-            rgb: [18, 18, 18], // Near-black preserves canvas.png luminance/grain; literal 0 would mathematically flatten every tinted pixel.
+            rgb: [37, 28, 52], // Match the static ruin plasm palette while preserving source texture grain.
             options: window.getPortraitTintingConfig?.() || {},
           });
           if (canvas) {
@@ -936,7 +939,7 @@
       finalTexture.generateMipmaps = false;
       finalTexture.needsUpdate = true;
       petroleumSurfaceMaterial.map = finalTexture;
-      petroleumSurfaceMaterial.color.set(shadeFilled ? 0xffffff : 0x000000); // Raw fallback is multiplied black; shade-filled texture already carries the requested black tint.
+      petroleumSurfaceMaterial.color.set(shadeFilled ? 0xffffff : 0x251c34); // Raw fallback uses the identical color as static Kanthic patches.
       petroleumSurfaceMaterial.needsUpdate = true;
     }, undefined, () => {});
   }
@@ -944,7 +947,7 @@
   function petroleumMaterial() {
     if (petroleumSurfaceMaterial || typeof THREE === 'undefined') return petroleumSurfaceMaterial;
     petroleumSurfaceMaterial = new THREE.MeshBasicMaterial({
-      color: 0x000000,
+      color: 0x251c34,
       transparent: true,
       opacity: PETROLEUM_OPACITY,
       depthWrite: false,
@@ -954,7 +957,7 @@
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
-    }); // Black semi-transparent textured skin; no amber/violet magical sheen remains.
+    }); // Purple-black translucent skin matches the static ruin plasm; no separate effect overlay is needed.
     loadPetroleumTexture();
     return petroleumSurfaceMaterial;
   }
@@ -966,28 +969,44 @@
   }
 
   function makeGasolinePuddle(owner, xPx, yPx) {
-    if (!isArena() || !owner?.scene || typeof THREE === 'undefined') return null;
+    if (!isArena() || !owner?.scene || typeof THREE === 'undefined' || !Number.isFinite(xPx) || !Number.isFinite(yPx)) return null;
+    const areaId=owner.areaId||currentLichArea()||ARENA_ID; // Area ownership prevents damage/visuals leaking across arena and ruins.
+    const tile=deps.TILE||64,worldX=xPx/tile,worldZ=yPx/tile; // Used by the ruin floor/footprint test before allocating a mesh.
+    if(areaId==='map_i_dev_random_ruin'){
+      if(!window.DevRandomRuin?.getRuntimeContext?.()?.floorSet?.has(Math.floor(worldX)+','+Math.floor(worldZ)))return null; // No floating oil in void tiles.
+      if(window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(worldX,worldZ))return null; // Never deposit on an entrance or checkpoint.
+    }
+    for(const existing of puddles){
+      if(existing.areaId!==areaId)continue;
+      if(Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
+      existing.ageS=0; // Nearby follow-up impacts refresh a patch instead of stacking draw calls on the same space.
+      lastEvent='plasm:refresh';
+      return existing;
+    }
+    const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
+    const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
+    if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinTileOccupancy?.solidAt?.(worldX,worldZ,.27,groundY+.35))return null; // A wall impact cannot deposit hidden plasm inside a solid.
+    if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value); // Oldest insertion expires first; bounded even with many liches.
     const geometry = buildPetroleumSurfaceGeometry();
     const material = petroleumMaterial();
     if (!geometry || !material) return null;
-    const group = new THREE.Group(); // Runtime/API name remains compatible, but the visual is now explicitly petroleum.
-    group.name = 'kanthic_petroleum_surface';
+    const group = new THREE.Group(); // Keep the legacy public API name for the Testing Arena's existing controls.
+    group.name = 'kanthic_plasm_surface';
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'kanthic_petroleum_micro_plateau';
-    mesh.rotation.y = random() * Math.PI * 2; // Shared irregular geometry is rotated per impact so repeated puddles do not visibly stamp the same edge.
+    mesh.name = 'kanthic_plasm_spell_patch';
+    mesh.rotation.y = random() * Math.PI * 2;
     mesh.scale.set(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES);
     mesh.renderOrder = 3;
     group.add(mesh);
-    const groundY = groundYAt(owner, xPx, yPx); // The shallow cap is rooted on the actual arena surface just like Western Slope snow roots on authored terrain height.
-    group.position.set(xPx / deps.TILE, groundY, yPx / deps.TILE); // Polygon offset handles z-fighting, so the cap's actual top stays exactly PETROLEUM_SURFACE_DEPTH above ground.
+    group.position.set(worldX,groundY,worldZ);
     owner.scene.add(group);
     const puddle = {
-      owner, x: xPx, y: yPx, group, mesh,
-      ageS: 0, tickS: 0, radiusPx: PUDDLE_RADIUS_TILES * deps.TILE,
-    }; // Gameplay radius stays unchanged; only presentation becomes the low black textured petroleum surface.
+      owner, areaId, x:xPx, y:yPx, group, mesh, groundY,
+      ageS:0, radiusPx:PUDDLE_RADIUS_TILES*(deps.TILE||64),
+    }; // Stable, shared mesh+material. Only its twelve-second lifetime changes, not its footprint.
     puddles.add(puddle);
-    totalPuddles += 1;
-    lastEvent = `petroleum:${owner.id || owner.name}`;
+    totalPuddles++;
+    lastEvent = 'plasm:deposited';
     return puddle;
   }
 
@@ -1492,22 +1511,77 @@
     }
   }
 
+  function clearPuddleSink(actor) {
+    if(!actor?._kanthicPuddleSink)return;
+    delete actor._kanthicPuddleSink;
+    puddleTouchedActors.delete(actor);
+    if(actor===deps?.player&&currentLichArea()==='map_i_dev_random_ruin'){
+      const floorY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Original physical support restores the player's render after leaving plasm.
+      if(Number.isFinite(floorY))window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY);
+    }
+  }
+
   function updatePuddles(dt) {
-    for (const puddle of [...puddles]) {
-      puddle.ageS += dt;
-      if (!isArena() || !isLiveActor(puddle.owner) || puddle.ageS >= PUDDLE_LIFETIME_S) {
-        disposePetroleumPuddle(puddle);
+    for(const puddle of [...puddles]){
+      puddle.ageS+=dt;
+      if(!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
+    }
+    if(!puddles.size){
+      for(const actor of puddleTouchedActors)clearPuddleSink(actor);
+      return; // No per-frame whole-hostile scan when no plasm exists.
+    }
+    const tile=deps?.TILE||64,area=currentLichArea();
+    const inRuin=area==='map_i_dev_random_ruin'; // Authored ruin uses its actual floor and collision footprint for pull checks.
+    const floorSet=inRuin?window.DevRandomRuin?.getRuntimeContext?.()?.floorSet:null;
+    for(const actor of [deps?.player,...(deps?.hostileObjects||[])]){
+      if(!isLiveActor(actor)||actor.isHarlyaoLich||actor.enemyClass===CLASS_ID){
+        clearPuddleSink(actor);
         continue;
       }
-      const fade = puddle.ageS > PUDDLE_LIFETIME_S - 2 ? Math.max(0, (PUDDLE_LIFETIME_S - puddle.ageS) / 2) : 1; // Last two seconds visibly evaporate instead of popping.
-      if (puddle.mesh) puddle.mesh.visible = fade > 0.01; // Shared 70%-opacity material cannot be faded per instance without affecting every puddle; gameplay lifetime remains unchanged.
-      puddle.tickS += dt;
-      if (puddle.tickS < PUDDLE_TICK_S) continue;
-      puddle.tickS %= PUDDLE_TICK_S;
-      for (const actor of [deps.player, ...(deps.hostileObjects || [])]) {
-        if (!isLiveActor(actor) || actor === puddle.owner) continue;
-        const dist = Math.hypot(actor.x - puddle.x, actor.y - puddle.y); // Flat arena-ground radius check intentionally ignores portrait height.
-        if (dist <= puddle.radiusPx) applyEntranced(actor, puddle.owner, PUDDLE_ENTRANCED_PER_TICK);
+      if(inRuin&&actor===deps.player&&(
+        window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()||
+        window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(actor.x/tile,actor.y/tile)||
+        window.DevRandomRuinLichThemes?.isPlasmAt?.(actor.x/tile,actor.y/tile))){
+        clearPuddleSink(actor);
+        continue; // Ropes/checkpoints are safe; static plasm owns immersion on overlapping patches.
+      }
+      let nearest=null,nearestDist=Infinity;
+      for(const puddle of puddles){
+        if(puddle.owner===actor||puddle.areaId!==(actor.areaId||area))continue;
+        const dist=Math.hypot(actor.x-puddle.x,actor.y-puddle.y);
+        if(dist>puddle.radiusPx||dist>=nearestDist||actor.climbing||actor.onRope||actor._onRope)continue;
+        const support=inRuin
+          ? (actor===deps.player
+            ? (window.DevRandomRuin?.getPlayerGroundSupportY?.()??deps.playerMesh?.position?.y)
+            : window.DevRandomRuin?.getGroundSupportYAt?.(actor.x/tile,actor.y/tile))
+          : groundYAt(actor,actor.x,actor.y); // Never use the sinking presentation as the floor's true height.
+        if(Number.isFinite(support)&&Math.abs(support-puddle.groundY)>PETROLEUM_SURFACE_DEPTH+.15)continue;
+        nearest=puddle;nearestDist=dist;
+      }
+      if(!nearest){clearPuddleSink(actor);continue;}
+      const state=actor._kanthicPuddleSink||(actor._kanthicPuddleSink={elapsed:0});
+      puddleTouchedActors.add(actor);
+      state.elapsed=Math.min(PUDDLE_SINK_SECONDS,state.elapsed+dt); // Overlaps never speed up immersion.
+      const dx=nearest.x-actor.x,dy=nearest.y-actor.y,dist=Math.hypot(dx,dy);
+      const pullPx=Math.min(dist,PUDDLE_PULL_TILES_S*tile*dt*(1+state.elapsed/PUDDLE_SINK_SECONDS));
+      if(dist>.001&&pullPx>0){
+        const nx=actor.x+dx/dist*pullPx,ny=actor.y+dy/dist*pullPx;
+        const x=nx/tile,z=ny/tile;
+        const onFloor=!inRuin||!!floorSet?.has(Math.floor(x)+','+Math.floor(z));
+        const solid=inRuin&&!!window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,.27,nearest.groundY+.35);
+        if(onFloor&&!solid){actor.x=nx;actor.y=ny;} // Do not pull actors through walls, doors or missing tiles.
+      }
+      if(actor===deps.player&&inRuin){
+        const height=Math.max(.9,Number(deps.playerMesh?.userData?.portraitModelHeight)||1.8);
+        window.DevRandomRuin?.syncPlayerPresentationHeight?.(nearest.groundY-state.elapsed/PUDDLE_SINK_SECONDS*height);
+      }
+      if(state.elapsed>=PUDDLE_SINK_SECONDS){
+        clearPuddleSink(actor);
+        const lethal=Math.max(10000,Number(actor.health)||0);
+        const opts={tag:'kanthic-plasm',ranged:false,attacker:nearest.owner,afflictionBonuses:{}};
+        if(actor===deps.player)deps.damagePlayer?.(lethal,nearest.x,nearest.y,0,opts);
+        else deps.damageCreature?.(actor,lethal,nearest.x,nearest.y,0,{...opts,friendlyFire:true});
+        lastEvent='plasm:immersion';
       }
     }
   }
@@ -1708,7 +1782,7 @@
     const dy = target.y - lich.y; // Z-plane vector to target used for facing/movement.
     const dist = Number.isFinite(distToTarget) ? distToTarget : Math.hypot(dx, dy); // Current distance in pixels for tactical thresholds.
     const aimAngle = Math.atan2(dy, dx); // Body facing returned to the shared hostile loop.
-    updateCommand(lich, target, dist);
+    // Kanthic fights now deny space with plasm, never commanding the player's direction.
 
     lich._lichPrimaryCooldownS = Math.max(0, (lich._lichPrimaryCooldownS || 0) - dt);
     lich._lichSummonCooldownS = Math.max(0, (lich._lichSummonCooldownS || 0) - dt);
@@ -1775,12 +1849,15 @@
       if (deps?.player) {
         clearGooSlowNow(deps.player);
         clearEntrancedNow(deps.player);
+        clearPuddleSink(deps.player); // No immersion state survives a zone transition.
       }
       for (const actor of deps?.hostileObjects || []) {
         if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Leaving the arena restores the grounded baseline and disables dangling hover.
         clearGooSlowNow(actor);
         clearEntrancedNow(actor);
+        clearPuddleSink(actor);
       }
+      for(const actor of puddleTouchedActors)clearPuddleSink(actor); // Includes actors removed from the live hostile set.
       updateCommandBanner();
       updateEntrancerMarker(dt);
       return;
@@ -1790,12 +1867,12 @@
     updatePuddles(dt);
     if (deps?.player) {
       clearExpiredSlow(deps.player);
-      updateEntrancedTarget(deps.player, dt);
+      if(deps.player._entrancedCommandState)clearEntrancedNow(deps.player); // Clear legacy control on a hot reload rather than extending it.
     }
     for (const actor of deps?.hostileObjects || []) {
       if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Hover remains updated even if prone logic bypasses the lich AI for this frame.
       clearExpiredSlow(actor);
-      updateEntrancedTarget(actor, dt);
+      if(actor._entrancedCommandState)clearEntrancedNow(actor); // No new movement commands are issued by lich attacks.
     }
     updateCommandBanner();
     updateEntrancerMarker(dt);
@@ -1861,7 +1938,7 @@
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
       eruptions: eruptions.size,
       hronalStoneInstances: [...eruptions].reduce((sum, erupt) => sum + (erupt.particles?.length || 0), 0), // On-demand diagnostic proves the bounded instanced stone load across overlapping warnings.
-      puddles: puddles.size, totalPuddles, totalSummons,
+      puddles: puddles.size, puddleLimit:PUDDLE_MAX_ACTIVE, puddleLifetimeS:PUDDLE_LIFETIME_S, playerPlasmSinkPct:Math.round(100*(deps?.player?._kanthicPuddleSink?.elapsed||0)/PUDDLE_SINK_SECONDS), totalPuddles, totalSummons,
       playerEntranced, playerCommand: playerCommandState?.source?._lichCommand || null,
       playerEntrancerId: playerCommandState?.source?.id || null,
       playerCommandGrace: grace ? { phase: grace.phase, countdown: grace.countdown, remainingMs: Math.max(0, playerCommandState.graceUntil - performance.now()) } : null,
@@ -1886,7 +1963,7 @@
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} grace=${d.playerCommandGrace ? (d.playerCommandGrace.countdown || d.playerCommandGrace.phase) : '-'} move=${d.playerEntrancedManeuver || '-'} appliers=${d.liveEntrancedApplicators} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? `aura:${d.entrancerMarker.auraCommand || '?'}` : '-'} edge=${d.entrancerMarker?.behindCamera ? 'behind' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.

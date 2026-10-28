@@ -17,10 +17,17 @@ assert.match(ruinSource, /floorSet:ruin\.floorSet,ceilingY:ruin\.ceilingY/, 'Com
 assert.match(puzzlesSource, /state\?\.context\?\.theme !== 'hronal'\) return null/, 'Rope lava is Hronal-only');
 assert.match(fogSource, /tradition === 'kanthic' \? 1/, 'Kanthic rooms retain pure blackness');
 assert.match(fogSource, /ruinTradition === 'tothal'\) return/, 'Tothal lantern illumination is disabled');
-assert.match(fogSource, /ruinTradition === 'kanthic' \? \.375 : 1/, 'Kanthic lantern radius grows 50% from .25 to .375 of the regular radius');
-assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles\*\.375/, 'Plasm visibility uses the same expanded .375 lantern radius as actual lighting');
+assert.match(fogSource, /ruinLanternScale = 1/, 'Kanthic lantern shares the normal feathered radius');
+assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles,/, 'Kanthic uses the ordinary full-radius lantern');
+assert.doesNotMatch(fogSource, /ctx\.clip\(/, 'No hard camera-centered lantern clipping circle may survive');
+assert.match(fogSource, /KANTHIC_STANDARD_DARKNESS_ALPHA = 0\.95/, 'Kanthic darkness uses the shared underground ambient rendering pass');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');
+const interiorSource=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // Ground height remains separate from the renderer's sinking height.
+assert.match(interiorSource,/function getPlayerGroundSupportY\(\)/,'Ruin runtime exposes physics support independent of presentation');
+assert.match(interiorSource,/function getGroundSupportYAt\(x, z\)/,'Boss projectile puddles sample sunken floor elevation');
+assert.match(themeSource,/getPlayerGroundSupportY\?\.\(\)/,'Static plasm must not read its own sinking presentation as ground height');
+
 
 class Vector {
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
@@ -125,53 +132,43 @@ function assertPlasmSeams(t) {
 }
 
 {
-  const t=setup('kanthic',3,3,{lanternRadius:.02}); // Grow a nonrectangular puddle, which exposes concave-corner cracks absent from square seed tests.
-  t.tick(12,.25);
-  assertPlasmSeams(t);
-  const initialKeys=[]; // Recover exact seeded positions after the synchronous checkpoint lifecycle.
+  const t=setup('kanthic');
+  const initial=t.api.snapshot().plasmTiles;
+  const mesh=()=>{let out=null;t.kit.root.traverse(obj=>{if(obj.name?.startsWith('kanthic_plasm_connected_room_'))out=obj;});return out;};
+  const original=mesh(),geometry=original.geometry,patches=t.mappedPatches.length;
+  const seed=new Set();
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))seed.add(x+','+z);
+  t.player.x=11.4*64;t.player.y=11.4*64;
+  t.tick(400,.25); // A long idle/gameplay interval may NEVER grow or erase a single tile.
+  assert.equal(t.api.snapshot().plasmTiles,initial,'Static hazard occupancy cannot change over time');
+  assert.equal(mesh(),original,'No scene mesh replacement on gameplay ticks');
+  assert.equal(original.geometry,geometry,'The GPU surface stays resident until teardown');
+  assert.equal(t.mappedPatches.length,patches,'No runtime nine-slice remapping or geometry uploads');
   t.composer.onPlayerDeath(t.kit);
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initialKeys.push(x+','+z);
-  t.tick(12,.25);
-  assert.ok(t.api.snapshot().plasmTiles>initialKeys.length,'Fixture grows before ordinary combat death');
-  const start=puzzlesSource.indexOf('  function respawnAtCheckpoint('),end=puzzlesSource.indexOf('\n  function buildCheckpoints(',start); // Execute the actual recovery owner rather than imitating its callback ordering.
-  const recovery={checkpoints:{active:{point:{x:3,y:0,z:3}},respawnCount:0},context:t.context,kit:t.kit}; // Minimal native checkpoint state.
+  assert.equal(t.api.snapshot().plasmTiles,initial,'Even death leaves stationary patches untouched');
+  for(let z=2;z<12;z++)for(let x=2;x<12;x++)assert.equal(t.api.isPlasmAt(x+.5,z+.5),seed.has(x+','+z));
+  assertPlasmSeams(t);
+  const start=puzzlesSource.indexOf('  function respawnAtCheckpoint('),end=puzzlesSource.indexOf('\n  function buildCheckpoints(',start);
+  const recovery={checkpoints:{active:{point:{x:3,y:0,z:3}},respawnCount:0},context:t.context,kit:t.kit};
   const respawn=vm.runInNewContext('('+puzzlesSource.slice(start,end)+')',{
     inRuin:()=>true,state:recovery,deps:t.kit.deps,composers:[t.composer],MAP_ID:'map_i_dev_random_ruin',
     restorePlayerScene(){},clearPlayerAfflictions(){},setPlayerWorld(){},restoreRopeEquipment(){},
     clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,
-  }); // Production callback must run before health is restored in the same synchronous call.
+  });
   t.player.maxHealth=100;t.player.health=0;
   assert.equal(respawn('combat'),true);
-  assert.equal(t.player.health,50,'Checkpoint has already restored health before the next render');
-  assert.equal(t.api.snapshot().plasmTiles,initialKeys.length,'Ordinary death immediately resets growth');
-  for(const key of initialKeys){
-    const [x,z]=key.split(',').map(Number); // Check the exact original cluster, not just its size.
-    assert.ok(t.api.isPlasmAt(x+.5,z+.5));
-  }
-  assert.equal(recovery.checkpoints.respawnCount,1);
-  assertPlasmSeams(t);
-  const [x,z]=initialKeys[0].split(',').map(Number); // Stand directly over the puddle for traversal/contact regressions.
+  assert.equal(t.player.health,50,'Checkpoint still restores health synchronously');
+  assert.equal(mesh(),original,'Respawn never reconstructs stationary plasm');
+  const [x,z]=[...seed][0].split(',').map(Number);
   t.player.x=(x+.5)*64;t.player.y=(z+.5)*64;
-  t.kit.ownsPlayerMotion=()=>true;
+  t.kit.ownsPlayerMotion=()=>true;t.tick(16,.25);
+  assert.equal(t.player.health,50,'Ropes and traversal protect from static plasm');
+  t.kit.ownsPlayerMotion=()=>false;t.kit.deps.playerMesh.position.y=3;t.kit.sampleSupport=()=>({y:3});
   t.tick(16,.25);
-  assert.equal(t.player.health,50,'A rope or flight over plasm cannot cause fatal immersion');
-  assert.equal(t.presentationHeights.length,0,'Rope and flight height stay owned by traversal');
-  t.kit.ownsPlayerMotion=()=>false;
-  t.kit.deps.playerMesh.position.y=3;
-  t.kit.sampleSupport=()=>({y:3}); // A bridge added later must not lift the original puddle onto its deck when remapped.
-  t.tick(16,.25);
-  assert.equal(t.player.health,50,'A raised bridge above plasm is safe');
-  assert.equal(t.presentationHeights.length,0,'Plasm never overwrites bridge height');
-  t.composer.onPlayerDeath(t.kit);
-  t.kit.root.traverse(mesh=>{
-    if(!mesh.name?.startsWith('kanthic_plasm_connected_room_'))return;
-    const p=mesh.geometry.getAttribute('position'); // Original puddle elevation survives a reset/remap under the new bridge.
-    for(let i=0;i<p.count;i++)assert.ok(p.getY(i)<=.227);
-  });
-  t.kit.deps.playerMesh.position.y=0;
-  t.tick(13,.25);
-  assert.equal(t.player.health,0,'Contact at the actual puddle elevation remains lethal');
-  assert.ok(t.presentationHeights.length>0,'Real immersion still lowers player presentation');
+  assert.equal(t.player.health,50,'A bridge above the original plasm is safe');
+  t.kit.deps.playerMesh.position.y=0;t.tick(13,.25);
+  assert.equal(t.player.health,0,'Sustained contact at floor level still causes sinking death');
+  assert.ok(t.presentationHeights.length>0,'The same plasm immersion presentation remains active');
   t.composer.clear();
 }
 
@@ -281,200 +278,39 @@ function assertPlasmSeams(t) {
     'Nine-slice mapper protects the image border, as snow does');
 
   assert.equal(t.api.snapshot().lightSources, 0, 'Kanthic relies on lantern alone');
-  // Turn toward the seed from outside the narrowed radius; the player can
-  // still see the direction, but not the actual puddle at lantern range.
-  const corners=[[2.1,2.1],[11.8,2.1],[2.1,11.8],[11.8,11.8]];
-  const far=corners.sort((a,b)=>Math.min(...seed.map(p=>Math.hypot(b[0]-p.x-.5,b[1]-p.z-.5)))-
-                               Math.min(...seed.map(p=>Math.hypot(a[0]-p.x-.5,a[1]-p.z-.5))))[0];
+  // The lantern does not delete static tiles; remaining in this room should not mutate any geometry.
+  const far=[11.5,11.5];
   t.player.x=far[0]*64;t.player.y=far[1]*64;
-  t.player.facing=Math.atan2(seed[0].z+.5-far[1],seed[0].x+.5-far[0]);
-  t.tick(12,.25);
-  const grown=t.api.snapshot().plasmTiles;
-  assert.ok(grown>initial,'A local puddle grows a half ring after three seconds');
-  assert.ok(initialGeometry.disposed,'Retexturing after plasm growth must dispose the previous GPU geometry');
-  assert.equal(t.mappedPatches.length,2,'One half-ring beat rebuilds the mesh only once');
-  assert.equal(t.mappedPatches[1].settings.edgeSourceFraction,.32,'Plasm must preserve source-PNG nine-slice borders');
-  // Step out of the chamber; no room transition may grow or cull the patch.
-  t.player.x=30*64;t.player.y=30*64;
-  t.tick(2,.25);
-  assert.equal(t.api.snapshot().plasmTiles,grown,
-    'When the player stands outside every room, even unseen plasm must not grow');
+  t.tick(120,.25);
+  assert.equal(t.api.snapshot().plasmTiles,initial,'Patch stays static for thirty seconds');
+  assert.equal(initialGeometry.disposed,false,'Stable geometry stays GPU-resident until dungeon teardown');
+  assert.equal(t.mappedPatches.length,1,'Connected surface is mapped exactly once per run');
   t.composer.clear();
-  assert.equal(t.api.snapshot().active,false,'Only leaving/clearing the entire ruin removes the puddle');
-  // Teardown is idempotent; repeated clear is safe.
+  assert.equal(t.api.snapshot().active,false,'Leaving the entire dungeon releases all patches');
   t.composer.clear();
 }
 {
-  // Each room has an independent seed and an independent growth clock.
-  // Entering another room pauses the old puddle without erasing or advancing it.
+  // Changing rooms, waiting and dying cannot alter the initial footprints.
   const rooms=[
     {id:'west',bounds:{minX:2,maxX:12,minZ:2,maxZ:12}},
     {id:'east',bounds:{minX:12,maxX:22,minZ:2,maxZ:12}},
   ];
   const t=setup('kanthic',3,3,{rooms,maxX:22});
-  const seedWest=[],seedEast=[];
-  for(let z=2;z<12;z++)for(let x=2;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5)){
-    (x<12?seedWest:seedEast).push(x+','+z);
-  }
-  assert.ok([4,9,16].includes(seedWest.length)&&[4,9,16].includes(seedEast.length),
-    'Each room receives its own initial solid 2x2–4x4 puddle');
-  const meshes=()=>{const result=new Map();t.kit.root.traverse(mesh=>{
-    if(mesh.name?.startsWith('kanthic_plasm_connected_room_'))result.set(mesh.name,mesh);
-  });return result;};
-  const originalWest=meshes().get('kanthic_plasm_connected_room_0');
-  const originalEast=meshes().get('kanthic_plasm_connected_room_1');
-  assert.ok(originalWest&&originalEast,'Each room has its own one-piece connected nine-slice surface');
-  const pickFarthestCorner=(minX,maxX,seed)=>{
-    const points=[[minX+.1,2.1],[maxX-.2,2.1],[minX+.1,11.8],[maxX-.2,11.8]];
-    return points.sort((a,b)=>{
-      const far=p=>Math.min(...seed.map(key=>{
-        const [x,z]=key.split(',').map(Number);
-        return Math.hypot(p[0]-x-.5,p[1]-z-.5);
-      }));
-      return far(b)-far(a);
-    })[0];
-  };
-  const farEast=pickFarthestCorner(12,22,seedEast);
-  t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;
-  t.tick(12,.25);
-  const eastAfterGrowth=[];
-  for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterGrowth.push(x+','+z);
-  assert.ok(eastAfterGrowth.length>seedEast.length,
-    'An unseen puddle grows in the room the player actually occupies');
-  assert.equal(meshes().get('kanthic_plasm_connected_room_0'),originalWest,
-    'Updating the east-room grid must not remap or replace the unchanged west-room mesh');
-  assert.equal(originalWest.geometry.disposed,false,'Dormant rooms retain their live nine-slice UV geometry');
-  assert.equal(originalEast.geometry.disposed,true,'Only the changed east room must retire its previous UV geometry');
-  assert.ok(meshes().get('kanthic_plasm_connected_room_1')!==originalEast,
-    'The active room is retextured after its grid changes');
-  const westWhileEast=[];
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))westWhileEast.push(x+','+z);
-  assert.equal(westWhileEast.length,seedWest.length,
-    'An unseen puddle in an unoccupied room may NOT grow');
-  for(const key of seedWest.concat(seedEast)){
-    const [x,z]=key.split(',').map(Number);
-    assert.ok(t.api.isPlasmAt(x+.5,z+.5),'Changing rooms may never cull a pre-existing plasm tile: '+key);
-  }
-  const beforeLeaving=t.api.snapshot().plasmTiles;
-  t.player.x=40*64;t.player.y=40*64;t.tick(3,.25);
-  assert.equal(t.api.snapshot().plasmTiles,beforeLeaving,
-    'Leaving every room preserves all puddles but freezes every growth clock');
-  const grownEast=[];
-  for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))grownEast.push(x+','+z);
-  assert.equal(grownEast.length,eastAfterGrowth.length,
-    'East-room plasm must not advance when the player leaves that room');
-  const farWest=pickFarthestCorner(2,12,seedWest);
-  t.player.x=farWest[0]*64;t.player.y=farWest[1]*64;
-  t.tick(12,.25);
-  const westAfterReturn=[];
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))westAfterReturn.push(x+','+z);
-  assert.ok(westAfterReturn.length>seedWest.length,
-    'Returning to an unseen west room resumes only that room’s growth');
-  const eastAfterWestReturn=[];
-  for(let z=2;z<12;z++)for(let x=12;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))eastAfterWestReturn.push(x+','+z);
-  assert.equal(eastAfterWestReturn.length,eastAfterGrowth.length,
-    'Returning to west leaves east frozen at its exact former size');
-  // Fatal immersion resets ALL rooms to the original seeded puddle clusters,
-  // rather than leaving the previous unseen expansion behind.
-  const [sx,sz]=seedWest[0].split(',').map(Number);
-  t.player.x=(sx+.5)*64;t.player.y=(sz+.5)*64;
-  t.tick(13,.25);
-  assert.equal(t.player.health,0,'Plasm remains lethal after repeated room transitions');
-  assert.equal(t.api.snapshot().plasmTiles,seedWest.length+seedEast.length,
-    'Fatal plasm sinking must reset ALL rooms to their original 2x2–4x4 clusters');
-  const initialSeed=new Set(seedWest.concat(seedEast));
-  for(let z=2;z<12;z++)for(let x=2;x<22;x++)assert.equal(
-    t.api.isPlasmAt(x+.5,z+.5),initialSeed.has(x+','+z),
-    'Fatal plasm sinking must restore exact original tile positions: '+x+','+z);
-  t.tick(3,.25);
-  assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,'A dead player must not restart unseen plasm growth');
-  // An unrelated cause of death must trigger exactly the same reset.
-  t.player.health=100;
-  t.player.x=farEast[0]*64;t.player.y=farEast[1]*64;t.tick(12,.25);
-  assert.ok(t.api.snapshot().plasmTiles>initialSeed.size,
-    'Plasm can resume growing when a respawned player enters an unseen room');
-  t.player.health=0;t.tick(1,.25);
-  assert.equal(t.api.snapshot().plasmTiles,initialSeed.size,
-    'Death from another source also restores original plasm across every room');
-  for(let z=2;z<12;z++)for(let x=2;x<22;x++)assert.equal(
-    t.api.isPlasmAt(x+.5,z+.5),initialSeed.has(x+','+z),
-    'Other causes of death must restore exact original tile positions: '+x+','+z);
-  t.composer.clear();
-  assert.equal(t.api.isPlasmAt(sx+.5,sz+.5),false,'Exiting and clearing the dungeon finally releases all plasm');
-}
-{
-  // Even in the dark with growth allowed, no new cell may cover the
-  // player's current tile. The lantern's visual suppression is deliberately
-  // disabled here to exercise the explicit occupied-cell rejection.
-  const t=setup('kanthic',30,30,{lanternRadius:.02});
-  let playerTile=null;
-  for(let z=2;z<12&&!playerTile;z++)for(let x=2;x<12&&!playerTile;x++){
-    if(t.api.isPlasmAt(x+.5,z+.5))continue;
-    const adjacent=[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>t.api.isPlasmAt(x+dx+.5,z+dz+.5));
-    if(adjacent)playerTile={x,z};
-  }
-  assert.ok(playerTile,'Fixture seed provides a dry tile next to a growing puddle');
-  t.player.x=(playerTile.x+.5)*64;t.player.y=(playerTile.z+.5)*64;
-  const originalSize=t.api.snapshot().plasmTiles;
-  t.tick(12,.25);
-  assert.equal(t.api.isPlasmAt(playerTile.x+.5,playerTile.z+.5),true,
-    'Plasm can now grow beneath the player');
-  assert.ok(t.api.snapshot().plasmTiles>originalSize,'Other, unoccupied frontier tiles must still grow');
-  t.composer.clear();
-}
-{
-  // Cap is half of the room's walkable area. Beyond the limit the farthest
-  // exposed tiles retreat so the growing perimeter never fragments.
-  const t=setup('kanthic',3,3,{lanternRadius:.02}); // Cap-only stress test: visibility is deliberately absent so maximum coverage is attainable.
   const initial=new Set();
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))initial.add(x+','+z);
-  assert.equal(t.api.snapshot().plasmCapacity,50,'100 walkable cells allow at most 50 plasm tiles');
-  const tickFromDryTile=()=>{
-    // Keep the player in the SAME room but outside the growing puddle.
-    // Reposition to a dry tile each frame so the test measures growth/culling,
-    // not the unrelated plasm sinking/death mechanic.
-    const candidates=[];
-    for(let z=2;z<12;z++)for(let x=2;x<12;x++){
-      if(t.api.isPlasmAt(x+.5,z+.5))continue;
-      const minDistance=Math.min(...[...Array(100)].map((_,i)=>{
-        const tx=2+i%10,tz=2+Math.floor(i/10);
-        return t.api.isPlasmAt(tx+.5,tz+.5)?Math.hypot(x-tx,z-tz):Infinity;
-      }));
-      candidates.push({x,z,minDistance});
-    }
-    candidates.sort((a,b)=>b.minDistance-a.minDistance);
-    assert.ok(candidates.length>0,'Half-room cap always leaves walkable dry tiles');
-    t.player.x=(candidates[0].x+.5)*64;t.player.y=(candidates[0].z+.5)*64;
-    t.tick(1,.25);
-  };
-  for(let frame=0;frame<102;frame++)tickFromDryTile(); // 25.5s of local growth at 2 tiles/s reaches the 50-cell cap and exercises replacement.
-  const report=t.api.snapshot();
-  assert.equal(report.plasmTiles,report.plasmCapacity,'Plasm must never exceed half the room');
-  assert.ok(report.plasmCulled>0,'After reaching the cap, new leading growth replaces farthest edge tiles');
-  const actual=new Set();
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))actual.add(x+','+z);
-  assert.equal(actual.size,50,'The cap must match the exact visible/gameplay footprint');
-  assertPlasmSeams(t);
-  const seed=actual.values().next().value,visited=new Set([seed]),queue=[seed];
-  for(let i=0;i<queue.length;i++){
-    const [x,z]=queue[i].split(',').map(Number);
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const key=(x+dx)+','+(z+dz);
-      if(actual.has(key)&&!visited.has(key)){visited.add(key);queue.push(key);}
-    }
-  }
-  assert.equal(visited.size,actual.size,'Farthest-tile culling must not split the plasm into unconnected islands');
-  // Growth cannot increase the overall area after capacity has been reached.
-  for(let frame=0;frame<4;frame++)tickFromDryTile();
-  assert.equal(t.api.snapshot().plasmTiles,50,'Plasm remains capped while growth continues at its boundary');
-  t.player.health=0;
-  t.tick(1,.25);
-  assert.equal(t.api.snapshot().plasmTiles,initial.size,'Death resets the full capped puddle to its original cluster');
-  assert.equal(t.api.snapshot().plasmCulled,0,'Death resets the culling counter along with the active patch');
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++){
-    const key=x+','+z;
-    assert.equal(t.api.isPlasmAt(x+.5,z+.5),initial.has(key),'Death restores exact initial coverage: '+key);
-  }
+  for(let z=2;z<12;z++)for(let x=2;x<22;x++)if(t.api.isPlasmAt(x+.5,z+.5))initial.add(x+','+z);
+  const before=t.api.snapshot();
+  assert.ok(before.plasmTiles>=8&&before.plasmTiles<=32,'Each clear chamber seeds one finite 2x2–4x4 patch');
+  assert.equal(before.plasmGrowthMs,0,'Growth timer is disabled');
+  assert.equal(before.plasmStatic,true,'Mobile diagnostics mark patches as static');
+  const geometry=new Map();
+  t.kit.root.traverse(mesh=>{if(mesh.name?.startsWith('kanthic_plasm_connected_room_'))geometry.set(mesh.name,mesh.geometry);});
+  assert.equal(geometry.size,2,'Each room retains a single connected static mesh');
+  t.player.x=15*64;t.player.y=10*64;t.tick(100,.25);
+  t.player.x=3*64;t.player.y=10*64;t.tick(100,.25);
+  t.composer.onPlayerDeath(t.kit);
+  assert.equal(t.api.snapshot().plasmTiles,initial.size,'No room changes across transitions/death');
+  for(let z=2;z<12;z++)for(let x=2;x<22;x++)assert.equal(t.api.isPlasmAt(x+.5,z+.5),initial.has(x+','+z));
+  t.kit.root.traverse(mesh=>{if(geometry.has(mesh.name))assert.equal(mesh.geometry,geometry.get(mesh.name),'No GPU geometry replacement on transitions');});
   t.composer.clear();
 }
 {
@@ -523,42 +359,23 @@ function assertPlasmSeams(t) {
     'Friction decay must be frame-rate-independent at 30 and 60 fps');
   t.composer.clear();
 }
-console.log('Harlyao ruin lich-theme tests passed: stable theme, entire icy floor with Minecraft-style native friction, clustered icicles, Kanthic half-ring growth every 3 seconds, teardown.');
+console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cached surfaces, shared lantern darkness, Tothal friction and icicles, teardown.');
 
 {
   const checkpoints={active:{point:{x:8.5,z:8.5}},doorways:[{axis:'x',x:6,z:7,width:2}]}; // Protect both inactive doorway landings and the current respawn.
   const t=setup('kanthic',3,3,{spawn:{x:3.5,z:3.5},checkpoints});
   const check=()=>{for(let z=2;z<12;z++)for(let x=2;x<12;x++){
     const safe=(Math.abs(x+.5-3.5)<=1.5&&Math.abs(z+.5-3.5)<=1.5)||(Math.abs(x+.5-8.5)<=1.5&&Math.abs(z+.5-8.5)<=1.5)||(Math.abs(x+.5-6)<=1.5&&Math.abs(z+.5-7)<=1.8);
-    if(safe)assert.equal(t.api.isPlasmAt(x+.5,z+.5),false,'No plasm on entry/checkpoint landing '+x+','+z);
+    if(safe){assert.equal(t.api.isPlasmAt(x+.5,z+.5),false,'No static plasm on landing '+x+','+z);assert.equal(t.api.isProtectedPlasmAt(x+.5,z+.5),true,'Shared spell-plasm safety recognizes the same landing '+x+','+z);}
   }};
   check();t.tick(240,.25);check();t.composer.onPlayerDeath(t.kit);check();
   t.composer.clear();
 }
 {
-  const camera={position:{x:0,y:1,z:0},getWorldDirection(out){out.set(this.dx,this.dy,this.dz);}}; // Controlled real-camera cone, independent of actor facing.
+  const camera={position:{x:0,y:1,z:0},getWorldDirection(out){out.set(1,0,0);}};
   const t=setup('kanthic',3,3,{camera});
-  let target=null;
-  for(let z=2;z<12&&!target;z++)for(let x=2;x<12&&!target;x++)if(t.api.isPlasmAt(x+.5,z+.5))target={x:x+.5,z:z+.5};
-  camera.position={x:target.x-1,y:1,z:target.z};
-  const length=Math.hypot(1,.78);camera.dx=1/length;camera.dy=-.78/length;camera.dz=0;
-  t.player.x=(target.x-1)*64;t.player.y=target.z*64;
-  t.tick(1,.25);
-  assert.equal(t.api.isPlasmAt(target.x,target.z),false,'Camera cone actively removes lit plasm before a growth beat');
-  t.composer.onPlayerDeath(t.kit);camera.dx=-camera.dx;
-  t.tick(1,.25);
-  assert.equal(t.api.isPlasmAt(target.x,target.z),true,'Looking away does not clear plasm behind the camera');
-  t.composer.clear();
-}
-
-{
-  const t=setup('kanthic',3,3); // One isolated growth beat proves both cadence and half-frontier size.
-  const seed=new Set(),frontier=new Set();
-  for(let z=2;z<12;z++)for(let x=2;x<12;x++)if(t.api.isPlasmAt(x+.5,z+.5))seed.add(x+','+z);
-  for(const key of seed){const [x,z]=key.split(',').map(Number);for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-    const nx=x+dx,nz=z+dz,k=nx+','+nz;if(nx>=2&&nx<12&&nz>=2&&nz<12&&!seed.has(k))frontier.add(k);
-  }}
-  t.tick(11,.25);assert.equal(t.api.snapshot().plasmTiles,seed.size,'No growth before three seconds');
-  t.tick(1,.25);assert.equal(t.api.snapshot().plasmTiles,seed.size+Math.ceil(frontier.size/2),'One beat adds exactly half of the pre-beat frontier');
+  const first=t.api.snapshot().plasmTiles;
+  t.tick(60,.25);
+  assert.equal(t.api.snapshot().plasmTiles,first,'Looking at plasm cannot clear it');
   t.composer.clear();
 }

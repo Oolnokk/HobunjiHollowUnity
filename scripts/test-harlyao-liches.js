@@ -162,7 +162,7 @@ assert(api.TYPE_DEFS.hronal.projectile.burningHealth > 0);
 assert.equal(api.TYPE_DEFS.hronal.projectile.shatteredStamina, undefined, 'Erupting Earth should apply Burning Health rather than the old projectile Shattered Stamina payload');
 assert(api.TYPE_DEFS.kanthic.projectile.gravityWorldS2 > 20, 'Kanthic blob keeps its unusually heavy dropoff');
 assert(api.TYPE_DEFS.kanthic.projectile.speedPxS > api.TYPE_DEFS.tothal.projectile.speedPxS, 'Kanthic blob remains much faster than the seeking Tothal fog');
-assert(api.TYPE_DEFS.kanthic.projectile.entrancedHealth > 0);
+assert.equal(api.TYPE_DEFS.kanthic.projectile.entrancedHealth, undefined, 'Kanthic projectiles cannot apply Entranced movement control');
 
 randomValue = 0.2;
 const slowBefore = windowObject.Combat.getMovementSpeedMul();
@@ -204,102 +204,14 @@ bandit._kanthicGooSlow.until = 0;
 api.clearExpiredSlow(bandit);
 assert.equal(bandit.def.moveSpeed, 90, 'bandit speed restores exactly');
 
-const lichA = { id: 'lich-a', name: 'Kanthic Lich A', areaId: 'map_dev_arena', x: 0, y: 0, health: 100, enemyClass: 'harlyao-lich', isHarlyaoLich: true, lichType: 'kanthic', _lichCommand: 'approach' };
-const lichB = { id: 'lich-b', name: 'Kanthic Lich B', areaId: 'map_dev_arena', x: 128, y: 0, health: 100, enemyClass: 'harlyao-lich', isHarlyaoLich: true, lichType: 'kanthic', _lichCommand: 'flee' };
-hostileObjects.add(lichA);
-hostileObjects.add(lichB);
-player.afflictions = { entrancedHealth: 0 };
-player.x = 64; player.y = 0; player.health = 100;
-const healthBeforeApplicationOnly = 1;
-player.health = healthBeforeApplicationOnly;
-const damageBeforeApplicationOnly = damageApplied;
-api.applyEntranced(player, lichA, 20);
-assert.equal(player.health, healthBeforeApplicationOnly, 'applying Entranced Health alone must never reduce real Health');
-assert.equal(damageApplied, damageBeforeApplicationOnly, 'applying Entranced Health alone must never call the lethal Health-affliction damage path');
-assert.equal(player._entrancedCommandState.source, lichA);
-assert(player._entrancedCommandState.graceUntil > nowMs + 3000, 'initial Entranced application must open a command/no-damage grace window');
-const firstGraceUntil = player._entrancedCommandState.graceUntil;
-nowMs += 200;
-api.applyEntranced(player, lichA, 2);
-assert.equal(player._entrancedCommandState.graceUntil, firstGraceUntil, 'same-controller puddle buildup must not restart the 3-2-1 grace period');
-api.applyEntranced(player, lichB, 4);
-assert.equal(player._entrancedCommandState.source, lichB, 'latest Entranced applicant must become referential target');
-assert(player._entrancedCommandState.graceUntil > firstGraceUntil, 'a new Entranced controller must start a fresh command grace period');
-
-player.afflictions.entrancedHealth = 20;
-api.applyEntranced(player, lichA, 0.1);
-player.afflictions.entrancedHealth = 20;
-player.health = 100;
-const graceFrozenBuildup = player.afflictions.entrancedHealth;
-const graceFrozenHealth = player.health;
-player.x = 80; // Wrong-way movement during the command announcement/countdown must be ignored.
-windowObject.RangedWeapons.update(0.1);
-assert.equal(player.health, graceFrozenHealth, 'Entranced command grace must suppress movement damage');
-assert.equal(player.afflictions.entrancedHealth, graceFrozenBuildup, 'Entranced command grace must also suppress natural recovery');
-nowMs = player._entrancedCommandState.graceStartedAt + 800;
-assert.equal(api.debugSnapshot().playerCommandGrace.countdown, 3, 'command HUD grace must enter its 3-second countdown after the announcement');
-nowMs = player._entrancedCommandState.graceUntil + 1;
-player.x = 96; // Away from lichA while commanded to approach: 16 px = 0.25 tile of ordinary movement.
-const healthBeforeWrongMove = player.health;
-const afflictionBeforeWrongMove = player.afflictions.entrancedHealth;
-const damageBeforeWrongMove = damageApplied;
-windowObject.RangedWeapons.update(0.1);
-const wrongMoveHealthLost = healthBeforeWrongMove - player.health;
-const wrongMoveBuildupConsumed = afflictionBeforeWrongMove - player.afflictions.entrancedHealth;
-assert(Math.abs(wrongMoveHealthLost - 0.9) < 1e-9, '0.25 tile of ordinary wrong-way movement must still deal exactly 0.9 Health');
-assert(Math.abs(wrongMoveBuildupConsumed - 0.9) < 1e-9, 'ordinary wrong-way movement must consume Entranced buildup by actual distance');
-assert(Math.abs((damageApplied - damageBeforeWrongMove) - 0.9) < 1e-9, 'ordinary movement conversion remains 3.6 Entranced Health per tile');
-
-const healthBeforeObey = player.health;
-const entrancedBeforeObey = player.afflictions.entrancedHealth;
-player.x = 86; // Toward lichA while commanded to approach: fast recovery, no punishment.
-windowObject.RangedWeapons.update(0.1);
-assert.equal(player.health, healthBeforeObey, 'obeying Entranced command must not deal Health damage');
-assert(player.afflictions.entrancedHealth < entrancedBeforeObey, 'obeying Entranced command must recover buildup');
-
-lichA._lichCommand = 'flee';
-const beforeCommandFlipBuildup = player.afflictions.entrancedHealth;
-const beforeCommandFlipHealth = player.health;
-windowObject.RangedWeapons.update(0.1);
-assert(player._entrancedCommandState.graceUntil > nowMs, 'Approach/Flee changes must start a new no-damage countdown');
-player.x -= 20;
-windowObject.RangedWeapons.update(0.1);
-assert.equal(player.health, beforeCommandFlipHealth, 'new-command grace must not punish movement');
-assert.equal(player.afflictions.entrancedHealth, beforeCommandFlipBuildup, 'new-command grace must freeze natural recovery too');
-
-nowMs = player._entrancedCommandState.graceUntil + 1;
-player.afflictions.entrancedHealth = 20;
-player.health = 100;
-player.x = 86;
-player.lunging = true;
-player.lungeDirX = -1; player.lungeDirY = 0; // Toward source while command is flee: wrong.
-windowObject.RangedWeapons.update(0.1);
-player.x = 85; // Physically only one pixel of travel.
-player.lunging = false;
-const lungeDamageBefore = damageApplied;
-windowObject.RangedWeapons.update(0.1);
-assert(Math.abs((damageApplied - lungeDamageBefore) - 3.6) < 1e-9, 'a wrong-way lunge must count as exactly one tile regardless of physical distance');
-assert(Math.abs(player.afflictions.entrancedHealth - 16.4) < 1e-9, 'one wrong-way lunge consumes exactly one tile worth of Entranced buildup');
-
-player.afflictions.entrancedHealth = 20;
-player.health = 100;
-player.x = 86;
-player.dodging = true;
-player.dodgeDirX = -1; player.dodgeDirY = 0; // Same wrong direction for Flee.
-windowObject.RangedWeapons.update(0.1);
-player.x = -400; // Deliberately enormous physical displacement must still collapse to one synthetic tile.
-player.dodging = false;
-const dodgeDamageBefore = damageApplied;
-windowObject.RangedWeapons.update(0.1);
-assert(Math.abs((damageApplied - dodgeDamageBefore) - 3.6) < 1e-9, 'a wrong-way dodge must count as exactly one tile even when its physical displacement is huge');
-assert(Math.abs(player.afflictions.entrancedHealth - 16.4) < 1e-9, 'one wrong-way dodge consumes exactly one tile worth of Entranced buildup');
-
-player.afflictions.entrancedHealth = 12;
-lichA.health = 0;
-lichB.health = 0;
-windowObject.RangedWeapons.update(0.1);
-assert.equal(player.afflictions.entrancedHealth, 0, 'Entranced Health must clear immediately when every Kanthic applicator is dead');
-assert.equal(player._entrancedCommandState, undefined, 'dead-applicator cleanup must also clear the referential command state');
+const lichA={id:'lich-a',areaId:'map_dev_arena',x:0,y:0,health:100,enemyClass:'harlyao-lich',isHarlyaoLich:true,lichType:'kanthic'};
+const lichB={id:'lich-b',areaId:'map_dev_arena',x:128,y:0,health:100,enemyClass:'harlyao-lich',isHarlyaoLich:true,lichType:'kanthic'};
+hostileObjects.add(lichA);hostileObjects.add(lichB);
+player.afflictions={entrancedHealth:0};player.health=100;
+windowObject.RangedWeapons.update(.1);
+assert.equal(player.afflictions.entrancedHealth,0,'The active Kanthic runtime does not build Entranced or command the player');
+assert.equal(player._entrancedCommandState,undefined,'No new directional controller is installed');
+lichA.health=0;lichB.health=0;
 
 api.addGooSlow(player); // Refresh this independent fixture after the long fake-clock Entranced countdown tests above.
 currentArea = 'farm';
@@ -394,11 +306,11 @@ assert.match(lichSource, /speedPxS: 96[\s\S]*maxAgeS: 8\.5[\s\S]*homingBlendPerS
 assert.match(lichSource, /registerFurnitureSfxSource\((?:projectile\.areaId \|\| )?ARENA_ID[\s\S]{0,300}TOTHAL_WIND_VOLUME/, 'Tothal fog must carry strong local wind through the existing BGS transport');
 assert.match(lichSource, /projectilePower\(projectile\)[\s\S]{0,1000}mesh\.scale\.setScalar/, 'Tothal lifetime power must visibly shrink its fog ball');
 assert.match(lichSource, /frostbittenStamina.*\* power/, 'Tothal Frostbitten Stamina payload must weaken with projectile age');
-assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE \/ 4/, 'Kanthic petroleum surface must be exactly one quarter of Western Slope snow height');
-assert.match(lichSource, /PETROLEUM_OPACITY = 0\.70/, 'Kanthic petroleum surface must render at exactly 70% opacity');
+assert.match(lichSource, /WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0\.22[\s\S]*PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE;/, 'Spell puddles share the full static-plasm surface height');
+assert.match(lichSource, /PETROLEUM_OPACITY = 0\.88/, 'Spell plasm uses the same opacity as the static ruin hazard');
 assert.match(lichSource, /PETROLEUM_TEXTURE_PATH = 'assets\/textures\/canvas\.png'/, 'Kanthic petroleum must reuse the Western Slope canvas texture');
-assert.match(lichSource, /rgb: \[18, 18, 18\][\s\S]{0,1600}petroleumSurfaceMaterial\.map = finalTexture/, 'petroleum tint must remain visually black while preserving canvas texture grain');
-assert.match(lichSource, /group\.name = 'kanthic_petroleum_surface'[\s\S]{0,500}mesh\.scale\.set\(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES\)/, 'Kanthic impact must render as a shallow snow-style petroleum surface rather than colored circle lobes');
+assert.match(lichSource, /rgb: \[37, 28, 52\][\s\S]{0,1600}petroleumSurfaceMaterial\.map = finalTexture/, 'plasm tint must match the static ruin color while preserving canvas texture grain');
+assert.match(lichSource, /group\.name = 'kanthic_plasm_surface'[\s\S]{0,500}mesh\.scale\.set\(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES\)/, 'Kanthic spell impacts use the same static-plasm visual family');
 assert.doesNotMatch(lichSource, /const amber = new THREE\.MeshBasicMaterial|const violet = new THREE\.MeshBasicMaterial/, 'old amber/violet gasoline sheen must be removed');
 assert.match(lichSource, /HRONAL_STONE_INSTANCE_CAP = 112/, 'Hronal stone visuals must have a bounded per-eruption instance budget');
 assert.match(lichSource, /new THREE\.InstancedMesh\(hronalStoneGeometry, hronalStoneMaterial, HRONAL_STONE_INSTANCE_CAP\)/, 'Hronal warning stones must batch into one instanced draw call per eruption');
@@ -461,6 +373,89 @@ assert.match(arenaRespawnBlock, /EXTERIOR_ZONES\.map_dev_arena[\s\S]*entryCol[\s
 assert.doesNotMatch(arenaRespawnBlock, /_returnToFarmMeshes\(/, 'arena death must never invoke the farm scene fallback');
 assert.match(arenaRespawnBlock, /player\.health = player\.maxHealth[\s\S]*player\.stamina = player\.maxStamina/, 'arena respawn must restore combat resources');
 assert.match(arenaRespawnBlock, /Object\.keys\(window\.ResourceSystem\?\.AFFLICTIONS \|\| \{\}\)/, 'arena respawn must clear stale affliction buildup that could instantly re-kill the test player');
+
+// Gameplay contract: real attack and puddle loops may not call the old directional-control applicator.
+const directImpact=lichSource.slice(lichSource.indexOf('  function damageActor('),lichSource.indexOf('  function disposeObject3D('));
+const puddleUpdate=lichSource.slice(lichSource.indexOf('  function updatePuddles('),lichSource.indexOf('  function updateProjectiles('));
+assert.doesNotMatch(directImpact,/applyEntranced\(/,'Direct Kanthic hits must never issue Entranced commands');
+assert.doesNotMatch(puddleUpdate,/applyEntranced\(/,'Standing in plasm must never issue Entranced commands');
+assert.match(directImpact,/makeGasolinePuddle\(projectile.owner,hitX,hitY\)/,'Direct hits deposit a puddle as well as misses');
+assert.doesNotMatch(directImpact,/addGooSlow\(/,'Kanthic direct hits do not slow or control actors');
+assert.match(directImpact,/if\(projectile.type==='kanthic'\)[\s\S]*?makeGasolinePuddle\([\s\S]*?return;/,'Kanthic impacts deposit plasm and exit before the direct-damage path');
+assert.match(puddleUpdate,/PUDDLE_SINK_SECONDS/,'Puddle contact must use sustained lethal immersion, not Entranced control');
+assert.match(lichSource,/PUDDLE_MAX_ACTIVE = 12/,'Visual collision budget must remain bounded');
+assert.match(lichSource,/isProtectedPlasmAt\?\.\(worldX,worldZ\)/,'Boss spell impacts must spare protected ruin checkpoints');
+assert.match(lichSource,/isProtectedPlasmAt\?\.\(actor.x\/tile/,'Respawned actors must be immune to overlapping boss plasm');
+
+// Isolated live-path test of material sharing, refresh, cap, overlap-safe immersion and cleanup.
+const v=()=>({x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}});
+class PlasmGroup {constructor(){this.position=v();this.rotation=v();this.scale={set(){}};this.children=[];} add(child){this.children.push(child);child.parent=this;}remove(child){this.children=this.children.filter(x=>x!==child);}}
+class PlasmMesh extends PlasmGroup {constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
+class PlasmGeometry {setAttribute(){return this;}setIndex(){return this;}computeVertexNormals(){}computeBoundingSphere(){}}
+context.THREE={
+ Group:PlasmGroup,Mesh:PlasmMesh,BufferGeometry:PlasmGeometry,
+ Float32BufferAttribute:class {constructor(array,size){this.array=array;this.size=size;}},
+ MeshBasicMaterial:class {constructor(opts){Object.assign(this,opts);this.color={set(){}};}},
+ DoubleSide:2,
+};
+const liveScene={add(node){node.parent=this;},remove(node){node.parent=null;}};
+const caster={id:'plasm-boss',areaId:'map_dev_arena',scene:liveScene,health:100};
+player.x=64*6;player.y=64*6;player.health=100;
+let puddle=api.makeGasolinePuddle(caster,player.x,player.y);
+assert(puddle,'Kanthic hit must construct a real puddle');
+assert.equal(api.debugSnapshot().puddles,1);
+assert.equal(api.makeGasolinePuddle(caster,player.x+1,player.y),puddle,'Overlapping casts refresh the same mesh');
+assert.equal(api.debugSnapshot().puddles,1);
+windowObject.RangedWeapons.update(.5);
+assert(api.debugSnapshot().playerPlasmSinkPct>0,'Plasm starts the sustained immersion meter on contact');
+player.x=2000;player.y=2000;windowObject.RangedWeapons.update(.25);
+assert.equal(api.debugSnapshot().playerPlasmSinkPct,0,'Stepping off plasm immediately resets immersion');
+for(let i=0;i<20;i++)api.makeGasolinePuddle(caster,128+i*200,128);
+assert.equal(api.debugSnapshot().puddles,12,'Twelve patches cap concurrent meshes under sustained multiple-lich casts');
+for(let i=0;i<50;i++)windowObject.RangedWeapons.update(.25);
+assert.equal(api.debugSnapshot().puddles,0,'Every temporary patch expires without lingering collision or visuals');
+
+// The ruin's visual sinking elevation is NOT the player's real support. The previous
+// implementation read its own sinking offset back as floor altitude, interrupting the
+// hazard. This test uses a sunken floor and a collision wall to exercise both paths.
+const ruinArea='map_i_dev_random_ruin'; // Simulated active ruin for the additional boss-plasm integration checks.
+const ruinTiles=new Set(['7,7','8,7']); // Used by the real puddle floor-occupancy gate and pull movement.
+let ruinPresentationY=-2; // The displayed player height must not be mistaken for stable floor support.
+let ruinSolid=true; // Blocks pull through an authored door or solid footprint.
+windowObject.DevRandomRuin={
+  getRuntimeContext:()=>({floorSet:ruinTiles}),
+  getGroundSupportYAt:()=>-2,
+  getPlayerGroundSupportY:()=>-2,
+  getPlayerSupportY:()=>ruinPresentationY,
+  syncPlayerPresentationHeight:y=>{ruinPresentationY=y;},
+};
+windowObject.DevRandomRuinTileOccupancy={solidAt:()=>ruinSolid};
+windowObject.DevRandomRuinLichThemes={isProtectedPlasmAt:()=>false,isPlasmAt:()=>false};
+windowObject.DevRandomRuinSimplePuzzles={ownsPlayerMotion:()=>false};
+api.allowArea(ruinArea);
+currentArea=ruinArea;
+player.areaId=ruinArea;
+player.x=7.8*64;player.y=7.5*64;player.health=100;
+const ruinCaster={id:'ruin-lich',areaId:ruinArea,scene:liveScene,health:100};
+assert.equal(api.makeGasolinePuddle(ruinCaster,7.5*64,7.5*64),null,'Projectile hitting a wall cannot deposit plasm inside a solid footprint');
+ruinSolid=false;
+const ruinPatch=api.makeGasolinePuddle(ruinCaster,7.5*64,7.5*64);
+assert(ruinPatch,'Clear, walkable sunken-floor tile accepts boss plasm');
+assert.equal(ruinPatch.groundY,-2,'Spell puddles use actual ruin surface elevation, not the generic zero-height area grid');
+ruinSolid=true;
+for(let i=0;i<3;i++)windowObject.RangedWeapons.update(.7);
+assert.equal(player.x,7.8*64,'Plasm pull cannot move the player through a solid door or wall');
+assert.equal(player.y,7.5*64,'Plasm pull preserves blocked Z movement as well');
+assert(api.debugSnapshot().playerPlasmSinkPct>70,'Immersion continues for 2.1 seconds even as the displayed body sinks below its true floor');
+assert(ruinPresentationY< -2.5,'Sinking animation tracks the real sunken-floor height');
+player.x=11*64;player.y=11*64;
+windowObject.RangedWeapons.update(.1);
+assert.equal(api.debugSnapshot().playerPlasmSinkPct,0,'Stepping off a ruin puddle resets its contact meter');
+assert.equal(ruinPresentationY,-2,'Leaving a plasm puddle restores the real support height immediately');
+player.areaId='farm';
+currentArea='farm';
+windowObject.RangedWeapons.update(.1);
+assert.equal(api.debugSnapshot().puddles,0,'Ruin departure disposes remaining boss puddles');
 
 console.log('Harlyao Lich regression checks passed.');
 
