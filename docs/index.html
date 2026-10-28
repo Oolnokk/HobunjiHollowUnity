@@ -95,7 +95,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261028farmwork1&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261028h06b160c&window=20260926rebase1"></script>
   <script src="js/farm-plot-editor.js?v=20261028farmworkreview2"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261028farmworkreview2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
@@ -247,7 +247,7 @@
   <script src="js/interior-door-tiles.js?v=20261027hfloorlessdoors1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
+  <script src="js/furniture-table-system.js?v=20261028h31c8f0f"></script>
   <script src="js/authored-furniture-runtime.js?v=20261025h9b3cc58"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
@@ -386,7 +386,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261028h0d8f6d6"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261028h266f7a0"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -675,7 +675,7 @@
        inventory consumption stays in the existing game placement functions.
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
-  <script src="js/furniture-placer.js?v=20261028farmworkreview2&window=20260926rebase1"></script>
+  <script src="js/furniture-placer.js?v=20261028h9766cde&window=20260926rebase1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -2831,7 +2831,7 @@
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
   <script src="config/romance-config.js?v=20261028spouse1"></script>
-  <script src="js/romance-family.js?v=20261027h3aa022c"></script>
+  <script src="js/romance-family.js?v=20261028h432698b"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/romance-system.js?v=20261028spouse1"></script>
@@ -2845,7 +2845,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261028h0a7967c"></script>
+  <script src="game.js?v=20261028h27c0ceb"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
