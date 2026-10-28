@@ -198,6 +198,43 @@ const server=http.createServer((request,response)=>{
       };
       const houseNatural=runHouse('natural'),houseCorners=runHouse('cornerFill'),houseWrap=runHouse('wrap');
 
+      // Two disconnected recognized wall surfaces must EACH receive the count,
+      // independently capped by strandLimit. Natural opts in explicitly.
+      const regionParent=new T.Group(),separated=[
+        {role:'walls',id:'left',recognizedSurface:true,vertices:[[0,0,0],[0,2,0],[0,2,2],[0,0,0],[0,2,2],[0,0,2]]},
+        {role:'walls',id:'right',recognizedSurface:true,vertices:[[5,0,0],[5,2,0],[5,2,2],[5,0,0],[5,2,2],[5,0,2]]}
+      ];
+      growth.replaceSemanticSurfaceGuides(regionParent,separated);
+      const perSurfaceCorners=growth.buildSurfaceGrowth(regionParent,{kind:'roots',style:'cornerFill',
+        target:'walls',count:5,strandLimit:3,length:1.8,radius:.04,seed:'per-surface-corners',texture:''});
+      const perSurfaceNatural=growth.buildSurfaceGrowth(regionParent,{kind:'vines',style:'natural',perSurface:true,
+        target:'walls',count:4,strandLimit:2,length:1.8,radius:.04,seed:'per-surface-vines',texture:''});
+      const budgetCorners=perSurfaceCorners.userData.surfaceGrowthStats;
+      const budgetNatural=perSurfaceNatural.userData.surfaceGrowthStats;
+      const perSurfaceDetails=perSurfaceCorners.userData.surfaceGrowthSurfaces;
+
+      // Real exposed geometry, not only flags: a second wing's wall enters
+      // the first wing's enclosed volume. Only the exposed half may become a
+      // candidate surface or outline.
+      const exposedRoot=new T.Group();
+      const face=(id,tag,v,section,extra={})=>({id,tag,v,highlandSectionRole:section,...extra});
+      const solids=[
+        face(1,'floor',[[0,0,0],[2,0,0],[2,0,2],[0,0,2]],'main',{highlandFrustumBottom:true}),
+        face(2,'ceiling',[[0,1,0],[2,1,0],[2,1,2],[0,1,2]],'main',{highlandFrustumTop:true}),
+        face(3,'roof',[[0,2,0],[2,2,0],[2,2,2],[0,2,2]],'main'),
+        face(4,'wall',[[1,0,.5],[3,0,.5],[3,1,.5],[1,1,.5]],'wing'),
+        face(5,'wall',[[1,0,.5],[1,1,.5],[1,1,1.5],[1,0,1.5]],'wing',{seamCap:true})
+      ];
+      const visible=growth.recognizeArchitecturalSurfaceRegions(exposedRoot,
+        growth.architecturalSurfaceSources(solids,{wallLift:0,roofLift:0}),{occlusionFaces:solids});
+      const visibleWall=visible.filter(r=>r.role==='walls');
+      const visibleCentroids=visibleWall.flatMap(r=>{
+        const pts=r.vertices,centers=[];
+        for(let i=0;i+2<pts.length;i+=3)centers.push((pts[i][0]+pts[i+1][0]+pts[i+2][0])/3);
+        return centers;
+      });
+
+
       // The named regions from Furniture Author (face-index subsets and labels)
       // replace the entire visible box mesh as the guide, including selected-part targeting.
       const furniture=new T.Group(),part=new T.Mesh(new T.BoxGeometry(2,1,1),new T.MeshBasicMaterial());
@@ -237,7 +274,7 @@ const server=http.createServer((request,response)=>{
       field('style').value='wrap';field('style').dispatchEvent(new Event('change'));
       const visibleAfter=getComputedStyle(densityRow).display!=='none';
       const budgetLabel=document.querySelector('[data-count-label]').textContent;
-      field('density').value='.75';field('count').value='9';
+      field('density').value='.75';field('count').value='9';field('strandLimit').value='4';field('perSurface').checked=true;
       document.querySelector('[data-action="apply"]').click();
       field('style').value='natural';field('style').dispatchEvent(new Event('change'));
       field('layer').value='0';field('layer').dispatchEvent(new Event('change'));
@@ -249,6 +286,7 @@ const server=http.createServer((request,response)=>{
         outline:full.children.find(x=>!x.userData.surfaceGrowthCover)?.layers.mask,
         deterministic:digest(full)===digest(reused),
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
+        budgetCorners,budgetNatural,perSurfaceDetails,visibleWallCount:visibleWall.length,visibleCentroids,
         rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
         coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
         transformedGable,
@@ -281,6 +319,13 @@ const server=http.createServer((request,response)=>{
     assert.equal(data.disconnectedGable.regions,2,'A detached but coplanar gable remains separate');
     assert.equal(data.furnitureStyleAngle.narrow,2,'Architectural split-angle threshold must prevent tight-angle merges');
     assert.equal(data.furnitureStyleAngle.wide,1,'Architecture must support the same configurable split-angle logic as Furniture Author');
+    assert.equal(data.budgetCorners.surfaces,2,'Both named architectural regions must receive their own budget');
+    assert.equal(data.budgetCorners.generatedStrands,6,'3 strands per region × 2 recognized regions, not 3 for the whole house');
+    assert.deepEqual(data.perSurfaceDetails.map(x=>x.actual),[3,3],'Strand limit caps each recognized region independently');
+    assert.equal(data.budgetNatural.generatedStrands,4,'Opted-in Natural generates two strands on EACH exposed region');
+    assert.equal(data.visibleWallCount,1,'Buried seam caps must not become exposed wall regions');
+    assert(data.visibleCentroids.length>0&&data.visibleCentroids.every(x=>x>1.88),
+      'Clipping must remove the buried wing-wall portions, not merely hide a fully internal mesh');
     assert.equal(data.houseNatural.sourceTriangles,96,'Legacy Natural house style must still inspect brick meshes');
     assert.equal(data.houseCorners.sourceTriangles,4,'Corner Fill must follow the two original wall quads, not brick polygons');
     assert.equal(data.houseWrap.sourceTriangles,4,'Wrap navigation must follow the two original wall quads, not brick polygons');
@@ -307,10 +352,12 @@ const server=http.createServer((request,response)=>{
     assert((data.outline&2)!==0,'Raised roots and vines must participate in shell outlines');
     assert(data.deterministic,'Identical saved seed/recipe must regenerate deterministic geometry');
     assert(data.hiddenBefore&&data.visibleAfter,'Wrap density must correctly hide/show in an actual browser DOM');
-    assert.equal(data.budgetLabel,'Strand budget');
+    assert.equal(data.budgetLabel,'Strand budget per surface');
     assert.equal(data.savedRecipe?.style,'wrap');
     assert.equal(data.savedRecipe?.density,.75);
     assert.equal(data.savedRecipe?.count,9);
+    assert.equal(data.savedRecipe?.strandLimit,4);
+    assert.equal(data.savedRecipe?.perSurface,true);
     assert.equal(data.restoredStyle,'wrap','Selecting a saved layer must restore its style');
     assert.equal(Number(data.restoredDensity),.75,'Selecting a saved layer must restore density');
     assert.deepEqual(pageErrors,[], 'Shared authoring or growth must not emit browser errors');
