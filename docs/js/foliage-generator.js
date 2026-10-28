@@ -1893,6 +1893,61 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   function recognizeArchitecturalSurfaceRegions(parent, sources=[], options={}) {
     const degree=Number.isFinite(Number(options.splitAngleDeg))?Number(options.splitAngleDeg):24; // Match Furniture Author's default recognition threshold.
     const cosThreshold=Math.cos(clamp(degree,0,180)*Math.PI/180),faces=[];
+    // An authored building can contain intersecting solid Highland sections.
+    // Their *construction* face quads are not necessarily part of the visible
+    // exterior. Derive each section's solid envelope from its true floor,
+    // frustum top and roof planes; clip hidden fractions before region detection.
+    const sectionVolumes=new Map();
+    for(const face of Array.isArray(options.occlusionFaces)?options.occlusionFaces:[]){
+      const section=String(face?.highlandSectionRole||face?.roofSectionRole||'');
+      if(!section||!Array.isArray(face.v)||face.v.length!==4||face.seamCap)continue;
+      if(!sectionVolumes.has(section))sectionVolumes.set(section,{id:section,roof:[],floor:null,eave:null});
+      const volume=sectionVolumes.get(section);
+      const xs=face.v.map(p=>p[0]),zs=face.v.map(p=>p[2]);
+      const rect={minX:Math.min(...xs),maxX:Math.max(...xs),minZ:Math.min(...zs),maxZ:Math.max(...zs),
+        y:face.v.reduce((acc,p)=>acc+p[1],0)/4};
+      if(face.tag==='floor'&&face.highlandFrustumBottom)volume.floor=rect;
+      if(face.tag==='ceiling'&&face.highlandFrustumTop)volume.eave=rect;
+      if(face.tag==='roof')volume.roof.push([face.v[0],face.v[1],face.v[2]],[face.v[0],face.v[2],face.v[3]]);
+    }
+    const volumes=[...sectionVolumes.values()].filter(v=>v.floor&&v.eave);
+    const roofHeightAt=(volume,x,z)=>{
+      let highest=-Infinity;
+      for(const tri of volume.roof){
+        const [a,b,c]=tri,den=(b[2]-c[2])*(a[0]-c[0])+(c[0]-b[0])*(a[2]-c[2]);
+        if(Math.abs(den)<1e-8)continue;
+        const u=((b[2]-c[2])*(x-c[0])+(c[0]-b[0])*(z-c[2]))/den;
+        const v=((c[2]-a[2])*(x-c[0])+(a[0]-c[0])*(z-c[2]))/den;
+        if(u<-.001||v<-.001||u+v>1.001)continue;
+        highest=Math.max(highest,u*a[1]+v*b[1]+(1-u-v)*c[1]);
+      }
+      return highest;
+    };
+    const insideOtherSection=(p,sourceSection)=>{
+      for(const volume of volumes){
+        if(volume.id===sourceSection||p.y<volume.floor.y+.01)continue;
+        if(p.x<=volume.floor.minX+.01||p.x>=volume.floor.maxX-.01||
+           p.z<=volume.floor.minZ+.01||p.z>=volume.floor.maxZ-.01)continue;
+        if(p.y<=volume.eave.y){
+          const t=clamp((p.y-volume.floor.y)/Math.max(.01,volume.eave.y-volume.floor.y),0,1);
+          const x0=lerp(volume.floor.minX,volume.eave.minX,t),x1=lerp(volume.floor.maxX,volume.eave.maxX,t);
+          const z0=lerp(volume.floor.minZ,volume.eave.minZ,t),z1=lerp(volume.floor.maxZ,volume.eave.maxZ,t);
+          if(p.x>x0+.01&&p.x<x1-.01&&p.z>z0+.01&&p.z<z1-.01)return true;
+        }else if(p.y<roofHeightAt(volume,p.x,p.z)-.01)return true;
+      }
+      return false;
+    };
+    const exposedTriangles=(tri,section,depth=0)=>{
+      if(!section||!volumes.length)return [tri];
+      const [a,b,c]=tri,center=a.clone().add(b).add(c).multiplyScalar(1/3);
+      const hidden=[a,b,c,center].map(p=>insideOtherSection(p,section));
+      if(hidden.every(Boolean))return [];
+      if(!hidden.some(Boolean))return [tri];
+      if(depth>=3)return hidden[3]?[]:[tri]; // At most 64 tiny subtriangles from a partially buried face.
+      const ab=a.clone().add(b).multiplyScalar(.5),bc=b.clone().add(c).multiplyScalar(.5),ca=c.clone().add(a).multiplyScalar(.5);
+      return [[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]]
+        .flatMap(part=>exposedTriangles(part,section,depth+1));
+    };
     parent.updateWorldMatrix(true,true);
     const inverse=parent.matrixWorld.clone().invert(),vertex=new T.Vector3();
     for(const source of Array.isArray(sources)?sources:[]){
@@ -1911,13 +1966,15 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           for(let c=0;c<3;c++)points.push(vertex.fromBufferAttribute(pos,idx?idx.getX(i*3+c):i*3+c).clone().applyMatrix4(matrix));
         }
       }
+      if(source?.constructionOnly)continue; // Seam caps and internal extension framing never define exposed boundaries.
       for(let i=0;i+2<points.length;i+=3){
-        const a=points[i],b=points[i+1],c=points[i+2];
-        if(!Number.isFinite(a.x+a.y+a.z+b.x+b.y+b.z+c.x+c.y+c.z))continue;
-        const normal=b.clone().sub(a).cross(c.clone().sub(a));
-        if(normal.lengthSq()<1e-12)continue;
-        normal.normalize();
-        faces.push({vertices:[a,b,c],normal,role,renderLift:Math.max(0,Math.min(.6,Number(source.renderLift)||0))});
+        for(const [a,b,c] of exposedTriangles([points[i],points[i+1],points[i+2]],source.sectionId||'')){
+          if(!Number.isFinite(a.x+a.y+a.z+b.x+b.y+b.z+c.x+c.y+c.z))continue;
+          const normal=b.clone().sub(a).cross(c.clone().sub(a));
+          if(normal.lengthSq()<1e-12)continue;
+          normal.normalize();
+          faces.push({vertices:[a,b,c],normal,role,renderLift:Math.max(0,Math.min(.6,Number(source.renderLift)||0))});
+        }
       }
     }
     if(!faces.length)return [];
