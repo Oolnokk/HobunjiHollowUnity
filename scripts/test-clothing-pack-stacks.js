@@ -72,13 +72,17 @@ assert.equal(groupClothingForDisplay([loomOne, { ...loomTwo, weaveMaterial: 'hea
 
 let pack = [copy(base), copy(base), dyed]; // Old shop purchases reused a single listing UID.
 let saves = 0; // Must only increase on actual ID repair or a real inventory transaction.
+let gearSaves = 0; // Used to verify that transferring one article persists it exactly once.
+const gear = { tools: {}, clothing: {}, clothingItems: [] }; // Persistent collection used by the transfer action.
 let selectedClears = 0; // Verifies sale actions use the existing detail-cleanup path.
 const inventory = { gold: 0 };
 panel.init({
   getPackClothing: () => pack,
   setPackClothing: items => { pack = items; },
   saveMemberWorldData: () => { saves++; },
-  getGearInventory: () => ({ tools: {}, clothing: {}, clothingItems: [] }),
+  getGearInventory: () => gear,
+  saveGearInventory: () => { gearSaves++; },
+  refreshPlayerAvatar: () => {},
   inventory,
   clearInvSelection: () => {},
   clearInventoryDetail: () => { selectedClears++; },
@@ -110,4 +114,11 @@ assert.equal(selectedClears, 1, 'the existing detail reset runs after the sale')
 assert.deepEqual(panel.getClothingStackDebug(), { articles: 2, visibleTiles: 2, stackedTiles: 0 },
   'mobile diagnostics report current display counts');
 
-console.log('Clothing stack rendering, migration, and single-article transactions passed');
+packNode.children[0].click();
+nodes.get('iiActions').children.find(child => child.textContent.startsWith('Transfer to Gear')).click();
+assert.equal(pack.length, 1, 'transferring the remaining garment removes only that physical article');
+assert.equal(gear.clothingItems.length, 1, 'the exact transferred item becomes permanent gear');
+assert.equal(gear.clothing.overwear?.cosmeticId, base.cosmeticId, 'that garment is equipped in its authored slot');
+assert.equal(gearSaves, 1, 'the transfer persists the gear collection');
+
+console.log('Clothing stack rendering, migration, sale, and transfer transactions passed');
