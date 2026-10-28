@@ -13,6 +13,10 @@ on:
       - 'docs/tools/building-interior-author/index.html'
       - 'docs/tools/furniture-avatar-author/index.html'
       - 'scripts/test-surface-foliage-styles-browser.js'
+      - 'scripts/test-temple-interior-material-growth-parity.js'
+      - 'docs/config/pieces/temple.json'
+      - 'docs/config/maps/map_i_temple.json'
+      - 'docs/js/surface-foliage-authoring.js'
       - '.github/workflows/smoke-surface-foliage-semantic.yml'
   workflow_dispatch:
 
@@ -40,5 +44,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Source-level foliage regression
         run: node scripts/test-surface-foliage.js
+      - name: Temple interior and exterior growth parity
+        run: node scripts/test-temple-interior-material-growth-parity.js
       - name: House architectural planes, furniture named surfaces, and nested guide ownership
         run: node scripts/test-surface-foliage-styles-browser.js
