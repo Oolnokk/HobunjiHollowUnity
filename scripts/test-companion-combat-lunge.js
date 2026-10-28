@@ -120,6 +120,12 @@ assert(chargeState.lungeMaxDistancePx > TILE * 1.9, 'Guard Charge covers the tar
 for (let step = 0; step < 15 && attacks.isBusy(charge); step++) attacks.update(charge, 1 / 60);
 assert(!attacks.isBusy(charge), 'native Guard Charge resolves in one fast charge');
 assert(nativeHits.length === 1, 'Guard Charge reaches and connects with its intended target without an extra burst');
+const offsetMaster = { x: 0, y: -TILE * 4 }; // Makes the old master-away steering visibly different from direct target bearing.
+const aimedCharge = { ...actor, x: 0, y: 0, master: offsetMaster, _animalAttack: null }; // Checks that closing a distant gap heads straight at the chosen opponent.
+attacks.start(aimedCharge, 'guardCharge', { target });
+assert(Math.abs(aimedCharge._animalAttack.state.lungeAngle) < 0.0001,
+  'extended companion Guard Charge targets the enemy, not a blended direction away from the master');
+attacks.cancel(aimedCharge);
 
 const pounce = { ...actor, x: 0, y: 0, _animalAttack: null }; // Exercises the production crouch-and-leap startup.
 attacks.start(pounce, 'pounce', { target });
