@@ -624,6 +624,7 @@
     shingleVariantScene: function (name) { var v = _shingleVariant(name); return v ? v.scene : null; }, // Diagnostics/tests: the material-owning template clone behind 'farm' or 'town' roofs.
     makeShingleModel: makeShingleModel,
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
+    buildEntryTunnelPiece: buildEntryTunnelPiece, // Supplies the same generated frame faces to the shared entrance finish; never duplicates tunnel geometry.
     buildChimneyGroup: buildChimneyGroup,
   };
 
