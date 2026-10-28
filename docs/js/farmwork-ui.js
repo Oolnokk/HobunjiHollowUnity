@@ -126,7 +126,7 @@
     }
     return true;
   }
-  function endWorldPointer(pointerId) { if (drag && (pointerId == null || drag.pointerId === pointerId)) endDrag(); }
+  function endWorldPointer(pointerId) { if (!drag || (pointerId != null && drag.pointerId !== pointerId)) return false; endDrag(); return true; }
 
   function render() {
     if (!open) return;
