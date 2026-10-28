@@ -447,6 +447,10 @@
       "path": "./clothes/hat/tangedcirclet.json"
     },
     {
+      "id": "hachutu_binding_mask_ii",
+      "path": "./clothes/masks/hachutu_binding_mask_ii.json"
+    },
+    {
       "id": "festivalmask_gar-wolf",
       "path": "./clothes/masks/festivalmask_gar-wolf.json"
     },
