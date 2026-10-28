@@ -101,4 +101,41 @@ assert(!near._animalAttack.approach && started === 3, 'no double lunge inside no
 const wild = { ...actor, isCompanion: false, x: 0, _animalAttack: null };
 attacks.start(wild, 'testBite', { target });
 assert(!wild._animalAttack.approach && started === 4, 'wild creature AI is not changed');
+// Pounce and Guard Charge have their OWN movement: selecting either from the outer
+// engagement band must not prepend a generic 2.6-tile charge.
+const nativeHits = []; // Collects real Guard Charge damage routing while testing its original collision-aware lunge.
+Object.assign(sandbox.window.Combat.deps, {
+  hostileObjects: [target], companionObjects: [],
+  damageCreature(...args) { nativeHits.push(args); },
+  playCreatureClawHit() {},
+  canOccupyAt: () => true,
+});
+sandbox.window.ResourceSystem.afflictionBonusesForTag = () => ({});
+const charge = { ...actor, x: 0, y: 0, _animalAttack: null }; // Separate character allows inspecting the native Guard Charge state.
+attacks.start(charge, 'guardCharge', { target });
+assert.equal(charge._animalAttack.approach, null, 'Guard Charge does not get a second, generic burst');
+const chargeState = charge._animalAttack.state; // The one native charge should cover the companion engagement distance.
+assert(chargeState.lungeMaxDistancePx <= TILE * 2.6 + 0.01, 'Guard Charge retains the common maximum 2.6-tile lunge');
+assert(chargeState.lungeMaxDistancePx > TILE * 1.9, 'Guard Charge covers the target gap from the outer engagement band');
+for (let step = 0; step < 15 && attacks.isBusy(charge); step++) attacks.update(charge, 1 / 60);
+assert(!attacks.isBusy(charge), 'native Guard Charge resolves in one fast charge');
+assert(nativeHits.length === 1, 'Guard Charge reaches and connects with its intended target without an extra burst');
+
+const pounce = { ...actor, x: 0, y: 0, _animalAttack: null }; // Exercises the production crouch-and-leap startup.
+attacks.start(pounce, 'pounce', { target });
+assert.equal(pounce._animalAttack.approach, null, 'Pounce starts its own authored windup rather than stacking lunges');
+assert.equal(pounce._animalAttack.state.stage, 'windup', 'Pounce retains its existing crouch telegraph');
+assert(pounce._animalAttack.state.lungeSpeedPxS >=
+  pounce._animalAttack.state.lungeMaxDistancePx / 0.12,
+  'companion leap movement completes at weapon-burst speed once the crouch ends');
+attacks.cancel(pounce);
+const wildPounce = { ...actor, isCompanion: false, x: 0, y: 0, _animalAttack: null }; // Wild animal pace remains authored.
+sandbox.window.Combat.deps.players = [target];
+attacks.start(wildPounce, 'pounce', { target });
+assert.equal(wildPounce._animalAttack.approach, null, 'wild Pounce never gets a companion-only pre-lunge');
+assert(wildPounce._animalAttack.state.lungeSpeedPxS <=
+  pounce._animalAttack.state.lungeSpeedPxS,
+  'wild Pounce does not inherit the companion-specific speed boost');
+attacks.cancel(wildPounce);
+
 console.log('Shared companion weapon-speed engagement, attack lifecycle, mobile debug and collision passed.');
