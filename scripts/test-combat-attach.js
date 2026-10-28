@@ -232,4 +232,20 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(loaded.visualSpreadScale, 0.42, 'authoring keeps the compact attached-state visual');
 }
 
+// Companion Swarm must use its own flying approach rather than taking an
+// extra ground-combat lunge before attaching to the target.
+{
+  const w = world();
+  const host = w.make({ x: TILE * 3, y: 0 }); // Beyond ordinary melee range, still within the enlarged engagement window.
+  const flyer = w.make({
+    x: 0, y: 0, isCompanion: true,
+    def: { attackDamage: 5, attackRangePx: TILE, attackTag: 'poison' },
+  }); // The attached creature is the only state owner for this special.
+  w.Combat.animalAttacks.start(flyer, 'swarm', { target: host });
+  assert.equal(flyer._animalAttack.approach, null, 'Swarm has no generic ground-lunge stage');
+  assert.equal(flyer._animalAttack.state.stage, 'approach', 'the authored attachment approach begins immediately');
+  w.Combat.animalAttacks.update(flyer, 0.12);
+  assert(flyer.x >= TILE * 2.5, 'companion swarm flies most of the gap in a single weapon-speed burst');
+  w.Combat.animalAttacks.cancel(flyer);
+}
 console.log('combat attach: ok');

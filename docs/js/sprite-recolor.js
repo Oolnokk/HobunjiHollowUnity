@@ -149,7 +149,7 @@
   }
   function loadAmphibiousFishingForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20261027he514227',()=>!!window.AmphibiousFishing);
+    parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20261028hnativefish1',()=>!!window.AmphibiousFishing);
     parserOrderedScript('amphibious-fish-corpse-cleanup.js','amphibious-corpse-cleanup','20260826a');
     parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20260826a',()=>!!window.FishingPresentationDebug);
   }

@@ -567,7 +567,7 @@
     }
   }
 
-  attacks.register('grehlrBurrow', { start, update, cancel });
+  attacks.register('grehlrBurrow', { start, update, cancel, ownsApproach: true }); // The underground pursuit is this attack's approach; never prepend a visible lunge.
 
   // Compatibility: Grehlr CREATURE_DB defaults still say pounce until the
   // asynchronous authored creature config arrives. Route only those two

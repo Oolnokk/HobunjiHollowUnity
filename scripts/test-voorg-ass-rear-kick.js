@@ -18,6 +18,7 @@ assert.match(game, /_voorgRearKickThreat = retaliator/, 'a struck wild Voorg-Ass
 assert.match(game, /animalAttacks\?\.start\(c, 'rearKick', \{ target: prey \}\)/, 'wildlife-vs-wildlife retaliations invoke the named kick');
 assert.match(game, /window\.VoorgAssRearKick\.canUse\(c\) \? 'rearKick' : 'guardCharge'/, 'companion kicks respect their own cooldown');
 assert.match(game, /_voorgRearKickSpent = false/, 'wild kick re-arms after returning home');
+assert.match(game, /VoorgAssRearKick\?\.isHoldingKickPose\?\.\(c\)/, 'companion keeps a fired kick pose even after the target is defeated or disappears');
 assert.match(game, /c\.state = c\._voorgRearKickThreat \? 'fleeing-low-health' : 'idle'/, 'wildlife switches to flight if the retaliation target disappears');
 assert.match(game, /c\.state = c\._voorgRearKickThreat \? 'fleeing-low-health' : 'return'/, 'wildlife escapes if the skirmish exceeds its leash');
 assert.match(game, /c\._voorgRearKickSpent = true; \/\/ No Stamina/, 'wildlife escapes if it cannot afford the kick');
@@ -124,9 +125,26 @@ async function main() {
   assert.ok(options.footingDamageMultiplier >= 80, 'huge Footing loss uses existing stagger pipeline');
   assert.equal(options.tag, 'blunt');
   assert.ok(log.some(x => x[0] === 'frame' && x[1] === wild.avatarRef && String(x[2]).startsWith('data:image/png')), 'combined frame applied through existing sprite renderer');
-  kick.update(wild, state, 0.15, deps);
-  kick.update(wild, state, 0.3, deps);
-  assert.equal(wild.state, 'fleeing-low-health', 'wild Voorg-Ass escapes after kicking');
+  assert.equal(windowStub.VoorgAssRearKick.tuning.KICK_POSE_HOLD_S, 1.0, 'kick pose hold is exactly one second after impact');
+  assert.equal(state.stage, 'kickHold', 'hoof contact enters the dedicated held-kick state');
+  const heldX = wild.x, heldY = wild.y, heldFrame = wild.currentFrameUrl; // The impact silhouette and world position must not drift.
+  const spriteChanges = log.filter(x => x[0] === 'frame').length; // Checks default animation cannot overwrite the pose during the hold.
+  wild.vx = 123; wild.vy = -50; // Simulates residual movement entering the stationary impact hold.
+  kick.update(wild, state, 0.5, deps);
+  kick.update(wild, state, 0.49, deps);
+  assert.equal(state.stage, 'kickHold', 'the rear kick remains fully extended through 0.99 seconds');
+  assert.equal(wild.state, 'chase', 'wild animal does not flee during the held-kick second');
+  assert.equal(wild.x, heldX);
+  assert.equal(wild.y, heldY);
+  assert.equal(wild.vx, 0);
+  assert.equal(wild.vy, 0);
+  assert.equal(wild.currentFrameUrl, heldFrame);
+  assert.equal(log.filter(x => x[0] === 'frame').length, spriteChanges, 'kick composite is unchanged throughout the stationary hold');
+  assert.equal(damageCalls.length, 1, 'holding the pose never deals a second hit');
+  kick.update(wild, state, 0.02, deps);
+  assert.equal(state.stage, 'recovery', 'one full second of impact pose precedes recovery');
+  kick.update(wild, state, 0.24, deps);
+  assert.equal(wild.state, 'fleeing-low-health', 'wild Voorg-Ass escapes only after the full kick hold and recovery');
   assert.equal(wild._voorgRearKickThreat, null, 'wild target cleared for retreat');
   assert.equal(wild._voorgRearKickSpent, true, 'wild kick cannot loop while escaping');
 
@@ -137,6 +155,17 @@ async function main() {
     creatureHits.push([source, hit, amount, speed, opts]);
   } };
   const companionDeps = { ...deps, damageCreature() {}, player, players: [player] };
+  // The modular dispatcher must begin Rear Kick's OWN 0.12-second charge even
+  // from extended companion engagement range, without a second generic lunge.
+  windowStub.Combat.deps = companionDeps; // Connects the shared dispatcher to the same world dependencies as direct-handler tests.
+  const distantCompanion = { ...companion, x: 0, y: 0, _animalAttack: null }; // Isolated instance so cooldown/retreat checks below remain intact.
+  const distantEnemy = { ...target, x: deps.TILE * 3 }; // More than normal hoof reach but still within the outer attack-selection band.
+  windowStub.Combat.animalAttacks.start(distantCompanion, 'rearKick', { target: distantEnemy });
+  assert.equal(distantCompanion._animalAttack.approach, null, 'Rear Kick owns its only approach, without a generic pre-lunge');
+  assert.equal(distantCompanion._animalAttack.state.stage, 'lunge', 'selected kick immediately starts its native charge');
+  assert.equal(distantCompanion._animalAttack.state.lungeMaxDistancePx, deps.TILE * 2.6);
+  windowStub.Combat.animalAttacks.cancel(distantCompanion);
+
   const companionState = {};
   kick.start(companion, companionState, { target }, companionDeps);
   assert.ok(!windowStub.VoorgAssRearKick.canUse(companion), 'special cooldown begins on start');
@@ -145,9 +174,17 @@ async function main() {
   kick.update(companion, companionState, 0.35, companionDeps);
   kick.update(companion, companionState, 0.15, companionDeps);
   assert.equal(creatureHits.length, 1, 'companion kick flows through companion offense');
-  kick.update(companion, companionState, 0.35, companionDeps);
+  assert.equal(companionState.stage, 'kickHold');
+  companion._animalAttack = { id: 'rearKick', state: companionState }; // Mirror dispatcher ownership to test the target-loss guard.
+  assert.ok(windowStub.VoorgAssRearKick.isHoldingKickPose(companion), 'companion keeps holding after a successful strike');
+  kick.update(companion, companionState, 0.7, companionDeps);
+  assert.equal(companionState.stage, 'kickHold', 'companion holds the same kick position for a full second');
+  assert.equal(creatureHits.length, 1, 'companion does not repeat damage while paused');
   kick.update(companion, companionState, 0.3, companionDeps);
+  assert.equal(companionState.stage, 'recovery');
+  kick.update(companion, companionState, 0.24, companionDeps);
   assert.equal(companion.state, 'chase', 'companion does not flee after the kick');
+  assert.ok(!windowStub.VoorgAssRearKick.isHoldingKickPose({ ...companion, _animalAttack: null }), 'the target-loss hold gate ends when the named attack finishes');
   clock += 9001;
   assert.ok(windowStub.VoorgAssRearKick.canUse(companion), 'signature attack recharges independently');
 
@@ -216,6 +253,31 @@ async function main() {
     kick.update(wild, missState, 0.14, deps);
     assert.equal(damageCalls.length, beforeHits, evasion + ': avoids committed rear kick');
   }
+
+  // Rear Kick's entire 2.6-tile approach is a weapon-style burst (Guard Charge's 0.12s), not a half-second chase.
+  assert.equal(windowStub.VoorgAssRearKick.tuning.LUNGE_DURATION_S, 0.12, 'Rear Kick uses the shared combat-burst cadence');
+  const distantVictim = { ...player, x: 800, y: 0 }; // Far enough to exercise the full travel budget without cone contact.
+  const bursting = { ...wild, x: 0, y: 0, facing: 0 }; // Isolates movement from previous attack instances.
+  const burstState = {}; // Captures per-attack travel diagnostics and stop reason.
+  kick.start(bursting, burstState, { target: distantVictim }, deps);
+  let burstFrames = 0; // Counts simulation ticks to guard against accidentally restoring slow approach movement.
+  do {
+    kick.update(bursting, burstState, 1 / 60, deps);
+    burstFrames++;
+    if (burstFrames === 1) assert.ok(bursting.x >= deps.TILE * 0.3, 'first burst frame moves a substantial distance');
+  } while (burstState.stage === 'lunge' && burstFrames < 20);
+  assert.equal(burstState.lungeStopReason, 'range', 'the committed attack keeps its finite travel budget');
+  assert.ok(burstFrames <= 9, 'full travel resolves within approximately 0.12s at 60fps');
+  assert.ok(burstState.lungeElapsedS < 0.15, 'the on-screen debug time measures a short attack burst');
+  assert.ok(Math.abs(bursting.x - 2.6 * deps.TILE) < 0.01, 'faster burst keeps the same maximum travel distance');
+
+  const obstacle = { ...wild, x: 0, y: 0, facing: 0 }; // Separate charge verifies speed did not skip solid obstacles.
+  const obstacleState = {}; // Holds the collision stop reason for the fast movement test.
+  const obstacleDeps = { ...deps, canOccupyAt: x => x <= deps.TILE * 0.85 }; // Solid boundary lies inside the first few high-speed frames.
+  kick.start(obstacle, obstacleState, { target: distantVictim }, obstacleDeps);
+  advancePastKickLunge(obstacle, obstacleState, obstacleDeps);
+  assert.equal(obstacleState.lungeStopReason, 'blocked', 'fast burst still detects collisions');
+  assert.ok(obstacle.x <= deps.TILE * 0.85, 'the lunge cannot tunnel through a wall at the faster speed');
 
   // Charge can run its full distance or collide with terrain and still turn/kick.
   for (const stop of ['range', 'blocked']) {
