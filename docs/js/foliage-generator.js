@@ -1889,7 +1889,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // edge can meet several smaller gable triangles. Collinear interval overlap
   // therefore counts as a shared edge, but vertex-only contact never does.
   function recognizeArchitecturalSurfaceRegions(parent, sources=[], options={}) {
-    const degree=Number.isFinite(Number(options.splitAngleDeg))?Number(options.splitAngleDeg):20;
+    const degree=Number.isFinite(Number(options.splitAngleDeg))?Number(options.splitAngleDeg):24; // Match Furniture Author's default recognition threshold.
     const cosThreshold=Math.cos(clamp(degree,0,180)*Math.PI/180),faces=[];
     parent.updateWorldMatrix(true,true);
     const inverse=parent.matrixWorld.clone().invert(),vertex=new T.Vector3();
