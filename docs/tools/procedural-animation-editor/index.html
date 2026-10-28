@@ -972,9 +972,22 @@ header,
             </div>
           </details>
           <div class="animationTopGrid">
-            <div><label for="animationPresetSelect">Preset</label><select id="animationPresetSelect"><option value="regular">Regular movement</option><option value="drunken" selected>Drunken movement</option><option value="custom">Custom</option></select></div>
+            <div><label for="animationPresetSelect">Preset</label><select id="animationPresetSelect"><option value="regular">Regular movement</option><option value="drunken" selected>Drunken movement</option><option value="maskbound_sentinel">Maskbound Guardian · Sentinel</option><option value="maskbound_bulwark">Maskbound Guardian · Bulwark</option><option value="maskbound_reacher">Maskbound Guardian · Reacher</option><option value="custom">Custom</option></select></div>
             <div><label for="animationSeed">Seed</label><input id="animationSeed" type="number" inputmode="numeric" min="1" max="2147483646" value="74119"></div>
           </div>
+          <details class="footGlbPanel" id="maskboundGaitPanel" open hidden>
+            <summary>Maskbound Guardian · procedural dragging gait</summary>
+            <div class="footGlbPanelBody">
+              <div class="row">
+                <div class="grow"><label for="maskboundDragSide">Trailing foot</label><select id="maskboundDragSide"><option value="left">Left foot</option><option value="right">Right foot</option></select></div>
+                <div class="grow"><label for="maskboundCadence">Cadence multiplier</label><input id="maskboundCadence" type="range" min="0.4" max="1.5" step="0.01"><output id="maskboundCadenceValue"></output></div>
+              </div>
+              <div class="animationRange"><label for="maskboundStance">Planted-foot fraction</label><input id="maskboundStance" type="range" min="0.52" max="0.82" step="0.01"><output id="maskboundStanceValue"></output></div>
+              <div class="animationRange"><label for="maskboundDragLift">Dragging foot lift multiplier</label><input id="maskboundDragLift" type="range" min="0.01" max="0.45" step="0.01"><output id="maskboundDragLiftValue"></output></div>
+              <div class="animationRange"><label for="maskboundLurchDegrees">Forward lurch angle</label><input id="maskboundLurchDegrees" type="range" min="0" max="25" step="1"><output id="maskboundLurchDegreesValue"></output></div>
+              <div class="authorHelp">These settings match the live Maskbound Guardian troop gait profiles: asymmetrical foot phases, a dragging foot, slower recovery and a pulsing forward lean. Change a slider to make a custom variation, then use <b>Export settings JSON</b>. The preview uses the tool's currently selected humanoid; in-game troop body proportions remain authored separately.</div>
+            </div>
+          </details>
           <div class="segmented">
             <button id="animationRegularBtn" class="secondary">Regular</button>
             <button id="animationDrunkenBtn" class="secondary active">Drunken</button>
@@ -54946,6 +54959,27 @@ const MOVEMENT_PRESETS = Object.freeze({ // Supplies repository-faithful Regular
     irregularity: 0.58, stumble: 0.52, recoilDistance: 0.18, recoilSpeed: 2.2, rebalanceSpeed: 5.2,
     arenaRadius: 4.5, autoWalk: false, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 74119,
   },
+  maskbound_sentinel: {
+    label: 'Maskbound Sentinel', speed: 1.75, sprintMultiplier: 1, acceleration: 6.2, turnAcceleration: 8.3,
+    deceleration: 9.4, turnResponse: 5.5, bob: 0.025, sway: 0.09, drift: 0.04,
+    irregularity: 0.12, stumble: 0.12, recoilDistance: 0.045, recoilSpeed: 4, rebalanceSpeed: 7,
+    arenaRadius: 4.5, autoWalk: true, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 54119,
+    gaitProfile: { style: 'maskbound-lurch', dragSide: 'left', cadence: 0.82, stance: 0.65, dragLift: 0.13, lurchDegrees: 13 },
+  },
+  maskbound_bulwark: {
+    label: 'Maskbound Bulwark', speed: 1.45, sprintMultiplier: 1, acceleration: 4.1, turnAcceleration: 5.5,
+    deceleration: 7.2, turnResponse: 3.2, bob: 0.03, sway: 0.12, drift: 0.05,
+    irregularity: 0.18, stumble: 0.08, recoilDistance: 0.035, recoilSpeed: 3, rebalanceSpeed: 5,
+    arenaRadius: 4.5, autoWalk: true, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 54120,
+    gaitProfile: { style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 },
+  },
+  maskbound_reacher: {
+    label: 'Maskbound Reacher', speed: 2.0, sprintMultiplier: 1, acceleration: 6.5, turnAcceleration: 8,
+    deceleration: 10.2, turnResponse: 6, bob: 0.032, sway: 0.15, drift: 0.055,
+    irregularity: 0.15, stumble: 0.13, recoilDistance: 0.055, recoilSpeed: 4.4, rebalanceSpeed: 6.8,
+    arenaRadius: 4.5, autoWalk: true, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 54121,
+    gaitProfile: { style: 'maskbound-lurch', dragSide: 'left', cadence: 0.92, stance: 0.62, dragLift: 0.22, lurchDegrees: 16 },
+  },
 });
 
 const IMPORTED_DRUNKEN_DIRECTIONAL_POSES = Object.freeze({ // Exact character-relative endpoint transforms from the supplied Drunken settings export.
@@ -57669,12 +57703,14 @@ function updateExperimentalFeetGait(dt, movingSpeed, characterMotion, input) { /
   const directionForward = procedural.feet.direction.forward / smoothedDirectionLength; // Applies the step path along local forward/backward travel.
 
   const modelHeight = Math.max(0.1, Number(analysis.gameModelHeight) || 0.9); // Scales gait dimensions from the exact game world model after species/child scaling.
-  const stanceFraction = 0.62; // Keeps each foot planted longer than it is airborne, like ordinary walking.
-  const fullStride = modelHeight * (0.32 + 0.44 * Math.sqrt(speedRatio)); // Lengthens the step continuously from a shuffle into a sprint stride (long, confident steps).
+  const lurch = procedural.settings.gaitProfile?.style === 'maskbound-lurch' ? procedural.settings.gaitProfile : null; // Matches the game's troop-specific procedural-leg gait instead of inventing a disconnected preview.
+  const stanceFraction = lurch ? lurch.stance : 0.62; // Puppets use an uneven, longer planted-foot interval.
+  const fullStride = modelHeight * (0.32 + 0.44 * Math.sqrt(speedRatio)) * (lurch ? 0.82 : 1); // Lengthens the step continuously from a shuffle into a sprint stride (long, confident steps).
   const strideLength = fullStride * procedural.feet.gaitStrength; // Fades horizontal travel at movement start and stop.
-  const cadenceHz = movingSpeed > 0.025 && fullStride > 0.001
+  const baseCadenceHz = movingSpeed > 0.025 && fullStride > 0.001
     ? clampNumber((movingSpeed * stanceFraction) / fullStride, 0.55, input.sprint ? 3.2 : 2.8)
     : 0; // Makes planted-foot relative speed track body speed while capping stylized extremes.
+  const cadenceHz = lurch ? baseCadenceHz * lurch.cadence : baseCadenceHz; // Troop cadence values exactly mirror the game.
   const liftHeight = (analysis.radius * (0.35 + 1.35 * Math.sqrt(speedRatio)) + modelHeight * 0.012 * speedRatio) * procedural.feet.gaitStrength; // Raises faster steps higher without floating at low speed.
   procedural.feet.cadenceHz = cadenceHz;
   procedural.feet.strideLength = strideLength;
@@ -57682,8 +57718,14 @@ function updateExperimentalFeetGait(dt, movingSpeed, characterMotion, input) { /
   if (cadenceHz > 0.001) procedural.feet.phase = (procedural.feet.phase + dt * cadenceHz) % 1; // Advances by distance-derived same-foot stride cycles.
 
   const leftPose = stridePoseAtPhase(procedural.feet.phase, strideLength, liftHeight, stanceFraction); // Uses the leading half-cycle.
-  const rightPose = stridePoseAtPhase(procedural.feet.phase + 0.5, strideLength, liftHeight, stanceFraction); // Alternates exactly half a cycle later.
-  const response = movingSpeed > 0.025 ? 18 + cadenceHz * 3 : 11; // Tracks fast steps tightly while allowing a smooth idle settle.
+  const rightPose = stridePoseAtPhase(procedural.feet.phase + (lurch ? 0.53 : 0.5), strideLength, liftHeight, stanceFraction); // Unsteady guardians are slightly out of phase.
+  if (lurch) {
+    const dragging = lurch.dragSide === 'right' ? rightPose : leftPose;
+    const supporting = lurch.dragSide === 'right' ? leftPose : rightPose;
+    dragging.lift *= lurch.dragLift; dragging.travel *= 0.83; // One foot scrapes while its partner compensates.
+    supporting.lift *= 0.82;
+  }
+  const response = movingSpeed > 0.025 ? (lurch ? 9 + cadenceHz * 2 : 18 + cadenceHz * 3) : 11; // Tracks fast steps tightly while allowing a smooth idle settle.
   const baseScale = analysis.baseScale || { x: 1, y: 1, z: 1 }; // Separates permanent torso-width sizing from temporary contact squash.
   const applyPose = (foot, idle, pose, sideSign) => {
     const outward = sideSign * analysis.radius * baseScale.x * 0.18 * pose.swingAmount * procedural.feet.gaitStrength; // Separates passing feet in proportion to their permanent X width.
@@ -59154,11 +59196,24 @@ function isEditableTarget(target) { // Prevents movement hotkeys while the user 
   return Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
 }
 
+function normalizeMaskboundEditorGait(value) { // Same clamped per-troop authoring domain as docs/js/procedural-leg-animation.js.
+  if (!value || value.style !== 'maskbound-lurch') return null;
+  return {
+    style: 'maskbound-lurch',
+    dragSide: value.dragSide === 'right' ? 'right' : 'left',
+    cadence: clampNumber(value.cadence ?? 0.8, 0.4, 1.5),
+    stance: clampNumber(value.stance ?? 0.67, 0.52, 0.82),
+    dragLift: clampNumber(value.dragLift ?? 0.14, 0.01, 0.45),
+    lurchDegrees: clampNumber(value.lurchDegrees ?? 14, 0, 25),
+  };
+}
+
 function normalizedAnimationSettings(value, fallbackPreset = 'drunken') { // Validates local/imported settings before they reach the simulation.
   const fallback = MOVEMENT_PRESETS[fallbackPreset] || MOVEMENT_PRESETS.drunken;
   const source = value && typeof value === 'object' ? value : {};
   return {
     label: String(source.label || fallback.label || 'Custom'),
+    gaitProfile: normalizeMaskboundEditorGait(source.gaitProfile ?? fallback.gaitProfile), // Authorable walking profile survives save/import/export.
     speed: clampNumber(source.speed ?? fallback.speed, 0.2, 4),
     sprintMultiplier: clampNumber(source.sprintMultiplier ?? fallback.sprintMultiplier, 1, 3),
     acceleration: clampNumber(source.acceleration ?? fallback.acceleration, 0.5, 20),
@@ -59216,7 +59271,7 @@ function loadAnimationSettings() { // Restores the most recent local authoring s
     if (stored?.settings) {
       procedural.preset = MOVEMENT_PRESETS[stored.preset] ? stored.preset : 'custom';
       procedural.settings = normalizedAnimationSettings(stored.settings, procedural.preset === 'regular' ? 'regular' : 'drunken');
-      procedural.pose.basePreset = stored.directionalPosePreset === 'regular' ? 'regular' : stored.directionalPosePreset === 'drunken' ? 'drunken' : (procedural.preset === 'regular' ? 'regular' : 'drunken');
+      procedural.pose.basePreset = MOVEMENT_PRESETS[stored.directionalPosePreset] ? stored.directionalPosePreset : (MOVEMENT_PRESETS[procedural.preset] ? procedural.preset : 'drunken'); // Keep guardian presets identifiable after a browser reload.
       procedural.pose.transforms = normalizeDirectionalPoses(stored.directionalPoses || stored.settings?.directionalPoses || createPresetDirectionalPoses(procedural.pose.basePreset));
       procedural.pose.sprintTransform = normalizeDirectionalTransform(stored.sprintPose || stored.settings?.sprintPose, createPresetSprintPose(procedural.pose.basePreset));
     }
@@ -59420,6 +59475,19 @@ function renderAnimationEditor() { // Synchronizes all authoring controls, badge
   $('animationFeetEnabled').checked = procedural.settings.feetEnabled;
   $('animationLegBonesEnabled').checked = procedural.legBones.enabled;
   $('animationPresetSelect').value = MOVEMENT_PRESETS[procedural.preset] ? procedural.preset : 'custom';
+  const gait = procedural.settings.gaitProfile;
+  const gaitPanel = $('maskboundGaitPanel');
+  if (gaitPanel) {
+    gaitPanel.hidden = !gait;
+    gaitPanel.style.display = gait ? '' : 'none';
+    if (gait) {
+      $('maskboundDragSide').value = gait.dragSide;
+      for (const [key, value] of [['Cadence', gait.cadence], ['Stance', gait.stance], ['DragLift', gait.dragLift], ['LurchDegrees', gait.lurchDegrees]]) {
+        $('maskbound' + key).value = value;
+        $('maskbound' + key + 'Value').textContent = Number(value).toFixed(key === 'LurchDegrees' ? 0 : 2);
+      }
+    }
+  }
   $('animationRegularBtn').classList.toggle('active', procedural.preset === 'regular');
   $('animationDrunkenBtn').classList.toggle('active', procedural.preset === 'drunken');
   $('animationPresetBadge').textContent = procedural.settings.label;
@@ -59463,6 +59531,14 @@ function readAnimationEditor() { // Pulls current form values into the validated
   next.followCamera = $('animationFollowCamera').checked;
   next.loopArena = $('animationLoopArena').checked;
   next.feetEnabled = $('animationFeetEnabled').checked;
+  if (next.gaitProfile?.style === 'maskbound-lurch') next.gaitProfile = {
+    ...next.gaitProfile,
+    dragSide: $('maskboundDragSide').value,
+    cadence: Number($('maskboundCadence').value),
+    stance: Number($('maskboundStance').value),
+    dragLift: Number($('maskboundDragLift').value),
+    lurchDegrees: Number($('maskboundLurchDegrees').value),
+  }; // All gait sliders are authored and preserved by Export settings JSON.
   procedural.settings = normalizedAnimationSettings(next, 'drunken');
   syncExperimentalFeetVisibility();
   syncLegBonesVisibility();
@@ -59845,6 +59921,8 @@ function updateProceduralMovement(dt) { // Advances input, movement physics, pos
   if (avatarLiftRoot) avatarLiftRoot.position.set(0, procedural.avatarLiftY + bob, 0); // Applies the game's half-height lift plus procedural bob only to the portrait body.
   applyTransformRecord(poseRoot, blendedPose);
   poseRoot.rotation.x += counterWave;
+  const lurch = procedural.settings.gaitProfile?.style === 'maskbound-lurch' ? procedural.settings.gaitProfile : null;
+  if (lurch && movingSpeed > 0.025) poseRoot.rotation.x += (lurch.lurchDegrees + 5 * Math.sin(procedural.feet.phase * Math.PI * 2)) * Math.PI / 180 * Math.min(1, Math.sqrt(movementStrength)); // Same rhythmic pitched puppet torso as the live combat avatar.
   poseRoot.rotation.z += -swayWave - travelLean;
   syncPosteriorPoseRotationOrigin(); // Recomputes the pivot-compensated position now that sway/counter-wave rotation was applied directly, after applyTransformRecord already ran.
   removeFootingDrunkenLegPlacement();
@@ -59937,7 +60015,7 @@ async function importAnimationFile(file) { // Loads either a settings export or 
     const namedPreset = MOVEMENT_PRESETS[parsed.preset] ? parsed.preset : 'custom'; // Preserves a known preset label only when the file names one.
     procedural.preset = namedPreset;
     procedural.settings = normalizedAnimationSettings(settings, namedPreset === 'regular' ? 'regular' : 'drunken');
-    procedural.pose.basePreset = parsed.directionalPosePreset === 'regular' ? 'regular' : parsed.directionalPosePreset === 'drunken' ? 'drunken' : (namedPreset === 'regular' ? 'regular' : 'drunken');
+    procedural.pose.basePreset = MOVEMENT_PRESETS[parsed.directionalPosePreset] ? parsed.directionalPosePreset : (MOVEMENT_PRESETS[namedPreset] ? namedPreset : 'drunken');
     procedural.pose.transforms = normalizeDirectionalPoses(parsed.directionalPoses || settings.directionalPoses || createPresetDirectionalPoses(procedural.pose.basePreset));
     procedural.pose.sprintTransform = normalizeDirectionalTransform(parsed.sprintPose || settings.sprintPose, createPresetSprintPose(procedural.pose.basePreset));
     resetProceduralMovement({ resetCamera: true, preservePlayback: true });
@@ -59979,6 +60057,7 @@ function initializeProceduralAnimator() { // Wires the standalone authoring UI, 
   $('animationRegularBtn').addEventListener('click', () => applyAnimationPreset('regular'));
   $('animationDrunkenBtn').addEventListener('click', () => applyAnimationPreset('drunken'));
   $('animationPresetSelect').addEventListener('change', event => { if (MOVEMENT_PRESETS[event.target.value]) applyAnimationPreset(event.target.value); });
+  $('maskboundDragSide').addEventListener('change', readAnimationEditor); // Select events don't bubble as input[type=range], so support both controller and mouse changes.
   $('animationEditor').addEventListener('input', event => {
     if (event.target.matches('input[type="range"], input[type="number"], input[type="checkbox"]') && !event.target.matches('[data-direction-pose-kind]')) readAnimationEditor();
   });
