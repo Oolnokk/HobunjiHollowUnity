@@ -1947,6 +1947,7 @@
     const sound = _ambientCueState.currentCombatBgm || _ambientCueState.currentBgm || _ambientCueState.currentCue; // Identifies the actual scheduler-owned transport.
     return {
       revision: 'cue-load-retry-2', area, stage: _ambientCueState.mode, cueIndex: indexId, audioContext: _musicAudioCtx?.state || 'none',
+      ruinVaultSilenced: ruinVaultSilencesAmbient(area), // Included in the existing mobile-copyable music diagnostics when the door owns the soundtrack.
       cueStageRemainingSec: Math.max(0, Math.round((_ambientCueState.cuePhaseEndsAt - performance.now()) / 1000)),
       nextInSec: Math.max(0, Math.round((_ambientCueState.nextAt - performance.now()) / 1000)),
       manifest: { ..._cueIndexLoad, retryInSec: Math.max(0, Math.round((_cueIndexLoad.retryAt - performance.now()) / 1000)), loaded: [..._audioCueIndexes.keys()] },
