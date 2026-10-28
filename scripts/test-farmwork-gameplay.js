@@ -12,7 +12,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8'); // Reads the same
 let spouseId = null, area = 'farm', owner = true; // Runtime gates for visible utility entry and panel actions.
 let saved = 0, synced = []; // Observability: real serialization and NPC worker re-registration.
 let pointerTile = { col: 4, row: 5 }; // Controlled world projection for drag painting.
-const panel = { style: { display: 'none' }, querySelector: selector => selector === '#farmworkContents' ? view : null }; // Controller panel root.
+const panel = { style: { display: 'none' }, querySelector: selector => selector === '#farmworkContents' ? view : null, querySelectorAll: () => [] }; // Controller panel root.
 const view = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; // Lightweight DOM surface for content assertions.
 const document = { activeElement: null, getElementById: id => id === 'farmworkPanel' ? panel : id === 'farmPlotsPane' ? null : null }; // No dev panel is present.
 const win = {
