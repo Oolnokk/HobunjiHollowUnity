@@ -147,7 +147,10 @@
     if (exists === !!present) return false;
     loaded = true;
     if (present) {
-      removeTile(c, r); // A tile belongs to exactly one family plot; transferring it releases old jobs on commit.
+      // Remove overlapping designations without filtering out the NEW empty plot being painted.
+      // removeTile() is for dev brush erasing and would discard this empty target before its first tile.
+      for (const other of plots) if (other !== plot) other.tiles = other.tiles.filter(t => t[0] !== c || t[1] !== r);
+      plots = plots.filter(other => other === plot || other.tiles.length); // Other plots emptied by a transfer may be retired.
       plot.tiles.push([c, r]);
     } else {
       plot.tiles = plot.tiles.filter(t => t[0] !== c || t[1] !== r);
