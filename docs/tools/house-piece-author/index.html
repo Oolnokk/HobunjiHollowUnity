@@ -2066,6 +2066,19 @@ function findObjectByNameLoose(rootObj, name){
   return found;
 }
 function analyzeShingleTemplate(sceneObj, sourceName=''){
+  // The Highland shingle GLB commonly has no UVs. Without the shared
+  // connected-surface UV mapper the material palette would display a solid
+  // corner texel in the House Editor even though gameplay renders the PNG.
+  const mapper=window.HobunjiSurfaceStretchUV;
+  sceneObj.traverse(mesh=>{
+    if(!mesh.isMesh||!mesh.geometry||String(mesh.name||'').toLowerCase()==='shinglebone')return;
+    if(mapper?.mapGeometry&&(!mesh.geometry.getAttribute('uv')||!mesh.geometry.userData?.hobunjiSurfaceStretch)){
+      try{mesh.geometry=mapper.mapGeometry(mesh.geometry,{
+        angleToleranceDeg:78,splitAtThreshold:true,ignoreReversedCoplanarFaces:true,
+        avoidCollapsedUvs:true,edgeReferenceWorldSize:.5});}
+      catch(error){log('Could not map shingle surface UVs: '+error.message,'warn');}
+    }
+  });
   const bone=findObjectByNameLoose(sceneObj,'shinglebone');
   let boneLength=1;
   let boneFrameInverse=null;
