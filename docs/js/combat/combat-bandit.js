@@ -2637,6 +2637,32 @@
     } finally { characterBuildPending--; unlock(); }
   }
 
+  function applyAuthoredHostileRigScale(avatarRef, explicitScale) {
+    if (!avatarRef?.group || !explicitScale) return false;
+    const positive = value => Number.isFinite(Number(value)) && Number(value) > 0; // Validate caller-authored scale fields before mutating live meshes.
+    const x = positive(explicitScale.x) ? Math.min(4, Math.max(0.1, Number(explicitScale.x))) : 1;
+    const y = positive(explicitScale.y) ? Math.min(4, Math.max(0.1, Number(explicitScale.y))) : 1;
+    const head = positive(explicitScale.head) ? Math.min(4, Math.max(0.1, Number(explicitScale.head))) : 1;
+    const offsetY = Number.isFinite(Number(explicitScale.offsetY)) ? Math.max(-0.5, Math.min(0.5, Number(explicitScale.offsetY))) : 0;
+    const originalHeight = avatarRef.modelHeight; // Head-neck offset is expressed against the unscaled local avatar height.
+    // Both the skinned face and rear head track their independently rotated neck bones.
+    // Counteract non-uniform whole-rig scaling so the skull stays undistorted.
+    for (const joint of [avatarRef.neckJoint?.front, avatarRef.neckJoint?.back]) {
+      if (!joint?.scale) continue;
+      joint.scale.x *= head / x;
+      joint.scale.y *= head / y;
+      if (joint.position) joint.position.y += originalHeight * offsetY;
+      joint.updateMatrix?.();
+    }
+    avatarRef.group.scale.set(avatarRef.group.scale.x * x, avatarRef.group.scale.y * y, avatarRef.group.scale.z * x);
+    avatarRef.modelWidth *= x; // makeBanditDef, melee targeting and collision must see the same dimensions as the rendered enemy.
+    avatarRef.modelHeight *= y;
+    avatarRef.group.userData.portraitModelWidth = avatarRef.modelWidth; // Runtime hitbox and pose-height metadata read the same scaled box.
+    avatarRef.group.userData.portraitModelHeight = avatarRef.modelHeight;
+    avatarRef.rigScale = { x, y, head, offsetY }; // Mobile-readable proof of the actual values applied.
+    return true;
+  }
+
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
     const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
@@ -2645,6 +2671,7 @@
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
+    if (avatarRef && opts.avatarRigScale) applyAuthoredHostileRigScale(avatarRef, opts.avatarRigScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
       window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
