@@ -1840,6 +1840,7 @@
     // (see its own docblock for the exact formulas), so there's nothing to
     // default for either.
     sizeY: 3.0, floorOffset: 0, entranceLength: 3,
+    entranceExtraColumnsPerSide: 0, // Configurable mouth widening supplied by cavern-generator; standalone sculpting stays at original width.
     tileSize: 1,
     solidOuterRim: false, // Procedural caves opt in; authored locale footprints retain their painted boundaries.
     // Near-spherical probe's Y semi-axis, as a multiplier of probeRadius
@@ -2104,11 +2105,12 @@
     }
 
     // Guarantee the entrance regardless of how the organic carve landed on
-    // the tile grid — 3 physical units wide at ts=1 (the original fixed
-    // 3-tile entrance), scaled to as many tiles as it takes to cover the
-    // same physical width at a finer tileSize, so the doorway's real-world
-    // size doesn't shrink just because the grid got finer.
-    const entranceTileCount = Math.max(3, Math.round(3 / ts));
+    // the tile grid — a base 3 physical units wide at ts=1 (the original
+    // 3-tile entrance), plus configurable extra open columns on each side.
+    // The base width scales with tileSize; the configured additions are grid
+    // columns, matching the collision tiles the player sees.
+    const sideColumns = Math.max(0, Math.min(8, Math.floor(Number(opts.entranceExtraColumnsPerSide) || 0))); // Additional open tiles on each side, sourced from cave-shape config.
+    const entranceTileCount = Math.max(3, Math.round(3 / ts)) + sideColumns * 2;
     const entranceColLo = -Math.floor(entranceTileCount / 2);
     const entranceRow = Math.floor(entranceZ / ts);
     const entranceTiles = Array.from({ length: entranceTileCount }, (_, i) => [entranceColLo + i, entranceRow]);
