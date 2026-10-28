@@ -69,6 +69,8 @@ assert.equal(clothingStackSignature(loomOne), clothingStackSignature(loomTwo),
 assert.equal(groupClothingForDisplay([loomOne, loomTwo]).length, 1, 'two identical loom copies display as one stack');
 assert.equal(groupClothingForDisplay([loomOne, { ...loomTwo, weaveMaterial: 'heavy' }]).length, 2,
   'different textile weights stay separate');
+assert.deepEqual(groupClothingForDisplay(Array.from({ length: 205 }, (_, index) => ({ ...copy(base), uid: 'many-' + index })))
+  .map(group => group.count), [99, 99, 7], 'clothing uses the normal Pack 99-item stack limit');
 
 let pack = [copy(base), copy(base), dyed]; // Old shop purchases reused a single listing UID.
 let saves = 0; // Must only increase on actual ID repair or a real inventory transaction.
