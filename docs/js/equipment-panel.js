@@ -843,7 +843,15 @@
       mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
       if (salePrice > 0) {
         mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {
-          deps.setPackClothing(deps.getPackClothing().filter(c => c.uid !== uid));
+          const owned = deps.getPackClothing(); // Read the current saved articles, not a stale detail-panel snapshot.
+          const saleIndex = owned.findIndex(c => c?.uid === uid); // A sale removes one physical garment even in an unmigrated duplicate-ID save.
+          if (saleIndex < 0) return;
+          const remaining = owned.slice(); // Preserve the pack's setter contract while keeping all other articles.
+          remaining.splice(saleIndex, 1);
+          deps.setPackClothing(remaining);
+          if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) {
+            deps.setManualHeldItem?.(null); // Never leave the handheld/gift target pointing at a garment just sold.
+          }
           deps.inventory.gold = (deps.inventory.gold || 0) + salePrice;
           deps.showToast('Sold ' + item.label + ' for ' + salePrice + 'g', true);
           buildPackClothingSection(); deps.buildInventoryGrid(); deps.clearInventoryDetail();
