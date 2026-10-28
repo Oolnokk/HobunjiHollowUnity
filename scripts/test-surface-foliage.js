@@ -37,7 +37,7 @@ assert.equal(api.normalizeSurfaceGrowth(roundTrip).density,.75);
 assert.equal(api.normalizeSurfaceGrowth(roundTrip).style,'wrap');
 assert.match(generatorSource,/function recognizeArchitecturalSurfaceRegions\(/,
   'Houses and interiors must recognize surface regions using face connectivity, not merely wall/gable tags');
-assert.match(generatorSource,/splitAngleDeg\)\):24/,
+assert.match(generatorSource,/Number\(options\.splitAngleDeg\):24/,
   'Architectural recognition must use the Furniture Author default 24 degree split angle');
 assert.match(generatorSource,/edge\.hiddenInternal=true/,
   'Interior gable/wall T-junction seams must not become artificial perimeter outlines');
