@@ -334,6 +334,10 @@
     return Math.min(Number.isFinite(authoredFrac) ? Math.max(0, authoredFrac) : 0.08,
       MAX_FIRE_TRIGGER_TO_PROJECTILE_S / durationS);
   }
+  function fireWindupFrac(def) {
+    const authoredWindup = Number(def?.fireWindupFrac); // Keeps the authored pre-strike gesture only when it fits inside the new fire-to-projectile window.
+    return Math.min(Number.isFinite(authoredWindup) ? Math.max(0, authoredWindup) : 0.02, fireReleaseFrac(def) * 0.5);
+  }
   function isLoaded(itemKey, owner = null) {
     if (owner) return owner._rangedLoaded !== false;
     if (!playerLoaded.has(itemKey)) playerLoaded.set(itemKey, true);
@@ -368,7 +372,7 @@
     const t = Math.max(0, Math.min(1, progress));
     const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
     const fireStrikeFrac = fireReleaseFrac(def); // Keeps the visible firing strike aligned with the accelerated projectile release.
-    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : Math.min(def.fireWindupFrac ?? 0.02, fireStrikeFrac * 0.5);
+    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : fireWindupFrac(def);
     const sf = kind === 'load' ? (def.reloadStrikeFrac ?? 0.56) : fireStrikeFrac;
     const hf = kind === 'load' ? (def.reloadHoldFrac ?? sf) : (def.fireHoldFrac ?? sf);
     if (sequence === 'attack') {
@@ -482,7 +486,7 @@
         gripMode: def.gripMode || null,
         toolEndFlip: def.toolEndFlip === true,
         alignToReticle: kind === 'fire',
-        windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : Math.min(def.fireWindupFrac ?? 0.02, fireReleaseFrac(def) * 0.5),
+        windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : fireWindupFrac(def),
         strikeFrac: kind === 'fire' ? fireReleaseFrac(def) : (def.reloadStrikeFrac ?? 0.56),
         holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
       });
@@ -1795,7 +1799,7 @@
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     playerActionState: () => playerAction, // Borrowed read-only live state for animation consumers; unlike __rangedDebug this does not allocate/copy every frame.
-    isPlayerThrownFireThroughStrike,
+    isPlayerThrownFireThroughStrike, fireReleaseFrac, fireWindupFrac, // Shared firing timeline for weapon animation and direct shoulder/hand drivers.
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
@@ -1857,7 +1861,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Ranged shots spawn within 12 ms of the fire trigger (after any thrown charge), then advance during projectile updates; reload, recovery, flight speed and blowgun audio remain independent.',
+      latestChange: 'Near-instant ranged release synchronized across projectiles, player/NPC weapon poses, and hand/shoulder targets; held throw charge and reload remain separate.',
       lastEvent, lastAudioEvent, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
